@@ -48,7 +48,7 @@ flate2 = "1"
 blake3 = "1.8"
 bytes = "1.10"
 tokio-stream = { version = "0.1", features = ["sync"] }
-tokio = { version = "1.44", features = ["rt-multi-thread", "parking_lot", "fs"] }
+tokio = { version = "1.45", features = ["rt-multi-thread", "parking_lot", "fs"] }
 tokio-util = "0.7"
 tempfile = "3.19"
 ruzstd = "0"
