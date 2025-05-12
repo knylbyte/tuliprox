@@ -219,11 +219,19 @@ impl Mapper {
     ///
     /// Will panic if default `RegEx` gets invalid
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>, tags: Option<&Vec<MappingTag>>) -> Result<(), TuliProxError> {
-        for key in self.attributes.keys() {
+        for (key, value) in &self.attributes.clone() {
             if !valid_property!(key.as_str(), MAPPER_ATTRIBUTE_FIELDS) {
                 return Err(info_err!(format!("Invalid mapper attribute field {key}")));
             }
+
+            if let Some(template_list) = templates {
+                let new_value = apply_templates_to_pattern(value, template_list);
+                if new_value != *value {
+                    self.attributes.insert(key.clone(), new_value);
+                }
+            }
         }
+
         for key in self.suffix.keys() {
             if !valid_property!(key.as_str(), AFFIX_FIELDS) {
                 return Err(info_err!(format!("Invalid mapper suffix field {key}")));

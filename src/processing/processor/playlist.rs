@@ -85,7 +85,7 @@ fn exec_rename(pli: &mut PlaylistItem, rename: Option<&Vec<ConfigRename>>) {
             for r in renames {
                 let value = get_field_value(result, &r.field);
                 let cap = r.re.as_ref().unwrap().replace_all(value.as_str(), &r.new_name);
-                if log::log_enabled!(log::Level::Debug) && *value != cap {
+                if log_enabled!(log::Level::Debug) && *value != cap {
                     debug_if_enabled!("Renamed {}={} to {}", &r.field, value, cap);
                 }
                 let value = cap.into_owned();
@@ -547,7 +547,7 @@ pub async fn exec_processing(client: Arc<reqwest::Client>, cfg: Arc<Config>, tar
         }
     }
     let elapsed = start_time.elapsed().as_secs();
-    info!("Update process finished! Took {elapsed} secs.");
+    info!("🌷 Update process finished! Took {elapsed} secs.");
 }
 
 #[cfg(test)]

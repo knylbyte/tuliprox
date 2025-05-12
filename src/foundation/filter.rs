@@ -555,8 +555,7 @@ pub fn prepare_templates(
 pub fn apply_templates_to_pattern(pattern: &str, templates: &Vec<PatternTemplate>) -> String {
     let mut new_pattern = pattern.to_string();
     for template in templates {
-        new_pattern =
-            new_pattern.replace(format!("!{}!", &template.name).as_str(), &template.value);
+        new_pattern = new_pattern.replace(format!("!{}!", &template.name).as_str(), &template.value);
     }
     new_pattern
 }

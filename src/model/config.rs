@@ -382,6 +382,8 @@ pub struct Config {
     #[serde(skip)]
     pub t_sources_file_path: String,
     #[serde(skip)]
+    pub t_mapping_file_path: String,
+    #[serde(skip)]
     pub t_api_proxy_file_path: String,
     #[serde(skip)]
     pub file_locks: Arc<FileLockManager>,
@@ -636,7 +638,7 @@ impl Config {
     */
     pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliProxError> {
         let work_dir = &self.working_dir;
-        self.working_dir = file_utils::get_working_path(work_dir);
+        self.working_dir = file_utils::resolve_directory_path(work_dir);
         if include_computed {
             self.t_access_token_secret = generate_secret();
             self.t_encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliProxError::new(TuliProxErrorKind::Info, err.to_string()))?;

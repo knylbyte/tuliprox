@@ -288,10 +288,10 @@ impl ConfigTarget {
                 // debug!("Filter: {}", fltr);
                 self.t_filter = Some(fltr);
                 if let Some(renames) = self.rename.as_mut() {
-                    handle_tuliprox_error_result_list!(TuliProxErrorKind::Info, renames.iter_mut().map(ConfigRename::prepare));
+                    handle_tuliprox_error_result_list!(TuliProxErrorKind::Info, renames.iter_mut().map(|cr|cr.prepare(templates)));
                 }
                 if let Some(sort) = self.sort.as_mut() {
-                    handle_tuliprox_error_result!(TuliProxErrorKind::Info, sort.prepare());
+                    handle_tuliprox_error_result!(TuliProxErrorKind::Info, sort.prepare(templates));
                 }
                 Ok(())
             }

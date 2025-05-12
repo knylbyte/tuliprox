@@ -100,7 +100,7 @@ fn main() {
         return;
     }
 
-    let config_path: String = args.config_path.unwrap_or_else(file_utils::get_default_config_path);
+    let config_path: String = file_utils::resolve_directory_path(&args.config_path.unwrap_or_else(file_utils::get_default_config_path));
     let config_file: String = args.config_file.unwrap_or_else(|| file_utils::get_default_config_file_path(&config_path));
 
     let env_log_level = std::env::var("TULIPROX_LOG");
@@ -125,24 +125,26 @@ fn main() {
     if let Some(bts) = BUILD_TIMESTAMP.to_string().parse::<DateTime<Utc>>().ok().map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string()) {
         info!("Build time: {bts}");
     }
+
+    match config_reader::read_mappings(args.mapping_file, &mut cfg, true) {
+        Ok(Some(mapping_file)) => {
+            cfg.t_mapping_file_path = mapping_file;
+        }
+        Ok(None) => {},
+        Err(err) => exit!("{err}"),
+    }
+
     info!("Current time: {}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"));
     info!("Working dir: {:?}", &cfg.working_dir);
     info!("Config dir: {:?}", &cfg.t_config_path);
     info!("Config file: {config_file:?}");
     info!("Source file: {sources_file:?}");
+    info!("Mapping file: {:?}", cfg.t_mapping_file_path);
     info!("Temp dir: {temp_path:?}");
     if let Some(cache) = cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
         if cache.enabled {
             info!("Cache dir: {:?}", cache.dir.as_ref().unwrap_or(&String::new()));
         }
-    }
-
-    match config_reader::read_mappings(args.mapping_file, &mut cfg, true) {
-        Ok(Some(mapping_file)) => {
-            info!("Mapping file: {mapping_file:?}");
-        }
-        Ok(None) => {}
-        Err(err) => exit!("{err}"),
     }
 
     // if cfg.t_channel_unavailable_video.is_some() {

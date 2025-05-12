@@ -1,13 +1,13 @@
 # Changelog
-# 2.2.6 (2025-04-xx)
+# 3.0.0 (2025-05-12)
+- !BREAKING_CHANGE! user has now the attribute `ui_enabled` to disable/enable web_ui for user.
+    You need to migrate the user db if you have used `use_user_db:true`.
+    Set it to `false` run old tuliprox version, then update tuliprox and set `use_user_db:true`and start.
 - !BREAKING_CHANGE! all docker images have now tuliprox under `/app` 
 - !BREAKING CHANGE! bandwidth `throttle_kbps` attribute for `reverse_proxy.stream` in  `config.yml`
   is now `throttle` and supports units. Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`.
 Default unit is `kbps`.
 - !BREAKING_CHANGE!  `log` config `active_clients` renamed to `log_active_user`
-- !BREAKING_CHANGE! user has now the attribute `ui_enabled` to disable/enable web_ui for user.
-  You need to migrate the user db if you have used `use_user_db:true`.
-  Set it to `false` run old tuliprox version, then update tuliprox and set `use_user_db:true`and start.
 - !BREAKING_CHANGE! `web_ui config` restructured and added `user_ui_enabled` attribute
 ```yaml
 web_ui:
@@ -20,8 +20,8 @@ web_ui:
     secret: ef9ab256a8c0abe5de92c2e05ca92baa810472ab702ff1674e9248308ceeec92
     userfile: user.txt
 ```
-- `grace_period_millis` default set to 2000 milliseconds.
-- `grace_period_timeout_secs` default set to 5 seconds.
+- `grace_period_millis` default set to 300 milliseconds.
+- `grace_period_timeout_secs` default set to 2 seconds.
 - Fixed user grace period
 - Added `default_grace_period_timeout_secs` to `reverse_proxy.stream` config. When grace_period granted,
 until the `default_grace_period_timeout_secs` elapses no grace_period is granted again.
@@ -76,16 +76,16 @@ url: ['file:///${env:TULIPROX_HOME}/epg.xml', 'file:///${env:TULIPROX_HOME}/epg2
 # multi url  epg
 url: ['http://localhost:3001/xmltv.php?epg_id=1', 'http://localhost:3001/xmltv.php?epg_id=2']
 ```
-- Added `estrip` to input for auto epg matching, if not given `["3840p", "uhd", "fhd", "hd", "sd", "4k", "plus", "raw"]` is default
+- Added `strip` to input for auto epg matching, if not given `["3840p", "uhd", "fhd", "hd", "sd", "4k", "plus", "raw"]` is default
   When no matching epg_id is found, the display name is used to match a channel name. The given strings are stripped to get a better match.
 - Fixed chno assignment issue
-- Redirect Proxy  provider cycle implemented (m3u playlist only cycles when output param `mask_redirect_url` is set). 
+- Redirect Proxy provider cycle implemented (m3u playlist only cycles when output param `mask_redirect_url` is set). 
 - Reverse Proxy mode for user can now be a subset
   - `reverse`           -> all reverse
   - `reverse[live]`     -> only live reverse, vod and series redirect
   - `reverse[live,vod]` -> series redirect, others reverse
 - `/status` api endpoint moved to  `/api/v1/status` for auth protection
-- fixed multi provider VOD seek problem (provider cycle  on seek request prevented playback)
+- fixed multi provider VOD seek problem (provider cycle on seek request prevented playback)
 - hdhomerun supports now basic auth like <http://user:password@ip:port/lineup.json>  
 you need to enable auth in config
 ```yaml
@@ -98,7 +98,7 @@ hdhomerun:
 - A new filter field `caption` has been added. This field is used to bypass the `title/name` issue. 
 If `caption` is provided, its value is read from `title` if available, otherwise from `name`. 
 When setting `caption`, both `title` and `name` are updated.”
-- Counter has now an attribute padding. Which fills the number like 001.
+- Counter has now an attribute `padding`. Which fills the number like 001.
 - Added proxy configuration for all outgoing requests in `config.yml`. supported http, https, socks5 proxies.
 ```yaml
 proxy:
