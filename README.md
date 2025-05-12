@@ -828,7 +828,7 @@ There is a difference for `resolve_vod` and `resolve_series`.
 The filter is a string with a filter statement.
 The filter can have UnaryExpression `NOT`, BinaryExpression `AND OR`, Regexp Comparison `(Group|Title|Name|Url) ~ "regexp"`
 and Type Comparsison `Type = vod` or `Type = live` or `Type = series`.
-Filter fields are `Group`, `Title`, `Name`, `Caption`, Url`, `Input` and `Type`.
+Filter fields are `Group`, `Title`, `Name`, `Caption`, `Url`, `Input` and `Type`.
 Example filter:  `((Group ~ "^DE.*") AND (NOT Title ~ ".*Shopping.*")) OR (Group ~ "^AU.*")`
 
 If you use characters like `+ | [ ] ( )` in filters don't forget to escape them!!
