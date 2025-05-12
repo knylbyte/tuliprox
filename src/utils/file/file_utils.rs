@@ -104,7 +104,7 @@ pub fn resolve_directory_path(input: &str) -> String {
         if md.is_dir() && !md.permissions().readonly() {
             input_path.canonicalize().ok()
         } else {
-            error!("Path not found or not writable: {:?}", &input_path);
+            error!("Path not found or not writable: {input_path:?}");
             None
         }
     });
@@ -115,7 +115,7 @@ pub fn resolve_directory_path(input: &str) -> String {
         .canonicalize()
         .map_or_else(
             |_| {
-                error!("Path not found {:?}", &final_path);
+                error!("Path not found {final_path:?}");
                 String::from("./")
             },
             |ap| String::from(ap.to_str().unwrap_or("./")),
