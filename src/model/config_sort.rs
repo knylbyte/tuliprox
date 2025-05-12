@@ -1,4 +1,5 @@
 use regex::Regex;
+use crate::foundation::filter::{apply_templates_to_pattern, PatternTemplate};
 use crate::tuliprox_error::{TuliProxError, TuliProxErrorKind, create_tuliprox_error, handle_tuliprox_error_result_list};
 use crate::model::{ItemField};
 
@@ -29,14 +30,21 @@ pub struct ConfigSortGroup {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sequence: Option<Vec<String>>,
     #[serde(default, skip)]
-    pub t_sequence: Option<Vec<Regex>>,
+    pub t_re_sequence: Option<Vec<Regex>>,
 }
 
 
 impl ConfigSortGroup {
-    pub fn prepare(&mut self) -> Result<(), TuliProxError> {
-        // Compile sequence patterns, if any
-        self.t_sequence = compile_regex_vec(self.sequence.as_ref())?;
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliProxError> {
+        // Transform sequence with templates if provided, otherwise use raw sequence
+        let processed_sequence = match (&self.sequence, templates) {
+            (Some(seqs), Some(tmpls)) => Some(seqs.iter().map(|s| apply_templates_to_pattern(s, tmpls)).collect()),
+            (Some(seqs), None) => Some(seqs.clone()),
+            (None, _) => None,
+        };
+
+        // Compile regex patterns
+        self.t_re_sequence = compile_regex_vec(processed_sequence.as_ref())?;
         Ok(())
     }
 }
@@ -52,13 +60,16 @@ pub struct ConfigSortChannel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sequence: Option<Vec<String>>,
     #[serde(default, skip)]
-    pub t_sequence: Option<Vec<Regex>>,
+    pub t_re_sequence: Option<Vec<Regex>>,
     #[serde(skip)]
     pub t_re_group_pattern: Option<Regex>,
 }
 
 impl ConfigSortChannel {
-    pub fn prepare(&mut self) -> Result<(), TuliProxError> {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliProxError> {
+        if let Some(templ) =  templates {
+            self.group_pattern = apply_templates_to_pattern(&self.group_pattern, templ);
+        }
         // Compile group_pattern
         self.t_re_group_pattern = Some(
             Regex::new(&self.group_pattern).map_err(|err| {
@@ -66,8 +77,15 @@ impl ConfigSortChannel {
             })?
         );
 
-        // Compile sequence patterns, if any
-        self.t_sequence = compile_regex_vec(self.sequence.as_ref())?;
+        // Transform sequence with templates if provided, otherwise use raw sequence
+        let processed_sequence = match (&self.sequence, templates) {
+            (Some(seqs), Some(tmpls)) => Some(seqs.iter().map(|s| apply_templates_to_pattern(s, tmpls)).collect()),
+            (Some(seqs), None) => Some(seqs.clone()),
+            (None, _) => None,
+        };
+
+        // Compile regex patterns
+        self.t_re_sequence = compile_regex_vec(processed_sequence.as_ref())?;
         Ok(())
     }
 }
@@ -84,12 +102,12 @@ pub struct ConfigSort {
 }
 
 impl ConfigSort {
-    pub fn prepare(&mut self) -> Result<(), TuliProxError> {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliProxError> {
         if let Some(group) = self.groups.as_mut() {
-            group.prepare()?;
+            group.prepare(templates)?;
         }
         if let Some(channels) = self.channels.as_mut() {
-            handle_tuliprox_error_result_list!(TuliProxErrorKind::Info, channels.iter_mut().map(ConfigSortChannel::prepare));
+            handle_tuliprox_error_result_list!(TuliProxErrorKind::Info, channels.iter_mut().map(|csc| csc.prepare(templates)));
         }
         Ok(())
     }

@@ -98,7 +98,7 @@ fn playlistgroup_comparator(a: &PlaylistGroup, b: &PlaylistGroup, group_sort: &C
     let value_a = if match_as_ascii { deunicode(&a.title) } else { a.title.to_string() };
     let value_b = if match_as_ascii { deunicode(&b.title) } else { b.title.to_string() };
 
-    playlist_comparator(group_sort.t_sequence.as_ref(), &group_sort.order, &value_a, &value_b)
+    playlist_comparator(group_sort.t_re_sequence.as_ref(), &group_sort.order, &value_a, &value_b)
 }
 
 fn playlistitem_comparator(
@@ -112,7 +112,7 @@ fn playlistitem_comparator(
     let value_a = if match_as_ascii { deunicode(&raw_value_a) } else { raw_value_a };
     let value_b = if match_as_ascii { deunicode(&raw_value_b) } else { raw_value_b };
 
-    playlist_comparator(channel_sort.t_sequence.as_ref(), &channel_sort.order, &value_a, &value_b)
+    playlist_comparator(channel_sort.t_re_sequence.as_ref(), &channel_sort.order, &value_a, &value_b)
 }
 
 pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new_playlist: &mut [PlaylistGroup]) {
@@ -154,7 +154,7 @@ mod tests {
             group_pattern: ".*".to_string(),
             order: SortOrder::Asc,
             sequence: None,
-            t_sequence: Some(vec![
+            t_re_sequence: Some(vec![
                 Regex::new(r"(?P<c1>.*?)\bUHD\b").unwrap(),
                 Regex::new(r"(?P<c1>.*?)\bFHD\b").unwrap(),
                 Regex::new(r"(?P<c1>.*?)\bHD\b").unwrap(),
@@ -202,7 +202,7 @@ mod tests {
             group_pattern: ".*US.*".to_string(),
             order: SortOrder::Asc,
             sequence: None,
-            t_sequence: Some(vec![
+            t_re_sequence: Some(vec![
                 Regex::new(r"^US\| EAST.*?\[\bUHD\b\](?P<c1>.*)").unwrap(),
                 Regex::new(r"^US\| EAST.*?\[\bFHD\b\](?P<c1>.*)").unwrap(),
                 Regex::new(r"^US\| EAST.*?\[\bHD\b\](?P<c1>.*)").unwrap(),

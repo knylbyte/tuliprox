@@ -88,26 +88,38 @@ pub fn get_default_api_proxy_config_path(config_path: &str) -> String {
     get_default_file_path(config_path, API_PROXY_FILE)
 }
 
-pub fn get_working_path(wd: &str) -> String {
+pub fn resolve_directory_path(input: &str) -> String {
     let current_dir = std::env::current_dir().unwrap_or_default();
-    if wd.is_empty() {
-        String::from(current_dir.to_str().unwrap_or("."))
-    } else {
-        let work_path = std::path::PathBuf::from(wd);
-        let _ = fs::create_dir_all(&work_path);
-        let wdpath = fs::metadata(&work_path).map_or(None, |md| if md.is_dir() && !md.permissions().readonly() {
-            work_path.canonicalize().ok()
-        } else {
-            error!("Path not found {:?}", &work_path);
-            None
-        });
-        let rp: PathBuf = wdpath.map_or_else(|| current_dir.join(wd), |d| d);
-        rp.canonicalize().map_or_else(|_| {
-            error!("Path not found {:?}", &rp);
-            String::from("./")
-        }, |ap| String::from(ap.to_str().unwrap_or("./")))
+
+    if input.is_empty() {
+        return String::from(current_dir.to_str().unwrap_or("."));
     }
+
+    let input_path = PathBuf::from(input);
+    let _ = fs::create_dir_all(&input_path);
+
+    let resolved_path = fs::metadata(&input_path).ok().and_then(|md| {
+        if md.is_dir() && !md.permissions().readonly() {
+            input_path.canonicalize().ok()
+        } else {
+            error!("Path not found or not writable: {:?}", &input_path);
+            None
+        }
+    });
+
+    let final_path = resolved_path.unwrap_or_else(|| current_dir.join(input));
+
+    final_path
+        .canonicalize()
+        .map_or_else(
+            |_| {
+                error!("Path not found {:?}", &final_path);
+                String::from("./")
+            },
+            |ap| String::from(ap.to_str().unwrap_or("./")),
+        )
 }
+
 
 #[inline]
 pub fn open_file(file_name: &Path) -> Result<File, std::io::Error> {

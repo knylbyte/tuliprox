@@ -27,6 +27,7 @@ use axum::Router;
 use tokio::sync::Mutex;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use crate::api::api_utils::{get_build_time, get_server_time};
+use crate::api::config_watch::exec_config_watch;
 use crate::utils::request::create_client;
 use crate::VERSION;
 
@@ -230,6 +231,11 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
 
     exec_scheduler(&Arc::clone(&shared_data.http_client), &cfg, &targets);
     exec_update_on_boot(Arc::clone(&shared_data.http_client), &cfg, &targets);
+
+    if let Err(err) = exec_config_watch(&app_state).await {
+        error!("Failed to start config watch: {err}");
+    }
+
     let web_auth_enabled = is_web_auth_enabled(&cfg, web_ui_enabled);
 
     if cfg.t_api_proxy.read().await.is_some() {
@@ -287,6 +293,7 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
         axum::serve(listener, router).into_future().await
     }
 }
+
 
 fn add_rate_limiter(router: Router<Arc<AppState>>, rate_limit_cfg: &RateLimitConfig) -> Router<Arc<AppState>> {
     if rate_limit_cfg.enabled {
