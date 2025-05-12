@@ -50,7 +50,7 @@ bytes = "1.10"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio = { version = "1.45", features = ["rt-multi-thread", "parking_lot", "fs"] }
 tokio-util = "0.7"
-tempfile = "3.19"
+tempfile = "3.20"
 ruzstd = "0"
 filetime = "0.2"
 zeroize = "1.8"

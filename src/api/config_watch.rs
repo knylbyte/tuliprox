@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Result, Watcher};
 use std::sync::{mpsc, Arc};
-use log::info;
+use log::{debug, error, info};
 use notify::event::{AccessKind, AccessMode};
 use crate::api::model::app_state::AppState;
 
@@ -35,12 +35,12 @@ pub async fn exec_config_watch(app_state: &Arc<AppState>) -> notify::Result<()> 
                     if let EventKind::Access(AccessKind::Close(AccessMode::Write)) = event.kind {
                         for path in event.paths {
                             if let Some(file) = files.get(&path) {
-                                println!("File changed {file}: {path:?}");
+                                debug!("File changed {file}: {path:?}");
                             }
                         }
                     }
                 }
-                Err(e) => println!("watch error: {e:?}"),
+                Err(e) => error!("watch error: {e:?}"),
             }
         }
         info!("Watching stopped");

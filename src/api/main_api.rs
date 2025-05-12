@@ -232,9 +232,10 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
     exec_scheduler(&Arc::clone(&shared_data.http_client), &cfg, &targets);
     exec_update_on_boot(Arc::clone(&shared_data.http_client), &cfg, &targets);
 
-    if let Err(err) = exec_config_watch(&app_state).await {
-        error!("Failed to start config watch: {err}");
-    }
+    // TODO enable when config watch is ready
+    // if let Err(err) = exec_config_watch(&app_state).await {
+    //     error!("Failed to start config watch: {err}");
+    // }
 
     let web_auth_enabled = is_web_auth_enabled(&cfg, web_ui_enabled);
 

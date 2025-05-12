@@ -96,7 +96,9 @@ pub fn resolve_directory_path(input: &str) -> String {
     }
 
     let input_path = PathBuf::from(input);
-    let _ = fs::create_dir_all(&input_path);
+    if let Err(e) = fs::create_dir_all(&input_path) {
+       error!("Failed to create directory: {input_path:?} - {e}");
+    }
 
     let resolved_path = fs::metadata(&input_path).ok().and_then(|md| {
         if md.is_dir() && !md.permissions().readonly() {

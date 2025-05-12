@@ -77,6 +77,8 @@ Top level entries in the config files are:
 * `connect_timeout_secs`: _optional_ and used for provider requests connection timeout.
 * `custom_stream_response` _optional_
 * `hdhomerun` _optional_
+* `proxy` _optional_
+* `ipcheck` _optional_
 
 ### 1.1. `threads`
 If you are running on a cpu which has multiple cores, you can set for example `threads: 2` to run two threads.
@@ -196,8 +198,9 @@ This configuration is only used for reverse proxy mode. The Reverse Proxy mode c
 Attributes:
 - `retry`
 - `buffer`
-- `throttle_kbps` Kilobit per second
-- `grace_period_millis`
+- `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
+- `grace_period_millis`  default set to 300 milliseconds.
+- `grace_period_timeout_secs` efault set to 2 seconds.
 
 ##### 1.6.1.1 `retry`
 If set to `true` on connection loss to provider, the stream will be reconnected.
@@ -216,8 +219,10 @@ The stream is buffered with the configured `size`.
 
 - The key difference: the `b.` approach is based on complex stream handling and more memory footprint.
 
-##### 1.6.1.3 `throttle_kbps` in Kilobits per seconds
+##### 1.6.1.3 `throttle` 
 Bandwidth throttle (speed limit).
+Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`.
+Default unit is `kbps`.
 
 | Resolution      |Framerate| Bitrate (kbps) | Quality     |
 |-----------------|---------|----------------|-------------|
@@ -232,6 +237,9 @@ a grace period can be given during the switchover.
 If this period is set too short, it may result in access being denied in some cases.
 The default is 0 milliseconds.
 If the connection is not throttled, the player will play its buffered content longer than expected.
+
+##### 1.6.1.4 `grace_period_timeout_secs`
+How long the grace grant will last, until another grace grant can made.
 
 #### 1.6.2 `cache`
 LRU-Cache is for resources. If it is `enabled`, the resources/images are persisted in the given `dir`. If the cache size exceeds `size`,
@@ -257,6 +265,19 @@ reverse_proxy:
     dir: ./cache
 ```
 
+#### 1.6.4 `rate_limit`
+Rate limiting per IP. The burst_size defines the initial number of available connections,
+while period_millis specifies the interval at which one connection is replenished.
+If behind a proxy `x-forwarded-for`, `x-real-ip` or `forwarded` should be set as header.
+The configuration below allows up to 10 connections initially and then replenishes 1 connection every 500 milliseconds.
+```yaml
+reverse_proxy:
+  rate_limit:
+    enabled: true
+    period_millis: 500
+    burst_size: 10
+```
+
 ### 1.7 `backup_dir`
 is the directory where the backup configuration files written, when saved from the ui.
 
@@ -266,7 +287,7 @@ if set to true, an update is started when the application starts.
 ### 1.9 `log`
 `log` has three attributes
 - `sanitize_sensitive_info` default true
-- `active_clients` default false, if set to true reverse proxy client count is printed as info log.
+- `log_active_user` default false, if set to true reverse proxy client count is printed as info log.
 - `log_level` can be set to `trace`, `debug`, `info`, `warn` and `error`.
   You can also set module based level like `hyper_util::client::legacy::connect=error,tuliprox=debug`
 
@@ -276,7 +297,7 @@ if set to true, an update is started when the application starts.
 ```yaml
 log:
   sanitize_sensitive_info: false
-  active_clients: true
+  log_active_user: true
   log_level: debug
 ```
 
@@ -375,11 +396,14 @@ It is the storage path for user configurations (f.e. bouquets).
 ### 1.16 `hdhomerun`
 
 It is possible to define `hdhomerun` target for output. To use this outputs we need to define HdHomeRun devices.
+Supports now basic auth like <http://user:password@ip:port/lineup.json>.
+
 
 The simplest config looks like:
 ```yaml
 hdhomerun:
   enabled: true
+  auth: true
   devices:
   - name: hdhr1
   - name: hdhr2
@@ -421,6 +445,28 @@ HdHomeRun device config has the following attributes:
 - `device_udn`: _optional_
 - `port`: _optional_, if not given the tuliprox-server port is incremented for each device.
 
+### 1.17 `proxy`
+
+Proxy configuration for all outgoing requests in `config.yml`. supported http, https, socks5 proxies.
+
+```yaml
+proxy:
+  url: socks5://192.168.1.6:8123
+  username: uname  # <- optional basic auth
+  password: secret # <- optional basic auth
+```
+### 1.18 `ipcheck`
+- `url` # URL that may return both IPv4 and IPv6 in one response
+- `url_ipv4` # Dedicated URL to fetch only IPv4
+- `url_ipv6` # Dedicated URL to fetch only IPv6
+- `pattern_ipv4` # Optional regex pattern to extract IPv4
+- `pattern_ipv6` # Optional regex pattern to extract IPv6
+
+```yaml
+ipcheck:
+  url_ipv4: https://ipinfo.io/ip
+```
+
 
 ## 2. `source.yml`
 
@@ -457,8 +503,9 @@ Each input has the following attributes:
 - `enabled` is optional, default is true, if you disable the processing is skipped
 - `persist` is optional, you can skip or leave it blank to avoid persisting the input file. The `{}` in the filename is filled with the current timestamp.
 - `url` for type `m3u` is the download url or a local filename (can be gzip) of the input-source. For type `xtream`it is `http://<hostname>:<port>`
-- `epg_url` _optional_ xmltv url
+- `epg` _optional_ xmltv epg configuration
 - `headers` is optional
+- `method` can be `GET` or `POST`
 - `username` only mandatory for type `xtream`
 - `pasword`only mandatory for type `xtream`
 - `prefix` is optional, it is applied to the given field with the given value
@@ -476,8 +523,43 @@ For `xtream` use a prefix like `./playlist_`
 
 `prefix` and `suffix` are appended after all processing is done, but before sort.
 They have 2 fields:
-- `field` can be `name` , `group`, `title`
+- `field` can be `name` , `group`, `title`, `caption`
 - `value` a static text
+
+Example `epg` config 
+
+```yaml
+epg:
+  auto_epg: true
+  url: ['http://localhost:3001/xmltv.php?epg_id=1', 'http://localhost:3001/xmltv.php?epg_id=2']
+  smart_match:
+    enabled: true
+    fuzzy_matching: true
+    match_threshold: 80
+    best_match_threshold: 99
+    name_prefix: !suffix "."
+    name_prefix_separator: [':', '|', '-']
+    strip :  ["3840p", "uhd", "fhd", "hd", "sd", "4k", "plus", "raw"]
+    normalize_regex: '[^a-zA-Z0-9\-]'
+```
+`match_threshold`is optional and if not set 80.
+`best_match_threshold` is optional and if not set 99.
+`name_prefix` can be `ignore`, `suffix`, `prefix`. For `suffix` and `prefix` you need to define a concat string.
+`strip :  ["3840p", "uhd", "fhd", "hd", "sd", "4k", "plus", "raw"]`  this is the defualt
+`normalize_regex: [^a-zA-Z0-9\-]`   is the default
+
+```yaml
+# single epg
+url: 'https://localhost.com/epg.xml'
+```
+```yaml
+# multi local file  epg
+url: ['file:///${env:TULIPROX_HOME}/epg.xml', 'file:///${env:TULIPROX_HOME}/epg2.xml']
+```
+```yaml
+# multi url  epg
+url: ['http://localhost:3001/xmltv.php?epg_id=1', 'http://localhost:3001/xmltv.php?epg_id=2']
+```
 
 Example input config for `m3u`
 ```yaml
@@ -485,7 +567,7 @@ sources:
 - inputs:
     - url: 'http://provder.net/get_php?...'
       name: test_m3u
-      epg_url: 'test-epg.xml'
+      epg: 'test-epg.xml'
       enabled: false
       persist: 'playlist_1_{}.m3u'
       options: {xtream_skip_series: true}
@@ -596,29 +678,37 @@ Has three top level attributes
 has one top level attribute `order` which can be set to `asc`or `desc`.
 #### `channels`
 is a list of sort configurations for groups. Each configuration has 3 top level entries.
-- `field` can be  `group`, `title`, `name` or `url`.
+- `field` can be  `group`, `title`, `name`, `caption` or `url`.
 - `group_pattern` is a regular expression like `'^TR.:\s?(.*)'` which is matched against group title.
 - `order` can be `asc` or `desc`
-- `sequence` _optional_  is a list of field values (based on `field`) which are used to sort based on index. The `order` is ignored for this entries.
+- `sequence` _optional_  is a list of regexp matching field values (based on `field`) which are used to sort based on index. The `order` is ignored for this entries.
 
 The pattern should be selected taking into account the processing sequence.
 
 ```yaml
-sort:
   groups:
-    order: asc
+  order: asc
+  sequence:
+    - '^Freetv'
+    - '^Shopping'
+    - '^Entertainment'
+    - '^Sunrise'
   channels:
-    - { field: name,  group_pattern: '^DE.*',  order: asc }
-    - field: name
-      group_pattern: '^FR.*'
+    - field: caption
+      group_pattern: '^Freetv'
       order: asc
       sequence:
-        - TF1
-        - TF1+1
-        - FRANCE 2
-        - FRANCE 3
-        - FRANCE 4
+        - '(?P<c1>.*?)\bUHD\b'
+        - '(?P<c1>.*?)\bFHD\b'
+        - '(?P<c1>.*?)\bHD\b'
+        - '(?P<c1>.*?)\bSD\b'
 ```
+In the example above, groups are sorted based on the specified sequence.
+Channels within the `Freetv` group are first sorted by `quality` (as matched by the regex sequence), and then by the `captured prefix`.
+
+To sort by specific parts of the content, use named capture groups such as `c1`, `c2`, `c3`, etc.
+The numeric suffix indicates the priority: `c1` is evaluated first, followed by `c2`, and so on.
+
 
 ### 2.2.2.2 `output`
 
@@ -659,6 +749,8 @@ Each format has different properties
 - ignore_logo:  _optional_,  true|false, default false
 - share_live_streams:  _optional_,  true|false, default false
 - remove_duplicates:  _optional_,  true|false, default false
+- `force_redirect` _optional_
+
 
 ```yaml
 targets:
@@ -736,7 +828,7 @@ There is a difference for `resolve_vod` and `resolve_series`.
 The filter is a string with a filter statement.
 The filter can have UnaryExpression `NOT`, BinaryExpression `AND OR`, Regexp Comparison `(Group|Title|Name|Url) ~ "regexp"`
 and Type Comparsison `Type = vod` or `Type = live` or `Type = series`.
-Filter fields are `Group`, `Title`, `Name`, `Url`, `Input` and `Type`.
+Filter fields are `Group`, `Title`, `Name`, `Caption`, Url`, `Input` and `Type`.
 Example filter:  `((Group ~ "^DE.*") AND (NOT Title ~ ".*Shopping.*")) OR (Group ~ "^AU.*")`
 
 If you use characters like `+ | [ ] ( )` in filters don't forget to escape them!!
@@ -748,7 +840,7 @@ Don't forget to select `Rust` option which is under the `FLAVOR` section on the 
 
 ### 2.2.2.6 `rename`
 Is a List of rename configurations. Each configuration has 3 top level entries.
-- `field` can be  `group`, `title`, `name` or `url`.
+- `field` can be  `group`, `title`, `name`, `caption`  or `url`.
 - `pattern` is a regular expression like `'^TR.:\s?(.*)'`
 - `new_name` can contain capture groups variables addressed with `$1`,`$2`,...
 
@@ -913,8 +1005,10 @@ It is optional and allows you to filter the content.
 #### 2.3.3.2 `pattern`
 The pattern is a string with a statement (@see filter statements).
 The pattern can have UnaryExpression `NOT`, BinaryExpression `AND OR`, and Comparison `(Group|Title|Name|Url) ~ "regexp"`.
-Filter fields are `Group`, `Title`, `Name`, `Url`, `Input` and `Type`.
+Filter fields are `Group`, `Title`, `Name`, `Caption`, `Url`, `Input` and `Type`.
 Example filter:  `NOT Title ~ ".*Shopping.*"`
+
+`Caption` is an alias for `Title` or/and `Name`.
 
 The pattern for the mapper works different from a filter expression.
 A filter evaluates the complete expression and returns a result.
@@ -958,6 +1052,7 @@ mappings:
       counter:
         - filter: '!sports!'
           value: 9000
+          padding: 3
           field: chno
           modifier: assign
       mapper:
@@ -1060,7 +1155,7 @@ channel name to uppercase:
 
 ### 2.3.4 counter
 
-Each mapping can have a  list of counter.
+Each mapping can have a list of counter.
 
 A counter has the following fields:
 - `filter`: filter expression
@@ -1068,6 +1163,7 @@ A counter has the following fields:
 - `field`: `title`, `name`, `chno`
 - `modifier`: `assign`, `suffix`, `prefix`
 - `concat`: is _optional_ and only used if `suffix` or `prefix` modifier given.
+- `padding`: is _optional_ 
 
 ```yaml
 mapping:
@@ -1077,6 +1173,7 @@ mapping:
       - filter: 'Group ~ ".*FR.*"'
         value: 9000
         field: title
+        padding: 2
         modifier: suffix
         concat: " - "
     mapper:
@@ -1177,15 +1274,20 @@ user:
 The `token` is _optional_. If defined it should be unique. The `token`can be used
 instead of username+password
 `proxy` is _optional_. If defined it can be `reverse` or `redirect`. Default is `redirect`.
+Reverse Proxy mode for user can be a subset
+  - `reverse`           -> all reverse
+  - `reverse[live]`     -> only live reverse, vod and series redirect
+  - `reverse[live,vod]` -> series redirect, others reverse
+
 `server` is _optional_. It should match one server definition, if not given the server with the name `default` is used or the first one.  
 `epg_timeshift` is _optional_. It is only applied when source has `epg_url` configured. `epg_timeshift: [-+]hh:mm`, example  
 `-2:30`(-2h30m), `1:45` (1h45m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m), `2:` (3h)
 - `max_connections` is _optional_
 - `status` is _optional_
 - `exp_date` is _optional_
-
-`max_connections`, `status` and `exp_date` are only used when `user_access_control` ist ste to true.
-
+- `max_connections`, `status` and `exp_date` are only used when `user_access_control` ist ste to true.
+- `user_ui_enabled` is _optional_. If defined it can be `true` or `false`. Default is `true`. Disable/enable web_ui for user
+- `user_access_control` is _optional_. If defined it can be `true` or `false`. Default is `false`. 
 
 If you have a lot of users and dont want to keep them in `api-proxy.yml`, you can set the option
 - `use_user_db` to true to store the user information inside a db-file.
