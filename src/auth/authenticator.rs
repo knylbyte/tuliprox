@@ -111,7 +111,7 @@ pub async fn validator_user(
     next: axum::middleware::Next,
 ) -> Result<axum::response::Response, axum::http::StatusCode> {
     if let Some(username) = get_username_from_auth_header(&token, &app_state) {
-        if let Some(user) = app_state.config.get_user_credentials(&username).await {
+        if let Some(user) = app_state.config.get_user_credentials(&username) {
             if !user.ui_enabled {
                 return Err(axum::http::StatusCode::FORBIDDEN);
             }

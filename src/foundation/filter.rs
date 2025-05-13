@@ -6,7 +6,7 @@ use log::{debug, error, log_enabled, trace, Level};
 use pest::iterators::Pair;
 use pest::Parser;
 
-use crate::tuliprox_error::{TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::model::ItemField;
 use crate::model::{PlaylistItem, PlaylistItemType};
 use crate::tools::directed_graph::DirectedGraph;
@@ -234,7 +234,7 @@ impl std::fmt::Display for Filter {
     }
 }
 
-fn get_parser_item_field(expr: &Pair<Rule>) -> Result<ItemField, TuliProxError> {
+fn get_parser_item_field(expr: &Pair<Rule>) -> Result<ItemField, TuliproxError> {
     if expr.as_rule() == Rule::field {
         let field_text = expr.as_str();
         for item in all::<ItemField>() {
@@ -243,13 +243,13 @@ fn get_parser_item_field(expr: &Pair<Rule>) -> Result<ItemField, TuliProxError> 
             }
         }
     }
-    create_tuliprox_error_result!(TuliProxErrorKind::Info, "unknown field: {}", expr.as_str())
+    create_tuliprox_error_result!(TuliproxErrorKind::Info, "unknown field: {}", expr.as_str())
 }
 
 fn get_parser_regexp(
     expr: &Pair<Rule>,
     templates: &Vec<PatternTemplate>,
-) -> Result<RegexWithCaptures, TuliProxError> {
+) -> Result<RegexWithCaptures, TuliproxError> {
     if expr.as_rule() == Rule::regexp {
         let mut parsed_text = String::from(expr.as_str());
         parsed_text.pop();
@@ -257,7 +257,7 @@ fn get_parser_regexp(
         let regstr = apply_templates_to_pattern(&parsed_text, templates);
         let re = regex::Regex::new(regstr.as_str());
         if re.is_err() {
-            return create_tuliprox_error_result!(TuliProxErrorKind::Info, "cant parse regex: {}", regstr);
+            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse regex: {}", regstr);
         }
         let regexp = re.unwrap();
         let captures = regexp
@@ -275,13 +275,13 @@ fn get_parser_regexp(
             captures,
         });
     }
-    create_tuliprox_error_result!(TuliProxErrorKind::Info, "unknown field: {}", expr.as_str())
+    create_tuliprox_error_result!(TuliproxErrorKind::Info, "unknown field: {}", expr.as_str())
 }
 
 fn get_parser_field_comparison(
     expr: Pair<Rule>,
     templates: &Vec<PatternTemplate>,
-) -> Result<Filter, TuliProxError> {
+) -> Result<Filter, TuliproxError> {
     let mut expr_inner = expr.into_inner();
     match get_parser_item_field(&expr_inner.next().unwrap()) {
         Ok(field) => match get_parser_regexp(&expr_inner.next().unwrap(), templates) {
@@ -311,11 +311,11 @@ fn get_filter_item_type(text_item_type: &str) -> Option<PlaylistItemType> {
     }
 }
 
-fn get_parser_type_comparison(expr: Pair<Rule>) -> Result<Filter, TuliProxError> {
+fn get_parser_type_comparison(expr: Pair<Rule>) -> Result<Filter, TuliproxError> {
     let expr_inner = expr.into_inner();
     let text_item_type = expr_inner.as_str();
     let item_type = get_filter_item_type(text_item_type);
-    item_type.map_or_else(|| create_tuliprox_error_result!(TuliProxErrorKind::Info, "cant parse item type: {text_item_type}"), |itype| Ok(Filter::TypeComparison(ItemField::Type, itype)))
+    item_type.map_or_else(|| create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse item type: {text_item_type}"), |itype| Ok(Filter::TypeComparison(ItemField::Type, itype)))
 }
 
 macro_rules! handle_expr {
@@ -396,12 +396,12 @@ fn get_parser_expression(
     stmts.pop().unwrap()
 }
 
-fn get_parser_binary_op(expr: &Pair<Rule>) -> Result<BinaryOperator, TuliProxError> {
+fn get_parser_binary_op(expr: &Pair<Rule>) -> Result<BinaryOperator, TuliproxError> {
     match expr.as_rule() {
         Rule::and => Ok(BinaryOperator::And),
         Rule::or => Ok(BinaryOperator::Or),
         _ => create_tuliprox_error_result!(
-            TuliProxErrorKind::Info,
+            TuliproxErrorKind::Info,
             "Unknown binary operator {}",
             expr.as_str()
         ),
@@ -411,7 +411,7 @@ fn get_parser_binary_op(expr: &Pair<Rule>) -> Result<BinaryOperator, TuliProxErr
 pub fn get_filter(
     filter_text: &str,
     templates: Option<&Vec<PatternTemplate>>,
-) -> Result<Filter, TuliProxError> {
+) -> Result<Filter, TuliproxError> {
     let empty_list = Vec::with_capacity(0);
     let template_list: &Vec<PatternTemplate> = templates.unwrap_or(&empty_list);
     let source = apply_templates_to_pattern(filter_text, template_list);
@@ -472,7 +472,7 @@ pub fn get_filter(
             result.map_or_else(
                 || {
                     create_tuliprox_error_result!(
-                        TuliProxErrorKind::Info,
+                        TuliproxErrorKind::Info,
                         "Unable to parse filter: {}",
                         &filter_text
                     )
@@ -480,13 +480,13 @@ pub fn get_filter(
                 Ok,
             )
         }
-        Err(err) => create_tuliprox_error_result!(TuliProxErrorKind::Info, "{}", err),
+        Err(err) => create_tuliprox_error_result!(TuliproxErrorKind::Info, "{}", err),
     }
 }
 
 fn build_dependency_graph(
     templates: &Vec<PatternTemplate>,
-) -> Result<DirectedGraph<String>, TuliProxError> {
+) -> Result<DirectedGraph<String>, TuliproxError> {
     let mut graph = DirectedGraph::<String>::new();
     for template in templates {
         graph.add_node(&template.name);
@@ -509,7 +509,7 @@ fn build_dependency_graph(
     }
     if !cycles.is_empty() {
         return create_tuliprox_error_result!(
-            TuliProxErrorKind::Info,
+            TuliproxErrorKind::Info,
             "Cyclic dependencies in templates detected!"
         );
     }
@@ -518,7 +518,7 @@ fn build_dependency_graph(
 
 pub fn prepare_templates(
     templates: &Vec<PatternTemplate>,
-) -> Result<Vec<PatternTemplate>, TuliProxError> {
+) -> Result<Vec<PatternTemplate>, TuliproxError> {
     let graph = build_dependency_graph(templates)?;
     let mut template_values = HashMap::<String, String>::new();
     let mut template_map: HashMap<String, PatternTemplate> = templates
@@ -535,7 +535,7 @@ pub fn prepare_templates(
                 if let Some(depends_on) = dependencies.get(&template_name) {
                     let mut templ_value = template_values.get(&template_name).unwrap().to_string();
                     for dep_templ_name in depends_on {
-                        let dep_value = template_values.get(dep_templ_name).ok_or_else(|| TuliProxError::new(TuliProxErrorKind::Info, format!("Failed to load template {dep_templ_name}")))?;
+                        let dep_value = template_values.get(dep_templ_name).ok_or_else(|| TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to load template {dep_templ_name}")))?;
                         templ_value =
                             templ_value.replace(format!("!{dep_templ_name}!").as_str(), dep_value);
                     }

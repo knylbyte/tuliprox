@@ -4,14 +4,14 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use arc_swap::ArcSwapOption;
 
 use log::{debug, error, warn};
 use path_clean::PathClean;
 use rand::Rng;
 
 use crate::foundation::filter::{prepare_templates,  PatternTemplate};
-use crate::tuliprox_error::{TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ApiProxyConfig, ApiProxyServerInfo, ProxyUserCredentials, Mappings};
 use crate::utils::{default_as_default, default_connect_timeout_secs, default_grace_period_millis, default_grace_period_timeout_secs};
 use crate::utils::file_lock_manager::FileLockManager;
@@ -244,12 +244,12 @@ pub struct StreamConfig {
 }
 
 impl StreamConfig {
-    fn prepare(&mut self) -> Result<(), TuliProxError> {
+    fn prepare(&mut self) -> Result<(), TuliproxError> {
         if let Some(buffer) = self.buffer.as_mut() {
             buffer.prepare();
         }
         if let Some(throttle) = &self.throttle {
-            self.throttle_kbps = parse_to_kbps(throttle).map_err(|err| TuliProxError::new(TuliProxErrorKind::Info, err))?;
+            self.throttle_kbps = parse_to_kbps(throttle).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err))?;
         }
 
         if self.grace_period_millis > 0 {
@@ -257,7 +257,7 @@ impl StreamConfig {
                 let triple_ms = self.grace_period_millis * 3;
                 self.grace_period_timeout_secs = std::cmp::max(1, triple_ms.div_ceil(1000));
             } else if self.grace_period_millis / 1000 > self.grace_period_timeout_secs {
-                return Err(TuliProxError::new(TuliProxErrorKind::Info, format!("Grace time period timeout {} sec should be more than grace time period {} ms", self.grace_period_timeout_secs, self.grace_period_millis)));
+                return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("Grace time period timeout {} sec should be more than grace time period {} ms", self.grace_period_timeout_secs, self.grace_period_millis)));
             }
         }
 
@@ -274,12 +274,12 @@ pub struct RateLimitConfig {
 }
 
 impl RateLimitConfig {
-    fn prepare(&self) -> Result<(), TuliProxError> {
+    fn prepare(&self) -> Result<(), TuliproxError> {
         if self.period_millis == 0 {
-            return Err(TuliProxError::new(TuliProxErrorKind::Info, "Rate limiter period can't be 0".to_string()));
+            return Err(TuliproxError::new(TuliproxErrorKind::Info, "Rate limiter period can't be 0".to_string()));
         }
         if self.burst_size == 0 {
-            return Err(TuliProxError::new(TuliProxErrorKind::Info, "Rate limiter bust can't be 0".to_string()));
+            return Err(TuliproxError::new(TuliproxErrorKind::Info, "Rate limiter bust can't be 0".to_string()));
         }
         Ok(())
     }
@@ -300,7 +300,7 @@ pub struct ReverseProxyConfig {
 }
 
 impl ReverseProxyConfig {
-    fn prepare(&mut self, working_dir: &str) -> Result<(), TuliProxError> {
+    fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {
         if let Some(stream) = self.stream.as_mut() {
             stream.prepare()?;
         }
@@ -368,13 +368,13 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reverse_proxy: Option<ReverseProxyConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hdhomerun: Option<HdHomeRunConfig>,
+    pub hdhomerun: Arc<ArcSwapOption<HdHomeRunConfig>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy: Option<ProxyConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ipcheck: Option<IpCheckConfig>,
     #[serde(skip)]
-    pub t_api_proxy: Arc<RwLock<Option<ApiProxyConfig>>>,
+    pub t_api_proxy: Arc<ArcSwapOption<ApiProxyConfig>>,
     #[serde(skip)]
     pub t_config_path: String,
     #[serde(skip)]
@@ -400,26 +400,26 @@ pub struct Config {
 }
 
 impl Config {
-    pub async fn set_api_proxy(&mut self, api_proxy: Option<ApiProxyConfig>) -> Result<(), TuliProxError> {
-        self.t_api_proxy = Arc::new(RwLock::new(api_proxy));
+    pub async fn set_api_proxy(&self, api_proxy: Option<Arc<ApiProxyConfig>>) -> Result<(), TuliproxError> {
+        self.t_api_proxy.store(api_proxy);
         self.check_target_user().await
     }
 
-    async fn check_username(&self, output_username: Option<&str>, target_name: &str) -> Result<(), TuliProxError> {
+    async fn check_username(&self, output_username: Option<&str>, target_name: &str) -> Result<(), TuliproxError> {
         if let Some(username) = output_username {
             if let Some((_, config_target)) = self.get_target_for_username(username).await {
                 if config_target.name != target_name {
-                    return create_tuliprox_error_result!(TuliProxErrorKind::Info, "User:{username} does not belong to target: {}", target_name);
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "User:{username} does not belong to target: {}", target_name);
                 }
             } else {
-                return create_tuliprox_error_result!(TuliProxErrorKind::Info, "User: {username} does not exist");
+                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "User: {username} does not exist");
             }
             Ok(())
         } else {
             Ok(())
         }
     }
-    async fn check_target_user(&mut self) -> Result<(), TuliProxError> {
+    async fn check_target_user(&self) -> Result<(), TuliproxError> {
         let check_homerun = self.hdhomerun.as_ref().is_some_and(|h| h.enabled);
         for source in &self.sources {
             for target in &source.targets {
@@ -488,23 +488,23 @@ impl Config {
     }
 
     pub async fn get_target_for_username(&self, username: &str) -> Option<(ProxyUserCredentials, &ConfigTarget)> {
-        if let Some(credentials) = self.get_user_credentials(username).await {
-            return self.t_api_proxy.read().await.as_ref()
+        if let Some(credentials) = self.get_user_credentials(username) {
+            return self.t_api_proxy.load().as_ref()
                 .and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name(&credentials.username, &credentials.password)));
         }
         None
     }
 
     pub async fn get_target_for_user(&self, username: &str, password: &str) -> Option<(ProxyUserCredentials, &ConfigTarget)> {
-        self.t_api_proxy.read().await.as_ref().and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name(username, password)))
+        self.t_api_proxy.load().as_ref().and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name(username, password)))
     }
 
     pub async fn get_target_for_user_by_token(&self, token: &str) -> Option<(ProxyUserCredentials, &ConfigTarget)> {
-        self.t_api_proxy.read().await.as_ref().and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name_by_token(token)))
+        self.t_api_proxy.load().as_ref().as_ref().and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name_by_token(token)))
     }
 
-    pub async fn get_user_credentials(&self, username: &str) -> Option<ProxyUserCredentials> {
-        self.t_api_proxy.read().await.as_ref().and_then(|api_proxy| api_proxy.get_user_credentials(username))
+    pub fn get_user_credentials(&self, username: &str) -> Option<ProxyUserCredentials> {
+        self.t_api_proxy.load().as_ref().as_ref().and_then(|api_proxy| api_proxy.get_user_credentials(username))
     }
 
     pub fn get_input_by_name(&self, input_name: &str) -> Option<&ConfigInput> {
@@ -551,9 +551,9 @@ impl Config {
         None
     }
 
-    pub fn set_mappings(&mut self, mappings_cfg: &Mappings) {
-        for source in &mut self.sources {
-            for target in &mut source.targets {
+    pub fn set_mappings(&self, mappings_cfg: &Mappings) {
+        for source in &self.sources {
+            for target in &source.targets {
                 if let Some(mapping_ids) = &target.mapping {
                     let mut target_mappings = Vec::with_capacity(128);
                     for mapping_id in mapping_ids {
@@ -562,32 +562,32 @@ impl Config {
                             target_mappings.push(mappings);
                         }
                     }
-                    target.t_mapping = if target_mappings.is_empty() { None } else { Some(target_mappings) };
+                    target.t_mapping.store(if target_mappings.is_empty() { None } else { Some(Arc::new(target_mappings)) });
                 }
             }
         }
     }
 
-    fn check_unique_input_names(&mut self) -> Result<(), TuliProxError> {
+    fn check_unique_input_names(&mut self) -> Result<(), TuliproxError> {
         let mut seen_names = HashSet::new();
         for source in &mut self.sources {
             for input in &source.inputs {
                 let input_name = input.name.trim().to_string();
                 if input_name.is_empty() {
-                    return create_tuliprox_error_result!(TuliProxErrorKind::Info, "input name required");
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input name required");
                 }
                 if seen_names.contains(input_name.as_str()) {
-                    return create_tuliprox_error_result!(TuliProxErrorKind::Info, "input names should be unique: {}", input_name);
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input names should be unique: {}", input_name);
                 }
                 seen_names.insert(input_name);
                 if let Some(aliases) = &input.aliases {
                     for alias in aliases {
                         let input_name = alias.name.trim().to_string();
                         if input_name.is_empty() {
-                            return create_tuliprox_error_result!(TuliProxErrorKind::Info, "input name required");
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input name required");
                         }
                         if seen_names.contains(input_name.as_str()) {
-                            return create_tuliprox_error_result!(TuliProxErrorKind::Info, "input names should be unique: {}", input_name);
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input names should be unique: {}", input_name);
                         }
                         seen_names.insert(input_name);
                     }
@@ -597,7 +597,7 @@ impl Config {
         Ok(())
     }
 
-    fn check_unique_target_names(&mut self) -> Result<HashSet<String>, TuliProxError> {
+    fn check_unique_target_names(&mut self) -> Result<HashSet<String>, TuliproxError> {
         let mut seen_names = HashSet::new();
         let default_target_name = default_as_default();
         for source in &self.sources {
@@ -605,11 +605,11 @@ impl Config {
                 // check target name is unique
                 let target_name = target.name.trim().to_string();
                 if target_name.is_empty() {
-                    return create_tuliprox_error_result!(TuliProxErrorKind::Info, "target name required");
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "target name required");
                 }
                 if !default_target_name.eq_ignore_ascii_case(target_name.as_str()) {
                     if seen_names.contains(target_name.as_str()) {
-                        return create_tuliprox_error_result!(TuliProxErrorKind::Info, "target names should be unique: {}", target_name);
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "target names should be unique: {}", target_name);
                     }
                     seen_names.insert(target_name);
                 }
@@ -618,13 +618,13 @@ impl Config {
         Ok(seen_names)
     }
 
-    fn check_scheduled_targets(&mut self, target_names: &HashSet<String>) -> Result<(), TuliProxError> {
+    fn check_scheduled_targets(&mut self, target_names: &HashSet<String>) -> Result<(), TuliproxError> {
         if let Some(schedules) = &self.schedules {
             for schedule in schedules {
                 if let Some(targets) = &schedule.targets {
                     for target_name in targets {
                         if !target_names.contains(target_name) {
-                            return create_tuliprox_error_result!(TuliProxErrorKind::Info, "Unknown target name in scheduler: {}", target_name);
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown target name in scheduler: {}", target_name);
                         }
                     }
                 }
@@ -636,12 +636,12 @@ impl Config {
     /**
     *  if `include_computed` set to true for `app_state`
     */
-    pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliProxError> {
+    pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         let work_dir = &self.working_dir;
         self.working_dir = file_utils::resolve_directory_path(work_dir);
         if include_computed {
             self.t_access_token_secret = generate_secret();
-            self.t_encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliProxError::new(TuliProxErrorKind::Info, err.to_string()))?;
+            self.t_encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;
             self.prepare_custom_stream_response();
         }
         self.prepare_directories();
@@ -680,7 +680,7 @@ impl Config {
         set_directory(&mut self.user_config_dir, "user_config", &self.working_dir);
     }
 
-    fn prepare_hdhomerun(&mut self) -> Result<(), TuliProxError> {
+    fn prepare_hdhomerun(&mut self) -> Result<(), TuliproxError> {
         if let Some(hdhomerun) = self.hdhomerun.as_mut() {
             if hdhomerun.enabled {
                 hdhomerun.prepare(self.api.port)?;
@@ -689,7 +689,7 @@ impl Config {
         Ok(())
     }
 
-    fn prepare_sources(&mut self, include_computed: bool) -> Result<(), TuliProxError> {
+    fn prepare_sources(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         // prepare sources and set id's
         let mut source_index: u16 = 1;
         let mut target_index: u16 = 1;
@@ -708,7 +708,7 @@ impl Config {
         Ok(())
     }
 
-    fn prepare_templates(&mut self) -> Result<(), TuliProxError> {
+    fn prepare_templates(&mut self) -> Result<(), TuliproxError> {
         if let Some(templates) = &mut self.templates {
             match prepare_templates(templates) {
                 Ok(tmplts) => {
@@ -722,14 +722,14 @@ impl Config {
         Ok(())
     }
 
-    fn prepare_web(&mut self) -> Result<(), TuliProxError> {
+    fn prepare_web(&mut self) -> Result<(), TuliproxError> {
         if let Some(web_ui_config) = self.web_ui.as_mut() {
             web_ui_config.prepare(&self.t_config_path)?;
         }
         Ok(())
     }
 
-    fn prepare_video_config(&mut self) -> Result<(), TuliProxError> {
+    fn prepare_video_config(&mut self) -> Result<(), TuliproxError> {
         match &mut self.video {
             None => {
                 self.video = Some(VideoConfig {
@@ -778,7 +778,8 @@ impl Config {
     ///
     /// Will panic if default server invalid
     pub async fn get_server_info(&self, server_info_name: &str) -> ApiProxyServerInfo {
-        let server_info_list = self.t_api_proxy.read().await.as_ref().unwrap().server.clone();
+        let guard = self.t_api_proxy.load();
+        let server_info_list = guard.as_ref().unwrap().server.clone();
         server_info_list.iter().find(|c| c.name.eq(server_info_name)).map_or_else(|| server_info_list.first().unwrap().clone(), Clone::clone)
     }
 
@@ -795,7 +796,7 @@ impl Config {
 /// * `target_args` the program parameters given with `-target` parameter.
 /// * `sources` configured sources in config file
 ///
-pub fn validate_targets(target_args: Option<&Vec<String>>, sources: &Vec<ConfigSource>) -> Result<ProcessTargets, TuliProxError> {
+pub fn validate_targets(target_args: Option<&Vec<String>>, sources: &Vec<ConfigSource>) -> Result<ProcessTargets, TuliproxError> {
     let mut enabled = true;
     let mut inputs: Vec<u16> = vec![];
     let mut targets: Vec<u16> = vec![];
@@ -822,7 +823,7 @@ pub fn validate_targets(target_args: Option<&Vec<String>>, sources: &Vec<ConfigS
 
         let missing_targets: Vec<String> = check_targets.iter().filter(|&(_, v)| *v == 0).map(|(k, _)| k.to_string()).collect();
         if !missing_targets.is_empty() {
-            return create_tuliprox_error_result!(TuliProxErrorKind::Info, "No target found for {}", missing_targets.join(", "));
+            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "No target found for {}", missing_targets.join(", "));
         }
         // let processing_targets: Vec<String> = check_targets.iter().filter(|&(_, v)| *v != 0).map(|(k, _)| k.to_string()).collect();
         // info!("Processing targets {}", processing_targets.join(", "));

@@ -102,6 +102,8 @@ fn main() {
 
     let config_path: String = file_utils::resolve_directory_path(&args.config_path.unwrap_or_else(file_utils::get_default_config_path));
     let config_file: String = args.config_file.unwrap_or_else(|| file_utils::get_default_config_file_path(&config_path));
+    let api_proxy_file = args.api_proxy.unwrap_or_else(|| file_utils::get_default_api_proxy_config_path(config_path.as_str()));
+    let mappings_file = args.mapping_file.unwrap_or_else(|| file_utils::get_default_mappings_path(config_path.as_str()));
 
     let env_log_level = std::env::var("TULIPROX_LOG");
     init_logger(args.log_level.as_ref(), env_log_level.ok(), config_file.as_str());
@@ -111,7 +113,9 @@ fn main() {
     }
 
     let sources_file: String = args.source_file.unwrap_or_else(|| file_utils::get_default_sources_file_path(&config_path));
-    let mut cfg = config_reader::read_config(config_path.as_str(), config_file.as_str(), sources_file.as_str(), true).unwrap_or_else(|err| exit!("{}", err));
+    let cfg = config_reader::read_config(config_path.as_str(), config_file.as_str(),
+                                             sources_file.as_str(), api_proxy_file.as_str(),
+                                             mappings_file.as_str(), true).unwrap_or_else(|err| exit!("{}", err));
 
     set_sanitize_sensitive_info(cfg.log.as_ref().is_none_or(|l| l.sanitize_sensitive_info));
 
@@ -126,10 +130,8 @@ fn main() {
         info!("Build time: {bts}");
     }
 
-    match config_reader::read_mappings(args.mapping_file, &mut cfg, true) {
-        Ok(Some(mapping_file)) => {
-            cfg.t_mapping_file_path = mapping_file;
-        }
+    match config_reader::read_mappings(mappings_file.as_str(), true) {
+        Ok(Some(mappings)) => cfg.set_mappings(&mappings),
         Ok(None) => {},
         Err(err) => exit!("{err}"),
     }
@@ -137,9 +139,10 @@ fn main() {
     info!("Current time: {}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"));
     info!("Working dir: {:?}", &cfg.working_dir);
     info!("Config dir: {:?}", &cfg.t_config_path);
-    info!("Config file: {config_file:?}");
-    info!("Source file: {sources_file:?}");
+    info!("Config file: {:?}", &cfg.t_config_file_path);
+    info!("Source file: {:?}", &cfg.t_sources_file_path);
     info!("Mapping file: {:?}", cfg.t_mapping_file_path);
+    info!("Api Proxy File: {:?}", cfg.t_api_proxy_file_path);
     info!("Temp dir: {temp_path:?}");
     if let Some(cache) = cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
         if cache.enabled {
@@ -154,11 +157,8 @@ fn main() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let () = rt.block_on(async {
         if args.server {
-            match config_reader::read_api_proxy_config(args.api_proxy, &mut cfg).await {
-                Ok(Some(api_proxy_file)) => {
-                    info!("Api Proxy File: {api_proxy_file:?}");
-                }
-                Ok(None) => {}
+            match config_reader::read_api_proxy_config(&cfg).await {
+                Ok(()) => {}
                 Err(err) => exit!("{err}"),
             }
             start_in_server_mode(Arc::new(cfg), Arc::new(targets)).await;

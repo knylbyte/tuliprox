@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{create_tuliprox_error, create_tuliprox_error_result, handle_tuliprox_error_result, info_err, str_to_io_error, to_io_error, TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{create_tuliprox_error, create_tuliprox_error_result, handle_tuliprox_error_result, info_err, str_to_io_error, to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::ApiProxyConfig;
 use crate::model::{Config, ConfigDto, ConfigInput, ConfigInputAlias, InputType};
 use crate::model::Mappings;
@@ -9,12 +9,13 @@ use crate::utils::{file_utils, multi_file_reader};
 use crate::utils::request::{get_credentials_from_url, get_local_file_content};
 use crate::utils::sys_utils::exit;
 use chrono::Local;
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use serde::Serialize;
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Cursor, Error, Read};
 use std::path::PathBuf;
+use std::sync::Arc;
 use url::Url;
 
 enum EitherReader<L, R> {
@@ -41,43 +42,33 @@ pub fn config_file_reader(file: File, resolve_env: bool) -> impl Read
     }
 }
 
-pub fn read_mappings(args_mapping: Option<String>, cfg: &mut Config, resolve_env: bool) -> Result<Option<String>, TuliProxError> {
-    let mappings_file: String = args_mapping.unwrap_or_else(|| file_utils::get_default_mappings_path(cfg.t_config_path.as_str()));
-
-    match read_mapping(mappings_file.as_str(), resolve_env) {
+pub fn read_mappings(mappings_file: &str, resolve_env: bool) -> Result<Option<Mappings>, TuliproxError> {
+    match read_mapping(mappings_file, resolve_env) {
         Ok(mappings) => {
             match mappings {
-                None => {
-                    debug!("no mapping loaded");
-                    Ok(Some(mappings_file))
-                }
-                Some(mappings_cfg) => {
-                    cfg.set_mappings(&mappings_cfg);
-                    Ok(Some(mappings_file))
-                }
+                None => Ok(None),
+                Some(mappings_cfg) => Ok(Some(mappings_cfg))
             }
         }
         Err(err) => Err(err),
     }
 }
 
-pub async fn read_api_proxy_config(args_api_proxy_config: Option<String>, cfg: &mut Config) -> Result<Option<String>, TuliProxError> {
-    let api_proxy_config_file: String = args_api_proxy_config.unwrap_or_else(|| file_utils::get_default_api_proxy_config_path(cfg.t_config_path.as_str()));
-    api_proxy_config_file.clone_into(&mut cfg.t_api_proxy_file_path);
-    let api_proxy_config = read_api_proxy(cfg, api_proxy_config_file.as_str(), true);
+pub async fn read_api_proxy_config(cfg: &Config) -> Result<(), TuliproxError> {
+    let api_proxy_config = read_api_proxy(cfg.t_api_proxy_file_path.as_str(), true);
     match api_proxy_config {
         None => {
-            warn!("cant read api_proxy_config file: {}", api_proxy_config_file.as_str());
-            Ok(None)
+            warn!("cant read api_proxy_config file: {}", cfg.t_api_proxy_file_path.as_str());
+            Ok(())
         }
         Some(config) => {
-            cfg.set_api_proxy(Some(config)).await?;
-            Ok(Some(api_proxy_config_file))
+            cfg.set_api_proxy(Some(Arc::new(config))).await?;
+            Ok(())
         }
     }
 }
 
-pub fn read_config(config_path: &str, config_file: &str, sources_file: &str, include_computed: bool) -> Result<Config, TuliProxError> {
+pub fn read_config(config_path: &str, config_file: &str, sources_file: &str, api_proxy_file: &str, mappings_file: &str, include_computed: bool) -> Result<Config, TuliproxError> {
     let files = vec![std::path::PathBuf::from(config_file), std::path::PathBuf::from(sources_file)];
     match multi_file_reader::MultiFileReader::new(&files) {
         Ok(reader) => {
@@ -86,27 +77,29 @@ pub fn read_config(config_path: &str, config_file: &str, sources_file: &str, inc
                     result.t_config_path = config_path.to_string();
                     result.t_config_file_path = config_file.to_string();
                     result.t_sources_file_path = sources_file.to_string();
+                    result.t_api_proxy_file_path = api_proxy_file.to_string();
+                    result.t_mapping_file_path = mappings_file.to_string();
                     match result.prepare(include_computed) {
                         Err(err) => Err(err),
                         _ => Ok(result),
                     }
                 }
                 Err(e) => {
-                    create_tuliprox_error_result!(TuliProxErrorKind::Info, "cant read config file: {}", e)
+                    create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant read config file: {}", e)
                 }
             }
         }
-        Err(err) => create_tuliprox_error_result!(TuliProxErrorKind::Info, "{}", err)
+        Err(err) => create_tuliprox_error_result!(TuliproxErrorKind::Info, "{}", err)
     }
 }
 
-pub fn read_mapping(mapping_file: &str, resolve_var: bool) -> Result<Option<Mappings>, TuliProxError> {
+pub fn read_mapping(mapping_file: &str, resolve_var: bool) -> Result<Option<Mappings>, TuliproxError> {
     let mapping_file = std::path::PathBuf::from(mapping_file);
     if let Ok(file) = file_utils::open_file(&mapping_file) {
         let mapping: Result<Mappings, _> = serde_yaml::from_reader(config_file_reader(file, resolve_var));
         return match mapping {
             Ok(mut result) => {
-                handle_tuliprox_error_result!(TuliProxErrorKind::Info, result.prepare());
+                handle_tuliprox_error_result!(TuliproxErrorKind::Info, result.prepare());
                 Ok(Some(result))
             }
             Err(err) => {
@@ -118,12 +111,12 @@ pub fn read_mapping(mapping_file: &str, resolve_var: bool) -> Result<Option<Mapp
     Ok(None)
 }
 
-pub fn read_api_proxy(config: &Config, api_proxy_file: &str, resolve_env: bool) -> Option<ApiProxyConfig> {
+pub fn read_api_proxy(api_proxy_file: &str, resolve_env: bool) -> Option<ApiProxyConfig> {
     file_utils::open_file(&std::path::PathBuf::from(api_proxy_file)).map_or(None, |file| {
         let mapping: Result<ApiProxyConfig, _> = serde_yaml::from_reader(config_file_reader(file, resolve_env));
         match mapping {
             Ok(mut result) => {
-                match result.prepare(config) {
+                match result.prepare() {
                     Err(err) => {
                         exit!("cant read api-proxy-config file: {err}");
                     }
@@ -138,9 +131,13 @@ pub fn read_api_proxy(config: &Config, api_proxy_file: &str, resolve_env: bool) 
             }
         }
     })
+
+        // TODO DO NOT FORGET
+    //self.migrate_api_user(cfg, &mut errors);
+
 }
 
-fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str) -> Result<(), TuliProxError>
+fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str) -> Result<(), TuliproxError>
 where
     T: ?Sized + Serialize,
 {
@@ -157,14 +154,14 @@ where
 
     File::create(&path)
         .and_then(|f| serde_yaml::to_writer(f, &config).map_err(to_io_error))
-        .map_err(|err| create_tuliprox_error!(TuliProxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
+        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
 }
 
-pub fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfig) -> Result<(), TuliProxError> {
+pub fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfig) -> Result<(), TuliproxError> {
     write_config_file(file_path, backup_dir, config, "api-proxy.yml")
 }
 
-pub fn save_main_config(file_path: &str, backup_dir: &str, config: &ConfigDto) -> Result<(), TuliProxError> {
+pub fn save_main_config(file_path: &str, backup_dir: &str, config: &ConfigDto) -> Result<(), TuliproxError> {
     write_config_file(file_path, backup_dir, config, "config.yml")
 }
 

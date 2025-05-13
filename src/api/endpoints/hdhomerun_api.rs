@@ -159,7 +159,7 @@ where
 }
 
 async fn create_device(app_state: &Arc<HdHomerunAppState>) -> Option<Device> {
-    if let Some(credentials) = app_state.app_state.config.get_user_credentials(&app_state.device.t_username).await {
+    if let Some(credentials) = app_state.app_state.config.get_user_credentials(&app_state.device.t_username) {
         let server_info = app_state.app_state.config.get_user_server_info(&credentials).await;
         let device = &app_state.device;
         let device_url = format!("{}://{}:{}", server_info.protocol, server_info.host, device.port);

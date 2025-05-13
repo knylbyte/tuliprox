@@ -1,5 +1,5 @@
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
-use crate::tuliprox_error::{TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ApiProxyServerInfo, ProxyUserCredentials};
 use crate::model::{ClusterFlags, Config, ConfigTarget, StrmTargetOutput};
 use crate::model::{
@@ -404,12 +404,12 @@ fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
     }
 }
 
-async fn prepare_strm_output_directory(path: &Path) -> Result<(), TuliProxError> {
+async fn prepare_strm_output_directory(path: &Path) -> Result<(), TuliproxError> {
     // Ensure the directory exists
     if let Err(e) = tokio::fs::create_dir_all(path).await {
         error!("Failed to create directory {path:?}: {e}");
         return create_tuliprox_error_result!(
-            TuliProxErrorKind::Notify,
+            TuliproxErrorKind::Notify,
             "Error creating STRM directory: {e}"
         );
     }
@@ -575,7 +575,7 @@ pub async fn kodi_write_strm_playlist(
     target_output: &StrmTargetOutput,
     cfg: &Config,
     new_playlist: &mut [PlaylistGroup],
-) -> Result<(), TuliProxError> {
+) -> Result<(), TuliproxError> {
     if new_playlist.is_empty() {
         return Ok(());
     }
@@ -769,7 +769,7 @@ async fn get_credentials_and_server_info(
     username: Option<&String>,
 ) -> Option<(ProxyUserCredentials, ApiProxyServerInfo)> {
     let username = username?;
-    let credentials = cfg.get_user_credentials(username).await?;
+    let credentials = cfg.get_user_credentials(username)?;
     let server_info = cfg.get_user_server_info(&credentials).await;
     Some((credentials, server_info))
 }

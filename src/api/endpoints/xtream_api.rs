@@ -12,7 +12,7 @@ use crate::api::model::streams::provider_stream::{create_custom_video_stream_res
 use crate::api::model::xtream::XtreamAuthorizationResponse;
 use crate::tuliprox_error::create_tuliprox_error_result;
 use crate::tuliprox_error::info_err;
-use crate::tuliprox_error::{str_to_io_error, TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::{ProxyType, ProxyUserCredentials, UserConnectionPermission};
 use crate::model::TargetType;
 use crate::model::{Config, ConfigInput, ConfigTarget};
@@ -80,15 +80,15 @@ impl TryFrom<XtreamCluster> for XtreamApiStreamContext {
 }
 
 impl FromStr for XtreamApiStreamContext {
-    type Err = TuliProxError;
+    type Err = TuliproxError;
 
-    fn from_str(s: &str) -> Result<Self, TuliProxError> {
+    fn from_str(s: &str) -> Result<Self, TuliproxError> {
         match s.to_lowercase().as_str() {
             Self::LIVE => Ok(Self::Live),
             Self::MOVIE => Ok(Self::Movie),
             Self::SERIES => Ok(Self::Series),
             Self::TIMESHIFT => Ok(Self::Timeshift),
-            _ => create_tuliprox_error_result!(TuliProxErrorKind::Info, "Unknown CounterModifier: {}", s)
+            _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown CounterModifier: {}", s)
         }
     }
 }
