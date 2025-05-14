@@ -198,6 +198,7 @@ impl TVGuide {
     /// Parses and filters a compressed EPG XML file, extracting relevant channel and program tags based on smart and fuzzy matching criteria.
     ///
     /// Returns an `Epg` containing filtered tags and TV attributes if any matching channels are found; otherwise, returns `None`.
+    /// The returned `Epg` will include the priority from the source, which is used for merging multiple EPG sources.
     ///
     /// # Examples
     ///

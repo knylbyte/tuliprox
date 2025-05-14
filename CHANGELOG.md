@@ -1,8 +1,32 @@
 # Changelog
 # 3.1.0 (2025-05-xx)
+
+- !BREAKING_CHANGE! epg config. Added priority, url config is now renamed to sources, priority is `optional`
+```yaml
+epg:
+  sources:
+    - url: "http://localhost:3001/xmltv.php?epg_id=1"
+      priority: -1
+    - url: "http://localhost:3001/xmltv.php?epg_id=2"
+      priority: 3
+    - url: "http://localhost:3001/xmltv.php?epg_id=3"
+      priority: 0
+    - url: "http://localhost:3001/xmltv.php?epg_id=4"
+      priority: 1
+  smart_match:
+    enabled: true
+    fuzzy_matching: true
+    match_threshold: 80
+    best_match_threshold: 99
+    name_prefix: !suffix "."
+    name_prefix_separator: [':', '|', '-']
+    strip :  ["3840p", "uhd", "fhd", "hd", "sd", "4k", "plus", "raw"]
+    normalize_regex: '[^a-zA-Z0-9\-]'
+```
+
 - Fixed mapper transform capitalize.
 - Auto hot reload for `mapping.yml`and `api_proxy.yml`
-To enable set `config_hot_reload: true` in `config.yml`
+  To enable set `config_hot_reload: true` in `config.yml`
 
 # 3.0.0 (2025-05-12)
 - !BREAKING_CHANGE! user has now the attribute `ui_enabled` to disable/enable web_ui for user.
