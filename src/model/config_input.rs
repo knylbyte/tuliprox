@@ -1,6 +1,5 @@
 use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
 use crate::model::{EpgConfig, EpgSource};
-use crate::utils::config_reader::csv_read_inputs;
 use crate::utils::default_as_true;
 use crate::utils::get_trimmed_string;
 use crate::utils::request::{get_base_url_from_str, get_credentials_from_url, get_credentials_from_url_str};
@@ -10,6 +9,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::str::FromStr;
 use url::Url;
+use crate::utils;
 
 macro_rules! check_input_credentials {
     ($this:ident, $input_type:expr) => {
@@ -342,7 +342,7 @@ impl ConfigInput {
                 InputType::Xtream
             };
 
-            match csv_read_inputs(self) {
+            match utils::csv_read_inputs(self) {
                 Ok(mut batch_aliases) => {
                     if !batch_aliases.is_empty() {
                         batch_aliases.reverse();

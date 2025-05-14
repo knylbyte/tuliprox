@@ -3,7 +3,7 @@ use crate::tuliprox_error::TuliproxError;
 use crate::model::{Config, ConfigInput};
 use crate::model::PlaylistGroup;
 use crate::processing::parser::m3u;
-use crate::utils::file_utils::prepare_file_path;
+use crate::utils::prepare_file_path;
 use crate::utils::request;
 
 pub async fn get_m3u_playlist(client: Arc<reqwest::Client>, cfg: &Config, input: &ConfigInput, working_dir: &str) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {

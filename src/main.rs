@@ -12,9 +12,7 @@ include_modules!();
 use crate::auth::password::generate_password;
 use crate::model::{validate_targets, Config, HealthcheckConfig, Healthcheck, ProcessTargets};
 use crate::processing::processor::playlist;
-use crate::utils::config_reader::config_file_reader;
-use utils::config_reader;
-use crate::utils::file_utils;
+use crate::utils::{config_file_reader, resolve_env_var};
 use crate::utils::request::{create_client, set_sanitize_sensitive_info};
 use chrono::{DateTime, Utc};
 use clap::Parser;
@@ -93,10 +91,10 @@ fn main() {
         return;
     }
 
-    let config_path: String = file_utils::resolve_directory_path(&args.config_path.unwrap_or_else(file_utils::get_default_config_path));
-    let config_file: String = args.config_file.unwrap_or_else(|| file_utils::get_default_config_file_path(&config_path));
-    let api_proxy_file = args.api_proxy.unwrap_or_else(|| file_utils::get_default_api_proxy_config_path(config_path.as_str()));
-    let mappings_file = args.mapping_file.unwrap_or_else(|| file_utils::get_default_mappings_path(config_path.as_str()));
+    let config_path: String = utils::resolve_directory_path(&resolve_env_var(&args.config_path.unwrap_or_else(utils::get_default_config_path)));
+    let config_file: String = resolve_env_var(&args.config_file.unwrap_or_else(|| utils::get_default_config_file_path(&config_path)));
+    let api_proxy_file = resolve_env_var(&args.api_proxy.unwrap_or_else(|| utils::get_default_api_proxy_config_path(config_path.as_str())));
+    let mappings_file = resolve_env_var(&args.mapping_file.unwrap_or_else(|| utils::get_default_mappings_path(config_path.as_str())));
 
     init_logger(args.log_level.as_ref(), config_file.as_str());
 
@@ -109,8 +107,8 @@ fn main() {
         healthcheck(config_file.as_str());
     }
 
-    let sources_file: String = args.source_file.unwrap_or_else(|| file_utils::get_default_sources_file_path(&config_path));
-    let cfg = config_reader::read_config(config_path.as_str(), config_file.as_str(),
+    let sources_file: String = args.source_file.unwrap_or_else(|| utils::get_default_sources_file_path(&config_path));
+    let cfg = utils::read_config(config_path.as_str(), config_file.as_str(),
                                              sources_file.as_str(), api_proxy_file.as_str(),
                                              mappings_file.as_str(), true).unwrap_or_else(|err| exit!("{}", err));
 
@@ -122,7 +120,7 @@ fn main() {
 
     let targets = validate_targets(args.target.as_ref(), &cfg.sources).unwrap_or_else(|err| exit!("{}", err));
 
-    match config_reader::read_mappings(mappings_file.as_str(), true) {
+    match utils::read_mappings(mappings_file.as_str(), true) {
         Ok(Some(mappings)) => cfg.set_mappings(&mappings),
         Ok(None) => {},
         Err(err) => exit!("{err}"),
@@ -145,7 +143,7 @@ fn main() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let () = rt.block_on(async {
         if args.server {
-            match config_reader::read_api_proxy_config(&cfg) {
+            match utils::read_api_proxy_config(&cfg) {
                 Ok(()) => {}
                 Err(err) => exit!("{err}"),
             }

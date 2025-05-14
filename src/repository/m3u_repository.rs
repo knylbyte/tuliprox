@@ -6,15 +6,13 @@ use crate::model::{M3uPlaylistItem, PlaylistGroup, PlaylistItem, PlaylistItemTyp
 use crate::repository::indexed_document::{IndexedDocumentDirectAccess, IndexedDocumentIterator, IndexedDocumentWriter};
 use crate::repository::m3u_playlist_iterator::{M3uPlaylistM3uTextIterator};
 use crate::repository::storage::{get_target_storage_path};
-use crate::utils::file_lock_manager::FileReadGuard;
-use crate::utils::file_utils;
-use crate::utils::file_utils::file_writer;
 use log::error;
 use std::fs::File;
 use std::io::{Error, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use crate::repository::storage_const;
+use crate::utils;
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
@@ -30,15 +28,15 @@ pub fn m3u_get_file_paths(target_path: &Path) -> (PathBuf, PathBuf) {
 
 pub fn m3u_get_epg_file_path(target_path: &Path) -> PathBuf {
     let path = target_path.join(PathBuf::from(format!("{}.{}", storage_const::FILE_M3U, storage_const::FILE_SUFFIX_DB)));
-    file_utils::add_prefix_to_filename(&path, "epg_", Some("xml"))
+    utils::add_prefix_to_filename(&path, "epg_", Some("xml"))
 }
 
 fn persist_m3u_playlist_as_text(cfg: &Config, target: &ConfigTarget, target_output: &M3uTargetOutput, m3u_playlist: &Vec<M3uPlaylistItem>) {
     if let Some(filename) = target_output.filename.as_ref() {
-        if let Some(m3u_filename) = file_utils::get_file_path(&cfg.working_dir, Some(PathBuf::from(filename))) {
+        if let Some(m3u_filename) = utils::get_file_path(&cfg.working_dir, Some(PathBuf::from(filename))) {
             match File::create(&m3u_filename) {
                 Ok(file) => {
-                    let mut buf_writer = file_writer(&file);
+                    let mut buf_writer = utils::file_writer(&file);
                     let _ = buf_writer.write(b"#EXTM3U\n");
                     for m3u in m3u_playlist {
                         let _ = buf_writer.write(m3u.to_m3u(target.options.as_ref(), false).to_string().as_bytes());
@@ -101,7 +99,7 @@ pub async fn m3u_get_item_for_stream_id(stream_id: u32, cfg: &Config, target: &C
     }
 }
 
-pub async fn iter_raw_m3u_playlist(config: &Arc<Config>, target: &ConfigTarget) -> Option<(FileReadGuard, impl Iterator<Item=(M3uPlaylistItem, bool)>)> {
+pub async fn iter_raw_m3u_playlist(config: &Arc<Config>, target: &ConfigTarget) -> Option<(utils::FileReadGuard, impl Iterator<Item=(M3uPlaylistItem, bool)>)> {
     let target_path = get_target_storage_path(config, target.name.as_str())?;
     let (m3u_path, idx_path) = m3u_get_file_paths(&target_path);
     if !m3u_path.exists() || !idx_path.exists() {

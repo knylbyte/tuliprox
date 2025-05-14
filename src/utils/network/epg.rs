@@ -2,8 +2,7 @@ use crate::tuliprox_error::TuliproxError;
 use crate::model::{Config, ConfigInput, PersistedEpgSource};
 use crate::model::TVGuide;
 use crate::repository::storage::short_hash;
-use crate::utils::file_utils;
-use crate::utils::file_utils::prepare_file_path;
+use crate::utils::{add_prefix_to_filename, prepare_file_path};
 use crate::utils::request;
 use log::debug;
 use std::path::PathBuf;
@@ -14,7 +13,7 @@ async fn download_epg_file(url: &str, client: &Arc<reqwest::Client>, input: &Con
     debug!("Getting epg file path for url: {url}");
     let file_prefix = short_hash(url);
     let persist_file_path = prepare_file_path(input.persist.as_deref(), working_dir, "")
-        .map(|path| file_utils::add_prefix_to_filename(&path, format!("{file_prefix}_epg_").as_str(), Some("xml")));
+        .map(|path| add_prefix_to_filename(&path, format!("{file_prefix}_epg_").as_str(), Some("xml")));
 
     request::get_input_text_content_as_file(Arc::clone(client), input, working_dir, url, persist_file_path).await
 }

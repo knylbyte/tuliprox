@@ -6,14 +6,13 @@ use crate::model::PlaylistXtreamCategory;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::xtream_get_playlist_categories;
-use crate::utils::file_utils;
 use crate::utils::json_write_documents_to_file;
 use chrono::Local;
 use log::error;
 use std::collections::{HashMap, HashSet};
 use std::io::Error;
 use std::path::{Path, PathBuf};
-
+use crate::utils;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct StoredProxyUserCredentialsDeprecated {
@@ -209,7 +208,7 @@ pub fn load_api_user(cfg: &Config) -> Result<Vec<TargetUser>, Error> {
 }
 
 pub fn get_user_storage_path(cfg: &Config, username: &str) -> Option<PathBuf> {
-    cfg.user_config_dir.as_ref().and_then(|ucd| file_utils::get_file_path(ucd, Some(std::path::PathBuf::from(username))))
+    cfg.user_config_dir.as_ref().and_then(|ucd| utils::get_file_path(ucd, Some(std::path::PathBuf::from(username))))
 }
 
 fn ensure_user_storage_path(cfg: &Config, username: &str) -> Option<PathBuf> {

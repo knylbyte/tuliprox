@@ -293,3 +293,7 @@ pub fn resolve_relative_path(relative: &str) -> std::io::Result<PathBuf> {
     let current_dir = env::current_dir()?;
     Ok(current_dir.join(relative))
 }
+
+pub fn is_directory(path: &str) -> bool {
+    PathBuf::from(path).is_dir()
+}

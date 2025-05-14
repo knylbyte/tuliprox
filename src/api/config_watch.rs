@@ -1,6 +1,7 @@
 use crate::api::model::app_state::AppState;
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
-use crate::utils::config_reader;
+use crate::utils;
+use crate::utils::is_directory;
 use log::{debug, error, info};
 use notify::event::{AccessKind, AccessMode};
 use notify::{recommended_watcher, Event, EventKind, RecursiveMode, Watcher};
@@ -17,7 +18,7 @@ enum ConfigFile {
 
 impl ConfigFile {
     fn load_mappping(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
-        match config_reader::read_mappings(app_state.config.t_mapping_file_path.as_str(), true) {
+        match utils::read_mappings(app_state.config.t_mapping_file_path.as_str(), true) {
             Ok(Some(mappings_cfg)) => {
                 app_state.config.set_mappings(&mappings_cfg);
                 info!("Loaded mapping file {}", app_state.config.t_mapping_file_path.as_str());
@@ -35,7 +36,7 @@ impl ConfigFile {
     }
 
     fn load_api_proxy(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
-        match config_reader::read_api_proxy_config(&app_state.config) {
+        match utils::read_api_proxy_config(&app_state.config) {
             Ok(()) => {
                 info!("Api Proxy File: {:?}", &app_state.config.t_api_proxy_file_path);
             }
@@ -60,10 +61,11 @@ pub async fn exec_config_watch(app_state: &Arc<AppState>) -> Result<(), Tuliprox
     let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
 
     let mut files = HashMap::new();
-    files.insert(PathBuf::from(&app_state.config.t_config_file_path), ConfigFile::Config);
-    files.insert(PathBuf::from(&app_state.config.t_api_proxy_file_path), ConfigFile::ApiProxy);
-    files.insert(PathBuf::from(&app_state.config.t_mapping_file_path), ConfigFile::Mapping);
-    files.insert(PathBuf::from(&app_state.config.t_sources_file_path), ConfigFile::Sources);
+    [(&app_state.config.t_config_file_path, ConfigFile::Config),
+        (&app_state.config.t_api_proxy_file_path, ConfigFile::ApiProxy),
+        (&app_state.config.t_mapping_file_path, ConfigFile::Mapping),
+        (&app_state.config.t_sources_file_path, ConfigFile::Sources)
+    ].into_iter().for_each(|(path, config_file)| { files.insert(PathBuf::from(path), (config_file, is_directory(path))); });
 
     // Use recommended_watcher() to automatically select the best implementation
     // for your platform. The `EventHandler` passed to this constructor can be a
@@ -74,7 +76,8 @@ pub async fn exec_config_watch(app_state: &Arc<AppState>) -> Result<(), Tuliprox
     // Add a path to be watched. All files and directories at that path and
     // below will be monitored for changes.
     let path = Path::new(app_state.config.t_config_path.as_str());
-    watcher.watch(path, RecursiveMode::NonRecursive).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to start config file watcher {err}")))?;
+    let recursive_mode = if utils::is_directory(&app_state.config.t_mapping_file_path) { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
+    watcher.watch(path, recursive_mode).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to start config file watcher {err}")))?;
     info!("Watching config file changes {path:?}");
 
     let watcher_app_state = Arc::clone(app_state);
@@ -85,9 +88,17 @@ pub async fn exec_config_watch(app_state: &Arc<AppState>) -> Result<(), Tuliprox
                 Ok(event) => {
                     if let EventKind::Access(AccessKind::Close(AccessMode::Write)) = event.kind {
                         for path in event.paths {
-                            if let Some(config_file) = files.get(&path) {
+                            if let Some((config_file, _is_dir)) = files.get(&path) {
                                 if let Err(err) = config_file.reload(&path, &watcher_app_state) {
                                     error!("Failed to reload config file {path:?}: {err}");
+                                }
+                            } else if recursive_mode == RecursiveMode::Recursive && path.extension().is_some_and(|ext| ext == "yml") {
+                                for (key, (config_file, is_dir)) in files.iter() {
+                                    if *is_dir && path.starts_with(key) {
+                                        if let Err(err) = config_file.reload(&path, &watcher_app_state) {
+                                            error!("Failed to reload config file {path:?}: {err}");
+                                        }
+                                    }
                                 }
                             }
                         }

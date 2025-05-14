@@ -13,7 +13,7 @@ use std::io::{BufWriter, Write};
 use std::sync::Arc;
 use std::time::Instant;
 use log::{info, log_enabled, Level};
-use crate::utils::file_utils::file_writer;
+use crate::utils;
 
 create_resolve_options_function_for_xtream_target!(vod);
 
@@ -71,8 +71,8 @@ pub async fn playlist_resolve_vod(client: Arc<reqwest::Client>, cfg: &Config, ta
     else { return; };
 
     let mut processed_info_ids = read_processed_vod_info_ids(cfg, errors, fpl).await;
-    let mut content_writer = file_writer(&wal_content_file);
-    let mut record_writer = file_writer(&wal_record_file);
+    let mut content_writer = utils::file_writer(&wal_content_file);
+    let mut record_writer = utils::file_writer(&wal_record_file);
     let mut content_updated = false;
 
     // TODO merge both filters to one

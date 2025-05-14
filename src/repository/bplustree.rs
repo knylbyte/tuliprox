@@ -4,12 +4,12 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::Path;
 use crate::tuliprox_error::{str_to_io_error, to_io_error};
-use crate::utils::file_utils::{file_reader, file_writer, open_read_write_file, rename_or_copy};
 use log::error;
 use ruzstd::decoding::StreamingDecoder;
 use ruzstd::encoding::{compress_to_vec, CompressionLevel};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
+use crate::utils;
 use crate::utils::{bincode_deserialize, bincode_serialize};
 
 const BLOCK_SIZE: usize = 4096;
@@ -474,13 +474,13 @@ where
     pub fn store(&mut self, filepath: &Path) -> io::Result<u64> {
         if self.dirty {
             let tempfile = NamedTempFile::new()?;
-            let mut file = file_writer(&tempfile); //create_new_file_for_write(&tempfile)?);
+            let mut file = utils::file_writer(&tempfile); //create_new_file_for_write(&tempfile)?);
             let mut buffer = vec![0u8; BLOCK_SIZE];
             match self.root.serialize_to_block(&mut file, &mut buffer, 0u64) {
                 Ok(result) => {
                     file.flush()?;
                     drop(file);
-                    if let Err(err) = rename_or_copy(tempfile.path(), filepath, false) {
+                    if let Err(err) = utils::rename_or_copy(tempfile.path(), filepath, false) {
                         return Err(str_to_io_error(&format!("Temp file rename/copy did not work {} {err}", tempfile.path().to_string_lossy())));
                     }
                     self.dirty = false;
@@ -497,7 +497,7 @@ where
 
     pub fn load(filepath: &Path) -> io::Result<Self> {
         let file = is_file_valid(File::open(filepath)?)?;
-        let mut reader = file_reader(file);
+        let mut reader = utils::file_reader(file);
         let mut buffer = vec![0u8; BLOCK_SIZE];
         let (root, _) = BPlusTreeNode::deserialize_from_block(&mut reader, &mut buffer, 0, true)?;
         Ok(Self::new_with_root(root))
@@ -582,7 +582,7 @@ where
     pub fn try_from_file(file: File) -> io::Result<Self> {
         let file = is_file_valid(file)?;
         Ok(Self {
-            file: file_reader(file),
+            file: utils::file_reader(file),
             _marker_k: PhantomData,
             _marker_v: PhantomData,
         })
@@ -620,7 +620,7 @@ where
         if !filepath.exists() {
             return Err(io::Error::new(io::ErrorKind::NotFound, format!("File not found {}", filepath.to_str().unwrap_or("?"))));
         }
-        let file = is_file_valid(open_read_write_file(filepath)?)?;
+        let file = is_file_valid(utils::open_read_write_file(filepath)?)?;
         Ok(Self {
             file,
             _marker_k: PhantomData,
@@ -629,7 +629,7 @@ where
     }
 
     pub fn query(&mut self, key: &K) -> Option<V> {
-        let mut reader = file_reader(&mut self.file);
+        let mut reader = utils::file_reader(&mut self.file);
         query_tree(&mut reader, key)
     }
 
@@ -643,7 +643,7 @@ where
     pub fn update(&mut self, key: &K, value: V) -> io::Result<u64> {
         let mut offset = 0;
         let mut buffer = vec![0u8; BLOCK_SIZE];
-        let mut reader = file_reader(&mut self.file);
+        let mut reader = utils::file_reader(&mut self.file);
         loop {
             match BPlusTreeNode::<K, V>::deserialize_from_block(&mut reader, &mut buffer, offset, false) {
                 Ok((mut node, pointers)) => {

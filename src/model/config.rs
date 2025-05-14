@@ -16,8 +16,6 @@ use crate::model::{ConfigInput, ConfigInputOptions, ConfigSource, ConfigTarget, 
 use crate::tuliprox_error::create_tuliprox_error_result;
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::utils::exit;
-use crate::utils::file_lock_manager::FileLockManager;
-use crate::utils::file_utils;
 use crate::utils::{default_as_default, default_connect_timeout_secs, default_grace_period_millis, default_grace_period_timeout_secs};
 use crate::utils::{parse_size_base_2, parse_to_kbps};
 
@@ -38,6 +36,7 @@ macro_rules! valid_property {
     }};
 }
 pub use valid_property;
+use crate::utils;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, Eq, PartialEq)]
 pub enum ItemField {
@@ -390,7 +389,7 @@ pub struct Config {
     #[serde(skip)]
     pub t_api_proxy_file_path: String,
     #[serde(skip)]
-    pub file_locks: Arc<FileLockManager>,
+    pub file_locks: Arc<utils::FileLockManager>,
     #[serde(skip)]
     pub t_channel_unavailable_video: Option<Arc<Vec<u8>>>,
     #[serde(skip)]
@@ -645,7 +644,7 @@ impl Config {
     */
     pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         let work_dir = &self.working_dir;
-        self.working_dir = file_utils::resolve_directory_path(work_dir);
+        self.working_dir = utils::resolve_directory_path(work_dir);
         if include_computed {
             self.t_access_token_secret = generate_secret();
             self.t_encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;
@@ -761,8 +760,8 @@ impl Config {
         if let Some(custom_stream_response) = self.custom_stream_response.as_ref() {
             fn load_and_set_file(path: Option<&String>, working_dir: &str) -> Option<Arc<Vec<u8>>> {
                 path.as_ref()
-                    .map(|file| file_utils::make_absolute_path(file, working_dir))
-                    .and_then(|absolute_path| match file_utils::read_file_as_bytes(&PathBuf::from(&absolute_path)) {
+                    .map(|file| utils::make_absolute_path(file, working_dir))
+                    .and_then(|absolute_path| match utils::read_file_as_bytes(&PathBuf::from(&absolute_path)) {
                         Ok(data) => Some(Arc::new(data)),
                         Err(err) => {
                             error!("Failed to load file: {absolute_path} {err}");
@@ -779,7 +778,7 @@ impl Config {
 
     fn prepare_api_web_root(&mut self) {
         if !self.api.web_root.is_empty() {
-            self.api.web_root = file_utils::make_absolute_path(&self.api.web_root, &self.working_dir);
+            self.api.web_root = utils::make_absolute_path(&self.api.web_root, &self.working_dir);
         }
     }
 

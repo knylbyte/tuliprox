@@ -2,6 +2,8 @@
 # 3.1.0 (2025-05-xx)
 
 - !BREAKING_CHANGE! epg config. Added priority, url config is now renamed to sources, priority is `optional`
+The `priority` value determines the importance or order of processing. Lower numbers mean higher priority. That is:
+A `priority` of `0` is higher than `1`. **Negative numbers** are allowed and represent even higher priority
 ```yaml
 epg:
   sources:

@@ -452,18 +452,19 @@ pub struct Mapping {
     pub id: String,
     #[serde(default)]
     pub match_as_ascii: bool,
-    pub mapper: Vec<Mapper>,
+    pub mapper: Option<Vec<Mapper>>,
     pub counter: Option<Vec<MappingCounterDefinition>>,
     #[serde(skip_serializing, skip_deserializing)]
     pub t_counter: Option<Vec<MappingCounter>>,
-
 }
 
 impl Mapping {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>,
                    tags: Option<&Vec<MappingTag>>) -> Result<(), TuliproxError> {
-        for mapper in &mut self.mapper {
-            handle_tuliprox_error_result!(TuliproxErrorKind::Info, mapper.prepare(templates, tags));
+        if let Some(mapper_list) = &mut self.mapper {
+            for mapper in mapper_list {
+                handle_tuliprox_error_result!(TuliproxErrorKind::Info, mapper.prepare(templates, tags));
+            }
         }
 
         if let Some(counter_def_list) = &self.counter {

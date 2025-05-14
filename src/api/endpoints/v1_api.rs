@@ -13,10 +13,9 @@ use crate::model::{validate_targets, Config, ConfigDto, ConfigInput, ConfigInput
 use crate::model::{ApiProxyConfig, ApiProxyServerInfo, ProxyUserCredentials, TargetUser};
 use crate::processing::processor::playlist;
 use crate::repository::user_repository::store_api_user;
-use crate::utils::config_reader;
 use crate::utils::ip_checker::get_ips;
 use crate::utils::request::sanitize_sensitive_info;
-use crate::VERSION;
+use crate::{utils, VERSION};
 use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
@@ -24,7 +23,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfig, file_path: &str) -> Option<TuliproxError> {
-    match config_reader::save_api_proxy(file_path, backup_dir, api_proxy) {
+    match utils::save_api_proxy(file_path, backup_dir, api_proxy) {
         Ok(()) => {}
         Err(err) => {
             error!("Failed to save api_proxy.yml {err}");
@@ -35,7 +34,7 @@ fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfig, fi
 }
 
 fn intern_save_config_main(file_path: &str, backup_dir: &str, cfg: &ConfigDto) -> Option<TuliproxError> {
-    match config_reader::save_main_config(file_path, backup_dir, cfg) {
+    match utils::save_main_config(file_path, backup_dir, cfg) {
         Ok(()) => {}
         Err(err) => {
             error!("Failed to save config.yml {err}");
@@ -287,10 +286,10 @@ async fn config(
         sources: config.sources.iter().map(map_source).collect(),
         proxy: config.proxy.clone(),
         ipcheck: config.ipcheck.clone(),
-        api_proxy: config_reader::read_api_proxy(&app_state.config, false),
+        api_proxy: utils::read_api_proxy(&app_state.config, false),
     };
 
-    let mut result = match config_reader::read_config(app_state.config.t_config_path.as_str(),
+    let mut result = match utils::read_config(app_state.config.t_config_path.as_str(),
                                                       app_state.config.t_config_file_path.as_str(),
                                                       app_state.config.t_sources_file_path.as_str(),
                                                       app_state.config.t_api_proxy_file_path.as_str(),

@@ -17,8 +17,7 @@ use crate::model::{Config, ConfigTarget, TargetOutput};
 use crate::repository::m3u_repository::m3u_get_epg_file_path;
 use crate::repository::storage::get_target_storage_path;
 use crate::repository::xtream_repository::{xtream_get_epg_file_path, xtream_get_storage_path};
-use crate::utils::file_utils;
-use crate::utils::file_utils::file_reader;
+use crate::utils;
 
 pub fn get_empty_epg_response() -> impl axum::response::IntoResponse + Send {
     axum::response::Response::builder()
@@ -46,7 +45,7 @@ fn time_correct(date_time: &str, correction: &TimeDelta) -> String {
 }
 
 fn get_epg_path_for_target_of_type(target_name: &str, epg_path: PathBuf) -> Option<PathBuf> {
-    if file_utils::path_exists(&epg_path) {
+    if utils::path_exists(&epg_path) {
         return Some(epg_path);
     }
     trace!("Cant find epg file for {target_name} target: {}", epg_path.to_str().unwrap_or("?"));
@@ -108,7 +107,7 @@ async fn serve_epg(epg_path: &Path, user: &ProxyUserCredentials) -> impl axum::r
 }
 
 fn serve_epg_with_timeshift(epg_file: File, offset_minutes: i32) -> impl axum::response::IntoResponse + Send {
-    let reader = file_reader(epg_file);
+    let reader = utils::file_reader(epg_file);
     let encoder = GzEncoder::new(Vec::with_capacity(4096), Compression::default());
     let mut xml_reader = Reader::from_reader(reader);
     let mut xml_writer = Writer::new(encoder);

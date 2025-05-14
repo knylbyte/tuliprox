@@ -5,13 +5,12 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery};
-use crate::utils::file_utils;
 use log::error;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use crate::tuliprox_error::{str_to_io_error, to_io_error};
+use crate::utils;
 use crate::utils::{bincode_deserialize, bincode_serialize};
-use crate::utils::file_utils::{create_new_file_for_read_write, file_reader, file_writer, open_read_write_file, open_readonly_file, rename_or_copy};
 
 const BLOCK_SIZE: usize = 4096;
 const LEN_SIZE: usize = 4;
@@ -94,9 +93,9 @@ where
     fn new_with_mode(main_path: PathBuf, index_path: PathBuf, append: bool) -> Result<Self, Error> {
         let append_mode = append && main_path.exists();
         let mut main_file = if append_mode {
-            open_read_write_file(&main_path)
+            utils::open_read_write_file(&main_path)
         } else {
-            create_new_file_for_read_write(&main_path)
+            utils::create_new_file_for_read_write(&main_path)
         }?;
 
         // Retrieve file size and convert to `u32` for `main_offset`, if possible
@@ -200,7 +199,7 @@ where
 
         let encoded_bytes_len = SizeType::try_from(encoded_bytes.len()).map_err(to_io_error)?;
         self.main_file.write_all(&encoded_bytes_len.to_le_bytes())?;
-        match file_utils::check_write(&self.main_file.write_all(&encoded_bytes)) {
+        match utils::check_write(&self.main_file.write_all(&encoded_bytes)) {
             Ok(()) => {
                 if new_record_appended {
                     self.index_tree.insert(doc_id, self.main_offset);
@@ -249,11 +248,11 @@ where
 {
     pub fn new(main_path: &Path, index_path: &Path) -> Result<Self, Error> {
         if main_path.exists() && index_path.exists() {
-            let main_file = open_readonly_file(main_path)?;
+            let main_file = utils::open_readonly_file(main_path)?;
             let index_tree = IndexedDocumentIndex::<K>::load(index_path)?;
 
             Ok(Self {
-                main_file: file_reader(main_file),
+                main_file: utils::file_reader(main_file),
                 index_tree,
                 t_type: PhantomData,
             })
@@ -309,7 +308,7 @@ where
                 Ok(file) => {
                     Ok(Self {
                         main_path: main_path.to_path_buf(),
-                        main_file: file_reader(file),
+                        main_file: utils::file_reader(file),
                         offsets,
                         index: 0,
                         failed: false,
@@ -430,7 +429,7 @@ where
         if main_path.exists() && index_path.exists() {
             // Attempt to open the main file in the specified mode (append or not)
 
-            let main_file = open_read_write_file(&main_path)?;
+            let main_file = utils::open_read_write_file(&main_path)?;
 
             // Retrieve file size and convert to `u32` for `main_file`, if possible
             let size = main_file
@@ -468,7 +467,7 @@ where
             self.index_tree.traverse(|keys, values| {
                 keys.iter().zip(values.iter()).for_each(|(key, &offset)| key_offset.push((key.clone(), offset)));
             });
-            let mut gc_writer = file_writer(&gc_file);
+            let mut gc_writer = utils::file_writer(&gc_file);
 
             let fragmented_byte = 0u8.to_le_bytes();
             gc_writer.write_all(&fragmented_byte)?;
@@ -499,7 +498,7 @@ where
             gc_writer.flush()?;
         }
 
-        rename_or_copy(gc_path, &self.main_path, false)?;
+        utils::rename_or_copy(gc_path, &self.main_path, false)?;
         self.index_tree.store(&self.index_path)?;
 
         Ok(())
@@ -515,7 +514,7 @@ mod tests {
     use crate::model::XtreamPlaylistItem;
     // use crate::model::XtreamPlaylistItem;
     use crate::repository::indexed_document::{IndexedDocumentGarbageCollector, IndexedDocumentIterator, IndexedDocumentWriter};
-    use crate::utils::config_reader::resolve_env_var;
+    use crate::utils::resolve_env_var;
 
     // Example usage with a simple struct
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

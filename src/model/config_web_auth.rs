@@ -4,8 +4,7 @@ use std::io::BufRead;
 use std::path::PathBuf;
 use crate::auth::user::UserCredential;
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
-use crate::utils::file_utils;
-use crate::utils::file_utils::file_reader;
+use crate::utils;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -22,20 +21,20 @@ pub struct WebAuthConfig {
 
 impl WebAuthConfig {
     pub fn prepare(&mut self, config_path: &str) -> Result<(), TuliproxError> {
-        let userfile_name = self.userfile.as_ref().map_or_else(|| file_utils::get_default_user_file_path(config_path), std::borrow::ToOwned::to_owned);
+        let userfile_name = self.userfile.as_ref().map_or_else(|| utils::get_default_user_file_path(config_path), std::borrow::ToOwned::to_owned);
         self.userfile = Some(userfile_name.clone());
 
         let mut userfile_path = PathBuf::from(&userfile_name);
-        if !file_utils::path_exists(&userfile_path) {
+        if !utils::path_exists(&userfile_path) {
             userfile_path = PathBuf::from(config_path).join(&userfile_name);
-            if !file_utils::path_exists(&userfile_path) {
+            if !utils::path_exists(&userfile_path) {
                 return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Could not find userfile {}", &userfile_name);
             }
         }
 
         if let Ok(file) = File::open(&userfile_path) {
             let mut users = vec![];
-            let reader = file_reader(file);
+            let reader = utils::file_reader(file);
             // TODO maybe print out errors
             for credentials in reader.lines().map_while(Result::ok) {
                 let mut parts = credentials.split(':');

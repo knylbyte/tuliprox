@@ -5,7 +5,7 @@ use crate::model::{Config};
 use crate::model::UUIDType;
 use crate::tuliprox_error::{notify_err};
 use crate::repository::storage_const;
-use crate::utils::file_utils;
+use crate::utils;
 
 #[inline]
 pub fn hash_bytes(bytes: &[u8]) -> UUIDType {
@@ -68,7 +68,7 @@ pub fn ensure_target_storage_path(cfg: &Config, target_name: &str) -> Result<Pat
 }
 
 pub fn get_target_storage_path(cfg: &Config, target_name: &str) -> Option<PathBuf> {
-    file_utils::get_file_path(&cfg.working_dir, Some(std::path::PathBuf::from(target_name.replace(' ', "_"))))
+    utils::get_file_path(&cfg.working_dir, Some(std::path::PathBuf::from(target_name.replace(' ', "_"))))
 }
 
 pub fn get_input_storage_path(input_name: &str, working_dir: &str) -> std::io::Result<PathBuf> {
