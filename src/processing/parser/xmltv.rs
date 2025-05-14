@@ -10,6 +10,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::borrow::Cow;
 use std::cmp::min;
 use std::collections::{HashMap};
+use std::collections::hash_map::Entry;
 use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -423,15 +424,24 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
                         };
                         if should_add {
                             let mut channel_map = channel_mapping.write().unwrap();
-                            channel_map.insert(chan_id.to_string(), guide.priority);
-                            children.push(c.clone());
+                            match channel_map.entry(chan_id.to_string()) {
+                                Entry::Vacant(e) => {
+                                    e.insert(guide.priority);
+                                    children.push(c.clone());
+                                }
+                                Entry::Occupied(mut e) if guide.priority < *e.get() => {
+                                    e.insert(guide.priority);
+                                    children.push(c.clone());
+                                }
+                                Entry::Occupied(_) => {}
+                            }
                         }
                     }
                 }
             });
             guide.children.iter().for_each(|c| {
                 if c.name.as_str() == EPG_TAG_PROGRAMME {
-                    if let Some(chan_id) = c.get_attribute_value(EPG_TAG_CHANNEL) {
+                    if let Some(chan_id) = c.get_attribute_value(EPG_ATTRIB_CHANNEL) {
                         let channel_map = channel_mapping.read().unwrap();
                         if let Some(&stored_priority) = channel_map.get(chan_id) {
                             if stored_priority == guide.priority {
