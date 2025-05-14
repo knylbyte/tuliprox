@@ -11,8 +11,7 @@ use crate::repository::storage::{ensure_target_storage_path, get_input_storage_p
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::{xtream_get_record_file_path, InputVodInfoRecord};
 use crate::utils::{KodiStyle, CONSTANTS};
-use crate::utils::file_lock_manager::FileReadGuard;
-use crate::utils::file_utils;
+use crate::utils::FileReadGuard;
 use crate::utils::request::extract_extension_from_url;
 use chrono::Datelike;
 use filetime::{set_file_times, FileTime};
@@ -24,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::{create_dir_all, remove_dir, remove_file, File};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use crate::utils;
 
 fn sanitize_for_filename(text: &str, underscore_whitespace: bool) -> String {
     text.trim()
@@ -580,7 +580,7 @@ pub async fn kodi_write_strm_playlist(
         return Ok(());
     }
 
-    let Some(root_path) = file_utils::get_file_path(
+    let Some(root_path) = utils::get_file_path(
         &cfg.working_dir,
         Some(std::path::PathBuf::from(&target_output.directory)),
     ) else {

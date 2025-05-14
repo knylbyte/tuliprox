@@ -5,9 +5,8 @@ use log::{error, info};
 use crate::messaging::{MsgKind, send_message};
 use crate::model::Config;
 use crate::model::PlaylistGroup;
+use crate::utils;
 use crate::utils::{bincode_deserialize, bincode_serialize};
-use crate::utils::file_utils;
-use crate::utils::file_utils::sanitize_filename;
 
 pub fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, target_name: &str, pl: &PlaylistGroup) {
     let mut new_tree = BTreeSet::new();
@@ -17,8 +16,8 @@ pub fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, target_n
         new_tree.insert(title);
     });
 
-    let watch_filename = format!("{}/{}.bin", sanitize_filename(target_name), sanitize_filename(&pl.title));
-    match file_utils::get_file_path(&cfg.working_dir, Some(std::path::PathBuf::from(&watch_filename))) {
+    let watch_filename = format!("{}/{}.bin", utils::sanitize_filename(target_name), utils::sanitize_filename(&pl.title));
+    match utils::get_file_path(&cfg.working_dir, Some(std::path::PathBuf::from(&watch_filename))) {
         Some(path) => {
             let save_path = path.as_path();
             let mut changed = false;

@@ -2,8 +2,7 @@ use crate::api::model::app_state::AppState;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::model::{Config, ClusterFlags};
 use crate::repository::user_repository::{backup_api_user_db_file, get_api_user_db_path, load_api_user, merge_api_user};
-use crate::utils::default_as_true;
-use crate::utils::config_reader;
+use crate::utils::{default_as_true, save_api_proxy};
 use chrono::Local;
 use enum_iterator::Sequence;
 use log::debug;
@@ -14,6 +13,7 @@ use std::fs;
 use std::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::model::PlaylistItemType;
+use crate::utils;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum UserConnectionPermission {
@@ -413,7 +413,7 @@ impl ApiProxyConfig {
                     let api_proxy_file = cfg.t_api_proxy_file_path.as_str();
                     let backup_dir = cfg.backup_dir.as_ref().unwrap().as_str();
                     self.user = vec![];
-                    if let Err(err) = config_reader::save_api_proxy(api_proxy_file, backup_dir, self) {
+                    if let Err(err) = utils::save_api_proxy(api_proxy_file, backup_dir, self) {
                         errors.push(format!("Error saving api proxy file: {err}"));
                     }
                 }
@@ -447,7 +447,7 @@ impl ApiProxyConfig {
                 }
                 let api_proxy_file = cfg.t_api_proxy_file_path.as_str();
                 let backup_dir = cfg.backup_dir.as_ref().unwrap().as_str();
-                if let Err(err) = config_reader::save_api_proxy(api_proxy_file, backup_dir, self) {
+                if let Err(err) = save_api_proxy(api_proxy_file, backup_dir, self) {
                     errors.push(format!("Error saving api proxy file: {err}"));
                 } else {
                     backup_api_user_db_file(cfg, &user_db_path);

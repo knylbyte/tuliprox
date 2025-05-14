@@ -2,7 +2,7 @@ use std::fs::File;
 use env_logger::Builder;
 use log::{error, info, LevelFilter};
 use crate::model::LogLevelConfig;
-use crate::utils::config_reader::config_file_reader;
+use crate::utils::config_file_reader;
 
 const LOG_ERROR_LEVEL_MOD: &[&str] = &[
     "reqwest::async_impl::client",

@@ -22,7 +22,7 @@ use crate::repository::storage::{get_input_storage_path, short_hash};
 use crate::repository::storage_const;
 use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
 use crate::utils::{debug_if_enabled, filter_request_header};
-use crate::utils::file_utils::{get_file_path, persist_file};
+use crate::utils::{get_file_path, persist_file};
 use crate::utils::{CONSTANTS, DASH_EXT, DASH_EXT_FRAGMENT, DASH_EXT_QUERY, ENCODING_DEFLATE, ENCODING_GZIP, HLS_EXT, HLS_EXT_FRAGMENT, HLS_EXT_QUERY};
 
 pub const fn bytes_to_megabytes(bytes: u64) -> u64 {

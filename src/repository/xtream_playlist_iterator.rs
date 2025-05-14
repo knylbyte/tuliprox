@@ -9,7 +9,7 @@ use crate::model::XtreamMappingOptions;
 use crate::repository::indexed_document::{IndexedDocumentIterator};
 use crate::repository::user_repository::user_get_bouquet_filter;
 use crate::repository::xtream_repository::{xtream_get_file_paths, xtream_get_storage_path};
-use crate::utils::file_lock_manager::FileReadGuard;
+use crate::utils::FileReadGuard;
 
 pub struct XtreamPlaylistIterator {
     reader: IndexedDocumentIterator<u32, XtreamPlaylistItem>,

@@ -19,7 +19,7 @@ use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::tools::lru_cache::LRUResourceCache;
 use crate::utils::{DASH_EXT, HLS_EXT};
 use crate::utils::default_grace_period_millis;
-use crate::utils::file_utils::create_new_file_for_write;
+use crate::utils::create_new_file_for_write;
 use crate::utils::request;
 use crate::utils::request::{extract_extension_from_url, replace_url_extension, sanitize_sensitive_info};
 use crate::utils::human_readable_byte_size;

@@ -12,7 +12,7 @@ use std::sync::Arc;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::xtream_get_record_file_path;
-use crate::utils::file_utils::append_or_crate_file;
+use crate::utils;
 use crate::utils::xtream;
 
 pub(in crate::processing) async fn playlist_resolve_download_playlist_item(client: Arc<reqwest::Client>, pli: &PlaylistItem, input: &ConfigInput, errors: &mut Vec<TuliproxError>, resolve_delay: u16, cluster: XtreamCluster) -> Option<String> {
@@ -47,7 +47,7 @@ pub(in crate::processing) fn create_resolve_episode_wal_files(cfg: &Config, inpu
     match get_input_storage_path(&input.name, &cfg.working_dir) {
         Ok(storage_path) => {
             let info_path = storage_path.join(format!("{}.{}", crate::model::XC_FILE_SERIES_EPISODE_RECORD, storage_const::FILE_SUFFIX_WAL));
-            let info_file = append_or_crate_file(&info_path).ok()?;
+            let info_file = utils::append_or_crate_file(&info_path).ok()?;
             Some((info_file, info_path))
         }
         Err(_) => None
@@ -64,8 +64,8 @@ pub(in crate::processing) fn create_resolve_info_wal_files(cfg: &Config, input: 
             } {
                 let content_path = storage_path.join(format!("{file_prefix}_content.{}", storage_const::FILE_SUFFIX_WAL));
                 let info_path = storage_path.join(format!("{file_prefix}_record.{}", storage_const::FILE_SUFFIX_WAL));
-                let content_file = append_or_crate_file(&content_path).ok()?;
-                let info_file = append_or_crate_file(&info_path).ok()?;
+                let content_file = utils::append_or_crate_file(&content_path).ok()?;
+                let info_file = utils::append_or_crate_file(&info_path).ok()?;
                 return Some((content_file, info_file, content_path, info_path));
             }
             None

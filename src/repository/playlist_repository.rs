@@ -9,9 +9,9 @@ use crate::repository::m3u_repository::m3u_write_playlist;
 use crate::repository::storage::{ensure_target_storage_path, get_target_id_mapping_file};
 use crate::repository::target_id_mapping::TargetIdMapping;
 use crate::repository::xtream_repository::xtream_write_playlist;
-use crate::utils::file_lock_manager::FileWriteGuard;
 use crate::utils::request::{is_dash_url, is_hls_url};
 use std::path::Path;
+use crate::utils;
 
 pub async fn persist_playlist(playlist: &mut [PlaylistGroup], epg: Option<&Epg>,
                               target: &ConfigTarget, cfg: &Config) -> Result<(), Vec<TuliproxError>> {
@@ -72,7 +72,7 @@ pub async fn persist_playlist(playlist: &mut [PlaylistGroup], epg: Option<&Epg>,
     if errors.is_empty() { Ok(()) } else { Err(errors) }
 }
 
-pub async fn get_target_id_mapping(cfg: &Config, target_path: &Path) -> (TargetIdMapping, FileWriteGuard) {
+pub async fn get_target_id_mapping(cfg: &Config, target_path: &Path) -> (TargetIdMapping, utils::FileWriteGuard) {
     let target_id_mapping_file = get_target_id_mapping_file(target_path);
     let file_lock = cfg.file_locks.write_lock(&target_id_mapping_file).await;
     (TargetIdMapping::new(&target_id_mapping_file), file_lock)

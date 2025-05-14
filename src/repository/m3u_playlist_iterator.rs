@@ -8,7 +8,7 @@ use crate::repository::m3u_repository::m3u_get_file_paths;
 use crate::repository::storage::ensure_target_storage_path;
 use crate::repository::storage_const;
 use crate::repository::user_repository::user_get_bouquet_filter;
-use crate::utils::file_lock_manager::FileReadGuard;
+use crate::utils::FileReadGuard;
 use std::collections::HashSet;
 
 #[allow(clippy::struct_excessive_bools)]

@@ -10,7 +10,6 @@ use std::thread;
 use tokio::sync::Mutex;
 
 use crate::foundation::filter::{get_field_value, set_field_value, MockValueProcessor, ValueProvider};
-use crate::tuliprox_error::{get_errors_notify_message, notify_err, TuliproxError, TuliproxErrorKind};
 use crate::messaging::{send_message, MsgKind};
 use crate::model::{ConfigTarget, InputType, ItemField, ProcessTargets, ProcessingOrder};
 use crate::model::{CounterModifier, Mapping, MappingValueProcessor};
@@ -21,8 +20,9 @@ use crate::processing::processor::affix::apply_affixes;
 use crate::processing::processor::xtream_series::playlist_resolve_series;
 use crate::processing::processor::xtream_vod::playlist_resolve_vod;
 use crate::repository::playlist_repository::persist_playlist;
-use crate::utils::default_as_default;
+use crate::tuliprox_error::{get_errors_notify_message, notify_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::debug_if_enabled;
+use crate::utils::default_as_default;
 use deunicode::deunicode;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use std::time::Instant;
@@ -130,24 +130,26 @@ macro_rules! apply_pattern {
 }
 
 fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
-    if !mapping.mapper.is_empty() {
-        let header = &channel.header;
-        let channel_name = if mapping.match_as_ascii { deunicode(&header.name) } else { header.name.to_string() };
-        if mapping.match_as_ascii && log_enabled!(Level::Trace) { trace!("Decoded {} for matching to {}", &header.name, &channel_name); }
-        // let ref_chan = &mut channel;
-        let ref_chan = &mut channel;
-        let mut mock_processor = MockValueProcessor {};
-        for m in &mapping.mapper {
-            let provider = ValueProvider { pli: &ref_chan.clone() };
-            let mut processor = MappingValueProcessor { pli: ref_chan, mapper: m };
-            match &m.t_filter {
-                Some(filter) => {
-                    if filter.filter(&provider, &mut mock_processor) {
+    if let Some(mapper) = &mapping.mapper {
+        if !mapper.is_empty() {
+            let header = &channel.header;
+            let channel_name = if mapping.match_as_ascii { deunicode(&header.name) } else { header.name.to_string() };
+            if mapping.match_as_ascii && log_enabled!(Level::Trace) { trace!("Decoded {} for matching to {}", &header.name, &channel_name); }
+            // let ref_chan = &mut channel;
+            let ref_chan = &mut channel;
+            let mut mock_processor = MockValueProcessor {};
+            for m in mapper {
+                let provider = ValueProvider { pli: &ref_chan.clone() };
+                let mut processor = MappingValueProcessor { pli: ref_chan, mapper: m };
+                match &m.t_filter {
+                    Some(filter) => {
+                        if filter.filter(&provider, &mut mock_processor) {
+                            apply_pattern!(&m.t_pattern, &provider, &mut processor);
+                        }
+                    }
+                    _ => {
                         apply_pattern!(&m.t_pattern, &provider, &mut processor);
                     }
-                }
-                _ => {
-                    apply_pattern!(&m.t_pattern, &provider, &mut processor);
                 }
             }
         }
@@ -159,7 +161,8 @@ fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option
     if let Some(mappings) = target.t_mapping.load().as_ref() {
         let new_playlist: Vec<PlaylistGroup> = playlist.iter().map(|playlist_group| {
             let mut grp = playlist_group.clone();
-            mappings.iter().filter(|&mapping| !mapping.mapper.is_empty()).for_each(|mapping|
+            mappings.iter().filter(|&mapping| mapping.mapper.as_ref().map_or(false, |v| !v.is_empty()))
+                .for_each(|mapping|
                 grp.channels = grp.channels.drain(..).map(|chan| map_channel(chan, mapping)).collect());
             grp
         }).collect();

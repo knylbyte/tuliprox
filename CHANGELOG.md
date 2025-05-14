@@ -2,6 +2,8 @@
 # 3.1.0 (2025-05-xx)
 
 - !BREAKING_CHANGE! epg config. Added priority, url config is now renamed to sources, priority is `optional`
+The `priority` value determines the importance or order of processing. Lower numbers mean higher priority. That is:
+A `priority` of `0` is higher than `1`. **Negative numbers** are allowed and represent even higher priority
 ```yaml
 epg:
   sources:
@@ -27,6 +29,11 @@ epg:
 - Fixed mapper transform capitalize.
 - Auto hot reload for `mapping.yml`and `api_proxy.yml`
   To enable set `config_hot_reload: true` in `config.yml`
+- Added config.d-style mapping support.
+  You can now place multiple mapping files inside a directory like `mapping.d` and specify it using the `-m` option, for example:
+  `-m /home/tuliprox/config/mapping.d`
+  The files are loaded in **alphanumeric** order.
+  **Note:** This is a lexicographic sort — so `m_10.yml` comes before `m_2.yml` unless you name files carefully (e.g., `m_01.yml`, `m_02.yml`, ..., `m_10.yml`).
 
 # 3.0.0 (2025-05-12)
 - !BREAKING_CHANGE! user has now the attribute `ui_enabled` to disable/enable web_ui for user.

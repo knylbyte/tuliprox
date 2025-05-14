@@ -151,8 +151,8 @@ pub async fn get_xtream_playlist(client: Arc<reqwest::Client>, input: &ConfigInp
         if !skip_cluster.contains(xtream_cluster) {
             let category_url = format!("{base_url}&action={category}");
             let stream_url = format!("{base_url}&action={stream}");
-            let category_file_path = crate::utils::file::file_utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{category}_").as_str());
-            let stream_file_path = crate::utils::file::file_utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{stream}_").as_str());
+            let category_file_path = crate::utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{category}_").as_str());
+            let stream_file_path = crate::utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{stream}_").as_str());
 
             match futures::join!(
                 request::get_input_json_content(Arc::clone(&client), input, category_url.as_str(), category_file_path),
