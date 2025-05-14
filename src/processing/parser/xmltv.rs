@@ -1,4 +1,4 @@
-use crate::model::{EpgNamePrefix, EpgSmartMatchConfig};
+use crate::model::{EpgNamePrefix, EpgSmartMatchConfig, PersistedEpgSource};
 use crate::model::{Epg, TVGuide, XmlTag, EPG_ATTRIB_CHANNEL, EPG_ATTRIB_ID, EPG_TAG_CHANNEL, EPG_TAG_DISPLAY_NAME, EPG_TAG_ICON, EPG_TAG_PROGRAMME, EPG_TAG_TV};
 use crate::processing::processor::epg::EpgIdCache;
 use crate::utils::compressed_file_reader::CompressedFileReader;
@@ -11,7 +11,6 @@ use std::borrow::Cow;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::mem;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -208,8 +207,8 @@ impl TVGuide {
     ///     assert!(!epg.children.is_empty());
     /// }
     /// ```
-    fn process_epg_file(id_cache: &mut EpgIdCache, epg_file: &Path) -> Option<Epg> {
-        match CompressedFileReader::new(epg_file) {
+    fn process_epg_file(id_cache: &mut EpgIdCache, epg_source: &PersistedEpgSource) -> Option<Epg> {
+        match CompressedFileReader::new(&epg_source.file_path) {
             Ok(mut reader) => {
                 let mut children: Vec<XmlTag> = vec![];
                 let mut tv_attributes: Option<HashMap<String, String>> = None;
@@ -271,8 +270,8 @@ impl TVGuide {
         if id_cache.channel_epg_id.is_empty() && id_cache.normalized.is_empty() {
             return None;
         }
-        let epgs: Vec<Epg> = self.file_paths.iter()
-            .filter_map(|path| Self::process_epg_file(id_cache, path))
+        let epgs: Vec<Epg> = self.get_epg_paths().iter()
+            .filter_map(|epg_path| Self::process_epg_file(id_cache, epg_path))
             .collect();
         if epgs.len() == 1 {
             epgs.into_iter().next()

@@ -655,6 +655,12 @@ http://my_provider_2.com:8080/get_php?username=user2&password=password2;1;0
 The Fields `max_connections` and `priority`are optional.
 `max_connections`  will be set default to `1`. This is different from yaml config where the default is `0=unlimited`
 
+The `priority` value determines the importance or order of processing. Lower numbers mean higher priority. That is:
+A `priority` of `0` is higher than `1`
+**Negative numbers** are allowed and represent even higher priority
+Higher numbers mean **lower priority**
+This means tasks or items with smaller (even negative) values will be handled before those with larger values.
+
 ### 2.2.2 `targets`
 Has the following top level entries:
 - `enabled` _optional_ default is `true`, if you disable the processing is skipped

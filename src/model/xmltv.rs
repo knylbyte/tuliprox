@@ -78,6 +78,26 @@ impl Epg {
 }
 
 #[derive(Debug, Clone)]
+pub struct PersistedEpgSource {
+    pub file_path: PathBuf,
+    pub priority: i16,
+}
+
+#[derive(Debug, Clone)]
 pub struct TVGuide {
-    pub file_paths: Vec<PathBuf>,
+    epg_paths: Vec<PersistedEpgSource>,
+}
+
+impl TVGuide {
+    pub fn new(mut epg_paths: Vec<PersistedEpgSource>) -> Self {
+        epg_paths.sort_by(|a, b| a.priority.cmp(&b.priority));
+        Self {
+            epg_paths,
+        }
+    }
+
+    #[inline]
+    pub fn get_epg_paths(&self) -> &Vec<PersistedEpgSource> {
+        &self.epg_paths
+    }
 }
