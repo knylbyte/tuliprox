@@ -1,25 +1,25 @@
 #![allow(clippy::struct_excessive_bools)]
+use arc_swap::ArcSwapOption;
 use enum_iterator::Sequence;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::Arc;
-use arc_swap::ArcSwapOption;
 
 use log::{debug, error, warn};
 use path_clean::PathClean;
 use rand::Rng;
 
-use crate::foundation::filter::{prepare_templates,  PatternTemplate};
+use crate::foundation::filter::{prepare_templates, PatternTemplate};
+use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Mappings, ProxyUserCredentials};
+use crate::model::{ConfigInput, ConfigInputOptions, ConfigSource, ConfigTarget, HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProcessTargets, ProxyConfig, TargetOutput, VideoConfig, WebUiConfig};
+use crate::tuliprox_error::create_tuliprox_error_result;
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
-use crate::model::{ApiProxyConfig, ApiProxyServerInfo, ProxyUserCredentials, Mappings};
-use crate::utils::{default_as_default, default_connect_timeout_secs, default_grace_period_millis, default_grace_period_timeout_secs};
+use crate::utils::exit;
 use crate::utils::file_lock_manager::FileLockManager;
 use crate::utils::file_utils;
+use crate::utils::{default_as_default, default_connect_timeout_secs, default_grace_period_millis, default_grace_period_timeout_secs};
 use crate::utils::{parse_size_base_2, parse_to_kbps};
-use crate::utils::exit;
-use crate::tuliprox_error::{ create_tuliprox_error_result};
-use crate::model::{ConfigInput, ConfigInputOptions, IpCheckConfig, ProxyConfig, ConfigSource, ConfigTarget, HdHomeRunConfig, LogConfig, MessagingConfig, ProcessTargets, TargetOutput, VideoConfig, WebUiConfig};
 
 const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with 8192byte chunks and 2Mbit/s approx 8MB
 
@@ -437,7 +437,7 @@ impl Config {
                             if check_homerun {
                                 let hdhr_name = &hdhomerun_output.device;
                                 self.check_username(Some(&hdhomerun_output.username), &target.name)?;
-                                if let Some(old_hdhomerun) =  self.t_hdhomerun.load().clone() {
+                                if let Some(old_hdhomerun) = self.t_hdhomerun.load().clone() {
                                     let mut hdhomerun = (*old_hdhomerun).clone();
                                     for device in &mut hdhomerun.devices {
                                         if &device.name == hdhr_name {
@@ -688,7 +688,7 @@ impl Config {
     }
 
     fn prepare_hdhomerun(&mut self) -> Result<(), TuliproxError> {
-        if let Some(old_hdhomerun) =  &self.hdhomerun {
+        if let Some(old_hdhomerun) = &self.hdhomerun {
             let mut hdhomerun = (*old_hdhomerun).clone();
             if hdhomerun.enabled {
                 hdhomerun.prepare(self.api.port)?;
@@ -788,8 +788,14 @@ impl Config {
     /// Will panic if default server invalid
     pub fn get_server_info(&self, server_info_name: &str) -> ApiProxyServerInfo {
         let guard = self.t_api_proxy.load();
-        let server_info_list = guard.as_ref().unwrap().server.clone();
-        server_info_list.iter().find(|c| c.name.eq(server_info_name)).map_or_else(|| server_info_list.first().unwrap().clone(), Clone::clone)
+        if let Ok(api_proxy) = guard.as_ref().ok_or_else(|| {
+            TuliproxError::new(TuliproxErrorKind::Info, "API proxy config not loaded".to_string())
+        }) {
+            let server_info_list = api_proxy.server.clone();
+            server_info_list.iter().find(|c| c.name.eq(server_info_name)).map_or_else(|| server_info_list.first().unwrap().clone(), Clone::clone)
+        } else {
+            panic!("ApiProxyServer info not found");
+        }
     }
 
     pub fn get_user_server_info(&self, user: &ProxyUserCredentials) -> ApiProxyServerInfo {

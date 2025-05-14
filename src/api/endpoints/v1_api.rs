@@ -116,13 +116,15 @@ async fn save_config_api_proxy_config(
             return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid content"}))).into_response();
         }
     }
+
+    // TODO wenn hot reload an ist wird doppelt geladen
     if let Some(old_api_proxy) =  app_state.config.t_api_proxy.load().clone() {
         let mut api_proxy = (*old_api_proxy).clone();
         api_proxy.server = req_api_proxy;
         let new_api_proxy = Arc::new(api_proxy);
         app_state.config.t_api_proxy.store(Some(Arc::clone(&new_api_proxy)));
         let backup_dir = app_state.config.backup_dir.as_ref().unwrap().as_str();
-        if let Some(err) = intern_save_config_api_proxy(backup_dir, &new_api_proxy, app_state.config.t_api_proxy_file_path.as_str()) {
+        if let Some(err) = intern_save_config_api_proxy(backup_dir, new_api_proxy.as_ref(), app_state.config.t_api_proxy_file_path.as_str()) {
             return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
         }
     }

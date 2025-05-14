@@ -179,7 +179,7 @@ impl FromStr for ProxyUserStatus {
             Self::TRIAL => Ok(Self::Trial),
             Self::DISABLED => Ok(Self::Disabled),
             Self::PENDING => Ok(Self::Pending),
-            _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown ProxyType: {}", s)
+            _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown ProxyUserStatus: {}", s)
         }
     }
 }

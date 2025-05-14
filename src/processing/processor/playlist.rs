@@ -156,11 +156,9 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
 }
 
 fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {
-    if target.t_mapping.load().is_some() {
+    if let Some(mappings) = target.t_mapping.load().as_ref() {
         let new_playlist: Vec<PlaylistGroup> = playlist.iter().map(|playlist_group| {
             let mut grp = playlist_group.clone();
-            let guard = target.t_mapping.load();
-            let mappings = guard.as_ref().unwrap();
             mappings.iter().filter(|&mapping| !mapping.mapper.is_empty()).for_each(|mapping|
                 grp.channels = grp.channels.drain(..).map(|chan| map_channel(chan, mapping)).collect());
             grp

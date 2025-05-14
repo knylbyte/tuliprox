@@ -111,7 +111,7 @@ impl TuliproxError {
 
 impl Display for TuliproxError {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "TuliProx error: {}", self.message)
+        write!(f, "Tuliprox error: {}", self.message)
     }
 }
 

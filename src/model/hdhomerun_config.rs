@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use log::warn;
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
-fn default_friendly_name() -> String { String::from("TuliProxTV") }
+fn default_friendly_name() -> String { String::from("TuliproxTV") }
 fn default_manufacturer() -> String { String::from("Silicondust") }
 fn default_model_name() -> String { String::from("HDTC-2US") }
 fn default_firmware_name() -> String { String::from("hdhomeruntc_atsc") }
