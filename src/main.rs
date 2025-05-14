@@ -100,6 +100,11 @@ fn main() {
 
     init_logger(args.log_level.as_ref(), config_file.as_str());
 
+    info!("Version: {VERSION}");
+    if let Some(bts) = BUILD_TIMESTAMP.to_string().parse::<DateTime<Utc>>().ok().map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string()) {
+        info!("Build time: {bts}");
+    }
+
     if args.healthcheck {
         healthcheck(config_file.as_str());
     }
@@ -116,11 +121,6 @@ fn main() {
     let _ = tempfile::env::override_temp_dir(&temp_path);
 
     let targets = validate_targets(args.target.as_ref(), &cfg.sources).unwrap_or_else(|err| exit!("{}", err));
-
-    info!("Version: {VERSION}");
-    if let Some(bts) = BUILD_TIMESTAMP.to_string().parse::<DateTime<Utc>>().ok().map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string()) {
-        info!("Build time: {bts}");
-    }
 
     match config_reader::read_mappings(mappings_file.as_str(), true) {
         Ok(Some(mappings)) => cfg.set_mappings(&mappings),

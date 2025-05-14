@@ -1,5 +1,5 @@
 use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
-use crate::model::EpgConfig;
+use crate::model::{EpgConfig, EpgSource};
 use crate::utils::config_reader::csv_read_inputs;
 use crate::utils::default_as_true;
 use crate::utils::get_trimmed_string;
@@ -306,9 +306,12 @@ impl ConfigInput {
                     warn!("auto_epg is enabled for input {}, but no credentials could be extracted", self.name);
                 } else if !self.t_base_url.is_empty() {
                     let provider_epg_url = format!("{}/xmltv.php?username={}&password={}", self.t_base_url, username.unwrap_or_default(), password.unwrap_or_default());
-                    if !epg.t_urls.contains(&provider_epg_url) {
+                    if ! epg.t_sources.iter().any(|e| e.url == provider_epg_url) {
                         debug!("Added provider epg url {provider_epg_url} for input {}", self.name);
-                        epg.t_urls.push(provider_epg_url);
+                        epg.t_sources.push(EpgSource {
+                            url: provider_epg_url,
+                            priority: epg.auto_epg_priority,
+                        });
                     }
                 } else {
                     warn!("auto_epg is enabled for input {}, but url could not be parsed {}", self.name, self.url);
