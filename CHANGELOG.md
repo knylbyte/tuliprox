@@ -2,7 +2,7 @@
 # 3.1.0 (2025-05-xx)
 
 - !BREAKING_CHANGE! epg config. Added priority, url config is now renamed to sources, priority is `optional`
-```
+```yaml
 epg:
   sources:
     - url: "http://localhost:3001/xmltv.php?epg_id=1"
