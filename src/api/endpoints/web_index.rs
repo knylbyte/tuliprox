@@ -39,7 +39,7 @@ async fn token(
                         }
                     }
                 }
-                if let Some(credentials) = app_state.config.get_user_credentials(username).await {
+                if let Some(credentials) = app_state.config.get_user_credentials(username) {
                     if credentials.password == password {
                         if let Ok(token) = create_jwt_user(web_auth, username) {
                             req.zeroize();

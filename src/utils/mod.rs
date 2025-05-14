@@ -12,6 +12,7 @@ mod time_utils;
 mod crypto_utils;
 mod constants;
 mod step_measure;
+pub mod logging;
 
 #[macro_export]
 macro_rules! debug_if_enabled {

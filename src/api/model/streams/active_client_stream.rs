@@ -43,13 +43,14 @@ impl ActiveClientStream {
         let username = user.username.as_str();
         let user_connection_guard = Some(active_user.add_connection(username, user.max_connections).await);
         let grace_stop_flag = Self::stream_grace_period(&stream_details, &active_provider, grant_user_grace_period, user, &active_user);
+        let config = &app_state.config;
         Self {
             inner: stream_details.stream.take().unwrap(),
             user_connection_guard,
             send_custom_stream_flag: grace_stop_flag,
             custom_video: (
-                app_state.config.t_provider_connections_exhausted_video.as_ref().map(|a| ChunkedBuffer::new(Arc::clone(a))),
-                app_state.config.t_user_connections_exhausted_video.as_ref().map(|a| ChunkedBuffer::new(Arc::clone(a))),
+                config.t_provider_connections_exhausted_video.as_ref().map(|a| ChunkedBuffer::new(Arc::clone(a))),
+                config.t_user_connections_exhausted_video.as_ref().map(|a| ChunkedBuffer::new(Arc::clone(a))),
             ),
             provider_connection_guard: stream_details.provider_connection_guard,
         }

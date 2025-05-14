@@ -171,7 +171,8 @@ fn create_compression_layer() -> tower_http::compression::CompressionLayer {
 
 fn start_hdhomerun(cfg: &Arc<Config>, app_state: &Arc<AppState>, infos: &mut Vec<String>) {
     let host = cfg.api.host.to_string();
-    if let Some(hdhomerun) = &cfg.hdhomerun {
+    let guard = cfg.t_hdhomerun.load();
+    if let Some(hdhomerun) = &*guard {
         if hdhomerun.enabled {
             for device in &hdhomerun.devices {
                 if device.t_enabled {
@@ -232,14 +233,15 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
     exec_scheduler(&Arc::clone(&shared_data.http_client), &cfg, &targets);
     exec_update_on_boot(Arc::clone(&shared_data.http_client), &cfg, &targets);
 
-    // TODO enable when config watch is ready
-    // if let Err(err) = exec_config_watch(&app_state).await {
-    //     error!("Failed to start config watch: {err}");
-    // }
+    if cfg.config_hot_reload {
+        if let Err(err) = exec_config_watch(&app_state).await {
+            error!("Failed to start config watch: {err}");
+        }
+    }
 
     let web_auth_enabled = is_web_auth_enabled(&cfg, web_ui_enabled);
 
-    if cfg.t_api_proxy.read().await.is_some() {
+    if cfg.t_api_proxy.load().is_some() {
         start_hdhomerun(&cfg, &app_state, &mut infos);
     }
 

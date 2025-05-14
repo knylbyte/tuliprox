@@ -10,7 +10,7 @@ use std::thread;
 use tokio::sync::Mutex;
 
 use crate::foundation::filter::{get_field_value, set_field_value, MockValueProcessor, ValueProvider};
-use crate::tuliprox_error::{get_errors_notify_message, notify_err, TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{get_errors_notify_message, notify_err, TuliproxError, TuliproxErrorKind};
 use crate::messaging::{send_message, MsgKind};
 use crate::model::{ConfigTarget, InputType, ItemField, ProcessTargets, ProcessingOrder};
 use crate::model::{CounterModifier, Mapping, MappingValueProcessor};
@@ -156,10 +156,9 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
 }
 
 fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {
-    if target.t_mapping.is_some() {
+    if let Some(mappings) = target.t_mapping.load().as_ref() {
         let new_playlist: Vec<PlaylistGroup> = playlist.iter().map(|playlist_group| {
             let mut grp = playlist_group.clone();
-            let mappings = target.t_mapping.as_ref().unwrap();
             mappings.iter().filter(|&mapping| !mapping.mapper.is_empty()).for_each(|mapping|
                 grp.channels = grp.channels.drain(..).map(|chan| map_channel(chan, mapping)).collect());
             grp
@@ -193,10 +192,11 @@ fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option
 }
 
 fn map_playlist_counter(target: &ConfigTarget, playlist: &mut [PlaylistGroup]) {
-    if target.t_mapping.is_some() {
+    if target.t_mapping.load().is_some() {
         let mut mock_processor = MockValueProcessor {};
-        let mappings = target.t_mapping.as_ref().unwrap();
-        for mapping in mappings {
+        let guard = target.t_mapping.load();
+        let mappings = guard.as_ref().unwrap();
+        for mapping in mappings.iter() {
             if let Some(counter_list) = &mapping.t_counter {
                 for counter in counter_list {
                     for plg in &mut *playlist {
@@ -245,7 +245,7 @@ fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bo
     (!user_targets.enabled && target.enabled) || (user_targets.enabled && user_targets.has_target(target.id))
 }
 
-async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<Config>, source_idx: usize, user_targets: Arc<ProcessTargets>) -> (Vec<InputStats>, Vec<TargetStats>, Vec<TuliProxError>) {
+async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<Config>, source_idx: usize, user_targets: Arc<ProcessTargets>) -> (Vec<InputStats>, Vec<TargetStats>, Vec<TuliproxError>) {
     let source = cfg.sources.get(source_idx).unwrap();
     let mut errors = vec![];
     let mut input_stats = HashMap::<String, InputStats>::new();
@@ -330,14 +330,14 @@ fn create_input_stat(group_count: usize, channel_count: usize, error_count: usiz
     }
 }
 
-async fn process_sources(client: Arc<reqwest::Client>, config: Arc<Config>, user_targets: Arc<ProcessTargets>) -> (Vec<SourceStats>, Vec<TuliProxError>) {
+async fn process_sources(client: Arc<reqwest::Client>, config: Arc<Config>, user_targets: Arc<ProcessTargets>) -> (Vec<SourceStats>, Vec<TuliproxError>) {
     let mut handle_list = vec![];
     let thread_num = config.threads;
     let process_parallel = thread_num > 1 && config.sources.len() > 1;
     if process_parallel && log_enabled!(Level::Debug) {
         debug!("Using {thread_num} threads");
     }
-    let errors = Arc::new(Mutex::<Vec<TuliProxError>>::new(vec![]));
+    let errors = Arc::new(Mutex::<Vec<TuliproxError>>::new(vec![]));
     let stats = Arc::new(Mutex::<Vec<SourceStats>>::new(vec![]));
     for (index, _) in config.sources.iter().enumerate() {
         // We're using the file lock this way on purpose
@@ -447,7 +447,7 @@ async fn process_playlist_for_target(client: Arc<reqwest::Client>,
                                      target: &ConfigTarget,
                                      cfg: &Config,
                                      stats: &mut HashMap<String, InputStats>,
-                                     errors: &mut Vec<TuliProxError>) -> Result<(), Vec<TuliProxError>> {
+                                     errors: &mut Vec<TuliproxError>) -> Result<(), Vec<TuliproxError>> {
     let pipe = get_processing_pipe(target);
     debug_if_enabled!("Processing order is {}", &target.processing_order);
 

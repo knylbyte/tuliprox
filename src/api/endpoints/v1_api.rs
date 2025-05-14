@@ -6,7 +6,7 @@ use crate::api::model::config::{ServerConfig, ServerInputConfig, ServerSourceCon
 use crate::api::model::request::{PlaylistRequest, PlaylistRequestType};
 use crate::auth::access_token::create_access_token;
 use crate::auth::authenticator::validator_admin;
-use crate::tuliprox_error::TuliProxError;
+use crate::tuliprox_error::TuliproxError;
 use crate::model::StatusCheck;
 use crate::model::XtreamPlaylistItem;
 use crate::model::{validate_targets, Config, ConfigDto, ConfigInput, ConfigInputOptions, ConfigSource, ConfigTarget, InputType};
@@ -23,7 +23,7 @@ use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
-fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfig, file_path: &str) -> Option<TuliProxError> {
+fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfig, file_path: &str) -> Option<TuliproxError> {
     match config_reader::save_api_proxy(file_path, backup_dir, api_proxy) {
         Ok(()) => {}
         Err(err) => {
@@ -34,7 +34,7 @@ fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfig, fi
     None
 }
 
-fn intern_save_config_main(file_path: &str, backup_dir: &str, cfg: &ConfigDto) -> Option<TuliProxError> {
+fn intern_save_config_main(file_path: &str, backup_dir: &str, cfg: &ConfigDto) -> Option<TuliproxError> {
     match config_reader::save_main_config(file_path, backup_dir, cfg) {
         Ok(()) => {}
         Err(err) => {
@@ -70,17 +70,20 @@ async fn save_config_api_proxy_user(
         }
     }
 
-    let mut lock = app_state.config.t_api_proxy.write().await;
-    if let Some(api_proxy) = lock.as_mut() {
+    if let Some(old_api_proxy) =  app_state.config.t_api_proxy.load().clone() {
+        let mut api_proxy = (*old_api_proxy).clone();
         api_proxy.user = users;
         api_proxy.user.iter_mut().flat_map(|t| &mut t.credentials).for_each(ProxyUserCredentials::prepare);
-        if api_proxy.use_user_db {
-            if let Err(err) = store_api_user(&app_state.config, &api_proxy.user) {
+        let new_api_proxy = Arc::new(api_proxy);
+        app_state.config.t_api_proxy.store(Some(Arc::clone(&new_api_proxy)));
+
+        if new_api_proxy.use_user_db {
+            if let Err(err) = store_api_user(&app_state.config, &new_api_proxy.user) {
                 return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
             }
         } else {
             let backup_dir = app_state.config.backup_dir.as_ref().unwrap().as_str();
-            if let Some(err) = intern_save_config_api_proxy(backup_dir, api_proxy, app_state.config.t_api_proxy_file_path.as_str()) {
+            if let Some(err) = intern_save_config_api_proxy(backup_dir, &new_api_proxy, app_state.config.t_api_proxy_file_path.as_str()) {
                 return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
             }
         }
@@ -113,11 +116,15 @@ async fn save_config_api_proxy_config(
             return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid content"}))).into_response();
         }
     }
-    let mut lock = app_state.config.t_api_proxy.write().await;
-    if let Some(api_proxy) = lock.as_mut() {
+
+    // TODO wenn hot reload an ist wird doppelt geladen
+    if let Some(old_api_proxy) =  app_state.config.t_api_proxy.load().clone() {
+        let mut api_proxy = (*old_api_proxy).clone();
         api_proxy.server = req_api_proxy;
+        let new_api_proxy = Arc::new(api_proxy);
+        app_state.config.t_api_proxy.store(Some(Arc::clone(&new_api_proxy)));
         let backup_dir = app_state.config.backup_dir.as_ref().unwrap().as_str();
-        if let Some(err) = intern_save_config_api_proxy(backup_dir, api_proxy, app_state.config.t_api_proxy_file_path.as_str()) {
+        if let Some(err) = intern_save_config_api_proxy(backup_dir, new_api_proxy.as_ref(), app_state.config.t_api_proxy_file_path.as_str()) {
             return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
         }
     }
@@ -226,7 +233,7 @@ async fn playlist_webplayer(
 ) -> impl axum::response::IntoResponse + Send {
     let access_token = create_access_token(&app_state.config.t_access_token_secret, 5);
     let server_name = app_state.config.web_ui.as_ref().and_then(|web_ui| web_ui.player_server.as_ref()).map_or("default", |server_name| server_name.as_str());
-    let server_info = app_state.config.get_server_info(server_name).await;
+    let server_info = app_state.config.get_server_info(server_name);
     let base_url = server_info.get_base_url();
     format!("{base_url}/token/{access_token}/{target_id}/{}/{}", playlist_item.xtream_cluster.as_stream_type(), playlist_item.virtual_id).into_response()
 }
@@ -280,12 +287,15 @@ async fn config(
         sources: config.sources.iter().map(map_source).collect(),
         proxy: config.proxy.clone(),
         ipcheck: config.ipcheck.clone(),
-        api_proxy: config_reader::read_api_proxy(config, app_state.config.t_api_proxy_file_path.as_str(), false),
+        api_proxy: config_reader::read_api_proxy(&app_state.config, false),
     };
 
     let mut result = match config_reader::read_config(app_state.config.t_config_path.as_str(),
                                                       app_state.config.t_config_file_path.as_str(),
-                                                      app_state.config.t_sources_file_path.as_str(), false) {
+                                                      app_state.config.t_sources_file_path.as_str(),
+                                                      app_state.config.t_api_proxy_file_path.as_str(),
+                                                      app_state.config.t_mapping_file_path.as_str(),
+                                                      false) {
         Ok(mut cfg) => {
             let _ = cfg.prepare(false);
             map_config(&cfg)
@@ -295,7 +305,8 @@ async fn config(
 
     // if we didn't read it from file then we should use it from app_state
     if result.api_proxy.is_none() {
-        result.api_proxy.clone_from(&*app_state.config.t_api_proxy.read().await);
+        let value = app_state.config.t_api_proxy.load();
+        result.api_proxy = value.as_ref().map(|a| a.as_ref().clone());
     }
 
     axum::response::Json(result).into_response()

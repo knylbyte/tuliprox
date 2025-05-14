@@ -1,4 +1,4 @@
-use crate::tuliprox_error::TuliProxError;
+use crate::tuliprox_error::TuliproxError;
 use crate::model::{Config, ConfigInput};
 use crate::model::TVGuide;
 use crate::repository::storage::short_hash;
@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 
-async fn download_epg_file(url: &str, client: &Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str) -> Result<PathBuf, TuliProxError> {
+async fn download_epg_file(url: &str, client: &Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str) -> Result<PathBuf, TuliproxError> {
     debug!("Getting epg file path for url: {url}");
     let file_prefix = short_hash(url);
     let persist_file_path = prepare_file_path(input.persist.as_deref(), working_dir, "")
@@ -19,7 +19,7 @@ async fn download_epg_file(url: &str, client: &Arc<reqwest::Client>, input: &Con
     request::get_input_text_content_as_file(Arc::clone(client), input, working_dir, url, persist_file_path).await
 }
 
-pub async fn get_xmltv(client: Arc<reqwest::Client>, _cfg: &Config, input: &ConfigInput, working_dir: &str) -> (Option<TVGuide>, Vec<TuliProxError>) {
+pub async fn get_xmltv(client: Arc<reqwest::Client>, _cfg: &Config, input: &ConfigInput, working_dir: &str) -> (Option<TVGuide>, Vec<TuliproxError>) {
     match &input.epg {
         None => (None, vec![]),
         Some(epg_config) => {

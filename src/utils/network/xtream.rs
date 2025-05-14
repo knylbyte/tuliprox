@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::tuliprox_error::{str_to_io_error, TuliProxError};
+use crate::tuliprox_error::{str_to_io_error, TuliproxError};
 use crate::model::{Config, ConfigInput, ConfigTarget};
 use crate::model::{PlaylistEntry, PlaylistGroup, XtreamCluster, XtreamPlaylistItem};
 use crate::processing::parser::xtream;
@@ -81,7 +81,7 @@ where
     } else if cluster == XtreamCluster::Video {
         if let Some(content) = xtream_repository::xtream_load_vod_info(config, target.name.as_str(), pli.get_virtual_id()) {
             // Deliver existing target content
-            return rewrite_xtream_vod_info_content(config, target, xtream_output, pli, user, &content).await;
+            return rewrite_xtream_vod_info_content(config, target, xtream_output, pli, user, &content);
         }
         // Check if the content has been resolved
         if xtream_output.resolve_vod {
@@ -129,7 +129,7 @@ const ACTIONS: [(XtreamCluster, &str, &str); 3] = [
     (XtreamCluster::Video, crate::model::XC_ACTION_GET_VOD_CATEGORIES, crate::model::XC_ACTION_GET_VOD_STREAMS),
     (XtreamCluster::Series, crate::model::XC_ACTION_GET_SERIES_CATEGORIES, crate::model::XC_ACTION_GET_SERIES)];
 
-pub async fn get_xtream_playlist(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str) -> (Vec<PlaylistGroup>, Vec<TuliProxError>) {
+pub async fn get_xtream_playlist(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
 
     let username = input.username.as_ref().map_or("", |v| v);
     let password = input.password.as_ref().map_or("", |v| v);

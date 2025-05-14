@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{notify_err, TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{notify_err, TuliproxError, TuliproxErrorKind};
 use crate::model::{Config, ConfigTarget, TargetOutput};
 use crate::model::Epg;
 use crate::repository::m3u_repository::m3u_get_epg_file_path;
@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{Cursor, Write};
 use std::path::Path;
 
-fn epg_write_file(target: &ConfigTarget, epg: &Epg, path: &Path) -> Result<(), TuliProxError> {
+fn epg_write_file(target: &ConfigTarget, epg: &Epg, path: &Path) -> Result<(), TuliproxError> {
     let mut writer = Writer::new(Cursor::new(vec![]));
     match epg.write_to(&mut writer) {
         Ok(()) => {
@@ -35,7 +35,7 @@ fn epg_write_file(target: &ConfigTarget, epg: &Epg, path: &Path) -> Result<(), T
     Ok(())
 }
 
-pub fn epg_write(target: &ConfigTarget, cfg: &Config, target_path: &Path, epg: Option<&Epg>, output: &TargetOutput) -> Result<(), TuliProxError> {
+pub fn epg_write(target: &ConfigTarget, cfg: &Config, target_path: &Path, epg: Option<&Epg>, output: &TargetOutput) -> Result<(), TuliproxError> {
     if let Some(epg_data) = epg {
         match output {
             TargetOutput::Xtream(_) => {

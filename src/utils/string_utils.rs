@@ -23,7 +23,11 @@ pub trait Capitalize {
 impl Capitalize for &str {
     fn capitalize(&self) -> String {
         let mut chars = self.chars();
-        chars.next().map_or_else(String::new, |first_char| first_char.to_uppercase().collect::<String>() + chars.as_str())
+        let first = chars.next()
+            .map(|c| c.to_uppercase().collect::<String>())
+            .unwrap_or_default();
+        let rest = chars.as_str().to_lowercase();
+        first + &rest
     }
 }
 

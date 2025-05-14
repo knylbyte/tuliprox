@@ -1,5 +1,5 @@
 use crate::foundation::filter::{get_filter, Filter, MockValueProcessor, PatternTemplate, ValueProvider};
-use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
 use crate::model::cluster_flags::ClusterFlags;
 use crate::model::config_rename::ConfigRename;
 use crate::model::config_sort::ConfigSort;
@@ -9,7 +9,8 @@ use crate::model::PlaylistItemType;
 use crate::utils::{default_as_default, default_as_true, default_resolve_delay_secs};
 use enum_iterator::Sequence;
 use std::fmt::Display;
-
+use std::sync::Arc;
+use arc_swap::{ArcSwapOption};
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash)]
 pub enum TargetType {
@@ -181,16 +182,16 @@ pub struct ConfigTarget {
     pub processing_order: ProcessingOrder,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<Vec<String>>,
-    #[serde(default, skip_serializing, skip_deserializing)]
+    #[serde(skip)]
     pub t_watch_re: Option<Vec<regex::Regex>>,
-    #[serde(default, skip_serializing, skip_deserializing)]
+    #[serde(skip)]
     pub t_filter: Option<Filter>,
-    #[serde(default, skip_serializing, skip_deserializing)]
-    pub t_mapping: Option<Vec<Mapping>>,
+    #[serde(skip)]
+    pub t_mapping: Arc<ArcSwapOption<Vec<Mapping>>>,
 }
 
 impl ConfigTarget {
-    pub fn prepare(&mut self, id: u16, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliProxError> {
+    pub fn prepare(&mut self, id: u16, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         self.id = id;
         if self.output.is_empty() {
             return Err(info_err!(format!("Missing output format for {}", self.name)));
@@ -208,7 +209,7 @@ impl ConfigTarget {
                 TargetOutput::Xtream(_) => {
                     xtream_cnt += 1;
                     if default_as_default().eq_ignore_ascii_case(&self.name) {
-                        return create_tuliprox_error_result!(TuliProxErrorKind::Info, "unique target name is required for xtream type output: {}", self.name);
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "unique target name is required for xtream type output: {}", self.name);
                     }
                 }
                 TargetOutput::M3u(m3u_output) => {
@@ -219,7 +220,7 @@ impl ConfigTarget {
                     strm_cnt += 1;
                     strm_output.directory = strm_output.directory.trim().to_string();
                     if strm_output.directory.trim().is_empty() {
-                        return create_tuliprox_error_result!(TuliProxErrorKind::Info, "directory is required for strm type: {}", self.name);
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "directory is required for strm type: {}", self.name);
                     }
                     if let Some(username) = &mut strm_output.username {
                         *username = username.trim().to_string();
@@ -234,19 +235,19 @@ impl ConfigTarget {
                     hdhr_cnt += 1;
                     hdhomerun_output.username = hdhomerun_output.username.trim().to_string();
                     if hdhomerun_output.username.is_empty() {
-                        return create_tuliprox_error_result!(TuliProxErrorKind::Info, "Username is required for HdHomeRun type: {}", self.name);
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Username is required for HdHomeRun type: {}", self.name);
                     }
 
                     hdhomerun_output.device = hdhomerun_output.device.trim().to_string();
                     if hdhomerun_output.device.is_empty() {
-                        return create_tuliprox_error_result!(TuliProxErrorKind::Info, "Device is required for HdHomeRun type: {}", self.name);
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Device is required for HdHomeRun type: {}", self.name);
                     }
 
                     if let Some(use_output) = hdhomerun_output.use_output.as_ref() {
                         match &use_output {
                             TargetType::M3u => { hdhomerun_needs_m3u = true; }
                             TargetType::Xtream => { hdhomerun_needs_xtream = true; }
-                            _ => return create_tuliprox_error_result!(TuliProxErrorKind::Info, "HdHomeRun output option `use_output` only accepts `m3u` or `xtream` for target: {}", self.name),
+                            _ => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun output option `use_output` only accepts `m3u` or `xtream` for target: {}", self.name),
                         }
                     }
                 }
@@ -254,22 +255,22 @@ impl ConfigTarget {
         }
 
         if m3u_cnt > 1 || strm_cnt > 1 || xtream_cnt > 1 || hdhr_cnt > 1 {
-            return create_tuliprox_error_result!(TuliProxErrorKind::Info, "Multiple output formats with same type : {}", self.name);
+            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Multiple output formats with same type : {}", self.name);
         }
 
         if strm_cnt > 0 && strm_needs_xtream && xtream_cnt == 0 {
-            return create_tuliprox_error_result!(TuliProxErrorKind::Info, "strm output with a username is only permitted when used in combination with xtream output: {}", self.name);
+            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "strm output with a username is only permitted when used in combination with xtream output: {}", self.name);
         }
 
         if hdhr_cnt > 0 {
             if xtream_cnt == 0 && m3u_cnt == 0 {
-                return create_tuliprox_error_result!(TuliProxErrorKind::Info, "HdHomeRun output is only permitted when used in combination with xtream or m3u output: {}", self.name);
+                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun output is only permitted when used in combination with xtream or m3u output: {}", self.name);
             }
             if hdhomerun_needs_m3u && m3u_cnt == 0 {
-                return create_tuliprox_error_result!(TuliProxErrorKind::Info, "HdHomeRun output has `use_output=m3u` but no `m3u` output defined: {}", self.name);
+                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun output has `use_output=m3u` but no `m3u` output defined: {}", self.name);
             }
             if hdhomerun_needs_xtream && xtream_cnt == 0 {
-                return create_tuliprox_error_result!(TuliProxErrorKind::Info, "HdHomeRun output has `use_output=xtream` but no `xtream` output defined: {}", self.name);
+                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun output has `use_output=xtream` but no `xtream` output defined: {}", self.name);
             }
         }
 
@@ -278,7 +279,7 @@ impl ConfigTarget {
             match regexps {
                 Ok(watch_re) => self.t_watch_re = Some(watch_re),
                 Err(err) => {
-                    return create_tuliprox_error_result!(TuliProxErrorKind::Info, "Invalid watch regular expression: {}", err);
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Invalid watch regular expression: {}", err);
                 }
             }
         }
@@ -288,10 +289,10 @@ impl ConfigTarget {
                 // debug!("Filter: {}", fltr);
                 self.t_filter = Some(fltr);
                 if let Some(renames) = self.rename.as_mut() {
-                    handle_tuliprox_error_result_list!(TuliProxErrorKind::Info, renames.iter_mut().map(|cr|cr.prepare(templates)));
+                    handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, renames.iter_mut().map(|cr|cr.prepare(templates)));
                 }
                 if let Some(sort) = self.sort.as_mut() {
-                    handle_tuliprox_error_result!(TuliProxErrorKind::Info, sort.prepare(templates));
+                    handle_tuliprox_error_result!(TuliproxErrorKind::Info, sort.prepare(templates));
                 }
                 Ok(())
             }

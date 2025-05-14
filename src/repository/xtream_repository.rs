@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::{ProxyUserCredentials};
 use crate::model::{Config, ConfigInput, ConfigTarget, XtreamTargetOutput};
 use crate::model::{PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
@@ -32,7 +32,7 @@ use std::sync::Arc;
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
         create_tuliprox_error!(
-            TuliProxErrorKind::Notify,
+            TuliproxErrorKind::Notify,
             "failed to write xtream playlist: {} - {}",
             $path.to_str().unwrap(),
             $err
@@ -60,7 +60,7 @@ fn get_collection_path(path: &Path, collection: &str) -> PathBuf {
     path.join(format!("{collection}.json"))
 }
 
-fn ensure_xtream_storage_path(cfg: &Config, target_name: &str) -> Result<PathBuf, TuliProxError> {
+fn ensure_xtream_storage_path(cfg: &Config, target_name: &str) -> Result<PathBuf, TuliproxError> {
     if let Some(path) = xtream_get_storage_path(cfg, target_name) {
         if std::fs::create_dir_all(&path).is_err() {
             let msg = format!(
@@ -104,7 +104,7 @@ fn write_playlists_to_file(
     cfg: &Config,
     storage_path: &Path,
     collections: Vec<(XtreamCluster, &[&mut PlaylistItem])>,
-) -> Result<(), TuliProxError> {
+) -> Result<(), TuliproxError> {
     for (cluster, playlist) in collections {
         let (xtream_path, idx_path) = xtream_get_file_paths(storage_path, cluster);
         {
@@ -200,7 +200,7 @@ pub async fn xtream_write_playlist(
     target: &ConfigTarget,
     cfg: &Config,
     playlist: &mut [PlaylistGroup],
-) -> Result<(), TuliProxError> {
+) -> Result<(), TuliproxError> {
     let path = ensure_xtream_storage_path(cfg, target.name.as_str())?;
     let mut errors = Vec::new();
     let mut cat_live_col = Vec::with_capacity(1_000);
@@ -281,7 +281,7 @@ pub async fn xtream_write_playlist(
 
     if !errors.is_empty() {
         return create_tuliprox_error_result!(
-            TuliProxErrorKind::Notify,
+            TuliproxErrorKind::Notify,
             "{}",
             errors.join("\n")
         );
@@ -385,7 +385,7 @@ pub async fn xtream_load_rewrite_playlist(
     target: &ConfigTarget,
     category_id: Option<u32>,
     user: &ProxyUserCredentials,
-) -> Result<XtreamPlaylistJsonIterator, TuliProxError> {
+) -> Result<XtreamPlaylistJsonIterator, TuliproxError> {
     XtreamPlaylistJsonIterator::new(cluster, config, target, category_id, user).await
 }
 
@@ -516,7 +516,7 @@ pub fn xtream_load_vod_info(
     None
 }
 
-async fn rewrite_xtream_vod_info<P>(
+fn rewrite_xtream_vod_info<P>(
     config: &Config,
     target: &ConfigTarget,
     xtream_output: &XtreamTargetOutput,
@@ -531,7 +531,7 @@ async fn rewrite_xtream_vod_info<P>(
         if let Some(Value::Object(info_data)) = doc.get_mut(crate::model::XC_TAG_INFO_DATA) {
             let item_type = pli.get_item_type();
             if user.proxy.is_reverse(item_type) && !target.is_force_redirect(item_type) {
-                let server_info = config.get_user_server_info(user).await;
+                let server_info = config.get_user_server_info(user);
                 let url = server_info.get_base_url();
                 let resource_url = Some(format!("{url}/resource/movie/{}/{}/{}", user.username, user.password, pli.get_virtual_id()));
                 rewrite_doc_urls(resource_url.as_ref(), info_data, storage_const::INFO_REWRITE_FIELDS, crate::model::XC_INFO_RESOURCE_PREFIX);
@@ -562,7 +562,7 @@ async fn rewrite_xtream_vod_info<P>(
     Ok(result)
 }
 
-pub async fn rewrite_xtream_vod_info_content<P>(
+pub fn rewrite_xtream_vod_info_content<P>(
     config: &Config,
     target: &ConfigTarget,
     xtream_output: &XtreamTargetOutput,
@@ -573,7 +573,7 @@ pub async fn rewrite_xtream_vod_info_content<P>(
     P: PlaylistEntry,
 {
     let mut doc = serde_json::from_str::<Map<String, Value>>(content).map_err(|_| str_to_io_error("Failed to parse JSON content"))?;
-    rewrite_xtream_vod_info(config, target, xtream_output, pli, user, &mut doc).await
+    rewrite_xtream_vod_info(config, target, xtream_output, pli, user, &mut doc)
 }
 
 pub async fn write_and_get_xtream_vod_info<P>(
@@ -588,7 +588,7 @@ pub async fn write_and_get_xtream_vod_info<P>(
 {
     let mut doc = serde_json::from_str::<Map<String, Value>>(content).map_err(|_| str_to_io_error("Failed to parse JSON content"))?;
     xtream_write_vod_info(config, target.name.as_str(), pli.get_virtual_id(), content).await.ok();
-    rewrite_xtream_vod_info(config, target, xtream_output, pli, user, &mut doc).await
+    rewrite_xtream_vod_info(config, target, xtream_output, pli, user, &mut doc)
 }
 
 async fn rewrite_xtream_series_info<P>(
@@ -606,7 +606,7 @@ async fn rewrite_xtream_series_info<P>(
     let resource_url = if config.is_reverse_proxy_resource_rewrite_enabled() {
         let item_type = pli.get_item_type();
         if user.proxy.is_reverse(item_type) && !target.is_force_redirect(item_type) {
-            let server_info = config.get_user_server_info(user).await;
+            let server_info = config.get_user_server_info(user);
             let url = server_info.get_base_url();
             Some(format!("{url}/resource/series/{}/{}/{}", user.username, user.password, pli.get_virtual_id()))
         } else {
@@ -728,7 +728,7 @@ pub async fn xtream_update_input_info_file(
     input: &ConfigInput,
     wal_path: &Path,
     cluster: XtreamCluster,
-) -> Result<(), TuliProxError> {
+) -> Result<(), TuliproxError> {
     match get_input_storage_path(&input.name, &cfg.working_dir).map(|storage_path| xtream_get_info_file_paths(&storage_path, cluster)) {
         Ok(Some((info_path, idx_path))) => {
             {
@@ -771,7 +771,7 @@ pub async fn xtream_update_input_vod_record_from_wal_file(
     cfg: &Config,
     input: &ConfigInput,
     wal_path: &Path,
-) -> Result<(), TuliProxError> {
+) -> Result<(), TuliproxError> {
     let record_path = get_input_storage_path(&input.name, &cfg.working_dir).map(|storage_path| xtream_get_record_file_path(&storage_path, PlaylistItemType::Video))
         .map_err(|err| notify_err!(format!("Error accessing storage path: {err}")))
         .and_then(|opt| opt.ok_or_else(|| notify_err!(format!("Error accessing storage path for input: {}", &input.name))))?;
@@ -811,7 +811,7 @@ pub async fn xtream_update_input_series_record_from_wal_file(
     cfg: &Config,
     input: &ConfigInput,
     wal_path: &Path,
-) -> Result<(), TuliProxError> {
+) -> Result<(), TuliproxError> {
     let record_path = get_input_storage_path(&input.name, &cfg.working_dir).map(|storage_path| xtream_get_record_file_path(&storage_path, PlaylistItemType::SeriesInfo))
         .map_err(|err| notify_err!(format!("Error accessing storage path: {err}")))
         .and_then(|opt| opt.ok_or_else(|| notify_err!(format!("Error accessing storage path for input: {}", &input.name))))?;
@@ -845,7 +845,7 @@ pub async fn xtream_update_input_series_episodes_record_from_wal_file(
     cfg: &Config,
     input: &ConfigInput,
     wal_path: &Path,
-) -> Result<(), TuliProxError> {
+) -> Result<(), TuliproxError> {
     let record_path = get_input_storage_path(&input.name, &cfg.working_dir).map(|storage_path| xtream_get_record_file_path(&storage_path, PlaylistItemType::Series))
         .map_err(|err| notify_err!(format!("Error accessing storage path: {err}")))
         .and_then(|opt| opt.ok_or_else(|| notify_err!(format!("Error accessing storage path for input: {}", &input.name))))?;

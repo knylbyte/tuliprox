@@ -62,6 +62,7 @@ paste = "1"
 bitflags = "2"
 indexmap = "2"
 notify = "8"
+arc-swap = "1"
 #[cfg(target_os = "macos")]
 libc = "0"
 #[cfg(target_os = "windows")]

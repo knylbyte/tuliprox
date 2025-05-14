@@ -1,5 +1,5 @@
 use crate::tuliprox_error::info_err;
-use crate::tuliprox_error::{TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ProxyType, ProxyUserCredentials};
 use crate::model::{Config, ConfigTarget, ConfigTargetOptions, TargetType};
 use crate::model::{M3uPlaylistItem, PlaylistItemType, XtreamCluster};
@@ -31,7 +31,7 @@ impl M3uPlaylistIterator {
         cfg: &Config,
         target: &ConfigTarget,
         user: &ProxyUserCredentials,
-    ) -> Result<Self, TuliProxError> {
+    ) -> Result<Self, TuliproxError> {
         let m3u_output = target.get_m3u_output().ok_or_else(|| info_err!(format!("Unexpected failure, missing m3u target output for target {}",  target.name)))?;
         let target_path = ensure_target_storage_path(cfg, target.name.as_str())?;
         let (m3u_path, idx_path) = m3u_get_file_paths(&target_path);
@@ -44,7 +44,7 @@ impl M3uPlaylistIterator {
 
         let filter = user_get_bouquet_filter(cfg, &user.username, None, TargetType::M3u, XtreamCluster::Live).await;
 
-        let server_info = cfg.get_user_server_info(user).await;
+        let server_info = cfg.get_user_server_info(user);
         Ok(Self {
             reader,
             base_url: server_info.get_base_url(),
@@ -138,7 +138,7 @@ impl M3uPlaylistM3uTextIterator {
         cfg: &Config,
         target: &ConfigTarget,
         user: &ProxyUserCredentials,
-    ) -> Result<Self, TuliProxError> {
+    ) -> Result<Self, TuliproxError> {
         Ok(Self {
             inner: M3uPlaylistIterator::new(cfg, target, user).await?,
             started: false,

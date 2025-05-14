@@ -1,6 +1,6 @@
 use regex::Regex;
 use crate::foundation::filter::{apply_templates_to_pattern, PatternTemplate};
-use crate::tuliprox_error::{TuliProxError, TuliProxErrorKind, create_tuliprox_error, handle_tuliprox_error_result_list};
+use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error, handle_tuliprox_error_result_list};
 use crate::model::{ItemField};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -11,12 +11,12 @@ pub enum SortOrder {
     Desc,
 }
 
-fn compile_regex_vec(patterns: Option<&Vec<String>>) -> Result<Option<Vec<Regex>>, TuliProxError> {
+fn compile_regex_vec(patterns: Option<&Vec<String>>) -> Result<Option<Vec<Regex>>, TuliproxError> {
     patterns.as_ref()
         .map(|seq| {
             seq.iter()
                 .map(|s| Regex::new(s).map_err(|err| {
-                    create_tuliprox_error!(TuliProxErrorKind::Info, "cant parse regex: {s} {err}")
+                    create_tuliprox_error!(TuliproxErrorKind::Info, "cant parse regex: {s} {err}")
                 }))
                 .collect::<Result<Vec<_>, _>>()
         })
@@ -35,7 +35,7 @@ pub struct ConfigSortGroup {
 
 
 impl ConfigSortGroup {
-    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliProxError> {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         // Transform sequence with templates if provided, otherwise use raw sequence
         let processed_sequence = match (&self.sequence, templates) {
             (Some(seqs), Some(tmpls)) => Some(seqs.iter().map(|s| apply_templates_to_pattern(s, tmpls)).collect()),
@@ -66,14 +66,14 @@ pub struct ConfigSortChannel {
 }
 
 impl ConfigSortChannel {
-    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliProxError> {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         if let Some(templ) =  templates {
             self.group_pattern = apply_templates_to_pattern(&self.group_pattern, templ);
         }
         // Compile group_pattern
         self.t_re_group_pattern = Some(
             Regex::new(&self.group_pattern).map_err(|err| {
-                create_tuliprox_error!(TuliProxErrorKind::Info, "cant parse regex: {} {err}", &self.group_pattern)
+                create_tuliprox_error!(TuliproxErrorKind::Info, "cant parse regex: {} {err}", &self.group_pattern)
             })?
         );
 
@@ -102,12 +102,12 @@ pub struct ConfigSort {
 }
 
 impl ConfigSort {
-    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliProxError> {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         if let Some(group) = self.groups.as_mut() {
             group.prepare(templates)?;
         }
         if let Some(channels) = self.channels.as_mut() {
-            handle_tuliprox_error_result_list!(TuliProxErrorKind::Info, channels.iter_mut().map(|csc| csc.prepare(templates)));
+            handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, channels.iter_mut().map(|csc| csc.prepare(templates)));
         }
         Ok(())
     }

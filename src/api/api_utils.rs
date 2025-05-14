@@ -121,31 +121,31 @@ pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl axum::r
     axum::http::StatusCode::NOT_FOUND.into_response()
 }
 
-pub async fn get_user_target_by_username<'a>(username: &str, app_state: &'a AppState) -> Option<(ProxyUserCredentials, &'a ConfigTarget)> {
+pub fn get_user_target_by_username<'a>(username: &str, app_state: &'a AppState) -> Option<(ProxyUserCredentials, &'a ConfigTarget)> {
     if !username.is_empty() {
-        return app_state.config.get_target_for_username(username).await;
+        return app_state.config.get_target_for_username(username);
     }
     None
 }
 
-pub async fn get_user_target_by_credentials<'a>(username: &str, password: &str, api_req: &'a UserApiRequest,
+pub fn get_user_target_by_credentials<'a>(username: &str, password: &str, api_req: &'a UserApiRequest,
                                                 app_state: &'a AppState) -> Option<(ProxyUserCredentials, &'a ConfigTarget)> {
     if !username.is_empty() && !password.is_empty() {
-        app_state.config.get_target_for_user(username, password).await
+        app_state.config.get_target_for_user(username, password)
     } else {
         let token = api_req.token.as_str().trim();
         if token.is_empty() {
             None
         } else {
-            app_state.config.get_target_for_user_by_token(token).await
+            app_state.config.get_target_for_user_by_token(token)
         }
     }
 }
 
-pub async fn get_user_target<'a>(api_req: &'a UserApiRequest, app_state: &'a AppState) -> Option<(ProxyUserCredentials, &'a ConfigTarget)> {
+pub fn get_user_target<'a>(api_req: &'a UserApiRequest, app_state: &'a AppState) -> Option<(ProxyUserCredentials, &'a ConfigTarget)> {
     let username = api_req.username.as_str().trim();
     let password = api_req.password.as_str().trim();
-    get_user_target_by_credentials(username, password, api_req, app_state).await
+    get_user_target_by_credentials(username, password, api_req, app_state)
 }
 
 pub struct StreamOptions {

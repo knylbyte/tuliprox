@@ -1,5 +1,5 @@
 use crate::foundation::filter::{apply_templates_to_pattern, PatternTemplate};
-use crate::tuliprox_error::{TuliProxError, TuliProxErrorKind, create_tuliprox_error_result};
+use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
 use crate::model::ItemField;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -13,7 +13,7 @@ pub struct ConfigRename {
 }
 
 impl ConfigRename {
-    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliProxError> {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         if let Some(templ) = templates {
             self.pattern = apply_templates_to_pattern(&self.pattern, templ);
         }
@@ -22,7 +22,7 @@ impl ConfigRename {
                 self.re = Some(pattern);
                 Ok(())
             }
-            Err(err) => create_tuliprox_error_result!(TuliProxErrorKind::Info, "cant parse regex: {} {err}", &self.pattern),
+            Err(err) => create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse regex: {} {err}", &self.pattern),
         }
     }
 }

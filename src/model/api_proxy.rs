@@ -1,5 +1,5 @@
 use crate::api::model::app_state::AppState;
-use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliProxError, TuliProxErrorKind};
+use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::model::{Config, ClusterFlags};
 use crate::repository::user_repository::{backup_api_user_db_file, get_api_user_db_path, load_api_user, merge_api_user};
 use crate::utils::default_as_true;
@@ -75,9 +75,9 @@ impl Display for ProxyType {
 }
 
 impl FromStr for ProxyType {
-    type Err = TuliProxError;
+    type Err = TuliproxError;
 
-    fn from_str(s: &str) -> Result<Self, TuliProxError> {
+    fn from_str(s: &str) -> Result<Self, TuliproxError> {
         if s == Self::REDIRECT {
             return Ok(Self::Redirect);
         }
@@ -95,7 +95,7 @@ impl FromStr for ProxyType {
             }
         }
 
-        create_tuliprox_error_result!(TuliProxErrorKind::Info, "Unknown ProxyType: {}", s)
+        create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown ProxyType: {}", s)
     }
 }
 
@@ -170,16 +170,16 @@ impl Display for ProxyUserStatus {
 }
 
 impl FromStr for ProxyUserStatus {
-    type Err = TuliProxError;
+    type Err = TuliproxError;
 
-    fn from_str(s: &str) -> Result<Self, TuliProxError> {
+    fn from_str(s: &str) -> Result<Self, TuliproxError> {
         match s {
             Self::EXPIRED => Ok(Self::Expired),
             Self::BANNED => Ok(Self::Banned),
             Self::TRIAL => Ok(Self::Trial),
             Self::DISABLED => Ok(Self::Disabled),
             Self::PENDING => Ok(Self::Pending),
-            _ => create_tuliprox_error_result!(TuliProxErrorKind::Info, "Unknown ProxyType: {}", s)
+            _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown ProxyUserStatus: {}", s)
         }
     }
 }
@@ -238,12 +238,12 @@ impl ProxyUserCredentials {
         }
     }
 
-    pub fn validate(&self) -> Result<(), TuliProxError> {
+    pub fn validate(&self) -> Result<(), TuliproxError> {
         if self.username.is_empty() {
-            return Err(TuliProxError::new(TuliProxErrorKind::Info, "Username required".to_string()));
+            return Err(TuliproxError::new(TuliproxErrorKind::Info, "Username required".to_string()));
         }
         if self.password.is_empty() {
-            return Err(TuliProxError::new(TuliProxErrorKind::Info, "Password required".to_string()));
+            return Err(TuliproxError::new(TuliproxErrorKind::Info, "Password required".to_string()));
         }
         Ok(())
     }
@@ -323,7 +323,7 @@ pub struct ApiProxyServerInfo {
 
 impl ApiProxyServerInfo {
 
-   pub fn prepare(&mut self ) -> Result<(), TuliProxError> {
+   pub fn prepare(&mut self ) -> Result<(), TuliproxError> {
        self.name = self.name.trim().to_string();
        if self.name.is_empty() {
            return Err(info_err!("Server info name is empty ".to_string()));
@@ -401,7 +401,8 @@ pub struct ApiProxyConfig {
 impl ApiProxyConfig {
     // we have the option to store user in the config file or in the user_db
     // When we switch from one to other we need to migrate the existing data.
-    fn migrate_api_user(&mut self, cfg: &Config, errors: &mut Vec<String>) {
+    /// # Panics
+    pub fn migrate_api_user(&mut self, cfg: &Config, errors: &mut Vec<String>) {
         if self.use_user_db {
             // we have user defined in config file.
             // we migrate them to the db and delete them from the config file
@@ -505,7 +506,7 @@ impl ApiProxyConfig {
         }
     }
 
-    pub fn prepare(&mut self, cfg: &Config) -> Result<(), TuliProxError> {
+    pub fn prepare(&mut self) -> Result<(), TuliproxError> {
         let mut errors = Vec::new();
         if self.server.is_empty() {
             errors.push("No server info defined".to_string());
@@ -513,7 +514,6 @@ impl ApiProxyConfig {
             self.prepare_server_config(&mut errors);
         }
         self.prepare_target_user(&mut errors);
-        self.migrate_api_user(cfg, &mut errors);
         if errors.is_empty() {
             Ok(())
         } else {
