@@ -65,7 +65,9 @@ pub async fn exec_config_watch(app_state: &Arc<AppState>) -> Result<(), Tuliprox
         (&app_state.config.t_api_proxy_file_path, ConfigFile::ApiProxy),
         (&app_state.config.t_mapping_file_path, ConfigFile::Mapping),
         (&app_state.config.t_sources_file_path, ConfigFile::Sources)
-    ].into_iter().for_each(|(path, config_file)| { files.insert(PathBuf::from(path), (config_file, is_directory(path))); });
+    ].into_iter()
+        .filter(|(path, _)| !path.is_empty())
+        .for_each(|(path, config_file)| { files.insert(PathBuf::from(path), (config_file, is_directory(path))); });
 
     // Use recommended_watcher() to automatically select the best implementation
     // for your platform. The `EventHandler` passed to this constructor can be a

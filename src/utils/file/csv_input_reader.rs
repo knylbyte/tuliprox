@@ -1,8 +1,8 @@
 use crate::model::{ConfigInput, ConfigInputAlias, InputType};
 use crate::tuliprox_error::{str_to_io_error, to_io_error};
+use crate::utils::request::{get_credentials_from_url, get_local_file_content};
 use crate::utils::EnvResolvingReader;
 use crate::utils::{file_reader, resolve_relative_path};
-use crate::utils::request::{get_credentials_from_url, get_local_file_content};
 use log::error;
 use std::io;
 use std::io::{BufRead, Cursor, Error};
@@ -30,7 +30,7 @@ fn csv_assign_mandatory_fields(alias: &mut ConfigInputAlias, input_type: InputTy
                     if input_type == InputType::XtreamBatch {
                         alias.url = url.origin().ascii_serialization().to_string();
                     } else if input_type == InputType::M3uBatch && alias.username.is_some() && alias.password.is_some() {
-                        alias.url = format!("{}/get_php?username={}&password={}&type=m3u_plus",
+                        alias.url = format!("{}/get.php?username={}&password={}&type=m3u_plus",
                                             url.origin().ascii_serialization(),
                                             alias.username.as_deref().unwrap_or(""),
                                             alias.password.as_deref().unwrap_or("")
@@ -164,16 +164,15 @@ pub fn csv_read_inputs(input: &ConfigInput) -> Result<Vec<ConfigInputAlias>, io:
 }
 
 fn get_csv_file_path(file_uri: &String) -> Result<PathBuf, Error> {
-    if file_uri.contains("://") {
-        if let Ok(url) = file_uri.parse::<url::Url>() {
-            if url.scheme() == "file" {
-                return match url.to_file_path() {
-                    Ok(path) => Ok(path),
-                    Err(()) => Err(str_to_io_error(&format!("Could not open {file_uri}"))),
-                };
+    if let Ok(url) = file_uri.parse::<url::Url>() {
+        if url.scheme() == "file" {
+            match url.to_file_path() {
+                Ok(path) => Ok(path),
+                Err(()) => Err(str_to_io_error(&format!("Could not open {file_uri}"))),
             }
+        } else {
+            Err(str_to_io_error(&format!("Only file:// is supported {file_uri}")))
         }
-        Err(str_to_io_error(&format!("Only file:// is supported {file_uri}")))
     } else {
         resolve_relative_path(file_uri)
     }
@@ -182,8 +181,8 @@ fn get_csv_file_path(file_uri: &String) -> Result<PathBuf, Error> {
 #[cfg(test)]
 mod tests {
     use crate::model::InputType;
-    use crate::utils::config_reader::resolve_env_var;
     use crate::utils::file::csv_input_reader::csv_read_inputs_from_reader;
+    use crate::utils::resolve_env_var;
     use std::io::{BufReader, Cursor};
 
     const M3U_BATCH: &str = r#"
