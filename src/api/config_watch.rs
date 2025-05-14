@@ -95,7 +95,7 @@ pub async fn exec_config_watch(app_state: &Arc<AppState>) -> Result<(), Tuliprox
                                     error!("Failed to reload config file {path:?}: {err}");
                                 }
                             } else if recursive_mode == RecursiveMode::Recursive && path.extension().is_some_and(|ext| ext == "yml") {
-                                for (key, (config_file, is_dir)) in files.iter() {
+                                for (key, (config_file, is_dir)) in &files {
                                     if *is_dir && path.starts_with(key) {
                                         if let Err(err) = config_file.reload(&path, &watcher_app_state) {
                                             error!("Failed to reload config file {path:?}: {err}");

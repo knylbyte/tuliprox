@@ -345,6 +345,8 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mapping_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_stream_response: Option<CustomStreamResponseConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub templates: Option<Vec<PatternTemplate>>,
@@ -645,6 +647,9 @@ impl Config {
     pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         let work_dir = &self.working_dir;
         self.working_dir = utils::resolve_directory_path(work_dir);
+        if let Some(mapping_path) = &self.mapping_path {
+            self.t_mapping_file_path = mapping_path.to_string();
+        }
         if include_computed {
             self.t_access_token_secret = generate_secret();
             self.t_encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;

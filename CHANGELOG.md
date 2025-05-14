@@ -34,6 +34,7 @@ epg:
   `-m /home/tuliprox/config/mapping.d`
   The files are loaded in **alphanumeric** order.
   **Note:** This is a lexicographic sort — so `m_10.yml` comes before `m_2.yml` unless you name files carefully (e.g., `m_01.yml`, `m_02.yml`, ..., `m_10.yml`).
+- Added `mapping_path` to `config.yml`. 
 
 # 3.0.0 (2025-05-12)
 - !BREAKING_CHANGE! user has now the attribute `ui_enabled` to disable/enable web_ui for user.
