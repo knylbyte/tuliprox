@@ -231,7 +231,7 @@ async fn playlist_webplayer(
 ) -> impl axum::response::IntoResponse + Send {
     let access_token = create_access_token(&app_state.config.t_access_token_secret, 5);
     let server_name = app_state.config.web_ui.as_ref().and_then(|web_ui| web_ui.player_server.as_ref()).map_or("default", |server_name| server_name.as_str());
-    let server_info = app_state.config.get_server_info(server_name).await;
+    let server_info = app_state.config.get_server_info(server_name);
     let base_url = server_info.get_base_url();
     format!("{base_url}/token/{access_token}/{target_id}/{}/{}", playlist_item.xtream_cluster.as_stream_type(), playlist_item.virtual_id).into_response()
 }
@@ -285,7 +285,7 @@ async fn config(
         sources: config.sources.iter().map(map_source).collect(),
         proxy: config.proxy.clone(),
         ipcheck: config.ipcheck.clone(),
-        api_proxy: config_reader::read_api_proxy(app_state.config.t_api_proxy_file_path.as_str(), false),
+        api_proxy: config_reader::read_api_proxy(&app_state.config, false),
     };
 
     let mut result = match config_reader::read_config(app_state.config.t_config_path.as_str(),

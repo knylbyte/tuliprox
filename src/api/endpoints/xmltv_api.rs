@@ -185,7 +185,7 @@ async fn xmltv_api(
     axum::extract::Query(api_req): axum::extract::Query<UserApiRequest>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl IntoResponse + Send {
-    let Some((user, target)) = get_user_target(&api_req, &app_state).await else {
+    let Some((user, target)) = get_user_target(&api_req, &app_state) else {
         return axum::http::StatusCode::FORBIDDEN.into_response();
     };
 

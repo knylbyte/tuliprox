@@ -16,7 +16,7 @@ enum ConfigFile {
 }
 
 impl ConfigFile {
-    async fn load_mappping(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+    fn load_mappping(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
         match config_reader::read_mappings(app_state.config.t_mapping_file_path.as_str(), true) {
             Ok(Some(mappings_cfg)) => {
                 app_state.config.set_mappings(&mappings_cfg);
@@ -29,13 +29,13 @@ impl ConfigFile {
                 error!("Failed to load mapping file {err}");
                 return Err(err);
             }
-        };
+        }
 
         Ok(())
     }
 
-    async fn load_api_proxy(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
-        match config_reader::read_api_proxy_config(&app_state.config).await {
+    fn load_api_proxy(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+        match config_reader::read_api_proxy_config(&app_state.config) {
             Ok(()) => {
                 info!("Api Proxy File: {:?}", &app_state.config.t_api_proxy_file_path);
             }
@@ -46,13 +46,12 @@ impl ConfigFile {
         }
         Ok(())
     }
-    pub(crate) async fn reload(&self, file_path: &PathBuf, app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+    pub(crate) fn reload(&self, file_path: &PathBuf, app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
         debug!("File changed {file_path:?}");
         match self {
-            ConfigFile::Config => { Ok(()) }
-            ConfigFile::ApiProxy => ConfigFile::load_api_proxy(app_state).await,
-            ConfigFile::Mapping => ConfigFile::load_mappping(app_state).await,
-            ConfigFile::Sources => { Ok(()) }
+            ConfigFile::ApiProxy => ConfigFile::load_api_proxy(app_state),
+            ConfigFile::Mapping => ConfigFile::load_mappping(app_state),
+            ConfigFile::Config | ConfigFile::Sources => { Ok(()) }
         }
     }
 }
@@ -87,7 +86,7 @@ pub async fn exec_config_watch(app_state: &Arc<AppState>) -> Result<(), Tuliprox
                     if let EventKind::Access(AccessKind::Close(AccessMode::Write)) = event.kind {
                         for path in event.paths {
                             if let Some(config_file) = files.get(&path) {
-                                if let Err(err) = config_file.reload(&path, &watcher_app_state).await {
+                                if let Err(err) = config_file.reload(&path, &watcher_app_state) {
                                     error!("Failed to reload config file {path:?}: {err}");
                                 }
                             }

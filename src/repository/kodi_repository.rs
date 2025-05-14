@@ -590,7 +590,7 @@ pub async fn kodi_write_strm_playlist(
         )));
     };
 
-    let user_and_server_info = get_credentials_and_server_info(cfg, target_output.username.as_ref()).await;
+    let user_and_server_info = get_credentials_and_server_info(cfg, target_output.username.as_ref());
     let strm_index_path =
         strm_get_file_paths(&ensure_target_storage_path(cfg, target.name.as_str())?);
     let existing_strm = {
@@ -764,13 +764,13 @@ async fn has_strm_file_same_hash(file_path: &PathBuf, content_hash: UUIDType) ->
     false
 }
 
-async fn get_credentials_and_server_info(
+fn get_credentials_and_server_info(
     cfg: &Config,
     username: Option<&String>,
 ) -> Option<(ProxyUserCredentials, ApiProxyServerInfo)> {
     let username = username?;
     let credentials = cfg.get_user_credentials(username)?;
-    let server_info = cfg.get_user_server_info(&credentials).await;
+    let server_info = cfg.get_user_server_info(&credentials);
     Some((credentials, server_info))
 }
 

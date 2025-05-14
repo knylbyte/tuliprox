@@ -44,7 +44,7 @@ impl M3uPlaylistIterator {
 
         let filter = user_get_bouquet_filter(cfg, &user.username, None, TargetType::M3u, XtreamCluster::Live).await;
 
-        let server_info = cfg.get_user_server_info(user).await;
+        let server_info = cfg.get_user_server_info(user);
         Ok(Self {
             reader,
             base_url: server_info.get_base_url(),

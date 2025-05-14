@@ -44,7 +44,7 @@ pub(in crate::api) async fn handle_hls_stream_request(app_state: &Arc<AppState>,
                                                       input: &ConfigInput,
                                                       connection_permission: UserConnectionPermission) -> impl IntoResponse + Send {
     let url = replace_url_extension(hls_url, HLS_EXT);
-    let server_info = app_state.config.get_user_server_info(user).await;
+    let server_info = app_state.config.get_user_server_info(user);
 
     let (request_url, session_token) = match user_session {
         Some(session) => {
@@ -95,7 +95,7 @@ async fn hls_api_stream(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
     let (user, target) = try_option_bad_request!(
-        app_state.config.get_target_for_user(&params.username, &params.password).await, false,
+        app_state.config.get_target_for_user(&params.username, &params.password), false,
         format!("Could not find any user {}", params.username));
     if user.permission_denied(&app_state) {
         return axum::http::StatusCode::FORBIDDEN.into_response();

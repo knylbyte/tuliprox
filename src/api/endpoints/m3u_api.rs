@@ -22,7 +22,7 @@ async fn m3u_api(
     api_req: &UserApiRequest,
     app_state: &AppState,
 ) -> impl axum::response::IntoResponse + Send {
-    match get_user_target(api_req, app_state).await {
+    match get_user_target(api_req, app_state) {
         Some((user, target)) => {
             match m3u_load_rewrite_playlist(&app_state.config, target, &user).await {
                 Ok(m3u_iter) => {
@@ -67,7 +67,7 @@ async fn m3u_api_stream(
     axum::extract::Path((username, password, stream_id)): axum::extract::Path<(String, String, String)>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
-    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(&username, &password, &api_req, &app_state).await, false, format!("Could not find any user {username}"));
+    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(&username, &password, &api_req, &app_state), false, format!("Could not find any user {username}"));
     if user.permission_denied(&app_state) {
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -147,7 +147,7 @@ async fn m3u_api_resource(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
     let Ok(m3u_stream_id) = stream_id.parse::<u32>() else { return axum::http::StatusCode::BAD_REQUEST.into_response() };
-    let Some((user, target)) = get_user_target_by_credentials(&username, &password, &api_req, &app_state).await
+    let Some((user, target)) = get_user_target_by_credentials(&username, &password, &api_req, &app_state)
     else { return StatusCode::BAD_REQUEST.into_response() };
     if user.permission_denied(&app_state) {
         return StatusCode::FORBIDDEN.into_response();

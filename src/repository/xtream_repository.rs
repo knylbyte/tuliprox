@@ -516,7 +516,7 @@ pub fn xtream_load_vod_info(
     None
 }
 
-async fn rewrite_xtream_vod_info<P>(
+fn rewrite_xtream_vod_info<P>(
     config: &Config,
     target: &ConfigTarget,
     xtream_output: &XtreamTargetOutput,
@@ -531,7 +531,7 @@ async fn rewrite_xtream_vod_info<P>(
         if let Some(Value::Object(info_data)) = doc.get_mut(crate::model::XC_TAG_INFO_DATA) {
             let item_type = pli.get_item_type();
             if user.proxy.is_reverse(item_type) && !target.is_force_redirect(item_type) {
-                let server_info = config.get_user_server_info(user).await;
+                let server_info = config.get_user_server_info(user);
                 let url = server_info.get_base_url();
                 let resource_url = Some(format!("{url}/resource/movie/{}/{}/{}", user.username, user.password, pli.get_virtual_id()));
                 rewrite_doc_urls(resource_url.as_ref(), info_data, storage_const::INFO_REWRITE_FIELDS, crate::model::XC_INFO_RESOURCE_PREFIX);
@@ -562,7 +562,7 @@ async fn rewrite_xtream_vod_info<P>(
     Ok(result)
 }
 
-pub async fn rewrite_xtream_vod_info_content<P>(
+pub fn rewrite_xtream_vod_info_content<P>(
     config: &Config,
     target: &ConfigTarget,
     xtream_output: &XtreamTargetOutput,
@@ -573,7 +573,7 @@ pub async fn rewrite_xtream_vod_info_content<P>(
     P: PlaylistEntry,
 {
     let mut doc = serde_json::from_str::<Map<String, Value>>(content).map_err(|_| str_to_io_error("Failed to parse JSON content"))?;
-    rewrite_xtream_vod_info(config, target, xtream_output, pli, user, &mut doc).await
+    rewrite_xtream_vod_info(config, target, xtream_output, pli, user, &mut doc)
 }
 
 pub async fn write_and_get_xtream_vod_info<P>(
@@ -588,7 +588,7 @@ pub async fn write_and_get_xtream_vod_info<P>(
 {
     let mut doc = serde_json::from_str::<Map<String, Value>>(content).map_err(|_| str_to_io_error("Failed to parse JSON content"))?;
     xtream_write_vod_info(config, target.name.as_str(), pli.get_virtual_id(), content).await.ok();
-    rewrite_xtream_vod_info(config, target, xtream_output, pli, user, &mut doc).await
+    rewrite_xtream_vod_info(config, target, xtream_output, pli, user, &mut doc)
 }
 
 async fn rewrite_xtream_series_info<P>(
@@ -606,7 +606,7 @@ async fn rewrite_xtream_series_info<P>(
     let resource_url = if config.is_reverse_proxy_resource_rewrite_enabled() {
         let item_type = pli.get_item_type();
         if user.proxy.is_reverse(item_type) && !target.is_force_redirect(item_type) {
-            let server_info = config.get_user_server_info(user).await;
+            let server_info = config.get_user_server_info(user);
             let url = server_info.get_base_url();
             Some(format!("{url}/resource/series/{}/{}/{}", user.username, user.password, pli.get_virtual_id()))
         } else {

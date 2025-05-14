@@ -401,7 +401,8 @@ pub struct ApiProxyConfig {
 impl ApiProxyConfig {
     // we have the option to store user in the config file or in the user_db
     // When we switch from one to other we need to migrate the existing data.
-    fn migrate_api_user(&mut self, cfg: &Config, errors: &mut Vec<String>) {
+    /// # Panics
+    pub fn migrate_api_user(&mut self, cfg: &Config, errors: &mut Vec<String>) {
         if self.use_user_db {
             // we have user defined in config file.
             // we migrate them to the db and delete them from the config file

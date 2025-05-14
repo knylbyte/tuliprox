@@ -1,4 +1,9 @@
 # Changelog
+# 3.1.0 (2025-05-xx)
+- Fixed mapper transform capitalize.
+- Auto hot reload for `mapping.yml`and `api_proxy.yml`
+To enable set `config_hot_reload: true` in `config.yml`
+
 # 3.0.0 (2025-05-12)
 - !BREAKING_CHANGE! user has now the attribute `ui_enabled` to disable/enable web_ui for user.
     You need to migrate the user db if you have used `use_user_db:true`.

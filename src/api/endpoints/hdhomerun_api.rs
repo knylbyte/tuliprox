@@ -158,9 +158,9 @@ where
     }
 }
 
-async fn create_device(app_state: &Arc<HdHomerunAppState>) -> Option<Device> {
+fn create_device(app_state: &Arc<HdHomerunAppState>) -> Option<Device> {
     if let Some(credentials) = app_state.app_state.config.get_user_credentials(&app_state.device.t_username) {
-        let server_info = app_state.app_state.config.get_user_server_info(&credentials).await;
+        let server_info = app_state.app_state.config.get_user_server_info(&credentials);
         let device = &app_state.device;
         let device_url = format!("{}://{}:{}", server_info.protocol, server_info.host, device.port);
         Some(Device {
@@ -185,7 +185,7 @@ async fn create_device(app_state: &Arc<HdHomerunAppState>) -> Option<Device> {
 }
 
 async fn device_xml(axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
-    if let Some(device) = create_device(&app_state).await {
+    if let Some(device) = create_device(&app_state) {
         axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(axum::http::header::CONTENT_TYPE, "application/xml")
@@ -198,7 +198,7 @@ async fn device_xml(axum::extract::State(app_state): axum::extract::State<Arc<Hd
 }
 
 async fn device_json(axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
-    if let Some(device) = create_device(&app_state).await {
+    if let Some(device) = create_device(&app_state) {
         axum::Json(device).into_response()
     } else {
         axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -206,7 +206,7 @@ async fn device_json(axum::extract::State(app_state): axum::extract::State<Arc<H
 }
 
 async fn discover_json(axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
-    if let Some(device) = create_device(&app_state).await {
+    if let Some(device) = create_device(&app_state) {
         axum::Json(device).into_response()
     } else {
         axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -239,7 +239,7 @@ async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<Config>, credentia
             .body(axum::body::Body::from_stream(body_stream))
             .unwrap().into_response();
     } else if (use_all || use_xtream) && target.has_output(&TargetType::Xtream) {
-        let server_info = app_state.app_state.config.get_user_server_info(credentials).await;
+        let server_info = app_state.app_state.config.get_user_server_info(credentials);
         let base_url = server_info.get_base_url();
 
         let base_url_live = if credentials.proxy.is_redirect(PlaylistItemType::Live) || target.is_force_redirect(PlaylistItemType::Live) { None } else { Some(base_url.clone()) };
@@ -276,7 +276,7 @@ async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<Config>, credentia
 
 async fn auth_lineup_json(AuthBasic((username, password)): AuthBasic, axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
     let cfg = Arc::clone(&app_state.app_state.config);
-    if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username).await {
+    if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username) {
         if !username.eq(&credentials.username) || !password.eq(&credentials.password) {
             return axum::http::StatusCode::UNAUTHORIZED.into_response();
         }
@@ -288,7 +288,7 @@ async fn auth_lineup_json(AuthBasic((username, password)): AuthBasic, axum::extr
 
 async fn lineup_json(axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
     let cfg = Arc::clone(&app_state.app_state.config);
-    if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username).await {
+    if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username) {
         let user_credentials = Arc::new(credentials);
         return lineup(&app_state, &cfg, &user_credentials, target).await.into_response();
     }

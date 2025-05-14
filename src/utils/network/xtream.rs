@@ -81,7 +81,7 @@ where
     } else if cluster == XtreamCluster::Video {
         if let Some(content) = xtream_repository::xtream_load_vod_info(config, target.name.as_str(), pli.get_virtual_id()) {
             // Deliver existing target content
-            return rewrite_xtream_vod_info_content(config, target, xtream_output, pli, user, &content).await;
+            return rewrite_xtream_vod_info_content(config, target, xtream_output, pli, user, &content);
         }
         // Check if the content has been resolved
         if xtream_output.resolve_vod {

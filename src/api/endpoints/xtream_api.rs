@@ -168,7 +168,7 @@ pub(in crate::api) fn get_xtream_player_api_stream_url(
 }
 
 async fn get_user_info(user: &ProxyUserCredentials, app_state: &AppState) -> XtreamAuthorizationResponse {
-    let server_info = app_state.config.get_user_server_info(user).await;
+    let server_info = app_state.config.get_user_server_info(user);
     let active_connections = app_state.get_active_connections_for_user(&user.username).await;
     XtreamAuthorizationResponse::new(&server_info, user, active_connections, app_state.config.user_access_control)
 }
@@ -179,7 +179,7 @@ async fn xtream_player_api_stream(
     app_state: &Arc<AppState>,
     stream_req: XtreamApiStreamRequest<'_>,
 ) -> impl IntoResponse + Send {
-    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(stream_req.username, stream_req.password, api_req, app_state).await, false, format!("Could not find any user {}", stream_req.username));
+    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(stream_req.username, stream_req.password, api_req, app_state), false, format!("Could not find any user {}", stream_req.username));
     if user.permission_denied(app_state) {
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -456,7 +456,7 @@ async fn xtream_player_api_resource(
     app_state: &Arc<AppState>,
     resource_req: XtreamApiStreamRequest<'_>,
 ) -> impl IntoResponse {
-    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(resource_req.username, resource_req.password, api_req, app_state).await, false, format!("Could not find any user {}", resource_req.username));
+    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(resource_req.username, resource_req.password, api_req, app_state), false, format!("Could not find any user {}", resource_req.username));
     if user.permission_denied(app_state) {
         return axum::http::StatusCode::FORBIDDEN.into_response();
     }
@@ -737,7 +737,7 @@ async fn xtream_player_api(
     api_req: UserApiRequest,
     app_state: &Arc<AppState>,
 ) -> impl IntoResponse + Send {
-    let user_target = get_user_target(&api_req, app_state).await;
+    let user_target = get_user_target(&api_req, app_state);
     if let Some((user, target)) = user_target {
         if !target.has_output(&TargetType::Xtream) {
             return axum::response::Json(get_user_info(&user, app_state).await).into_response();

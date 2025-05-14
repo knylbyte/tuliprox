@@ -362,17 +362,21 @@ pub struct Config {
     #[serde(default)]
     pub update_on_boot: bool,
     #[serde(default)]
+    pub config_hot_reload: bool,
+    #[serde(default)]
     pub web_ui: Option<WebUiConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub messaging: Option<MessagingConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reverse_proxy: Option<ReverseProxyConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hdhomerun: Arc<ArcSwapOption<HdHomeRunConfig>>,
+    pub hdhomerun: Option<HdHomeRunConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy: Option<ProxyConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ipcheck: Option<IpCheckConfig>,
+    #[serde(skip)]
+    pub t_hdhomerun: Arc<ArcSwapOption<HdHomeRunConfig>>,
     #[serde(skip)]
     pub t_api_proxy: Arc<ArcSwapOption<ApiProxyConfig>>,
     #[serde(skip)]
@@ -400,14 +404,14 @@ pub struct Config {
 }
 
 impl Config {
-    pub async fn set_api_proxy(&self, api_proxy: Option<Arc<ApiProxyConfig>>) -> Result<(), TuliproxError> {
+    pub fn set_api_proxy(&self, api_proxy: Option<Arc<ApiProxyConfig>>) -> Result<(), TuliproxError> {
         self.t_api_proxy.store(api_proxy);
-        self.check_target_user().await
+        self.check_target_user()
     }
 
-    async fn check_username(&self, output_username: Option<&str>, target_name: &str) -> Result<(), TuliproxError> {
+    fn check_username(&self, output_username: Option<&str>, target_name: &str) -> Result<(), TuliproxError> {
         if let Some(username) = output_username {
-            if let Some((_, config_target)) = self.get_target_for_username(username).await {
+            if let Some((_, config_target)) = self.get_target_for_username(username) {
                 if config_target.name != target_name {
                     return create_tuliprox_error_result!(TuliproxErrorKind::Info, "User:{username} does not belong to target: {}", target_name);
                 }
@@ -419,27 +423,29 @@ impl Config {
             Ok(())
         }
     }
-    async fn check_target_user(&self) -> Result<(), TuliproxError> {
-        let check_homerun = self.hdhomerun.as_ref().is_some_and(|h| h.enabled);
+    fn check_target_user(&self) -> Result<(), TuliproxError> {
+        let check_homerun = self.t_hdhomerun.load().as_ref().is_some_and(|h| h.enabled);
         for source in &self.sources {
             for target in &source.targets {
                 for output in &target.output {
                     match output {
                         TargetOutput::Xtream(_) | TargetOutput::M3u(_) => {}
                         TargetOutput::Strm(strm_output) => {
-                            self.check_username(strm_output.username.as_deref(), &target.name).await?;
+                            self.check_username(strm_output.username.as_deref(), &target.name)?;
                         }
                         TargetOutput::HdHomeRun(hdhomerun_output) => {
                             if check_homerun {
                                 let hdhr_name = &hdhomerun_output.device;
-                                self.check_username(Some(&hdhomerun_output.username), &target.name).await?;
-                                if let Some(homerun) = &mut self.hdhomerun {
-                                    for device in &mut homerun.devices {
+                                self.check_username(Some(&hdhomerun_output.username), &target.name)?;
+                                if let Some(old_hdhomerun) =  self.t_hdhomerun.load().clone() {
+                                    let mut hdhomerun = (*old_hdhomerun).clone();
+                                    for device in &mut hdhomerun.devices {
                                         if &device.name == hdhr_name {
                                             device.t_username.clone_from(&hdhomerun_output.username);
                                             device.t_enabled = true;
                                         }
                                     }
+                                    self.t_hdhomerun.store(Some(Arc::new(hdhomerun)));
                                 }
                             }
                         }
@@ -448,7 +454,8 @@ impl Config {
             }
         }
 
-        if let Some(hdhomerun) = &self.hdhomerun {
+        let guard = self.t_hdhomerun.load();
+        if let Some(hdhomerun) = &*guard {
             for device in &hdhomerun.devices {
                 if !device.t_enabled {
                     debug!("HdHomeRun device '{}' has no username and will be disabled", device.name);
@@ -487,7 +494,7 @@ impl Config {
         None
     }
 
-    pub async fn get_target_for_username(&self, username: &str) -> Option<(ProxyUserCredentials, &ConfigTarget)> {
+    pub fn get_target_for_username(&self, username: &str) -> Option<(ProxyUserCredentials, &ConfigTarget)> {
         if let Some(credentials) = self.get_user_credentials(username) {
             return self.t_api_proxy.load().as_ref()
                 .and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name(&credentials.username, &credentials.password)));
@@ -495,11 +502,11 @@ impl Config {
         None
     }
 
-    pub async fn get_target_for_user(&self, username: &str, password: &str) -> Option<(ProxyUserCredentials, &ConfigTarget)> {
+    pub fn get_target_for_user(&self, username: &str, password: &str) -> Option<(ProxyUserCredentials, &ConfigTarget)> {
         self.t_api_proxy.load().as_ref().and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name(username, password)))
     }
 
-    pub async fn get_target_for_user_by_token(&self, token: &str) -> Option<(ProxyUserCredentials, &ConfigTarget)> {
+    pub fn get_target_for_user_by_token(&self, token: &str) -> Option<(ProxyUserCredentials, &ConfigTarget)> {
         self.t_api_proxy.load().as_ref().as_ref().and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name_by_token(token)))
     }
 
@@ -681,10 +688,12 @@ impl Config {
     }
 
     fn prepare_hdhomerun(&mut self) -> Result<(), TuliproxError> {
-        if let Some(hdhomerun) = self.hdhomerun.as_mut() {
+        if let Some(old_hdhomerun) =  &self.hdhomerun {
+            let mut hdhomerun = (*old_hdhomerun).clone();
             if hdhomerun.enabled {
                 hdhomerun.prepare(self.api.port)?;
             }
+            self.t_hdhomerun.store(Some(Arc::new(hdhomerun)));
         }
         Ok(())
     }
@@ -777,15 +786,15 @@ impl Config {
     /// # Panics
     ///
     /// Will panic if default server invalid
-    pub async fn get_server_info(&self, server_info_name: &str) -> ApiProxyServerInfo {
+    pub fn get_server_info(&self, server_info_name: &str) -> ApiProxyServerInfo {
         let guard = self.t_api_proxy.load();
         let server_info_list = guard.as_ref().unwrap().server.clone();
         server_info_list.iter().find(|c| c.name.eq(server_info_name)).map_or_else(|| server_info_list.first().unwrap().clone(), Clone::clone)
     }
 
-    pub async fn get_user_server_info(&self, user: &ProxyUserCredentials) -> ApiProxyServerInfo {
+    pub fn get_user_server_info(&self, user: &ProxyUserCredentials) -> ApiProxyServerInfo {
         let server_info_name = user.server.as_ref().map_or("default", |server_name| server_name.as_str());
-        self.get_server_info(server_info_name).await
+        self.get_server_info(server_info_name)
     }
 }
 

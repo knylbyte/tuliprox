@@ -10,7 +10,7 @@ mod modules;
 include_modules!();
 
 use crate::auth::password::generate_password;
-use crate::model::{validate_targets, Config, HealthcheckConfig, Healthcheck, ProcessTargets, LogLevelConfig};
+use crate::model::{validate_targets, Config, HealthcheckConfig, Healthcheck, ProcessTargets};
 use crate::processing::processor::playlist;
 use crate::utils::config_reader::config_file_reader;
 use utils::config_reader;
@@ -18,18 +18,11 @@ use crate::utils::file_utils;
 use crate::utils::request::{create_client, set_sanitize_sensitive_info};
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use env_logger::Builder;
-use log::{error, info, LevelFilter};
+use log::{error, info};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
-const LOG_ERROR_LEVEL_MOD: &[&str] = &[
-    "reqwest::async_impl::client",
-    "reqwest::connect",
-    "hyper_util::client",
-];
-
+use crate::utils::logging::init_logger;
 
 #[derive(Parser)]
 #[command(name = "tuliprox")]
@@ -105,8 +98,7 @@ fn main() {
     let api_proxy_file = args.api_proxy.unwrap_or_else(|| file_utils::get_default_api_proxy_config_path(config_path.as_str()));
     let mappings_file = args.mapping_file.unwrap_or_else(|| file_utils::get_default_mappings_path(config_path.as_str()));
 
-    let env_log_level = std::env::var("TULIPROX_LOG");
-    init_logger(args.log_level.as_ref(), env_log_level.ok(), config_file.as_str());
+    init_logger(args.log_level.as_ref(), config_file.as_str());
 
     if args.healthcheck {
         healthcheck(config_file.as_str());
@@ -150,14 +142,10 @@ fn main() {
         }
     }
 
-    // if cfg.t_channel_unavailable_video.is_some() {
-    //     info!("Channel unavailable video loaded from {:?}", cfg.channel_unavailable_file.as_ref().map_or("?", |v| v.as_str()));
-    // }
-
     let rt = tokio::runtime::Runtime::new().unwrap();
     let () = rt.block_on(async {
         if args.server {
-            match config_reader::read_api_proxy_config(&cfg).await {
+            match config_reader::read_api_proxy_config(&cfg) {
                 Ok(()) => {}
                 Err(err) => exit!("{err}"),
             }
@@ -209,51 +197,6 @@ async fn start_in_server_mode(cfg: Arc<Config>, targets: Arc<ProcessTargets>) {
     if let Err(err) = api::main_api::start_server(cfg, targets).await {
         exit!("Can't start server: {err}");
     }
-}
-
-fn get_log_level(log_level: &str) -> LevelFilter {
-    match log_level.to_lowercase().as_str() {
-        "trace" => LevelFilter::Trace,
-        "debug" => LevelFilter::Debug,
-        "warn" => LevelFilter::Warn,
-        "error" => LevelFilter::Error,
-        // "info" => LevelFilter::Info,
-        _ => LevelFilter::Info,
-    }
-}
-
-fn init_logger(user_log_level: Option<&String>, env_log_level: Option<String>, config_file: &str) {
-    let mut log_builder = Builder::from_default_env();
-
-    // priority  CLI-Argument, Env-Var, Config, Default
-    let log_level = user_log_level
-        .map(std::string::ToString::to_string) // cli-argument
-        .or(env_log_level) // env
-        .or_else(|| {               // config
-            File::open(config_file).ok()
-                .and_then(|file| serde_yaml::from_reader::<_, LogLevelConfig>(config_file_reader(file, true))
-                    .map_err(|e| error!("Failed to parse log config file: {e}"))
-                    .ok())
-                .and_then(|cfg| cfg.log.and_then(|l| l.log_level))
-        })
-        .unwrap_or_else(|| "info".to_string()); // Default
-
-    if log_level.contains('=') {
-        for pair in log_level.split(',').filter(|s| s.contains('=')) {
-            let mut kv_iter = pair.split('=').map(str::trim);
-            if let (Some(module), Some(level)) = (kv_iter.next(), kv_iter.next()) {
-                log_builder.filter_module(module, get_log_level(level));
-            }
-        }
-    } else {
-        // Set the log level based on the parsed value
-        log_builder.filter_level(get_log_level(&log_level));
-    }
-    for module in LOG_ERROR_LEVEL_MOD {
-        log_builder.filter_module(module, LevelFilter::Error);
-    }
-    log_builder.init();
-    info!("Log Level {}", get_log_level(&log_level));
 }
 
 fn healthcheck(config_file: &str) {
