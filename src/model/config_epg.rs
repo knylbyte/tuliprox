@@ -1,13 +1,24 @@
+use crate::tuliprox_error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use crate::utils::CONSTANTS;
 use log::warn;
 use regex::Regex;
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
-use crate::utils::CONSTANTS;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(untagged)]
-pub enum EpgUrl {
-    Single(String),
-    Multi(Vec<String>),
+#[serde(deny_unknown_fields)]
+pub struct EpgSource {
+    pub(crate) url: String,
+    #[serde(default)]
+    pub priority: i16,
+}
+
+impl EpgSource {
+    pub fn prepare(&mut self) {
+        self.url = self.url.trim().to_string();
+    }
+
+    pub fn is_valid(&self) -> bool {
+        !self.url.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
@@ -137,12 +148,14 @@ impl Default for EpgSmartMatchConfig {
 pub struct EpgConfig {
     #[serde(default)]
     pub auto_epg: bool,
+    #[serde(default)]
+    pub auto_epg_priority: i16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<EpgUrl>,
+    pub sources: Option<Vec<EpgSource>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub smart_match: Option<EpgSmartMatchConfig>,
     #[serde(skip)]
-    pub t_urls: Vec<String>,
+    pub t_sources: Vec<EpgSource>,
     #[serde(skip)]
     pub t_smart_match: EpgSmartMatchConfig,
 }
@@ -150,18 +163,15 @@ pub struct EpgConfig {
 impl EpgConfig {
     pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         if include_computed {
-            self.t_urls = self.url.as_ref().map_or_else(Vec::new, |epg_url| {
-                match epg_url {
-                    EpgUrl::Single(url) => if url.trim().is_empty() {
-                        vec![]
-                    } else {
-                        vec![url.trim().to_string()]
-                    },
-                    EpgUrl::Multi(urls) =>
-                        urls.iter().map(|url| url.trim().to_string())
-                            .filter(|s| !s.is_empty())
-                            .collect()
+            self.t_sources = self.sources.as_mut().map_or_else(Vec::new, |epg_sources| {
+                let mut result = Vec::new();
+                for mut epg_source in epg_sources.drain(..) {
+                    epg_source.prepare();
+                    if epg_source.is_valid() {
+                        result.push(epg_source);
+                    }
                 }
+                result
             });
 
             self.t_smart_match = match self.smart_match.as_mut() {

@@ -59,6 +59,7 @@ impl XmlTag {
 
 #[derive(Debug, Clone)]
 pub struct Epg {
+    pub priority: i16,
     pub attributes: Option<HashMap<String, String>>,
     pub children: Vec<XmlTag>,
 }
@@ -78,6 +79,26 @@ impl Epg {
 }
 
 #[derive(Debug, Clone)]
+pub struct PersistedEpgSource {
+    pub file_path: PathBuf,
+    pub priority: i16,
+}
+
+#[derive(Debug, Clone)]
 pub struct TVGuide {
-    pub file_paths: Vec<PathBuf>,
+    epg_sources: Vec<PersistedEpgSource>,
+}
+
+impl TVGuide {
+    pub fn new(mut epg_sources: Vec<PersistedEpgSource>) -> Self {
+        epg_sources.sort_by(|a, b| a.priority.cmp(&b.priority));
+        Self {
+            epg_sources,
+        }
+    }
+
+    #[inline]
+    pub fn get_epg_sources(&self) -> &Vec<PersistedEpgSource> {
+        &self.epg_sources
+    }
 }

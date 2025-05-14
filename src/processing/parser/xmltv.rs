@@ -1,4 +1,4 @@
-use crate::model::{EpgNamePrefix, EpgSmartMatchConfig};
+use crate::model::{EpgNamePrefix, EpgSmartMatchConfig, PersistedEpgSource};
 use crate::model::{Epg, TVGuide, XmlTag, EPG_ATTRIB_CHANNEL, EPG_ATTRIB_ID, EPG_TAG_CHANNEL, EPG_TAG_DISPLAY_NAME, EPG_TAG_ICON, EPG_TAG_PROGRAMME, EPG_TAG_TV};
 use crate::processing::processor::epg::EpgIdCache;
 use crate::utils::compressed_file_reader::CompressedFileReader;
@@ -9,9 +9,9 @@ use quick_xml::Reader;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::borrow::Cow;
 use std::cmp::min;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
+use std::collections::hash_map::Entry;
 use std::mem;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -96,6 +96,7 @@ impl TVGuide {
         let first_epg_attributes = epgs.get_mut(0).unwrap().attributes.take();
         let merged_children: Vec<XmlTag> = epgs.into_iter().flat_map(|epg| epg.children).collect();
         Some(Epg {
+            priority: 0,
             attributes: first_epg_attributes,
             children: merged_children,
         })
@@ -203,13 +204,13 @@ impl TVGuide {
     ///
     /// ```
     /// let mut id_cache = EpgIdCache::default();
-    /// let epg_file = Path::new("guide.xml.gz");
-    /// if let Some(epg) = process_epg_file(&mut id_cache, epg_file) {
+    /// let epg_source = PersistedEpgSource { file_path: Path::new("guide.xml.gz"), priority: 0 };
+    /// if let Some(epg) = process_epg_file(&mut id_cache, &epg_source) {
     ///     assert!(!epg.children.is_empty());
     /// }
     /// ```
-    fn process_epg_file(id_cache: &mut EpgIdCache, epg_file: &Path) -> Option<Epg> {
-        match CompressedFileReader::new(epg_file) {
+    fn process_epg_file(id_cache: &mut EpgIdCache, epg_source: &PersistedEpgSource) -> Option<Epg> {
+        match CompressedFileReader::new(&epg_source.file_path) {
             Ok(mut reader) => {
                 let mut children: Vec<XmlTag> = vec![];
                 let mut tv_attributes: Option<HashMap<String, String>> = None;
@@ -259,6 +260,7 @@ impl TVGuide {
                 }
 
                 Some(Epg {
+                    priority: epg_source.priority,
                     attributes: tv_attributes,
                     children,
                 })
@@ -271,8 +273,8 @@ impl TVGuide {
         if id_cache.channel_epg_id.is_empty() && id_cache.normalized.is_empty() {
             return None;
         }
-        let epgs: Vec<Epg> = self.file_paths.iter()
-            .filter_map(|path| Self::process_epg_file(id_cache, path))
+        let epgs: Vec<Epg> = self.get_epg_sources().iter()
+            .filter_map(|epg_source| Self::process_epg_file(id_cache, epg_source))
             .collect();
         if epgs.len() == 1 {
             epgs.into_iter().next()
@@ -402,25 +404,49 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
         let epg_children = Mutex::new(Vec::new());
         let epg_attributes = tv_guides.first().and_then(|t| t.attributes.clone());
         let count = tv_guides.iter().map(|tvg| tvg.children.len()).sum();
-        let channel_ids: RwLock<HashSet<&String>> = RwLock::new(HashSet::with_capacity(count));
-        tv_guides.par_iter().for_each(|guide| {
+        let channel_mapping: RwLock<HashMap<String, i16>> = RwLock::new(HashMap::with_capacity(count));
+
+        let mut sorted_guides = tv_guides.to_vec();
+        // sort by priority
+        sorted_guides.sort_by(|a, b| a.priority.cmp(&b.priority));
+
+        sorted_guides.par_iter().for_each(|guide| {
             let mut children = vec![];
             guide.children.iter().for_each(|c| {
                 if c.name.as_str() == EPG_TAG_CHANNEL {
                     if let Some(chan_id) = c.get_attribute_value(EPG_ATTRIB_ID) {
-                        let channel_id_exists = channel_ids.read().unwrap().contains(&chan_id);
-                        if !channel_id_exists {
-                            channel_ids.write().unwrap().insert(chan_id);
-                            children.push(c.clone());
+                        let should_add = {
+                            let channel_map = channel_mapping.read().unwrap();
+                            // if not stored
+                            !channel_map.contains_key(chan_id) ||
+                                // or if priority is higher (less means higher priority)
+                                channel_map.get(chan_id).is_none_or(|&priority| guide.priority < priority)
+                        };
+                        if should_add {
+                            let mut channel_map = channel_mapping.write().unwrap();
+                            match channel_map.entry(chan_id.to_string()) {
+                                Entry::Vacant(e) => {
+                                    e.insert(guide.priority);
+                                    children.push(c.clone());
+                                }
+                                Entry::Occupied(mut e) if guide.priority < *e.get() => {
+                                    e.insert(guide.priority);
+                                    children.push(c.clone());
+                                }
+                                Entry::Occupied(_) => {}
+                            }
                         }
                     }
                 }
             });
             guide.children.iter().for_each(|c| {
                 if c.name.as_str() == EPG_TAG_PROGRAMME {
-                    if let Some(chan_id) = c.get_attribute_value(EPG_TAG_CHANNEL) {
-                        if channel_ids.read().unwrap().contains(&chan_id) {
-                            children.push(c.clone());
+                    if let Some(chan_id) = c.get_attribute_value(EPG_ATTRIB_CHANNEL) {
+                        let channel_map = channel_mapping.read().unwrap();
+                        if let Some(&stored_priority) = channel_map.get(chan_id) {
+                            if stored_priority == guide.priority {
+                                children.push(c.clone());
+                            }
                         }
                     }
                 }
@@ -429,6 +455,7 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
             epg_children.lock().unwrap().extend(children);
         });
         let epg = Epg {
+            priority: 0,
             attributes: epg_attributes,
             children: mem::take(&mut *epg_children.lock().unwrap()),
         };

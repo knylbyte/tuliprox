@@ -1,5 +1,5 @@
 use crate::tuliprox_error::TuliproxError;
-use crate::model::{Config, ConfigInput};
+use crate::model::{Config, ConfigInput, PersistedEpgSource};
 use crate::model::TVGuide;
 use crate::repository::storage::short_hash;
 use crate::utils::file_utils;
@@ -26,10 +26,10 @@ pub async fn get_xmltv(client: Arc<reqwest::Client>, _cfg: &Config, input: &Conf
             let mut errors = vec![];
             let mut file_paths = vec![];
 
-            for url in &epg_config.t_urls {
-                match download_epg_file(url, &client, input, working_dir).await {
+            for epg_source in &epg_config.t_sources {
+                match download_epg_file(&epg_source.url, &client, input, working_dir).await {
                     Ok(file_path) => {
-                        file_paths.push(file_path);
+                        file_paths.push(PersistedEpgSource {file_path, priority: epg_source.priority});
                     }
                     Err(err) => {
                         errors.push(err);
@@ -40,7 +40,7 @@ pub async fn get_xmltv(client: Arc<reqwest::Client>, _cfg: &Config, input: &Conf
             if file_paths.is_empty() {
                 (None, errors)
             } else {
-                (Some(TVGuide { file_paths }), errors)
+                (Some(TVGuide::new(file_paths)), errors)
             }
         }
     }
