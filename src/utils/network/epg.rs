@@ -28,7 +28,7 @@ pub async fn get_xmltv(client: Arc<reqwest::Client>, _cfg: &Config, input: &Conf
             for epg_source in &epg_config.t_sources {
                 match download_epg_file(&epg_source.url, &client, input, working_dir).await {
                     Ok(file_path) => {
-                        file_paths.push(PersistedEpgSource {file_path, priority: epg_source.priority});
+                        file_paths.push(PersistedEpgSource {file_path, priority: epg_source.priority, logo_override: epg_source.logo_override});
                     }
                     Err(err) => {
                         errors.push(err);

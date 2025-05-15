@@ -137,8 +137,8 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
         if let Some(epg) = tv_guide.filter(id_cache) {
             // // icon tags
             let icon_tags: HashMap<&String, &XmlTag> = epg.children.iter()
-                .filter(|tag| tag.icon.is_some() && tag.get_attribute_value(EPG_ATTRIB_ID).is_some())
-                .map(|t| (t.get_attribute_value(EPG_ATTRIB_ID).unwrap(), t)).collect();
+                    .filter(|tag| tag.icon.is_some() && tag.get_attribute_value(EPG_ATTRIB_ID).is_some())
+                    .map(|t| (t.get_attribute_value(EPG_ATTRIB_ID).unwrap(), t)).collect();
 
             let filter_live = |c: &&mut PlaylistItem| c.header.xtream_cluster == XtreamCluster::Live;
             // let filter_missing_epg_id = |chan: &mut PlaylistItem| chan.header.epg_channel_id.is_none() || chan.header.logo.is_empty() || chan.header.logo_small.is_empty();
@@ -158,13 +158,13 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
                         }
                     }
                 }
-                if chan.header.epg_channel_id.is_some() && (chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
+                if chan.header.epg_channel_id.is_some() && (epg.logo_override || chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
                     if let Some(icon_tag) = icon_tags.get(chan.header.epg_channel_id.as_ref().unwrap()) {
                         if let Some(icon) = icon_tag.icon.as_ref() {
-                            if chan.header.logo.is_empty() {
+                            if epg.logo_override || chan.header.logo.is_empty() {
                                 chan.header.logo = (*icon).to_string();
                             }
-                            if chan.header.logo_small.is_empty() {
+                            if epg.logo_override || chan.header.logo_small.is_empty() {
                                 chan.header.logo_small = (*icon).to_string();
                             }
                         }

@@ -96,6 +96,7 @@ impl TVGuide {
         let first_epg_attributes = epgs.get_mut(0).unwrap().attributes.take();
         let merged_children: Vec<XmlTag> = epgs.into_iter().flat_map(|epg| epg.children).collect();
         Some(Epg {
+            logo_override: false,
             priority: 0,
             attributes: first_epg_attributes,
             children: merged_children,
@@ -261,6 +262,7 @@ impl TVGuide {
                 }
 
                 Some(Epg {
+                    logo_override: epg_source.logo_override,
                     priority: epg_source.priority,
                     attributes: tv_attributes,
                     children,
@@ -456,6 +458,7 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
             epg_children.lock().unwrap().extend(children);
         });
         let epg = Epg {
+            logo_override: false,
             priority: 0,
             attributes: epg_attributes,
             children: mem::take(&mut *epg_children.lock().unwrap()),

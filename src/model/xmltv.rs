@@ -60,6 +60,7 @@ impl XmlTag {
 #[derive(Debug, Clone)]
 pub struct Epg {
     pub priority: i16,
+    pub logo_override: bool,
     pub attributes: Option<HashMap<String, String>>,
     pub children: Vec<XmlTag>,
 }
@@ -82,6 +83,7 @@ impl Epg {
 pub struct PersistedEpgSource {
     pub file_path: PathBuf,
     pub priority: i16,
+    pub logo_override: bool,
 }
 
 #[derive(Debug, Clone)]
