@@ -65,7 +65,7 @@ pub fn generate_random_string(length: usize) -> String {
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
-    use crate::utils::generate_random_string;
+    use crate::utils::{generate_random_string, Capitalize};
 
     #[test]
     fn test_generate_random_string() {
@@ -75,4 +75,10 @@ mod test {
         }
         assert_eq!(strings.len(), 100);
     }
+
+    #[test]
+    fn test_capitalize() {
+        assert_eq!("hELLO".capitalize(), "Hello");
+    }
+
 }

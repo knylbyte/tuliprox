@@ -48,7 +48,7 @@ impl ConfigFile {
         Ok(())
     }
     pub(crate) fn reload(&self, file_path: &PathBuf, app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
-        debug!("File changed {file_path:?}");
+        debug!("File change detected {file_path:?}");
         match self {
             ConfigFile::ApiProxy => ConfigFile::load_api_proxy(app_state),
             ConfigFile::Mapping => ConfigFile::load_mappping(app_state),

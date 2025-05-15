@@ -36,6 +36,30 @@ epg:
   **Note:** This is a lexicographic sort — so `m_10.yml` comes before `m_2.yml` unless you name files carefully (e.g., `m_01.yml`, `m_02.yml`, ..., `m_10.yml`).
 - Added `mapping_path` to `config.yml`. 
 
+- Added list template for sequences. List templates can only be used for sequences.
+```yaml
+templates:
+ - name: CHAN_SEQ
+   value:
+   - '(?i)\bUHD\b'
+   - '(?i)\bFHD\b'
+```
+
+The template can now be used for sequence 
+```yaml
+  sort:
+    groups:
+      order: asc
+    channels:
+      - field: caption
+        group_pattern: "!US_TNT_ENTERTAIN!"
+        order: asc
+        sequence:
+          - "!CHAN_SEQ!"
+          - '(?i)\bHD\b'
+          - '(?i)\bSD\b'
+```
+
 # 3.0.0 (2025-05-12)
 - !BREAKING_CHANGE! user has now the attribute `ui_enabled` to disable/enable web_ui for user.
     You need to migrate the user db if you have used `use_user_db:true`.

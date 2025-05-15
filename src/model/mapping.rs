@@ -8,14 +8,14 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
 
-use crate::foundation::filter::{apply_templates_to_pattern, get_filter, prepare_templates, Filter, PatternTemplate, RegexWithCaptures, ValueProcessor};
+use crate::foundation::filter::{apply_templates_to_pattern_single, get_filter, prepare_templates, Filter, PatternTemplate, RegexWithCaptures, ValueProcessor};
+use crate::model::valid_property;
+use crate::model::{FieldGetAccessor, FieldSetAccessor, PlaylistItem};
+use crate::model::ItemField;
 use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result, info_err};
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
-use crate::model::valid_property;
-use crate::model::{ItemField};
-use crate::model::{FieldGetAccessor, FieldSetAccessor, PlaylistItem};
-use crate::utils::CONSTANTS;
 use crate::utils::Capitalize;
+use crate::utils::CONSTANTS;
 
 pub const COUNTER_FIELDS: &[&str] = &["name", "title", "caption", "chno"];
 
@@ -179,7 +179,7 @@ impl MapperTransform {
                 match templates {
                     None => {}
                     Some(template_list) => {
-                        new_pattern = apply_templates_to_pattern(pattern, template_list);
+                        new_pattern = apply_templates_to_pattern_single(pattern, template_list)?;
                     }
                 }
                 match Regex::new(&new_pattern) {
@@ -225,7 +225,7 @@ impl Mapper {
             }
 
             if let Some(template_list) = templates {
-                let new_value = apply_templates_to_pattern(value, template_list);
+                let new_value = apply_templates_to_pattern_single(value, template_list)?;
                 if new_value != *value {
                     self.attributes.insert(key.clone(), new_value);
                 }

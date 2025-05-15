@@ -1,5 +1,5 @@
 use regex::Regex;
-use crate::foundation::filter::{apply_templates_to_pattern, PatternTemplate};
+use crate::foundation::filter::{apply_templates_to_pattern, apply_templates_to_pattern_single, PatternTemplate, TemplateValue};
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error, handle_tuliprox_error_result_list};
 use crate::model::{ItemField};
 
@@ -35,15 +35,23 @@ pub struct ConfigSortGroup {
 
 
 impl ConfigSortGroup {
+
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
-        // Transform sequence with templates if provided, otherwise use raw sequence
         let processed_sequence = match (&self.sequence, templates) {
-            (Some(seqs), Some(tmpls)) => Some(seqs.iter().map(|s| apply_templates_to_pattern(s, tmpls)).collect()),
+            (Some(seqs), Some(tmpls)) => {
+                let mut result = Vec::new();
+                for s in seqs {
+                    match apply_templates_to_pattern(s, tmpls, true)? {
+                        TemplateValue::Single(val) => result.push(val),
+                        TemplateValue::Multi(vals) => result.extend(vals),
+                    }
+                }
+                Some(result)
+            },
             (Some(seqs), None) => Some(seqs.clone()),
             (None, _) => None,
         };
 
-        // Compile regex patterns
         self.t_re_sequence = compile_regex_vec(processed_sequence.as_ref())?;
         Ok(())
     }
@@ -68,7 +76,7 @@ pub struct ConfigSortChannel {
 impl ConfigSortChannel {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         if let Some(templ) =  templates {
-            self.group_pattern = apply_templates_to_pattern(&self.group_pattern, templ);
+            self.group_pattern = apply_templates_to_pattern_single(&self.group_pattern, templ)?;
         }
         // Compile group_pattern
         self.t_re_group_pattern = Some(
@@ -79,7 +87,16 @@ impl ConfigSortChannel {
 
         // Transform sequence with templates if provided, otherwise use raw sequence
         let processed_sequence = match (&self.sequence, templates) {
-            (Some(seqs), Some(tmpls)) => Some(seqs.iter().map(|s| apply_templates_to_pattern(s, tmpls)).collect()),
+            (Some(seqs), Some(tmpls)) => {
+                let mut result = Vec::new();
+                for s in seqs {
+                    match apply_templates_to_pattern(s, tmpls, true)? {
+                        TemplateValue::Single(val) => result.push(val),
+                        TemplateValue::Multi(vals) => result.extend(vals),
+                    }
+                }
+                Some(result)
+            },
             (Some(seqs), None) => Some(seqs.clone()),
             (None, _) => None,
         };

@@ -1,4 +1,4 @@
-use crate::foundation::filter::{apply_templates_to_pattern, PatternTemplate};
+use crate::foundation::filter::{apply_templates_to_pattern_single, PatternTemplate};
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
 use crate::model::ItemField;
 
@@ -15,7 +15,7 @@ pub struct ConfigRename {
 impl ConfigRename {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         if let Some(templ) = templates {
-            self.pattern = apply_templates_to_pattern(&self.pattern, templ);
+            self.pattern = apply_templates_to_pattern_single(&self.pattern, templ)?;
         }
         match regex::Regex::new(&self.pattern) {
             Ok(pattern) => {
