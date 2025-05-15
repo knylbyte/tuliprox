@@ -1,20 +1,27 @@
 # Changelog
 # 3.1.0 (2025-05-xx)
 
-- !BREAKING_CHANGE! epg config. Added priority, url config is now renamed to sources, priority is `optional`
-The `priority` value determines the importance or order of processing. Lower numbers mean higher priority. That is:
+- !BREAKING_CHANGE! epg refactored
+  - url config is now renamed to sources
+  - Added `priority`, priority is `optional`
+  - `auto_epg` is now removed, use `url: auto` instead.
+  - Added `logo_override` to overwrite logo from epg.
+
+**Npte:** The `priority` value determines the importance or order of processing. Lower numbers mean higher priority. That is:
 A `priority` of `0` is higher than `1`. **Negative numbers** are allowed and represent even higher priority
+
 ```yaml
 epg:
   sources:
+    - url: "auto"
+      priority: -2
+      logo_override: true
     - url: "http://localhost:3001/xmltv.php?epg_id=1"
       priority: -1
     - url: "http://localhost:3001/xmltv.php?epg_id=2"
       priority: 3
     - url: "http://localhost:3001/xmltv.php?epg_id=3"
       priority: 0
-    - url: "http://localhost:3001/xmltv.php?epg_id=4"
-      priority: 1
   smart_match:
     enabled: true
     fuzzy_matching: true
@@ -59,6 +66,7 @@ The template can now be used for sequence
           - '(?i)\bHD\b'
           - '(?i)\bSD\b'
 ```
+
 
 # 3.0.0 (2025-05-12)
 - !BREAKING_CHANGE! user has now the attribute `ui_enabled` to disable/enable web_ui for user.

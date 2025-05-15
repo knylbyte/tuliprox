@@ -9,6 +9,8 @@ pub struct EpgSource {
     pub(crate) url: String,
     #[serde(default)]
     pub priority: i16,
+    #[serde(default)]
+    pub logo_override: bool,
 }
 
 impl EpgSource {
@@ -146,10 +148,6 @@ impl Default for EpgSmartMatchConfig {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EpgConfig {
-    #[serde(default)]
-    pub auto_epg: bool,
-    #[serde(default)]
-    pub auto_epg_priority: i16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sources: Option<Vec<EpgSource>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
