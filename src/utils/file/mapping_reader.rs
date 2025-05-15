@@ -128,11 +128,11 @@ pub fn read_mappings(mappings_file: &str, resolve_env: bool) -> Result<Option<Ma
             } else if metadata.is_dir() {
                 read_mappings_from_directory(&path, resolve_env)
             } else {
-                Err(TuliproxError::new(TuliproxErrorKind::Info, format!("cant read mappings file: {mappings_file}")))
+                Ok(None)
             }
         }
         Err(_err) => {
-            Err(TuliproxError::new(TuliproxErrorKind::Info, format!("cant read mappings file: {mappings_file}")))
+            Ok(None)
         }
     }
 }

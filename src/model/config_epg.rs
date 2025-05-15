@@ -40,7 +40,7 @@ pub struct EpgSmartMatchConfig {
     pub strip: Option<Vec<String>>,
     #[serde(default)]
     pub name_prefix: EpgNamePrefix,
-    #[serde(skip)]
+    #[serde(default)]
     pub name_prefix_separator: Option<Vec<char>>,
     #[serde(default)]
     pub fuzzy_matching: bool,

@@ -120,20 +120,23 @@ fn main() {
 
     let targets = validate_targets(args.target.as_ref(), &cfg.sources).unwrap_or_else(|err| exit!("{}", err));
 
-    match utils::read_mappings(mappings_file.as_str(), true) {
-        Ok(Some(mappings)) => cfg.set_mappings(&mappings),
-        Ok(None) => {},
-        Err(err) => exit!("{err}"),
-    }
-
     info!("Current time: {}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"));
+    info!("Temp dir: {temp_path:?}");
     info!("Working dir: {:?}", &cfg.working_dir);
     info!("Config dir: {:?}", &cfg.t_config_path);
     info!("Config file: {:?}", &cfg.t_config_file_path);
     info!("Source file: {:?}", &cfg.t_sources_file_path);
-    info!("Mapping file: {:?}", cfg.t_mapping_file_path);
     info!("Api Proxy File: {:?}", cfg.t_api_proxy_file_path);
-    info!("Temp dir: {temp_path:?}");
+    match utils::read_mappings(mappings_file.as_str(), true) {
+        Ok(Some(mappings)) => {
+            info!("Mapping file: {:?}", cfg.t_mapping_file_path);
+            cfg.set_mappings(&mappings);
+        }
+        Ok(None) => {
+            info!("Mapping file: not used");
+        },
+        Err(err) => error!("{err}"),
+    }
     if let Some(cache) = cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
         if cache.enabled {
             info!("Cache dir: {:?}", cache.dir.as_ref().unwrap_or(&String::new()));
