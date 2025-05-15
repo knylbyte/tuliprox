@@ -141,11 +141,9 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
                     .map(|t| (t.get_attribute_value(EPG_ATTRIB_ID).unwrap(), t)).collect();
 
             let filter_live = |c: &&mut PlaylistItem| c.header.xtream_cluster == XtreamCluster::Live;
-            // let filter_missing_epg_id = |chan: &mut PlaylistItem| chan.header.epg_channel_id.is_none() || chan.header.logo.is_empty() || chan.header.logo_small.is_empty();
-            let filter_missing_epg_id = |chan: &&mut PlaylistItem| chan.header.epg_channel_id.is_none();
 
             let assign_values = |chan: &mut PlaylistItem| {
-                if id_cache.smart_match_enabled {
+                if id_cache.smart_match_enabled  && chan.header.epg_channel_id.is_none() {
                     // if the channel has no epg_id  or the epg_id is not present in xmltv/tvguide then we need to match one from existing tvguide
                     let not_processed = match &chan.header.epg_channel_id {
                         None => true,
@@ -175,7 +173,6 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
             fp.playlistgroups.iter_mut()
                 .flat_map(|g| &mut g.channels)
                 .filter(filter_live)
-                .filter(filter_missing_epg_id)
                 .for_each(assign_values);
             new_epg.push(epg);
         }

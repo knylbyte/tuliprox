@@ -548,6 +548,12 @@ epg:
 `strip :  ["3840p", "uhd", "fhd", "hd", "sd", "4k", "plus", "raw"]`  this is the defualt
 `normalize_regex: [^a-zA-Z0-9\-]`   is the default
 
+The fuzzy matching tries to guess the EPG ID for a given channel. Some keys are generated based on the channel name for similarity search.
+When looking at playlists, it's common for a country prefix to be included in the name, such as `US:` or `FR|`.
+The `name_prefix_separator` defines the possible separator characters used to identify this part.
+For EPG IDs, the country code is typically added as a suffix, like cnn.us. This is controlled by the name_prefix attribute. 
+The `!suffix '.'` setting means: if a prefix is found, append it to the name using the given separator character (in this case, a dot).
+
 ```yaml
 # single epg
 url: 'https://localhost.com/epg.xml'
@@ -1029,9 +1035,10 @@ Attributes is a map of key value pairs. Valid keys are:
 - `id`
 - `epg_channel_id` or `epg_id`
 - `chno`
-- `name`
 - `group`
+- `name`
 - `title`
+- `caption` (for `title and `name`)
 - `logo`
 - `logo_small`
 - `parent_code`
@@ -1111,9 +1118,10 @@ If the regexps matches, the given fields will be prefixed to field value
 Attributes is a map of key value pairs. Valid keys and values are:
 - `id`
 - `chno`
-- `name`
 - `group`
+- `name`
 - `title`
+- `caption` (for `title and `name`)
 - `logo`
 - `logo_small`
 - `parent_code`
