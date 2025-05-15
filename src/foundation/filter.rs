@@ -651,7 +651,9 @@ pub fn apply_templates_to_pattern(
             TemplateValue::Single(_) => {}
             TemplateValue::Multi(multi_vals) => {
                 match multi_vals.len().cmp(&1) {
-                    Ordering::Less => {}
+                    Ordering::Less => {
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Empty multi value templates are not supported for pattern! {pattern}");
+                    }
                     Ordering::Equal => {
                         new_pattern = TemplateValue::Single(multi_vals.first().unwrap().to_owned());
                     }
