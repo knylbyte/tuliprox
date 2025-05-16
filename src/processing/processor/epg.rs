@@ -1,6 +1,6 @@
+use crate::model::{Epg, TVGuide, XmlTag, EPG_ATTRIB_ID};
 use crate::model::{EpgConfig, EpgSmartMatchConfig};
 use crate::model::{FetchedPlaylist, PlaylistItem, XtreamCluster};
-use crate::model::{Epg, XmlTag, EPG_ATTRIB_ID};
 use crate::processing::parser::xmltv::normalize_channel_name;
 use log::debug;
 use rphonetic::{DoubleMetaphone, Encoder};
@@ -134,46 +134,57 @@ impl EpgIdCache<'_> {
 /// ```
 fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache: &mut EpgIdCache) {
     if let Some(tv_guide) = &fp.epg {
-        if let Some(epg) = tv_guide.filter(id_cache) {
-            // // icon tags
-            let icon_tags: HashMap<&String, &XmlTag> = epg.children.iter()
+        let mut processed_epgs = vec![];
+        if let Some(epg_sources) = tv_guide.filter(id_cache) {
+            let mut icon_assigned = HashSet::new();
+            for epg_source in epg_sources {
+                // icon tags
+                let icon_tags: HashMap<&String, &XmlTag> = epg_source.children.iter()
                     .filter(|tag| tag.icon.is_some() && tag.get_attribute_value(EPG_ATTRIB_ID).is_some())
                     .map(|t| (t.get_attribute_value(EPG_ATTRIB_ID).unwrap(), t)).collect();
 
-            let filter_live = |c: &&mut PlaylistItem| c.header.xtream_cluster == XtreamCluster::Live;
-
-            let assign_values = |chan: &mut PlaylistItem| {
-                if id_cache.smart_match_enabled  && chan.header.epg_channel_id.is_none() {
-                    // if the channel has no epg_id  or the epg_id is not present in xmltv/tvguide then we need to match one from existing tvguide
-                    let not_processed = match &chan.header.epg_channel_id {
-                        None => true,
-                        Some(epg_id) => !id_cache.processed.contains(epg_id),
-                    };
-                    if not_processed {
-                        let normalized = id_cache.normalize(&chan.header.name);
-                        if let Some(epg_id) = id_cache.normalized.get(&normalized) {
-                            chan.header.epg_channel_id.clone_from(epg_id);
-                        }
-                    }
-                }
-                if chan.header.epg_channel_id.is_some() && (epg.logo_override || chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
-                    if let Some(icon_tag) = icon_tags.get(chan.header.epg_channel_id.as_ref().unwrap()) {
-                        if let Some(icon) = icon_tag.icon.as_ref() {
-                            if epg.logo_override || chan.header.logo.is_empty() {
-                                chan.header.logo = (*icon).to_string();
-                            }
-                            if epg.logo_override || chan.header.logo_small.is_empty() {
-                                chan.header.logo_small = (*icon).to_string();
+                let assign_values = |chan: &mut PlaylistItem| {
+                    if id_cache.smart_match_enabled && chan.header.epg_channel_id.is_none() {
+                        // if the channel has no epg_id  or the epg_id is not present in xmltv/tvguide then we need to match one from existing tvguide
+                        let not_processed = match &chan.header.epg_channel_id {
+                            None => true,
+                            Some(epg_id) => !id_cache.processed.contains(epg_id),
+                        };
+                        if not_processed {
+                            let normalized = id_cache.normalize(&chan.header.name);
+                            if let Some(epg_id) = id_cache.normalized.get(&normalized) {
+                                chan.header.epg_channel_id.clone_from(epg_id);
                             }
                         }
                     }
-                }
-            };
+                    if let Some(epg_channel_id) = chan.header.epg_channel_id.as_ref() {
+                        if !icon_assigned.contains(epg_channel_id) &&
+                            (epg_source.logo_override || chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
+                            if let Some(icon_tag) = icon_tags.get(chan.header.epg_channel_id.as_ref().unwrap()) {
+                                icon_assigned.insert(epg_channel_id.to_string());
+                                if let Some(icon) = icon_tag.icon.as_ref() {
+                                    if epg_source.logo_override || chan.header.logo.is_empty() {
+                                        chan.header.logo = (*icon).to_string();
+                                    }
+                                    if epg_source.logo_override || chan.header.logo_small.is_empty() {
+                                        chan.header.logo_small = (*icon).to_string();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
 
-            fp.playlistgroups.iter_mut()
-                .flat_map(|g| &mut g.channels)
-                .filter(filter_live)
-                .for_each(assign_values);
+                let filter_live = |c: &&mut PlaylistItem| c.header.xtream_cluster == XtreamCluster::Live;
+                fp.playlistgroups.iter_mut()
+                    .flat_map(|g| &mut g.channels)
+                    .filter(filter_live)
+                    .for_each(assign_values);
+                processed_epgs.push(epg_source);
+            }
+        }
+
+        if let Some(epg) = TVGuide::merge(processed_epgs) {
             new_epg.push(epg);
         }
     }
