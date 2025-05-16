@@ -147,7 +147,7 @@ mod tests {
         let mut channels: Vec<PlaylistItem> = vec![
             ("D", "HD"), ("A", "FHD"), ("Z", "HD"), ("K", "HD"), ("B", "HD"), ("A", "HD"),
             ("K", "UHD"), ("C", "HD"), ("L", "FHD"), ("R", "UHD"), ("T", "SD"), ("A", "FHD"),
-        ].into_iter().map(|(name, quality)| PlaylistItem { header: PlaylistItemHeader { title: format!("Chanel {name} [{quality}]"), ..Default::default() } }).collect::<Vec<PlaylistItem>>().into();
+        ].into_iter().map(|(name, quality)| PlaylistItem { header: PlaylistItemHeader { title: format!("Chanel {name} [{quality}]"), ..Default::default() } }).collect::<Vec<PlaylistItem>>();
 
         let channel_sort = ConfigSortChannel {
             field: ItemField::Caption,
@@ -195,7 +195,7 @@ mod tests {
             "US| East d",
             "US| West e",
             "US| West f",
-        ].into_iter().map(|name| PlaylistItem { header: PlaylistItemHeader { title: name.to_string(), ..Default::default() } }).collect::<Vec<PlaylistItem>>().into();
+        ].into_iter().map(|name| PlaylistItem { header: PlaylistItemHeader { title: name.to_string(), ..Default::default() } }).collect::<Vec<PlaylistItem>>();
 
         let channel_sort = ConfigSortChannel {
             field: ItemField::Caption,

@@ -57,21 +57,18 @@ mod tests {
         let run_me = || runs.fetch_add(1, Ordering::SeqCst);
 
         let start = std::time::Instant::now();
-        match Schedule::from_str(expression) {
-            Ok(schedule) => {
-                let offset = *Local::now().offset();
-                loop {
-                    let mut upcoming = schedule.upcoming(offset).take(1);
-                    if let Some(datetime) = upcoming.next() {
-                        tokio::time::sleep_until(tokio::time::Instant::from(datetime_to_instant(datetime))).await;
-                        run_me();
-                    }
-                    if runs.load(Ordering::SeqCst) == 6 {
-                        break;
-                    }
+        if let Ok(schedule) = Schedule::from_str(expression) {
+            let offset = *Local::now().offset();
+            loop {
+                let mut upcoming = schedule.upcoming(offset).take(1);
+                if let Some(datetime) = upcoming.next() {
+                    tokio::time::sleep_until(tokio::time::Instant::from(datetime_to_instant(datetime))).await;
+                    run_me();
+                }
+                if runs.load(Ordering::SeqCst) == 6 {
+                    break;
                 }
             }
-            Err(_) => {}
         }
         let duration = start.elapsed();
 

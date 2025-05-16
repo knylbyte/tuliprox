@@ -63,8 +63,8 @@ mod tests {
     fn test_valid_token() {
         let secret = b"37c30f739e83ba27b4c17b174c31f3a9";
         let token = create_access_token(secret, 1);
-        assert_eq!(verify_access_token(token.as_str(), secret), true);
+        assert!(verify_access_token(token.as_str(), secret));
         thread::sleep(std::time::Duration::from_secs(2));
-        assert_eq!(verify_access_token(token.as_str(), secret), false);
+        assert!(!verify_access_token(token.as_str(), secret));
     }
 }

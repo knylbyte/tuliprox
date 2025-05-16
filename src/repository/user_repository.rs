@@ -474,6 +474,6 @@ mod tests {
         let user_list = load_api_user(&cfg);
         assert!(user_list.is_ok());
         assert_eq!(user_list.as_ref().unwrap().len(), 1);
-        assert_eq!(user_list.as_ref().unwrap().get(0).unwrap().credentials.len(), 4);
+        assert_eq!(user_list.as_ref().unwrap().first().unwrap().credentials.len(), 4);
     }
 }

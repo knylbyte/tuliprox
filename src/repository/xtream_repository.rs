@@ -253,7 +253,7 @@ pub async fn xtream_write_playlist(
         match json_write_documents_to_file(&col_path, data) {
             Ok(()) => {}
             Err(err) => {
-                errors.push(format!("Persisting collection failed: {col_path:?}: {err}"));
+                errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
             }
         }
     }

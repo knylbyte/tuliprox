@@ -520,7 +520,7 @@ mod tests {
         epg_smart_cfg.enabled = true;
         epg_smart_cfg.name_prefix = EpgNamePrefix::Suffix(".".to_string());
         let _ = epg_smart_cfg.prepare();
-        println!("{:?}", epg_smart_cfg);
+        println!("{epg_smart_cfg:?}");
         assert_eq!("supersport6.ru", normalize_channel_name("RU: SUPERSPORT 6 ᴿᴬᵂ", &epg_smart_cfg));
         assert_eq!("odisea.sat", normalize_channel_name("SAT: ODISEA ᴿᴬᵂ", &epg_smart_cfg));
         assert_eq!("odisea.4k", normalize_channel_name("4K: ODISEA ᵁᴴᴰ ³⁸⁴⁰ᴾ", &epg_smart_cfg));
@@ -549,7 +549,7 @@ mod tests {
         epg_smart_cfg.enabled = true;
         epg_smart_cfg.name_prefix = EpgNamePrefix::Suffix(".".to_string());
         let _ = epg_smart_cfg.prepare();
-        println!("{:?}", epg_smart_cfg);
+        println!("{epg_smart_cfg:?}");
         // assert_eq!("supersport6.ru", metaphone.encode(&normalize_channel_name("RU: SUPERSPORT 6 ᴿᴬᵂ", &epg_normalize_cfg)));
         // assert_eq!("odisea.sat", metaphone.encode(&normalize_channel_name("SAT: ODISEA ᴿᴬᵂ", &epg_normalize_cfg)));
         // assert_eq!("odisea", metaphone.encode(&normalize_channel_name("4K: ODISEA ᵁᴴᴰ ³⁸⁴⁰ᴾ", &epg_normalize_cfg)));

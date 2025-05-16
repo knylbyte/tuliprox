@@ -78,7 +78,7 @@ mod tests {
     fn test_obfuscate() {
         let secret: [u8; 16] = rand::rng().random(); // Random IV (AES-CBC 16 Bytes)
         let plain = "hello world";
-        let encrypted = obfuscate_text(&secret, &plain);
+        let encrypted = obfuscate_text(&secret, plain);
         let decrypted = deobfuscate_text(&secret, &encrypted.unwrap()).unwrap();
 
         assert_eq!(decrypted, plain);

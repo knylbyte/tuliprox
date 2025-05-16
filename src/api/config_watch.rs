@@ -47,8 +47,8 @@ impl ConfigFile {
         }
         Ok(())
     }
-    pub(crate) fn reload(&self, file_path: &PathBuf, app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
-        debug!("File change detected {file_path:?}");
+    pub(crate) fn reload(&self, file_path: &Path, app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+        debug!("File change detected {}", file_path.display());
         match self {
             ConfigFile::ApiProxy => ConfigFile::load_api_proxy(app_state),
             ConfigFile::Mapping => ConfigFile::load_mappping(app_state),
@@ -80,7 +80,7 @@ pub async fn exec_config_watch(app_state: &Arc<AppState>) -> Result<(), Tuliprox
     let path = Path::new(app_state.config.t_config_path.as_str());
     let recursive_mode = if utils::is_directory(&app_state.config.t_mapping_file_path) { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
     watcher.watch(path, recursive_mode).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to start config file watcher {err}")))?;
-    info!("Watching config file changes {path:?}");
+    info!("Watching config file changes {}", path.display());
 
     let watcher_app_state = Arc::clone(app_state);
     tokio::spawn(async move {
@@ -92,13 +92,13 @@ pub async fn exec_config_watch(app_state: &Arc<AppState>) -> Result<(), Tuliprox
                         for path in event.paths {
                             if let Some((config_file, _is_dir)) = files.get(&path) {
                                 if let Err(err) = config_file.reload(&path, &watcher_app_state) {
-                                    error!("Failed to reload config file {path:?}: {err}");
+                                    error!("Failed to reload config file {}: {err}", path.display());
                                 }
                             } else if recursive_mode == RecursiveMode::Recursive && path.extension().is_some_and(|ext| ext == "yml") {
                                 for (key, (config_file, is_dir)) in &files {
                                     if *is_dir && path.starts_with(key) {
                                         if let Err(err) = config_file.reload(&path, &watcher_app_state) {
-                                            error!("Failed to reload config file {path:?}: {err}");
+                                            error!("Failed to reload config file {}: {err}", path.display());
                                         }
                                     }
                                 }
