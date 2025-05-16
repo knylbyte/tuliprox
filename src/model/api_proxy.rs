@@ -174,6 +174,7 @@ impl FromStr for ProxyUserStatus {
 
     fn from_str(s: &str) -> Result<Self, TuliproxError> {
         match s {
+            Self::ACTIVE => Ok(Self::Active),
             Self::EXPIRED => Ok(Self::Expired),
             Self::BANNED => Ok(Self::Banned),
             Self::TRIAL => Ok(Self::Trial),
