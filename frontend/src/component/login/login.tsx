@@ -41,9 +41,12 @@ export default function Login(): JSX.Element {
 
 
     return <>
-        <div className={'login-view__logo'}>{appLogo}</div>
+        <div className={'login-view__logo'}>{getIconByName('Logo')}</div>
         <div className={'login-view'}>
-            <div className={'login-view__title'}>Login to {appTitle}</div>
+            <div className={'login-view__header'}>
+                <div className={'login-view__header-logo'}>{appLogo}</div>
+                <div className={'login-view__header-title'}>Login to {appTitle}</div>
+            </div>
             <form>
                 <div className="login-view__form">
                     <input ref={usernameRef} type="text" name="username" placeholder="username" autoFocus={true}/>
