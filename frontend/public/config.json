@@ -1,6 +1,6 @@
 {
   "app_title": "tuliprox",
-  "app_logo": null,
+  "app_logo": "assets/tuliprox-logo.svg",
   "api": {
     "apiUrl": "/api/v1/",
     "authUrl": "/auth/"

@@ -151,7 +151,7 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Confi
             if let Some(status_value) = value.get("status") {
                 if let Some(status) = utils::get_string_from_serde_value(status_value) {
                     if let Ok(cur_status) = ProxyUserStatus::from_str(&status) {
-                        if matches!(cur_status,  ProxyUserStatus::Active | ProxyUserStatus::Trial) {
+                        if !matches!(cur_status,  ProxyUserStatus::Active | ProxyUserStatus::Trial) {
                             warn!("User status for user {username} is {cur_status:?}");
                             send_message(client, &MsgKind::Info, cfg.messaging.as_ref(), &format!("User status for user {username} is {cur_status:?}"));
                         }
@@ -167,7 +167,7 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Confi
                             let now_secs = now.as_secs();
                             if expiration_ts > now_secs {
                                 let time_left = expiration_ts - now_secs;
-                                if time_left > 3 * 24 * 60 * 60 {
+                                if time_left < 3 * 24 * 60 * 60 {
                                     let datetime = DateTime::from_timestamp(expiration_timestamp, 0).unwrap();
                                     let formatted = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
                                     warn!("User account for user {username} expires {formatted}");
