@@ -4,7 +4,7 @@ use crate::processing::processor::epg::EpgIdCache;
 use crate::utils::compressed_file_reader::CompressedFileReader;
 use crate::utils::CONSTANTS;
 use deunicode::deunicode;
-use quick_xml::events::{BytesStart, BytesText, Event};
+use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::Reader;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::borrow::Cow;
@@ -364,6 +364,10 @@ where
         match reader.read_event_into(&mut buf) {
             Ok(Event::Eof) => break,
             Ok(Event::Start(e)) => handle_tag_start(callback, &mut stack, &e),
+            Ok(Event::Empty(e)) => {
+                handle_tag_start(callback, &mut stack, &e);
+                handle_tag_end(callback, &mut stack);
+            },
             Ok(Event::End(_e)) => handle_tag_end(callback, &mut stack),
             Ok(Event::Text(e)) => handle_text_tag(&mut stack, &e),
             _ => {}

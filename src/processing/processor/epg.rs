@@ -161,8 +161,8 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
                         if !icon_assigned.contains(epg_channel_id) &&
                             (epg_source.logo_override || chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
                             if let Some(icon_tag) = icon_tags.get(chan.header.epg_channel_id.as_ref().unwrap()) {
-                                icon_assigned.insert(epg_channel_id.to_string());
                                 if let Some(icon) = icon_tag.icon.as_ref() {
+                                    icon_assigned.insert(epg_channel_id.to_string());
                                     if epg_source.logo_override || chan.header.logo.is_empty() {
                                         chan.header.logo = (*icon).to_string();
                                     }
