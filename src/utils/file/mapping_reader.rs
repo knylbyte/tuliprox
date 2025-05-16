@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::foundation::filter::PatternTemplate;
 use crate::model::{Mapping, MappingDefinition, MappingTag, Mappings};
-use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
+use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::traverse_dir;
 use crate::utils::{config_file_reader, open_file};
 use log::{warn};
@@ -13,7 +13,7 @@ fn read_mapping(mapping_file: &Path, resolve_var: bool, prepare_mappings: bool) 
         return match maybe_mapping {
             Ok(mut mapping) => {
                 if prepare_mappings {
-                    handle_tuliprox_error_result!(TuliproxErrorKind::Info, mapping.prepare());
+                    mapping.prepare()?;
                 }
                 Ok(Some(mapping))
             }

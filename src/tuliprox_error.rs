@@ -120,8 +120,8 @@ impl Error for TuliproxError {}
 pub fn to_io_error<E>(err: E) -> std::io::Error
 where
     E: std::error::Error,
-{ std::io::Error::new(std::io::ErrorKind::Other, err.to_string()) }
+{ std::io::Error::other(err.to_string()) }
 
 pub fn str_to_io_error(err: &str) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::Other, err.to_string())
+    std::io::Error::other(err.to_string())
 }

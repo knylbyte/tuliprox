@@ -65,7 +65,7 @@ pub async fn get_xtream_stream_info<P>(client: Arc<reqwest::Client>,
 where
     P: PlaylistEntry,
 {
-    let xtream_output = target.get_xtream_output().ok_or_else(|| Error::new(std::io::ErrorKind::Other, "Unexpected error, missing xtream output"))?;
+    let xtream_output = target.get_xtream_output().ok_or_else(|| Error::other("Unexpected error, missing xtream output"))?;
 
     if cluster == XtreamCluster::Series {
         if let Some(content) = xtream_repository::xtream_load_series_info(config, target.name.as_str(), pli.get_virtual_id()) {

@@ -121,7 +121,7 @@ fn main() {
     let targets = validate_targets(args.target.as_ref(), &cfg.sources).unwrap_or_else(|err| exit!("{}", err));
 
     info!("Current time: {}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"));
-    info!("Temp dir: {temp_path:?}");
+    info!("Temp dir: {}", temp_path.display());
     info!("Working dir: {:?}", &cfg.working_dir);
     info!("Config dir: {:?}", &cfg.t_config_path);
     info!("Config file: {:?}", &cfg.t_config_file_path);
@@ -135,7 +135,7 @@ fn main() {
         Ok(None) => {
             info!("Mapping file: not used");
         },
-        Err(err) => error!("{err}"),
+        Err(err) => exit!("{err}"),
     }
     if let Some(cache) = cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
         if cache.enabled {

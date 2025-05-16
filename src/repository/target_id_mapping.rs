@@ -119,7 +119,7 @@ impl TargetIdMapping {
 impl Drop for TargetIdMapping {
     fn drop(&mut self) {
         if let Err(err) = self.persist() {
-            error!("Failed to persist target id mapping {:?} err:{err}", &self.path);
+            error!("Failed to persist target id mapping {} err:{err}", &self.path.display());
         }
     }
 }

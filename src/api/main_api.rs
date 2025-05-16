@@ -36,7 +36,7 @@ fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std
     let web_dir_path = PathBuf::from(&web_dir);
     if web_ui_enabled && (!&web_dir_path.exists() || !&web_dir_path.is_dir()) {
         return Err(std::io::Error::new(ErrorKind::NotFound,
-                                       format!("web_root does not exists or is not an directory: {:?}", &web_dir_path)));
+                                       format!("web_root does not exists or is not an directory: {}", web_dir_path.display())));
     }
     Ok(web_dir_path)
 }
@@ -224,7 +224,7 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
         Err(err) => return Err(err)
     };
     if web_ui_enabled {
-        infos.push(format!("Web root: {:?}", &web_dir_path));
+        infos.push(format!("Web root: {}", web_dir_path.display()));
     }
     let app_shared_data = create_shared_data(&cfg).await;
     let app_state = Arc::new(app_shared_data);

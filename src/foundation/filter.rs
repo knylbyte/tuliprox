@@ -14,7 +14,6 @@ use crate::model::{PlaylistItem, PlaylistItemType};
 use crate::tools::directed_graph::DirectedGraph;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
 use crate::utils::CONSTANTS;
-use crate::utils::exit;
 
 pub fn get_field_value(pli: &PlaylistItem, field: &ItemField) -> String {
     let header = &pli.header;
@@ -351,7 +350,7 @@ fn get_parser_expression(
     expr: Pair<Rule>,
     templates: &Vec<PatternTemplate>,
     errors: &mut Vec<String>,
-) -> Filter {
+) -> Result<Filter, String> {
     let mut stmts = Vec::with_capacity(128);
     let pairs = expr.into_inner();
     let mut bop: Option<BinaryOperator> = None;
@@ -374,10 +373,17 @@ fn get_parser_expression(
                 }
             }
             Rule::comparison | Rule::expr => {
-                handle_expr!(bop, uop, stmts, get_parser_expression(pair, templates, errors));
+                match get_parser_expression(pair, templates, errors) {
+                    Ok(expr) => handle_expr!(bop, uop, stmts, expr),
+                    Err(err) => return Err(err),
+                }
+
             }
             Rule::expr_group => {
-                handle_expr!(bop, uop, stmts, Filter::Group(Box::new(get_parser_expression(pair.into_inner().next().unwrap(), templates, errors))));
+                match get_parser_expression(pair.into_inner().next().unwrap(), templates, errors) {
+                    Ok(expr) => handle_expr!(bop, uop, stmts, Filter::Group(Box::new(expr))),
+                    Err(err) => return Err(err),
+                }
             }
             Rule::not => {
                 uop = Some(UnaryOperator::Not);
@@ -396,13 +402,13 @@ fn get_parser_expression(
         }
     }
     if stmts.is_empty() {
-        exit!("Invalid Filter, could not parse {errors:?}")
+        return Err(format!("Invalid Filter, could not parse {errors:?}"));
     }
     if stmts.len() > 1 {
-        exit!("did not expect multiple rule: {stmts:?}, {errors:?}");
+        return Err(format!("did not expect multiple rule: {stmts:?}, {errors:?}"));
     }
 
-    stmts.pop().unwrap()
+    Ok(stmts.pop().unwrap())
 }
 
 fn get_parser_binary_op(expr: &Pair<Rule>) -> Result<BinaryOperator, TuliproxError> {
@@ -436,18 +442,21 @@ pub fn get_filter(
                         for expr in pair.into_inner() {
                             match expr.as_rule() {
                                 Rule::expr => {
-                                    let expr =
-                                        get_parser_expression(expr, template_list, &mut errors);
-                                    match &op {
-                                        Some(binop) => {
-                                            result = Some(Filter::BinaryExpression(
-                                                Box::new(result.unwrap()),
-                                                binop.clone(),
-                                                Box::new(expr),
-                                            ));
-                                            op = None;
+                                    match get_parser_expression(expr, template_list, &mut errors) {
+                                        Ok(expr) => {
+                                            match &op {
+                                                Some(binop) => {
+                                                    result = Some(Filter::BinaryExpression(
+                                                        Box::new(result.unwrap()),
+                                                        binop.clone(),
+                                                        Box::new(expr),
+                                                    ));
+                                                    op = None;
+                                                }
+                                                _ => result = Some(expr),
+                                            }
                                         }
-                                        _ => result = Some(expr),
+                                        Err(err) => errors.push(err),
                                     }
                                 }
                                 Rule::bool_op => {
@@ -752,29 +761,26 @@ mod tests {
                     })
                     .collect();
                 assert_eq!(filtered.len(), 2);
-                assert_eq!(
+                assert!(
                     filtered.iter().any(|&chan| {
                         let group = chan.header.group.to_string();
                         let name = chan.header.name.to_string();
                         name.eq("24/7: Cars") && group.eq("FR Channels")
-                    }),
-                    true
+                    })
                 );
-                assert_eq!(
+                assert!(
                     filtered.iter().any(|&chan| {
                         let group = chan.header.group.to_string();
                         let name = chan.header.name.to_string();
                         name.eq("Entertainment") && group.eq("US Channels")
-                    }),
-                    true
+                    })
                 );
-                assert_eq!(
-                    filtered.iter().any(|&chan| {
+                assert!(
+                    !filtered.iter().any(|&chan| {
                         let group = chan.header.group.to_string();
                         let name = chan.header.name.to_string();
                         name.eq("24/7: Cars") && group.eq("US Channels")
-                    }),
-                    false
+                    })
                 );
             }
             Err(e) => {
@@ -870,13 +876,12 @@ mod tests {
                     })
                     .collect();
                 assert_eq!(filtered.len(), 1);
-                assert_eq!(
+                assert!(
                     filtered.iter().any(|&chan| {
                         let group = chan.header.group.to_string();
                         let name = chan.header.name.to_string();
                         name.eq("Entertainment") && group.eq("US Channels")
-                    }),
-                    true
+                    })
                 );
             }
             Err(e) => {

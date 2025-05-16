@@ -185,29 +185,29 @@ mod tests {
     use crate::utils::resolve_env_var;
     use std::io::{BufReader, Cursor};
 
-    const M3U_BATCH: &str = r#"
+    const M3U_BATCH: &str = r"
 #url;name;max_connections;priority
 http://hd.providerline.com:8080/get.php?username=user1&password=user1&type=m3u_plus;input_1
 http://hd.providerline.com/get.php?username=user2&password=user2&type=m3u_plus;input_2;1;2
 http://hd.providerline.com/get.php?username=user3&password=user3&type=m3u_plus;input_3;1;2
 http://hd.providerline.com/get.php?username=user4&password=user4&type=m3u_plus;input_4
-"#;
+";
 
-    const XTREAM_BATCH: &str = r#"
+    const XTREAM_BATCH: &str = r"
 #name;username;password;url;max_connections
 input_1;desanocra;eyCG8SN523KQ;http://provider_1.tv:80;1
 input_2;desanocra;eyCG8SN523KQ;http://provider_2.tv:8080;1
-"#;
+";
 
     #[test]
     fn test_read_inputs_xtream_as_m3u() {
         let reader = BufReader::new(Cursor::new(XTREAM_BATCH));
         let result = csv_read_inputs_from_reader(InputType::M3uBatch, reader);
-        assert_eq!(result.is_ok(), true);
+        assert!(result.is_ok());
         let aliases = result.unwrap();
-        assert_eq!(aliases.is_empty(), false);
+        assert!(!aliases.is_empty());
         for config in aliases {
-            assert_eq!(config.url.contains("username"), true);
+            assert!(config.url.contains("username"));
         }
     }
 
@@ -215,11 +215,11 @@ input_2;desanocra;eyCG8SN523KQ;http://provider_2.tv:8080;1
     fn test_read_inputs_m3u_as_m3u() {
         let reader = BufReader::new(Cursor::new(M3U_BATCH));
         let result = csv_read_inputs_from_reader(InputType::M3uBatch, reader);
-        assert_eq!(result.is_ok(), true);
+        assert!(result.is_ok());
         let aliases = result.unwrap();
-        assert_eq!(aliases.is_empty(), false);
+        assert!(!aliases.is_empty());
         for config in aliases {
-            assert_eq!(config.url.contains("username"), true);
+            assert!(config.url.contains("username"));
         }
     }
 
@@ -227,11 +227,11 @@ input_2;desanocra;eyCG8SN523KQ;http://provider_2.tv:8080;1
     fn test_read_inputs_xtream_as_xtream() {
         let reader = BufReader::new(Cursor::new(XTREAM_BATCH));
         let result = csv_read_inputs_from_reader(InputType::XtreamBatch, reader);
-        assert_eq!(result.is_ok(), true);
+        assert!(result.is_ok());
         let aliases = result.unwrap();
-        assert_eq!(aliases.is_empty(), false);
+        assert!(!aliases.is_empty());
         for config in aliases {
-            assert_eq!(config.url.contains("username"), false);
+            assert!(!config.url.contains("username"));
         }
     }
 
@@ -239,11 +239,11 @@ input_2;desanocra;eyCG8SN523KQ;http://provider_2.tv:8080;1
     fn test_read_inputs_m3u_as_xtream() {
         let reader = BufReader::new(Cursor::new(M3U_BATCH));
         let result = csv_read_inputs_from_reader(InputType::XtreamBatch, reader);
-        assert_eq!(result.is_ok(), true);
+        assert!(result.is_ok());
         let aliases = result.unwrap();
-        assert_eq!(aliases.is_empty(), false);
+        assert!(!aliases.is_empty());
         for config in aliases {
-            assert_eq!(config.url.contains("username"), false);
+            assert!(!config.url.contains("username"));
         }
     }
 

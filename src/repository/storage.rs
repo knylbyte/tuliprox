@@ -57,7 +57,7 @@ pub(in crate::repository) fn get_target_id_mapping_file(target_path: &Path) -> P
 pub fn ensure_target_storage_path(cfg: &Config, target_name: &str) -> Result<PathBuf, TuliproxError> {
     if let Some(path) = get_target_storage_path(cfg, target_name) {
         if std::fs::create_dir_all(&path).is_err() {
-            let msg = format!("Failed to save target data, can't create directory {path:?}");
+            let msg = format!("Failed to save target data, can't create directory {}", path.display());
             return Err(notify_err!(msg));
         }
         Ok(path)

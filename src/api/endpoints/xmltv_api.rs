@@ -237,7 +237,7 @@ mod tests {
         assert_eq!(parse_timeshift(Some(&String::from("-0:10"))), Some(-10));
         assert_eq!(parse_timeshift(Some(&String::from("invalid"))), None);
         assert_eq!(parse_timeshift(Some(&String::from("+abc"))), None);
-        assert_eq!(parse_timeshift(Some(&String::from(""))), None);
+        assert_eq!(parse_timeshift(Some(&String::new())), None);
         assert_eq!(parse_timeshift(None), None);
     }
 }

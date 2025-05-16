@@ -211,8 +211,8 @@ mod tests {
     use std::collections::HashSet;
 
     fn are_vecs_equal(vec1: &Vec<&str>, vec2: Vec<&str>) -> bool {
-        let set1: HashSet<String> = vec1.iter().map(|s| s.to_string()).collect();
-        let set2: HashSet<String> = vec2.iter().map(|s| s.to_string()).collect();
+        let set1: HashSet<String> = vec1.iter().map(|s| (*s).to_string()).collect();
+        let set2: HashSet<String> = vec2.iter().map(|s| (*s).to_string()).collect();
 
         set1 == set2
     }

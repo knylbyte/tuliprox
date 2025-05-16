@@ -218,7 +218,7 @@ async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &Config
 
                 file.flush()?;
                 let elapsed = start_time.elapsed().as_secs();
-                debug!("File downloaded successfully to {file_path:?}, took:{}", format_elapsed_time(elapsed));
+                debug!("File downloaded successfully to {}, took:{}", file_path.display(), format_elapsed_time(elapsed));
                 Ok(file_path.to_path_buf())
             } else {
                 Err(str_to_io_error(&format!("Request failed with status {} {}", response.status(), sanitize_sensitive_info(url.as_str()))))
@@ -304,7 +304,7 @@ pub async fn download_text_content_as_file(client: Arc<reqwest::Client>, input: 
             url.to_file_path().map_or_else(|()| Err(Error::new(ErrorKind::Unsupported, format!("Unknown file {}", sanitize_sensitive_info(url_str)))), |file_path| if file_path.exists() {
                 Ok(file_path)
             } else {
-                Err(Error::new(ErrorKind::NotFound, format!("Unknown file {file_path:?}")))
+                Err(Error::new(ErrorKind::NotFound, format!("Unknown file {}", file_path.display())))
             })
         } else {
             let file_path = persist_filepath.map_or_else(|| match get_input_storage_path(&input.name, working_dir) {

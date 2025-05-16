@@ -115,7 +115,7 @@ where
         // Initialize the index tree (BPlusTree) - either by deserializing an existing one or creating a new one
         let index_tree = if append_mode && index_path.exists() {
             IndexedDocumentIndex::<K>::load(&index_path).unwrap_or_else(|err| {
-                error!("Failed to load index {index_path:?}: {err}");
+                error!("Failed to load index {}: {err}", index_path.display());
                 IndexedDocumentIndex::<K>::new()
             })
         } else {
@@ -257,7 +257,7 @@ where
                 t_type: PhantomData,
             })
         } else {
-            Err(Error::new(ErrorKind::NotFound, format!("File not found {main_path:?}")))
+            Err(Error::new(ErrorKind::NotFound, format!("File not found {}", main_path.display())))
         }
     }
     pub fn get(&mut self, doc_id: &K) -> Result<T, Error> {
@@ -437,7 +437,7 @@ where
                 .and_then(|meta| SizeType::try_from(meta.len()).map_err(to_io_error))
                 .unwrap_or(0);
             if size < 1 {
-                return Err(Error::new(ErrorKind::UnexpectedEof, format!("File empty main:{main_path:?}")));
+                return Err(Error::new(ErrorKind::UnexpectedEof, format!("File empty main:{}", main_path.display())));
             }
 
             // Initialize the index tree (BPlusTree) - by deserializing an existing one
@@ -450,7 +450,7 @@ where
                 index_tree,
             })
         } else {
-            Err(Error::new(ErrorKind::NotFound, format!("Files not found main:{main_path:?} index:{index_path:?}")))
+            Err(Error::new(ErrorKind::NotFound, format!("Files not found main:{} index:{}", main_path.display(), index_path.display())))
         }
     }
 
