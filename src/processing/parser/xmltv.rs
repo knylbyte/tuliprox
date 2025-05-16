@@ -4,7 +4,7 @@ use crate::processing::processor::epg::EpgIdCache;
 use crate::utils::compressed_file_reader::CompressedFileReader;
 use crate::utils::CONSTANTS;
 use deunicode::deunicode;
-use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::events::{BytesStart, BytesText, Event};
 use quick_xml::Reader;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::borrow::Cow;
