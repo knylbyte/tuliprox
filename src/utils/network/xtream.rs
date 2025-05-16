@@ -197,13 +197,6 @@ pub async fn get_xtream_playlist(cfg: &Config, client: Arc<reqwest::Client>, inp
         return (Vec::with_capacity(0), vec![err]);
     }
 
-    if let Err(_err) = request::get_input_json_content(Arc::clone(&client), input, base_url.as_str(), None).await {
-        if let Err(err) = request::get_input_json_content(Arc::clone(&client), input, &format!("{base_url}&action=get_account_info"), None).await {
-            warn!("Failed to login xtream account {username} {err}");
-            return (Vec::with_capacity(0), vec![err]);
-        }
-    }
-
     let mut playlist_groups: Vec<PlaylistGroup> = Vec::with_capacity(128);
     let skip_cluster = get_skip_cluster(input);
 
