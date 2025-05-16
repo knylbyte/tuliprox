@@ -1,5 +1,5 @@
-use crate::model::{EpgNamePrefix, EpgSmartMatchConfig, PersistedEpgSource};
 use crate::model::{Epg, TVGuide, XmlTag, EPG_ATTRIB_CHANNEL, EPG_ATTRIB_ID, EPG_TAG_CHANNEL, EPG_TAG_DISPLAY_NAME, EPG_TAG_ICON, EPG_TAG_PROGRAMME, EPG_TAG_TV};
+use crate::model::{EpgNamePrefix, EpgSmartMatchConfig, PersistedEpgSource};
 use crate::processing::processor::epg::EpgIdCache;
 use crate::utils::compressed_file_reader::CompressedFileReader;
 use crate::utils::CONSTANTS;
@@ -9,8 +9,8 @@ use quick_xml::Reader;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::borrow::Cow;
 use std::cmp::min;
-use std::collections::{HashMap};
 use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -89,18 +89,19 @@ pub fn normalize_channel_name(name: &str, normalize_config: &EpgSmartMatchConfig
 }
 
 impl TVGuide {
-    fn merge(mut epgs: Vec<Epg>) -> Option<Epg> {
-        if epgs.is_empty() {
-            return None;
+    pub fn merge(mut epgs: Vec<Epg>) -> Option<Epg> {
+        if let Some(first_epg) = epgs.get_mut(0) {
+            let first_epg_attributes = first_epg.attributes.take();
+            let merged_children: Vec<XmlTag> = epgs.into_iter().flat_map(|epg| epg.children).collect();
+            Some(Epg {
+                logo_override: false,
+                priority: 0,
+                attributes: first_epg_attributes,
+                children: merged_children,
+            })
+        } else {
+            None
         }
-        let first_epg_attributes = epgs.get_mut(0).unwrap().attributes.take();
-        let merged_children: Vec<XmlTag> = epgs.into_iter().flat_map(|epg| epg.children).collect();
-        Some(Epg {
-            logo_override: false,
-            priority: 0,
-            attributes: first_epg_attributes,
-            children: merged_children,
-        })
     }
 
     fn prepare_tag(id_cache: &mut EpgIdCache, tag: &mut XmlTag, smart_match: bool) {
@@ -272,18 +273,15 @@ impl TVGuide {
         }
     }
 
-    pub fn filter(&self, id_cache: &mut EpgIdCache) -> Option<Epg> {
+    pub fn filter(&self, id_cache: &mut EpgIdCache) -> Option<Vec<Epg>> {
         if id_cache.channel_epg_id.is_empty() && id_cache.normalized.is_empty() {
             return None;
         }
-        let epgs: Vec<Epg> = self.get_epg_sources().iter()
+        let mut epg_sources: Vec<Epg> = self.get_epg_sources().iter()
             .filter_map(|epg_source| Self::process_epg_file(id_cache, epg_source))
             .collect();
-        if epgs.len() == 1 {
-            epgs.into_iter().next()
-        } else {
-            Self::merge(epgs)
-        }
+        epg_sources.sort_by(|a, b| a.priority.cmp(&b.priority));
+        Some(epg_sources)
     }
 }
 

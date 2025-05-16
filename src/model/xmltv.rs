@@ -1,7 +1,7 @@
-use std::collections::{HashMap};
-use std::path::PathBuf;
-use quick_xml::{Error, Writer};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::{Error, Writer};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 pub const EPG_TAG_TV: &str = "tv";
 pub const EPG_TAG_PROGRAMME: &str = "programme";
@@ -24,7 +24,6 @@ pub struct XmlTag {
 }
 
 impl XmlTag {
-
     pub(crate) fn new(name: String, attribs: Option<HashMap<String, String>>) -> Self {
         Self {
             name,
