@@ -1,5 +1,5 @@
 use crate::foundation::filter::{get_filter, Filter, MockValueProcessor, PatternTemplate, ValueProvider};
-use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
+use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
 use crate::model::cluster_flags::ClusterFlags;
 use crate::model::config_rename::ConfigRename;
 use crate::model::config_sort::ConfigSort;
@@ -292,7 +292,7 @@ impl ConfigTarget {
                     handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, renames.iter_mut().map(|cr|cr.prepare(templates)));
                 }
                 if let Some(sort) = self.sort.as_mut() {
-                    handle_tuliprox_error_result!(TuliproxErrorKind::Info, sort.prepare(templates));
+                    sort.prepare(templates)?;
                 }
                 Ok(())
             }

@@ -12,7 +12,7 @@ use crate::foundation::filter::{apply_templates_to_pattern_single, get_filter, p
 use crate::model::valid_property;
 use crate::model::{FieldGetAccessor, FieldSetAccessor, PlaylistItem};
 use crate::model::ItemField;
-use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result, info_err};
+use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::utils::Capitalize;
 use crate::utils::CONSTANTS;
@@ -463,7 +463,7 @@ impl Mapping {
                    tags: Option<&Vec<MappingTag>>) -> Result<(), TuliproxError> {
         if let Some(mapper_list) = &mut self.mapper {
             for mapper in mapper_list {
-                handle_tuliprox_error_result!(TuliproxErrorKind::Info, mapper.prepare(templates, tags));
+                mapper.prepare(templates, tags)?;
             }
         }
 
@@ -514,7 +514,7 @@ impl MappingDefinition {
         for mapping in &mut self.mapping {
             let template_list = self.templates.as_ref();
             let tag_list = self.tags.as_ref();
-            handle_tuliprox_error_result!(TuliproxErrorKind::Info, mapping.prepare(template_list, tag_list));
+            mapping.prepare(template_list, tag_list)?;
         }
         Ok(())
     }

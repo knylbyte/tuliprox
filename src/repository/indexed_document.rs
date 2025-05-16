@@ -437,7 +437,7 @@ where
                 .and_then(|meta| SizeType::try_from(meta.len()).map_err(to_io_error))
                 .unwrap_or(0);
             if size < 1 {
-                return Err(Error::new(ErrorKind::UnexpectedEof, format!("File empty main:{main_path:?}")));
+                return Err(Error::new(ErrorKind::UnexpectedEof, format!("File empty main:{}", main_path.display())));
             }
 
             // Initialize the index tree (BPlusTree) - by deserializing an existing one
@@ -450,7 +450,7 @@ where
                 index_tree,
             })
         } else {
-            Err(Error::new(ErrorKind::NotFound, format!("Files not found main:{main_path:?} index:{index_path:?}")))
+            Err(Error::new(ErrorKind::NotFound, format!("Files not found main:{} index:{}", main_path.display(), index_path.display())))
         }
     }
 

@@ -214,7 +214,7 @@ pub fn get_user_storage_path(cfg: &Config, username: &str) -> Option<PathBuf> {
 fn ensure_user_storage_path(cfg: &Config, username: &str) -> Option<PathBuf> {
     if let Some(path) = get_user_storage_path(cfg, username) {
         if !path.exists() && std::fs::create_dir_all(&path).is_err() {
-            error!("Failed to create user config dir, can't create directory {path:?}");
+            error!("Failed to create user config dir, can't create directory {}", path.display());
         }
         Some(path)
     } else {

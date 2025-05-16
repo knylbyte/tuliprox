@@ -407,7 +407,7 @@ fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
 async fn prepare_strm_output_directory(path: &Path) -> Result<(), TuliproxError> {
     // Ensure the directory exists
     if let Err(e) = tokio::fs::create_dir_all(path).await {
-        error!("Failed to create directory {path:?}: {e}");
+        error!("Failed to create directory {}: {e}", path.display());
         return create_tuliprox_error_result!(
             TuliproxErrorKind::Notify,
             "Error creating STRM directory: {e}"
@@ -446,7 +446,7 @@ async fn cleanup_strm_output_directory(
 ) -> Result<(), String> {
     if !(root_path.exists() && root_path.is_dir()) {
         return Err(format!(
-            "Error: STRM directory does not exist: {root_path:?}"
+            "Error: STRM directory does not exist: {}", root_path.display()
         ));
     }
 
@@ -471,7 +471,7 @@ async fn cleanup_strm_output_directory(
     for file in &to_remove {
         let file_path = root_path.join(file);
         if let Err(err) = remove_file(&file_path).await {
-            error!("Failed to remove file {file_path:?}: {err}");
+            error!("Failed to remove file {}: {err}", file_path.display());
         }
     }
 
@@ -689,7 +689,7 @@ async fn write_strm_index_file(
         .write_lock(index_file_path);
     let file = File::create(index_file_path)
         .await
-        .map_err(|err| format!("Failed to create strm index file: {index_file_path:?} {err}"))?;
+        .map_err(|err| format!("Failed to create strm index file: {} {err}", index_file_path.display()))?;
     let mut writer = BufWriter::new(file);
     let new_line = "\n".as_bytes();
     for entry in entries {
@@ -713,7 +713,7 @@ async fn ensure_strm_file_directory(failed: &mut Vec<String>, output_path: &Path
     if !output_path.exists() {
         if let Err(e) = create_dir_all(output_path).await {
             let err_msg =
-                format!("Failed to create directory for strm playlist: {output_path:?} {e}");
+                format!("Failed to create directory for strm playlist: {} {e}", output_path.display());
             error!("{err_msg}");
             failed.push(err_msg);
             return false; // skip creation, could not create directory
@@ -757,7 +757,7 @@ async fn has_strm_file_same_hash(file_path: &PathBuf, content_hash: UUIDType) ->
                 }
             }
             Err(err) => {
-                error!("Could not read existing strm file {file_path:?} {err}");
+                error!("Could not read existing strm file {} {err}", file_path.display());
             }
         }
     }
@@ -932,7 +932,7 @@ async fn delete_empty_dirs_from_tree(root_path: &Path, tree_nodes: HashMap<PathB
     for node in tree_stack.into_iter().rev() {
         if !node.has_files && !node.is_root {
             if let Err(err) = remove_dir(&node.path).await {
-                trace!("Could not delete empty dir: {:?}, {err}", &node.path);
+                trace!("Could not delete empty dir: {}, {err}", &node.path.display());
             }
         }
     }

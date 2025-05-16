@@ -59,7 +59,7 @@ impl XtreamPlaylistIterator {
 
     fn get_next(&mut self) -> Option<(XtreamPlaylistItem, bool)> {
         if self.reader.has_error() {
-            error!("Could not deserialize xtream item: {:?}", self.reader.get_path());
+            error!("Could not deserialize xtream item: {}", self.reader.get_path().display());
             return None;
         }
         if let Some(set) = &self.filter {

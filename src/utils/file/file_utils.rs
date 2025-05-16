@@ -97,14 +97,14 @@ pub fn resolve_directory_path(input: &str) -> String {
 
     let input_path = PathBuf::from(input);
     if let Err(e) = fs::create_dir_all(&input_path) {
-       error!("Failed to create directory: {input_path:?} - {e}");
+       error!("Failed to create directory: {} - {e}", input_path.display());
     }
 
     let resolved_path = fs::metadata(&input_path).ok().and_then(|md| {
         if md.is_dir() && !md.permissions().readonly() {
             input_path.canonicalize().ok()
         } else {
-            error!("Path not found or not writable: {input_path:?}");
+            error!("Path not found or not writable: {}", input_path.display());
             None
         }
     });
@@ -115,7 +115,7 @@ pub fn resolve_directory_path(input: &str) -> String {
         .canonicalize()
         .map_or_else(
             |_| {
-                error!("Path not found {final_path:?}");
+                error!("Path not found {}", final_path.display());
                 String::from("./")
             },
             |ap| String::from(ap.to_str().unwrap_or("./")),
