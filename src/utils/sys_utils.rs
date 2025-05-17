@@ -6,7 +6,6 @@ macro_rules! exit {
     }};
 }
 pub use exit;
-use crate::utils::CONSTANTS;
 
 #[cfg(target_os = "linux")]
 fn get_memory_usage_linux() -> std::io::Result<u64> {

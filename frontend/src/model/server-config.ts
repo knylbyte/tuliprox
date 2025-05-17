@@ -143,7 +143,8 @@ export interface MessagingConfig {
 
 export interface LogConfig {
     sanitize_sensitive_info: boolean,
-    active_clients: boolean,
+    log_active_user: boolean,
+    log_level?: string,
 }
 
 export interface Credentials {

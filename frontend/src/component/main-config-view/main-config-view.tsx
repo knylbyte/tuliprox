@@ -90,12 +90,15 @@ const CONFIG_SCHEDULES_FIELDS = [
 
 const CONFIG_LOG_FIELDS = [
     {name: 'sanitize_sensitive_info', label: 'LABEL.SANITIZE_SENSITIVE_INFO', fieldType: FormFieldType.CHECK},
-    {
-        name: 'active_clients',
-        label: 'LABEL.ACTIVE_CLIENTS',
-        hint: 'HINT.CONFIG.LOG.ACTIVE_CLIENTS',
-        fieldType: FormFieldType.CHECK
-    },
+    {name: 'log_active_user', label: 'LABEL.ACTIVE_USER', hint: 'HINT.CONFIG.LOG.ACTIVE_USER', fieldType: FormFieldType.CHECK},
+    {name: 'log_level', label: 'LABEL.LOG_LEVEL', fieldType: FormFieldType.SINGLE_SELECT,
+        options:[
+            {label: 'info', value: 'info'},
+            {label: 'debug', value: 'debug'},
+            {label: 'warn', value: 'warn'},
+            {label: 'error', value: 'error'},
+            {label: 'trace', value: 'trace'},
+        ]},
 ]
 
 const CONFIG_REVERSE_PROXY_FIELDS = [
