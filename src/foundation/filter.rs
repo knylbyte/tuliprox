@@ -1,18 +1,18 @@
 #![allow(clippy::empty_docs)]
 
-use std::cmp::Ordering;
-use std::collections::HashMap;
 use enum_iterator::all;
 use indexmap::IndexSet;
 use log::{debug, error, log_enabled, trace, Level};
 use pest::iterators::Pair;
 use pest::Parser;
+use std::cmp::Ordering;
+use std::collections::HashMap;
 
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::model::ItemField;
 use crate::model::{PlaylistItem, PlaylistItemType};
 use crate::tools::directed_graph::DirectedGraph;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
+use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::utils::CONSTANTS;
 
 pub fn get_field_value(pli: &PlaylistItem, field: &ItemField) -> String {
@@ -40,7 +40,7 @@ pub fn set_field_value(pli: &mut PlaylistItem, field: &ItemField, value: String)
         ItemField::Caption => {
             header.title.clone_from(&value);
             header.name = value;
-        },
+        }
         ItemField::Type => {}
     }
 }
@@ -78,6 +78,19 @@ pub enum TemplateValue {
 pub struct PatternTemplate {
     pub name: String,
     pub value: TemplateValue,
+    #[serde(skip)]
+    pub placeholder: String,
+}
+
+impl PatternTemplate {
+    pub fn prepare(&mut self) {
+        let mut placeholder = String::with_capacity(self.name.len() + 2);
+        placeholder.push('!');
+        placeholder.push_str(&self.name);
+        placeholder.push('!');
+
+        self.placeholder = placeholder;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -377,7 +390,6 @@ fn get_parser_expression(
                     Ok(expr) => handle_expr!(bop, uop, stmts, expr),
                     Err(err) => return Err(err),
                 }
-
             }
             Rule::expr_group => {
                 match get_parser_expression(pair.into_inner().next().unwrap(), templates, errors) {
@@ -541,13 +553,14 @@ fn build_dependency_graph(
 }
 
 pub fn prepare_templates(
-    templates: &Vec<PatternTemplate>,
+    templates: &mut Vec<PatternTemplate>,
 ) -> Result<Vec<PatternTemplate>, TuliproxError> {
     let graph = build_dependency_graph(templates)?;
     let mut template_values = HashMap::<String, TemplateValue>::new();
     let mut template_map: HashMap<String, PatternTemplate> = templates
-        .iter()
+        .iter_mut()
         .map(|item| {
+            item.prepare();
             template_values.insert(item.name.clone(), item.value.clone());
             (item.name.clone(), item.clone())
         })
@@ -560,14 +573,25 @@ pub fn prepare_templates(
                     let mut templ_value = template_values.get(&template_name).unwrap().clone();
                     for dep_templ_name in depends_on {
                         let dep_value = template_values.get(dep_templ_name).ok_or_else(|| info_err!(format!("Failed to load template {dep_templ_name}")))?;
+                        let dep_templ = template_map.get_mut(dep_templ_name).unwrap();
                         templ_value = match dep_value {
                             TemplateValue::Single(dep_val) => {
                                 match templ_value {
-                                    TemplateValue::Single(templ_val) => TemplateValue::Single(templ_val.replace(format!("!{dep_templ_name}!").as_str(), dep_val)),
+                                    TemplateValue::Single(templ_val) => {
+                                        if templ_val.contains(&dep_templ.placeholder) {
+                                            TemplateValue::Single(templ_val.replace(&dep_templ.placeholder, dep_val))
+                                        } else {
+                                            TemplateValue::Single(templ_val)
+                                        }
+                                    }
                                     TemplateValue::Multi(templ_vals) => {
                                         let mut new_values = vec![];
                                         for val in templ_vals {
-                                            new_values.push(val.replace(format!("!{dep_templ_name}!").as_str(), dep_val));
+                                            if val.contains(&dep_templ.placeholder) {
+                                                new_values.push(val.replace(&dep_templ.placeholder, dep_val));
+                                            } else {
+                                                new_values.push(val);
+                                            }
                                         }
                                         TemplateValue::Multi(new_values)
                                     }
@@ -578,7 +602,11 @@ pub fn prepare_templates(
                                     TemplateValue::Single(templ_val) => {
                                         let mut new_values = vec![];
                                         for dep_val in dep_vals {
-                                            new_values.push(templ_val.replace(format!("!{dep_templ_name}!").as_str(), dep_val));
+                                            if templ_val.contains(&dep_templ.placeholder) {
+                                                new_values.push(templ_val.replace(&dep_templ.placeholder, dep_val));
+                                            } else {
+                                                new_values.push(templ_val.clone());
+                                            }
                                         }
                                         TemplateValue::Multi(new_values)
                                     }
@@ -586,7 +614,11 @@ pub fn prepare_templates(
                                         let mut new_values = vec![];
                                         for dep_val in dep_vals {
                                             for templ_val in &templ_vals {
-                                                new_values.push(templ_val.replace(format!("!{dep_templ_name}!").as_str(), dep_val));
+                                                if templ_val.contains(&dep_templ.placeholder) {
+                                                    new_values.push(templ_val.replace(&dep_templ.placeholder, dep_val));
+                                                } else {
+                                                    new_values.push(templ_val.clone());
+                                                }
                                             }
                                         }
                                         TemplateValue::Multi(new_values)
@@ -616,17 +648,19 @@ pub fn apply_templates_to_pattern(
     let mut new_pattern = TemplateValue::Single(pattern.to_string());
 
     for template in templates {
-        let placeholder = format!("!{}!", &template.name);
-
         match &template.value {
             TemplateValue::Single(val) => {
                 match new_pattern {
                     TemplateValue::Single(ref mut pat) => {
-                        *pat = pat.replace(&placeholder, val);
+                        if pat.contains(&template.placeholder) {
+                            *pat = pat.replace(&template.placeholder, val);
+                        }
                     }
                     TemplateValue::Multi(ref mut pats) => {
                         for pat in pats.iter_mut() {
-                            *pat = pat.replace(&placeholder, val);
+                            if pat.contains(&template.placeholder) {
+                                *pat = pat.replace(&template.placeholder, val);
+                            }
                         }
                     }
                 }
@@ -637,7 +671,11 @@ pub fn apply_templates_to_pattern(
                     TemplateValue::Single(pat) => {
                         let mut new_values = IndexSet::new();
                         for val in multi_vals {
-                            new_values.insert(pat.replace(&placeholder, val));
+                            if pat.contains(&template.placeholder) {
+                                new_values.insert(pat.replace(&template.placeholder, val));
+                            } else {
+                                new_values.insert(pat.clone());
+                            }
                         }
                         TemplateValue::Multi(new_values.into_iter().collect())
                     }
@@ -645,7 +683,11 @@ pub fn apply_templates_to_pattern(
                         let mut new_values = IndexSet::new();
                         for val in multi_vals {
                             for pat in pats {
-                                new_values.insert(pat.replace(&placeholder, val));
+                                if pat.contains(&template.placeholder) {
+                                    new_values.insert(pat.replace(&template.placeholder, val));
+                                } else {
+                                    new_values.insert(pat.clone());
+                                }
                             }
                         }
                         TemplateValue::Multi(new_values.into_iter().collect())
