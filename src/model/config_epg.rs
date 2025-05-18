@@ -118,8 +118,9 @@ impl EpgSmartMatchConfig {
             }
         };
 
-        if self.strip.is_none() {
-            self.t_strip = ["3840p", "uhd", "fhd", "hd", "sd", "4k", "plus", "raw"].iter().map(std::string::ToString::to_string).collect();
+        match &self.strip {
+            Some(list) => self.t_strip = list.iter().map(|s| s.to_lowercase()).collect(),
+            None => self.t_strip = ["3840p", "uhd", "fhd", "hd", "sd", "4k", "plus", "raw", "full hd"].iter().map(std::string::ToString::to_string).collect(),
         }
         Ok(())
     }

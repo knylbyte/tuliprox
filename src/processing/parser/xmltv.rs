@@ -32,13 +32,14 @@ use std::sync::{Arc, Mutex, RwLock};
 /// assert_eq!(rest, "HBO");
 /// ```
 fn split_by_first_match<'a>(input: &'a str, delimiters: &[char]) -> (Option<&'a str>, &'a str) {
+    let content = input.trim_start_matches(|c: char| !c.is_alphanumeric());
+
     for delim in delimiters {
-        if let Some(index) = input.find(*delim) {
-            let (left, right) = input.split_at(index);
+        if let Some(index) = content.find(*delim) {
+            let (left, right) = content.split_at(index);
             let right = &right[delim.len_utf8()..].trim();
             if !right.is_empty() {
                 let prefix = left.trim();
-                // when we used anything as prefix the result was bad
                 if CONSTANTS.country_codes.contains(&prefix) {
                     return (Some(prefix), right.trim());
                 }
@@ -47,6 +48,7 @@ fn split_by_first_match<'a>(input: &'a str, delimiters: &[char]) -> (Option<&'a 
     }
     (None, input)
 }
+
 
 fn name_prefix<'a>(name: &'a str, smart_config: &EpgSmartMatchConfig) -> (&'a str, Option<&'a str>) {
     if smart_config.name_prefix != EpgNamePrefix::Ignore {
