@@ -2,7 +2,7 @@ use crate::model::{Epg, TVGuide, XmlTag, EPG_ATTRIB_ID};
 use crate::model::{EpgConfig, EpgSmartMatchConfig};
 use crate::model::{FetchedPlaylist, PlaylistItem, XtreamCluster};
 use crate::processing::parser::xmltv::normalize_channel_name;
-use log::debug;
+use log::{debug, trace};
 use rphonetic::{DoubleMetaphone, Encoder};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -133,6 +133,7 @@ impl EpgIdCache<'_> {
 /// assign_channel_epg(&mut new_epg, &mut playlist, &mut id_cache);
 /// ```
 fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache: &mut EpgIdCache) {
+    id_cache.normalized.retain(|_, v| v.is_some());
     if let Some(tv_guide) = &fp.epg {
         let mut processed_epgs = vec![];
         if let Some(epg_sources) = tv_guide.filter(id_cache) {
@@ -153,7 +154,10 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
                         if not_processed {
                             let normalized = id_cache.normalize(&chan.header.name);
                             if let Some(epg_id) = id_cache.normalized.get(&normalized) {
-                                chan.header.epg_channel_id.clone_from(epg_id);
+                                if epg_id.is_some() {
+                                    trace!("Matched channel {} to epg {epg_id:?}", chan.header.name);
+                                    chan.header.epg_channel_id.clone_from(epg_id);
+                                }
                             }
                         }
                     }
@@ -164,6 +168,7 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
                                 if let Some(icon) = icon_tag.icon.as_ref() {
                                     icon_assigned.insert(epg_channel_id.to_string());
                                     if epg_source.logo_override || chan.header.logo.is_empty() {
+                                        trace!("Matched channel {} to epg icon {icon}", chan.header.name);
                                         chan.header.logo = (*icon).to_string();
                                     }
                                     if epg_source.logo_override || chan.header.logo_small.is_empty() {

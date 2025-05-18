@@ -414,7 +414,7 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
         let mut sorted_guides = tv_guides.to_vec();
         // sort by priority
         sorted_guides.sort_by(|a, b| a.priority.cmp(&b.priority));
-
+        // if executed parallel it does not matter how we sort.
         sorted_guides.par_iter().for_each(|guide| {
             let mut children = vec![];
             guide.children.iter().for_each(|c| {
