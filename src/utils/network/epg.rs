@@ -15,7 +15,7 @@ async fn download_epg_file(url: &str, client: &Arc<reqwest::Client>, input: &Con
     let persist_file_path = prepare_file_path(input.persist.as_deref(), working_dir, "")
         .map(|path| add_prefix_to_filename(&path, format!("{file_prefix}_epg_").as_str(), Some("xml")));
 
-    request::get_input_text_content_as_file(Arc::clone(client), input, working_dir, url, persist_file_path).await
+    request::get_input_epg_content_as_file(Arc::clone(client), input, working_dir, url, persist_file_path).await
 }
 
 pub async fn get_xmltv(client: Arc<reqwest::Client>, _cfg: &Config, input: &ConfigInput, working_dir: &str) -> (Option<TVGuide>, Vec<TuliproxError>) {

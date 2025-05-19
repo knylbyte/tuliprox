@@ -29,10 +29,10 @@ pub const fn bytes_to_megabytes(bytes: u64) -> u64 {
     bytes / 1_048_576
 }
 
-pub async fn get_input_text_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
+pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
     debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(url_str));
     if url_str.parse::<url::Url>().is_ok() {
-        match download_text_content_as_file(client, input, url_str, working_dir, persist_filepath).await {
+        match download_epg_content_as_file(client, input, url_str, working_dir, persist_filepath).await {
             Ok(content) => Ok(content),
             Err(e) => {
                 error!("cant download input url: {}  => {}", sanitize_sensitive_info(url_str), sanitize_sensitive_info(e.to_string().as_str()));
@@ -298,7 +298,7 @@ async fn get_remote_content(client: Arc<reqwest::Client>, input: &ConfigInput, u
     }
 }
 
-pub async fn download_text_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, url_str: &str, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, Error> {
+async fn download_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, url_str: &str, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, Error> {
     if let Ok(url) = url_str.parse::<url::Url>() {
         if url.scheme() == "file" {
             url.to_file_path().map_or_else(|()| Err(Error::new(ErrorKind::Unsupported, format!("Unknown file {}", sanitize_sensitive_info(url_str)))), |file_path| if file_path.exists() {
@@ -371,18 +371,25 @@ pub fn set_sanitize_sensitive_info(value: bool) {
     CONSTANTS.sanitize.store(value, Ordering::SeqCst);
 }
 pub fn sanitize_sensitive_info(query: &str) -> String {
-    if CONSTANTS.sanitize.load(Ordering::SeqCst) {
-        // Replace with "***"
-        let masked_query = CONSTANTS.re_username.replace_all(query, "$1***");
-        let masked_query = CONSTANTS.re_password.replace_all(&masked_query, "$1***");
-        let masked_query = CONSTANTS.re_token.replace_all(&masked_query, "$1***");
-        let masked_query = CONSTANTS.re_stream_url.replace_all(&masked_query, "$1***/$2/***");
-        let masked_query = CONSTANTS.re_url.replace_all(&masked_query, "$1***/$2");
-        masked_query.to_string()
-    } else {
-        query.to_string()
+    if !CONSTANTS.sanitize.load(Ordering::SeqCst) {
+        return query.to_string();
     }
+
+    let mut result = query.to_owned();
+
+    for (re, replacement) in &[
+        (&CONSTANTS.re_credentials, "$1***"),
+        (&CONSTANTS.re_ipv4, "$1***"),
+        (&CONSTANTS.re_ipv6, "$1***"),
+        (&CONSTANTS.re_stream_url, "$1***/$2/***"),
+        (&CONSTANTS.re_url, "$1***/$2"),
+    ] {
+        result = re.replace_all(&result, *replacement).into_owned();
+    }
+
+    result
 }
+
 
 pub fn extract_extension_from_url(url: &str) -> Option<&str> {
     if let Some(protocol_pos) = url.find("://") {
