@@ -69,9 +69,9 @@ pub struct KodiStyle {
 }
 
 pub struct Constants {
-    pub re_username: Regex,
-    pub re_password: Regex,
-    pub re_token: Regex,
+    pub re_credentials: Regex,
+    pub re_ipv4: Regex,
+    pub re_ipv6: Regex,
     pub re_stream_url: Regex,
     pub re_url: Regex,
     pub re_base_href: Regex,
@@ -93,9 +93,9 @@ pub struct Constants {
 
 pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
     Constants {
-        re_username: Regex::new(r"(username=)[^&]*").unwrap(),
-        re_password: Regex::new(r"(password=)[^&]*").unwrap(),
-        re_token: Regex::new(r"(token=)[^&]*").unwrap(),
+        re_credentials: Regex::new(r"((username|password|token)=)[^&]*").unwrap(),
+        re_ipv4: Regex::new(r"\b((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\b").unwrap(),
+        re_ipv6: Regex::new(r"\b([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b|\b::([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}\b|\b([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}\b").unwrap(),
         re_stream_url: Regex::new(r"(?i)^(?P<scheme>https?://)[^/]+/(?P<ctx>live|video|movie|series|m3u-stream|resource)/[^/]+/[^/]+/").unwrap(),
         re_url: Regex::new(r"(.*://).*?/(.*)").unwrap(),
         re_base_href: Regex::new(r#"(href|src)="/([^"]*)""#).unwrap(),
