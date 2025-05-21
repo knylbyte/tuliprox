@@ -23,6 +23,7 @@ reverse_proxy:
     size: 500MB
     enabled: true
     dir: /home/tuliprox/cache
+  disable_referer_header: false # Optional, set to true to disable sending the Referer header for reverse proxied requests
 log:
   sanitize_sensitive_info: false
   active_clients: true
@@ -62,3 +63,8 @@ video:
     directory: /tmp/
     organize_into_directories: true
     episode_pattern: '.*(?P<episode>[Ss]\d{1,2}(.*?)[Ee]\d{1,2}).*'
+
+proxy:
+  url: "http://your-proxy-url:port"
+  username: "your-proxy-username" # Optional
+  password: "your-proxy-password" # Optional

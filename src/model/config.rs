@@ -295,7 +295,8 @@ pub struct ReverseProxyConfig {
     pub resource_rewrite_disabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate_limit: Option<RateLimitConfig>,
-
+    #[serde(default)]
+    pub disable_referer_header: bool,
 }
 
 impl ReverseProxyConfig {

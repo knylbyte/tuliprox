@@ -527,7 +527,7 @@ pub fn create_client(proxy_config: Option<&ProxyConfig>) -> reqwest::ClientBuild
             client
         };
     }
-    client
+    reqwest::Client::builder()
 }
 
 #[cfg(test)]
