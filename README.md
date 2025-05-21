@@ -283,7 +283,6 @@ This option, when set to `true`, prevents tuliprox from sending the Referer head
 
 ```yaml
 reverse_proxy:
-  # ... other settings ...
   disable_referer_header: false 
 ```
 
