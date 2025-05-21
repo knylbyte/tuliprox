@@ -16,7 +16,7 @@ use url::Url;
 
 use crate::tuliprox_error::create_tuliprox_error_result;
 use crate::tuliprox_error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
-use crate::model::format_elapsed_time;
+use crate::model::{format_elapsed_time, Config};
 use crate::model::{ConfigInput, ProxyConfig, InputFetchMethod};
 use crate::repository::storage::{get_input_storage_path, short_hash};
 use crate::repository::storage_const;
@@ -505,9 +505,9 @@ pub fn get_base_url_from_str(url: &str) -> Option<String> {
     }
 }
 
-pub fn create_client(proxy_config: Option<&ProxyConfig>) -> reqwest::ClientBuilder {
+pub fn create_client(cfg: &Config) -> reqwest::ClientBuilder {
     let client = reqwest::Client::builder();
-    if let Some(proxy_cfg) = proxy_config {
+    if let Some(proxy_cfg) = cfg.proxy.as_ref() {
         let proxy = match reqwest::Proxy::all(&proxy_cfg.url) {
             Ok(proxy) => {
                 if let (Some(username), Some(password)) = (&proxy_cfg.username, &proxy_cfg.password) {

@@ -4,6 +4,7 @@ use enum_iterator::Sequence;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use log::{debug, error, warn};
@@ -79,6 +80,31 @@ impl Display for ItemField {
         })
     }
 }
+
+impl FromStr for ItemField {
+    type Err = TuliproxError;
+
+    fn from_str(s: &str) -> Result<Self, TuliproxError> {
+        if s.eq_ignore_ascii_case(Self::GROUP) {
+            Ok(Self::Group)
+        } else if s.eq_ignore_ascii_case(Self::NAME) {
+            Ok(Self::Name)
+        } else if s.eq_ignore_ascii_case(Self::TITLE) {
+            Ok(Self::Title)
+        } else if s.eq_ignore_ascii_case(Self::CAPTION) {
+            Ok(Self::Caption)
+        } else if s.eq_ignore_ascii_case(Self::URL) {
+            Ok(Self::Url)
+        } else if s.eq_ignore_ascii_case(Self::INPUT) {
+            Ok(Self::Input)
+        } else if s.eq_ignore_ascii_case(Self::TYPE) {
+            Ok(Self::Type)
+        } else {
+            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum FilterMode {

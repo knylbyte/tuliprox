@@ -1,4 +1,4 @@
-use crate::model::{ConfigInput, InputAffix, AFFIX_FIELDS, valid_property};
+use crate::model::{ConfigInput, InputAffix, valid_property, MAPPER_FIELDS};
 use crate::model::{FetchedPlaylist, FieldGetAccessor, FieldSetAccessor, PlaylistItem};
 use crate::utils::{debug_if_enabled};
 
@@ -19,7 +19,7 @@ fn create_affix_processor(affix: &InputAffix, is_prefix: bool) -> AffixProcessor
 
 fn validate_and_create_affix_processor(affix: Option<&InputAffix>, is_prefix: bool) -> Option<AffixProcessor> {
     if let Some(affix_def) = affix {
-        if (valid_property!(&affix_def.field.as_str(), AFFIX_FIELDS) && !affix_def.value.is_empty()) {
+        if (valid_property!(&affix_def.field.as_str(), MAPPER_FIELDS) && !affix_def.value.is_empty()) {
             return Some(create_affix_processor(affix_def, is_prefix));
         }
     }

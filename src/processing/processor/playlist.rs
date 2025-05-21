@@ -144,11 +144,11 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
                 match &m.t_filter {
                     Some(filter) => {
                         if filter.filter(&provider, &mut mock_processor) {
-                            apply_pattern!(&m.t_pattern, &provider, &mut processor);
+                            //apply_pattern!(&m.t_pattern, &provider, &mut processor);
                         }
                     }
                     _ => {
-                        apply_pattern!(&m.t_pattern, &provider, &mut processor);
+                        //apply_pattern!(&m.t_pattern, &provider, &mut processor);
                     }
                 }
             }

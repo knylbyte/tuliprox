@@ -50,7 +50,7 @@ pub struct ValueProvider<'a> {
 }
 
 impl ValueProvider<'_> {
-    fn call(&self, field: &ItemField) -> String {
+    pub fn call(&self, field: &ItemField) -> String {
         get_field_value(self.pli, field)
     }
 }

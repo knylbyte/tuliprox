@@ -1,7 +1,6 @@
 use enum_iterator::Sequence;
 use log::{debug, error, trace};
 use regex::Regex;
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::str::FromStr;
@@ -10,8 +9,8 @@ use std::sync::Arc;
 
 use crate::foundation::filter::{apply_templates_to_pattern_single, get_filter, prepare_templates, Filter, PatternTemplate, RegexWithCaptures, ValueProcessor};
 use crate::model::valid_property;
-use crate::model::{FieldGetAccessor, FieldSetAccessor, PlaylistItem};
 use crate::model::ItemField;
+use crate::model::{FieldGetAccessor, FieldSetAccessor, PlaylistItem};
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::utils::Capitalize;
@@ -19,9 +18,7 @@ use crate::utils::CONSTANTS;
 
 pub const COUNTER_FIELDS: &[&str] = &["name", "title", "caption", "chno"];
 
-pub const AFFIX_FIELDS: &[&str] = &["name", "title", "caption", "group"];
-
-pub const MAPPER_ATTRIBUTE_FIELDS: &[&str] = &[
+pub const MAPPER_FIELDS: &[&str] = &[
     "name", "title", "caption", "group", "id", "chno", "logo",
     "logo_small", "parent_code", "audio_track",
     "time_shift", "rec", "url", "epg_channel_id", "epg_id"
@@ -113,103 +110,64 @@ pub struct MappingCounter {
     pub padding: u8,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq)]
-pub enum TransformModifier {
-    #[serde(rename = "lowercase")]
-    Lowercase,
-    #[serde(rename = "uppercase")]
-    Uppercase,
-    #[serde(rename = "capitalize")]
-    Capitalize,
-}
-
-impl Default for TransformModifier {
-    fn default() -> Self {
-        Self::Lowercase
-    }
-}
-
-impl TransformModifier {
-    const LOWERCASE: &'static str = "lowercase";
-    const UPPERCASE: &'static str = "uppercase";
-    const CAPITALIZE: &'static str = "capitalize";
-}
-
-impl Display for TransformModifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Lowercase => Self::LOWERCASE,
-            Self::Uppercase => Self::UPPERCASE,
-            Self::Capitalize => Self::CAPITALIZE,
-        })
-    }
-}
-
-impl FromStr for TransformModifier {
-    type Err = TuliproxError;
-
-    fn from_str(s: &str) -> Result<Self, TuliproxError> {
-        if s.eq("lowercase") {
-            Ok(Self::Lowercase)
-        } else if s.eq("uppercase") {
-            Ok(Self::Uppercase)
-        } else if s.eq("capitalize") {
-            Ok(Self::Capitalize)
-        } else {
-            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown TransformModifier: {}", s)
-        }
-    }
-}
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct MapperTransform {
-    pub field: String,
-    pub modifier: TransformModifier,
-    pub pattern: Option<String>,
-    #[serde(skip_serializing, skip_deserializing)]
-    pub t_pattern: Option<Regex>,
+#[serde(tag = "modifier", rename_all = "snake_case")]
+pub enum MapperOperation {
+    Lowercase { field: String },
+    Uppercase { field: String },
+    Capitalize { field: String },
+    Suffix { field: String, value: String },
+    Prefix { field: String, value: String },
+    Set { field: String, value: String },
+    Copy { field: String, source: String },
 }
 
-impl MapperTransform {
+impl MapperOperation {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
-        match &self.pattern {
-            None => self.t_pattern = None,
-            Some(pattern) => {
-                let mut new_pattern = pattern.to_string();
-                match templates {
-                    None => {}
-                    Some(template_list) => {
-                        new_pattern = apply_templates_to_pattern_single(pattern, template_list)?;
-                    }
+        match self {
+            MapperOperation::Lowercase { field }
+            | MapperOperation::Uppercase { field }
+            | MapperOperation::Capitalize { field } => {
+                if !valid_property!(field.as_str(), MAPPER_FIELDS) {
+                    return Err(info_err!(format!("Invalid mapper attribute field {field}")));
                 }
-                match Regex::new(&new_pattern) {
-                    Ok(pattern) => self.t_pattern = Some(pattern),
-                    Err(err) => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse regex: {new_pattern} {err}"),
+            }
+
+            MapperOperation::Copy { field, source } => {
+                if !valid_property!(field.as_str(), MAPPER_FIELDS) {
+                    return Err(info_err!(format!("Invalid mapper attribute field {field}")));
+                }
+                if !valid_property!(source.as_str(), MAPPER_FIELDS) {
+                    return Err(info_err!(format!("Invalid mapper source field {source}")));
+                }
+            }
+
+            MapperOperation::Suffix { field, value }
+            | MapperOperation::Prefix { field, value }
+            | MapperOperation::Set { field, value } => {
+                if !valid_property!(field.as_str(), MAPPER_FIELDS) {
+                    return Err(info_err!(format!("Invalid mapper attribute field {field}")));
+                }
+
+                if let Some(template_list) = templates {
+                    *value = apply_templates_to_pattern_single(value, template_list)?;
                 }
             }
         }
+
         Ok(())
     }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct Mapper {
-    pub filter: Option<String>,
-    pub pattern: String,
-    #[serde(default)]
-    attributes: HashMap<String, String>,
-    #[serde(default)]
-    suffix: HashMap<String, String>,
-    #[serde(default)]
-    prefix: HashMap<String, String>,
-    #[serde(default)]
-    assignments: HashMap<String, String>,
-    #[serde(default)]
-    transform: Option<Vec<MapperTransform>>,
+    pub filter: String,
+    pub pattern: Vec<String>,
+    pub pipeline: Vec<MapperOperation>,
     #[serde(skip_serializing, skip_deserializing)]
     pub t_filter: Option<Filter>,
     #[serde(skip_serializing, skip_deserializing)]
-    pub t_pattern: Option<Filter>,
+    pub t_pattern: Option<Vec<Regex>>,
     #[serde(skip_serializing, skip_deserializing)]
     t_tags: Vec<MappingTag>,
 }
@@ -219,69 +177,36 @@ impl Mapper {
     ///
     /// Will panic if default `RegEx` gets invalid
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>, tags: Option<&Vec<MappingTag>>) -> Result<(), TuliproxError> {
-        for (key, value) in &self.attributes.clone() {
-            if !valid_property!(key.as_str(), MAPPER_ATTRIBUTE_FIELDS) {
-                return Err(info_err!(format!("Invalid mapper attribute field {key}")));
-            }
+        for op in &mut self.pipeline {
+            op.prepare(templates)?;
+        }
+        match get_filter(&self.filter, templates) {
+            Ok(filter) => self.t_filter = Some(filter),
+            Err(err) => return Err(err),
+        }
+        self.t_pattern = Some(self
+            .pattern
+            .iter()
+            .map(|pattern| {
+                let processed = match templates {
+                    None => pattern.to_string(),
+                    Some(tmpls) => apply_templates_to_pattern_single(pattern, tmpls)?,
+                };
+                Regex::new(&processed)
+                    .map_err(|err| info_err!(format!("Invalid regex: {processed} {err}")))
+            })
+            .collect::<Result<Vec<_>, _>>()?);
 
-            if let Some(template_list) = templates {
-                let new_value = apply_templates_to_pattern_single(value, template_list)?;
-                if new_value != *value {
-                    self.attributes.insert(key.clone(), new_value);
-                }
-            }
-        }
+        self.t_tags = tags.map_or_else(Vec::new, std::clone::Clone::clone);
 
-        for key in self.suffix.keys() {
-            if !valid_property!(key.as_str(), AFFIX_FIELDS) {
-                return Err(info_err!(format!("Invalid mapper suffix field {key}")));
-            }
-        }
-        for key in self.prefix.keys() {
-            if !valid_property!(key.as_str(), AFFIX_FIELDS) {
-                return Err(info_err!(format!("Invalid mapper prefix field {key}")));
-            }
-        }
-        for (key, value) in &self.assignments {
-            if !valid_property!(key.as_str(), MAPPER_ATTRIBUTE_FIELDS) {
-                return Err(info_err!(format!("Invalid mapper assignment field {key}")));
-            }
-            if !valid_property!(value.as_str(), MAPPER_ATTRIBUTE_FIELDS) {
-                return Err(info_err!(format!("Invalid mapper assignment field {value}")));
-            }
-        }
-
-        match &mut self.transform {
-            None => {}
-            Some(transforms) => {
-                for t in transforms {
-                    let field = t.field.as_str();
-                    if !valid_property!(field, AFFIX_FIELDS) {
-                        return Err(info_err!(format!("Invalid mapper transform field {field}")));
-                    }
-                    t.prepare(templates)?;
-                }
-            }
-        }
-
-        match get_filter(&self.pattern, templates) {
-            Ok(pattern) => {
-                self.t_pattern = Some(pattern);
-                match &self.filter {
-                    Some(flt) => {
-                        match get_filter(flt, templates) {
-                            Ok(filter) => self.t_filter = Some(filter),
-                            Err(err) => return Err(err),
-                        }
-                    }
-                    _ => self.t_filter = None
-                }
-                self.t_tags = tags.map_or_else(std::vec::Vec::new, std::clone::Clone::clone);
-                Ok(())
-            }
-            Err(err) => Err(err)
-        }
+        Ok(())
     }
+}
+
+enum TransformModifier {
+    Lowercase,
+    Uppercase,
+    Capitalize,
 }
 
 pub struct MappingValueProcessor<'a> {
@@ -301,18 +226,79 @@ impl MappingValueProcessor<'_> {
         trace!("Property {key} set to {value}");
     }
 
-    fn apply_attributes(&mut self, captured_names: &HashMap<&str, &str>) {
-        let mapper = self.mapper;
-        let attributes = &mapper.attributes;
-        for (key, value) in attributes {
-            if value.contains('<') { // possible replacement
-                let replaced = CONSTANTS.re_template_attribute.replace_all(value, |captures: &regex::Captures| {
-                    let capture_name = &captures[1];
-                    (*captured_names.get(&capture_name).unwrap_or(&&captures[0])).to_string()
-                });
-                self.set_property(key, &replaced);
-            } else {
-                self.set_property(key, value);
+    fn apply_affix(&mut self, field: &str, value: &str, captured_names: &HashMap<&str, &str>, prefix: bool) {
+        if let Some(affix) = self.apply_tags(value, captured_names) {
+            if let Some(old_value) = self.get_property(field) {
+                let mut new_value = String::with_capacity(old_value.len() + affix.len());
+                if prefix {
+                    new_value.push_str(&affix);
+                    new_value.push_str(&old_value);
+                } else {
+                    new_value.push_str(&old_value);
+                    new_value.push_str(&affix);
+                }
+                self.set_property(field, &new_value);
+            }
+        }
+    }
+
+    fn apply_assignment(&mut self, field: &str, source: &str) {
+        if let Some(prop_value) = self.get_property(source) {
+            self.set_property(field, &prop_value);
+        }
+    }
+
+    fn apply_attributes(&mut self, field: &str, value: &str, captured_names: &HashMap<&str, &str>) {
+        if value.contains('<') { // possible replacement
+            let replaced = CONSTANTS.re_template_attribute.replace_all(value, |captures: &regex::Captures| {
+                let capture_name = &captures[1];
+                (*captured_names.get(&capture_name).unwrap_or(&&captures[0])).to_string()
+            });
+            self.set_property(field, &replaced);
+        } else {
+            self.set_property(field, value);
+        }
+    }
+
+    fn apply_transform_modifier(modifier: &TransformModifier, value: &str) -> String {
+        match modifier {
+            TransformModifier::Uppercase => value.to_uppercase(),
+            TransformModifier::Lowercase => value.to_lowercase(),
+            TransformModifier::Capitalize => value.capitalize(),
+        }
+    }
+
+    fn apply_transform(&mut self, modifier: TransformModifier, field: &str, captured_names: &HashMap<&str, &str>) {
+        match modifier {
+            TransformModifier::Lowercase => {}
+            TransformModifier::Uppercase => {}
+            TransformModifier::Capitalize => {}
+
+            // None => {}
+            // Some(transform_list) => {
+            //     for transform in transform_list {
+            //         if let Some(prop_value) = self.get_property(&transform.field) {
+            //             let value = transform.t_pattern.as_ref().map_or_else(|| Cow::from(Self::apply_transform_modifier(&transform.modifier, prop_value.as_str())), |regex| regex.replace_all(&prop_value, |caps: &regex::Captures| {
+            //                 Self::apply_transform_modifier(&transform.modifier, &caps[0])
+            //             }));
+            //             self.set_property(&transform.field, &value);
+            //         }
+            //     }
+            // }
+        }
+    }
+
+    fn apply_pipeline(&mut self, captured_names: &HashMap<&str, &str>) {
+        let pipeline = &self.mapper.pipeline;
+        for op in pipeline {
+            match op {
+                MapperOperation::Lowercase { field } => self.apply_transform(TransformModifier::Lowercase, field,  captured_names),
+                MapperOperation::Uppercase { field } => self.apply_transform(TransformModifier::Uppercase, field,  captured_names),
+                MapperOperation::Capitalize { field } => self.apply_transform(TransformModifier::Capitalize, field,  captured_names),
+                MapperOperation::Suffix { field, value } => self.apply_affix(field, value, captured_names, false),
+                MapperOperation::Prefix { field, value } => self.apply_affix(field, value, captured_names, true),
+                MapperOperation::Set { field, value } => self.apply_attributes(field, value, captured_names),
+                MapperOperation::Copy { field, source } => self.apply_assignment(field, source),
             }
         }
     }
@@ -355,68 +341,6 @@ impl MappingValueProcessor<'_> {
         }
         Some(new_value)
     }
-
-    fn apply_suffix(&mut self, captures: &HashMap<&str, &str>) {
-        let mapper = self.mapper;
-        let suffixes = &mapper.suffix;
-
-        for (key, value) in suffixes {
-            if let Some(suffix) = self.apply_tags(value, captures) {
-                if let Some(old_value) = self.get_property(key) {
-                    let new_value = format!("{old_value}{suffix}");
-                    self.set_property(key, &new_value);
-                }
-            }
-        }
-    }
-
-    fn apply_prefix(&mut self, captures: &HashMap<&str, &str>) {
-        let mapper = self.mapper;
-        let prefix = &mapper.prefix;
-        for (key, value) in prefix {
-            if let Some(prefix) = self.apply_tags(value, captures) {
-                if let Some(old_value) = self.get_property(key) {
-                    let new_value = format!("{}{}", prefix, &old_value);
-                    self.set_property(key, &new_value);
-                }
-            }
-        }
-    }
-
-    fn apply_assignments(&mut self) {
-        let mapper = self.mapper;
-        let assignments = &mapper.assignments;
-        for (key, value) in assignments {
-            if let Some(prop_value) = self.get_property(value) {
-                self.set_property(key, &prop_value);
-            }
-        }
-    }
-
-    fn apply_transform_modifier(modifier: &TransformModifier, value: &str) -> String {
-        match modifier {
-            TransformModifier::Uppercase => value.to_uppercase(),
-            TransformModifier::Lowercase => value.to_lowercase(),
-            TransformModifier::Capitalize => value.capitalize(),
-        }
-    }
-
-    fn apply_transform(&mut self) {
-        let mapper = self.mapper;
-        match &mapper.transform {
-            None => {}
-            Some(transform_list) => {
-                for transform in transform_list {
-                    if let Some(prop_value) = self.get_property(&transform.field) {
-                        let value = transform.t_pattern.as_ref().map_or_else(|| Cow::from(Self::apply_transform_modifier(&transform.modifier, prop_value.as_str())), |regex| regex.replace_all(&prop_value, |caps: &regex::Captures| {
-                            Self::apply_transform_modifier(&transform.modifier, &caps[0])
-                        }));
-                        self.set_property(&transform.field, &value);
-                    }
-                }
-            }
-        }
-    }
 }
 
 impl ValueProcessor for MappingValueProcessor<'_> {
@@ -438,11 +362,8 @@ impl ValueProcessor for MappingValueProcessor<'_> {
                     }
                 );
         }
-        MappingValueProcessor::<'_>::apply_attributes(self, &captured_values);
-        MappingValueProcessor::<'_>::apply_suffix(self, &captured_values);
-        MappingValueProcessor::<'_>::apply_prefix(self, &captured_values);
-        MappingValueProcessor::<'_>::apply_assignments(self);
-        MappingValueProcessor::<'_>::apply_transform(self);
+
+        MappingValueProcessor::<'_>::apply_pipeline(self, &captured_values);
         true
     }
 }
