@@ -4,15 +4,15 @@ identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
 string_literal = @{ "\"" ~ ( "\\\"" | (!"\"" ~ ANY) )* ~ "\"" }
 field = { ^"group" | ^"title" | ^"name" | ^"url" | ^"input" | ^"caption"}
 regex_expr = { field ~ regex_op ~ string_literal }
-expression = _{ match_block | function_call | regex_expr | string_literal | identifier }
+expression = _{ map_block | match_block | function_call | regex_expr | string_literal | identifier }
 function_name = {  ^"concat" | ^"uppercase" | ^"lowercase" | ^"capitalize" | ^"trim"}
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
-match_key = { any_match | identifier }
-match_key_list = { match_key ~ ("," ~ match_key)* }
-match_case = { match_key_list ~ "=>" ~ expression | "(" ~ match_key_list ~ ")" ~ "=>" ~ expression }
+match_case_key = { any_match | identifier }
+match_case_key_list = { match_case_key ~ ("," ~ match_case_key)* }
+match_case = { match_case_key_list ~ "=>" ~ expression | "(" ~ match_case_key_list ~ ")" ~ "=>" ~ expression }
 match_block = { "match" ~  "{" ~ NEWLINE* ~ (match_case ~ ("," ~ NEWLINE* ~ match_case)*)? ~ ","? ~ NEWLINE* ~ "}" }
-map_case_key = { any_match | string_literal}
+map_case_key = { any_match | string_literal }
 map_case = { map_case_key ~ "=>" ~ expression }
 map_key = { identifier }
 map_block = { "map" ~ map_key ~ "{" ~ NEWLINE* ~ (map_case ~ ("," ~ NEWLINE* ~ map_case)*)? ~ ","? ~ NEWLINE* ~ "}" }

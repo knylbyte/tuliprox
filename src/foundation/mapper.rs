@@ -1,16 +1,16 @@
 #![allow(clippy::empty_docs)]
 
-use crate::foundation::filter::{ValueProvider};
-use crate::foundation::mapper::EvalResult::{Named, Value, Undefined, Failure, AnyValue};
+use crate::foundation::filter::ValueProvider;
+use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Undefined, Value};
 use crate::model::ItemField;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
+use crate::utils::Capitalize;
 use log::error;
 use pest::iterators::Pair;
 use pest::Parser;
-use regex::{Regex};
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use crate::utils::Capitalize;
 
 #[derive(Parser)]
 #[grammar_inline = r##"
@@ -20,15 +20,15 @@ identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
 string_literal = @{ "\"" ~ ( "\\\"" | (!"\"" ~ ANY) )* ~ "\"" }
 field = { ^"group" | ^"title" | ^"name" | ^"url" | ^"input" | ^"caption"}
 regex_expr = { field ~ regex_op ~ string_literal }
-expression = _{ match_block | function_call | regex_expr | string_literal | identifier }
+expression = _{ map_block | match_block | function_call | regex_expr | string_literal | identifier }
 function_name = {  ^"concat" | ^"uppercase" | ^"lowercase" | ^"capitalize" | ^"trim"}
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
-match_key = { any_match | identifier }
-match_key_list = { match_key ~ ("," ~ match_key)* }
-match_case = { match_key_list ~ "=>" ~ expression | "(" ~ match_key_list ~ ")" ~ "=>" ~ expression }
+match_case_key = { any_match | identifier }
+match_case_key_list = { match_case_key ~ ("," ~ match_case_key)* }
+match_case = { match_case_key_list ~ "=>" ~ expression | "(" ~ match_case_key_list ~ ")" ~ "=>" ~ expression }
 match_block = { "match" ~  "{" ~ NEWLINE* ~ (match_case ~ ("," ~ NEWLINE* ~ match_case)*)? ~ ","? ~ NEWLINE* ~ "}" }
-map_case_key = { any_match | string_literal}
+map_case_key = { any_match | string_literal }
 map_case = { map_case_key ~ "=>" ~ expression }
 map_key = { identifier }
 map_block = { "map" ~ map_key ~ "{" ~ NEWLINE* ~ (map_case ~ ("," ~ NEWLINE* ~ map_case)*)? ~ ","? ~ NEWLINE* ~ "}" }
@@ -45,18 +45,29 @@ struct MapperParser;
 #[derive(Debug, Clone)]
 enum MatchCaseKey {
     Identifier(String),
-    String(String),
     AnyMatch,
 }
 
 #[derive(Debug, Clone)]
 struct MatchCase {
-    pub identifiers: Vec<MatchCaseKey>,
+    pub keys: Vec<MatchCaseKey>,
     pub expression: Expression,
 }
 
 #[derive(Debug, Clone)]
-enum MatchKey {
+enum MapCaseKey {
+    Text(String),
+    AnyMatch,
+}
+
+#[derive(Debug, Clone)]
+struct MapCase {
+    pub key: MapCaseKey,
+    pub expression: Expression,
+}
+
+#[derive(Debug, Clone)]
+enum MapKey {
     Identifier(String),
 }
 
@@ -91,7 +102,8 @@ enum Expression {
     StringLiteral(String),
     RegexExpr { field: ItemField, pattern: String, re_pattern: Regex },
     FunctionCall { name: BuiltInFunction, args: Vec<Expression> },
-    MatchBlock { keys: Vec<MatchKey>, cases: Vec<MatchCase> },
+    MatchBlock(Vec<MatchCase>),
+    MapBlock { key: MapKey, cases: Vec<MapCase> },
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +124,15 @@ pub struct MapperProgram {
     statements: Vec<Statement>,
 }
 
+impl MapperProgram {
+    pub fn eval(&self, ctx: &mut Context, provider: &ValueProvider) -> Result<(), TuliproxError> {
+        for stmt in &self.statements {
+            stmt.eval(ctx, provider)?;
+        }
+        Ok(())
+    }
+}
+
 impl Statement {
     pub fn eval(&self, ctx: &mut Context, provider: &ValueProvider) -> Result<(), TuliproxError> {
         match self {
@@ -126,6 +147,7 @@ impl Statement {
                         error!("Set field value not implemented yet. {name} = {val:?}");
                     }
                 }
+
             }
             Statement::Expression(expr) => {
                 let result = expr.eval(ctx, provider);
@@ -152,40 +174,62 @@ impl MapperProgram {
                     MapperProgram::validate_expr(arg, identifiers)?;
                 }
             }
-            Expression::MatchBlock {keys, cases} => {
-                let mut key_count = 0;
-                for key in keys {
-                    match key {
-                        MatchKey::Identifier(ident) => {
-                            if !identifiers.contains(ident.as_str()) {
-                                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}", ident);
-                            }
-                            key_count += 1;
-                        }
-                    }
-                }
+            Expression::MatchBlock(cases) => {
+                let mut case_keys = HashSet::new();
                 for match_case in cases {
                     let mut any_match_count = 0;
-                    if match_case.identifiers.len() != key_count {
-                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Match key count does not match case key count");
-                    }
-                    for identifier in &match_case.identifiers {
+                    let mut identifer_key = String::with_capacity(56);
+                    for identifier in &match_case.keys {
                         match identifier {
                             MatchCaseKey::Identifier(ident) => {
                                 if !identifiers.contains(ident.as_str()) {
                                     return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}", ident);
                                 }
+                                identifer_key.push_str(ident.as_str());
+                                identifer_key.push_str(", ");
                             }
-                            MatchCaseKey::String(_) => {}
                             MatchCaseKey::AnyMatch => {
                                 any_match_count += 1;
                                 if any_match_count > 1 {
-                                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Match arm can only have one '_'");
+                                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Match case can only have one '_'");
                                 }
+                                identifer_key.push_str("_, ");
                             }
                         }
                     }
+                    if case_keys.contains(&identifer_key) {
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Duplicate case {}", identifer_key);
+                    }
+                    case_keys.insert(identifer_key);
                     MapperProgram::validate_expr(&match_case.expression, identifiers)?;
+                }
+            }
+            Expression::MapBlock { key, cases } => {
+                match key {
+                    MapKey::Identifier(ident) => {
+                        if !identifiers.contains(ident.as_str()) {
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}", ident);
+                        }
+                    }
+                }
+                let mut case_keys = HashSet::new();
+                let mut any_match_count = 0;
+                for map_case in cases {
+                    match &map_case.key {
+                        MapCaseKey::Text(value) => {
+                            if case_keys.contains(value.as_str()) {
+                                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Duplicate case {}", value);
+                            }
+                            case_keys.insert(value.as_str());
+                        }
+                        MapCaseKey::AnyMatch => {
+                            any_match_count += 1;
+                            if any_match_count > 1 {
+                                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Map case can only have one '_'");
+                            }
+                        }
+                    }
+                    MapperProgram::validate_expr(&map_case.expression, identifiers)?;
                 }
             }
         }
@@ -258,7 +302,6 @@ impl MapperProgram {
         let mut inner = pair.into_inner().next().unwrap();
         match inner.as_rule() {
             Rule::identifier => Ok(MatchCaseKey::Identifier(inner.as_str().to_string())),
-            Rule::string_literal => Ok(MatchCaseKey::String(inner.as_str().to_string())),
             Rule::any_match => Ok(MatchCaseKey::AnyMatch),
             _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unexpected match_key: {:?}", inner.as_rule()),
         }
@@ -270,10 +313,10 @@ impl MapperProgram {
         let first = inner.next().unwrap();
 
         let identifiers = match first.as_rule() {
-            Rule::case_key => {
+            Rule::match_case_key => {
                 vec![MapperProgram::parse_match_case_key(first)?]
             }
-            Rule::case_key_list => {
+            Rule::match_case_key_list => {
                 let mut matches = vec![];
                 for arm in first.into_inner() {
                     if arm.as_rule() != Rule::WHITESPACE {
@@ -288,7 +331,36 @@ impl MapperProgram {
         let expr = MapperProgram::parse_expression(inner.next().unwrap())?;
 
         Ok(MatchCase {
-            identifiers,
+            keys: identifiers,
+            expression: expr,
+        })
+    }
+
+    fn parse_map_case_key(pair: Pair<Rule>) -> Result<MapCaseKey, TuliproxError> {
+        let mut inner = pair.into_inner().next().unwrap();
+        match inner.as_rule() {
+            Rule::string_literal => Ok(MapCaseKey::Text(inner.as_str().to_string())),
+            Rule::any_match => Ok(MapCaseKey::AnyMatch),
+            _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unexpected map key: {:?}", inner.as_rule()),
+        }
+    }
+
+    fn parse_map_case(pair: Pair<Rule>) -> Result<MapCase, TuliproxError> {
+        let mut inner = pair.into_inner();
+
+        let first = inner.next().unwrap();
+
+        let identifier = match first.as_rule() {
+            Rule::map_case_key => {
+                MapperProgram::parse_map_case_key(first)?
+            }
+            _ => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unexpected map case key: {:?}", first.as_rule()),
+        };
+
+        let expr = MapperProgram::parse_expression(inner.next().unwrap())?;
+
+        Ok(MapCase {
+            key: identifier,
             expression: expr,
         })
     }
@@ -329,11 +401,26 @@ impl MapperProgram {
             Rule::match_block => {
                 let case_pairs = pair.into_inner();
                 let mut cases = vec![];
-                for arm in case_pairs {
-                    cases.push(MapperProgram::parse_match_case(arm)?);
+                for case in case_pairs {
+                    cases.push(MapperProgram::parse_match_case(case)?);
                 }
-                Err(info_err!("Failed".to_string()))
-                //Ok(Expression::MatchBlock { cases})
+                Ok(Expression::MatchBlock(cases))
+            }
+
+            Rule::map_block => {
+                let mut inner = pair.into_inner();
+                let first = inner.next().unwrap();
+                let key = match first.as_rule() {
+                    Rule::map_key => {
+                        MapKey::Identifier(first.as_str().to_string())
+                    }
+                    _ => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unexpected map case key: {:?}", first.as_rule()),
+                };
+                let mut cases = vec![];
+                for case in inner {
+                    cases.push(MapperProgram::parse_map_case(case)?);
+                }
+                Ok(Expression::MapBlock { key, cases})
             }
 
             _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown expression rule: {:?}", pair.as_rule()),
@@ -363,7 +450,6 @@ impl Context {
     pub fn get_var(&self, name: &str) -> &EvalResult {
         self.variables.get(name).unwrap_or(&Undefined)
     }
-
 }
 
 #[derive(Debug)]
@@ -422,7 +508,6 @@ fn concat_args(args: &Vec<EvalResult>) -> Vec<&str> {
 }
 
 impl Expression {
-
     pub fn eval(&self, ctx: &mut Context, provider: &ValueProvider) -> EvalResult {
         match self {
             Expression::Identifier(name) => {
@@ -436,6 +521,14 @@ impl Expression {
                 let val = provider.call(field);
                 let mut values = vec![];
                 for caps in re_pattern.captures_iter(&val) {
+                    // Positional groups
+                    for i in 1..caps.len() {
+                        if let Some(m) = caps.get(i) {
+                            values.push((i.to_string(), m.as_str().to_string()));
+                        }
+                    }
+
+                    // named groups
                     for name in re_pattern.capture_names().flatten() {
                         if let Some(m) = caps.name(name) {
                             values.push((name.to_string(), m.as_str().to_string()));
@@ -444,6 +537,8 @@ impl Expression {
                 }
                 if values.is_empty() {
                     return Undefined;
+                } else if values.len() == 1 {
+                    return Value(values[0].1.to_string());
                 }
                 Named(values)
             }
@@ -463,22 +558,10 @@ impl Expression {
                     BuiltInFunction::Capitalize => Value(concat_args(&evaluated_args).iter().map(|&s| s.capitalize()).collect::<Vec<_>>().join(" ")),
                 }
             }
-            Expression::MatchBlock{ keys, cases} => {
-                let mut match_keys = vec![];
-                for key in keys {
-                    match key {
-                        MatchKey::Identifier(ident) => {
-                            if !ctx.has_var(ident) {
-                                return EvalResult::Failure(format!("Match expression invalid! Variable with name {ident} not found."));
-                            }
-                            match_keys.push(ctx.get_var(ident));
-                        }
-                    }
-                }
-
+            Expression::MatchBlock(cases) => {
                 for match_case in cases {
                     let mut case_keys = vec![];
-                    for case_key in &match_case.identifiers{
+                    for case_key in &match_case.keys {
                         match case_key {
                             MatchCaseKey::Identifier(ident) => {
                                 if !ctx.has_var(&ident) {
@@ -486,19 +569,45 @@ impl Expression {
                                 }
                                 case_keys.push(ctx.get_var(&ident).clone());
                             }
-                            MatchCaseKey::String(value) => case_keys.push(EvalResult::Value(value.to_string())),
-                            MatchCaseKey::AnyMatch  => case_keys.push(AnyValue),
+                            MatchCaseKey::AnyMatch => case_keys.push(AnyValue),
                         }
                     }
 
+
                     let mut match_count = 0;
-                    for (case_key, &match_key) in case_keys.iter().zip(&match_keys) {
-                        if !match_key.matches(case_key) {
-                            match_count += 1;
+                    let case_keys_len = case_keys.len();
+                    for case_key in case_keys {
+                        match case_key {
+                            Value(_)
+                            | Named(_)
+                            | AnyValue => match_count += 1,
+                            Undefined | Failure(_) => {}
                         }
                     }
-                    if match_count == case_keys.len() {
+                    if match_count == case_keys_len {
                         return match_case.expression.eval(ctx, provider);
+                    }
+                }
+                Undefined
+            }
+            Expression::MapBlock { key, cases } => {
+                let key_value = match key {
+                    MapKey::Identifier(ident) => {
+                        if !ctx.has_var(ident) {
+                            return Failure(format!("Map expression invalid! Variable with name {ident} not found."));
+                        }
+                        ctx.get_var(ident)
+                    }
+                };
+
+                for map_case in cases {
+                    let matches = match &map_case.key {
+                        MapCaseKey::Text(value) => key_value.matches(&Value(value.to_string())),
+                        MapCaseKey::AnyMatch => true,
+                    };
+
+                    if matches {
+                        return map_case.expression.eval(ctx, provider);
                     }
                 }
                 Undefined
@@ -565,36 +674,46 @@ impl Expression {
 
 #[cfg(test)]
 mod tests {
+    use crate::model::{PlaylistItem, PlaylistItemHeader};
     use super::*;
 
     #[test]
     fn test_mapper_dsl_eval() {
         let dsl = r#"
         coast = Caption ~ "(?i)(East|West)"
-        quality = Caption ~ "(?i)(HD|FHD|LHD)"
+        quality = Caption ~ "(?i)(SD|HD|FHD|LHD|UHD)"
         quality = uppercase(quality)
         quality = map quality {
                    "LHD" => "HD",
                    "SHD" => "SD",
                     _ => quality,
-             },
-             _ => quality
         }
-
         coast_quality = match {
             (coast, quality) => concat(capitalize(coast), " ", uppercase(quality)),
             (coast, _) => concat(capitalize(coast), " HD"),
-            (_, quality) => concat("East ", uppercase(quality)),
+            (_, quality) => concat("East", uppercase(quality)),
         }
 
         result = concat("US: TNT ", coast_quality)
     "#;
 
-        let mut program = MapperProgram::parse(dsl).expect("Parsing failed");
-        println!("Program: {program:?}");
+        let mut mapper = MapperProgram::parse(dsl).expect("Parsing failed");
+        println!("Program: {mapper:?}");
+        let channels: Vec<PlaylistItem> = vec![
+            ("D", "HD"), ("A", "FHD"), ("Z", ""), ("K", "HD"), ("B", "HD"), ("A", "HD"),
+            ("K", "SHD"), ("C", "LHD"), ("L", "FHD"), ("R", "UHD"), ("T", "SD"), ("A", "FHD"),
+        ].into_iter().map(|(name, quality)| PlaylistItem { header: PlaylistItemHeader { title: format!("Chanel {name} [{quality}]"), ..Default::default() } }).collect::<Vec<PlaylistItem>>();
 
-        // let mut ctx = Context::new();
-        // // Beispiel-Felder für Caption
+        for pli in channels.iter() {
+            let mut ctx = Context::new();
+            let provider = ValueProvider {
+                pli
+            };
+            mapper.eval(&mut ctx, &provider).expect("TODO: panic message");
+            println!("Result: {:?}", ctx.variables.get("result"));
+        }
+
+
         // ctx.fields.insert("Caption".to_string(), "US: TNT East LHD bubble".to_string());
         //
         // for stmt in &program.statements {

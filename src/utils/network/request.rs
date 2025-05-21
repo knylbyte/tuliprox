@@ -506,7 +506,8 @@ pub fn get_base_url_from_str(url: &str) -> Option<String> {
 }
 
 pub fn create_client(cfg: &Config) -> reqwest::ClientBuilder {
-    let client = reqwest::Client::builder();
+    let mut client = reqwest::Client::builder();
+
     if let Some(proxy_cfg) = cfg.proxy.as_ref() {
         let proxy = match reqwest::Proxy::all(&proxy_cfg.url) {
             Ok(proxy) => {
@@ -521,12 +522,19 @@ pub fn create_client(cfg: &Config) -> reqwest::ClientBuilder {
                 None
             }
         };
-        return if let Some(prxy) = proxy {
+        client = if let Some(prxy) = proxy {
             client.proxy(prxy)
         } else {
             client
         };
     }
+
+    if let Some(rp_config) = cfg.reverse_proxy.as_ref() {
+        if rp_config.disable_referer_header {
+            client = client.referer(false);
+        }
+    }
+
     client
 }
 
