@@ -278,6 +278,14 @@ reverse_proxy:
     burst_size: 10
 ```
 
+#### 1.6.5 `disable_referer_header`
+This option, when set to `true`, prevents tuliprox from sending the Referer header in requests made when acting as a reverse proxy. This can be particularly useful when dealing with certain Xtream Codes providers that might restrict or behave differently based on the Referer header. Default is `false`.
+
+```yaml
+reverse_proxy:
+  disable_referer_header: false 
+```
+
 ### 1.7 `backup_dir`
 is the directory where the backup configuration files written, when saved from the ui.
 
@@ -455,6 +463,7 @@ proxy:
   username: uname  # <- optional basic auth
   password: secret # <- optional basic auth
 ```
+
 ### 1.18 `ipcheck`
 - `url` # URL that may return both IPv4 and IPv6 in one response
 - `url_ipv4` # Dedicated URL to fetch only IPv4
