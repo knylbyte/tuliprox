@@ -17,7 +17,7 @@ use url::Url;
 use crate::tuliprox_error::create_tuliprox_error_result;
 use crate::tuliprox_error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::format_elapsed_time;
-use crate::model::{ConfigInput, ProxyConfig, InputFetchMethod};
+use crate::model::{ConfigInput, Config, InputFetchMethod};
 use crate::repository::storage::{get_input_storage_path, short_hash};
 use crate::repository::storage_const;
 use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
@@ -505,9 +505,10 @@ pub fn get_base_url_from_str(url: &str) -> Option<String> {
     }
 }
 
-pub fn create_client(proxy_config: Option<&ProxyConfig>) -> reqwest::ClientBuilder {
-    let client = reqwest::Client::builder();
-    if let Some(proxy_cfg) = proxy_config {
+pub fn create_client(cfg: &Config) -> reqwest::ClientBuilder {
+    let mut client = reqwest::Client::builder();
+    
+    if let Some(proxy_cfg) = cfg.proxy.as_ref() {
         let proxy = match reqwest::Proxy::all(&proxy_cfg.url) {
             Ok(proxy) => {
                 if let (Some(username), Some(password)) = (&proxy_cfg.username, &proxy_cfg.password) {
@@ -521,13 +522,20 @@ pub fn create_client(proxy_config: Option<&ProxyConfig>) -> reqwest::ClientBuild
                 None
             }
         };
-        return if let Some(prxy) = proxy {
+        client = if let Some(prxy) = proxy {
             client.proxy(prxy)
         } else {
             client
         };
     }
-    reqwest::Client::builder()
+    
+    if let Some(rp_config) = cfg.reverse_proxy.as_ref() {
+        if rp_config.disable_referer_header {
+            client = client.referer(false);
+        }
+    }
+    
+    client
 }
 
 #[cfg(test)]

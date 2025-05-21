@@ -73,15 +73,9 @@ async fn create_shared_data(cfg: &Arc<Config>) -> AppState {
     let active_users = Arc::new(ActiveUserManager::new(cfg));
     let active_provider = Arc::new(ActiveProviderManager::new(cfg).await);
 
-    let mut builder = create_client(cfg.proxy.as_ref()).http1_only();
+    let mut builder = create_client(cfg).http1_only();
     if cfg.connect_timeout_secs > 0 {
         builder = builder.connect_timeout(Duration::from_secs(u64::from(cfg.connect_timeout_secs)));
-    }
-
-    if let Some(rp_config) = cfg.reverse_proxy.as_ref() {
-        if rp_config.disable_referer_header {
-            builder = builder.referer(false);
-        }
     }
 
     let client = builder.build().unwrap_or_else(|_| Client::new());
