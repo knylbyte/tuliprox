@@ -1,6 +1,6 @@
 #![allow(clippy::empty_docs)]
 
-use crate::foundation::filter::{ValueAccessor};
+use crate::foundation::filter::ValueAccessor;
 use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Undefined, Value};
 use crate::model::ItemField;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
@@ -119,7 +119,7 @@ enum AssignmentTarget {
 enum Statement {
     Assignment { target: AssignmentTarget, expr: Expression },
     Expression(Expression),
-    Comment//(String),
+    Comment, //(String),
 }
 
 #[derive(Debug, Clone)]
@@ -129,12 +129,12 @@ pub struct MapperScript {
 
 impl MapperScript {
     pub fn eval(&self, setter: &mut ValueAccessor) -> Result<(), TuliproxError> {
-        let ctx = &mut Context::new();
+        let ctx = &mut MapperContext::new();
         self.eval_with_context(ctx, setter)?;
         Ok(())
     }
 
-    pub fn eval_with_context(&self, ctx: &mut Context, setter: &mut ValueAccessor) -> Result<(), TuliproxError> {
+    pub fn eval_with_context(&self, ctx: &mut MapperContext, setter: &mut ValueAccessor) -> Result<(), TuliproxError> {
         for stmt in &self.statements {
             stmt.eval(ctx, setter)?;
         }
@@ -143,7 +143,7 @@ impl MapperScript {
 }
 
 impl Statement {
-    pub fn eval(&self, ctx: &mut Context, setter: &mut ValueAccessor) -> Result<(), TuliproxError> {
+    pub fn eval(&self, ctx: &mut MapperContext, setter: &mut ValueAccessor) -> Result<(), TuliproxError> {
         match self {
             Statement::Assignment { target, expr } => {
                 let val = expr.eval(ctx, setter);
@@ -153,7 +153,6 @@ impl Statement {
                     }
                     AssignmentTarget::Field(name) => {
                         match val {
-                            Undefined => {}
                             Value(content) => {
                                 setter.set(name, content.as_str());
                             }
@@ -169,14 +168,13 @@ impl Statement {
                                 }
                                 setter.set(name, &result);
                             }
-                            AnyValue => {}
+                            Undefined | AnyValue => {}
                             Failure(err) => {
-                                error!("Failed to set field {name} value: {err}");
+                                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Failed to set field {} value: {}", name, err);
                             }
                         }
                     }
                 }
-
             }
             Statement::Expression(expr) => {
                 let result = expr.eval(ctx, setter);
@@ -189,7 +187,7 @@ impl Statement {
 }
 
 impl MapperScript {
-    fn validate_expr<'a>(expr: &Expression, identifiers: &mut HashSet<&'a str>) -> Result<(), TuliproxError> {
+    fn validate_expr(expr: &Expression, identifiers: &mut HashSet<&str>) -> Result<(), TuliproxError> {
         match expr {
             Expression::Identifier(ident)
             | Expression::VarAccess(ident, _) => {
@@ -380,7 +378,7 @@ impl MapperScript {
                 // remove quotes
                 let content = &raw[1..raw.len() - 1];
                 Ok(MapCaseKey::Text(content.to_string()))
-            },
+            }
             Rule::any_match => Ok(MapCaseKey::AnyMatch),
             _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unexpected map key: {:?}", inner.as_rule()),
         }
@@ -410,14 +408,13 @@ impl MapperScript {
         match pair.as_rule() {
             Rule::var_access => {
                 let text = pair.as_str().to_string();
-                if text.contains(".") {
+                if text.contains('.') {
                     let splitted: Vec<&str> = text.splitn(2, '.').collect();
                     Ok(Expression::VarAccess(splitted[0].to_string(), splitted[1].to_string()))
                 } else {
                     Ok(Expression::Identifier(text))
                 }
-
-            },
+            }
 
             Rule::string_literal => {
                 let raw = pair.as_str();
@@ -470,7 +467,7 @@ impl MapperScript {
                 for case in inner {
                     cases.push(MapperScript::parse_map_case(case)?);
                 }
-                Ok(Expression::MapBlock { key, cases})
+                Ok(Expression::MapBlock { key, cases })
             }
 
             Rule::expression => {
@@ -483,11 +480,11 @@ impl MapperScript {
     }
 }
 
-pub struct Context {
+pub struct MapperContext {
     variables: HashMap<String, EvalResult>,
 }
 
-impl Context {
+impl MapperContext {
     pub fn new() -> Self {
         Self {
             variables: HashMap::new(),
@@ -507,6 +504,13 @@ impl Context {
     }
 }
 
+impl Default for MapperContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
 #[derive(Debug)]
 #[derive(Clone)]
 enum EvalResult {
@@ -521,7 +525,7 @@ fn compare_tuple_vec<'a>(
     a: &'a [(String, String)],
     b: &'a [(String, String)],
 ) -> bool {
-    fn to_map<'a>(vec: &'a [(String, String)]) -> HashMap<&'a str, &'a str> {
+    fn to_map(vec: &[(String, String)]) -> HashMap<&str, &str> {
         vec.iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect()
@@ -533,20 +537,15 @@ fn compare_tuple_vec<'a>(
 impl EvalResult {
     fn matches(&self, other: &EvalResult) -> bool {
         match (self, other) {
-            (AnyValue, _)
-            | (_, AnyValue) => true,
+            (AnyValue, _) | (_, AnyValue) => true,
             (Value(a), Value(b)) => a == b,
-            (Named(a), Named(b)) => compare_tuple_vec(&a, &b),
-            (Failure(_), _) | (_, Failure(_)) => false,
-            (Undefined, _) | (_, Undefined) => false,
+            (Named(a), Named(b)) => compare_tuple_vec(a, b),
             _ => false,
         }
     }
+
     pub fn is_error(&self) -> bool {
-        match self {
-            Failure(_) => true,
-            _ => false,
-        }
+        matches!(self, Failure(_))
     }
 }
 
@@ -555,7 +554,6 @@ fn concat_args(args: &Vec<EvalResult>) -> Vec<&str> {
 
     for arg in args {
         match arg {
-            Undefined => {}
             Value(value) => result.push(value.as_str()),
             Named(pairs) => {
                 for (i, (key, value)) in pairs.iter().enumerate() {
@@ -567,8 +565,7 @@ fn concat_args(args: &Vec<EvalResult>) -> Vec<&str> {
                     }
                 }
             }
-            AnyValue => {}
-            Failure(_) => {}
+            Undefined | AnyValue | Failure(_) => {}
         }
     }
 
@@ -576,7 +573,8 @@ fn concat_args(args: &Vec<EvalResult>) -> Vec<&str> {
 }
 
 impl Expression {
-    pub fn eval(&self, ctx: &mut Context, accessor: &ValueAccessor) -> EvalResult {
+    #[allow(clippy::too_many_lines)]
+    pub fn eval(&self, ctx: &mut MapperContext, accessor: &ValueAccessor) -> EvalResult {
         match self {
             Expression::Identifier(name) => {
                 match ctx.variables.get(name) {
@@ -593,7 +591,7 @@ impl Expression {
                         Named(values) => {
                             for (key, val) in values {
                                 if key == field {
-                                    return Value(val.to_string())
+                                    return Value(val.to_string());
                                 }
                             }
                             Failure(format!("Variable with name {name} has no field {field}."))
@@ -654,10 +652,10 @@ impl Expression {
                     for case_key in &match_case.keys {
                         match case_key {
                             MatchCaseKey::Identifier(ident) => {
-                                if !ctx.has_var(&ident) {
+                                if !ctx.has_var(ident) {
                                     return Failure(format!("Match case invalid! Variable with name {ident} not found."));
                                 }
-                                case_keys.push(ctx.get_var(&ident).clone());
+                                case_keys.push(ctx.get_var(ident).clone());
                             }
                             MatchCaseKey::AnyMatch => case_keys.push(AnyValue),
                         }
@@ -705,67 +703,11 @@ impl Expression {
         }
     }
 }
-//
-// pub fn eval_expression(expr: &Expression, ctx: &Context) -> Option<String> {
-//     match expr {
-//         Expression::StringLiteral(s) => Some(s.clone()),
-//         Expression::Identifier(name) => ctx.get(name),
-//         Expression::FunctionCall { name, args } => {
-//             let eval_args: Vec<String> = args.iter()
-//                 .filter_map(|a| eval_expression(a, ctx))
-//                 .collect();
-//             match name.as_str() {
-//                 "uppercase" => eval_args.get(0).map(|s| s.to_uppercase()),
-//                 "lowercase" => eval_args.get(0).map(|s| s.to_lowercase()),
-//                 "capitalize" => eval_args.get(0).map(|s| {
-//                     let mut c = s.chars();
-//                     match c.next() {
-//                         None => String::new(),
-//                         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-//                     }
-//                 }),
-//                 "concat" => Some(eval_args.join("")),
-//                 _ => None,
-//             }
-//         }
-//     }
-// }
-//
-// pub fn eval_statement(stmt: &Statement, ctx: &mut Context) {
-//     match stmt {
-//         Statement::Assignment { target, value } => {
-//             if let Some(val) = eval_expression(value, ctx) {
-//                 ctx.set(target, val);
-//             }
-//         }
-//         Statement::MatchAssignment { target, arms } => {
-//             let values: Vec<Option<String>> = arms[0].pattern.iter().map(|v| ctx.get(v)).collect();
-//             for arm in arms {
-//                 let match_ok = arm.pattern.iter().enumerate().all(|(i, name)| {
-//                     name == "_" || ctx.get(name).is_some()
-//                 });
-//                 if match_ok {
-//                     if let Some(result) = eval_expression(&arm.result, ctx) {
-//                         ctx.set(target, result);
-//                         break;
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-//
-// pub fn eval_program(prog: &Program, ctx: &mut Context) {
-//     for stmt in &prog.statements {
-//         eval_statement(stmt, ctx);
-//     }
-// }
-
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{PlaylistItem, PlaylistItemHeader};
     use super::*;
+    use crate::model::{PlaylistItem, PlaylistItemHeader};
 
     #[test]
     fn test_mapper_dsl_eval() {

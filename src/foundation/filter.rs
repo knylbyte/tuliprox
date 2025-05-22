@@ -66,7 +66,7 @@ impl ValueAccessor<'_> {
     }
 
     pub fn set(&mut self, field: &ItemField, value: &str) {
-        if set_field_value(&mut self.pli, field, value.to_string()) {
+        if set_field_value(self.pli, field, value.to_string()) {
             trace!("Property {field} set to {value}");
         } else {
             error!("Can't set unknown field {field} set to {value}");

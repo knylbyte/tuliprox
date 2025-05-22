@@ -1,11 +1,12 @@
 WHITESPACE = _{ " " | "\t"}
 regex_op =  _{ "~" }
 identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
+var_access = { identifier ~ ("." ~ identifier)? }
 string_literal = @{ "\"" ~ ( "\\\"" | (!"\"" ~ ANY) )* ~ "\"" }
 field = { ^"group" | ^"title" | ^"name" | ^"url" | ^"input" | ^"caption"}
 regex_expr = { field ~ regex_op ~ string_literal }
-expression = _{ map_block | match_block | function_call | regex_expr | string_literal | identifier }
-function_name = {  ^"concat" | ^"uppercase" | ^"lowercase" | ^"capitalize" | ^"trim"}
+expression = { map_block | match_block | function_call | regex_expr | string_literal | var_access }
+function_name = {  "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" }
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
 match_case_key = { any_match | identifier }
