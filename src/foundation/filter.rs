@@ -556,19 +556,17 @@ fn build_dependency_graph(
     Ok(graph)
 }
 
-pub fn prepare_templates(
-    templates: &mut Vec<PatternTemplate>,
-) -> Result<Vec<PatternTemplate>, TuliproxError> {
+pub fn prepare_templates(templates: &mut Vec<PatternTemplate>) -> Result<Vec<PatternTemplate>, TuliproxError> {
+
     let graph = build_dependency_graph(templates)?;
-    let mut template_values = HashMap::<String, TemplateValue>::new();
-    let mut template_map: HashMap<String, PatternTemplate> = templates
-        .iter_mut()
-        .map(|item| {
-            item.prepare();
-            template_values.insert(item.name.clone(), item.value.clone());
-            (item.name.clone(), item.clone())
-        })
-        .collect();
+    let mut template_values = HashMap::new();
+    let mut template_map = HashMap::with_capacity(templates.len());
+
+    for item in templates.iter_mut() {
+        item.prepare();
+        template_values.insert(item.name.clone(), item.value.clone());
+        template_map.insert(item.name.clone(), item);
+    }
 
     if let Some(dependencies) = graph.get_dependencies() {
         if let Some(sorted) = graph.topological_sort() {
@@ -641,7 +639,8 @@ pub fn prepare_templates(
             }
         }
     }
-    Ok(template_map.into_values().collect())
+    let result: Vec<PatternTemplate> = template_map.iter_mut().map(|(_, t)| t.clone()).collect();
+    Ok(result)
 }
 
 pub fn apply_templates_to_pattern(
@@ -656,14 +655,16 @@ pub fn apply_templates_to_pattern(
             TemplateValue::Single(val) => {
                 match new_pattern {
                     TemplateValue::Single(ref mut pat) => {
-                        if pat.contains(&template.placeholder) {
-                            *pat = pat.replace(&template.placeholder, val);
+                        let replaced = pat.replace(&template.placeholder, val);
+                        if replaced != *pat {
+                            *pat = replaced;
                         }
                     }
                     TemplateValue::Multi(ref mut pats) => {
                         for pat in pats.iter_mut() {
-                            if pat.contains(&template.placeholder) {
-                                *pat = pat.replace(&template.placeholder, val);
+                            let replaced = pat.replace(&template.placeholder, val);
+                            if replaced != *pat {
+                                *pat = replaced;
                             }
                         }
                     }
