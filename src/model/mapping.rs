@@ -3,7 +3,7 @@ use std::fmt::Display;
 use std::str::FromStr;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
-
+use log::{trace};
 use crate::foundation::filter::{apply_templates_to_pattern_single, get_filter, prepare_templates, Filter, PatternTemplate};
 use crate::foundation::mapper::MapperScript;
 use crate::model::valid_property;
@@ -119,15 +119,15 @@ pub enum MapperOperation {
 impl MapperOperation {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         match self {
-            MapperOperation::Lowercase { field }
-            | MapperOperation::Uppercase { field }
-            | MapperOperation::Capitalize { field } => {
+            MapperOperation::Lowercase {ref field }
+            | MapperOperation::Uppercase { ref field }
+            | MapperOperation::Capitalize { ref field } => {
                 if !valid_property!(field.as_str(), MAPPER_FIELDS) {
                     return Err(info_err!(format!("Invalid mapper attribute field {field}")));
                 }
             }
 
-            MapperOperation::Copy { field, source } => {
+            MapperOperation::Copy { ref field, ref source } => {
                 if !valid_property!(field.as_str(), MAPPER_FIELDS) {
                     return Err(info_err!(format!("Invalid mapper attribute field {field}")));
                 }
@@ -136,9 +136,9 @@ impl MapperOperation {
                 }
             }
 
-            MapperOperation::Suffix { field, value }
-            | MapperOperation::Prefix { field, value }
-            | MapperOperation::Set { field, value } => {
+            MapperOperation::Suffix { ref field, ref mut value }
+            | MapperOperation::Prefix { ref field, ref mut value }
+            | MapperOperation::Set { ref field, ref mut value } => {
                 if !valid_property!(field.as_str(), MAPPER_FIELDS) {
                     return Err(info_err!(format!("Invalid mapper attribute field {field}")));
                 }
@@ -161,15 +161,13 @@ pub struct Mapper {
     pub t_filter: Option<Filter>,
     #[serde(skip_serializing, skip_deserializing)]
     pub t_script: Option<MapperScript>,
-    #[serde(skip_serializing, skip_deserializing)]
-    t_tags: Vec<MappingTag>,
 }
 
 impl Mapper {
     /// # Panics
     ///
     /// Will panic if default `RegEx` gets invalid
-    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>, tags: Option<&Vec<MappingTag>>) -> Result<(), TuliproxError> {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         match get_filter(&self.filter, templates) {
             Ok(filter) => self.t_filter = Some(filter),
             Err(err) => return Err(err),
@@ -178,8 +176,8 @@ impl Mapper {
             None => self.script.to_string(),
             Some(tmpls) => apply_templates_to_pattern_single(&self.script, tmpls)?,
         };
+        trace!("Mapper script: {script}");
         self.t_script = Some(MapperScript::parse(&script)?);
-        self.t_tags = tags.map_or_else(Vec::new, std::clone::Clone::clone);
         Ok(())
     }
 }
@@ -197,11 +195,10 @@ pub struct Mapping {
 }
 
 impl Mapping {
-    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>,
-                   tags: Option<&Vec<MappingTag>>) -> Result<(), TuliproxError> {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         if let Some(mapper_list) = &mut self.mapper {
             for mapper in mapper_list {
-                mapper.prepare(templates, tags)?;
+                mapper.prepare(templates)?;
             }
         }
 
@@ -251,8 +248,7 @@ impl MappingDefinition {
         }
         for mapping in &mut self.mapping {
             let template_list = self.templates.as_ref();
-            let tag_list = self.tags.as_ref();
-            mapping.prepare(template_list, tag_list)?;
+            mapping.prepare(template_list)?;
         }
         Ok(())
     }

@@ -5,7 +5,7 @@ use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Undefined,
 use crate::model::ItemField;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::Capitalize;
-use log::error;
+use log::{error, trace};
 use pest::iterators::Pair;
 use pest::Parser;
 use regex::Regex;
@@ -19,7 +19,7 @@ regex_op =  _{ "~" }
 identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
 var_access = { identifier ~ ("." ~ identifier)? }
 string_literal = @{ "\"" ~ ( "\\\"" | (!"\"" ~ ANY) )* ~ "\"" }
-field = { ^"group" | ^"title" | ^"name" | ^"url" | ^"input" | ^"caption"}
+field = { ^"name" | ^"title" | ^"caption" | ^"group" | ^"id" | ^"chno" | ^"logo" | ^"logo_small" | ^"parent_code" | ^"audio_track" | ^"time_shift" | ^"rec" | ^"url" | ^"epg_channel_id" | ^"epg_id" }
 regex_expr = { field ~ regex_op ~ string_literal }
 expression = { map_block | match_block | function_call | regex_expr | string_literal | var_access }
 function_name = {  "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" }
@@ -149,7 +149,7 @@ impl Statement {
                 let val = expr.eval(ctx, setter);
                 match target {
                     AssignmentTarget::Identifier(name) => {
-                        ctx.add_var(name, val);
+                        ctx.set_var(name, val);
                     }
                     AssignmentTarget::Field(name) => {
                         match val {
@@ -178,7 +178,11 @@ impl Statement {
             }
             Statement::Expression(expr) => {
                 let result = expr.eval(ctx, setter);
-                error!("Ignoring result {result:?}");
+                if let Failure(err) = &result {
+                    error!("{err}");
+                } else {
+                    trace!("Ignoring result {result:?}");
+                }
             }
             Statement::Comment => {}
         }
@@ -322,7 +326,7 @@ impl MapperScript {
         let target = match name.as_rule() {
             Rule::identifier => AssignmentTarget::Identifier(name.as_str().to_string()),
             Rule::field => AssignmentTarget::Field(ItemField::from_str(name.as_str())?),
-            _ => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Assignment target not supported {}", name.as_str()),
+            _ => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Assignment target isn't supported {}", name.as_str()),
         };
         let next = inner.next().unwrap();
         let value = MapperScript::parse_expression(next)?;
@@ -353,9 +357,13 @@ impl MapperScript {
                     if arm.as_rule() != Rule::WHITESPACE {
                         match MapperScript::parse_match_case_key(arm)? {
                             MatchCaseKey::Identifier(ident) => matches.push(MatchCaseKey::Identifier(ident)),
-                            MatchCaseKey::AnyMatch => return Err(info_err!("Unexpected match case key: _".to_string())),
+                            MatchCaseKey::AnyMatch => matches.push(MatchCaseKey::AnyMatch),
                         }
                     }
+                }
+                // we don't allow inside multi match keys AnyMatch
+                if matches.len() > 1 && matches.iter().filter(|&m| matches!(m, &MatchCaseKey::AnyMatch)).count() > 0 {
+                    return Err(info_err!("Unexpected match case key: _".to_string()));
                 }
                 matches
             }
@@ -491,7 +499,7 @@ impl MapperContext {
         }
     }
 
-    fn add_var(&mut self, name: &str, value: EvalResult) {
+    fn set_var(&mut self, name: &str, value: EvalResult) {
         self.variables.insert(name.to_string(), value);
     }
 
@@ -627,22 +635,29 @@ impl Expression {
                 Named(values)
             }
             Expression::FunctionCall { name, args } => {
-                let evaluated_args: Vec<EvalResult> = args.iter().map(|a| a.eval(ctx, accessor)).collect();
+                let mut evaluated_args: Vec<EvalResult> = args.iter().map(|a| a.eval(ctx, accessor)).collect();
                 for arg in &evaluated_args {
                     if arg.is_error() {
                         return arg.clone();
                     }
                 }
-
-                match name {
-                    BuiltInFunction::Concat => Value(concat_args(&evaluated_args).join("")),
-                    BuiltInFunction::Uppercase => Value(concat_args(&evaluated_args).join(" ").to_uppercase()),
-                    BuiltInFunction::Trim => Value(concat_args(&evaluated_args).iter().map(|&s| s.trim()).collect::<Vec<_>>().join(" ").trim().to_string()),
-                    BuiltInFunction::Lowercase => Value(concat_args(&evaluated_args).join(" ").to_lowercase()),
-                    BuiltInFunction::Capitalize => Value(concat_args(&evaluated_args).iter().map(|&s| s.capitalize()).collect::<Vec<_>>().join(" ")),
-                    BuiltInFunction::Print => {
-                        println!("[MapperScript] {}", concat_args(&evaluated_args).join(""));
-                        Undefined
+                evaluated_args.retain(|er| ! matches!(er, Undefined | Failure(_) | AnyValue));
+                if evaluated_args.is_empty() {
+                    if matches!(name, BuiltInFunction::Print) {
+                        trace!("[MapperScript] undefined");
+                    }
+                    Undefined
+                } else {
+                    match name {
+                        BuiltInFunction::Concat => Value(concat_args(&evaluated_args).join("")),
+                        BuiltInFunction::Uppercase => Value(concat_args(&evaluated_args).join(" ").to_uppercase()),
+                        BuiltInFunction::Trim => Value(concat_args(&evaluated_args).iter().map(|&s| s.trim()).collect::<Vec<_>>().join(" ").trim().to_string()),
+                        BuiltInFunction::Lowercase => Value(concat_args(&evaluated_args).join(" ").to_lowercase()),
+                        BuiltInFunction::Capitalize => Value(concat_args(&evaluated_args).iter().map(|&s| s.capitalize()).collect::<Vec<_>>().join(" ")),
+                        BuiltInFunction::Print => {
+                            trace!("[MapperScript] {}", concat_args(&evaluated_args).join(""));
+                            Undefined
+                        }
                     }
                 }
             }
@@ -660,7 +675,6 @@ impl Expression {
                             MatchCaseKey::AnyMatch => case_keys.push(AnyValue),
                         }
                     }
-
 
                     let mut match_count = 0;
                     let case_keys_len = case_keys.len();
@@ -712,22 +726,25 @@ mod tests {
     #[test]
     fn test_mapper_dsl_eval() {
         let dsl = r#"
-        coast = Caption ~ "(?i)(East|West)"
-        quality = Caption ~ "(?i)(SD|HD|FHD|LHD|UHD)"
-        quality = uppercase(quality)
-        quality = map quality {
-                   "LHD" => "HD",
-                   "SHD" => "SD",
-                    _ => quality,
-        }
-        # print("quality is:", quality)
-        coast_quality = match {
-            (coast, quality) => concat(capitalize(coast), " ", uppercase(quality)),
-            coast => concat(capitalize(coast), " HD"),
-            quality => concat("East ", uppercase(quality)),
-        }
-
-        Caption = concat("US: TNT ", coast_quality)
+            coast = Caption ~ "(?i)\b(EAST|WEST)\b"
+            quality = Caption ~ "(?i)\b([FUSL]?HD|SD|4K|1080p|720p|3840p)\b"
+            quality = uppercase(quality)
+            quality = map quality {
+                       "SHD" => "SD",
+                       "LHD" => "HD",
+                       "720p" => "HD",
+                       "1080p" => "FHD",
+                       "4K" => "UHD",
+                       "3840p" => "UHD",
+                        _ => quality,
+            }
+            coast_quality = match {
+                (coast, quality) => concat(capitalize(coast), " ", uppercase(quality)),
+                coast => concat(capitalize(coast), " HD"),
+                quality => concat("East ", uppercase(quality)),
+            }
+            Caption = concat("US: TNT", " ", coast_quality)
+            Group = "United States - Entertainment"
     "#;
 
         let mapper = MapperScript::parse(dsl).expect("Parsing failed");
