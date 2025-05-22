@@ -8,7 +8,7 @@ use pest::Parser;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use crate::model::ItemField;
+use crate::model::{ItemField};
 use crate::model::{PlaylistItem, PlaylistItemType};
 use crate::tools::directed_graph::DirectedGraph;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
@@ -29,7 +29,7 @@ pub fn get_field_value(pli: &PlaylistItem, field: &ItemField) -> String {
     value.to_string()
 }
 
-pub fn set_field_value(pli: &mut PlaylistItem, field: &ItemField, value: String) {
+pub fn set_field_value(pli: &mut PlaylistItem, field: &ItemField, value: String) -> bool {
     let header = &mut pli.header;
     match field {
         ItemField::Group => header.group = value,
@@ -41,8 +41,9 @@ pub fn set_field_value(pli: &mut PlaylistItem, field: &ItemField, value: String)
             header.title.clone_from(&value);
             header.name = value;
         }
-        ItemField::Type => {}
+        ItemField::Type => {},
     }
+    true
 }
 
 pub struct ValueProvider<'a> {
@@ -50,20 +51,26 @@ pub struct ValueProvider<'a> {
 }
 
 impl ValueProvider<'_> {
-    pub fn call(&self, field: &ItemField) -> String {
+    pub fn get(&self, field: &ItemField) -> String {
         get_field_value(self.pli, field)
     }
 }
 
-pub trait ValueProcessor {
-    fn process(&mut self, field: &ItemField, value: &str, rewc: &RegexWithCaptures) -> bool;
+pub struct ValueAccessor<'a> {
+    pub pli: &'a mut PlaylistItem,
 }
 
-pub struct MockValueProcessor {}
+impl ValueAccessor<'_> {
+    pub fn get(&self, field: &ItemField) -> String {
+        get_field_value(self.pli, field)
+    }
 
-impl ValueProcessor for MockValueProcessor {
-    fn process(&mut self, _: &ItemField, _: &str, _: &RegexWithCaptures) -> bool {
-        false
+    pub fn set(&mut self, field: &ItemField, value: &str) {
+        if set_field_value(&mut self.pli, field, value.to_string()) {
+            trace!("Property {field} set to {value}");
+        } else {
+            error!("Can't set unknown field {field} set to {value}");
+        }
     }
 }
 
@@ -161,19 +168,19 @@ pub enum Filter {
 }
 
 impl Filter {
-    pub fn filter(&self, provider: &ValueProvider, processor: &mut dyn ValueProcessor) -> bool {
+    pub fn filter(&self, provider: &ValueProvider) -> bool {
         match self {
             Self::FieldComparison(field, rewc) => {
                 let (is_match, value) = if field == &ItemField::Caption {
-                    let value = provider.call(&ItemField::Title);
+                    let value = provider.get(&ItemField::Title);
                     if rewc.re.is_match(value.as_str()) {
                         (true, value)
                     } else {
-                        let value = provider.call(&ItemField::Name);
+                        let value = provider.get(&ItemField::Name);
                         (rewc.re.is_match(value.as_str()), value)
                     }
                 } else {
-                    let value = provider.call(field);
+                    let value = provider.get(field);
                     (rewc.re.is_match(value.as_str()), value)
                 };
                 if log_enabled!(Level::Trace) {
@@ -183,13 +190,10 @@ impl Filter {
                         debug!("Match failed: {self}: {:?} {} => {}={}", &rewc, &rewc.restr, &field, &value);
                     }
                 }
-                if is_match {
-                    processor.process(field, &value, rewc);
-                }
                 is_match
             }
             Self::TypeComparison(field, item_type) => {
-                let value = provider.call(field);
+                let value = provider.get(field);
                 get_filter_item_type(value.as_str()).is_some_and(|pli_type| {
                     let is_match = pli_type.eq(item_type);
                     if log_enabled!(Level::Trace) {
@@ -202,16 +206,16 @@ impl Filter {
                     is_match
                 })
             }
-            Self::Group(expr) => expr.filter(provider, processor),
+            Self::Group(expr) => expr.filter(provider),
             Self::UnaryExpression(op, expr) => match op {
-                UnaryOperator::Not => !expr.filter(provider, processor),
+                UnaryOperator::Not => !expr.filter(provider),
             },
             Self::BinaryExpression(left, op, right) => match op {
                 BinaryOperator::And => {
-                    left.filter(provider, processor) && right.filter(provider, processor)
+                    left.filter(provider) && right.filter(provider)
                 }
                 BinaryOperator::Or => {
-                    left.filter(provider, processor) || right.filter(provider, processor)
+                    left.filter(provider) || right.filter(provider)
                 }
             },
         }
@@ -728,7 +732,7 @@ pub fn apply_templates_to_pattern_single(pattern: &str, templates: &Vec<PatternT
 
 #[cfg(test)]
 mod tests {
-    use crate::foundation::filter::{get_filter, MockValueProcessor, ValueProvider};
+    use crate::foundation::filter::{get_filter, ValueProvider};
     use crate::model::{PlaylistItem, PlaylistItemHeader};
     use crate::utils::CONSTANTS;
 
@@ -792,14 +796,13 @@ mod tests {
                     create_mock_pli("24/7: Cars", "US Channels"),
                     create_mock_pli("Entertainment", "US Channels"),
                 ];
-                let mut processor = MockValueProcessor {};
                 let filtered: Vec<&PlaylistItem> = channels
                     .iter()
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
                         };
-                        filter.filter(&provider, &mut processor)
+                        filter.filter(&provider)
                     })
                     .collect();
                 assert_eq!(filtered.len(), 2);
@@ -845,14 +848,13 @@ mod tests {
                     create_mock_pli("NC", "GA"),
                     create_mock_pli("NA", "GC"),
                 ];
-                let mut processor = MockValueProcessor {};
                 let filtered: Vec<&PlaylistItem> = channels
                     .iter()
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
                         };
-                        filter.filter(&provider, &mut processor)
+                        filter.filter(&provider)
                     })
                     .collect();
                 assert_eq!(filtered.len(), 1);
@@ -907,14 +909,13 @@ mod tests {
                     create_mock_pli("24/7: Cars", "US Channels"),
                     create_mock_pli("Entertainment", "US Channels"),
                 ];
-                let mut processor = MockValueProcessor {};
                 let filtered: Vec<&PlaylistItem> = channels
                     .iter()
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
                         };
-                        filter.filter(&provider, &mut processor)
+                        filter.filter(&provider)
                     })
                     .collect();
                 assert_eq!(filtered.len(), 1);

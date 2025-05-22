@@ -17,7 +17,7 @@ use url::Url;
 use crate::tuliprox_error::create_tuliprox_error_result;
 use crate::tuliprox_error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::{format_elapsed_time, Config};
-use crate::model::{ConfigInput, ProxyConfig, InputFetchMethod};
+use crate::model::{ConfigInput, InputFetchMethod};
 use crate::repository::storage::{get_input_storage_path, short_hash};
 use crate::repository::storage_const;
 use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
