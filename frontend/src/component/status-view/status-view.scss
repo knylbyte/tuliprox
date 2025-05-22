@@ -1,7 +1,10 @@
+@use '../../scss/common';
+
 .status-view {
   display: flex;
   flex-flow: column;
   gap: 12px;
+  padding: 4px;
 
   &__content {
     display: grid;
@@ -10,11 +13,20 @@
   }
 
   &__section-title {
+    display: flex;
+    flex-flow: row;
+    align-items: center;
+    gap: 20px;
     color: var(--title-label-color);
     font-weight: bold;
+    font-size: 1.5rem;
     border-bottom: 1px solid var(--border-color);
     padding-bottom: 4px;
     margin: 8px 0;
+
+    button {
+      @include common.iconButton();
+    }
   }
 
   &__col-label {
