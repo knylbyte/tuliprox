@@ -283,7 +283,7 @@ This option, when set to `true`, prevents tuliprox from sending the Referer head
 
 ```yaml
 reverse_proxy:
-  disable_referer_header: false 
+  disable_referer_header: false
 ```
 
 ### 1.7 `backup_dir`
@@ -309,24 +309,27 @@ log:
   log_level: debug
 ```
 
-### 1.10 `web_ui_enabled`
-default is true, if set to false the web_ui is disabled
-
-### 1.11 `web_auth`
-Web UI Authentication can be enabled if `web_ui_enabled` is `true`.
+### 1.10 `web_ui`
+- enabled: default is true, if set to false the web_ui is disabled
+- user_ui_enabled, true or false,  for user bouquet editor
+- path is for web_ui path like `/ui` for reverse proxy integration if necessary.
+- auth for authentication settings
+  - `enabled` can be deactivated if `enabled` is set to `false`. If not set default is `true`.
+  - `issuer`
+  - `secret` is used for jwt token generation.
+  - `userfile` is the file where the ui users are stored. if the filename is not absolute `tuliprox` will look into the `config_dir`. if `userfile`is not given the default value is `user.txt`
 
 ```yaml
-web_ui_enabled: true
-web_auth:
+web_ui:
   enabled: true
-  secret: very.secret.secret
-  issuer: tuliprox
-  userfile: user.txt
+  user_ui_enabled: true
+  path:
+  auth:
+    enabled: true
+    issuer: tuliprox
+    secret: ef9ab256a8c0abe5de92c2e05ca92baa810472ab702ff1674e9248308ceeec92
+    userfile: user.txt
 ```
-
-- `web_auth` can be deactivated if `enabled` is set to `false`. If not set default is `true`.
-- `secret` is used for jwt token generation.
-- `userfile` is the file where the ui users are stored. if the filename is not absolute `tuliprox` will look into the `config_dir`. if `userfile`is not given the default value is `user.txt`
 
 You can generate a secret for jwt token for example with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
 
@@ -405,7 +408,6 @@ It is the storage path for user configurations (f.e. bouquets).
 
 It is possible to define `hdhomerun` target for output. To use this outputs we need to define HdHomeRun devices.
 Supports now basic auth like <http://user:password@ip:port/lineup.json>.
-
 
 The simplest config looks like:
 ```yaml
@@ -1019,7 +1021,7 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
 - Identifiers: `Variable Names` and `Playlist Field Names` composed of ASCII alphanumeric characters and underscores.
 - Strings / Text: Enclosed in double quotes. "example string" 
 - Regex Matching:   `FieldName ~ "Regex"` like in filter statements.
-- Access a field in a regex match result:  with `result.capture`. For example if you have multiple captures you can access them by their name, or their index 1..
+- Access a field in a regex match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at 1.
 - Builtin String functions: 
   - concat(a, b, ...)
   - uppercase(a)
