@@ -154,7 +154,7 @@ impl Statement {
                     AssignmentTarget::Field(name) => {
                         match val {
                             Value(content) => {
-                                setter.set(name, content.as_str());
+                                setter.set(name.as_str(), content.as_str());
                             }
                             Named(pairs) => {
                                 let mut result = String::with_capacity(128);
@@ -166,7 +166,7 @@ impl Statement {
                                         result.push_str(", ");
                                     }
                                 }
-                                setter.set(name, &result);
+                                setter.set(name.as_str(), &result);
                             }
                             Undefined | AnyValue => {}
                             Failure(err) => {
@@ -610,29 +610,31 @@ impl Expression {
             }
             Expression::StringLiteral(s) => Value(s.clone()),
             Expression::RegexExpr { field, pattern: _pattern, re_pattern } => {
-                let val = accessor.get(field);
-                let mut values = vec![];
-                for caps in re_pattern.captures_iter(&val) {
-                    // Positional groups
-                    for i in 1..caps.len() {
-                        if let Some(m) = caps.get(i) {
-                            values.push((i.to_string(), m.as_str().to_string()));
+                if let Some(val) = accessor.get(field.as_str()) {
+                    let mut values = vec![];
+                    for caps in re_pattern.captures_iter(&val) {
+                        // Positional groups
+                        for i in 1..caps.len() {
+                            if let Some(m) = caps.get(i) {
+                                values.push((i.to_string(), m.as_str().to_string()));
+                            }
                         }
-                    }
 
-                    // named groups
-                    for name in re_pattern.capture_names().flatten() {
-                        if let Some(m) = caps.name(name) {
-                            values.push((name.to_string(), m.as_str().to_string()));
+                        // named groups
+                        for name in re_pattern.capture_names().flatten() {
+                            if let Some(m) = caps.name(name) {
+                                values.push((name.to_string(), m.as_str().to_string()));
+                            }
                         }
                     }
+                    if values.is_empty() {
+                        return Undefined;
+                    } else if values.len() == 1 {
+                        return Value(values[0].1.to_string());
+                    }
+                    return Named(values);
                 }
-                if values.is_empty() {
-                    return Undefined;
-                } else if values.len() == 1 {
-                    return Value(values[0].1.to_string());
-                }
-                Named(values)
+                Undefined
             }
             Expression::FunctionCall { name, args } => {
                 let mut evaluated_args: Vec<EvalResult> = args.iter().map(|a| a.eval(ctx, accessor)).collect();

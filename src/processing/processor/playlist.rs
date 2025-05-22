@@ -16,7 +16,6 @@ use crate::model::{CounterModifier, Mapping};
 use crate::model::{FetchedPlaylist, FieldGetAccessor, FieldSetAccessor, PlaylistEntry, PlaylistGroup, PlaylistItem, UUIDType, XtreamCluster};
 use crate::model::{InputStats, PlaylistStats, SourceStats, TargetStats};
 use crate::processing::playlist_watch::process_group_watch;
-use crate::processing::processor::affix::apply_affixes;
 use crate::processing::processor::xtream_series::playlist_resolve_series;
 use crate::processing::processor::xtream_vod::playlist_resolve_vod;
 use crate::repository::playlist_repository::persist_playlist;
@@ -461,9 +460,6 @@ async fn process_playlist_for_target(client: Arc<reqwest::Client>,
         }
         processed_fetched_playlists.push(processed_fpl);
     }
-
-    step.tick("Processed affixes");
-    apply_affixes(&mut processed_fetched_playlists);
 
     step.tick("Processed epg");
     let (new_epg, new_playlist) = process_epg(&mut processed_fetched_playlists);

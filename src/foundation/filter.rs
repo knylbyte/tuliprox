@@ -1,5 +1,6 @@
 #![allow(clippy::empty_docs)]
 
+use std::borrow::Cow;
 use enum_iterator::all;
 use indexmap::IndexSet;
 use log::{debug, error, log_enabled, trace, Level};
@@ -8,7 +9,7 @@ use pest::Parser;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use crate::model::{ItemField};
+use crate::model::{FieldGetAccessor, FieldSetAccessor, ItemField};
 use crate::model::{PlaylistItem, PlaylistItemType};
 use crate::tools::directed_graph::DirectedGraph;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
@@ -51,8 +52,8 @@ pub struct ValueProvider<'a> {
 }
 
 impl ValueProvider<'_> {
-    pub fn get(&self, field: &ItemField) -> String {
-        get_field_value(self.pli, field)
+    pub fn get(&self, field: &str) -> Option<Cow<str>> {
+        self.pli.header.get_field(field)
     }
 }
 
@@ -61,12 +62,12 @@ pub struct ValueAccessor<'a> {
 }
 
 impl ValueAccessor<'_> {
-    pub fn get(&self, field: &ItemField) -> String {
-        get_field_value(self.pli, field)
+    pub fn get(&self, field: &str) -> Option<Cow<str>> {
+        self.pli.header.get_field(field)
     }
 
-    pub fn set(&mut self, field: &ItemField, value: &str) {
-        if set_field_value(self.pli, field, value.to_string()) {
+    pub fn set(&mut self, field: &str, value: &str) {
+        if self.pli.header.set_field(field, value) {
             trace!("Property {field} set to {value}");
         } else {
             error!("Can't set unknown field {field} set to {value}");
@@ -167,44 +168,57 @@ pub enum Filter {
     BinaryExpression(Box<Filter>, BinaryOperator, Box<Filter>),
 }
 
+fn get_caption<'a>(provider: &'a ValueProvider<'a>, rewc: &'a RegexWithCaptures) -> (bool, Cow<'a, str>) {
+    if let Some(value) = provider.get("title") {
+        if rewc.re.is_match(&value) {
+            return (true, value);
+        }
+    }
+
+    if let Some(value) = provider.get("title") {
+        if rewc.re.is_match(&value) {
+            return (true, value);
+        }
+    }
+    (false, Cow::Borrowed(""))
+}
+
 impl Filter {
     pub fn filter(&self, provider: &ValueProvider) -> bool {
         match self {
             Self::FieldComparison(field, rewc) => {
                 let (is_match, value) = if field == &ItemField::Caption {
-                    let value = provider.get(&ItemField::Title);
-                    if rewc.re.is_match(value.as_str()) {
-                        (true, value)
-                    } else {
-                        let value = provider.get(&ItemField::Name);
-                        (rewc.re.is_match(value.as_str()), value)
-                    }
+                    get_caption(provider, rewc)
+               } else if let Some(value) = provider.get(field.as_str()) {
+                    (rewc.re.is_match(&value), value)
                 } else {
-                    let value = provider.get(field);
-                    (rewc.re.is_match(value.as_str()), value)
+                    (false, Cow::Borrowed(""))
                 };
                 if log_enabled!(Level::Trace) {
                     if is_match {
-                        debug!("Match found: {:?} {} => {}={}", &rewc, &rewc.restr, &field, &value);
+                        debug!("Match found: {rewc:?} {} => {field}={value}", &rewc.restr);
                     } else {
-                        debug!("Match failed: {self}: {:?} {} => {}={}", &rewc, &rewc.restr, &field, &value);
+                        debug!("Match failed: {self}: {rewc:?} {} => {field}={value}", &rewc.restr);
                     }
                 }
                 is_match
             }
             Self::TypeComparison(field, item_type) => {
-                let value = provider.get(field);
-                get_filter_item_type(value.as_str()).is_some_and(|pli_type| {
-                    let is_match = pli_type.eq(item_type);
-                    if log_enabled!(Level::Trace) {
-                        if is_match {
-                            debug!("Match found: {:?} {}", &field, value);
-                        } else {
-                            debug!("Match failed: {self}: {:?} {}", &field, &value);
+                if let Some(value) = provider.get(field.as_str()) {
+                    get_filter_item_type(&value).is_some_and(|pli_type| {
+                        let is_match = pli_type.eq(item_type);
+                        if log_enabled!(Level::Trace) {
+                            if is_match {
+                                debug!("Match found: {field:?} {value}");
+                            } else {
+                                debug!("Match failed: {self}: {field:?} {value}");
+                            }
                         }
-                    }
-                    is_match
-                })
+                        is_match
+                    })
+                } else {
+                    false
+                }
             }
             Self::Group(expr) => expr.filter(provider),
             Self::UnaryExpression(op, expr) => match op {

@@ -65,6 +65,18 @@ impl ItemField {
     const INPUT: &'static str = "Input";
     const TYPE: &'static str = "Type";
     const CAPTION: &'static str = "Caption";
+
+    pub fn as_str(&self) -> &'static str {
+        match *self {
+            Self::Group => Self::GROUP,
+            Self::Name => Self::NAME,
+            Self::Title => Self::TITLE,
+            Self::Url => Self::URL,
+            Self::Input => Self::INPUT,
+            Self::Type => Self::TYPE,
+            Self::Caption => Self::CAPTION,
+        }
+    }
 }
 
 impl Display for ItemField {

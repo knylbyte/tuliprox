@@ -8,9 +8,9 @@ fn create_affix_processor(affix: &InputAffix, is_prefix: bool) -> AffixProcessor
     Box::new(move |channel: &mut PlaylistItem| {
         let header = &mut channel.header;
         let value = header.get_field(affix.field.as_str()).map_or_else(|| String::from(&affix.value), |field_value| if is_prefix {
-            format!("{}{}", &affix.value, field_value.as_str())
+            format!("{}{field_value}", &affix.value, )
         } else {
-            format!("{}{}", field_value.as_str(), &affix.value)
+            format!("{field_value}{}", , &affix.value)
         });
         debug_if_enabled!("Applying input {}:  {}={}",  if is_prefix {"prefix"} else {"suffix"},  &affix.field, &value);
         header.set_field(&affix.field, value.as_str());
