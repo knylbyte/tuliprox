@@ -40,3 +40,10 @@ To create a docker image type:
 
 To start the container, you can use the `docker-compose.yml`
 But you need to change `image: ghcr.io/euzu/tuliprox:latest` to `image: tuliprox`
+
+
+Set timezone in docker-compose.yml like
+```dockerfile
+    environment:
+      - TZ=${TZ:-Europe/Paris}
+```

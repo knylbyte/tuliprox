@@ -13,7 +13,7 @@ use crate::utils::request::{classify_content_type, get_request_headers, sanitize
 use crate::utils::{debug_if_enabled, filter_request_header};
 use futures::stream::{self};
 use futures::{StreamExt, TryStreamExt};
-use log::{debug, warn};
+use log::{debug, log_enabled, warn};
 use reqwest::header::{HeaderMap, RANGE};
 use reqwest::StatusCode;
 use std::collections::HashMap;
@@ -186,8 +186,10 @@ fn prepare_client(request_client: &Arc<reqwest::Client>, stream_options: &Provid
     let range_start = stream_options.get_total_bytes_send();
     let original_headers = stream_options.get_headers();
 
-    debug!("original_headers {original_headers:?}");
-
+    if log_enabled!(log::Level::Debug) {
+        let message = format!("original_headers {original_headers:?}");
+        debug!("{}", sanitize_sensitive_info(&message));
+    }
 
     let mut headers = HeaderMap::default();
     for (key, value) in original_headers {
@@ -222,7 +224,10 @@ fn prepare_client(request_client: &Arc<reqwest::Client>, stream_options: &Provid
         false
     };
 
-    debug_if_enabled!("Stream requested with headers: {:?}", headers.iter().map(|header| (header.0, String::from_utf8_lossy(header.1.as_ref()))).collect::<Vec<_>>());
+    if log_enabled!(log::Level::Debug) {
+        let message = format!("Stream requested with headers: {:?}", headers.iter().map(|header| (header.0, String::from_utf8_lossy(header.1.as_ref()))).collect::<Vec<_>>());
+        debug!("{}", sanitize_sensitive_info(&message));
+    }
 
     let request_builder = request_client.get(url.clone()).headers(headers);
 
@@ -238,7 +243,11 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
                 let response_info = {
                     // Unfortunately, the HEAD request does not work, so we need this workaround.
                     // We need some header information from the provider, we extract the necessary headers and forward them to the client
-                    debug_if_enabled!("Provider response  status: '{}' headers: {:?}", response.status(), response.headers_mut());
+                    if log_enabled!(log::Level::Debug) {
+                        let message = format!("Provider response  status: '{}' headers: {:?}", response.status(), response.headers_mut());
+                        debug!("{}", sanitize_sensitive_info(&message));
+                    }
+
                     let response_headers: Vec<(String, String)> = get_response_headers(response.headers());
                     //let url = stream_options.get_url();
                     // debug!("First  headers {headers:?} {} {}", sanitize_sensitive_info(url.as_str()));

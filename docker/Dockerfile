@@ -62,17 +62,34 @@ RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
     -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
     ./resources/provider_connections_exhausted.ts
 
+
+# Stage to prepare /etc/localtime for scratch
+FROM alpine:latest AS tz-prep
+ARG TZ=UTC
+RUN apk add --no-cache tzdata \
+  && mkdir -p /output/etc \
+  && mkdir -p /output/usr/share \
+  && cp -r /usr/share/zoneinfo /output/usr/share/zoneinfo \
+  && ln -sf /usr/share/zoneinfo/${TZ} /output/etc/localtime \
+
 # Final container (Scratch)
 FROM scratch AS scratch-final
 
 ARG RUST_TARGET
 
-WORKDIR /app
-COPY --from=rust-build /usr/share/zoneinfo /usr/share/zoneinfo
+# Copy timezone data and localtime from tz-prep
+COPY --from=tz-prep /output/usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=tz-prep /output/etc/localtime /etc/localtime
+
+# Certificates
 COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# App
+WORKDIR /app
 COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
 COPY --from=node-build /app/build ./web
 COPY --from=resource-build /src/resources ./resources
+
 ENTRYPOINT ["/app/tuliprox"]
 CMD ["-s", "-p", "/app/config"]
 
@@ -82,6 +99,14 @@ FROM alpine:latest AS alpine-final
 ARG RUST_TARGET
 
 RUN apk add --no-cache bash curl ca-certificates tini
+
+COPY --from=rust-build /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Default timezone fallback
+ARG TZ=UTC
+ENV TZ=${TZ}
+RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 WORKDIR /app
 COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
