@@ -2,7 +2,7 @@ use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_
 use crate::model::{EpgConfig};
 use crate::utils::default_as_true;
 use crate::utils::get_trimmed_string;
-use crate::utils::request::{get_base_url_from_str, get_credentials_from_url, get_credentials_from_url_str};
+use crate::utils::request::{get_base_url_from_str, get_credentials_from_url, get_credentials_from_url_str, sanitize_sensitive_info};
 use enum_iterator::Sequence;
 use log::{debug, warn};
 use std::collections::{HashMap, HashSet};
@@ -311,7 +311,7 @@ impl ConfigInput {
 
                         epg.t_sources.iter_mut().for_each(|epg_source| {
                             if epg_source.url.trim() == "auto" {
-                                debug!("Added provider epg url {provider_epg_url} for input {}", self.name);
+                                debug!("Added provider epg url {} for input {}", sanitize_sensitive_info(&provider_epg_url), self.name);
                                 epg_source.url.clone_from(&provider_epg_url);
                             }
                         });
@@ -324,7 +324,7 @@ impl ConfigInput {
                                 .collect()
                         };
                     } else {
-                        warn!("auto_epg is enabled for input {}, but url could not be parsed {}", self.name, self.url);
+                        warn!("auto_epg is enabled for input {}, but url could not be parsed {}", self.name, sanitize_sensitive_info(&self.url));
                     }
                 }
             }

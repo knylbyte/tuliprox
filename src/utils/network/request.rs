@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::File;
@@ -370,9 +371,9 @@ pub async fn get_input_json_content(client: Arc<reqwest::Client>, input: &Config
 pub fn set_sanitize_sensitive_info(value: bool) {
     CONSTANTS.sanitize.store(value, Ordering::SeqCst);
 }
-pub fn sanitize_sensitive_info(query: &str) -> String {
+pub fn sanitize_sensitive_info(query: &str) -> Cow<str> {
     if !CONSTANTS.sanitize.load(Ordering::SeqCst) {
-        return query.to_string();
+        return Cow::Borrowed(query);
     }
 
     let mut result = query.to_owned();
@@ -386,8 +387,7 @@ pub fn sanitize_sensitive_info(query: &str) -> String {
     ] {
         result = re.replace_all(&result, *replacement).into_owned();
     }
-
-    result
+    Cow::Owned(result)
 }
 
 
