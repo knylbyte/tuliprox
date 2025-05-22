@@ -1,115 +1,59 @@
-# Build rust stage
-FROM rust:bookworm AS rust-build
-
-ARG RUST_TARGET=x86_64-unknown-linux-musl
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config \
-    musl-tools \
-    libssl-dev
-
-RUN rustup update && rustup target add $RUST_TARGET
-
-ENV RUSTFLAGS='--remap-path-prefix $HOME=~ -C target-feature=+crt-static'
-
-WORKDIR /src
-COPY Cargo.toml Cargo.lock ./
-
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --target $RUST_TARGET --release || true
-
-COPY . .
-RUN cargo build --target $RUST_TARGET --release
-
-
-# Build node stage
-FROM node:lts AS node-build
-
-ENV NODE_OPTIONS=--openssl-legacy-provider
-
-WORKDIR /app
-
-COPY ./frontend/package.json ./
-RUN yarn install --prefer-offline --non-interactive --production=false
-
-COPY ./frontend /app
-RUN yarn build && rm -rf node_modules && yarn cache clean
-
-
-# Build resource stage (ffmpeg)
-FROM linuxserver/ffmpeg:latest AS resource-build
-
-WORKDIR /src
-COPY resources ./resources
-
-RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/channel_unavailable.ts && \
-  ffmpeg -loop 1 -i ./resources/user_connections_exhausted.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/user_connections_exhausted.ts && \
-  ffmpeg -loop 1 -i ./resources/provider_connections_exhausted.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/provider_connections_exhausted.ts
-
-
-# Stage to prepare timezone data for scratch container
 FROM alpine:latest AS tz-prep
-
-ARG TZ=UTC
-
-RUN apk add --no-cache tzdata \
- && mkdir -p /output/etc /output/usr/share \
- && cp -r /usr/share/zoneinfo /output/usr/share/zoneinfo \
- && ln -sf /usr/share/zoneinfo/${TZ} /output/etc/localtime
-
-
-# Final container (Scratch)
-FROM scratch AS scratch-final
-
-ARG RUST_TARGET
-
-COPY --from=tz-prep /output/usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=tz-prep /output/etc/localtime /etc/localtime
-
-COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-WORKDIR /app
-COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
-COPY --from=node-build /app/build ./web
-COPY --from=resource-build /src/resources ./resources
-
-ENTRYPOINT ["/app/tuliprox"]
-CMD ["-s", "-p", "/app/config"]
-
-
-# Final container (Alpine)
-FROM alpine:3.19 AS alpine-final
 
 ARG TZ=UTC
 ENV TZ=${TZ}
 
-RUN apk add --no-install-recommends --no-cache \
-    bash \
-    curl \
-    ca-certificates \
-    tini && \
-    adduser -D tuliprox
+RUN apk add --no-cache tzdata \
+  && mkdir -p /output/etc \
+  && mkdir -p /output/usr/share \
+  && cp -r /usr/share/zoneinfo /output/usr/share/zoneinfo \
+  && ln -sf /usr/share/zoneinfo/${TZ} /output/etc/localtime \
+  && mkdir -p /output/etc/ssl/certs \
+  && cp /etc/ssl/certs/ca-certificates.crt /output/etc/ssl/certs/ca-certificates.crt
 
-COPY --from=rust-build --chown=tuliprox:tuliprox /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=rust-build --chown=tuliprox:tuliprox /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Scratch Final container
+FROM scratch AS scratch-final
+
+ARG TZ=UTC
+ENV TZ=${TZ}
+
+# Copy timezone data and localtime from tz-prep
+COPY --from=tz-prep /output/usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=tz-prep /output/etc/localtime /etc/localtime
+COPY --from=tz-prep /output/etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+# RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
+
+WORKDIR /app
+
+COPY ./tuliprox ./
+COPY ./web ./web
+COPY ./resources ./resources
+
+CMD ["/app/tuliprox", "-s", "-p", "/app/config"]
+
+# Alpine Final container
+FROM alpine:latest AS alpine-final
+
+ARG TZ=UTC
+ENV TZ=${TZ}
+
+RUN apk add --no-cache bash curl strace tcpdump bind-tools nano ca-certificates tini
+
+# Copy timezone data and localtime from tz-prep
+COPY --from=tz-prep /output/usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=tz-prep /output/etc/localtime /etc/localtime
+COPY --from=tz-prep /output/etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 WORKDIR /app
-COPY --chown=tuliprox:tuliprox ./tuliprox ./
-COPY --chown=tuliprox:tuliprox ./web ./web
-COPY --chown=tuliprox:tuliprox ./resources ./resources
 
-USER tuliprox
+COPY ./tuliprox ./
+COPY ./web ./web
+COPY ./resources ./resources
+# config should be mounted as volume
+# COPY ./config ./config
 
 ENTRYPOINT ["/sbin/tini", "--", "/app/tuliprox"]
 CMD ["-s", "-p", "/app/config"]

@@ -45,6 +45,7 @@ RUN yarn build && rm -rf node_modules
 
 # Build resource stage (using ffmpeg)
 FROM linuxserver/ffmpeg:latest AS resource-build
+
 WORKDIR /src
 COPY resources ./resources
 
@@ -65,12 +66,16 @@ RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
 
 # Stage to prepare /etc/localtime for scratch
 FROM alpine:latest AS tz-prep
+
 ARG TZ=UTC
+ENV TZ=${TZ}
+
 RUN apk add --no-cache tzdata \
   && mkdir -p /output/etc \
   && mkdir -p /output/usr/share \
   && cp -r /usr/share/zoneinfo /output/usr/share/zoneinfo \
-  && ln -sf /usr/share/zoneinfo/${TZ} /output/etc/localtime \
+  && ln -sf /usr/share/zoneinfo/${TZ} /output/etc/localtime
+
 
 # Final container (Scratch)
 FROM scratch AS scratch-final
@@ -83,6 +88,8 @@ COPY --from=tz-prep /output/etc/localtime /etc/localtime
 
 # Certificates
 COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 # App
 WORKDIR /app
@@ -97,6 +104,8 @@ CMD ["-s", "-p", "/app/config"]
 FROM alpine:latest AS alpine-final
 
 ARG RUST_TARGET
+ARG TZ=UTC
+ENV TZ=${TZ}
 
 RUN apk add --no-cache bash curl ca-certificates tini
 
@@ -104,8 +113,6 @@ COPY --from=rust-build /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # Default timezone fallback
-ARG TZ=UTC
-ENV TZ=${TZ}
 RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 WORKDIR /app
