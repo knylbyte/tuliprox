@@ -5,6 +5,7 @@ import {ServerIpCheck, ServerStatus} from "../../model/server-status";
 import {interval} from "rxjs";
 import {first} from "rxjs/operators";
 import './status-view.scss';
+import {getIconByName} from "../../icons/icons";
 
 const REQUEST_INTERVAL = 5000;
 const STATUS_COLUMNS = [
@@ -43,12 +44,11 @@ export default function StatusView() {
         const sub = interval(REQUEST_INTERVAL).subscribe(fetchData);
         checkIp();
         return () => sub.unsubscribe();
-    }, [services, checkIp])
-
+    }, [services, checkIp]);
 
     return <div className={'status-view'}>
         {ipCheck && <>
-            <div className={'status-view__section-title'}>{translate("LABEL.IP")}</div>
+            <div className={'status-view__section-title'}>{translate("LABEL.IP")} <button onClick={checkIp}>{getIconByName('Refresh')}</button></div>
             <div className={'status-view__content'}>
                 <div className={"status-view__col-label"}>{translate("LABEL.IPv4")}</div>
                 <div className={'status-view__col-value'}>{ipCheck?.ipv4 ?? '?'}</div>
