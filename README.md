@@ -878,7 +878,7 @@ In the above example each entry starting with `DE` will be prefixed with `1.`.
 
 ### 2.2.2.7 `mapping`
 `mapping: <list of mapping id's>`
-The mappings are defined in a file `mapping.yml`. The filename can be given as `-m` argument.
+The mappings are defined in a file `mapping.yml`. The filename can be given as `-m` argument. (See Mappings section)
 
 ## Example source.yml file
 ```yaml
@@ -968,7 +968,6 @@ messaging:
 ## 2. `mapping.yml`
 Has the root item `mappings` which has the following top level entries:
 - `templates` _optional_
-- `tags` _optional_
 - `mapping` _mandatory_
 
 ### 2.1 `templates`
@@ -985,14 +984,6 @@ With this definition you can use `delimiter` and `quality` in your regexp's surr
 
 This will replace all occurrences of `!delimiter!` and `!quality!` in the regexp string.
 
-### 2.2 `tags`
-Has the following top level entries:
-- `name`: unique name of the tag.
-- `captures`: List of captured variable names like `quality`. The names should be equal to the regexp capture names.
-- `concat`: if you have more than one captures defined this is the join string between them
-- `suffix`: suffix for the tag
-- `prefix`: prefix for the tag
-
 ### 2.3 `mapping`
 Has the following top level entries:
 - `id` _mandatory_
@@ -1008,174 +999,112 @@ If you have non ascii characters in you playlist and want to
 write regexp without considering chars like `é` and use `e` instead, set this option to `true`.
 [unidecode](https://crates.io/crates/unidecode) is used to convert the text.
 
-
 ### 2.3.3 `mapper`
 Has the following top level entries:
-- `filter` _optional_
-- `pattern`
-- `attributes`
-- `suffix`
-- `prefix`
-- `assignments`
-- `transform`
+- `filter`
+- `script`
 
 #### 2.3.3.1 `filter`
 The filter  is a string with a statement (@see filter statements).
 It is optional and allows you to filter the content.
 
-#### 2.3.3.2 `pattern`
-The pattern is a string with a statement (@see filter statements).
-The pattern can have UnaryExpression `NOT`, BinaryExpression `AND OR`, and Comparison `(Group|Title|Name|Url) ~ "regexp"`.
-Filter fields are `Group`, `Title`, `Name`, `Caption`, `Url`, `Input` and `Type`.
-Example filter:  `NOT Title ~ ".*Shopping.*"`
+#### 2.3.3.2 `script`
+Script has a custom DSL syntax. 
 
-`Caption` is an alias for `Title` or/and `Name`.
+This Domain-Specific Language (DSL) supports simple scripting operations including variable assignment, 
+string operations, pattern matching, conditional mapping, and structured data access. 
+It is whitespace-tolerant and uses familiar programming concepts with a custom syntax.
 
-The pattern for the mapper works different from a filter expression.
-A filter evaluates the complete expression and returns a result.
-The mapper pattern evaluates the expression, but matches directly comparisons and processes them immediately.
-To avoid misunderstandings, keep the pattern simply to comparisons.
+**Basic elements:**
+- Identifiers: `Variable Names` and `Playlist Field Names` composed of ASCII alphanumeric characters and underscores.
+- Strings / Text: Enclosed in double quotes. "example string" 
+- Regex Matching:   `FieldName ~ "Regex"` like in filter statements.
+- Access a field in a regex match result:  with `result.capture`. For example if you have multiple captures you can access them by their name, or their index 1..
+- Builtin String functions: 
+  - concat(a, b, ...)
+  - uppercase(a)
+  - lowercase(a)
+  - capitalize(a)
+  - trim(a)
+  - print(a)
+Example `print(uppercase("hello"))`
+- Assignment assigns an expression result. variable or field.
+```
+  Title = uppercase("hello")
+  hello = concat(capitalize("hello"), " ", capitalize("world")) 
+```
+-  Match block evaluates expressions based on multiple matching cases.
+Note: **The order of the cases are important.**
 
-The regular expression syntax is similar to Perl-style regular expressions,
-but lacks a few features like look around and backreferences.
+```
+result = match {
+    (var1, var2) => result1,  <- only executed when both variables set
+     var2 => result2,  <- only executed when var2 variable is set
+     var3 => result3,  <- only executed when var3 variable is set
+     _ => default <-  matches anything.
+   }
+```
+- Map block assigns expression results to a variable or field
+```
+result = map variable_name {
+    "key1" => result1,
+    "key2" => result2,
+    _ => default
+}
+```
 
-#### 2.3.3.3 `attributes`
-Attributes is a map of key value pairs. Valid keys are:
-- `id`
-- `epg_channel_id` or `epg_id`
-- `chno`
-- `group`
-- `name`
-- `title`
-- `caption` (for `title and `name`)
-- `logo`
-- `logo_small`
-- `parent_code`
-- `audio_track`
-- `time_shift`
-- `rec`
-- `url`
-
-If the regexps matches, the given fields will be set to the new value
-You can use `captures` in attributes.
-For example you want to `rewrite` the `base_url` for channels in a specific group.
+Example `mapping.yml`
 
 ```yaml
-
 mappings:
   templates:
-    - name: sports
-      value: 'Group ~ ".*SPORT.*"'
-    - name: source
-      value: 'Url ~ "https?:\/\/(.*?)\/(?P<query>.*)$"'
+    # Template to match and capture different qualities in the caption (FHD, HD, SD, UHD)
+    - name: QUALITY
+      value: '(?i)\b([FUSL]?HD|SD|4K|1080p|720p|3840p)\b'
+
+    - name: COAST
+      value: '(?i)\b(EAST|WEST)\b'
+
+    - name: USA_TNT_FILTER
+      value: 'Caption ~ "(?i)^(US|USA|United States).*?TNT"'
+
+    - name: US_TNT_PREFIX
+      value: "US: TNT"
+
+    - name: US_TNT_ENTERTAIN_GROUP
+      value: "United States - Entertainment"
+
+    # Template to capture the group name for US TNT channels
+    - name: US_TNT_ENTERTAIN
+      value: 'Group ~ "^United States - Entertainment"'
 
   mapping:
-    - id: sport-mapper
-      counter:
-        - filter: '!sports!'
-          value: 9000
-          padding: 3
-          field: chno
-          modifier: assign
+    # Mapping rules for all channels
+    - id: all_channels
+      match_as_ascii: true
       mapper:
-        - filter: '!sports!'
-          pattern: "!source!"
-          attributes:
-            url: http://my.bubble-gum.tv/<query>
+        - filter: "!USA_TNT_FILTER!"
+          script: |
+            coast = Caption ~ "!COAST!"
+            quality = uppercase(Caption ~ "!QUALITY!")
+            quality = map quality {
+                       "SHD" => "SD",
+                       "LHD" => "HD",
+                       "720p" => "HD",
+                       "1080p" => "FHD",
+                       "4K" => "UHD",
+                       "3840p" => "UHD",
+                        _ => quality,
+            }
+            coast_quality = match {
+                (coast, quality) => concat(capitalize(coast), " ", uppercase(quality)),
+                coast => concat(capitalize(coast), " HD"),
+                quality => concat("East ", uppercase(quality)),
+                _ => "East HD",
+            }
+            Caption = concat("!US_TNT_PREFIX!", " ", coast_quality)
+            Group = "!US_TNT_ENTERTAIN_GROUP!"
 ```
-
-In this example all channels the urls of all channels with a group name containing `SPORT` will be changed.
-
-
-#### 2.3.3.4 `suffix`
-Suffix is a map of key value pairs. Valid keys are
-- name
-- group
-- title
-
-The special text `<tag:tag_name>` is used to append the tag if not empty.
-Example:
-```yaml
-  suffix:
-     name: '<tag:quality>'
-     title: '-=[<tag:group>]=-'
-```
-
-In this example there must be 2 tag definitions `quality` and `group`.
-
-If the regexps matches, the given fields will be appended to field value
-
-#### 2.3.3.5 `prefix`
-Suffix is a map of key value pairs. Valid keys are
-- name
-- group
-- title
-
-The special text `<tag:tag_name>` is used to append the tag if not empty
-Example:
-```yaml
-  suffix:
-     name: '<tag:quality>'
-     title: '-=[<tag:group>]=-'
-```
-
-In this example there must be 2 tag definitions `quality` and `group`.
-
-If the regexps matches, the given fields will be prefixed to field value
-
-#### 2.3.3.6 `assignments`
-Attributes is a map of key value pairs. Valid keys and values are:
-- `id`
-- `chno`
-- `group`
-- `name`
-- `title`
-- `caption` (for `title and `name`)
-- `logo`
-- `logo_small`
-- `parent_code`
-- `audio_track`
-- `time_shift`
-- `rec`
-- `source`
-
-Example configuration is:
-```yaml
-assignments:
-   title: name
-```
-This configuration sets `title` property to the value of `name`.
-
-#### 2.3.3.6 `transform`
-
-`transform` is a list of transformations.
-
-Each transformation can have the following attributes:
-- `field` _mandatory_ the field where the transformation will be applied
-- `modifier` _mandatory_, values are: `lowercase`, `uppercase` and `capitalize`
-- `pattern` _optional_  is a regular expression (not filter!) with captures. Only needed when you want to transform parts of the property.
-
-For example: first 3 chars of channel name to lowercase:
-
-```yaml
-      mapper:
-        - pattern: 'Group ~ ".*"'
-          transform:
-          - field: name
-            pattern: "^(...)"
-            modifier: lowercase
-```
-
-channel name to uppercase:
-
-```yaml
-      mapper:
-        - pattern: 'Group ~ ".*"'
-          transform:
-          - field: name
-            modifier: uppercase
-```
-
 ### 2.3.4 counter
 
 Each mapping can have a list of counter.

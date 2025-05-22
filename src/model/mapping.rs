@@ -18,20 +18,6 @@ pub const MAPPER_FIELDS: &[&str] = &[
     "time_shift", "rec", "url", "epg_channel_id", "epg_id"
 ];
 
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-pub struct MappingTag {
-    pub name: String,
-    pub captures: Vec<String>,
-    #[serde(default)]
-    pub concat: String,
-    #[serde(default)]
-    pub prefix: String,
-    #[serde(default)]
-    pub suffix: String,
-}
-
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq)]
 pub enum CounterModifier {
     #[serde(rename = "assign")]
@@ -232,7 +218,6 @@ impl Mapping {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MappingDefinition {
     pub templates: Option<Vec<PatternTemplate>>,
-    pub tags: Option<Vec<MappingTag>>,
     pub mapping: Vec<Mapping>,
 }
 

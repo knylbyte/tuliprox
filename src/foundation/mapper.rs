@@ -5,7 +5,7 @@ use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Undefined,
 use crate::model::ItemField;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::Capitalize;
-use log::{error, trace};
+use log::{debug, error, trace};
 use pest::iterators::Pair;
 use pest::Parser;
 use regex::Regex;
@@ -179,7 +179,7 @@ impl Statement {
             Statement::Expression(expr) => {
                 let result = expr.eval(ctx, setter);
                 if let Failure(err) = &result {
-                    error!("{err}");
+                    debug!("{err}");
                 } else {
                     trace!("Ignoring result {result:?}");
                 }
