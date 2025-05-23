@@ -23,6 +23,7 @@ pub struct M3uPlaylistIterator {
     rewrite_resource: bool,
     proxy_type: ProxyType,
     filter: Option<HashSet<String>>,
+    lookup_item: Option<(M3uPlaylistItem, bool)>,
     _file_lock: FileReadGuard,
 }
 
@@ -57,6 +58,7 @@ impl M3uPlaylistIterator {
             proxy_type: user.proxy.clone(),
             _file_lock: file_lock, // Save lock inside struct
             rewrite_resource: cfg.is_reverse_proxy_resource_rewrite_enabled(),
+            lookup_item: None,
         })
     }
 
@@ -94,7 +96,21 @@ impl M3uPlaylistIterator {
 
     fn get_next(&mut self) -> Option<(M3uPlaylistItem, bool)> {
         let entry = if let Some(set) = &self.filter {
-            self.reader.find(|(pli, _has_next)| set.contains(&pli.group.to_string()))
+            if let Some((current_item, _)) = self.lookup_item.take() {
+                let next_valid = self.reader.find(|(pli, _)| set.contains(&pli.group.to_string()));
+                self.lookup_item = next_valid;
+                let has_next = self.lookup_item.is_some();
+                Some((current_item, has_next))
+            } else {
+                let current_item = self.reader.find(|(item, _)| set.contains(&item.group.to_string()));
+                if let Some((item, _)) = current_item {
+                    self.lookup_item = self.reader.find(|(item, _)| set.contains(&item.group.to_string()));
+                    let has_next = self.lookup_item.is_some();
+                    Some((item, has_next))
+                } else {
+                    None
+                }
+            }
         } else {
             self.reader.next()
         };
