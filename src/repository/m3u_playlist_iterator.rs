@@ -116,7 +116,7 @@ impl M3uPlaylistIterator {
         };
 
         // TODO hls and unknown reverse proxy
-        entry.map(|(mut m3u_pli, _has_next)| {
+        entry.map(|(mut m3u_pli, has_next)| {
             let is_redirect = self.proxy_type.is_redirect(m3u_pli.item_type) || self.target_options.as_ref().and_then(|o| o.force_redirect.as_ref()).is_some_and(|f| f.has_cluster(m3u_pli.item_type));
             let should_rewrite_urls = if is_redirect { self.mask_redirect_url} else { true };
             let rewrite_urls = if should_rewrite_urls {
@@ -130,7 +130,7 @@ impl M3uPlaylistIterator {
 
             m3u_pli.t_stream_url = stream_url.to_string();
             m3u_pli.t_resource_url = resource_url.map(|s| s.to_string());
-            (m3u_pli, self.reader.has_next())
+            (m3u_pli, has_next)
         })
     }
 }
