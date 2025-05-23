@@ -1,5 +1,6 @@
 export interface UiConfig {
     languages?: string[],
+    tab_title?: string,
     app_title?: string,
     app_logo?: string,
     api?: {

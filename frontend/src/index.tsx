@@ -29,6 +29,10 @@ const initUI = () => {
 Fetcher.fetchJson("config.json").pipe(
     switchMap((config: UiConfig) => {
             ServiceContext.config().setUiConfig(config);
+            const document_title = config.tab_title || config.app_title;
+            if (document_title) {
+                document.title = document_title;
+            }
             return i18n_init(ServiceContext.config().getUiConfig().languages).pipe(
                 map(() => {
                     initUI();
