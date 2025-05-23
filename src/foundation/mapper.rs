@@ -1,8 +1,8 @@
 #![allow(clippy::empty_docs)]
 
+use std::borrow::Cow;
 use crate::foundation::filter::ValueAccessor;
 use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Undefined, Value};
-use crate::model::ItemField;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::Capitalize;
 use log::{debug, error, trace};
@@ -22,9 +22,9 @@ var_access = { identifier ~ ("." ~ identifier)? }
 string_literal = @{ "\"" ~ ( "\\\"" | (!"\"" ~ ANY) )* ~ "\"" }
 field = { ^"name" | ^"title" | ^"caption" | ^"group" | ^"id" | ^"chno" | ^"logo" | ^"logo_small" | ^"parent_code" | ^"audio_track" | ^"time_shift" | ^"rec" | ^"url" | ^"epg_channel_id" | ^"epg_id" }
 field_access = _{ "@" ~ field }
-regex_expr = { field ~ regex_op ~ string_literal }
-regex_expr_on_field = _{ "@"? ~ regex_expr }
-expression = { map_block | match_block | function_call | regex_expr_on_field | string_literal | var_access | field_access | null }
+regex_source = _{ field_access | identifier }
+regex_expr = { regex_source ~ regex_op ~ string_literal }
+expression = { map_block | match_block | function_call | regex_expr | string_literal | var_access | field_access | null }
 function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" }
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
@@ -103,12 +103,18 @@ impl FromStr for BuiltInFunction {
 }
 
 #[derive(Debug, Clone)]
+enum RegexSource {
+    Identifier(String),
+    Field(String),
+}
+
+#[derive(Debug, Clone)]
 enum Expression {
     Identifier(String),
     StringLiteral(String),
     FieldAccess(String),
     VarAccess(String, String),
-    RegexExpr { field: ItemField, pattern: String, re_pattern: Regex },
+    RegexExpr { field: RegexSource, pattern: String, re_pattern: Regex },
     FunctionCall { name: BuiltInFunction, args: Vec<Expression> },
     MatchBlock(Vec<MatchCase>),
     MapBlock { key: MapKey, cases: Vec<MapCase> },
@@ -208,7 +214,16 @@ impl MapperScript {
             Expression::NullValue
             | Expression::FieldAccess(_)
             | Expression::StringLiteral(_) => {}
-            Expression::RegexExpr { field: _field, pattern: _pattern, re_pattern: _re_pattern } => {}
+            Expression::RegexExpr { field, pattern: _pattern, re_pattern: _re_pattern } => {
+                match field {
+                    RegexSource::Identifier(ident) => {
+                        if !identifiers.contains(ident.as_str()) {
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}", ident);
+                        }
+                    }
+                    RegexSource::Field(_) => {}
+                }
+            }
             Expression::FunctionCall { name: _name, args } => {
                 for arg in args {
                     MapperScript::validate_expr(arg, identifiers)?;
@@ -394,7 +409,6 @@ impl MapperScript {
             Rule::map_case_key_list => {
                 let mut matches = vec![];
                 for arm in inner.into_inner() {
-                    debug!("{:?}", arm.as_rule());
                     match arm.as_rule() {
                         Rule::string_literal => {
                             let raw = arm.as_str().to_string();
@@ -456,7 +470,12 @@ impl MapperScript {
 
             Rule::regex_expr => {
                 let mut inner = pair.into_inner();
-                let field = ItemField::from_str(inner.next().unwrap().as_str())?;
+                let first = inner.next().unwrap();
+                let field = match first.as_rule() {
+                    Rule::identifier => RegexSource::Identifier(first.as_str().to_string()),
+                    Rule::field => RegexSource::Field(first.as_str().to_string()),
+                    _ => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Invalid regex source {}", first.as_str().to_string()),
+                };
                 let pattern_raw = inner.next().unwrap().as_str();
                 let pattern = &pattern_raw[1..pattern_raw.len() - 1]; // Strip quotes
                 match Regex::new(pattern) {
@@ -612,9 +631,10 @@ impl Expression {
         match self {
             Expression::NullValue => Undefined,
             Expression::Identifier(name) => {
-                match ctx.variables.get(name) {
-                    None => Failure(format!("Variable with name {name} not found.")),
-                    Some(value) => value.clone(),
+                if ctx.has_var(name) {
+                    ctx.get_var(name).clone()
+                } else {
+                    Failure(format!("Variable with name {name} not found."))
                 }
             }
             Expression::FieldAccess(field) => {
@@ -644,7 +664,16 @@ impl Expression {
             }
             Expression::StringLiteral(s) => Value(s.clone()),
             Expression::RegexExpr { field, pattern: _pattern, re_pattern } => {
-                if let Some(val) = accessor.get(field.as_str()) {
+                let source = match field {
+                    RegexSource::Identifier(ident) => {
+                        match ctx.get_var(ident) {
+                            Value(text) => Some(Cow::Borrowed(text.as_str())),
+                            _ => None,
+                        }
+                    }
+                    RegexSource::Field(field) => accessor.get(field),
+                };
+                if let Some(val) = source {
                     let mut values = vec![];
                     for caps in re_pattern.captures_iter(&val) {
                         // Positional groups

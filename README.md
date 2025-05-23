@@ -972,6 +972,9 @@ Has the root item `mappings` which has the following top level entries:
 - `templates` _optional_
 - `mapping` _mandatory_
 
+Instead of using a single `mapping.yml` file, you can use multiple `mapping` files  
+when you set `mapping_path` in `config.yml` to a directory.
+
 ### 2.1 `templates`
 If you have a lot of repeats in you regexps, you can use `templates` to make your regexps cleaner.
 You can reference other templates in templates with `!name!`;
@@ -1020,10 +1023,9 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
 **Basic elements:**
 - Identifiers: `Variable Names` composed of ASCII alphanumeric characters and underscores.
 - FieldNames: `Playlist Field Names` starting with `@` following compose of ASCII alphanumeric characters and underscores.
-The `@` prefix is not needed for regex statements like `Caption ~ ".*"`.
 - Strings / Text: Enclosed in double quotes. "example string" 
 - Null value `null`
-- Regex Matching:   `FieldName ~ "Regex"` like in filter statements.
+- Regex Matching:   `@FieldName ~ "Regex"` like in filter statements. You can match a `FieldName` or a existing `variable`.
 - Access a field in a regex match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at 1.
 - Builtin String functions: 
   - concat(a, b, ...)
