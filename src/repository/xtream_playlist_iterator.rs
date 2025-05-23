@@ -15,9 +15,10 @@ pub struct XtreamPlaylistIterator {
     reader: IndexedDocumentIterator<u32, XtreamPlaylistItem>,
     options: XtreamMappingOptions,
     filter: Option<HashSet<String>>,
-    _file_lock: FileReadGuard,
     base_url: String,
     user: ProxyUserCredentials,
+    lookup_item: Option<(XtreamPlaylistItem, bool)>,  // this is for filtered iteration
+    _file_lock: FileReadGuard,
 }
 
 impl XtreamPlaylistIterator {
@@ -51,6 +52,7 @@ impl XtreamPlaylistIterator {
                 _file_lock: file_lock,
                 base_url: server_info.get_base_url(),
                 user: user.clone(),
+                lookup_item: None,
             })
         } else {
             Err(info_err!(format!("Failed to find xtream storage for target {}", &target.name)))
@@ -63,7 +65,21 @@ impl XtreamPlaylistIterator {
             return None;
         }
         if let Some(set) = &self.filter {
-            self.reader.find(|(pli, _has_next)| set.contains(&pli.category_id.to_string()))
+            if let Some((current_item, _)) = self.lookup_item.take() {
+                let next_valid = self.reader.find(|(pli, _)| set.contains(&pli.category_id.to_string()));
+                self.lookup_item = next_valid;
+                let has_next = self.lookup_item.is_some();
+                Some((current_item, has_next))
+            } else {
+                let current_item = self.reader.find(|(item, _)| set.contains(&item.category_id.to_string()));
+                if let Some((item, _)) = current_item {
+                    self.lookup_item = self.reader.find(|(item, _)| set.contains(&item.category_id.to_string()));
+                    let has_next = self.lookup_item.is_some();
+                    Some((item, has_next))
+                } else {
+                    None
+                }
+            }
         } else {
             self.reader.next()
         }

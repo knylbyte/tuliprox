@@ -23,6 +23,7 @@ pub struct M3uPlaylistIterator {
     rewrite_resource: bool,
     proxy_type: ProxyType,
     filter: Option<HashSet<String>>,
+    lookup_item: Option<(M3uPlaylistItem, bool)>,
     _file_lock: FileReadGuard,
 }
 
@@ -57,6 +58,7 @@ impl M3uPlaylistIterator {
             proxy_type: user.proxy.clone(),
             _file_lock: file_lock, // Save lock inside struct
             rewrite_resource: cfg.is_reverse_proxy_resource_rewrite_enabled(),
+            lookup_item: None,
         })
     }
 
@@ -94,13 +96,27 @@ impl M3uPlaylistIterator {
 
     fn get_next(&mut self) -> Option<(M3uPlaylistItem, bool)> {
         let entry = if let Some(set) = &self.filter {
-            self.reader.find(|(pli, _has_next)| set.contains(&pli.group.to_string()))
+            if let Some((current_item, _)) = self.lookup_item.take() {
+                let next_valid = self.reader.find(|(pli, _)| set.contains(&pli.group.to_string()));
+                self.lookup_item = next_valid;
+                let has_next = self.lookup_item.is_some();
+                Some((current_item, has_next))
+            } else {
+                let current_item = self.reader.find(|(item, _)| set.contains(&item.group.to_string()));
+                if let Some((item, _)) = current_item {
+                    self.lookup_item = self.reader.find(|(item, _)| set.contains(&item.group.to_string()));
+                    let has_next = self.lookup_item.is_some();
+                    Some((item, has_next))
+                } else {
+                    None
+                }
+            }
         } else {
             self.reader.next()
         };
 
         // TODO hls and unknown reverse proxy
-        entry.map(|(mut m3u_pli, _has_next)| {
+        entry.map(|(mut m3u_pli, has_next)| {
             let is_redirect = self.proxy_type.is_redirect(m3u_pli.item_type) || self.target_options.as_ref().and_then(|o| o.force_redirect.as_ref()).is_some_and(|f| f.has_cluster(m3u_pli.item_type));
             let should_rewrite_urls = if is_redirect { self.mask_redirect_url} else { true };
             let rewrite_urls = if should_rewrite_urls {
@@ -114,7 +130,7 @@ impl M3uPlaylistIterator {
 
             m3u_pli.t_stream_url = stream_url.to_string();
             m3u_pli.t_resource_url = resource_url.map(|s| s.to_string());
-            (m3u_pli, self.reader.has_next())
+            (m3u_pli, has_next)
         })
     }
 }
