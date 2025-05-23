@@ -71,11 +71,11 @@ pub struct ProcessTargets {
 
 impl ProcessTargets {
     pub fn has_target(&self, tid: u16) -> bool {
-        matches!(self.targets.iter().position(|&x| x == tid), Some(_pos))
+        !self.enabled || self.targets.is_empty() || self.targets.contains(&tid)
     }
 
     pub fn has_input(&self, tid: u16) -> bool {
-        matches!(self.inputs.iter().position(|&x| x == tid), Some(_pos))
+        !self.enabled || self.inputs.is_empty() || self.inputs.contains(&tid)
     }
 }
 
