@@ -317,8 +317,7 @@ log:
   - `enabled` can be deactivated if `enabled` is set to `false`. If not set default is `true`.
   - `issuer`
   - `secret` is used for jwt token generation.
-  - `userfile` is the file where the ui users are stored. if the filename is not absolute `tuliprox` will look into the `config_dir`. if `userfile`is not given the default value is `user.txt`
-
+  - `userfile` is the file where the ui users are stored. If the filename is not absolute, `tuliprox` will look into the `config_dir`. If `userfile` is not given, the default value is `user.txt`.
 ```yaml
 web_ui:
   enabled: true
@@ -972,7 +971,7 @@ Has the root item `mappings` which has the following top level entries:
 - `templates` _optional_
 - `mapping` _mandatory_
 
-Instead of using a single `mapping.yml` file, you can use multiple `mapping` files  
+Instead of using a single `mapping.yml` file, you can use multiple mapping files
 when you set `mapping_path` in `config.yml` to a directory.
 
 ### 2.1 `templates`
@@ -1036,14 +1035,14 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
   - print(a)
 Example `print(uppercase("hello"))`. output is only visible in `trace` log level you can enable it like `log_level: debug,tuliprox::foundation::mapper=trace` in config
 - Assignment assigns an expression result. variable or field.
-```
+```dsl
   @Title = uppercase("hello")
   hello = concat(capitalize("hello"), " ", capitalize("world")) 
 ```
 -  Match block evaluates expressions based on multiple matching cases.
 Note: **The order of the cases are important.**
 
-```
+```dsl
 result = match {
     (var1, var2) => result1,  <- only executed when both variables set
      var2 => result2,  <- only executed when var2 variable is set
@@ -1053,7 +1052,7 @@ result = match {
 ```
 - Map block assigns expression results to a variable or field
 It is possible to define multiple keys with `|` seperated for one case.  
-```
+```dsl
 result = map variable_name {
     "key1" => result1,
     "key2" => result2,
@@ -1842,14 +1841,14 @@ title_name = title_match.2
 We will later merge 3 groups together and want to keep the quality for the group name.
 For example all channels from the groups "NEWS", "NATIONAL" amd "SATELLITE" will go
 into new groups named by the previously extracted quality.
-```
+```dsl
 quality = map group {
 "NEWS" | "NATIONAL" | "SATELLITE" => quality,
 _ => null,
 }
 ```
 is equivalent to
-```
+```python
 if group in ["NEWS", "NATIONAL", "SATELLITE"]:
    keep quality
 else:
@@ -1862,7 +1861,7 @@ This could be later done with counter sequence too. (And would be better if some
 
 if the current plalyist item has one of the qualities we set the prefix according to quality,
 otherwise we use the group category.
-```
+```dsl
   prefix = map quality {
    "HD" => "01.",
    "FHD" => "02.",
@@ -1885,7 +1884,7 @@ otherwise we use the group category.
 
 Final name construction
 
-```
+```dsl
   name = match {
     quality => concat(prefix, " FR [", quality, "]"),
     group => concat(prefix, " FR [", group, "]"),
@@ -1895,7 +1894,7 @@ Final name construction
 
 is equivalent to 
 
-```
+```python
 if quality is set:
     name = prefix + " FR [" + quality + "]"
 elif group is set:
@@ -1908,7 +1907,7 @@ Update the playlist item
 - Group is overwritten with the new formatted name.
 - Caption is overwritten with the cleaned-up title name.
 
-```
+```dsl
   @Group = name
   @Caption = title_name
 ```
