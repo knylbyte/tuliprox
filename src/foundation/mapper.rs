@@ -205,9 +205,9 @@ impl MapperScript {
                     return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}", ident);
                 }
             }
-            Expression::NullValue => {}
-            Expression::FieldAccess(_) => {}
-            Expression::StringLiteral(_) => {}
+            Expression::NullValue
+            | Expression::FieldAccess(_)
+            | Expression::StringLiteral(_) => {}
             Expression::RegexExpr { field: _field, pattern: _pattern, re_pattern: _re_pattern } => {}
             Expression::FunctionCall { name: _name, args } => {
                 for arg in args {
