@@ -150,7 +150,7 @@ fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option
             let mut grp = playlist_group.clone();
             mappings.iter().filter(|&mapping| mapping.mapper.as_ref().is_some_and(|v| !v.is_empty()))
                 .for_each(|mapping|
-                grp.channels = grp.channels.drain(..).map(|chan| map_channel(chan, mapping)).collect());
+                    grp.channels = grp.channels.drain(..).map(|chan| map_channel(chan, mapping)).collect());
             grp
         }).collect();
 
@@ -221,13 +221,10 @@ fn map_playlist_counter(target: &ConfigTarget, playlist: &mut [PlaylistGroup]) {
 // If no input is enabled but the user set the target as command line argument,
 // we force the input to be enabled.
 // If there are enabled input, then only these are used.
-fn is_input_enabled(enabled_inputs: usize, input: &ConfigInput, user_targets: &ProcessTargets) -> bool {
+fn is_input_enabled(input: &ConfigInput, user_targets: &ProcessTargets) -> bool {
     let input_enabled = input.enabled;
     let input_id = input.id;
-    if enabled_inputs == 0 {
-        return user_targets.enabled && user_targets.has_input(input_id);
-    }
-    input_enabled
+    (!user_targets.enabled && input_enabled) || user_targets.has_input(input_id)
 }
 
 fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bool {
@@ -240,10 +237,11 @@ async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<Config>, source_i
     let mut input_stats = HashMap::<String, InputStats>::new();
     let mut target_stats = Vec::<TargetStats>::new();
     let mut source_playlists = Vec::with_capacity(128);
-    let enabled_inputs = source.inputs.iter().filter(|&input| input.enabled).count();
     // Download the sources
+    let mut source_downloaded = false;
     for input in &source.inputs {
-        if is_input_enabled(enabled_inputs, input, &user_targets) {
+        if is_input_enabled(input, &user_targets) {
+            source_downloaded = true;
             let start_time = Instant::now();
             let (mut playlistgroups, mut error_list) = match input.input_type {
                 InputType::M3u => m3u::get_m3u_playlist(Arc::clone(&client), &cfg, input, &cfg.working_dir).await,
@@ -280,20 +278,22 @@ async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<Config>, source_i
                                                                          input.input_type, input_name, elapsed));
         }
     }
-    if source_playlists.is_empty() {
-        debug!("Source at index {source_idx} is empty");
-        errors.push(notify_err!(format!("Source at {source_idx} is empty")));
-    } else {
-        debug_if_enabled!("Source has {} groups", source_playlists.iter().map(|fpl| fpl.playlistgroups.len()).sum::<usize>());
-        for target in &source.targets {
-            if is_target_enabled(target, &user_targets) {
-                match process_playlist_for_target(Arc::clone(&client), &mut source_playlists, target, &cfg, &mut input_stats, &mut errors).await {
-                    Ok(()) => {
-                        target_stats.push(TargetStats::success(&target.name));
-                    }
-                    Err(mut err) => {
-                        target_stats.push(TargetStats::failure(&target.name));
-                        errors.append(&mut err);
+    if source_downloaded {
+        if source_playlists.is_empty() {
+            debug!("Source at index {source_idx} is empty");
+            errors.push(notify_err!(format!("Source at {source_idx} is empty")));
+        } else {
+            debug_if_enabled!("Source has {} groups", source_playlists.iter().map(|fpl| fpl.playlistgroups.len()).sum::<usize>());
+            for target in &source.targets {
+                if is_target_enabled(target, &user_targets) {
+                    match process_playlist_for_target(Arc::clone(&client), &mut source_playlists, target, &cfg, &mut input_stats, &mut errors).await {
+                        Ok(()) => {
+                            target_stats.push(TargetStats::success(&target.name));
+                        }
+                        Err(mut err) => {
+                            target_stats.push(TargetStats::failure(&target.name));
+                            errors.append(&mut err);
+                        }
                     }
                 }
             }
