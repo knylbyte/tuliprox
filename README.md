@@ -1766,3 +1766,147 @@ To handle this, we introduce a **grace period_millis** and **grace_period_timeou
 ```
 The grace period means: if a user reaches the connection limit, we still allow one more connection for a short time.
 After a delay, we check whether old connections have been properly closed. If not, we then enforce the limit and terminate the excess connection(s).
+
+# Mapper example
+
+```yaml
+  group = Group ~ "(EU|SATELLITE|NATIONAL|NEWS|MUSIC|SPORT|RELIGION|FILM|KIDS|DOCU)"
+  quality = Caption ~ "\b([F]?HD[i]?)\b"
+  title_match = Caption ~ "(.*?)\:\s*(.*)"
+  title_prefix = title_match.1
+  title_name = title_match.2
+
+  # suffix '*' for SATELLITE
+  title_name = map title_prefix {
+     "SATELLITE" =>  concat(title_name, "*"),
+     _ => title_name,
+  }
+
+  quality = map group {
+      "NEWS" | "NATIONAL" | "SATELLITE" => quality,
+      _ => null,
+  }
+
+  prefix = map quality {
+   "HD" => "01.",
+   "FHD" => "02.",
+   "HDi" => "03.",
+   _ => map group {
+      "NEWS" => "04.",
+      "DOCU" => "05.",
+      "SPORT" => "06.",
+      "NATIONAL" => "07.",
+      "RELIGION" => "08.",
+      "KIDS" => "09.",
+      "FILM" => "10.",
+      "MUSIC" => "11.",
+      "EU" => "12.",
+      "SATELLITE" => "13.",
+      _ => group
+    },
+  }
+
+  name = match {
+    quality => concat(prefix, " FR [", quality, "]"),
+    group => concat(prefix, " FR [", group, "]"),
+    _ => prefix
+  }
+
+  @Group = name
+  @Caption = title_name
+```
+The transformation logic processes each entry and modifies two key fields:
+- `Group`: The group or category the stream belongs to.
+- `Caption`: The title or name of the stream.
+It extracts data from these fields and applies structured transformations.
+
+This extracts a known group keyword from `Group`
+`group = Group ~ "(EU|SATELLITE|NATIONAL|NEWS|MUSIC|SPORT|RELIGION|FILM|KIDS|DOCU)"`
+
+Quality subset detection -> HD, FHD, HDi
+`quality = @Caption ~ "\b([F]?HD[i]?)\b"`
+
+Title splitting. As you can see there are 2 captures, the first one is the prefix and the second one is the name.
+You get something like 
+- title_prefix = 'FR'
+- title_name = 'TV5Monde'
+from "FR: TV5Monde"
+```
+title_match = @Caption ~ "(.*?)\:\s*(.*)"
+title_prefix = title_match.1
+title_name = title_match.2
+```
+
+We will later merge 3 groups together and want to keep the quality for the group name.
+For example all channels from the groups "NEWS", "NATIONAL" amd "SATELLITE" will go
+into new groups named by the previously extracted quality.
+```
+quality = map group {
+"NEWS" | "NATIONAL" | "SATELLITE" => quality,
+_ => null,
+}
+```
+is equivalent to
+```
+if group in ["NEWS", "NATIONAL", "SATELLITE"]:
+   keep quality
+else:
+   quality = null
+```
+
+Generate prefix. We have later 3 new groups named by the quality. 
+We want to put them in some order and prefix them with a counter.
+This could be later done with counter sequence too. (And would be better if some groups get empty)
+
+if the current plalyist item has one of the qualities we set the prefix according to quality,
+otherwise we use the group category.
+```
+  prefix = map quality {
+   "HD" => "01.",
+   "FHD" => "02.",
+   "HDi" => "03.",
+   _ => map group {
+      "NEWS" => "04.",
+      "DOCU" => "05.",
+      "SPORT" => "06.",
+      "NATIONAL" => "07.",
+      "RELIGION" => "08.",
+      "KIDS" => "09.",
+      "FILM" => "10.",
+      "MUSIC" => "11.",
+      "EU" => "12.",
+      "SATELLITE" => "13.",
+      _ => group
+    },
+  }
+```
+
+Final name construction
+
+```
+  name = match {
+    quality => concat(prefix, " FR [", quality, "]"),
+    group => concat(prefix, " FR [", group, "]"),
+    _ => prefix
+  }
+```
+
+is equivalent to 
+
+```
+if quality is set:
+    name = prefix + " FR [" + quality + "]"
+elif group is set:
+    name = prefix + " FR [" + group + "]"
+else:
+    name = prefix
+``` 
+
+Update the playlist item
+- Group is overwritten with the new formatted name.
+- Caption is overwritten with the cleaned-up title name.
+
+```
+  @Group = name
+  @Caption = title_name
+```

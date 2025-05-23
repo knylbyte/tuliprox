@@ -218,29 +218,29 @@ impl MapperScript {
                 let mut case_keys = HashSet::new();
                 for match_case in cases {
                     let mut any_match_count = 0;
-                    let mut identifer_key = String::with_capacity(56);
+                    let mut identifier_key = String::with_capacity(56);
                     for identifier in &match_case.keys {
                         match identifier {
                             MatchCaseKey::Identifier(ident) => {
                                 if !identifiers.contains(ident.as_str()) {
                                     return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}", ident);
                                 }
-                                identifer_key.push_str(ident.as_str());
-                                identifer_key.push_str(", ");
+                                identifier_key.push_str(ident.as_str());
+                                identifier_key.push_str(", ");
                             }
                             MatchCaseKey::AnyMatch => {
                                 any_match_count += 1;
                                 if any_match_count > 1 {
                                     return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Match case can only have one '_'");
                                 }
-                                identifer_key.push_str("_, ");
+                                identifier_key.push_str("_, ");
                             }
                         }
                     }
-                    if case_keys.contains(&identifer_key) {
-                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Duplicate case {}", identifer_key);
+                    if case_keys.contains(&identifier_key) {
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Duplicate case {}", identifier_key);
                     }
-                    case_keys.insert(identifer_key);
+                    case_keys.insert(identifier_key);
                     MapperScript::validate_expr(&match_case.expression, identifiers)?;
                 }
             }
