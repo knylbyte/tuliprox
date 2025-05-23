@@ -1,5 +1,5 @@
 use std::fs::File;
-use env_logger::Builder;
+use env_logger::{Builder, Target};
 use log::{error, info, LevelFilter};
 use crate::model::LogLevelConfig;
 use crate::utils::config_file_reader;
@@ -26,6 +26,7 @@ pub fn init_logger(user_log_level: Option<&String>, config_file: &str) {
     let env_log_level = std::env::var("TULIPROX_LOG").ok();
 
     let mut log_builder = Builder::from_default_env();
+    log_builder.target(Target::Stdout);
 
     // priority  CLI-Argument, Env-Var, Config, Default
     let log_level = user_log_level
@@ -41,10 +42,14 @@ pub fn init_logger(user_log_level: Option<&String>, config_file: &str) {
         .unwrap_or_else(|| "info".to_string()); // Default
 
     if log_level.contains('=') {
-        for pair in log_level.split(',').filter(|s| s.contains('=')) {
-            let mut kv_iter = pair.split('=').map(str::trim);
-            if let (Some(module), Some(level)) = (kv_iter.next(), kv_iter.next()) {
-                log_builder.filter_module(module, get_log_level(level));
+        for pair in log_level.split(',') {
+            if pair.contains('=') {
+                let mut kv_iter = pair.split('=').map(str::trim);
+                if let (Some(module), Some(level)) = (kv_iter.next(), kv_iter.next()) {
+                    log_builder.filter_module(module, get_log_level(level));
+                }
+            } else {
+                log_builder.filter_level(get_log_level(pair));
             }
         }
     } else {
