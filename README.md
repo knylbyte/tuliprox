@@ -1018,8 +1018,11 @@ string operations, pattern matching, conditional mapping, and structured data ac
 It is whitespace-tolerant and uses familiar programming concepts with a custom syntax.
 
 **Basic elements:**
-- Identifiers: `Variable Names` and `Playlist Field Names` composed of ASCII alphanumeric characters and underscores.
+- Identifiers: `Variable Names` composed of ASCII alphanumeric characters and underscores.
+- FieldNames: `Playlist Field Names` starting with `@` following compose of ASCII alphanumeric characters and underscores.
+The `@` prefix is not needed for regex statements like `Caption ~ ".*"`.
 - Strings / Text: Enclosed in double quotes. "example string" 
+- Null value `null`
 - Regex Matching:   `FieldName ~ "Regex"` like in filter statements.
 - Access a field in a regex match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at 1.
 - Builtin String functions: 
@@ -1029,10 +1032,10 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
   - capitalize(a)
   - trim(a)
   - print(a)
-Example `print(uppercase("hello"))`
+Example `print(uppercase("hello"))`. output is only visible in `trace` log level you can enable it like `log_level: debug,tuliprox::foundation::mapper=trace` in config
 - Assignment assigns an expression result. variable or field.
 ```
-  Title = uppercase("hello")
+  @Title = uppercase("hello")
   hello = concat(capitalize("hello"), " ", capitalize("world")) 
 ```
 -  Match block evaluates expressions based on multiple matching cases.
@@ -1047,11 +1050,17 @@ result = match {
    }
 ```
 - Map block assigns expression results to a variable or field
+It is possible to define multiple keys with `|` seperated for one case.  
 ```
 result = map variable_name {
     "key1" => result1,
     "key2" => result2,
     _ => default
+}
+
+result = map variable_name {
+    "key1" | "key2" => result1,
+    _ => null
 }
 ```
 
@@ -1104,8 +1113,8 @@ mappings:
                 quality => concat("East ", uppercase(quality)),
                 _ => "East HD",
             }
-            Caption = concat("!US_TNT_PREFIX!", " ", coast_quality)
-            Group = "!US_TNT_ENTERTAIN_GROUP!"
+            @Caption = concat("!US_TNT_PREFIX!", " ", coast_quality)
+            @Group = "!US_TNT_ENTERTAIN_GROUP!"
 ```
 ### 2.3.4 counter
 
