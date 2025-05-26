@@ -1,14 +1,15 @@
 use std::borrow::Cow;
-use std::{env, fs};
+use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::{env, fs};
 
 use crate::tuliprox_error::str_to_io_error;
 use crate::utils::debug_if_enabled;
+use crate::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE};
 use log::{debug, error};
 use path_clean::PathClean;
-use crate::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE};
 
 pub fn file_writer<W>(w: W) -> BufWriter<W>
 where
@@ -97,7 +98,7 @@ pub fn resolve_directory_path(input: &str) -> String {
 
     let input_path = PathBuf::from(input);
     if let Err(e) = fs::create_dir_all(&input_path) {
-       error!("Failed to create directory: {} - {e}", input_path.display());
+        error!("Failed to create directory: {} - {e}", input_path.display());
     }
 
     let resolved_path = fs::metadata(&input_path).ok().and_then(|md| {
@@ -301,4 +302,33 @@ pub fn resolve_relative_path(relative: &str) -> std::io::Result<PathBuf> {
 
 pub fn is_directory(path: &str) -> bool {
     PathBuf::from(path).is_dir()
+}
+
+// Cleans up the directories and deletes all files whic are not listed in the list
+pub fn cleanup_unlisted_files_with_suffix(
+    keep_files: &Vec<PathBuf>,
+    suffix: &str,
+) -> std::io::Result<()> {
+    let keep_set: HashSet<_> = keep_files.iter().collect();
+
+    let mut dirs: HashSet<&Path> = HashSet::new();
+    for file in keep_files {
+        if let Some(parent) = file.parent() {
+            dirs.insert(parent);
+        }
+    }
+
+    for dir in dirs {
+        for entry in (fs::read_dir(dir)?).flatten() {
+            let path = entry.path();
+
+            if path.is_file() && !keep_set.contains(&path) && path.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|name| name.ends_with(suffix)) && fs::remove_file(&path).is_ok() {
+                debug!("Deleted {:?}", path.display());
+            }
+        }
+    }
+
+    Ok(())
 }

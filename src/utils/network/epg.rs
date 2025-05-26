@@ -2,7 +2,7 @@ use crate::tuliprox_error::TuliproxError;
 use crate::model::{Config, ConfigInput, PersistedEpgSource};
 use crate::model::TVGuide;
 use crate::repository::storage::short_hash;
-use crate::utils::{add_prefix_to_filename, prepare_file_path};
+use crate::utils::{add_prefix_to_filename, cleanup_unlisted_files_with_suffix, prepare_file_path};
 use crate::utils::request;
 use log::debug;
 use std::path::PathBuf;
@@ -24,10 +24,12 @@ pub async fn get_xmltv(client: Arc<reqwest::Client>, _cfg: &Config, input: &Conf
         Some(epg_config) => {
             let mut errors = vec![];
             let mut file_paths = vec![];
+            let mut stored_file_paths = vec![];
 
             for epg_source in &epg_config.t_sources {
                 match download_epg_file(&epg_source.url, &client, input, working_dir).await {
                     Ok(file_path) => {
+                        stored_file_paths.push(file_path.clone());
                         file_paths.push(PersistedEpgSource {file_path, priority: epg_source.priority, logo_override: epg_source.logo_override});
                     }
                     Err(err) => {
@@ -35,6 +37,8 @@ pub async fn get_xmltv(client: Arc<reqwest::Client>, _cfg: &Config, input: &Conf
                     }
                 }
             }
+
+            let _ = cleanup_unlisted_files_with_suffix(&stored_file_paths, "_epg.xml");
 
             if file_paths.is_empty() {
                 (None, errors)
