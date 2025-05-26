@@ -1,14 +1,15 @@
 #![allow(clippy::empty_docs)]
 
-use std::borrow::Cow;
 use crate::foundation::filter::ValueAccessor;
-use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Undefined, Value};
+use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Number, Undefined, Value};
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::Capitalize;
 use log::{debug, error, trace};
 use pest::iterators::Pair;
 use pest::Parser;
 use regex::Regex;
+use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
@@ -20,12 +21,18 @@ null = { "null" }
 identifier = @{ !null ~ (ASCII_ALPHANUMERIC | "_")+ }
 var_access = { identifier ~ ("." ~ identifier)? }
 string_literal = @{ "\"" ~ ( "\\\"" | (!"\"" ~ ANY) )* ~ "\"" }
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+number_range_from = { number ~ ".." }
+number_range_to = { ".." ~ number }
+number_range_full = { number ~ ".." ~ number }
+number_range_eq = { number }
+number_range = _{ number_range_full | number_range_from | number_range_to | number_range_eq}
 field = { ^"name" | ^"title" | ^"caption" | ^"group" | ^"id" | ^"chno" | ^"logo" | ^"logo_small" | ^"parent_code" | ^"audio_track" | ^"time_shift" | ^"rec" | ^"url" | ^"epg_channel_id" | ^"epg_id" }
 field_access = _{ "@" ~ field }
 regex_source = _{ field_access | identifier }
 regex_expr = { regex_source ~ regex_op ~ string_literal }
-expression = { map_block | match_block | function_call | regex_expr | string_literal | var_access | field_access | null }
-function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" }
+expression = { map_block | match_block | function_call | regex_expr | string_literal | number | var_access | field_access | null }
+function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" }
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
 match_case_key = { any_match | identifier }
@@ -33,7 +40,7 @@ match_case_key_list = { match_case_key ~ ("," ~ match_case_key)* }
 match_case = { match_case_key_list ~ "=>" ~ expression | "(" ~ match_case_key_list ~ ")" ~ "=>" ~ expression }
 match_block = { "match" ~  "{" ~ NEWLINE* ~ (match_case ~ ("," ~ NEWLINE* ~ match_case)*)? ~ ","? ~ NEWLINE* ~ "}" }
 map_case_key_list = { string_literal ~ ("|" ~ string_literal)* }
-map_case_key = { any_match | map_case_key_list }
+map_case_key = { any_match | number_range | map_case_key_list }
 map_case = { map_case_key ~ "=>" ~ expression }
 map_key = { identifier }
 map_block = { "map" ~ map_key ~ "{" ~ NEWLINE* ~ (map_case ~ ("," ~ NEWLINE* ~ map_case)*)? ~ ","? ~ NEWLINE* ~ "}" }
@@ -61,6 +68,10 @@ struct MatchCase {
 #[derive(Debug, Clone)]
 enum MapCaseKey {
     Text(String),
+    RangeFrom(f64),
+    RangeTo(f64),
+    RangeFull(f64, f64),
+    RangeEq(f64),
     AnyMatch,
 }
 
@@ -84,6 +95,7 @@ enum BuiltInFunction {
     Capitalize,
     Trim,
     Print,
+    ToNumber,
 }
 
 impl FromStr for BuiltInFunction {
@@ -97,6 +109,7 @@ impl FromStr for BuiltInFunction {
             "uppercase" => Ok(Self::Uppercase),
             "trim" => Ok(Self::Trim),
             "print" => Ok(Self::Print),
+            "number" => Ok(Self::ToNumber),
             _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown function {}", s),
         }
     }
@@ -112,13 +125,14 @@ enum RegexSource {
 enum Expression {
     Identifier(String),
     StringLiteral(String),
+    NumberLiteral(f64),
     FieldAccess(String),
     VarAccess(String, String),
     RegexExpr { field: RegexSource, pattern: String, re_pattern: Regex },
     FunctionCall { name: BuiltInFunction, args: Vec<Expression> },
     MatchBlock(Vec<MatchCase>),
     MapBlock { key: MapKey, cases: Vec<MapCase> },
-    NullValue
+    NullValue,
 }
 
 #[derive(Debug, Clone)]
@@ -168,6 +182,9 @@ impl Statement {
                             Value(content) => {
                                 setter.set(name, content.as_str());
                             }
+                            Number(num) => {
+                                setter.set(name, format_number(num).as_str());
+                            }
                             Named(pairs) => {
                                 let mut result = String::with_capacity(128);
                                 for (i, (key, value)) in pairs.iter().enumerate() {
@@ -213,7 +230,8 @@ impl MapperScript {
             }
             Expression::NullValue
             | Expression::FieldAccess(_)
-            | Expression::StringLiteral(_) => {}
+            | Expression::StringLiteral(_)
+            | Expression::NumberLiteral(_) => {}
             Expression::RegexExpr { field, pattern: _pattern, re_pattern: _re_pattern } => {
                 match field {
                     RegexSource::Identifier(ident) => {
@@ -278,6 +296,14 @@ impl MapperScript {
                                 }
                                 case_keys.insert(value.as_str());
                             }
+                            MapCaseKey::RangeEq(_)
+                            | MapCaseKey::RangeTo(_)
+                            | MapCaseKey::RangeFrom(_) => {}
+                            MapCaseKey::RangeFull(from, to) => {
+                                if *from > *to {
+                                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Invalid range {from}..{to}");
+                                }
+                            },
                             MapCaseKey::AnyMatch => {
                                 any_match_count += 1;
                                 if any_match_count > 1 {
@@ -421,6 +447,27 @@ impl MapperScript {
                 }
                 Ok(matches)
             }
+            Rule::number_range_full => {
+                let mut inner = inner.into_inner();
+                let start = inner.next().unwrap().as_str().parse::<f64>().unwrap();
+                let end = inner.next().unwrap().as_str().parse::<f64>().unwrap();
+                Ok(vec![MapCaseKey::RangeFull(start, end)])
+            }
+            Rule::number_range_from => {
+                let mut inner = inner.into_inner();
+                let start = inner.next().unwrap().as_str().parse::<f64>().unwrap();
+                Ok(vec![MapCaseKey::RangeFrom(start)])
+            }
+            Rule::number_range_to => {
+                let mut inner = inner.into_inner();
+                let to = inner.next().unwrap().as_str().parse::<f64>().unwrap();
+                Ok(vec![MapCaseKey::RangeTo(to)])
+            }
+            Rule::number_range_eq => {
+                let mut inner = inner.into_inner();
+                let num = inner.next().unwrap().as_str().parse::<f64>().unwrap();
+                Ok(vec![MapCaseKey::RangeEq(num)])
+            }
             Rule::any_match => Ok(vec![MapCaseKey::AnyMatch]),
             _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unexpected map key: {:?}", inner.as_rule()),
         }
@@ -466,6 +513,15 @@ impl MapperScript {
                 // remove quotes
                 let content = &raw[1..raw.len() - 1];
                 Ok(Expression::StringLiteral(content.to_string()))
+            }
+
+            Rule::number => {
+                let raw = pair.as_str();
+                if let Number(val) = to_number(raw) {
+                    Ok(Expression::NumberLiteral(val))
+                } else {
+                    create_tuliprox_error_result!(TuliproxErrorKind::Info, "Invalid number {raw}")
+                }
             }
 
             Rule::regex_expr => {
@@ -563,15 +619,44 @@ impl Default for MapperContext {
     }
 }
 
-
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 enum EvalResult {
     Undefined,
     Value(String),
+    Number(f64),
     Named(Vec<(String, String)>),
     AnyValue,
     Failure(String),
+}
+
+fn to_number(value: &str) -> EvalResult {
+    match value.parse::<f64>() {
+        Ok(num) => Number(num),
+        Err(_) => Failure(format!("Invalid number: {value}")),
+    }
+}
+
+fn compare_number(a: f64, b: f64) -> Ordering {
+    let epsilon = 1e-3; // = 0.001
+
+    if (a - b).abs() < epsilon {
+        Ordering::Equal
+    } else if a < b {
+        Ordering::Less
+    } else {
+        Ordering::Greater
+    }
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn format_number(num: f64) -> String {
+    let epsilon = 1e-3; // = 0.001
+
+    if num.fract().abs() < epsilon {
+        format!("{}", num as i64)
+    } else {
+        format!("{num}")
+    }
 }
 
 fn compare_tuple_vec<'a>(
@@ -587,13 +672,52 @@ fn compare_tuple_vec<'a>(
     to_map(a) == to_map(b)
 }
 
+fn match_number(num: f64, s: &str) -> bool {
+    if let Ok(val) = s.parse::<f64>() {
+        return compare_number(num, val) == Ordering::Equal;
+    }
+    false
+}
+
+fn cmp_number(num: f64, s: &str) -> Option<Ordering> {
+    if let Ok(val) = s.parse::<f64>() {
+        return Some(compare_number(num, val));
+    }
+    None
+}
+
+
 impl EvalResult {
     fn matches(&self, other: &EvalResult) -> bool {
         match (self, other) {
             (AnyValue, _) | (_, AnyValue) => true,
             (Value(a), Value(b)) => a == b,
+            (Number(a), Value(b)) => match_number(*a, b),
+            (Value(a), Number(b)) => match_number(*b, a),
+            (Number(a), Number(b)) => compare_number(*a, *b) == Ordering::Equal,
             (Named(a), Named(b)) => compare_tuple_vec(a, b),
             _ => false,
+        }
+    }
+
+    fn compare(&self, other: &EvalResult) -> Option<Ordering> {
+        match (self, other) {
+            (AnyValue, _) | (_, AnyValue) => Some(Ordering::Equal),
+            (Value(a), Value(b)) => Some(a.cmp(b)),
+            (Number(a), Value(b)) => cmp_number(*a, b),
+            (Value(a), Number(b)) => match cmp_number(*b, a) {
+                None => None,
+                Some(ord) => {
+                    match ord {
+                        Ordering::Less => Some(Ordering::Greater),
+                        Ordering::Equal =>  Some(Ordering::Equal),
+                        Ordering::Greater =>  Some(Ordering::Less),
+                    }
+                }
+            },
+            (Number(a), Number(b)) => Some(compare_number(*a, *b)),
+            (Named(a), Named(b)) => if compare_tuple_vec(a, b) { Some(Ordering::Equal) } else { None },
+            _ => None,
         }
     }
 
@@ -602,19 +726,20 @@ impl EvalResult {
     }
 }
 
-fn concat_args(args: &Vec<EvalResult>) -> Vec<&str> {
+fn concat_args(args: &Vec<EvalResult>) -> Vec<Cow<str>> {
     let mut result = vec![];
 
     for arg in args {
         match arg {
-            Value(value) => result.push(value.as_str()),
+            Value(value) => result.push(Cow::Borrowed(value.as_str())),
+            Number(value) => result.push(Cow::Owned(format_number(*value))),
             Named(pairs) => {
                 for (i, (key, value)) in pairs.iter().enumerate() {
-                    result.push(key.as_str());
-                    result.push(": ");
-                    result.push(value.as_str());
+                    result.push(Cow::Borrowed(key.as_str()));
+                    result.push(Cow::Borrowed(": "));
+                    result.push(Cow::Borrowed(value.as_str()));
                     if i < pairs.len() - 1 {
-                        result.push(", ");
+                        result.push(Cow::Borrowed(", "));
                     }
                 }
             }
@@ -649,7 +774,7 @@ impl Expression {
                     None => Failure(format!("Variable with name {name} not found.")),
                     Some(value) => match value {
                         Undefined => Undefined,
-                        Value(_) => Failure(format!("Variable with name {name} has no fields.")),
+                        Number(_) | Value(_) => Failure(format!("Variable with name {name} has no fields.")),
                         Named(values) => {
                             for (key, val) in values {
                                 if key == field {
@@ -663,6 +788,7 @@ impl Expression {
                 }
             }
             Expression::StringLiteral(s) => Value(s.clone()),
+            Expression::NumberLiteral(num) => Number(*num),
             Expression::RegexExpr { field, pattern: _pattern, re_pattern } => {
                 let source = match field {
                     RegexSource::Identifier(ident) => {
@@ -716,12 +842,21 @@ impl Expression {
                     match name {
                         BuiltInFunction::Concat => Value(concat_args(&evaluated_args).join("")),
                         BuiltInFunction::Uppercase => Value(concat_args(&evaluated_args).join(" ").to_uppercase()),
-                        BuiltInFunction::Trim => Value(concat_args(&evaluated_args).iter().map(|&s| s.trim()).collect::<Vec<_>>().join(" ").trim().to_string()),
+                        BuiltInFunction::Trim => Value(concat_args(&evaluated_args).iter().map(|s| s.trim()).collect::<Vec<_>>().join(" ").trim().to_string()),
                         BuiltInFunction::Lowercase => Value(concat_args(&evaluated_args).join(" ").to_lowercase()),
-                        BuiltInFunction::Capitalize => Value(concat_args(&evaluated_args).iter().map(|&s| s.capitalize()).collect::<Vec<_>>().join(" ")),
+                        BuiltInFunction::Capitalize => Value(concat_args(&evaluated_args).iter().map(Capitalize::capitalize).collect::<Vec<_>>().join(" ")),
                         BuiltInFunction::Print => {
                             trace!("[MapperScript] {}", concat_args(&evaluated_args).join(""));
                             Undefined
+                        }
+                        BuiltInFunction::ToNumber => {
+                            let evaluated_arg = &evaluated_args[0];
+                            match evaluated_arg {
+                                Value(value) => {
+                                    to_number(value)
+                                }
+                                _ => evaluated_arg.clone()
+                            }
                         }
                     }
                 }
@@ -746,6 +881,7 @@ impl Expression {
                     for case_key in case_keys {
                         match case_key {
                             Value(_)
+                            | Number(_)
                             | Named(_)
                             | AnyValue => match_count += 1,
                             Undefined | Failure(_) => {}
@@ -773,6 +909,50 @@ impl Expression {
                         if match key {
                             MapCaseKey::Text(value) => key_value.matches(&Value(value.to_string())),
                             MapCaseKey::AnyMatch => true,
+                            MapCaseKey::RangeFrom(num) => {
+                                match key_value.compare(&Number(*num)) {
+                                    None => false,
+                                    Some(ord) => match ord {
+                                        Ordering::Less => false,
+                                        Ordering::Equal | Ordering::Greater => true,
+                                    }
+                                }
+                            }
+                            MapCaseKey::RangeTo(num) => {
+                                match key_value.compare(&Number(*num)) {
+                                    None => false,
+                                    Some(ord) => match ord {
+                                        Ordering::Equal | Ordering::Less => true,
+                                        Ordering::Greater => false,
+                                    }
+                                }
+                            }
+                            MapCaseKey::RangeFull(from, to) => {
+                                match key_value.compare(&Number(*from)) {
+                                    None => false,
+                                    Some(ord) => match ord {
+                                        Ordering::Less => false,
+                                        Ordering::Equal | Ordering::Greater => {
+                                            match key_value.compare(&Number(*to)) {
+                                                None => false,
+                                                Some(ord) => match ord {
+                                                    Ordering::Equal | Ordering::Less => true,
+                                                    Ordering::Greater => false,
+                                                }
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                            MapCaseKey::RangeEq(num) => {
+                                match key_value.compare(&Number(*num)) {
+                                    None => false,
+                                    Some(ord) => match ord {
+                                        Ordering::Equal => true,
+                                        Ordering::Less | Ordering::Greater => false,
+                                    }
+                                }
+                            }
                         } {
                             matches = true;
                             break;

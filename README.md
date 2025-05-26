@@ -1026,12 +1026,13 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
 - Null value `null`
 - Regex Matching:   `@FieldName ~ "Regex"` like in filter statements. You can match a `FieldName` or a existing `variable`.
 - Access a field in a regex match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at 1.
-- Builtin String functions: 
+- Builtin functions: 
   - concat(a, b, ...)
   - uppercase(a)
   - lowercase(a)
   - capitalize(a)
   - trim(a)
+  - number(a)
   - print(a)
 Example `print(uppercase("hello"))`. output is only visible in `trace` log level you can enable it like `log_level: debug,tuliprox::foundation::mapper=trace` in config
 - Assignment assigns an expression result. variable or field.
@@ -1051,6 +1052,8 @@ result = match {
    }
 ```
 - Map block assigns expression results to a variable or field
+
+Mapping over text
 It is possible to define multiple keys with `|` seperated for one case.  
 ```dsl
 result = map variable_name {
@@ -1064,6 +1067,17 @@ result = map variable_name {
     _ => null
 }
 ```
+
+Mapping over number ranges
+```dls
+  year_group = map year {
+   ..2019 => "< 2020",
+   2020..2023 => "2020 - 2023",
+   2024..2025 => "2024 - 2025",
+   2025.. => "> 2025",
+   _ =>  year_text,
+  }
+```            
 
 Example `mapping.yml`
 
@@ -1769,6 +1783,11 @@ The grace period means: if a user reaches the connection limit, we still allow o
 After a delay, we check whether old connections have been properly closed. If not, we then enforce the limit and terminate the excess connection(s).
 
 # Mapper example
+## Grouping
+We asume we have some groups with the text EU, SATELLITE, NATIONAL, NEWS, MUSIC, SPORT, RELIGION, FILM, KIDS, DOCU
+in the group name.
+We wwant to group the channels inside  NEWS.  NATIONAL, SATELLITE by their quality.
+The other groups should get a number prefix for ordering.
 
 ```yaml
   group = Group ~ "(EU|SATELLITE|NATIONAL|NEWS|MUSIC|SPORT|RELIGION|FILM|KIDS|DOCU)"
@@ -1911,3 +1930,31 @@ Update the playlist item
   @Group = name
   @Caption = title_name
 ```
+
+## Grouping by release year
+We want to automatically group these channels by their release year, using the following logic:
+- All movies released before 2020 should be grouped together under one label.
+- Movies from 2020 onward should each be grouped by their specific year.
+Example title: "Master Movie (2020)"
+The result should look like
+- FR | Movies < 2020
+- FR | Movies 2020
+- FR | Movies 2021
+- FR | Movies <and so on>
+```dsl
+- filter: 'Group ~ "^FR" AND Caption ~ "\(?\d{4}\)?$"'
+  script: |
+    year_text = @Caption ~ "(\d{4})\)?$"
+    year = number(year_text)
+    year_group = map year {
+     ..2019 => "< 2020",
+     _ =>  year_text,
+    }
+    @Group = concat("FR | MOVIES ", year_group)
+```
+Filter: Matches channels where the Group starts with "FR" and the Caption ends in a 4-digit year (optionally inside parentheses).
+Regex extraction: Pulls the 4-digit year from the caption.
+Mapping:
+ If the year is ≤ 2019, it maps to " < 2020".
+ Otherwise, the group is named by the actual year (e.g., "2021").
+Assignment: Constructs a new group label like "FR | MOVIES 2021" and assigns it to @Group

@@ -20,21 +20,16 @@ pub trait Capitalize {
 }
 
 // Implement the Capitalize trait for &str
-impl Capitalize for &str {
+impl<T: AsRef<str>> Capitalize for T {
     fn capitalize(&self) -> String {
-        let mut chars = self.chars();
-        let first = chars.next()
+        let s = self.as_ref();
+        let mut chars = s.chars();
+        let first = chars
+            .next()
             .map(|c| c.to_uppercase().collect::<String>())
             .unwrap_or_default();
         let rest = chars.as_str().to_lowercase();
         first + &rest
-    }
-}
-
-// Implement the trait for String as well
-impl Capitalize for String {
-    fn capitalize(&self) -> String {
-        self.as_str().capitalize()  // Reuse the &str implementation
     }
 }
 
