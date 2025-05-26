@@ -8,6 +8,8 @@
   - provider_connection_exhausted.ts 
   - user_connection_exhausted.ts
   - channel_unavailable.ts
+`user_account_expired.ts`: Tuliprox will return a 403 Forbidden response for any playlist request if the user is expired.
+    So this screen will only ever appear if someone tries to directly access a stream URL after their account has expired.
 
 - !BREAKING_CHANGE! epg refactored
   - url config is now renamed to sources
