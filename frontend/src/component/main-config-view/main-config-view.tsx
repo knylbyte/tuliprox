@@ -108,6 +108,12 @@ const CONFIG_REVERSE_PROXY_FIELDS = [
         hint: 'HINT.CONFIG.PROXY.RESOURCE_REWRITE_DISABLE',
         fieldType: FormFieldType.CHECK
     },
+    {
+        name: 'disable_referer_header',
+        label: 'LABEL.DISABLE_REFERER_HEADER',
+        hint: 'HINT.CONFIG.PROXY.DISABLE_REFERER_HEADER',
+        fieldType: FormFieldType.CHECK
+    },
 ];
 
 const CONFIG_REVERSE_PROXY_STREAM_FIELDS = [
@@ -300,6 +306,7 @@ export default function MainConfigView(props: MainConfigViewProps) {
                 getObject(reverseProxyRateLimitConfig);
             const cfgReverseProxy: ReverseProxyConfig = reverseProxyConfigAvailable ? {
                 resource_rewrite_disabled: reverseProxyConfig.resource_rewrite_disabled,
+                disable_referer_header: reverseProxyConfig.disable_referer_header,
                 stream: getObject(cfgReverseProxyStreamBuffer),
                 cache: getObject(reverseProxyCacheConfig),
                 rate_limit: getObject(reverseProxyRateLimitConfig),

@@ -228,6 +228,7 @@ export interface ReverseProxyConfig {
     cache?: CacheConfig,
     rate_limit?: RateLimitConfig,
     resource_rewrite_disabled: boolean,
+    disable_referer_header: boolean,
 }
 
 export interface WebUiConfig {
