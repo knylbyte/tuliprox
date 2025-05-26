@@ -1,5 +1,5 @@
 # Changelog
-# 3.1.0 (2025-05-xx)
+# 3.1.0 (2025-05-26)
 - !BREAKING_CHANGE! mapper refactored, mapping can be written as a script with a custom DSL.
 - !BREAKING_CHANGE! `tags` definition removed from new mapper.
 - !BREAKING_CHANGE! removed `suffix` and `prefix` from input config. Use mapper with an input filter instead.
