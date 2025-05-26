@@ -69,8 +69,7 @@ Top level entries in the config files are:
 * `schedules` _optional_
 * `backup_dir` _optional_
 * `update_on_boot` _optional_
-* `web_ui_enabled` _optional_
-* `web_auth` _optional_
+* `web_ui` _optional_
 * `reverse_proxy` _optional_
 * `log` _optional
 * `user_access_control` _optional_
@@ -1070,6 +1069,9 @@ result = map variable_name {
 
 Mapping over number ranges
 ```dls
+  year_text = @Caption ~ "(\d{4})\)?$"
+  year = number(year_text)
+
   year_group = map year {
    ..2019 => "< 2020",
    2020..2023 => "2020 - 2023",

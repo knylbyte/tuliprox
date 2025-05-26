@@ -20,7 +20,7 @@ regex_op =  _{ "~" }
 null = { "null" }
 identifier = @{ !null ~ (ASCII_ALPHANUMERIC | "_")+ }
 var_access = { identifier ~ ("." ~ identifier)? }
-string_literal = @{ "\"" ~ ( "\\\"" | (!"\"" ~ ANY) )* ~ "\"" }
+string_literal = @{ "\"" ~ ( "\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ ANY) )* ~ "\"" }
 number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 number_range_from = { number ~ ".." }
 number_range_to = { ".." ~ number }
@@ -303,7 +303,7 @@ impl MapperScript {
                                 if *from > *to {
                                     return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Invalid range {from}..{to}");
                                 }
-                            },
+                            }
                             MapCaseKey::AnyMatch => {
                                 any_match_count += 1;
                                 if any_match_count > 1 {
@@ -710,8 +710,8 @@ impl EvalResult {
                 Some(ord) => {
                     match ord {
                         Ordering::Less => Some(Ordering::Greater),
-                        Ordering::Equal =>  Some(Ordering::Equal),
-                        Ordering::Greater =>  Some(Ordering::Less),
+                        Ordering::Equal => Some(Ordering::Equal),
+                        Ordering::Greater => Some(Ordering::Less),
                     }
                 }
             },
@@ -829,7 +829,7 @@ impl Expression {
                 let mut evaluated_args: Vec<EvalResult> = args.iter().map(|a| a.eval(ctx, accessor)).collect();
                 for arg in &evaluated_args {
                     if arg.is_error() {
-                        return arg.clone();
+                        return Failure(format!("Function '{name:?}' failed: {}", if let Failure(msg) = arg { msg } else { "Unknown error" }));
                     }
                 }
                 evaluated_args.retain(|er| !matches!(er, Undefined | Failure(_) | AnyValue));
@@ -940,7 +940,7 @@ impl Expression {
                                                     Ordering::Greater => false,
                                                 }
                                             }
-                                        },
+                                        }
                                     }
                                 }
                             }
