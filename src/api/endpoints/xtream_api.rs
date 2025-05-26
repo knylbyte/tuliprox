@@ -42,7 +42,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum XtreamApiStreamContext {
     LiveAlt,
     Live,
@@ -140,7 +140,7 @@ pub fn serve_query(file_path: &Path, filter: &HashMap<&str, HashSet<String>>) ->
 }
 
 pub(in crate::api) fn get_xtream_player_api_stream_url(
-    input: &ConfigInput, context: &XtreamApiStreamContext, action_path: &str, fallback_url: &str,
+    input: &ConfigInput, context: XtreamApiStreamContext, action_path: &str, fallback_url: &str,
 ) -> Option<String> {
     if let Some(input_user_info) = input.get_user_info() {
         let ctx = match context {
@@ -182,7 +182,7 @@ async fn xtream_player_api_stream(
 ) -> impl IntoResponse + Send {
     let (user, target) = try_option_bad_request!(get_user_target_by_credentials(stream_req.username, stream_req.password, api_req, app_state), false, format!("Could not find any user {}", stream_req.username));
     if user.permission_denied(app_state) {
-        return StatusCode::FORBIDDEN.into_response();
+        return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserAccountExpired).into_response();
     }
 
     let target_name = &target.name;
@@ -204,11 +204,11 @@ async fn xtream_player_api_stream(
 
     if let Some(session)  = &user_session {
         if session.permission == UserConnectionPermission::Exhausted {
-           return create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::UserConnectionsExhausted).into_response();
+           return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
         }
 
         if app_state.active_provider.is_over_limit(&session.provider).await {
-            return create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
+            return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
         }
 
         if session.virtual_id == virtual_id  && is_seek_request(cluster, req_headers).await {
@@ -219,10 +219,10 @@ async fn xtream_player_api_stream(
 
     let connection_permission = user.connection_permission(app_state).await;
     if connection_permission == UserConnectionPermission::Exhausted {
-        return create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::UserConnectionsExhausted).into_response();
+        return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
     }
 
-    let context = stream_req.context.clone();
+    let context = stream_req.context;
 
     let redirect_params = RedirectParams {
         item: &pli,
@@ -249,7 +249,7 @@ async fn xtream_player_api_stream(
         format!("{}/{}{extension}", stream_req.action_path, pli.provider_id)
     };
 
-    let stream_url = try_option_bad_request!(get_xtream_player_api_stream_url(input, &stream_req.context, &query_path, &pli.url),
+    let stream_url = try_option_bad_request!(get_xtream_player_api_stream_url(input, stream_req.context, &query_path, &pli.url),
         true, format!("Cant find stream url for target {target_name}, context {}, stream_id {virtual_id}", stream_req.context));
 
     let is_hls_request = pli.item_type == PlaylistItemType::LiveHls || pli.item_type == PlaylistItemType::LiveDash || extension == HLS_EXT;
@@ -314,7 +314,7 @@ async fn xtream_player_api_stream_with_token(
         };
 
         let stream_url = try_option_bad_request!(get_xtream_player_api_stream_url(input,
-        &stream_req.context, &query_path, pli.url.as_str()),
+        stream_req.context, &query_path, pli.url.as_str()),
         true, format!("Cant find stream url for target {target_name}, context {}, stream_id {virtual_id}",
         stream_req.context));
 

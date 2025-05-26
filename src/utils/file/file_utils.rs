@@ -271,22 +271,27 @@ pub fn read_file_as_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
 
 pub fn make_absolute_path(path: &str, working_dir: &str) -> String {
     let rpb = std::path::PathBuf::from(path);
+    let pathbuf = make_path_absolute(&rpb, working_dir);
+    pathbuf.to_str().unwrap_or_default().to_string()
+}
+
+pub fn make_path_absolute(rpb: &Path, working_dir: &str) -> PathBuf {
     if rpb.is_relative() {
-        let mut rpb2 = std::path::PathBuf::from(working_dir).join(&rpb);
+        let mut rpb2 = std::path::PathBuf::from(working_dir).join(rpb);
         if !rpb2.exists() {
-            rpb2 = get_exe_path().join(&rpb);
+            rpb2 = get_exe_path().join(rpb);
         }
         if !rpb2.exists() {
             let cwd = std::env::current_dir();
             if let Ok(cwd_path) = cwd {
-                rpb2 = cwd_path.join(&rpb);
+                rpb2 = cwd_path.join(rpb);
             }
         }
         if rpb2.exists() {
-            return String::from(rpb2.clean().to_str().unwrap_or_default());
+            return rpb2.clean();
         }
     }
-    path.to_string()
+    rpb.to_path_buf()
 }
 
 pub fn resolve_relative_path(relative: &str) -> std::io::Result<PathBuf> {

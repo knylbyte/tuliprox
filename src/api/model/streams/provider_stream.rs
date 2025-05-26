@@ -8,10 +8,12 @@ use std::sync::Arc;
 use axum::response::IntoResponse;
 use crate::api::model::stream::ProviderStreamResponse;
 
+#[derive(Debug, Copy, Clone)]
 pub enum CustomVideoStreamType {
     ChannelUnavailable,
     UserConnectionsExhausted,
     ProviderConnectionsExhausted,
+    UserAccountExpired
 }
 
 fn create_video_stream(video: Option<&Arc<Vec<u8>>>, headers: &[(String, String)], log_message: &str) -> ProviderStreamResponse {
@@ -28,22 +30,31 @@ fn create_video_stream(video: Option<&Arc<Vec<u8>>>, headers: &[(String, String)
 }
 
 pub fn create_channel_unavailable_stream(cfg: &Config, headers: &[(String, String)], status: StatusCode) -> ProviderStreamResponse {
-    create_video_stream(cfg.t_channel_unavailable_video.as_ref(), headers, &format!("Streaming response channel unavailable for status {status}"))
+    let video = cfg.t_custom_stream_response.as_ref().and_then(|c| c.channel_unavailable.as_ref());
+    create_video_stream(video, headers, &format!("Streaming response channel unavailable for status {status}"))
 }
 
 pub fn create_user_connections_exhausted_stream(cfg: &Config, headers: &[(String, String)]) -> ProviderStreamResponse {
-    create_video_stream(cfg.t_user_connections_exhausted_video.as_ref(), headers, "Streaming response user connections exhausted")
+    let video = cfg.t_custom_stream_response.as_ref().and_then(|c| c.user_connections_exhausted.as_ref());
+    create_video_stream(video, headers, "Streaming response user connections exhausted")
 }
 
 pub fn create_provider_connections_exhausted_stream(cfg: &Config, headers: &[(String, String)]) -> ProviderStreamResponse {
-    create_video_stream(cfg.t_provider_connections_exhausted_video.as_ref(), headers, "Streaming response provider connections exhausted")
+    let video = cfg.t_custom_stream_response.as_ref().and_then(|c| c.provider_connections_exhausted.as_ref());
+    create_video_stream(video, headers, "Streaming response provider connections exhausted")
 }
 
-pub fn create_custom_video_stream_response(config: &Config, video_response: &CustomVideoStreamType) -> impl axum::response::IntoResponse + Send {
+pub fn create_user_account_expired_stream(cfg: &Config, headers: &[(String, String)]) -> ProviderStreamResponse {
+    let video = cfg.t_custom_stream_response.as_ref().and_then(|c| c.user_account_expired.as_ref());
+    create_video_stream(video, headers, "Streaming response user account expired")
+}
+
+pub fn create_custom_video_stream_response(config: &Config, video_response: CustomVideoStreamType) -> impl axum::response::IntoResponse + Send {
     if let (Some(stream), Some((headers, status_code))) = match video_response {
         CustomVideoStreamType::ChannelUnavailable => create_channel_unavailable_stream(config, &[], StatusCode::BAD_REQUEST),
         CustomVideoStreamType::UserConnectionsExhausted => create_user_connections_exhausted_stream(config, &[]),
         CustomVideoStreamType::ProviderConnectionsExhausted => create_provider_connections_exhausted_stream(config, &[]),
+        CustomVideoStreamType::UserAccountExpired => create_user_account_expired_stream(config, &[]),
     } {
         let mut builder = axum::response::Response::builder()
             .status(status_code);

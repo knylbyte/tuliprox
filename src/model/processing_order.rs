@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use enum_iterator::Sequence;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Default)]
 pub enum ProcessingOrder {
     #[serde(rename = "frm")]
     #[default]

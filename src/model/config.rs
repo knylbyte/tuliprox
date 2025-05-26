@@ -3,7 +3,7 @@ use arc_swap::ArcSwapOption;
 use enum_iterator::Sequence;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -39,7 +39,7 @@ macro_rules! valid_property {
 pub use valid_property;
 use crate::utils;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, Eq, PartialEq)]
 pub enum ItemField {
     #[serde(rename = "group")]
     Group,
@@ -118,7 +118,7 @@ impl FromStr for ItemField {
 }
 
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
 pub enum FilterMode {
     #[serde(rename = "discard")]
     Discard,
@@ -361,13 +361,15 @@ impl ReverseProxyConfig {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-pub struct CustomStreamResponseConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel_unavailable: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub user_connections_exhausted: Option<String>, // user has no more connections
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_connections_exhausted: Option<String>, // provider limit reached, has no more connections
+pub struct CustomStreamResponse {
+    #[serde(default, skip)]
+    pub channel_unavailable: Option<Arc<Vec<u8>>>,
+    #[serde(default, skip)]
+    pub user_connections_exhausted: Option<Arc<Vec<u8>>>, // user has no more connections
+    #[serde(default, skip)]
+    pub provider_connections_exhausted: Option<Arc<Vec<u8>>>, // provider limit reached, has no more connections
+    #[serde(default, skip)]
+    pub user_account_expired: Option<Arc<Vec<u8>>>,
 }
 
 
@@ -386,7 +388,7 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mapping_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_stream_response: Option<CustomStreamResponseConfig>,
+    pub custom_stream_response_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub templates: Option<Vec<PatternTemplate>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -432,11 +434,7 @@ pub struct Config {
     #[serde(skip)]
     pub file_locks: Arc<utils::FileLockManager>,
     #[serde(skip)]
-    pub t_channel_unavailable_video: Option<Arc<Vec<u8>>>,
-    #[serde(skip)]
-    pub t_user_connections_exhausted_video: Option<Arc<Vec<u8>>>,
-    #[serde(skip)]
-    pub t_provider_connections_exhausted_video: Option<Arc<Vec<u8>>>,
+    pub t_custom_stream_response: Option<CustomStreamResponse>,
     #[serde(skip)]
     pub t_access_token_secret: [u8; 32],
     #[serde(skip)]
@@ -801,22 +799,33 @@ impl Config {
     }
 
     fn prepare_custom_stream_response(&mut self) {
-        if let Some(custom_stream_response) = self.custom_stream_response.as_ref() {
-            fn load_and_set_file(path: Option<&String>, working_dir: &str) -> Option<Arc<Vec<u8>>> {
-                path.as_ref()
-                    .map(|file| utils::make_absolute_path(file, working_dir))
-                    .and_then(|absolute_path| match utils::read_file_as_bytes(&PathBuf::from(&absolute_path)) {
+        if let Some(custom_stream_response_path) = self.custom_stream_response_path.as_ref() {
+            fn load_and_set_file(path: &Path, working_dir: &str) -> Option<Arc<Vec<u8>>> {
+                let file_path = utils::make_path_absolute(path, working_dir);
+                if file_path.exists() {
+                    match utils::read_file_as_bytes(&PathBuf::from(&file_path)) {
                         Ok(data) => Some(Arc::new(data)),
                         Err(err) => {
-                            error!("Failed to load file: {absolute_path} {err}");
+                            error!("Failed to load a resource file: {} {err}", file_path.display());
                             None
                         }
-                    })
+                    }
+                } else {
+                    None
+                }
             }
 
-            self.t_channel_unavailable_video = load_and_set_file(custom_stream_response.channel_unavailable.as_ref(), &self.working_dir);
-            self.t_user_connections_exhausted_video = load_and_set_file(custom_stream_response.user_connections_exhausted.as_ref(), &self.working_dir);
-            self.t_provider_connections_exhausted_video = load_and_set_file(custom_stream_response.provider_connections_exhausted.as_ref(), &self.working_dir);
+            let path = PathBuf::from(custom_stream_response_path);
+            let channel_unavailable = load_and_set_file(&path.join("channel_unavailable.ts"), &self.working_dir);
+            let user_connections_exhausted = load_and_set_file(&path.join("user_connections_exhausted.ts"), &self.working_dir);
+            let provider_connections_exhausted = load_and_set_file(&path.join("provider_connections_exhausted.ts"), &self.working_dir);
+            let user_account_expired = load_and_set_file(&path.join("user_account_expired.ts"), &self.working_dir);
+            self.t_custom_stream_response = Some(CustomStreamResponse {
+                channel_unavailable,
+                user_connections_exhausted,
+                provider_connections_exhausted,
+                user_account_expired,
+            });
         }
     }
 

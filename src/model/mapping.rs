@@ -18,7 +18,7 @@ pub const MAPPER_FIELDS: &[&str] = &[
     "time_shift", "rec", "url", "epg_channel_id", "epg_id"
 ];
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq)]
 pub enum CounterModifier {
     #[serde(rename = "assign")]
     Assign,
@@ -200,7 +200,7 @@ impl Mapping {
                             filter: flt,
                             field: def.field.clone(),
                             concat: def.concat.clone(),
-                            modifier: def.modifier.clone(),
+                            modifier: def.modifier,
                             value: Arc::new(AtomicU32::new(def.value)),
                             padding: def.padding,
                         });

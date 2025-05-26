@@ -329,10 +329,10 @@ async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, inpu
 }
 
 
-fn get_grace_period_millis(connection_permission: &UserConnectionPermission, stream_response_params: &ProviderStreamState, config_grace_period_millis: u64) -> u64 {
+fn get_grace_period_millis(connection_permission: UserConnectionPermission, stream_response_params: &ProviderStreamState, config_grace_period_millis: u64) -> u64 {
     if config_grace_period_millis > 0 &&
         (matches!(stream_response_params, ProviderStreamState::GracePeriod(_, _)) // provider grace period
-            || connection_permission == &UserConnectionPermission::GracePeriod // user grace period
+            || connection_permission == UserConnectionPermission::GracePeriod // user grace period
         ) { config_grace_period_millis } else { 0 }
 }
 
@@ -350,7 +350,7 @@ async fn create_stream_response_details(app_state: &AppState,
         resolve_streaming_strategy(app_state, stream_url, input, force_provider).await;
     let config_grace_period_millis = app_state.config.reverse_proxy.as_ref()
         .and_then(|r| r.stream.as_ref()).map_or_else(default_grace_period_millis, |s| s.grace_period_millis);
-    let grace_period_millis = get_grace_period_millis(&connection_permission, &streaming_strategy.provider_stream_state, config_grace_period_millis);
+    let grace_period_millis = get_grace_period_millis(connection_permission, &streaming_strategy.provider_stream_state, config_grace_period_millis);
     match streaming_strategy.provider_stream_state {
         // custom stream means we display our own stream like connection exhausted, channel unavailable...
         ProviderStreamState::Custom(provider_stream) => {
@@ -486,7 +486,7 @@ where
 
             let target_name = params.target.name.as_str();
             let virtual_id = params.item.get_virtual_id();
-            let stream_url = match get_xtream_player_api_stream_url(params.input, &params.req_context, &params.get_query_path(provider_id, provider_url), provider_url) {
+            let stream_url = match get_xtream_player_api_stream_url(params.input, params.req_context, &params.get_query_path(provider_id, provider_url), provider_url) {
                 None => {
                     error!("Cant find stream url for target {target_name}, context {}, stream_id {virtual_id}", params.req_context);
                     return Some(StatusCode::BAD_REQUEST.into_response());
@@ -567,7 +567,7 @@ pub async fn force_provider_stream_response(app_state: &AppState,
     let connection_permission = UserConnectionPermission::Allowed;
 
     let mut stream_details =
-        create_stream_response_details(app_state, &stream_options, &user_session.stream_url, req_headers, input, item_type, share_stream, connection_permission.clone(), Some(&user_session.provider)).await;
+        create_stream_response_details(app_state, &stream_options, &user_session.stream_url, req_headers, input, item_type, share_stream, connection_permission, Some(&user_session.provider)).await;
 
     if stream_details.has_stream() {
         let provider_response = stream_details.stream_info.as_ref().map(|(h, sc)| (h.clone(), *sc));
@@ -608,25 +608,25 @@ pub async fn stream_response(app_state: &AppState,
     if log_enabled!(log::Level::Trace) { trace!("Try to open stream {}", sanitize_sensitive_info(stream_url)); }
 
     if connection_permission == UserConnectionPermission::Exhausted {
-        return create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::UserConnectionsExhausted).into_response();
+        return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
     }
 
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
-        if let Some(value) = shared_stream_response(app_state, stream_url, user, connection_permission.clone()).await {
+        if let Some(value) = shared_stream_response(app_state, stream_url, user, connection_permission).await {
             return value.into_response();
         }
     }
 
     let stream_options = get_stream_options(app_state);
     let mut stream_details =
-        create_stream_response_details(app_state, &stream_options, stream_url, req_headers, input, item_type, share_stream, connection_permission.clone(), None).await;
+        create_stream_response_details(app_state, &stream_options, stream_url, req_headers, input, item_type, share_stream, connection_permission, None).await;
     if stream_details.has_stream() {
         // let content_length = get_stream_content_length(provider_response.as_ref());
         let provider_response = stream_details.stream_info.as_ref().map(|(h, sc)| (h.clone(), *sc));
         let provider_name = stream_details.provider_connection_guard.as_ref().and_then(ProviderConnectionGuard::get_provider_name);
 
-        let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission.clone()).await;
+        let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission).await;
         let stream_resp = if share_stream {
             debug_if_enabled!("Streaming shared stream request from {}", sanitize_sensitive_info(stream_url));
             // Shared Stream response

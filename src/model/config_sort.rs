@@ -3,7 +3,7 @@ use crate::foundation::filter::{apply_templates_to_pattern, apply_templates_to_p
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error, handle_tuliprox_error_result_list};
 use crate::model::{ItemField};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
 pub enum SortOrder {
     #[serde(rename = "asc")]
     Asc,

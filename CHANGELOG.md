@@ -1,13 +1,21 @@
 # Changelog
 # 3.1.0 (2025-05-xx)
-- !BREAKING_CHANGE! mapper refactored, mapping can be written as script with a custom DSL.  
+- !BREAKING_CHANGE! mapper refactored, mapping can be written as a script with a custom DSL.
+- !BREAKING_CHANGE! `tags` definition removed from new mapper.
+- !BREAKING_CHANGE! removed suffix and prefix from input config. Use mapper with an input filter instead.
+- !BREAKING_CHANGE! custom_stream_response is now `custom_stream_response_path`. The filename identifies the file inside the path
+  - user_account_expired.ts
+  - provider_connection_exhausted.ts 
+  - user_connection_exhausted.ts
+  - channel_unavailable.ts
+
 - !BREAKING_CHANGE! epg refactored
   - url config is now renamed to sources
   - Added `priority`, priority is `optional`
   - `auto_epg` is now removed, use `url: auto` instead.
   - Added `logo_override` to overwrite logo from epg.
 
-**Npte:** The `priority` value determines the importance or order of processing. Lower numbers mean higher priority. That is:
+**Note:** The `priority` value determines the importance or order of processing. Lower numbers mean higher priority. That is:
 A `priority` of `0` is higher than `1`. **Negative numbers** are allowed and represent even higher priority
 
 ```yaml

@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 
 fn playlist_comparator(
     sequence: Option<&Vec<regex::Regex>>,
-    order: &SortOrder,
+    order: SortOrder,
     value_a: &str,
     value_b: &str,
 ) -> Ordering {
@@ -98,7 +98,7 @@ fn playlistgroup_comparator(a: &PlaylistGroup, b: &PlaylistGroup, group_sort: &C
     let value_a = if match_as_ascii { deunicode(&a.title) } else { a.title.to_string() };
     let value_b = if match_as_ascii { deunicode(&b.title) } else { b.title.to_string() };
 
-    playlist_comparator(group_sort.t_re_sequence.as_ref(), &group_sort.order, &value_a, &value_b)
+    playlist_comparator(group_sort.t_re_sequence.as_ref(), group_sort.order, &value_a, &value_b)
 }
 
 fn playlistitem_comparator(
@@ -107,12 +107,12 @@ fn playlistitem_comparator(
     channel_sort: &ConfigSortChannel,
     match_as_ascii: bool,
 ) -> Ordering {
-    let raw_value_a = get_field_value(a, &channel_sort.field);
-    let raw_value_b = get_field_value(b, &channel_sort.field);
+    let raw_value_a = get_field_value(a, channel_sort.field);
+    let raw_value_b = get_field_value(b, channel_sort.field);
     let value_a = if match_as_ascii { deunicode(&raw_value_a) } else { raw_value_a };
     let value_b = if match_as_ascii { deunicode(&raw_value_b) } else { raw_value_b };
 
-    playlist_comparator(channel_sort.t_re_sequence.as_ref(), &channel_sort.order, &value_a, &value_b)
+    playlist_comparator(channel_sort.t_re_sequence.as_ref(), channel_sort.order, &value_a, &value_b)
 }
 
 pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new_playlist: &mut [PlaylistGroup]) {

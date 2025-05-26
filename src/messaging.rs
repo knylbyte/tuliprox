@@ -3,7 +3,7 @@ use crate::model::{MessagingConfig};
 use log::{debug, error};
 use reqwest::{header};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum MsgKind {
     #[serde(rename = "info")]
     Info,
@@ -15,8 +15,8 @@ pub enum MsgKind {
     Watch,
 }
 
-fn is_enabled(kind: &MsgKind, cfg: &MessagingConfig) -> bool {
-    cfg.notify_on.contains(kind)
+fn is_enabled(kind: MsgKind, cfg: &MessagingConfig) -> bool {
+    cfg.notify_on.contains(&kind)
 }
 
 fn send_http_post_request(client: &Arc<reqwest::Client>, msg: &str, messaging: &MessagingConfig) {
@@ -84,7 +84,7 @@ fn send_pushover_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &M
 
 pub fn send_message(client: &Arc<reqwest::Client>, kind: &MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
     if let Some(messaging) = cfg {
-        if is_enabled(kind, messaging) {
+        if is_enabled(*kind, messaging) {
             send_telegram_message(msg, messaging);
             send_http_post_request(client, msg, messaging);
             send_pushover_message(client, msg, messaging);

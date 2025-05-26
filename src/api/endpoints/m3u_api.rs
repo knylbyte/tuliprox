@@ -69,7 +69,7 @@ async fn m3u_api_stream(
 ) -> impl axum::response::IntoResponse + Send {
     let (user, target) = try_option_bad_request!(get_user_target_by_credentials(&username, &password, &api_req, &app_state), false, format!("Could not find any user {username}"));
     if user.permission_denied(&app_state) {
-        return StatusCode::FORBIDDEN.into_response();
+        return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserAccountExpired).into_response();
     }
 
     let target_name = &target.name;
@@ -92,11 +92,11 @@ async fn m3u_api_stream(
 
     if let Some(session)  = &user_session {
         if session.permission == UserConnectionPermission::Exhausted {
-            return create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::UserConnectionsExhausted).into_response();
+            return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
         }
 
         if app_state.active_provider.is_over_limit(&session.provider).await {
-            return create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
+            return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
         }
         if session.virtual_id == virtual_id  && is_seek_request(cluster, &req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
@@ -106,7 +106,7 @@ async fn m3u_api_stream(
 
     let connection_permission = user.connection_permission(&app_state).await;
     if connection_permission == UserConnectionPermission::Exhausted {
-        return create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::UserConnectionsExhausted).into_response();
+        return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
     }
 
     let context = XtreamApiStreamContext::try_from(cluster).unwrap_or(XtreamApiStreamContext::Live);

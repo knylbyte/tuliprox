@@ -65,7 +65,7 @@ impl Drop for ProviderConnectionGuard {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ProviderAllocation {
     Exhausted,
     Available(Arc<ProviderConfig>),
@@ -621,8 +621,6 @@ mod tests {
             username: None,
             password: None,
             persist: None,
-            prefix: None,
-            suffix: None,
             enabled: true,
             input_type: InputType::Xtream, // You can use a default value here
             max_connections,

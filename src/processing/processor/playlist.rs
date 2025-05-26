@@ -81,13 +81,13 @@ fn exec_rename(pli: &mut PlaylistItem, rename: Option<&Vec<ConfigRename>>) {
         if !renames.is_empty() {
             let result = pli;
             for r in renames {
-                let value = get_field_value(result, &r.field);
+                let value = get_field_value(result, r.field);
                 let cap = r.re.as_ref().unwrap().replace_all(value.as_str(), &r.new_name);
                 if log_enabled!(log::Level::Debug) && *value != cap {
                     debug_if_enabled!("Renamed {}={} to {}", &r.field, value, cap);
                 }
                 let value = cap.into_owned();
-                set_field_value(result, &r.field, value);
+                set_field_value(result, r.field, value);
             }
         }
     }

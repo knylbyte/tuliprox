@@ -40,7 +40,7 @@ export default function PlaylistTree(props: PlaylistTreeProps) {
     const getPlaylistItemById = useCallback((itemId: string): PlaylistItem => {
         const id = parseInt(itemId);
         if (data && !isNaN(id)) {
-            const groups = [data.live, data.vod, data.series].flat();
+            const groups = [data?.live, data?.vod, data?.series].filter(Boolean).flat();
             for (let i = 0, len = groups.length; i < len; i++) {
                 const group = groups[i];
                 for (let j = 0, clen = group.channels?.length ?? 0; j < clen; j++) {

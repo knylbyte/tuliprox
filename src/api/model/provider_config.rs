@@ -6,7 +6,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum ProviderConfigAllocation {
     Exhausted,
     Available,

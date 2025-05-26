@@ -1,12 +1,12 @@
-use crate::api::model::active_user_manager::UserConnectionGuard;
 use crate::api::api_utils::StreamDetails;
 use crate::api::model::active_provider_manager::{ActiveProviderManager, ProviderConnectionGuard};
 use crate::api::model::active_user_manager::ActiveUserManager;
+use crate::api::model::active_user_manager::UserConnectionGuard;
 use crate::api::model::app_state::AppState;
 use crate::api::model::stream::BoxedProviderStream;
 use crate::api::model::stream_error::StreamError;
 use crate::api::model::streams::chunked_buffer::ChunkedBuffer;
-use crate::model::{ProxyUserCredentials, UserConnectionPermission};
+use crate::model::{CustomStreamResponse, ProxyUserCredentials, UserConnectionPermission};
 use bytes::Bytes;
 use futures::Stream;
 use log::{error, info};
@@ -24,7 +24,8 @@ pub(in crate::api) struct ActiveClientStream {
     #[allow(unused)]
     user_connection_guard: Option<UserConnectionGuard>,
     send_custom_stream_flag: Option<Arc<AtomicU8>>,
-    custom_video: (Option<ChunkedBuffer>, Option<ChunkedBuffer>),
+    custom_video: Option<CustomStreamResponse>,
+    active_custom_video: Option<ChunkedBuffer>,
     #[allow(dead_code)]
     provider_connection_guard: Option<ProviderConnectionGuard>,
 }
@@ -48,10 +49,8 @@ impl ActiveClientStream {
             inner: stream_details.stream.take().unwrap(),
             user_connection_guard,
             send_custom_stream_flag: grace_stop_flag,
-            custom_video: (
-                config.t_provider_connections_exhausted_video.as_ref().map(|a| ChunkedBuffer::new(Arc::clone(a))),
-                config.t_user_connections_exhausted_video.as_ref().map(|a| ChunkedBuffer::new(Arc::clone(a))),
-            ),
+            custom_video: config.t_custom_stream_response.clone(),
+            active_custom_video: None,
             provider_connection_guard: stream_details.provider_connection_guard,
         }
     }
@@ -108,7 +107,6 @@ impl ActiveClientStream {
         }
         None
     }
-
 }
 impl Stream for ActiveClientStream {
     type Item = Result<Bytes, StreamError>;
@@ -123,10 +121,27 @@ impl Stream for ActiveClientStream {
             if self.provider_connection_guard.is_some() {
                 drop(self.provider_connection_guard.take());
             }
-            let custom_video = if send_custom_stream == PROVIDER_EXHAUSTED_FLAG {
-                self.custom_video.0.as_mut()
+
+            if self.active_custom_video.is_none() {
+                let video = match self.custom_video.as_ref() {
+                    None => None,
+                    Some(custom_videos) => {
+                        if send_custom_stream == PROVIDER_EXHAUSTED_FLAG {
+                            custom_videos.provider_connections_exhausted.as_ref()
+                        } else {
+                            custom_videos.user_connections_exhausted.as_ref()
+                        }
+                    }
+                };
+                if let Some(custom_video) = video.as_ref() {
+                    self.active_custom_video = Some(ChunkedBuffer::new(Arc::clone(custom_video)));
+                }
+            }
+
+            let custom_video: Option<&mut ChunkedBuffer> = if self.active_custom_video.is_some() {
+                self.active_custom_video.as_mut()
             } else {
-                self.custom_video.1.as_mut()
+                None
             };
             return match custom_video {
                 None => {

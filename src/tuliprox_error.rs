@@ -90,7 +90,7 @@ macro_rules! handle_tuliprox_error_result {
 pub use handle_tuliprox_error_result;
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TuliproxErrorKind {
     // do not send with messaging
     Info,

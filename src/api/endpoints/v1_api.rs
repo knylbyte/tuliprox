@@ -261,7 +261,7 @@ async fn config(
         output: t.output.clone(),
         rename: t.rename.clone(),
         mapping: t.mapping.clone(),
-        processing_order: t.processing_order.clone(),
+        processing_order: t.processing_order,
         watch: t.watch.clone(),
     };
 
