@@ -74,10 +74,11 @@ Top level entries in the config files are:
 * `log` _optional
 * `user_access_control` _optional_
 * `connect_timeout_secs`: _optional_ and used for provider requests connection timeout.
-* `custom_stream_response` _optional_
+* `custom_stream_response_path` _optional_
 * `hdhomerun` _optional_
 * `proxy` _optional_
 * `ipcheck` _optional_
+* `config_hot_reload` _optional_, default false.
 
 ### 1.1. `threads`
 If you are running on a cpu which has multiple cores, you can set for example `threads: 2` to run two threads.
@@ -392,11 +393,14 @@ You can convert an image with `ffmpeg`.
 
 and add it to the `config.yml`.
 
+`custom_stream_response_path`. The filename identifies the file inside the path
+- `user_account_expired.ts`
+- `provider_connections_exhausted.ts`
+- `user_connections_exhausted.ts`
+- `channel_unavailable.ts`
+
 ```yaml
-custom_stream_response:
-  channel_unavailable: /home/tuliprox/channel_unavailable.ts
-  user_connections_exhausted: /home/tuliprox/user_connections_exhausted.ts
-  provider_connections_exhausted: /home/tuliprox/provider_connections_exhausted.ts
+custom_stream_response_path: /home/tuliprox/resources 
 ```
 
 ### 1.15 `user_config_dir`
@@ -476,6 +480,8 @@ ipcheck:
   url_ipv4: https://ipinfo.io/ip
 ```
 
+### 1.19 `config_hot_reload`
+if set to true, `mapping` files and `api_proxy.yml` are hot reloaded.
 
 ## 2. `source.yml`
 
@@ -496,6 +502,35 @@ With this definition you can use `delimiter` and `quality` in your regexp's surr
 `^.*TF1!delimiter!Series?!delimiter!Films?(!delimiter!!quality!)\s*$`
 
 This will replace all occurrences of `!delimiter!` and `!quality!` in the regexp string.
+
+List templates for for sequences can only be used for sequences.
+For example if you define this template:
+```yaml
+templates:
+ - name: CHAN_SEQ
+   value:
+   - '(?i)\bUHD\b'
+   - '(?i)\bFHD\b'
+```
+
+It can be used inside a sequence
+The template can now be used for sequence
+```yaml
+  sort:
+    groups:
+      order: asc
+    channels:
+      - field: caption
+        group_pattern: "!US_TNT_ENTERTAIN!"
+        order: asc
+        sequence:
+          - "!CHAN_SEQ!"
+          - '(?i)\bHD\b'
+          - '(?i)\bSD\b'
+```
+
+
+
 
 ### 2.2. `sources`
 `sources` is a sequence of source definitions, which have two top level entries:
@@ -530,10 +565,25 @@ For `xtream` use a prefix like `./playlist_`
 
 Example `epg` config 
 
+Url `auto` is replaced by generated provider epg url.
+`priority` is `optional`. 
+The `priority` value determines the importance or order of processing. Lower numbers mean higher priority. That is:
+A `priority` of `0` is higher than `1`. **Negative numbers** are allowed and represent even higher priority
+
+If `logo_override` is ste to true, the channel logos are replaced by the provider epg logo.
+
 ```yaml
 epg:
-  auto_epg: true
-  url: ['http://localhost:3001/xmltv.php?epg_id=1', 'http://localhost:3001/xmltv.php?epg_id=2']
+  sources:
+    - url: "auto"
+      priority: -2
+      logo_override: true
+    - url: "http://localhost:3001/xmltv.php?epg_id=1"
+      priority: -1
+    - url: "http://localhost:3001/xmltv.php?epg_id=2"
+      priority: 3
+    - url: "http://localhost:3001/xmltv.php?epg_id=3"
+      priority: 0
   smart_match:
     enabled: true
     fuzzy_matching: true
@@ -555,19 +605,6 @@ When looking at playlists, it's common for a country prefix to be included in th
 The `name_prefix_separator` defines the possible separator characters used to identify this part.
 For EPG IDs, the country code is typically added as a suffix, like cnn.us. This is controlled by the name_prefix attribute. 
 The `!suffix '.'` setting means: if a prefix is found, append it to the name using the given separator character (in this case, a dot).
-
-```yaml
-# single epg
-url: 'https://localhost.com/epg.xml'
-```
-```yaml
-# multi local file  epg
-url: ['file:///${env:TULIPROX_HOME}/epg.xml', 'file:///${env:TULIPROX_HOME}/epg2.xml']
-```
-```yaml
-# multi url  epg
-url: ['http://localhost:3001/xmltv.php?epg_id=1', 'http://localhost:3001/xmltv.php?epg_id=2']
-```
 
 Example input config for `m3u`
 ```yaml
@@ -871,7 +908,15 @@ In the above example each entry starting with `DE` will be prefixed with `1.`.
 
 ### 2.2.2.7 `mapping`
 `mapping: <list of mapping id's>`
-The mappings are defined in a file `mapping.yml`. The filename can be given as `-m` argument. (See Mappings section)
+
+Mapping can be defined in a file, or multiple mapping files can be stored in the mapping path.
+If you use a mapping path, you need to set `mapping_path` in `config.yml`
+The files are loaded in **alphanumeric** order.
+**Note:** This is a lexicographic sort — so `m_10.yml` comes before `m_2.yml` unless you name files carefully (e.g., `m_01.yml`, `m_02.yml`, ..., `m_10.yml`).
+
+The filename or path can be given as `-m` argument. (See Mappings section)
+
+Default mapping file is `maping.yml`
 
 ## Example source.yml file
 ```yaml

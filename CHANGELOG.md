@@ -5,8 +5,8 @@
 - !BREAKING_CHANGE! removed `suffix` and `prefix` from input config. Use mapper with an input filter instead.
 - !BREAKING_CHANGE! custom_stream_response is now `custom_stream_response_path`. The filename identifies the file inside the path
   - user_account_expired.ts
-  - provider_connection_exhausted.ts 
-  - user_connection_exhausted.ts
+  - provider_connections_exhausted.ts 
+  - user_connections_exhausted.ts
   - channel_unavailable.ts
 `user_account_expired.ts`: Tuliprox will return a 403 Forbidden response for any playlist request if the user is expired.
     So this screen will only ever appear if someone tries to directly access a stream URL after their account has expired.

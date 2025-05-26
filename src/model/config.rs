@@ -25,6 +25,11 @@ use crate::utils::{parse_size_base_2, parse_to_kbps};
 const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with 8192byte chunks and 2Mbit/s approx 8MB
 
 
+const CHANNEL_UNAVAILABLE: &str = "channel_unavailable.ts";
+const USER_CONNECTIONS_EXHAUSTED: &str = "user_connections_exhausted.ts";
+const PROVIDER_CONNECTIONS_EXHAUSTED: &str = "provider_connections_exhausted.ts";
+const USER_ACCOUNT_EXPIRED: &str = "user_account_expired.ts";
+
 fn generate_secret() -> [u8; 32] {
     let mut rng = rand::rng();
     let mut secret = [0u8; 32];
@@ -839,10 +844,10 @@ impl Config {
             let path = PathBuf::from(custom_stream_response_path);
             let path = utils::make_path_absolute(&path, &self.working_dir);
             self.t_custom_stream_response_path = Some(path.to_string_lossy().to_string());
-            let channel_unavailable = load_and_set_file(&path.join("channel_unavailable.ts"));
-            let user_connections_exhausted = load_and_set_file(&path.join("user_connections_exhausted.ts"));
-            let provider_connections_exhausted = load_and_set_file(&path.join("provider_connections_exhausted.ts"));
-            let user_account_expired = load_and_set_file(&path.join("user_account_expired.ts"));
+            let channel_unavailable = load_and_set_file(&path.join(CHANNEL_UNAVAILABLE));
+            let user_connections_exhausted = load_and_set_file(&path.join(USER_CONNECTIONS_EXHAUSTED));
+            let provider_connections_exhausted = load_and_set_file(&path.join(PROVIDER_CONNECTIONS_EXHAUSTED));
+            let user_account_expired = load_and_set_file(&path.join(USER_ACCOUNT_EXPIRED));
             self.t_custom_stream_response = Some(CustomStreamResponse {
                 channel_unavailable,
                 user_connections_exhausted,
