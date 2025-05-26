@@ -1,25 +1,26 @@
 use bytes::{Bytes, BytesMut};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const CHUNK_SIZE: usize = 8192;
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct ReadonlyRingBuffer {
     buffer: Arc<Vec<u8>>,
-    current_pos: usize,
+    current_pos: AtomicUsize,
 }
 
 impl ReadonlyRingBuffer {
     pub fn new(buffer: Arc<Vec<u8>>) -> Self {
         Self {
             buffer,
-            current_pos: 0,
+            current_pos: AtomicUsize::new(0),
         }
     }
 
-    pub fn next_chunk(&mut self) -> Option<Bytes> {
+    pub fn next_chunk(&self) -> Option<Bytes> {
         let buffer_len = self.buffer.len();
-        let mut current_pos = self.current_pos;
+        let mut current_pos = self.current_pos.load(Ordering::SeqCst);
 
         // Return None if the buffer is empty or all data is consumed.
         if buffer_len == 0 || current_pos >= buffer_len {
@@ -49,7 +50,7 @@ impl ReadonlyRingBuffer {
         }
 
         // Update the buffer's position for the next read
-        self.current_pos = current_pos;
+        self.current_pos.store(current_pos, Ordering::SeqCst);
 
         // Return the chunk
         Some(bytes.freeze())

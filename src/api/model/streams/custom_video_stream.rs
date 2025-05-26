@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 
-#[derive(Clone)]
 pub struct CustomVideoStream {
     buffer: ReadonlyRingBuffer,
 }
@@ -24,7 +23,7 @@ impl Stream for CustomVideoStream {
     type Item = Result<Bytes, StreamError>;
 
     fn poll_next(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         _cx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         match self.buffer.next_chunk() {
