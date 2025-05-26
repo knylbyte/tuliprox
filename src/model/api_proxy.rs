@@ -15,7 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::model::PlaylistItemType;
 use crate::utils;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum UserConnectionPermission {
     Exhausted,
     Allowed,
@@ -130,7 +130,7 @@ impl Serialize for ProxyType {
 }
 
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq)]
 pub enum ProxyUserStatus {
     Active, // The account is in good standing and can stream content
     Expired, // The account can no longer access content unless it is renewed.

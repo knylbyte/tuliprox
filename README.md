@@ -517,8 +517,6 @@ Each input has the following attributes:
 - `method` can be `GET` or `POST`
 - `username` only mandatory for type `xtream`
 - `pasword`only mandatory for type `xtream`
-- `prefix` is optional, it is applied to the given field with the given value
-- `suffix` is optional, it is applied to the given field with the given value
 - `options` is optional,
   + `xtream_skip_live` true or false, live section can be skipped.
   + `xtream_skip_vod` true or false, vod section can be skipped.
@@ -529,11 +527,6 @@ Each input has the following attributes:
 
 `persist` should be different for `m3u` and `xtream` types. For `m3u` use full filename like `./playlist_{}.m3u`.
 For `xtream` use a prefix like `./playlist_`
-
-`prefix` and `suffix` are appended after all processing is done, but before sort.
-They have 2 fields:
-- `field` can be `name` , `group`, `title`, `caption`
-- `value` a static text
 
 Example `epg` config 
 
@@ -1170,40 +1163,14 @@ mappings:
         value: '(?i)(?P<quality>HD|LQ|4K|UHD)?'
       - name: source
         value: 'Url ~ "https?:\/\/(.*?)\/(?P<query>.*)$"'
-    tags:
-      - name: quality
-        captures:
-          - quality
-        concat: '|'
-        prefix: ' [ '
-        suffix: ' ]'
     mapping:
       - id: France
         match_as_ascii: true
         mapper:
           - filter: 'Name ~ "^TF.*"'
-            pattern: '!source!'
-            attributes:
-              url: http://my.iptv.proxy.com/<query> 
-          - pattern: 'Name ~ "^TF1$"'
-            attributes:
-              name: TF1
-              id: TF1.fr
-              chno: '1'
-              logo: https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/TF1_logo_2013.svg/320px-TF1_logo_2013.svg.png
-            suffix:
-              title: '<tag:quality>'
-              group: '|FR|TNT'
-            assignments:
-              title: name
-          - pattern: 'Name ~ "^TF1!delimiter!!quality!*Series[_ ]*Films$"'
-            attributes:
-              name: TF1 Series Films
-              id: TF1SeriesFilms.fr
-              chno: '20'
-              logo: https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/TF1_logo_2013.svg/320px-TF1_logo_2013.svg.png,
-            suffix:
-              group: '|FR|TNT'
+            script: |
+              query_match = @Url ~ "https?:\/\/(.*?)\/(?P<query>.*)$" 
+              @Url = concat("http://my.iptv.proxy.com/", query_match.query)
 ```
 
 ## 3. Api-Proxy Config

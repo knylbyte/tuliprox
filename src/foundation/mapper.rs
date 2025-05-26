@@ -1005,7 +1005,7 @@ mod tests {
             ("K", "SHD"), ("C", "LHD"), ("L", "FHD"), ("R", "UHD"), ("T", "SD"), ("A", "FHD"),
         ].into_iter().map(|(name, quality)| PlaylistItem { header: PlaylistItemHeader { title: format!("Chanel {name} [{quality}]"), ..Default::default() } }).collect::<Vec<PlaylistItem>>();
 
-        for pli in channels.iter_mut() {
+        for pli in &mut channels {
             let mut accessor = ValueAccessor {
                 pli,
             };

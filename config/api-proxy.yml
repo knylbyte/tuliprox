@@ -1,20 +1,37 @@
 server:
   - name: default
     protocol: http
-    host: 192.168.9.3
-    port: 80
+    host: 10.41.41.89
+    port: "8901"
     timezone: Europe/Paris
-    message: Welcome to tuliprox
-  - name: extern
+    message: Welcome to m3u-filter
+  - name: external
     protocol: https
-    host: tuliprox.mydns.com
-    port: 443
-    rtmp_port:
+    host: my-own-host.com
+    port: "443"
     timezone: Europe/Paris
-    message: Welcome to tuliprox
-    path: tuliprox # optional, only needed for easier reverse proxy configuration see README.md.
+    message: Welcome to m3u-filter
 user:
-  - target: pl1
+  - target: iptv-org
     credentials:
-      - {username: x3452, password: ztrhgrGZrt83hjerter, token: 4243234wer234er234, proxy: redirect, server: default}
-      - {username: x3453, password: kljlkjorn87jfkhksdh, token: 43dfgerrt345345ss4, proxy: reverse, server: extern, epg_timeshift: -02:30}
+      - username: local
+        password: localsecret
+        token: "77417"
+        proxy: reverse
+        server: default
+        exp_date: 0
+        max_connections: 0
+        status: Active
+        ui_enabled: true
+
+      - username: external
+        password: externalsecret
+        token: "77418"
+        proxy: reverse
+        server: external
+        exp_date: 0
+        max_connections: 0
+        status: Active
+        ui_enabled: true
+
+use_user_db: false

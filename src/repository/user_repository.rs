@@ -42,7 +42,7 @@ impl StoredProxyUserCredentialsDeprecated {
             created_at: stored.created_at,
             exp_date: stored.exp_date,
             max_connections: stored.max_connections.unwrap_or_default(),
-            status: stored.status.clone(),
+            status: stored.status,
             ui_enabled: stored.ui_enabled,
             comment: None,
         }
@@ -83,7 +83,7 @@ impl StoredProxyUserCredentials {
             created_at: proxy.created_at,
             exp_date: proxy.exp_date,
             max_connections: if proxy.max_connections > 0 { Some(proxy.max_connections) } else { None },
-            status: proxy.status.clone(),
+            status: proxy.status,
             ui_enabled: proxy.ui_enabled,
             comment: proxy.comment.clone(),
         }
@@ -100,7 +100,7 @@ impl StoredProxyUserCredentials {
             created_at: stored.created_at,
             exp_date: stored.exp_date,
             max_connections: stored.max_connections.unwrap_or_default(),
-            status: stored.status.clone(),
+            status: stored.status,
             ui_enabled: stored.ui_enabled,
             comment: stored.comment.clone(),
         }

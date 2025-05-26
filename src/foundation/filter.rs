@@ -16,7 +16,7 @@ use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::utils::CONSTANTS;
 
-pub fn get_field_value(pli: &PlaylistItem, field: &ItemField) -> String {
+pub fn get_field_value(pli: &PlaylistItem, field: ItemField) -> String {
     let header = &pli.header;
     let value = match field {
         ItemField::Group => header.group.to_string(),
@@ -30,7 +30,7 @@ pub fn get_field_value(pli: &PlaylistItem, field: &ItemField) -> String {
     value.to_string()
 }
 
-pub fn set_field_value(pli: &mut PlaylistItem, field: &ItemField, value: String) -> bool {
+pub fn set_field_value(pli: &mut PlaylistItem, field: ItemField, value: String) -> bool {
     let header = &mut pli.header;
     match field {
         ItemField::Group => header.group = value,
@@ -134,12 +134,12 @@ main = _{ SOI ~ stmt ~ EOI }
 "#]
 struct FilterParser;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum UnaryOperator {
     Not,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum BinaryOperator {
     And,
     Or,
@@ -478,7 +478,7 @@ pub fn get_filter(
                                                 Some(binop) => {
                                                     result = Some(Filter::BinaryExpression(
                                                         Box::new(result.unwrap()),
-                                                        binop.clone(),
+                                                        *binop,
                                                         Box::new(expr),
                                                     ));
                                                     op = None;

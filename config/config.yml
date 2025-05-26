@@ -1,32 +1,28 @@
-api: { host: 127.0.0.1, port: 8901, web_root: /home/tuliprox/web }
+# TULIPROX_HOME should point to /app for docker
 threads: 0
-working_dir: /home/tuliprox/data
-backup_dir: /home/tuliprox/.backup
-update_on_boot: false
-custom_stream_response:
-  channel_unavailable: /home/tuliprox/resources/channel_unavailable.ts
-  user_connections_exhausted: /home/tuliprox/resources/user_connections_exhausted.ts
-  provider_connections_exhausted: /home/tuliprox/resources/provider_connections_exhausted.ts
-
+api:
+  host: 0.0.0.0
+  port: 8901
+  web_root: ${env:TULIPROX_HOME}/web
+working_dir: ${env:TULIPROX_HOME}/data
+backup_dir: ${env:TULIPROX_HOME}/backup
+custom_stream_response_path: ${env:TULIPROX_HOME}/resources
 connect_timeout_secs: 10
+user_access_control: false
 
-# sec  min   hour   day of month   month   day of week   year
 schedules:
-  - schedule: "0  0  8,12,16,20,22,1  *  *  *  *"
-reverse_proxy:
-  stream:
-    retry: true
-    buffer:
-      enabled: true
-      size: 1024
-  cache:
-    size: 500MB
-    enabled: true
-    dir: /home/tuliprox/cache
-  disable_referer_header: false # Optional, set to true to disable sending the Referer header for reverse proxied requests
+  - schedule: 0 0  4/23  *  *  *
+    targets: []
+
+messaging:
+  notify_on: []
+
 log:
   sanitize_sensitive_info: false
-  active_clients: true
+  log_active_user: true
+  log_level: debug
+
+update_on_boot: false # best not to hammer upstream during testing
 
 web_ui:
   enabled: true
@@ -38,33 +34,20 @@ web_ui:
     secret: ef9ab256a8c0abe5de92c2e05ca92baa810472ab702ff1674e9248308ceeec92
     userfile: user.txt
 
-messaging:
-  notify_on:
-    - error
-    - info
-    - stats
-    - watch
-  telegram:
-    bot_token: '<your telegram bot token>'
-    chat_ids:
-      - <your telegram chat_id>
-  rest:
-    url: http://<ip>/<maybe_path>/<notification>
 video:
-  web_search: 'https://www.imdb.com/search/title/?title={}'
+  web_search: "https://www.imdb.com/search/title/?title={}"
   extensions:
     - mkv
-    - mp4
     - avi
+    - mp4
+    - mpeg
+    - divx
+    - mov
   download:
     headers:
-      User-Agent: "AppleTV/tvOS/9.1.1."
-      Accept: "video/*"
-    directory: /tmp/
-    organize_into_directories: true
-    episode_pattern: '.*(?P<episode>[Ss]\d{1,2}(.*?)[Ee]\d{1,2}).*'
-
-proxy:
-  url: "http://your-proxy-url:port"
-  username: "your-proxy-username" # Optional
-  password: "your-proxy-password" # Optional
+      Accept: video/*
+      User-Agent: |
+        Mozilla/5.0 (AppleTV; U; CPU OS 14_2 like Mac OS X; en-us) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.1 Safari/605.1.15
+    directory: ${env:TULIPROX_HOME}/downloads
+    organize_into_directories: false
+    episode_pattern: .*(?P<episode>[Ss]\d{1,2}(.*?)[Ee]\d{1,2}).*

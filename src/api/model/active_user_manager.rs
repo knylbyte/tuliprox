@@ -250,7 +250,7 @@ impl ActiveUserManager {
             }
 
             if let Some(index) = found_session_index {
-                let session_permission = connection_data.sessions[index].permission.clone();
+                let session_permission = connection_data.sessions[index].permission;
                 if session_permission == UserConnectionPermission::GracePeriod {
                     let new_permission = self.check_connection_permission(username, connection_data);
                     connection_data.sessions[index].permission = new_permission;

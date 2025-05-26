@@ -84,7 +84,7 @@ pub(in crate::api) async fn handle_hls_stream_request(app_state: &Arc<AppState>,
         }
         Err(err) => {
             error!("Failed to download m3u8 {}", sanitize_sensitive_info(err.to_string().as_str()));
-            create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::ChannelUnavailable).into_response()
+            create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::ChannelUnavailable).into_response()
         }
     }
 }
@@ -98,7 +98,7 @@ async fn hls_api_stream(
         app_state.config.get_target_for_user(&params.username, &params.password), false,
         format!("Could not find any user {}", params.username));
     if user.permission_denied(&app_state) {
-        return axum::http::StatusCode::FORBIDDEN.into_response();
+        return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserAccountExpired).into_response();
     }
 
     let target_name = &target.name;
@@ -112,11 +112,11 @@ async fn hls_api_stream(
 
     if let Some(session)  = &mut user_session {
         if session.permission == UserConnectionPermission::Exhausted {
-            return create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::UserConnectionsExhausted).into_response();
+            return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
         }
 
         if app_state.active_provider.is_over_limit(&session.provider).await {
-            return create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
+            return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
         }
 
         // let hls_url = if let Some((session_token_opt, hls_url)) = get_hls_session_token_and_url_from_token(&app_state.config.t_encrypt_secret, &params.token) {
@@ -147,7 +147,7 @@ async fn hls_api_stream(
 
         let connection_permission = user.connection_permission(&app_state).await;
         if connection_permission == UserConnectionPermission::Exhausted {
-            return create_custom_video_stream_response(&app_state.config, &CustomVideoStreamType::UserConnectionsExhausted).into_response();
+            return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
         }
 
         if is_hls_url(&session.stream_url) {

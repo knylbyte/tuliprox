@@ -40,17 +40,7 @@ pub struct InputAffix {
     pub value: String,
 }
 
-#[derive(
-    Debug,
-    Copy,
-    Clone,
-    serde::Serialize,
-    serde::Deserialize,
-    Sequence,
-    PartialEq,
-    Eq,
-    Default
-)]
+#[derive(Debug,Copy,Clone,serde::Serialize,serde::Deserialize,Sequence,PartialEq,Eq,Default)]
 pub enum InputType {
     #[serde(rename = "m3u")]
     #[default]
@@ -99,17 +89,7 @@ impl FromStr for InputType {
     }
 }
 
-#[derive(
-    Debug,
-    Copy,
-    Clone,
-    serde::Serialize,
-    serde::Deserialize,
-    Sequence,
-    PartialEq,
-    Eq,
-    Default
-)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Default)]
 pub enum InputFetchMethod {
     #[default]
     GET,
@@ -253,10 +233,6 @@ pub struct ConfigInput {
     pub password: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub persist: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefix: Option<InputAffix>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub suffix: Option<InputAffix>,
     #[serde(default = "default_as_true")]
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
