@@ -2,7 +2,7 @@
 # 3.1.0 (2025-05-xx)
 - !BREAKING_CHANGE! mapper refactored, mapping can be written as a script with a custom DSL.
 - !BREAKING_CHANGE! `tags` definition removed from new mapper.
-- !BREAKING_CHANGE! removed suffix and prefix from input config. Use mapper with an input filter instead.
+- !BREAKING_CHANGE! removed `suffix` and `prefix` from input config. Use mapper with an input filter instead.
 - !BREAKING_CHANGE! custom_stream_response is now `custom_stream_response_path`. The filename identifies the file inside the path
   - user_account_expired.ts
   - provider_connection_exhausted.ts 

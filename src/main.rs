@@ -126,10 +126,10 @@ fn main() {
     info!("Config dir: {:?}", &cfg.t_config_path);
     info!("Config file: {:?}", &cfg.t_config_file_path);
     info!("Source file: {:?}", &cfg.t_sources_file_path);
-    info!("Api Proxy File: {:?}", cfg.t_api_proxy_file_path);
+    info!("Api Proxy File: {:?}", &cfg.t_api_proxy_file_path);
     match utils::read_mappings(&cfg.t_mapping_file_path, true) {
         Ok(Some(mappings)) => {
-            info!("Mapping file: {:?}", cfg.t_mapping_file_path);
+            info!("Mapping file: {:?}", &cfg.t_mapping_file_path);
             cfg.set_mappings(&mappings);
         }
         Ok(None) => {
@@ -139,8 +139,13 @@ fn main() {
     }
     if let Some(cache) = cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
         if cache.enabled {
-            info!("Cache dir: {:?}", cache.dir.as_ref().unwrap_or(&String::new()));
+            if let Some(cache_dir) = cache.dir.as_ref() {
+                info!("Cache dir: {cache_dir}");
+            }
         }
+    }
+    if let Some(resource_path) = cfg.t_custom_stream_response_path.as_ref() {
+        info!("Resource path: {resource_path}");
     }
 
     let rt = tokio::runtime::Runtime::new().unwrap();

@@ -3,6 +3,8 @@ use arc_swap::ArcSwapOption;
 use enum_iterator::Sequence;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -439,6 +441,8 @@ pub struct Config {
     pub t_access_token_secret: [u8; 32],
     #[serde(skip)]
     pub t_encrypt_secret: [u8; 16],
+    #[serde(skip)]
+    pub t_custom_stream_response_path: Option<String>
 }
 
 impl Config {
@@ -800,9 +804,26 @@ impl Config {
 
     fn prepare_custom_stream_response(&mut self) {
         if let Some(custom_stream_response_path) = self.custom_stream_response_path.as_ref() {
-            fn load_and_set_file(path: &Path, working_dir: &str) -> Option<Arc<Vec<u8>>> {
-                let file_path = utils::make_path_absolute(path, working_dir);
+            fn load_and_set_file(file_path: &Path) -> Option<Arc<Vec<u8>>> {
                 if file_path.exists() {
+                    // Enforce maximum file size (10 MB)
+                    if let Ok(meta) = std::fs::metadata(file_path) {
+                        const MAX_RESPONSE_SIZE: u64 = 10 * 1024 * 1024;
+                        if meta.len() > MAX_RESPONSE_SIZE {
+                            error!("Custom stream response file too large ({} bytes): {}",
+                                   meta.len(), file_path.display());
+                            return None;
+                        }
+                    }
+                    // Quick MPEG-TS sync-byte check (0x47)
+                    if let Ok(mut f) = File::open(file_path) {
+                        let mut buf = [0u8; 1];
+                        if f.read_exact(&mut buf).is_err() || buf[0] != 0x47 {
+                            error!("Invalid MPEG-TS file: {}", file_path.display());
+                            return None;
+                        }
+                    }
+
                     match utils::read_file_as_bytes(&PathBuf::from(&file_path)) {
                         Ok(data) => Some(Arc::new(data)),
                         Err(err) => {
@@ -816,10 +837,12 @@ impl Config {
             }
 
             let path = PathBuf::from(custom_stream_response_path);
-            let channel_unavailable = load_and_set_file(&path.join("channel_unavailable.ts"), &self.working_dir);
-            let user_connections_exhausted = load_and_set_file(&path.join("user_connections_exhausted.ts"), &self.working_dir);
-            let provider_connections_exhausted = load_and_set_file(&path.join("provider_connections_exhausted.ts"), &self.working_dir);
-            let user_account_expired = load_and_set_file(&path.join("user_account_expired.ts"), &self.working_dir);
+            let path = utils::make_path_absolute(&path, &self.working_dir);
+            self.t_custom_stream_response_path = Some(path.to_string_lossy().to_string());
+            let channel_unavailable = load_and_set_file(&path.join("channel_unavailable.ts"));
+            let user_connections_exhausted = load_and_set_file(&path.join("user_connections_exhausted.ts"));
+            let provider_connections_exhausted = load_and_set_file(&path.join("provider_connections_exhausted.ts"));
+            let user_account_expired = load_and_set_file(&path.join("user_account_expired.ts"));
             self.t_custom_stream_response = Some(CustomStreamResponse {
                 channel_unavailable,
                 user_connections_exhausted,
