@@ -119,17 +119,6 @@ async fn hls_api_stream(
             return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
         }
 
-        // let hls_url = if let Some((session_token_opt, hls_url)) = get_hls_session_token_and_url_from_token(&app_state.config.t_encrypt_secret, &params.token) {
-        //     if let Some(session_token) = session_token_opt {
-        //         if session.token != session_token {
-        //             return axum::http::StatusCode::BAD_REQUEST.into_response();
-        //         }
-        //     }
-        //     hls_url
-        // } else {
-        //     return axum::http::StatusCode::BAD_REQUEST.into_response();
-        // };
-
         let hls_url = match get_hls_session_token_and_url_from_token(&app_state.config.t_encrypt_secret, &params.token) {
             Some((Some(session_token), hls_url)) if session_token == session.token => hls_url,
             _ => return axum::http::StatusCode::BAD_REQUEST.into_response(),

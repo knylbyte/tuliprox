@@ -115,7 +115,7 @@ async fn m3u_api_stream(
         item: &pli,
         provider_id: pli.get_provider_id(),
         cluster,
-        target_type: TargetType::Xtream,
+        target_type: TargetType::M3u,
         target,
         input,
         user: &user,
