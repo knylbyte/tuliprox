@@ -61,7 +61,7 @@ impl ActiveClientStream {
             provider_connection_guard: stream_details.provider_connection_guard,
             send_custom_stream_flag: grace_stop_flag,
             custom_video,
-            waker
+            waker,
         }
     }
 
@@ -92,7 +92,7 @@ impl ActiveClientStream {
         if provider_grace_check.is_some() || user_grace_check.is_some() {
             let stream_strategy_flag = Arc::new(AtomicU8::new(GRACE_BLOCK_STREAM));
             let stream_strategy_flag_copy = Arc::clone(&stream_strategy_flag);
-            let waker_clone = Arc::clone(&waker);
+            let waker_copy = Arc::clone(&waker);
             let grace_period_millis = stream_details.grace_period_millis;
 
             tokio::spawn(async move {
@@ -130,8 +130,12 @@ impl ActiveClientStream {
                 if !updated {
                     stream_strategy_flag_copy.store(INNER_STREAM, std::sync::atomic::Ordering::SeqCst);
                 }
-                if let Some(w) = waker_clone.lock().unwrap().take() {
-                    w.wake();
+                if let Ok(mut waker_guard) = waker_copy.lock() {
+                    if let Some(w) = waker_guard.take() {
+                        w.wake();
+                    }
+                } else {
+                    error!("Failed to acquire waker lock - mutex poisoned");
                 }
             });
             return Some(stream_strategy_flag);
@@ -153,9 +157,12 @@ impl Stream for ActiveClientStream {
         }
 
         if flag == GRACE_BLOCK_STREAM {
-            let mut waker_lock = self.waker.lock().unwrap();
-            *waker_lock = Some(cx.waker().clone());
-            return Poll::Pending;
+            if let Ok(mut waker_lock) = self.waker.lock() {
+                *waker_lock = Some(cx.waker().clone());
+                return Poll::Pending;
+            } else {
+               return Poll::Ready(Some(Ok(Bytes::new())));
+            }
         }
 
         let buffer_opt = match flag {
