@@ -11,7 +11,7 @@ use crate::api::model::app_state::{AppState, HdHomerunAppState};
 use crate::api::model::download::DownloadQueue;
 use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
 use crate::api::scheduler::start_scheduler;
-use crate::model::{validate_targets, Config, ProcessTargets, RateLimitConfig, ScheduleConfig};
+use crate::model::{Config, ProcessTargets, RateLimitConfig, ScheduleConfig};
 use crate::model::{Healthcheck};
 use crate::processing::processor::playlist;
 use crate::tools::lru_cache::LRUResourceCache;
@@ -103,7 +103,7 @@ fn exec_update_on_boot(client: Arc<reqwest::Client>, cfg: &Arc<Config>, targets:
 
 
 fn get_process_targets(cfg: &Arc<Config>, process_targets: &Arc<ProcessTargets>, exec_targets: Option<&Vec<String>>) -> Arc<ProcessTargets> {
-    if let Ok(user_targets) = validate_targets(exec_targets, &cfg.sources) {
+    if let Ok(user_targets) = cfg.sources.validate_targets(exec_targets) {
         if user_targets.enabled {
             if !process_targets.enabled {
                 return Arc::new(user_targets);

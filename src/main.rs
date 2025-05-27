@@ -10,7 +10,7 @@ mod modules;
 include_modules!();
 
 use crate::auth::password::generate_password;
-use crate::model::{validate_targets, Config, HealthcheckConfig, Healthcheck, ProcessTargets};
+use crate::model::{Config, HealthcheckConfig, Healthcheck, ProcessTargets};
 use crate::processing::processor::playlist;
 use crate::utils::{config_file_reader, resolve_env_var};
 use crate::utils::request::{create_client, set_sanitize_sensitive_info};
@@ -118,7 +118,7 @@ fn main() {
     create_directories(&cfg, &temp_path);
     let _ = tempfile::env::override_temp_dir(&temp_path);
 
-    let targets = validate_targets(args.target.as_ref(), &cfg.sources).unwrap_or_else(|err| exit!("{}", err));
+    let targets = cfg.sources.validate_targets(args.target.as_ref()).unwrap_or_else(|err| exit!("{}", err));
 
     info!("Current time: {}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"));
     info!("Temp dir: {}", temp_path.display());

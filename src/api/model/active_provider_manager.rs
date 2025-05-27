@@ -411,7 +411,7 @@ impl ActiveProviderManager {
             grace_period_timeout_secs,
             providers: Arc::new(RwLock::new(Vec::new())),
         };
-        for source in &cfg.sources {
+        for source in &cfg.sources.sources {
             for input in &source.inputs {
                 this.add_provider(input).await;
             }
