@@ -12,12 +12,13 @@ use futures::Stream;
 use log::{error, info};
 use std::pin::Pin;
 use std::sync::atomic::AtomicU8;
-use std::sync::Arc;
-use std::task::Poll;
+use std::sync::{Arc, Mutex};
+use std::task::{Poll, Waker};
 
 const INNER_STREAM: u8 = 0_u8;
-const USER_EXHAUSTED_STREAM: u8 = 1_u8;
-const PROVIDER_EXHAUSTED_STREAM: u8 = 2_u8;
+const GRACE_BLOCK_STREAM: u8 = 1_u8;
+const USER_EXHAUSTED_STREAM: u8 = 2_u8;
+const PROVIDER_EXHAUSTED_STREAM: u8 = 3_u8;
 
 pub(in crate::api) struct ActiveClientStream {
     inner: BoxedProviderStream,
@@ -27,6 +28,7 @@ pub(in crate::api) struct ActiveClientStream {
     #[allow(dead_code)]
     provider_connection_guard: Option<ProviderConnectionGuard>,
     custom_video: (Option<ReadonlyRingBuffer>, Option<ReadonlyRingBuffer>),
+    waker: Arc<Mutex<Option<Waker>>>,
 }
 
 impl ActiveClientStream {
@@ -43,7 +45,9 @@ impl ActiveClientStream {
         let username = user.username.as_str();
         let user_connection_guard = Some(active_user.add_connection(username, user.max_connections).await);
         let cfg = &app_state.config;
-        let grace_stop_flag = Self::stream_grace_period(&stream_details, grant_user_grace_period, user, &active_user, &active_provider);
+        let waker = Arc::new(Mutex::new(None));
+        let waker_clone = Arc::clone(&waker);
+        let grace_stop_flag = Self::stream_grace_period(&stream_details, grant_user_grace_period, user, &active_user, &active_provider, &waker_clone);
         let custom_video = cfg.t_custom_stream_response.as_ref()
             .map_or((None, None), |c|
                 (
@@ -57,6 +61,7 @@ impl ActiveClientStream {
             provider_connection_guard: stream_details.provider_connection_guard,
             send_custom_stream_flag: grace_stop_flag,
             custom_video,
+            waker,
         }
     }
 
@@ -64,7 +69,8 @@ impl ActiveClientStream {
                            user_grace_period: bool,
                            user: &ProxyUserCredentials,
                            active_user: &Arc<ActiveUserManager>,
-                           active_provider: &Arc<ActiveProviderManager>) -> Option<Arc<AtomicU8>> {
+                           active_provider: &Arc<ActiveProviderManager>,
+                           waker: &Arc<Mutex<Option<Waker>>>) -> Option<Arc<AtomicU8>> {
         let provider_grace_check = if stream_details.has_grace_period() && stream_details.input_name.is_some() {
             let provider_name = stream_details.input_name.as_deref().unwrap_or_default().to_string();
             let provider_manager = Arc::clone(active_provider);
@@ -84,34 +90,55 @@ impl ActiveClientStream {
         };
 
         if provider_grace_check.is_some() || user_grace_check.is_some() {
-            let stop_flag = Arc::new(AtomicU8::new(INNER_STREAM));
-            let stop_stream_flag = Arc::clone(&stop_flag);
+            let stream_strategy_flag = Arc::new(AtomicU8::new(GRACE_BLOCK_STREAM));
+            let stream_strategy_flag_copy = Arc::clone(&stream_strategy_flag);
+            let waker_copy = Arc::clone(waker);
             let grace_period_millis = stream_details.grace_period_millis;
+
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(grace_period_millis)).await;
+
+                let mut updated = false;
+
                 if let Some((username, user_manager, max_connections, reconnect_flag)) = user_grace_check {
                     let active_connections = user_manager.user_connections(&username).await;
                     if active_connections > max_connections {
                         info!("User connections exhausted for active clients: {username}");
-                        stop_stream_flag.store(USER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
-                        if let Some(connect_flag) = reconnect_flag {
+                        stream_strategy_flag_copy.store(USER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
+                        if let Some(flag) = reconnect_flag {
                             info!("Stopped reconnecting, user connections exhausted");
-                            connect_flag.notify();
+                            flag.notify();
+                        }
+                        updated = true;
+                    }
+                }
+
+                if !updated {
+                    if let Some((provider_name, provider_manager, reconnect_flag)) = provider_grace_check {
+                        if provider_manager.is_over_limit(&provider_name).await {
+                            info!("Provider connections exhausted for active clients: {provider_name}");
+                            stream_strategy_flag_copy.store(PROVIDER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
+                            if let Some(flag) = reconnect_flag {
+                                info!("Stopped reconnecting, provider connections exhausted");
+                                flag.notify();
+                            }
+                            updated = true;
                         }
                     }
                 }
-                if let Some((provider_name, provider_manager, reconnect_flag)) = provider_grace_check {
-                    if provider_manager.is_over_limit(&provider_name).await {
-                        info!("Provider connections exhausted for active clients: {provider_name}");
-                        stop_stream_flag.store(PROVIDER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
-                        if let Some(connect_flag) = reconnect_flag {
-                            info!("Stopped reconnecting, provider connections exhausted");
-                            connect_flag.notify();
-                        }
+
+                if !updated {
+                    stream_strategy_flag_copy.store(INNER_STREAM, std::sync::atomic::Ordering::SeqCst);
+                }
+                if let Ok(mut waker_guard) = waker_copy.lock() {
+                    if let Some(w) = waker_guard.take() {
+                        w.wake();
                     }
+                } else {
+                    error!("Failed to acquire waker lock - mutex poisoned");
                 }
             });
-            return Some(stop_flag);
+            return Some(stream_strategy_flag);
         }
         None
     }
@@ -121,12 +148,22 @@ impl Stream for ActiveClientStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
         let flag = match &self.send_custom_stream_flag {
-            Some(flag) => flag.load(std::sync::atomic::Ordering::Relaxed),
+            Some(flag) => flag.load(std::sync::atomic::Ordering::SeqCst),
             None => INNER_STREAM,
         };
 
         if flag == INNER_STREAM {
             return Pin::new(&mut self.inner).poll_next(cx);
+        }
+
+        if flag == GRACE_BLOCK_STREAM {
+            if let Ok(mut waker_lock) = self.waker.lock() {
+                if waker_lock.is_none() {
+                    *waker_lock = Some(cx.waker().clone());
+                }
+                return Poll::Pending;
+            }
+            return Poll::Ready(Some(Ok(Bytes::new())));
         }
 
         let buffer_opt = match flag {
