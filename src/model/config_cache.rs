@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use log::error;
 use path_clean::PathClean;
 use crate::tuliprox_error::{info_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::parse_size_base_2;
@@ -32,7 +33,13 @@ impl CacheConfig {
             match self.size.as_ref() {
                 None => self.t_size = 1024,
                 Some(val) => match parse_size_base_2(val) {
-                    Ok(size) => self.t_size = usize::try_from(size).unwrap_or(0),
+                    Ok(size) => match usize::try_from(size) {
+                        Ok(s) => self.t_size = s,
+                        Err(err) => {
+                            self.t_size = 0;
+                            error!("Cache size could not be determined. Setting to 0. {err}");
+                        }
+                    },
                     Err(err) => { return Err(info_err!(format!("Failed to read cache size: {err}"))) }
                 }
             }

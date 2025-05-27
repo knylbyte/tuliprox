@@ -28,8 +28,8 @@ mod config_log;
 mod config_healthcheck;
 mod config_cache;
 
-pub
-use self::config::*;
+pub use self::config_cache::*;
+pub use self::config::*;
 pub use self::playlist::*;
 pub use self::mapping::*;
 pub use self::config_api_proxy::*;
