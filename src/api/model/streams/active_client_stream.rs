@@ -47,7 +47,7 @@ impl ActiveClientStream {
         let cfg = &app_state.config;
         let waker = Arc::new(Mutex::new(None));
         let waker_clone = Arc::clone(&waker);
-        let grace_stop_flag = Self::stream_grace_period(&stream_details, grant_user_grace_period, user, &active_user, &active_provider, waker_clone);
+        let grace_stop_flag = Self::stream_grace_period(&stream_details, grant_user_grace_period, user, &active_user, &active_provider, &waker_clone);
         let custom_video = cfg.t_custom_stream_response.as_ref()
             .map_or((None, None), |c|
                 (
@@ -70,7 +70,7 @@ impl ActiveClientStream {
                            user: &ProxyUserCredentials,
                            active_user: &Arc<ActiveUserManager>,
                            active_provider: &Arc<ActiveProviderManager>,
-                           waker: Arc<Mutex<Option<Waker>>>) -> Option<Arc<AtomicU8>> {
+                           waker: &Arc<Mutex<Option<Waker>>>) -> Option<Arc<AtomicU8>> {
         let provider_grace_check = if stream_details.has_grace_period() && stream_details.input_name.is_some() {
             let provider_name = stream_details.input_name.as_deref().unwrap_or_default().to_string();
             let provider_manager = Arc::clone(active_provider);
@@ -92,7 +92,7 @@ impl ActiveClientStream {
         if provider_grace_check.is_some() || user_grace_check.is_some() {
             let stream_strategy_flag = Arc::new(AtomicU8::new(GRACE_BLOCK_STREAM));
             let stream_strategy_flag_copy = Arc::clone(&stream_strategy_flag);
-            let waker_copy = Arc::clone(&waker);
+            let waker_copy = Arc::clone(waker);
             let grace_period_millis = stream_details.grace_period_millis;
 
             tokio::spawn(async move {
@@ -160,9 +160,8 @@ impl Stream for ActiveClientStream {
             if let Ok(mut waker_lock) = self.waker.lock() {
                 *waker_lock = Some(cx.waker().clone());
                 return Poll::Pending;
-            } else {
-               return Poll::Ready(Some(Ok(Bytes::new())));
             }
+            return Poll::Ready(Some(Ok(Bytes::new())));
         }
 
         let buffer_opt = match flag {
