@@ -30,3 +30,6 @@ mappings:
         - filter: "!business!"
           script: |
             @Group = "News"
+        - filter: 'Input = "iptv-org"'
+          script: |
+            @Caption = concat(@Caption, " (iptv-org)")

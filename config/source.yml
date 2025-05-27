@@ -12,10 +12,6 @@ sources:
       - name: iptv-org
         type: m3u
         url: https://iptv-org.github.io/iptv/countries/uk.m3u
-        suffix:
-          field: title
-          value: "(iptv-org)"
-    targets:
       - name: iptv-org
         output:
           - type: xtream
