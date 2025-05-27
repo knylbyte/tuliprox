@@ -1,4 +1,9 @@
 # Changelog
+# 3.1.1 (2025-05-27)
+- fixed m3u api hls handling
+- during grace period no data is sent to client.
+- splitted config file handling for accurate error messages
+
 # 3.1.0 (2025-05-26)
 - !BREAKING_CHANGE! mapper refactored, mapping can be written as a script with a custom DSL.
 - !BREAKING_CHANGE! `tags` definition removed from new mapper.
