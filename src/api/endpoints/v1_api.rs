@@ -9,7 +9,7 @@ use crate::auth::authenticator::validator_admin;
 use crate::tuliprox_error::TuliproxError;
 use crate::model::StatusCheck;
 use crate::model::XtreamPlaylistItem;
-use crate::model::{validate_targets, Config, ConfigDto, ConfigInput, ConfigInputOptions, ConfigSource, ConfigTarget, InputType};
+use crate::model::{Config, ConfigDto, ConfigInput, ConfigInputOptions, ConfigSource, ConfigTarget, InputType};
 use crate::model::{ApiProxyConfig, ApiProxyServerInfo, ProxyUserCredentials, TargetUser};
 use crate::processing::processor::playlist;
 use crate::repository::user_repository::store_api_user;
@@ -135,7 +135,7 @@ async fn playlist_update(
     axum::extract::Json(targets): axum::extract::Json<Vec<String>>,
 ) -> impl axum::response::IntoResponse + Send {
     let user_targets = if targets.is_empty() { None } else { Some(targets) };
-    let process_targets = validate_targets(user_targets.as_ref(), &app_state.config.sources);
+    let process_targets = app_state.config.sources.validate_targets(user_targets.as_ref());
     match process_targets {
         Ok(valid_targets) => {
             tokio::spawn(playlist::exec_processing(Arc::clone(&app_state.http_client), Arc::clone(&app_state.config), Arc::new(valid_targets)));
@@ -283,7 +283,7 @@ async fn config(
         reverse_proxy: config.reverse_proxy.clone(),
         messaging: config.messaging.clone(),
         video: config.video.clone(),
-        sources: config.sources.iter().map(map_source).collect(),
+        sources: config.sources.sources.iter().map(map_source).collect(),
         proxy: config.proxy.clone(),
         ipcheck: config.ipcheck.clone(),
         api_proxy: utils::read_api_proxy(&app_state.config, false),

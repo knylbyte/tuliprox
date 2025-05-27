@@ -232,7 +232,7 @@ fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bo
 }
 
 async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<Config>, source_idx: usize, user_targets: Arc<ProcessTargets>) -> (Vec<InputStats>, Vec<TargetStats>, Vec<TuliproxError>) {
-    let source = cfg.sources.get(source_idx).unwrap();
+    let source = cfg.sources.get_source_at(source_idx).unwrap();
     let mut errors = vec![];
     let mut input_stats = HashMap::<String, InputStats>::new();
     let mut target_stats = Vec::<TargetStats>::new();
@@ -322,13 +322,13 @@ fn create_input_stat(group_count: usize, channel_count: usize, error_count: usiz
 async fn process_sources(client: Arc<reqwest::Client>, config: Arc<Config>, user_targets: Arc<ProcessTargets>) -> (Vec<SourceStats>, Vec<TuliproxError>) {
     let mut handle_list = vec![];
     let thread_num = config.threads;
-    let process_parallel = thread_num > 1 && config.sources.len() > 1;
+    let process_parallel = thread_num > 1 && config.sources.sources.len() > 1;
     if process_parallel && log_enabled!(Level::Debug) {
         debug!("Using {thread_num} threads");
     }
     let errors = Arc::new(Mutex::<Vec<TuliproxError>>::new(vec![]));
     let stats = Arc::new(Mutex::<Vec<SourceStats>>::new(vec![]));
-    for (index, _) in config.sources.iter().enumerate() {
+    for (index, _) in config.sources.sources.iter().enumerate() {
         // We're using the file lock this way on purpose
         let source_lock_path = PathBuf::from(format!("source_{index}"));
         let Ok(update_lock) = config.file_locks.try_write_lock(&source_lock_path).await else {

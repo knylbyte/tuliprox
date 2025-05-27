@@ -22,8 +22,8 @@ impl ReadonlyRingBuffer {
         let buffer_len = self.buffer.len();
         let mut current_pos = self.current_pos.load(Ordering::SeqCst);
 
-        // Return None if the buffer is empty or all data is consumed.
-        if buffer_len == 0 || current_pos >= buffer_len {
+        // Return None if the buffer is empty
+        if buffer_len == 0 {
             return None;
         }
 
@@ -65,7 +65,7 @@ mod tests {
     #[test]
     fn test_buffer() {
         let buffer: Vec<u8> = (0..20000).map(|x| (x % 256) as u8).collect();
-        let mut ring_buffer = ReadonlyRingBuffer::new(Arc::new(buffer.clone()));
+        let ring_buffer = ReadonlyRingBuffer::new(Arc::new(buffer.clone()));
 
         let mut index:usize = 0;
         while let Some(chunk) = ring_buffer.next_chunk() {

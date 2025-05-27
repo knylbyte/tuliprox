@@ -1,8 +1,8 @@
-use crate::model::ApiProxyConfig;
+use crate::model::{ApiProxyConfig, SourcesConfig};
 use crate::model::{Config, ConfigDto};
-use crate::tuliprox_error::{create_tuliprox_error, create_tuliprox_error_result, to_io_error, TuliproxError, TuliproxErrorKind};
+use crate::tuliprox_error::{create_tuliprox_error,  info_err, to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::utils::{open_file, EnvResolvingReader};
-use crate::utils::{MultiFileReader, file_reader};
+use crate::utils::{file_reader};
 use crate::utils::sys_utils::exit;
 use crate::utils::CONSTANTS;
 use chrono::Local;
@@ -10,7 +10,7 @@ use log::{error, info, warn};
 use serde::Serialize;
 use std::env;
 use std::fs::File;
-use std::io::{self,  BufReader, Read};
+use std::io::{self, BufReader, Read};
 use std::path::{PathBuf};
 use std::sync::Arc;
 use crate::utils;
@@ -53,29 +53,55 @@ pub fn read_api_proxy_config(cfg: &Config) -> Result<(), TuliproxError> {
     }
 }
 
-pub fn read_config(config_path: &str, config_file: &str, sources_file: &str, api_proxy_file: &str, mappings_file: Option<String>, include_computed: bool) -> Result<Config, TuliproxError> {
-    let files = vec![std::path::PathBuf::from(config_file), std::path::PathBuf::from(sources_file)];
-    match MultiFileReader::new(&files) {
-        Ok(reader) => {
-            match serde_yaml::from_reader::<_, Config>(reader) {
-                Ok(mut result) => {
-                    result.t_config_path = config_path.to_string();
-                    result.t_config_file_path = config_file.to_string();
-                    result.t_sources_file_path = sources_file.to_string();
-                    result.t_api_proxy_file_path = api_proxy_file.to_string();
-                    if let Err(err) = result.prepare(include_computed) { Err(err) } else {
-                        if result.t_mapping_file_path.is_empty() {
-                            result.t_mapping_file_path = resolve_env_var(&mappings_file.unwrap_or_else(|| utils::get_default_mappings_path(config_path)));
-                        }
-                        Ok(result)
+pub fn read_sources(sources_file: &str, resolve_env: bool, include_computed: bool) -> Result<SourcesConfig, TuliproxError> {
+
+    match open_file(&std::path::PathBuf::from(sources_file)) {
+        Ok(file) => {
+            let maybe_sources: Result<SourcesConfig, _> = serde_yaml::from_reader(config_file_reader(file, resolve_env));
+            match maybe_sources {
+                Ok(mut sources) => {
+                    if let Err(err) = sources.prepare(include_computed) {
+                        Err(info_err!(format!("Can't read the sources-config file: {sources_file}: {err}")))
+                    } else {
+                        Ok(sources)
                     }
                 }
-                Err(e) => {
-                    create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant read config file: {}", e)
-                }
+                Err(err) => Err(info_err!(format!("Can't read the sources-config file: {sources_file}: {err}")))
             }
         }
-        Err(err) => create_tuliprox_error_result!(TuliproxErrorKind::Info, "{}", err)
+        Err(err) => Err(info_err!(format!("Can't read the sources-config file: {sources_file}: {err}")))
+    }
+}
+
+
+
+pub fn read_config(config_path: &str, config_file: &str, sources_file: &str, api_proxy_file: &str, mappings_file: Option<String>, include_computed: bool) -> Result<Config, TuliproxError> {
+
+    let resolve_env = true;
+    let sources = read_sources(sources_file, resolve_env, include_computed)?;
+
+    match open_file(&std::path::PathBuf::from(config_file)) {
+        Ok(file) => {
+            let maybe_config: Result<Config, _> = serde_yaml::from_reader(config_file_reader(file, resolve_env));
+            match maybe_config {
+                Ok(mut config) => {
+                    config.sources = sources;
+                    config.t_config_path = config_path.to_string();
+                    config.t_config_file_path = config_file.to_string();
+                    config.t_sources_file_path = sources_file.to_string();
+                    config.t_api_proxy_file_path = api_proxy_file.to_string();
+                    if let Err(err) = config.prepare(include_computed) { Err(err) } else {
+                        if config.t_mapping_file_path.is_empty() {
+                            config.t_mapping_file_path = resolve_env_var(&mappings_file.unwrap_or_else(|| utils::get_default_mappings_path(config_path)));
+                        }
+                        Ok(config)
+                    }
+                }
+                Err(err) =>  Err(info_err!(format!("Can't read the config file: {config_file}: {err}")))
+            }
+
+        }
+        Err(err) =>  Err(info_err!(format!("Can't read the config file: {config_file}: {err}")))
     }
 }
 
