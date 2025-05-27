@@ -158,7 +158,9 @@ impl Stream for ActiveClientStream {
 
         if flag == GRACE_BLOCK_STREAM {
             if let Ok(mut waker_lock) = self.waker.lock() {
-                *waker_lock = Some(cx.waker().clone());
+                if waker_lock.is_none() {
+                    *waker_lock = Some(cx.waker().clone());
+                }
                 return Poll::Pending;
             }
             return Poll::Ready(Some(Ok(Bytes::new())));
