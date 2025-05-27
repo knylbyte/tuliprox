@@ -105,7 +105,6 @@ impl ActiveClientStream {
                     if active_connections > max_connections {
                         info!("User connections exhausted for active clients: {username}");
                         stream_strategy_flag_copy.store(USER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
-                        info!("!!! user exhausted stream");
                         if let Some(flag) = reconnect_flag {
                             info!("Stopped reconnecting, user connections exhausted");
                             flag.notify();
