@@ -158,12 +158,12 @@ where
             let pos = self.get_entry_index_upper_bound(&key);
             let child = self.children.get_mut(pos)?;
             let node = child.insert(key.clone(), v, inner_order, leaf_order);
-            if node.is_some() {
-                if let Some(leaf_key) = Self::find_leaf_entry(node.as_ref().unwrap()) {
+            if let Some(tree_node) = node {
+                if let Some(leaf_key) = Self::find_leaf_entry(&tree_node) {
                     let idx = self.get_entry_index_upper_bound(leaf_key);
                     if self.keys.binary_search(&key).is_err() {
                         self.keys.insert(idx, leaf_key.clone());
-                        self.children.insert(idx + 1, node.unwrap());
+                        self.children.insert(idx + 1, tree_node);
                         if self.is_overflow(inner_order) {
                             return Some(self.split(inner_order));
                         }
