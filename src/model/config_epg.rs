@@ -172,7 +172,7 @@ impl EpgConfig {
                 }
                 result
             });
-
+            
             self.t_smart_match = match self.smart_match.as_mut() {
                 None => {
                     let mut normalize: EpgSmartMatchConfig = EpgSmartMatchConfig::default();
