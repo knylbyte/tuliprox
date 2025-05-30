@@ -31,12 +31,12 @@ pub const fn bytes_to_megabytes(bytes: u64) -> u64 {
 }
 
 pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
-    debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(url_str));
+    debug_if_enabled!("getting input epg content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(url_str));
     if url_str.parse::<url::Url>().is_ok() {
         match download_epg_content_as_file(client, input, url_str, working_dir, persist_filepath).await {
             Ok(content) => Ok(content),
             Err(e) => {
-                error!("cant download input url: {}  => {}", sanitize_sensitive_info(url_str), sanitize_sensitive_info(e.to_string().as_str()));
+                error!("cant download input epg url: {}  => {}", sanitize_sensitive_info(url_str), sanitize_sensitive_info(e.to_string().as_str()));
                 create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to download")
             }
         }

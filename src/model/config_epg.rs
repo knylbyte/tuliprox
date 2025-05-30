@@ -164,10 +164,10 @@ impl EpgConfig {
         if include_computed {
             self.t_sources = self.sources.as_mut().map_or_else(Vec::new, |epg_sources| {
                 let mut result = Vec::new();
-                for mut epg_source in epg_sources.drain(..) {
+                for epg_source in epg_sources {
                     epg_source.prepare();
                     if epg_source.is_valid() {
-                        result.push(epg_source);
+                        result.push(epg_source.clone());
                     }
                 }
                 result
