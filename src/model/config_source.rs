@@ -15,7 +15,8 @@ pub struct ConfigSource {
 impl ConfigSource {
     #[allow(clippy::cast_possible_truncation)]
     pub fn prepare(&mut self, index: u16, include_computed: bool) -> Result<u16, TuliproxError> {
-        handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, self.inputs.iter_mut().enumerate().map(|(idx, i)| i.prepare(index+(idx as u16), include_computed)));
+        handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, self.inputs.iter_mut().enumerate()
+            .map(|(idx, i)| i.prepare(index+(idx as u16), include_computed)));
         Ok(index + (self.inputs.len() as u16))
     }
 

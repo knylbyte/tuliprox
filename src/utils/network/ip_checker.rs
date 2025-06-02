@@ -3,10 +3,11 @@ use crate::model::IpCheckConfig;
 use regex::Regex;
 use reqwest::Client;
 use std::sync::Arc;
+use crate::utils::request::sanitize_sensitive_info;
 
 async fn fetch_ip(client: &Arc<Client>, url: &str, regex: Option<&Regex>) -> Result<String, TuliproxError> {
     let response = client.get(url).send().await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to request {url}: {e}")))?;
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to request {}: {e}", sanitize_sensitive_info(url))))?;
 
     let text = response.text().await
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to read response: {e}")))?;

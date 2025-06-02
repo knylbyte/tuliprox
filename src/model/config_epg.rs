@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::CONSTANTS;
 use log::warn;
 use regex::Regex;
@@ -95,7 +95,9 @@ impl EpgSmartMatchConfig {
             Some(list) => list.clone(),
         };
 
-        if self.match_threshold < 10 {
+        if self.match_threshold == 0 {
+            self.match_threshold = 80;
+        } else if self.match_threshold < 10 {
             warn!("match_threshold is less than 10%, setting to 10%");
             self.match_threshold = 10;
         } else if self.match_threshold > 100 {
@@ -160,19 +162,35 @@ pub struct EpgConfig {
 }
 
 impl EpgConfig {
-    pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
+    pub fn prepare<F>(&mut self, create_auto_url: F, include_computed: bool) -> Result<(), TuliproxError>
+    where
+        F: Fn() -> Result<String, String>,
+    {
         if include_computed {
-            self.t_sources = self.sources.as_mut().map_or_else(Vec::new, |epg_sources| {
-                let mut result = Vec::new();
+            self.t_sources = Vec::new();
+            if let Some(epg_sources) = self.sources.as_mut() {
                 for epg_source in epg_sources {
                     epg_source.prepare();
                     if epg_source.is_valid() {
-                        result.push(epg_source.clone());
+                        if include_computed && epg_source.url.eq_ignore_ascii_case("auto") {
+                            let auto_url = create_auto_url();
+                            match auto_url {
+                                Ok(provider_url) => {
+                                    self.t_sources.push(EpgSource {
+                                        url: provider_url,
+                                        priority: epg_source.priority,
+                                        logo_override: epg_source.logo_override,
+                                    });
+                                }
+                                Err(err) => return Err(info_err!(err))
+                            }
+                        } else {
+                            self.t_sources.push(epg_source.clone());
+                        }
                     }
                 }
-                result
-            });
-            
+            }
+
             self.t_smart_match = match self.smart_match.as_mut() {
                 None => {
                     let mut normalize: EpgSmartMatchConfig = EpgSmartMatchConfig::default();
