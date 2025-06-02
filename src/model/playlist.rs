@@ -262,6 +262,7 @@ macro_rules! generate_field_accessor_impl_for_playlist_item_header {
                         stringify!($prop) => Some(Cow::Borrowed(&self.$prop)),
                     )*
                     "input" =>  Some(Cow::Borrowed(self.input_name.as_str())),
+                    "type" => Some(Cow::Owned(self.item_type.to_string())),
                     "caption" =>  Some(if self.title.is_empty() { Cow::Borrowed(&self.name) } else { Cow::Borrowed(&self.title) }),
                     "epg_channel_id" | "epg_id" => self.epg_channel_id.as_ref().map(|s| Cow::Borrowed(s.as_str())),
                     _ => None,

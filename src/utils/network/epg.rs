@@ -7,10 +7,10 @@ use crate::utils::request;
 use log::debug;
 use std::path::PathBuf;
 use std::sync::Arc;
-
+use crate::utils::request::sanitize_sensitive_info;
 
 async fn download_epg_file(url: &str, client: &Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str) -> Result<PathBuf, TuliproxError> {
-    debug!("Getting epg file path for url: {url}");
+    debug!("Getting epg file path for url: {}", sanitize_sensitive_info(url));
     let file_prefix = short_hash(url);
     let persist_file_path = prepare_file_path(input.persist.as_deref(), working_dir, "")
         .map(|path| add_prefix_to_filename(&path, format!("{file_prefix}_epg_").as_str(), Some("xml")));

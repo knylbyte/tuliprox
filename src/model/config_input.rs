@@ -4,7 +4,7 @@ use crate::utils::default_as_true;
 use crate::utils::get_trimmed_string;
 use crate::utils::request::{get_base_url_from_str, get_credentials_from_url, get_credentials_from_url_str, sanitize_sensitive_info};
 use enum_iterator::Sequence;
-use log::{debug, warn};
+use log::{debug};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::str::FromStr;
@@ -270,40 +270,31 @@ impl ConfigInput {
         }
 
         if let Some(epg) = self.epg.as_mut() {
-            let _ = epg.prepare(include_computed);
-            if include_computed {
-                let has_auto_epg = epg.t_sources.iter().any(|e| e.url.trim() == "auto");
-                if has_auto_epg {
-                    let (username, password) = if self.username.is_none() || self.password.is_none() {
-                        get_credentials_from_url_str(&self.url)
-                    } else {
-                        (self.username.clone(), self.password.clone())
-                    };
+            let create_auto_url = || {
+                let (username, password) = if self.username.is_none() || self.password.is_none() {
+                    get_credentials_from_url_str(&self.url)
+                } else {
+                    (self.username.clone(), self.password.clone())
+                };
 
-                    if username.is_none() || password.is_none() {
-                        warn!("auto_epg is enabled for input {}, but no credentials could be extracted", self.name);
-                    } else if !self.t_base_url.is_empty() {
-                        let provider_epg_url = format!("{}/xmltv.php?username={}&password={}", self.t_base_url, username.unwrap_or_default(), password.unwrap_or_default());
-
-                        epg.t_sources.iter_mut().for_each(|epg_source| {
-                            if epg_source.url.trim() == "auto" {
-                                debug!("Added provider epg url {} for input {}", sanitize_sensitive_info(&provider_epg_url), self.name);
-                                epg_source.url.clone_from(&provider_epg_url);
-                            }
-                        });
-
-                        epg.t_sources = {
-                            let mut seen_urls = HashSet::new();
-                            epg.t_sources
-                                .drain(..)
-                                .filter(|src| seen_urls.insert(src.url.clone()))
-                                .collect()
-                        };
-                    } else {
-                        warn!("auto_epg is enabled for input {}, but url could not be parsed {}", self.name, sanitize_sensitive_info(&self.url));
-                    }
+                if username.is_none() || password.is_none() {
+                    Err(format!("auto_epg is enabled for input {}, but no credentials could be extracted", self.name))
+                } else if !self.t_base_url.is_empty() {
+                    let provider_epg_url = format!("{}/xmltv.php?username={}&password={}", self.t_base_url, username.unwrap_or_default(), password.unwrap_or_default());
+                     Ok(provider_epg_url)
+                } else {
+                    Err(format!("auto_epg is enabled for input {}, but url could not be parsed {}", self.name, sanitize_sensitive_info(&self.url)))
                 }
-            }
+            };
+
+            epg.prepare(create_auto_url, include_computed)?;
+            epg.t_sources = {
+                let mut seen_urls = HashSet::new();
+                epg.t_sources
+                    .drain(..)
+                    .filter(|src| seen_urls.insert(src.url.clone()))
+                    .collect()
+            };
         }
 
         if let Some(aliases) = self.aliases.as_mut() {

@@ -1,4 +1,9 @@
 # Changelog
+# 3.1.2 (2025-06-02)
+- fixed input filter
+- fixed epg fuzzy match `match_threshold` default value
+- fixed `auto` epg source 
+
 # 3.1.1 (2025-05-27)
 - fixed m3u api hls handling
 - during grace period no data is sent to client.

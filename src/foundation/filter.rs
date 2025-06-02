@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use enum_iterator::all;
 use indexmap::IndexSet;
-use log::{debug, error, log_enabled, trace, Level};
+use log::{error, log_enabled, trace, Level};
 use pest::iterators::Pair;
 use pest::Parser;
 use std::cmp::Ordering;
@@ -102,10 +102,9 @@ impl PatternTemplate {
 }
 
 #[derive(Debug, Clone)]
-pub struct RegexWithCaptures {
+pub struct CompiledRegex {
     pub restr: String,
     pub re: regex::Regex,
-    pub captures: Vec<String>,
 }
 
 #[derive(Parser)]
@@ -162,13 +161,13 @@ impl std::fmt::Display for BinaryOperator {
 #[derive(Debug, Clone)]
 pub enum Filter {
     Group(Box<Filter>),
-    FieldComparison(ItemField, RegexWithCaptures),
+    FieldComparison(ItemField, CompiledRegex),
     TypeComparison(ItemField, PlaylistItemType),
     UnaryExpression(UnaryOperator, Box<Filter>),
     BinaryExpression(Box<Filter>, BinaryOperator, Box<Filter>),
 }
 
-fn get_caption<'a>(provider: &'a ValueProvider<'a>, rewc: &'a RegexWithCaptures) -> (bool, Cow<'a, str>) {
+fn get_caption<'a>(provider: &'a ValueProvider<'a>, rewc: &'a CompiledRegex) -> (bool, Cow<'a, str>) {
     if let Some(value) = provider.get("title") {
         if rewc.re.is_match(&value) {
             return (true, value);
@@ -196,9 +195,9 @@ impl Filter {
                 };
                 if log_enabled!(Level::Trace) {
                     if is_match {
-                        debug!("Match found: {rewc:?} {} => {field}={value}", &rewc.restr);
+                        trace!("Match found: {rewc:?} {} => {field}='{value}'", &rewc.restr);
                     } else {
-                        debug!("Match failed: {self}: {rewc:?} {} => {field}={value}", &rewc.restr);
+                        trace!("Match failed: {self}: {rewc:?} {} => {field}='{value}'", &rewc.restr);
                     }
                 }
                 is_match
@@ -209,9 +208,9 @@ impl Filter {
                         let is_match = pli_type.eq(item_type);
                         if log_enabled!(Level::Trace) {
                             if is_match {
-                                debug!("Match found: {field:?} {value}");
+                                trace!("Match found: {field:?} {value}");
                             } else {
-                                debug!("Match failed: {self}: {field:?} {value}");
+                                trace!("Match failed: {self}: {field:?} {value}");
                             }
                         }
                         is_match
@@ -288,7 +287,7 @@ fn get_parser_item_field(expr: &Pair<Rule>) -> Result<ItemField, TuliproxError> 
 fn get_parser_regexp(
     expr: &Pair<Rule>,
     templates: &Vec<PatternTemplate>,
-) -> Result<RegexWithCaptures, TuliproxError> {
+) -> Result<CompiledRegex, TuliproxError> {
     if expr.as_rule() == Rule::regexp {
         let mut parsed_text = String::from(expr.as_str());
         parsed_text.pop();
@@ -299,19 +298,12 @@ fn get_parser_regexp(
             return create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse regex: {}", regstr);
         }
         let regexp = re.unwrap();
-        let captures = regexp
-            .capture_names()
-            .flatten()
-            .map(String::from)
-            .filter(|x| !x.is_empty())
-            .collect::<Vec<String>>();
         if log_enabled!(Level::Trace) {
-            trace!("Created regex: {} with captures: [{}]", regstr, captures.join(", "));
+            trace!("Created regex: {regstr}");
         }
-        return Ok(RegexWithCaptures {
+        return Ok(CompiledRegex {
             restr: regstr,
             re: regexp,
-            captures,
         });
     }
     create_tuliprox_error_result!(TuliproxErrorKind::Info, "unknown field: {}", expr.as_str())
@@ -334,9 +326,9 @@ fn get_parser_field_comparison(
 fn get_filter_item_type(text_item_type: &str) -> Option<PlaylistItemType> {
     if text_item_type.eq_ignore_ascii_case("live") {
         Some(PlaylistItemType::Live)
-    } else if text_item_type.eq_ignore_ascii_case("movie")
+    } else if text_item_type.eq_ignore_ascii_case("vod")
         || text_item_type.eq_ignore_ascii_case("video")
-        || text_item_type.eq_ignore_ascii_case("vod")
+        || text_item_type.eq_ignore_ascii_case("movie")
     {
         Some(PlaylistItemType::Video)
     } else if text_item_type.eq_ignore_ascii_case("series") {
@@ -354,7 +346,8 @@ fn get_parser_type_comparison(expr: Pair<Rule>) -> Result<Filter, TuliproxError>
     let expr_inner = expr.into_inner();
     let text_item_type = expr_inner.as_str();
     let item_type = get_filter_item_type(text_item_type);
-    item_type.map_or_else(|| create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse item type: {text_item_type}"), |itype| Ok(Filter::TypeComparison(ItemField::Type, itype)))
+    item_type.map_or_else(|| create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse item type: {text_item_type}"),
+                          |itype| Ok(Filter::TypeComparison(ItemField::Type, itype)))
 }
 
 macro_rules! handle_expr {
