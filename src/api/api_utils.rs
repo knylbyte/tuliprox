@@ -1,5 +1,6 @@
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, XtreamApiStreamContext};
 use crate::api::model::active_provider_manager::{ProviderAllocation, ProviderConnectionGuard};
+use crate::tuliprox_error::{info_err};
 use crate::api::model::app_state::AppState;
 use crate::api::model::model_utils::{ get_stream_response_with_headers};
 use crate::api::model::request::UserApiRequest;
@@ -24,9 +25,9 @@ use crate::utils::request;
 use crate::utils::request::{extract_extension_from_url, replace_url_extension, sanitize_sensitive_info};
 use crate::utils::human_readable_byte_size;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
-use crate::BUILD_TIMESTAMP;
+use crate::{BUILD_TIMESTAMP};
 use axum::body::Body;
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, HeaderValue};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};

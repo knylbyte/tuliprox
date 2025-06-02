@@ -169,7 +169,8 @@ fn get_request_range_start_bytes(req_headers: &HashMap<String, Vec<u8>>) -> Opti
             }
         }
     }
-    None
+    Some(0) // catchup workaround. without range catchup not working.
+    //None
 }
 
 // fn get_host_and_optional_port(url: &Url) -> Option<String> {
@@ -192,6 +193,7 @@ fn prepare_client(request_client: &Arc<reqwest::Client>, stream_options: &Provid
     }
 
     let mut headers = HeaderMap::default();
+
     for (key, value) in original_headers {
         if filter_request_header(key.as_str()) {
             headers.insert(key.clone(), value.clone());
@@ -268,6 +270,22 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
 
             if status.is_client_error() {
                 debug!("Client error status response : {status}");
+                return match status {
+                    StatusCode::NOT_FOUND
+                    | StatusCode::FORBIDDEN
+                    | StatusCode::UNAUTHORIZED
+                    | StatusCode::METHOD_NOT_ALLOWED
+                    | StatusCode::BAD_REQUEST => {
+                        if let (Some(boxed_provider_stream), response_info) =
+                            create_channel_unavailable_stream(cfg, &get_response_headers(stream_options.get_headers()), StatusCode::BAD_GATEWAY)
+                        {
+                            Ok(Some((boxed_provider_stream, response_info)))
+                        } else {
+                            Err(StatusCode::SERVICE_UNAVAILABLE)
+                        }
+                    }
+                    _ => Err(status)
+                };
             }
             if status.is_server_error() {
                 match status {
