@@ -23,7 +23,7 @@ fn create_video_stream(video: Option<&Arc<Vec<u8>>>, headers: &[(String, String)
             .filter(|(key, _)| !(key.eq("content-type") || key.eq("content-length") || key.contains("range")))
             .map(|(key, value)| (key.to_string(), value.to_string())).collect();
         response_headers.push(("content-type".to_string(), "video/mp2t".to_string()));
-        (Some(Box::pin(CustomVideoStream::new(Arc::clone(video)))), Some((response_headers, StatusCode::OK)))
+        (Some(Box::pin(CustomVideoStream::new(Arc::clone(video)))), Some((response_headers, StatusCode::OK, None)))
     } else {
         (None, None)
     }
@@ -50,7 +50,7 @@ pub fn create_user_account_expired_stream(cfg: &Config, headers: &[(String, Stri
 }
 
 pub fn create_custom_video_stream_response(config: &Config, video_response: CustomVideoStreamType) -> impl axum::response::IntoResponse + Send {
-    if let (Some(stream), Some((headers, status_code))) = match video_response {
+    if let (Some(stream), Some((headers, status_code, _))) = match video_response {
         CustomVideoStreamType::ChannelUnavailable => create_channel_unavailable_stream(config, &[], StatusCode::BAD_REQUEST),
         CustomVideoStreamType::UserConnectionsExhausted => create_user_connections_exhausted_stream(config, &[]),
         CustomVideoStreamType::ProviderConnectionsExhausted => create_provider_connections_exhausted_stream(config, &[]),

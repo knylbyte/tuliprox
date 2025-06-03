@@ -79,10 +79,8 @@ impl TryFrom<PlaylistItemType> for XtreamCluster {
     fn try_from(item_type: PlaylistItemType) -> Result<Self, Self::Error> {
         match item_type {
             PlaylistItemType::Live | PlaylistItemType::LiveHls | PlaylistItemType::LiveDash | PlaylistItemType::LiveUnknown => Ok(Self::Live),
-            PlaylistItemType::Video => Ok(Self::Video),
+            PlaylistItemType::Catchup | PlaylistItemType::Video => Ok(Self::Video),
             PlaylistItemType::Series | PlaylistItemType::SeriesInfo => Ok(Self::Series),
-            // TODO is catchup video or live ?
-            PlaylistItemType::Catchup => Err(format!("Cant convert {item_type}")),
         }
     }
 }

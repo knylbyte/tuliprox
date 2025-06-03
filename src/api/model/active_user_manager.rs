@@ -3,7 +3,6 @@ use crate::model::Config;
 use crate::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs};
 use jsonwebtoken::get_current_timestamp;
 use log::{debug, info};
-use rand::RngCore;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -199,8 +198,7 @@ impl ActiveUserManager {
         sessions.iter().find(|&session| session.token == token)
     }
 
-    fn new_user_session(virtual_id: u32, provider: &str, stream_url: &str, connection_permission: UserConnectionPermission) -> UserSession {
-        let session_token = rand::rng().next_u32();
+    fn new_user_session(session_token: u32, virtual_id: u32, provider: &str, stream_url: &str, connection_permission: UserConnectionPermission) -> UserSession {
         UserSession {
             token: session_token,
             virtual_id,
@@ -211,17 +209,17 @@ impl ActiveUserManager {
         }
     }
 
-    pub async fn create_user_session(&self, user: &ProxyUserCredentials, virtual_id: u32, provider: &str, stream_url: &str, connection_permission: UserConnectionPermission) -> Option<u32> {
+    pub async fn create_user_session(&self, user: &ProxyUserCredentials, session_token: u32, virtual_id: u32, provider: &str, stream_url: &str, connection_permission: UserConnectionPermission) -> Option<u32> {
         self.gc().await;
         let mut lock = self.user.write().await;
         if let Some(connection_data) = lock.get_mut(&user.username) {
-            let session = Self::new_user_session(virtual_id, provider, stream_url, connection_permission);
+            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
             let token = session.token;
             connection_data.sessions.push(session);
             Some(token)
         } else {
             let mut connection_data = UserConnectionData::new(0, user.max_connections);
-            let session = Self::new_user_session(virtual_id, provider, stream_url, connection_permission);
+            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
             let token = session.token;
             connection_data.sessions.push(session);
             lock.insert(user.username.to_string(), connection_data);

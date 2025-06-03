@@ -72,4 +72,6 @@ pub struct UserApiRequest {
     pub duration: String,
     #[serde(default, alias = "type")]
     pub content_type: String,
+    #[serde(default)]
+    pub session: u32,
 }

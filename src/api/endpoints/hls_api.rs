@@ -1,4 +1,5 @@
-use crate::api::api_utils::{create_session_cookie, force_provider_stream_response, get_stream_alternative_url, is_seek_request, read_session_token};
+use rand::RngCore;
+use crate::api::api_utils::{force_provider_stream_response, get_stream_alternative_url, is_seek_request};
 use crate::api::api_utils::{try_option_bad_request};
 use crate::api::model::app_state::AppState;
 use crate::api::model::streams::provider_stream::{create_custom_video_stream_response, CustomVideoStreamType};
@@ -60,7 +61,9 @@ pub(in crate::api) async fn handle_hls_stream_request(app_state: &Arc<AppState>,
             match app_state.active_provider.get_next_provider(&input.name).await {
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
-                    let session_token= app_state.active_users.create_user_session(user, virtual_id, &provider_cfg.name, &stream_url, connection_permission).await;
+                    // TODO avoid same tokens twice, this is a little bit hacky
+                    let user_session_token = rand::rng().next_u32();
+                    let session_token= app_state.active_users.create_user_session(user, user_session_token, virtual_id, &provider_cfg.name, &stream_url, connection_permission).await;
                     (stream_url, session_token)
                 },
                 None => (url, None),
@@ -80,7 +83,7 @@ pub(in crate::api) async fn handle_hls_stream_request(app_state: &Arc<AppState>,
                 user_token: session_token,
             };
             let hls_content = rewrite_hls(user, &rewrite_hls_props);
-            hls_response(hls_content, session_token.map(create_session_cookie)).into_response()
+            hls_response(hls_content, session_token.map(|t: u32| std::string::ToString::to_string(&t))).into_response()
         }
         Err(err) => {
             error!("Failed to download m3u8 {}", sanitize_sensitive_info(err.to_string().as_str()));
@@ -105,9 +108,12 @@ async fn hls_api_stream(
     let virtual_id = params.stream_id;
     let input = try_option_bad_request!(app_state.config.get_input_by_id(params.input_id), true, format!("Cant find input for target {target_name}, context {}, stream_id {virtual_id}", XtreamCluster::Live));
 
-    let mut user_session = match read_session_token(&req_headers) {
-        None => None,
-        Some(token) => app_state.active_users.get_user_session(&user.username, token).await,
+    // TODO SESSION TOKEN GENRATION !!!
+    let user_session_token = 0;
+    let mut user_session = if user_session_token == 0 {
+        None
+    } else {
+        app_state.active_users.get_user_session(&user.username, user_session_token).await
     };
 
     if let Some(session)  = &mut user_session {

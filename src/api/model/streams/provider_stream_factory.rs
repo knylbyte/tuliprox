@@ -169,8 +169,7 @@ fn get_request_range_start_bytes(req_headers: &HashMap<String, Vec<u8>>) -> Opti
             }
         }
     }
-    Some(0) // catchup workaround. without range catchup not working.
-    //None
+    None
 }
 
 // fn get_host_and_optional_port(url: &Url) -> Option<String> {
@@ -253,7 +252,7 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
                     let response_headers: Vec<(String, String)> = get_response_headers(response.headers());
                     //let url = stream_options.get_url();
                     // debug!("First  headers {headers:?} {} {}", sanitize_sensitive_info(url.as_str()));
-                    Some((response_headers, response.status()))
+                    Some((response_headers, response.status(), Some(response.url().clone())))
                 };
 
                 let provider_stream = response.bytes_stream().map_err(|err| {
@@ -288,14 +287,21 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
                 };
             }
             if status.is_server_error() {
-                match status {
+                debug!("Server error status response : {status}");
+                return match status {
                     StatusCode::INTERNAL_SERVER_ERROR |
                     StatusCode::BAD_GATEWAY |
                     StatusCode::SERVICE_UNAVAILABLE |
-                    StatusCode::GATEWAY_TIMEOUT => {}
-                    _ => {
-                        debug!("Server error status response : {status}");
+                    StatusCode::GATEWAY_TIMEOUT => {
+                        if let (Some(boxed_provider_stream), response_info) =
+                            create_channel_unavailable_stream(cfg, &get_response_headers(stream_options.get_headers()), StatusCode::BAD_GATEWAY)
+                        {
+                            Ok(Some((boxed_provider_stream, response_info)))
+                        } else {
+                            Err(StatusCode::SERVICE_UNAVAILABLE)
+                        }
                     }
+                    _ => Err(status)
                 }
             }
             Err(status)
@@ -374,7 +380,7 @@ pub async fn create_provider_stream(cfg: Arc<Config>,
 
     match get_provider_stream(&cfg, Arc::clone(&client), &stream_options).await {
         Ok(Some((init_stream, info))) => {
-            let is_media_stream_or_not_piped = if let Some((headers, _)) = &info {
+            let is_media_stream_or_not_piped = if let Some((headers, _, _)) = &info {
                 // if it is piped or no video stream, then we don't reconnect
                 !stream_options.pipe_stream && classify_content_type(headers) == MimeCategory::Video
             } else {

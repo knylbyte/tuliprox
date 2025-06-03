@@ -1,6 +1,5 @@
-use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, XtreamApiStreamContext};
+use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
 use crate::api::model::active_provider_manager::{ProviderAllocation, ProviderConnectionGuard};
-use crate::tuliprox_error::{info_err};
 use crate::api::model::app_state::AppState;
 use crate::api::model::model_utils::{ get_stream_response_with_headers};
 use crate::api::model::request::UserApiRequest;
@@ -27,7 +26,7 @@ use crate::utils::human_readable_byte_size;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::{BUILD_TIMESTAMP};
 use axum::body::Body;
-use axum::http::{HeaderMap, HeaderValue};
+use axum::http::{HeaderMap};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
@@ -84,7 +83,6 @@ pub use try_option_bad_request;
 pub use try_result_bad_request;
 use crate::api::model::active_user_manager::UserSession;
 use crate::api::model::provider_config::ProviderConfig;
-use crate::utils::base64_to_u32;
 
 pub fn get_server_time() -> String {
     chrono::offset::Local::now().with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S %Z").to_string()
@@ -391,10 +389,10 @@ async fn create_stream_response_details(app_state: &AppState,
             }
 
             if log_enabled!(log::Level::Debug) {
-                if let Some((headers, status_code)) = stream_info.as_ref() {
+                if let Some((headers, status_code, response_url)) = stream_info.as_ref() {
                     debug!(
                         "Responding stream request {} with status {}, headers {:?}",
-                        sanitize_sensitive_info(&request_url),
+                        sanitize_sensitive_info(response_url.as_ref().map_or(stream_url, |s| s.as_str())),
                         status_code,
                         headers
                     );
@@ -425,7 +423,7 @@ where
     pub input: &'a ConfigInput,
     pub user: &'a ProxyUserCredentials,
     pub stream_ext: Option<&'a str>,
-    pub req_context: XtreamApiStreamContext,
+    pub req_context: ApiStreamContext,
     pub action_path: &'a str,
 }
 
@@ -516,33 +514,7 @@ where
 }
 
 fn is_throttled_stream(item_type: PlaylistItemType, throttle_kbps: usize) -> bool {
-    throttle_kbps > 0 && matches!(item_type, PlaylistItemType::Video | PlaylistItemType::Series  | PlaylistItemType::SeriesInfo)
-}
-
-const SESSION_COOKIE_NAME: &str = "tuliprox_session=";
-
-// fn create_delete_session_cookie() -> String {
-//     format!("{SESSION_COOKIE_NAME}; Max-Age=0; Path=/; HttpOnly")
-// }
-
-pub fn create_session_cookie(token: u32) -> String {
-    let cookie = crate::utils::u32_to_base64(token);
-    format!("{SESSION_COOKIE_NAME}{cookie}; Path=/; HttpOnly; SameSite=None")
-}
-
-pub fn read_session_token(headers: &HeaderMap) -> Option<u32> {
-    if let Some(cookie_header) = headers.get(axum::http::header::COOKIE) {
-        let cookie_value = cookie_header.to_str().unwrap_or_default();
-        if let Some(cookie) = cookie_value.split(';')
-            .map(str::trim)
-            .find(|&part| part.starts_with(SESSION_COOKIE_NAME))
-            .and_then(|p| {
-                p.strip_prefix(SESSION_COOKIE_NAME).map(str::trim)
-            }) {
-            return base64_to_u32(cookie);
-        }
-    }
-    None
+    throttle_kbps > 0 && matches!(item_type, PlaylistItemType::Video | PlaylistItemType::Series  | PlaylistItemType::SeriesInfo | PlaylistItemType::Catchup)
 }
 
 fn prepare_body_stream(app_state: &AppState, item_type: PlaylistItemType, stream: ActiveClientStream) -> Body {
@@ -554,7 +526,6 @@ fn prepare_body_stream(app_state: &AppState, item_type: PlaylistItemType, stream
     };
     body_stream
 }
-
 
 /// # Panics
 pub async fn force_provider_stream_response(app_state: &AppState,
@@ -571,10 +542,10 @@ pub async fn force_provider_stream_response(app_state: &AppState,
         create_stream_response_details(app_state, &stream_options, &user_session.stream_url, req_headers, input, item_type, share_stream, connection_permission, Some(&user_session.provider)).await;
 
     if stream_details.has_stream() {
-        let provider_response = stream_details.stream_info.as_ref().map(|(h, sc)| (h.clone(), *sc));
+        let provider_response = stream_details.stream_info.as_ref().map(|(h, sc,url)| (h.clone(), *sc, url.clone()));
         let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission).await;
 
-        let (status_code, header_map) = get_stream_response_with_headers(provider_response);
+        let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h,s,_)| (h, s)));
         let mut response = axum::response::Response::builder().status(status_code);
         for (key, value) in &header_map {
             response = response.header(key, value);
@@ -598,6 +569,7 @@ pub async fn force_provider_stream_response(app_state: &AppState,
 /// # Panics
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_response(app_state: &AppState,
+                             session_token: u32,
                              virtual_id: u32,
                              item_type: PlaylistItemType,
                              stream_url: &str,
@@ -624,17 +596,17 @@ pub async fn stream_response(app_state: &AppState,
         create_stream_response_details(app_state, &stream_options, stream_url, req_headers, input, item_type, share_stream, connection_permission, None).await;
     if stream_details.has_stream() {
         // let content_length = get_stream_content_length(provider_response.as_ref());
-        let provider_response = stream_details.stream_info.as_ref().map(|(h, sc)| (h.clone(), *sc));
+        let provider_response = stream_details.stream_info.as_ref().map(|(h, sc, response_url)| (h.clone(), *sc, response_url.clone()));
         let provider_name = stream_details.provider_connection_guard.as_ref().and_then(ProviderConnectionGuard::get_provider_name);
 
         let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission).await;
         let stream_resp = if share_stream {
             debug_if_enabled!("Streaming shared stream request from {}", sanitize_sensitive_info(stream_url));
             // Shared Stream response
-            let shared_headers = provider_response.as_ref().map_or_else(Vec::new, |(h, _)| h.clone());
+            let shared_headers = provider_response.as_ref().map_or_else(Vec::new, |(h, _, _)| h.clone());
             SharedStreamManager::subscribe(app_state, stream_url, stream, shared_headers, stream_options.buffer_size).await;
             if let Some(broadcast_stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url).await {
-                let (status_code, header_map) = get_stream_response_with_headers(provider_response);
+                let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h,s,_)| (h, s)));
                 let mut response = axum::response::Response::builder()
                     .status(status_code);
                 for (key, value) in &header_map {
@@ -645,17 +617,18 @@ pub async fn stream_response(app_state: &AppState,
                 axum::http::StatusCode::BAD_REQUEST.into_response()
             }
         } else {
+            let session_url = provider_response.as_ref().and_then(|(_,_,u)| u.as_ref()).map_or_else(|| Cow::Borrowed(stream_url), |url| Cow::Owned(url.to_string()));
             debug_if_enabled!("Streaming stream request from {}", sanitize_sensitive_info(stream_url));
-            let (status_code, header_map) = get_stream_response_with_headers(provider_response);
+            let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h,s,_)| (h, s)));
             let mut response = axum::response::Response::builder().status(status_code);
             for (key, value) in &header_map {
                 response = response.header(key, value);
             }
 
             if let Some(provider) = provider_name {
-                if matches!(item_type, PlaylistItemType::LiveHls  | PlaylistItemType::LiveDash | PlaylistItemType::Video | PlaylistItemType::Series) {
-                    if let Some(token) = app_state.active_users.create_user_session(user, virtual_id, &provider, stream_url, connection_permission).await {
-                        response = response.header(axum::http::header::SET_COOKIE, create_session_cookie(token));
+                if matches!(item_type, PlaylistItemType::LiveHls  | PlaylistItemType::LiveDash | PlaylistItemType::Video | PlaylistItemType::Series | PlaylistItemType::Catchup) {
+                    if let Some(token) = app_state.active_users.create_user_session(user, session_token, virtual_id, &provider, &session_url, connection_permission).await {
+                        debug!("Creating session for user {} with token {token} {session_url}", user.username);
                     }
                 }
             }
