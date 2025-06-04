@@ -21,7 +21,7 @@ use crate::model::{get_backdrop_path_value, FieldGetAccessor, PlaylistEntry, Pla
 use crate::repository::playlist_repository::get_target_id_mapping;
 use crate::repository::storage::{get_target_storage_path, hex_encode};
 use crate::repository::{storage_const, user_repository, xtream_repository};
-use crate::utils::HLS_EXT;
+use crate::utils::{get_non_empty_str, HLS_EXT};
 use crate::utils::generate_playlist_uuid;
 use crate::utils::get_u32_from_serde_value;
 use crate::utils::request::{extract_extension_from_url, sanitize_sensitive_info};
@@ -526,15 +526,6 @@ create_xtream_player_api_resource!(xtream_player_api_live_resource, XtreamApiStr
 create_xtream_player_api_resource!(xtream_player_api_series_resource, XtreamApiStreamContext::Series);
 create_xtream_player_api_resource!(xtream_player_api_movie_resource, XtreamApiStreamContext::Movie);
 
-fn get_non_empty<'a>(first: &'a str, second: &'a str, third: &'a str) -> &'a str {
-    if !first.is_empty() {
-        first
-    } else if !second.is_empty() {
-        second
-    } else {
-        third
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 struct XtreamApiTimeShiftRequest {
@@ -552,11 +543,11 @@ async fn xtream_player_api_timeshift_stream(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::extract::Form(api_form_req): axum::extract::Form<UserApiRequest>,
 ) -> impl IntoResponse + Send {
-    let username = get_non_empty(&timeshift_request.username, &api_query_req.username, &api_form_req.username);
-    let password = get_non_empty(&timeshift_request.password, &api_query_req.password, &api_form_req.password);
-    let stream_id = get_non_empty(&timeshift_request.stream_id, &api_query_req.stream, &api_form_req.stream);
-    let duration = get_non_empty(&timeshift_request.duration, &api_query_req.duration, &api_form_req.duration);
-    let start = get_non_empty(&timeshift_request.start, &api_query_req.start, &api_form_req.start);
+    let username = get_non_empty_str(&timeshift_request.username, &api_query_req.username, &api_form_req.username);
+    let password = get_non_empty_str(&timeshift_request.password, &api_query_req.password, &api_form_req.password);
+    let stream_id = get_non_empty_str(&timeshift_request.stream_id, &api_query_req.stream, &api_form_req.stream);
+    let duration = get_non_empty_str(&timeshift_request.duration, &api_query_req.duration, &api_form_req.duration);
+    let start = get_non_empty_str(&timeshift_request.start, &api_query_req.start, &api_form_req.start);
     let action_path = format!("{duration}/{start}");
     xtream_player_api_stream(&req_headers, &api_query_req, &app_state, XtreamApiStreamRequest::from(XtreamApiStreamContext::Timeshift, username, password, stream_id, &action_path)).await
 }

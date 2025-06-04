@@ -3,7 +3,7 @@ use crate::model::{Config, ConfigTarget, ClusterFlags, XtreamTargetOutput};
 use crate::model::{PlaylistEntry, PlaylistItem, XtreamCluster, XtreamPlaylistItem};
 use crate::model::serde_utils::{deserialize_as_option_rc_string, deserialize_as_rc_string, deserialize_as_string_array, deserialize_number_from_string};
 use crate::model::xtream_const;
-use crate::utils::{opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
+use crate::utils::{get_non_empty_str, opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -220,14 +220,12 @@ pub struct XtreamSeriesInfoInfo {
     director: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     genre: String,
-    #[serde(
-        default,
-        alias = "release_date",
-        alias = "releaseDate",
-        alias = "releasedate",
-        deserialize_with = "string_default_on_null"
-    )]
+    #[serde(default, deserialize_with = "string_default_on_null")]
     release_date: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    releaseDate: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    releasedate: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     last_modified: String,
     #[serde(default, deserialize_with = "string_or_number_f64")]
@@ -246,17 +244,16 @@ pub struct XtreamSeriesInfoInfo {
     category_id: u32,
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct XtreamSeriesInfoEpisodeInfo {
     #[serde(default, deserialize_with = "opt_string_or_number_u32")]
     pub tmdb_id: Option<u32>,
-    #[serde(
-        default,
-        alias = "release_date",
-        alias = "releaseDate",
-        alias = "releasedate",
-        deserialize_with = "string_default_on_null"
-    )]
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub release_date: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub releaseDate: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
     pub releasedate: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub plot: String,
@@ -358,7 +355,7 @@ impl XtreamSeriesInfoEpisode {
             result.insert(String::from("backdrop_path"), Value::Array(Vec::from([Value::String(String::from(bdpath?.first()?))])));
         }
         add_str_property_if_exists!(result, info.map_or("", |i| i.name.as_str()), "series_name");
-        add_str_property_if_exists!(result, info.map_or("", |i| i.release_date.as_str()), "series_release_date");
+        add_str_property_if_exists!(result, info.map_or("", |i| get_non_empty_str(i.release_date.as_str(), i.releaseDate.as_str(), i.releasedate.as_str())), "series_release_date");
         add_str_property_if_exists!(result, self.added.as_str(), "added");
         add_str_property_if_exists!(result, info.map_or("", |i| i.cast.as_str()), "cast");
         add_str_property_if_exists!(result, self.container_extension.as_str(), "container_extension");
@@ -369,7 +366,7 @@ impl XtreamSeriesInfoEpisode {
         add_str_property_if_exists!(result, self.info.as_ref().map_or("", |info| info.plot.as_str()), "plot");
         add_f64_property_if_exists!(result, info.map_or(0_f64, |i| i.rating), "rating");
         add_f64_property_if_exists!(result, info.map_or(0_f64, |i| i.rating_5based), "rating_5based");
-        add_str_property_if_exists!(result, self.info.as_ref().map_or("", |info| info.releasedate.as_str()), "release_date");
+        add_str_property_if_exists!(result, self.info.as_ref().map_or("", |info| get_non_empty_str(info.release_date.as_str(), info.releaseDate.as_str(), info.releasedate.as_str())), "release_date");
         add_str_property_if_exists!(result, self.title, "title");
         add_i64_property_if_exists!(result, self.season, "season");
         add_i64_property_if_exists!(result, self.episode_num, "episode");
@@ -403,6 +400,7 @@ fn append_release_date(document: &mut serde_json::Map<String, Value>) {
     let release_date = document
         .get("release_date")
         .or_else(|| document.get("releaseDate"))
+        .or_else(|| document.get("releasedate"))
         .cloned()
         .unwrap_or(Value::Null);
 

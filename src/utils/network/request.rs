@@ -390,18 +390,25 @@ pub fn sanitize_sensitive_info(query: &str) -> Cow<str> {
     Cow::Owned(result)
 }
 
+#[inline]
+fn ensure_extension(ext: &str) -> Option<&str> {
+    if ext.len() > 4 {
+        return None;
+    }
+    Some(ext)
+}
 
 pub fn extract_extension_from_url(url: &str) -> Option<&str> {
     if let Some(protocol_pos) = url.find("://") {
         if let Some(last_slash_pos) = url[protocol_pos + 3..].rfind('/') {
             let path = &url[protocol_pos + 3 + last_slash_pos + 1..];
             if let Some(last_dot_pos) = path.rfind('.') {
-                return Some(&path[last_dot_pos..]);
+                return ensure_extension(&path[last_dot_pos..]);
             }
         }
     } else if let Some(last_dot_pos) = url.rfind('.') {
         if last_dot_pos > url.rfind('/').unwrap_or(0) {
-            return Some(&url[last_dot_pos..]);
+            return ensure_extension(&url[last_dot_pos..]);
         }
     }
     None
@@ -506,7 +513,7 @@ pub fn get_base_url_from_str(url: &str) -> Option<String> {
 }
 
 pub fn create_client(cfg: &Config) -> reqwest::ClientBuilder {
-    let mut client = reqwest::Client::builder();
+    let mut client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::limited(10));
 
     if let Some(proxy_cfg) = cfg.proxy.as_ref() {
         let proxy = match reqwest::Proxy::all(&proxy_cfg.url) {
