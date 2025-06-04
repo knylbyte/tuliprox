@@ -92,7 +92,7 @@ async fn m3u_api_stream(
         app_state.active_users.get_user_session(&user.username, api_req.session).await
     };
 
-    if let Some(session) = &user_session {
+    let session_url = if let Some(session) = &user_session {
         if session.permission == UserConnectionPermission::Exhausted {
             return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
         }
@@ -104,7 +104,10 @@ async fn m3u_api_stream(
             // partial request means we are in reverse proxy mode, seek happened
             return force_provider_stream_response(&app_state, session, pli.item_type, &req_headers, input, &user).await.into_response();
         }
-    }
+        session.stream_url.as_str()
+    } else {
+        pli.url.as_str()
+    };
 
     let connection_permission = user.connection_permission(&app_state).await;
     if connection_permission == UserConnectionPermission::Exhausted {
@@ -139,7 +142,7 @@ async fn m3u_api_stream(
         return handle_hls_stream_request(&app_state, &user, user_session.as_ref(), &pli.url, pli.virtual_id, input, connection_permission).await.into_response();
     }
 
-    stream_response(&app_state, api_req.session, pli.virtual_id, pli.item_type, pli.url.as_str(), &req_headers, input, target, &user, connection_permission).await.into_response()
+    stream_response(&app_state, api_req.session, pli.virtual_id, pli.item_type, session_url, &req_headers, input, target, &user, connection_permission).await.into_response()
 }
 
 async fn m3u_api_resource(

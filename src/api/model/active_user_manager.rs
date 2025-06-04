@@ -213,6 +213,23 @@ impl ActiveUserManager {
         self.gc().await;
         let mut lock = self.user.write().await;
         if let Some(connection_data) = lock.get_mut(&user.username) {
+
+            // check existing session
+            for session in &mut connection_data.sessions {
+                if session.token == session_token {
+                    session.ts = current_time_secs();
+                    if !session.stream_url.eq(&stream_url) {
+                        session.stream_url =  stream_url.to_string();
+                    }
+                    if !provider.eq(&session.provider) {
+                        session.provider = provider.to_string();
+                    }
+                    session.permission = connection_permission;
+                    return Some(session.token);
+                }
+            }
+
+            // no session create new one
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
             let token = session.token;
             connection_data.sessions.push(session);

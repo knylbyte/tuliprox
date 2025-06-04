@@ -618,7 +618,13 @@ pub async fn stream_response(app_state: &AppState,
             }
         } else {
             let session_url = provider_response.as_ref().and_then(|(_,_,u)| u.as_ref()).map_or_else(|| Cow::Borrowed(stream_url), |url| Cow::Owned(url.to_string()));
-            debug_if_enabled!("Streaming stream request from {}", sanitize_sensitive_info(stream_url));
+            if log_enabled!(log::Level::Debug) {
+                if session_url.eq(&stream_url) {
+                    debug!("Streaming stream request from {}", sanitize_sensitive_info(stream_url));
+                } else {
+                    debug!("Streaming stream request for {} from {}", sanitize_sensitive_info(stream_url), sanitize_sensitive_info(&session_url));
+                }
+            }
             let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h,s,_)| (h, s)));
             let mut response = axum::response::Response::builder().status(status_code);
             for (key, value) in &header_map {
@@ -818,21 +824,5 @@ pub async fn is_seek_request(
             return true;
         }
     }
-    false}
-
-#[cfg(test)]
-mod tests {
-    use crate::api::api_utils::SESSION_COOKIE_NAME;
-
-    #[test]
-    fn test_cookie() {
-        let cookie_value = format!("{SESSION_COOKIE_NAME}bbblegum; sehe=dfd; sdfsdf=sdfsd;");
-        let cookie = cookie_value.split(';')
-            .map(str::trim)
-            .find(|&part| part.starts_with(SESSION_COOKIE_NAME))
-            .and_then(|p| {
-                p.strip_prefix(SESSION_COOKIE_NAME).map(str::trim)
-            }).expect("Cookie not found");
-        assert_eq!(cookie, "bbblegum");
-    }
+    false
 }

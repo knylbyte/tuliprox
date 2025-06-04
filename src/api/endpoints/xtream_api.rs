@@ -198,13 +198,15 @@ async fn xtream_player_api_stream(
     let input = try_option_bad_request!(app_state.config.get_input_by_name(pli.input_name.as_str()), true, format!("Cant find input for target {target_name}, context {}, stream_id {virtual_id}", stream_req.context));
     let cluster = pli.xtream_cluster;
 
+    let item_type = if stream_req.context == ApiStreamContext::Timeshift { PlaylistItemType::Catchup } else  { pli.item_type };
+
     let user_session = if api_req.session == 0 {
         None
     } else {
         app_state.active_users.get_user_session(&user.username, api_req.session).await
     };
 
-    if let Some(session) = &user_session {
+    let session_url = if let Some(session) = &user_session {
         if session.permission == UserConnectionPermission::Exhausted {
             return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
         }
@@ -215,9 +217,13 @@ async fn xtream_player_api_stream(
 
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
-            return force_provider_stream_response(app_state, session, pli.item_type, req_headers, input, &user).await.into_response();
+            return force_provider_stream_response(app_state, session, item_type, req_headers, input, &user).await.into_response();
         }
-    }
+
+        session.stream_url.as_str()
+    } else {
+        pli.url.as_str()
+    };
 
     let connection_permission = user.connection_permission(app_state).await;
     if connection_permission == UserConnectionPermission::Exhausted {
@@ -251,16 +257,16 @@ async fn xtream_player_api_stream(
         format!("{}/{}{extension}", stream_req.action_path, pli.provider_id)
     };
 
-    let stream_url = try_option_bad_request!(get_xtream_player_api_stream_url(input, stream_req.context, &query_path, &pli.url),
+    let stream_url = try_option_bad_request!(get_xtream_player_api_stream_url(input, stream_req.context, &query_path, session_url),
         true, format!("Cant find stream url for target {target_name}, context {}, stream_id {virtual_id}", stream_req.context));
 
-    let is_hls_request = pli.item_type == PlaylistItemType::LiveHls || pli.item_type == PlaylistItemType::LiveDash || extension == HLS_EXT;
+    let is_hls_request = item_type == PlaylistItemType::LiveHls || item_type == PlaylistItemType::LiveDash || extension == HLS_EXT;
     // Reverse proxy mode
     if is_hls_request {
         return handle_hls_stream_request(app_state, &user, user_session.as_ref(), &stream_url, pli.virtual_id, input, connection_permission).await.into_response();
     }
 
-    stream_response(app_state, api_req.session, pli.virtual_id, pli.item_type, &stream_url, req_headers, input, target, &user, connection_permission).await.into_response()
+    stream_response(app_state, api_req.session, pli.virtual_id, item_type, &stream_url, req_headers, input, target, &user, connection_permission).await.into_response()
 }
 
 // Used by webui
