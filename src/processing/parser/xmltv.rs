@@ -113,13 +113,17 @@ impl TVGuide {
                     EPG_TAG_DISPLAY_NAME => {
                         if smart_match {
                             if let Some(name) = &child.value {
-                                tag.normalized_epg_ids.push(normalize_channel_name(name, &id_cache.smart_match_config));
+                                tag.normalized_epg_ids
+                                    .get_or_insert_with(Vec::new)
+                                    .push(normalize_channel_name(name, &id_cache.smart_match_config));
                             }
                         }
                     }
                     EPG_TAG_ICON => {
                         if let Some(src) = child.get_attribute_value("src") {
-                            tag.icon = Some(src.to_string());
+                            if !src.is_empty() {
+                                tag.icon = Some(src.to_string());
+                            }
                         }
                     }
                     _ => {}
@@ -129,7 +133,10 @@ impl TVGuide {
     }
 
     fn try_fuzzy_matching(id_cache: &mut EpgIdCache, epg_id: &str, tag: &XmlTag, fuzzy_matching: bool) -> bool {
-        let mut matched = id_cache.match_with_normalized(epg_id, &tag.normalized_epg_ids);
+        let mut matched = tag
+            .normalized_epg_ids
+            .as_ref()
+            .map_or(false, |ids| id_cache.match_with_normalized(epg_id, ids));
         if !matched && fuzzy_matching {
             let (fuzzy_matched, matched_normalized_name) = Self::find_best_fuzzy_match(id_cache, tag);
             if fuzzy_matched {
@@ -170,25 +177,27 @@ impl TVGuide {
         let match_threshold = id_cache.smart_match_config.match_threshold;
         let best_match_threshold = id_cache.smart_match_config.best_match_threshold;
 
-        for tag_normalized in &tag.normalized_epg_ids {
-            let tag_code = id_cache.phonetic(tag_normalized);
-            if let Some(normalized) = id_cache.phonetics.get(&tag_code) {
-                normalized.par_iter().find_any(|norm_key| {
-                    let match_jw = strsim::jaro_winkler(norm_key, tag_normalized);
-                    #[allow(clippy::cast_possible_truncation)]
-                    #[allow(clippy::cast_sign_loss)]
-                    let mjw = min(100, (match_jw * 100.0).round() as u16);
-                    if mjw >= match_threshold {
-                        let mut lock = data.lock().unwrap();
-                        if lock.0 < mjw {
-                            *lock = (mjw, Some(Cow::Borrowed(norm_key)));
+        if let Some(normalized_epg_ids) = tag.normalized_epg_ids.as_ref() {
+            for tag_normalized in normalized_epg_ids {
+                let tag_code = id_cache.phonetic(tag_normalized);
+                if let Some(normalized) = id_cache.phonetics.get(&tag_code) {
+                    normalized.par_iter().find_any(|norm_key| {
+                        let match_jw = strsim::jaro_winkler(norm_key, tag_normalized);
+                        #[allow(clippy::cast_possible_truncation)]
+                        #[allow(clippy::cast_sign_loss)]
+                        let mjw = min(100, (match_jw * 100.0).round() as u16);
+                        if mjw >= match_threshold {
+                            let mut lock = data.lock().unwrap();
+                            if lock.0 < mjw {
+                                *lock = (mjw, Some(Cow::Borrowed(norm_key)));
+                            }
+                            if mjw > best_match_threshold {
+                                return true; // (true, matched_normalized_epg_id.map(|s| s.to_string()));
+                            }
                         }
-                        if mjw > best_match_threshold {
-                            return true; // (true, matched_normalized_epg_id.map(|s| s.to_string()));
-                        }
-                    }
-                    false
-                });
+                        false
+                    });
+                }
             }
         }
         // is there an early exit strategy ???

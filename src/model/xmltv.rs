@@ -20,7 +20,7 @@ pub struct XmlTag {
     pub attributes: Option<HashMap<String, String>>,
     pub children: Option<Vec<XmlTag>>,
     pub icon: Option<String>,
-    pub normalized_epg_ids: Vec<String>,
+    pub normalized_epg_ids: Option<Vec<String>>,
 }
 
 impl XmlTag {
@@ -31,7 +31,7 @@ impl XmlTag {
             attributes: attribs,
             children: None,
             icon: None,
-            normalized_epg_ids: Vec::new(),
+            normalized_epg_ids: None,
         }
     }
 
@@ -41,6 +41,12 @@ impl XmlTag {
 
     fn write_to<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<(), Error> {
         let mut elem = BytesStart::new(self.name.as_str());
+
+        // empty icon not processed
+        if self.icon.is_none() && self.name.eq(EPG_TAG_ICON) {
+           return Ok(());
+        }
+
         if let Some(attribs) = self.attributes.as_ref() {
             attribs.iter().for_each(|(k, v)| elem.push_attribute((k.as_str(), v.as_str())));
         }
