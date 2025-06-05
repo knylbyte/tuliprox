@@ -14,8 +14,11 @@ field = { ^"name" | ^"title" | ^"caption" | ^"group" | ^"id" | ^"chno" | ^"logo"
 field_access = _{ "@" ~ field }
 regex_source = _{ field_access | identifier }
 regex_expr = { regex_source ~ regex_op ~ string_literal }
-expression = { map_block | match_block | function_call | regex_expr | string_literal | number | var_access | field_access | null }
-function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" }
+block_expr = { "{" ~ statements ~ "}" }
+condition = { function_call | var_access | field_access }
+assignment = { (field_access | identifier) ~ "=" ~ expression }
+expression = { assignment | map_block | match_block | function_call | regex_expr | string_literal | number | var_access | field_access | null | block_expr }
+function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" }
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
 match_case_key = { any_match | identifier }
@@ -25,10 +28,9 @@ match_block = { "match" ~  "{" ~ NEWLINE* ~ (match_case ~ ("," ~ NEWLINE* ~ matc
 map_case_key_list = { string_literal ~ ("|" ~ string_literal)* }
 map_case_key = { any_match | number_range | map_case_key_list }
 map_case = { map_case_key ~ "=>" ~ expression }
-map_key = { identifier }
+map_key = { var_access | field_access  }
 map_block = { "map" ~ map_key ~ "{" ~ NEWLINE* ~ (map_case ~ ("," ~ NEWLINE* ~ map_case)*)? ~ ","? ~ NEWLINE* ~ "}" }
-assignment = { (field_access | identifier) ~ "=" ~ expression }
-statement = { assignment | expression }
+statement = _{ expression }
 comment = _{ "#" ~ (!NEWLINE ~ ANY)* }
 statement_reparator = _{ ";" | NEWLINE }
 statements = _{ (statement_reparator* ~ (statement | comment))* ~ statement_reparator* }
