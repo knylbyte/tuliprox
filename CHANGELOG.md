@@ -1,4 +1,27 @@
 # Changelog
+# 3.1.3 (2025-06-05)
+- Fixed xtream codes series info duplicate fields problem.
+- Fixed series info container_extension problem.
+- Mapper script can have blocks now.
+For example you want to write a `if then else` block
+```
+  # Maybe there is no station
+  station = @Caption ~ "ABC"
+  match {
+     station => {
+        # if block
+        # station exists
+     }
+     # optional any match as else block
+     _ => {
+         # else block
+         # station does not exists
+     } 
+  }
+```
+- New BuiltIn Mapper function `first`. When you use Regular expressions it could be that your match contains multiple results.
+The builtin function `first` returns the first match.
+
 # 3.1.2 (2025-06-02)
 - fixed input filter
 - fixed epg fuzzy match `match_threshold` default value

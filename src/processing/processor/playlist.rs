@@ -132,9 +132,7 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
                     let mut accessor = ValueAccessor { pli: ref_chan };
                     if let Some(filter) = &m.t_filter {
                         if filter.filter(&provider) {
-                            if let Err(err) = script.eval(&mut accessor) {
-                                error!("Error while evaluating script: {err}");
-                            }
+                            script.eval(&mut accessor);
                         }
                     }
                 }
