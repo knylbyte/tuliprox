@@ -41,24 +41,31 @@ pub fn init_logger(user_log_level: Option<&String>, config_file: &str) {
         })
         .unwrap_or_else(|| "info".to_string()); // Default
 
+    let mut log_levels = vec![];
     if log_level.contains('=') {
         for pair in log_level.split(',') {
             if pair.contains('=') {
                 let mut kv_iter = pair.split('=').map(str::trim);
                 if let (Some(module), Some(level)) = (kv_iter.next(), kv_iter.next()) {
-                    log_builder.filter_module(module, get_log_level(level));
+                    let log_level =  get_log_level(level);
+                    log_levels.push(format!("{module}={log_level}"));
+                    log_builder.filter_module(module, log_level);
+
                 }
             } else {
-                log_builder.filter_level(get_log_level(pair));
+                let level =  get_log_level(pair);
+                log_levels.push(level.to_string());
+                log_builder.filter_level(level);
             }
         }
     } else {
         // Set the log level based on the parsed value
         log_builder.filter_level(get_log_level(&log_level));
+        log_levels.push(log_level);
     }
     for module in LOG_ERROR_LEVEL_MOD {
         log_builder.filter_module(module, LevelFilter::Error);
     }
     log_builder.init();
-    info!("Log Level {}", get_log_level(&log_level));
+    info!("Log Level {}", &log_levels.join(", "));
 }
