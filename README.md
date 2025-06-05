@@ -1070,7 +1070,10 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
   - capitalize(a)
   - trim(a)
   - number(a)
-  - print(a)
+  - print(a, b, c)
+  - first(a)
+Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
+When you use Regular expressions it could be that your match contains multiple results. The builtin function `first` returns the first match.
 Example `print(uppercase("hello"))`. output is only visible in `trace` log level you can enable it like `log_level: debug,tuliprox::foundation::mapper=trace` in config
 - Assignment assigns an expression result. variable or field.
 ```dsl
@@ -1118,6 +1121,24 @@ Mapping over number ranges
    _ =>  year_text,
   }
 ```            
+
+Example `if then else` block
+```
+  # Maybe there is no station
+  station = @Caption ~ "ABC"
+  match {
+     station => {
+        # if block
+        # station exists
+     }
+     # optional any match as else block
+     _ => {
+         # else block
+         # station does not exists
+     } 
+  }
+```
+
 
 Example `mapping.yml`
 
