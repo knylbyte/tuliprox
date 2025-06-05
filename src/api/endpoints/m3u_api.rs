@@ -100,16 +100,16 @@ async fn m3u_api_stream(
         if app_state.active_provider.is_over_limit(&session.provider).await {
             return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
         }
-        if session.virtual_id == virtual_id && is_seek_request(cluster, &req_headers).await {
+        if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
-            return force_provider_stream_response(&app_state, session, pli.item_type, &req_headers, input, &user).await.into_response();
+            return force_provider_stream_response(app_state, session, pli.item_type, req_headers, input, &user).await.into_response();
         }
         session.stream_url.as_str()
     } else {
         pli.url.as_str()
     };
 
-    let connection_permission = user.connection_permission(&app_state).await;
+    let connection_permission = user.connection_permission(app_state).await;
     if connection_permission == UserConnectionPermission::Exhausted {
         return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
     }
@@ -129,7 +129,7 @@ async fn m3u_api_stream(
         action_path: "", // TODO is there timeshoft or something like that ?
     };
 
-    if let Some(response) = redirect_response(&app_state, &redirect_params).await {
+    if let Some(response) = redirect_response(app_state, &redirect_params).await {
         return response.into_response();
     }
 
@@ -139,10 +139,10 @@ async fn m3u_api_stream(
     let is_hls_request = pli.item_type == PlaylistItemType::LiveHls || pli.item_type == PlaylistItemType::LiveDash || extension == HLS_EXT;
     // Reverse proxy mode
     if is_hls_request {
-        return handle_hls_stream_request(&app_state, &user, user_session.as_ref(), &pli.url, pli.virtual_id, input, connection_permission).await.into_response();
+        return handle_hls_stream_request(app_state, &user, user_session.as_ref(), &pli.url, pli.virtual_id, input, connection_permission).await.into_response();
     }
 
-    stream_response(&app_state, api_req.session, pli.virtual_id, pli.item_type, session_url, &req_headers, input, target, &user, connection_permission).await.into_response()
+    stream_response(app_state, api_req.session, pli.virtual_id, pli.item_type, session_url,req_headers, input, target, &user, connection_permission).await.into_response()
 }
 
 async fn m3u_api_resource(
@@ -194,7 +194,7 @@ async fn m3u_api_stream_with_session(
     req_headers: &HeaderMap,
 ) -> impl IntoResponse + Send {
     if api_req.session > 0 {
-        return m3u_api_stream(&req_headers, &api_req, &app_state, stream_req/*, &addr*/).await.into_response()
+        return m3u_api_stream(req_headers, api_req, app_state, stream_req/*, &addr*/).await.into_response()
     }
     if let Some(credentials) = app_state.config.get_user_credentials(stream_req.username) {
         // create new session and redirect

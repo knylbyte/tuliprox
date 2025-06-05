@@ -57,6 +57,16 @@ pub fn generate_random_string(length: usize) -> String {
     random_string
 }
 
+pub fn get_non_empty_str<'a>(first: &'a str, second: &'a str, third: &'a str) -> &'a str {
+    if !first.is_empty() {
+        first
+    } else if !second.is_empty() {
+        second
+    } else {
+        third
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;

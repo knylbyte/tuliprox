@@ -643,12 +643,11 @@ async fn xtream_player_api_timeshift_query_stream(
     let action_path = format!("{duration}/{start}");
     if username.is_empty() || password.is_empty() || stream_id.is_empty() || duration.is_empty() || start.is_empty() {
         // if token.is_empty() {
-            return axum::http::StatusCode::BAD_REQUEST.into_response();
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
         // }
         // xtream_player_api_stream(&req_headers, &api_query_req, &app_state, ApiStreamRequest::from_access_token(ApiStreamContext::Timeshift, token, stream_id, &action_path)/*, &addr*/).await.into_response()
-    } else {
-        xtream_player_api_stream(&req_headers, &api_query_req, &app_state, ApiStreamRequest::from(ApiStreamContext::Timeshift, username, password, stream_id, &action_path)).await.into_response()
     }
+    xtream_player_api_stream(&req_headers, &api_query_req, &app_state, ApiStreamRequest::from(ApiStreamContext::Timeshift, username, password, stream_id, &action_path)).await.into_response()
 }
 
 
