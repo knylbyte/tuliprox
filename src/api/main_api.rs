@@ -270,9 +270,9 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
         .merge(m3u_api_register())
         .merge(xmltv_api_register())
         .merge(hls_api_register());
-    let mut rate_limiting = false;
+    // let mut rate_limiting = false;
     if let Some(rate_limiter) = app_state.config.reverse_proxy.as_ref().and_then(|r| r.rate_limit.clone()) {
-        rate_limiting = rate_limiter.enabled;
+        // rate_limiting = rate_limiter.enabled;
         api_router = add_rate_limiter(api_router, &rate_limiter);
     }
 
@@ -290,11 +290,11 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
 
     let router: axum::Router<()> = router.with_state(shared_data.clone());
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
-    if rate_limiting {
+    // if rate_limiting {
         axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await
-    } else {
-        axum::serve(listener, router).into_future().await
-    }
+    // } else {
+    //     axum::serve(listener, router).into_future().await
+    // }
 }
 
 

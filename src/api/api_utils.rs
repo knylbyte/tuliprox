@@ -11,7 +11,7 @@ use crate::api::model::streams::provider_stream::{create_channel_unavailable_str
 use crate::api::model::streams::provider_stream_factory::{create_provider_stream, ProviderStreamFactoryOptions};
 use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
 use crate::api::model::streams::throttled_stream::ThrottledStream;
-use crate::auth::authenticator::Claims;
+use crate::auth::Claims;
 use crate::model::{ProxyUserCredentials, UserConnectionPermission};
 use crate::model::{ConfigInput, ConfigTarget, InputFetchMethod, TargetType};
 use crate::model::{PlaylistEntry, PlaylistItemType, XtreamCluster};
@@ -569,7 +569,7 @@ pub async fn force_provider_stream_response(app_state: &AppState,
 /// # Panics
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_response(app_state: &AppState,
-                             session_token: u32,
+                             session_token: &str,
                              virtual_id: u32,
                              item_type: PlaylistItemType,
                              stream_url: &str,

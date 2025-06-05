@@ -16,8 +16,8 @@ use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::stream;
 use log::{debug, error};
-use rand::RngCore;
 use std::sync::Arc;
+use crate::auth::Fingerprint;
 
 async fn m3u_api(
     api_req: &UserApiRequest,
@@ -63,9 +63,10 @@ async fn m3u_api_post(
 }
 
 async fn m3u_api_stream(
+    fingerprint: &str,
     req_headers: &HeaderMap,
-    api_req: &UserApiRequest,
     app_state: &Arc<AppState>,
+    api_req: &UserApiRequest,
     stream_req: ApiStreamRequest<'_>,
     // _addr: &std::net::SocketAddr,
 ) -> impl axum::response::IntoResponse + Send {
@@ -86,11 +87,9 @@ async fn m3u_api_stream(
     let input = try_option_bad_request!(app_state.config.get_input_by_name(pli.input_name.as_str()), true, format!("Cant find input for target {target_name}, stream_id {virtual_id}"));
     let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
 
-    let user_session = if api_req.session == 0 {
-        None
-    } else {
-        app_state.active_users.get_user_session(&user.username, api_req.session).await
-    };
+
+    let session_key = format!("{fingerprint}{virtual_id}");
+    let user_session = app_state.active_users.get_user_session(&user.username, &session_key).await;
 
     let session_url = if let Some(session) = &user_session {
         if session.permission == UserConnectionPermission::Exhausted {
@@ -139,10 +138,10 @@ async fn m3u_api_stream(
     let is_hls_request = pli.item_type == PlaylistItemType::LiveHls || pli.item_type == PlaylistItemType::LiveDash || extension == HLS_EXT;
     // Reverse proxy mode
     if is_hls_request {
-        return handle_hls_stream_request(app_state, &user, user_session.as_ref(), &pli.url, pli.virtual_id, input, connection_permission).await.into_response();
+        return handle_hls_stream_request(fingerprint, app_state, &user, user_session.as_ref(), &pli.url, pli.virtual_id, input, connection_permission).await.into_response();
     }
 
-    stream_response(app_state, api_req.session, pli.virtual_id, pli.item_type, session_url,req_headers, input, target, &user, connection_permission).await.into_response()
+    stream_response(app_state, &session_key, pli.virtual_id, pli.item_type, session_url,req_headers, input, target, &user, connection_permission).await.into_response()
 }
 
 async fn m3u_api_resource(
@@ -185,54 +184,22 @@ async fn m3u_api_resource(
     }
 }
 
-
-async fn m3u_api_stream_with_session(
-    // addr: &SocketAddr,
-    app_state: &Arc<AppState>,
-    api_req: &UserApiRequest,
-    stream_req: ApiStreamRequest<'_>,
-    req_headers: &HeaderMap,
-) -> impl IntoResponse + Send {
-    if api_req.session > 0 {
-        return m3u_api_stream(req_headers, api_req, app_state, stream_req/*, &addr*/).await.into_response()
-    }
-    if let Some(credentials) = app_state.config.get_user_credentials(stream_req.username) {
-        // create new session and redirect
-        let context = match stream_req.context  {
-            ApiStreamContext::Live => "live",
-            ApiStreamContext::Movie => "movie",
-            ApiStreamContext::Series => "series",
-            _ => "",
-        };
-
-        let username = stream_req.username;
-        let password = stream_req.password;
-        let stream_id = stream_req.stream_id;
-
-        // TODO avoid same tokens twice, this is a little bit hacky
-        let session_token = rand::rng().next_u32();
-        let server_info = app_state.config.get_user_server_info(&credentials);
-        let redirect_url = format!("{}/{}/{context}/{username}/{password}/{stream_id}?session={session_token}",
-                                   storage_const::M3U_STREAM_PATH, server_info.get_base_url());
-        return redirect(&redirect_url).into_response();
-    }
-    StatusCode::BAD_REQUEST.into_response()
-}
 macro_rules! create_m3u_api_stream {
     ($fn_name:ident, $context:expr) => {
         async fn $fn_name(
+            Fingerprint(fingerprint): Fingerprint,
             req_headers: axum::http::HeaderMap,
             axum::extract::Query(api_req): axum::extract::Query<UserApiRequest>,
             axum::extract::Path((username, password, stream_id)): axum::extract::Path<(String, String, String)>,
             axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
             // axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
         ) ->  impl IntoResponse + Send {
-            m3u_api_stream_with_session(
-                // &addr,
+            m3u_api_stream(
+                &fingerprint,
+                &req_headers,
                 &app_state,
                 &api_req,
                 ApiStreamRequest::from($context, &username, &password, &stream_id, ""),
-                &req_headers,
             ).await.into_response()
         }
     }

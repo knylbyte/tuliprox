@@ -9,7 +9,7 @@ mod modules;
 
 include_modules!();
 
-use crate::auth::password::generate_password;
+use crate::auth::generate_password;
 use crate::model::{Config, HealthcheckConfig, Healthcheck, ProcessTargets};
 use crate::processing::processor::playlist;
 use crate::utils::{config_file_reader, resolve_env_var};

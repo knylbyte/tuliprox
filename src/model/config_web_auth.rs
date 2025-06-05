@@ -2,7 +2,7 @@ use crate::utils::default_as_true;
 use std::fs::File;
 use std::io::BufRead;
 use std::path::PathBuf;
-use crate::auth::user::UserCredential;
+use crate::auth::UserCredential;
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
 use crate::utils;
 
