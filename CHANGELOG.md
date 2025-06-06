@@ -7,7 +7,7 @@
   For example, you want to write a `if then else` block
 ```
   # Maybe there is no station
-  station = @Caption ~ "ABC"
+  station = @Caption ~ "(ABC)"
   match {
      station => {
         # if block
