@@ -37,6 +37,7 @@ fn hls_response(hls_content: String, cookie: Option<String>) -> impl IntoRespons
         .into_response()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(in crate::api) async fn handle_hls_stream_request(
         fingerprint: &str,
         app_state: &Arc<AppState>,

@@ -79,7 +79,7 @@ pub fn rewrite_hls(user: &ProxyUserCredentials, props: &RewriteHlsProps) -> Stri
             rewrite_hls_url(&props.hls_url, line)
         };
         if let Some(user_token) = &props.user_token {
-            if let Some(token) = create_hls_session_token_and_url(props.secret, *user_token, &target_url) {
+            if let Some(token) = create_hls_session_token_and_url(props.secret, user_token, &target_url) {
                 let url = format!(
                     "{}/{HLS_PREFIX}/{}/{}/{}/{}/{}",
                     props.base_url,

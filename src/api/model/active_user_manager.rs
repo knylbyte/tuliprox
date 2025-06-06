@@ -226,16 +226,19 @@ impl ActiveUserManager {
                         session.provider = provider.to_string();
                     }
                     session.permission = connection_permission;
+                    debug!("Using session for user {} with token {session_token} {stream_url}", user.username);
                     return Some(session.token.to_string());
                 }
             }
 
             // no session create new one
+            debug!("Creating session for user {} with token {session_token} {stream_url}", user.username);
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
             let token = session.token.clone();
             connection_data.sessions.push(session);
             Some(token)
         } else {
+            debug!("Creating session for user {} with token {session_token} {stream_url}", user.username);
             let mut connection_data = UserConnectionData::new(0, user.max_connections);
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
             let token = session.token.clone();

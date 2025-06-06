@@ -633,9 +633,7 @@ pub async fn stream_response(app_state: &AppState,
 
             if let Some(provider) = provider_name {
                 if matches!(item_type, PlaylistItemType::LiveHls  | PlaylistItemType::LiveDash | PlaylistItemType::Video | PlaylistItemType::Series | PlaylistItemType::Catchup) {
-                    if let Some(token) = app_state.active_users.create_user_session(user, session_token, virtual_id, &provider, &session_url, connection_permission).await {
-                        debug!("Creating session for user {} with token {token} {session_url}", user.username);
-                    }
+                    let _ = app_state.active_users.create_user_session(user, session_token, virtual_id, &provider, &session_url, connection_permission).await;
                 }
             }
 
