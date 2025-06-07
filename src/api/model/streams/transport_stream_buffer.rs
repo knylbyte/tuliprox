@@ -1,6 +1,5 @@
 use bytes::{Bytes, BytesMut};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 const MAX_PCR: u64 = 1 << 42;        // 42 bit PCR cycle
 const MAX_PTS_DTS: u64 = 1 << 33;    // 33 bit PTS/DTS cycle
@@ -216,11 +215,11 @@ type PacketIndices = Vec<(usize, Option<(usize, usize, u16)>)>;
 pub struct TransportStreamBuffer {
     buffer: Arc<Vec<u8>>,
     packet_indices: Arc<PacketIndices>,
-    current_pos: AtomicUsize,
-    current_dts: AtomicU64,
-    timestamp_offset: AtomicU64,
+    current_pos: usize,
+    current_dts: u64,
+    timestamp_offset: u64,
     length: usize,
-    stream_duration_90khz: u64, // Dauer in 90kHz Einheiten
+    stream_duration_90khz: u64, // Duration in 90kHz units
     continuity_counters: Box<[u8; 8192]>,
 }
 
@@ -229,9 +228,9 @@ impl Clone for TransportStreamBuffer {
         Self {
             buffer: Arc::clone(&self.buffer),
             packet_indices: Arc::clone(&self.packet_indices),
-            current_pos: AtomicUsize::new(0),
-            current_dts: AtomicU64::new(0),
-            timestamp_offset: AtomicU64::new(0),
+            current_pos: 0,
+            current_dts: 0,
+            timestamp_offset: 0,
             length: self.length,
             stream_duration_90khz: self.stream_duration_90khz,
             continuity_counters: Box::new([0; 8192]),
@@ -259,9 +258,9 @@ impl TransportStreamBuffer {
 
         Self {
             buffer: Arc::new(raw),
-            current_pos: AtomicUsize::new(0),
-            current_dts: AtomicU64::new(0),
-            timestamp_offset: AtomicU64::new(0),
+            current_pos: 9,
+            current_dts: 0,
+            timestamp_offset: 0,
             length,
             packet_indices: Arc::new(packet_indices),
             stream_duration_90khz,
@@ -269,24 +268,24 @@ impl TransportStreamBuffer {
         }
     }
 
-    /// returns next chunks with adjusted PTS/DTS und PCR
+    /// Returns next chunks with adjusted PTS/DTS and PCR
     pub fn next_chunk(&mut self) -> Bytes {
         let mut bytes = BytesMut::with_capacity(CHUNK_SIZE);
         // we send this amount of packets in one chunk
         let mut packets_remaining = PACKET_COUNT;
 
         while packets_remaining > 0 {
-            if self.current_pos.load(Ordering::SeqCst) >= self.length {
+            if self.current_pos >= self.length {
                 // Loop back and update timestamp offset
-                self.current_pos.store(0, Ordering::SeqCst);
+                self.current_pos = 0;
 
-                let new_offset = (self.timestamp_offset.load(Ordering::SeqCst) + self.stream_duration_90khz) % MAX_PTS_DTS;
-                self.timestamp_offset.store(new_offset, Ordering::SeqCst);
+                let new_offset = (self.timestamp_offset + self.stream_duration_90khz) % MAX_PTS_DTS;
+                self.timestamp_offset = new_offset;
 
-                self.current_dts.store(0, Ordering::SeqCst);
+                self.current_dts = 0;
             }
 
-            let current_pos = self.current_pos.load(Ordering::SeqCst);
+            let current_pos = self.current_pos;
             let (packet_start, pts_dts_maybe) = self.packet_indices[current_pos];
             let packet = &self.buffer[packet_start..packet_start + TS_PACKET_SIZE];
 
@@ -310,7 +309,7 @@ impl TransportStreamBuffer {
                             // read original PCR
                             let orig_pcr = decode_pcr(&new_packet[pcr_pos..pcr_pos + 6]);
                             // Apply PCR offset; PCR runs at 27 MHz, so multiply by 300 to convert from 90 kHz to 27 MHz
-                            let offset = self.timestamp_offset.load(Ordering::SeqCst) * 300;
+                            let offset = self.timestamp_offset * 300;
                             let new_pcr = (orig_pcr + offset) % MAX_PCR;
                             let pcr_bytes = encode_pcr(new_pcr);
                             new_packet[pcr_pos..pcr_pos + 6].copy_from_slice(&pcr_bytes);
@@ -322,10 +321,10 @@ impl TransportStreamBuffer {
             // adjust PTS/DTS
             if let Some((pts_offset, dts_offset, _diff)) = pts_dts_maybe {
                 let orig_dts = decode_timestamp(&new_packet[dts_offset..dts_offset + 5]);
-                let new_decoding_ts = (orig_dts + self.timestamp_offset.load(Ordering::SeqCst)) % MAX_PTS_DTS;
+                let new_decoding_ts = (orig_dts + self.timestamp_offset) % MAX_PTS_DTS;
 
                 let orig_presentation_ts = decode_timestamp(&new_packet[pts_offset..pts_offset + 5]);
-                let new_presentation_ts = (orig_presentation_ts + self.timestamp_offset.load(Ordering::SeqCst)) % MAX_PTS_DTS;
+                let new_presentation_ts = (orig_presentation_ts + self.timestamp_offset) % MAX_PTS_DTS;
 
                 let replaced = replace_pts_dts(&new_packet, pts_offset, dts_offset, new_presentation_ts, new_decoding_ts);
                 new_packet = replaced;
@@ -333,7 +332,7 @@ impl TransportStreamBuffer {
 
             bytes.extend_from_slice(&new_packet);
 
-            self.current_pos.fetch_add(1, Ordering::SeqCst);
+            self.current_pos += 1;
             packets_remaining -= 1;
         }
 
