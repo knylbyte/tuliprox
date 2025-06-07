@@ -4,9 +4,9 @@ use crate::model::{Config};
 use crate::model::PlaylistItemType;
 use log::{trace};
 use reqwest::StatusCode;
-use std::sync::Arc;
 use axum::response::IntoResponse;
 use crate::api::model::stream::ProviderStreamResponse;
+use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
 
 #[derive(Debug, Copy, Clone)]
 pub enum CustomVideoStreamType {
@@ -16,14 +16,14 @@ pub enum CustomVideoStreamType {
     UserAccountExpired
 }
 
-fn create_video_stream(video: Option<&Arc<Vec<u8>>>, headers: &[(String, String)], log_message: &str) -> ProviderStreamResponse {
-    if let Some(video) = video {
+fn create_video_stream(video_buffer: Option<&TransportStreamBuffer>, headers: &[(String, String)], log_message: &str) -> ProviderStreamResponse {
+    if let Some(video) = video_buffer {
         trace!("{log_message}");
         let mut response_headers: Vec<(String, String)> = headers.iter()
             .filter(|(key, _)| !(key.eq("content-type") || key.eq("content-length") || key.contains("range")))
             .map(|(key, value)| (key.to_string(), value.to_string())).collect();
         response_headers.push(("content-type".to_string(), "video/mp2t".to_string()));
-        (Some(Box::pin(CustomVideoStream::new(Arc::clone(video)))), Some((response_headers, StatusCode::OK, None)))
+        (Some(Box::pin(CustomVideoStream::new(video.clone()))), Some((response_headers, StatusCode::OK, None)))
     } else {
         (None, None)
     }
