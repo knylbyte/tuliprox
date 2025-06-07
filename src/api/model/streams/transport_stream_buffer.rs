@@ -60,12 +60,14 @@ fn encode_pcr(pcr: u64) -> [u8; 6] {
     ]
 }
 
+type TsInfoExtraction = (Vec<(usize, Option<(usize, usize, u16)>)>, Vec<(u16, u8)>);
+
 /// Extracts PTS and DTS info from MPEG-TS data.
 /// Returns a vector of tuples containing:
 /// - the start offset of each TS packet within the data,
 /// - an optional tuple with the PTS offset, DTS offset (both relative to the packet start),
 ///   and the lower 16 bits of the DTS difference compared to the previous DTS.
-pub fn extract_pts_dts_indices_with_continuity(ts_data: &[u8]) -> (Vec<(usize, Option<(usize, usize, u16)>)>, Vec<(u16, u8)>) {
+pub fn extract_pts_dts_indices_with_continuity(ts_data: &[u8]) -> TsInfoExtraction {
     let length = ts_data.len();
     let mut result = Vec::with_capacity(length / TS_PACKET_SIZE);
     let mut i = 0;
@@ -83,7 +85,7 @@ pub fn extract_pts_dts_indices_with_continuity(ts_data: &[u8]) -> (Vec<(usize, O
         }
 
         let packet = &ts_data[i..i + TS_PACKET_SIZE];
-        let pid = ((packet[1] as u16 & 0x1F) << 8) | packet[2] as u16;
+        let pid = ((u16::from(packet[1]) & 0x1F) << 8) | u16::from(packet[2]);
 
         // Set Continuity Counter for this PID
         let counter = continuity_counters.entry(pid).or_insert(0);
@@ -321,9 +323,10 @@ impl TransportStreamBuffer {
                 new_packet[3] = (new_packet[3] & 0xF0) | (*counter & 0x0F);
                 *counter = (*counter + 1) % 16;
             } else {
+                // This should not happen because we scan the entire pids.
                 // PID not present yet, insert new entry with counter = 0
                 self.continuity_counters.push((pid, 1)); // Start at 1, since we immediately use the counter
-                new_packet[3] = (new_packet[3] & 0xF0) | (0 & 0x0F);
+                new_packet[3] &= 0xF0;
             }
 
             // adjust PCR based on the original PCR, then add the offset
