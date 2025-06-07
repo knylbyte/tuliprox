@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use bytes::{Bytes, BytesMut};
 use std::sync::Arc;
 
@@ -60,11 +61,16 @@ fn encode_pcr(pcr: u64) -> [u8; 6] {
 }
 
 /// Extracts PTS and DTS info from MPEG-TS data.
-/// Returns vector of (`packet_start_offset`, Option<(`pts_offset_in_packet`, `dts_offset_in_packet`, `dts_diff_low16`)>)
-pub fn extract_pts_dts_indices(ts_data: &[u8]) -> PacketIndices {
+/// Returns a vector of tuples containing:
+/// - the start offset of each TS packet within the data,
+/// - an optional tuple with the PTS offset, DTS offset (both relative to the packet start),
+///   and the lower 16 bits of the DTS difference compared to the previous DTS.
+pub fn extract_pts_dts_indices_with_continuity(ts_data: &[u8]) -> (Vec<(usize, Option<(usize, usize, u16)>)>, Vec<(u16, u8)>) {
     let length = ts_data.len();
     let mut result = Vec::with_capacity(length / TS_PACKET_SIZE);
     let mut i = 0;
+
+    let mut continuity_counters: HashMap<u16, u8> = HashMap::new();
 
     let mut first_dts: Option<usize> = None;
     let mut last_dts: u64 = 0;
@@ -77,6 +83,13 @@ pub fn extract_pts_dts_indices(ts_data: &[u8]) -> PacketIndices {
         }
 
         let packet = &ts_data[i..i + TS_PACKET_SIZE];
+        let pid = ((packet[1] as u16 & 0x1F) << 8) | packet[2] as u16;
+
+        // Set Continuity Counter for this PID
+        let counter = continuity_counters.entry(pid).or_insert(0);
+        // packet[3] = (packet[3] & 0xF0) | (*counter & 0x0F);
+        *counter = (*counter + 1) % 16;
+
         let pusi = (packet[1] & 0x40) != 0;
 
         if !pusi {
@@ -139,11 +152,14 @@ pub fn extract_pts_dts_indices(ts_data: &[u8]) -> PacketIndices {
 
     if let Some(first_dts_idx) = first_dts {
         let avg_diff = sum_diff / result.len() as u64;
-        if let (idx, Some((pts, dts, _diff))) = result[first_dts_idx] {
+        if let (idx, Some((pts, dts, _))) = result[first_dts_idx] {
             result[first_dts_idx] = (idx, Some((pts, dts, (avg_diff & 0xFFFF) as u16)));
         }
     }
-    result
+    let mut vec = Vec::with_capacity(continuity_counters.len());
+    vec.extend(continuity_counters.iter().map(|(&k, &v)| (k, v)));
+
+    (result, vec)
 }
 
 /// Replace PTS and DTS timestamps in the TS packet slice
@@ -220,7 +236,8 @@ pub struct TransportStreamBuffer {
     timestamp_offset: u64,
     length: usize,
     stream_duration_90khz: u64, // Duration in 90kHz units
-    continuity_counters: Box<[u8; 8192]>,
+    initial_continuity_counters: Arc<Vec<(u16,u8)>>,
+    continuity_counters: Vec<(u16,u8)>,
 }
 
 impl Clone for TransportStreamBuffer {
@@ -233,7 +250,8 @@ impl Clone for TransportStreamBuffer {
             timestamp_offset: 0,
             length: self.length,
             stream_duration_90khz: self.stream_duration_90khz,
-            continuity_counters: Box::new([0; 8192]),
+            initial_continuity_counters: Arc::clone(&self.initial_continuity_counters),
+            continuity_counters: self.initial_continuity_counters.as_ref().clone(),
         }
     }
 }
@@ -250,7 +268,7 @@ impl TransportStreamBuffer {
             }
         }
 
-        let packet_indices = extract_pts_dts_indices(&raw);
+        let (packet_indices, continuity_counters) = extract_pts_dts_indices_with_continuity(&raw);
         let length = packet_indices.len();
 
         let stream_duration_seconds = duration_seconds(&raw, &packet_indices).unwrap_or(0);
@@ -264,7 +282,8 @@ impl TransportStreamBuffer {
             length,
             packet_indices: Arc::new(packet_indices),
             stream_duration_90khz,
-            continuity_counters: Box::new([0; 8192]),
+            continuity_counters: continuity_counters.clone(),
+            initial_continuity_counters:  Arc::new(continuity_counters),
         }
     }
 
@@ -293,9 +312,19 @@ impl TransportStreamBuffer {
 
             // update continuity counter
             let pid = (u16::from(new_packet[1] & 0x1F) << 8) | u16::from(new_packet[2]);
-            let counter = &mut self.continuity_counters[pid as usize];
-            new_packet[3] = (new_packet[3] & 0xF0) | (*counter & 0x0F);
-            *counter = (*counter + 1) % 16;
+            // let counter = &mut self.continuity_counters[pid as usize];
+            // new_packet[3] = (new_packet[3] & 0xF0) | (*counter & 0x0F);
+            // *counter = (*counter + 1) % 16;
+
+            // Find the entry with this PID (mutable), or insert a new entry if it doesn't exist
+            if let Some((_pid, counter)) = self.continuity_counters.iter_mut().find(|(p, _)| *p == pid) {
+                new_packet[3] = (new_packet[3] & 0xF0) | (*counter & 0x0F);
+                *counter = (*counter + 1) % 16;
+            } else {
+                // PID not present yet, insert new entry with counter = 0
+                self.continuity_counters.push((pid, 1)); // Start at 1, since we immediately use the counter
+                new_packet[3] = (new_packet[3] & 0xF0) | (0 & 0x0F);
+            }
 
             // adjust PCR based on the original PCR, then add the offset
             let afc = (new_packet[3] >> 4) & 0b11;
