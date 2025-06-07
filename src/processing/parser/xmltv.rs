@@ -136,7 +136,7 @@ impl TVGuide {
         let mut matched = tag
             .normalized_epg_ids
             .as_ref()
-            .map_or(false, |ids| id_cache.match_with_normalized(epg_id, ids));
+            .is_some_and(|ids| id_cache.match_with_normalized(epg_id, ids));
         if !matched && fuzzy_matching {
             let (fuzzy_matched, matched_normalized_name) = Self::find_best_fuzzy_match(id_cache, tag);
             if fuzzy_matched {

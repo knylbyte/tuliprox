@@ -5,7 +5,7 @@ use crate::api::model::active_user_manager::UserConnectionGuard;
 use crate::api::model::app_state::AppState;
 use crate::api::model::stream::BoxedProviderStream;
 use crate::api::model::stream_error::StreamError;
-use crate::api::model::streams::readonly_ring_buffer::ReadonlyRingBuffer;
+use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
 use crate::model::{ProxyUserCredentials, UserConnectionPermission};
 use bytes::Bytes;
 use futures::Stream;
@@ -27,7 +27,7 @@ pub(in crate::api) struct ActiveClientStream {
     user_connection_guard: Option<UserConnectionGuard>,
     #[allow(dead_code)]
     provider_connection_guard: Option<ProviderConnectionGuard>,
-    custom_video: (Option<ReadonlyRingBuffer>, Option<ReadonlyRingBuffer>),
+    custom_video: (Option<TransportStreamBuffer>, Option<TransportStreamBuffer>),
     waker: Arc<Mutex<Option<Waker>>>,
 }
 
@@ -51,8 +51,8 @@ impl ActiveClientStream {
         let custom_video = cfg.t_custom_stream_response.as_ref()
             .map_or((None, None), |c|
                 (
-                    c.user_connections_exhausted.as_ref().map(|s| ReadonlyRingBuffer::new(Arc::clone(s))),
-                    c.provider_connections_exhausted.as_ref().map(|s| ReadonlyRingBuffer::new(Arc::clone(s)))
+                    c.user_connections_exhausted.clone(),
+                    c.provider_connections_exhausted.clone()
                 ));
 
         Self {
@@ -167,15 +167,13 @@ impl Stream for ActiveClientStream {
         }
 
         let buffer_opt = match flag {
-            USER_EXHAUSTED_STREAM => self.custom_video.0.as_ref(),
-            PROVIDER_EXHAUSTED_STREAM => self.custom_video.1.as_ref(),
+            USER_EXHAUSTED_STREAM => self.custom_video.0.as_mut(),
+            PROVIDER_EXHAUSTED_STREAM => self.custom_video.1.as_mut(),
             _ => None,
         };
 
         if let Some(buffer) = buffer_opt {
-            if let Some(bytes) = buffer.next_chunk() {
-                return Poll::Ready(Some(Ok(bytes)));
-            }
+           return Poll::Ready(Some(Ok(buffer.next_chunk())));
         }
 
         Poll::Ready(None)

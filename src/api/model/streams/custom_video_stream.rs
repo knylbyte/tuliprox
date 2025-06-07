@@ -1,20 +1,19 @@
 use crate::api::model::stream_error::StreamError;
-use crate::api::model::streams::readonly_ring_buffer::ReadonlyRingBuffer;
+use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
 use bytes::Bytes;
 use futures::Stream;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 
 pub struct CustomVideoStream {
-    buffer: ReadonlyRingBuffer,
+    buffer: TransportStreamBuffer,
 }
 
 impl CustomVideoStream {
-    pub fn new(buffer: Arc<Vec<u8>>) -> Self {
+    pub fn new(buffer: TransportStreamBuffer) -> Self {
         Self {
-            buffer: ReadonlyRingBuffer::new(buffer)
+            buffer
         }
     }
 }
@@ -22,17 +21,7 @@ impl CustomVideoStream {
 impl Stream for CustomVideoStream {
     type Item = Result<Bytes, StreamError>;
 
-    fn poll_next(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
-        match self.buffer.next_chunk() {
-            None => {
-                Poll::Ready(None)
-            }
-            Some(bytes) => {
-                Poll::Ready(Some(Ok(bytes)))
-            }
-        }
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>,) -> Poll<Option<Self::Item>> {
+        Poll::Ready(Some(Ok(self.buffer.next_chunk())))
     }
 }
