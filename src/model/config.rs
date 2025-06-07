@@ -40,6 +40,7 @@ macro_rules! valid_property {
     }};
 }
 pub use valid_property;
+use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
 use crate::model::config_cache::CacheConfig;
 use crate::utils;
 
@@ -343,13 +344,13 @@ impl ReverseProxyConfig {
 #[serde(deny_unknown_fields)]
 pub struct CustomStreamResponse {
     #[serde(default, skip)]
-    pub channel_unavailable: Option<Arc<Vec<u8>>>,
+    pub channel_unavailable: Option<TransportStreamBuffer>,
     #[serde(default, skip)]
-    pub user_connections_exhausted: Option<Arc<Vec<u8>>>, // user has no more connections
+    pub user_connections_exhausted: Option<TransportStreamBuffer>, // user has no more connections
     #[serde(default, skip)]
-    pub provider_connections_exhausted: Option<Arc<Vec<u8>>>, // provider limit reached, has no more connections
+    pub provider_connections_exhausted: Option<TransportStreamBuffer>, // provider limit reached, has no more connections
     #[serde(default, skip)]
-    pub user_account_expired: Option<Arc<Vec<u8>>>,
+    pub user_account_expired: Option<TransportStreamBuffer>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
@@ -719,7 +720,7 @@ impl Config {
 
     fn prepare_custom_stream_response(&mut self) {
         if let Some(custom_stream_response_path) = self.custom_stream_response_path.as_ref() {
-            fn load_and_set_file(file_path: &Path) -> Option<Arc<Vec<u8>>> {
+            fn load_and_set_file(file_path: &Path) -> Option<TransportStreamBuffer> {
                 if file_path.exists() {
                     // Enforce maximum file size (10 MB)
                     if let Ok(meta) = std::fs::metadata(file_path) {
@@ -740,7 +741,7 @@ impl Config {
                     }
 
                     match utils::read_file_as_bytes(&PathBuf::from(&file_path)) {
-                        Ok(data) => Some(Arc::new(data)),
+                        Ok(data) => Some(TransportStreamBuffer::new(data, )),
                         Err(err) => {
                             error!("Failed to load a resource file: {} {err}", file_path.display());
                             None
