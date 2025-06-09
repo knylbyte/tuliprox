@@ -290,11 +290,7 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
 
     let router: axum::Router<()> = router.with_state(shared_data.clone());
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
-    // if rate_limiting {
-        axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await
-    // } else {
-    //     axum::serve(listener, router).into_future().await
-    // }
+     axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await
 }
 
 

@@ -35,7 +35,16 @@ impl Fingerprint {
             .to_str()
             .map_err(|_| (StatusCode::BAD_REQUEST, "User-Agent header contains invalid characters"))?;
 
-        let key = format!("{}{user_agent}", addr.ip());
+        let x_forwarded_for = req
+            .headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+            .map(std::string::ToString::to_string);
+
+        let key = match x_forwarded_for {
+            Some(xff) => format!("{}{xff}{user_agent}", addr.ip()),
+            None => format!("{}{user_agent}", addr.ip()),
+        };
 
         Ok(Fingerprint(key))
     }

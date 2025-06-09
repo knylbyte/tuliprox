@@ -569,32 +569,18 @@ async fn xtream_player_api_timeshift_stream(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::extract::Form(api_form_req): axum::extract::Form<UserApiRequest>,
 ) -> impl IntoResponse + Send {
-    let username = get_non_empty(&timeshift_request.username, &timeshift_request.username, &api_form_req.username);
-    let password = get_non_empty(&timeshift_request.password, &timeshift_request.password, &api_form_req.password);
+    let username = get_non_empty(&timeshift_request.username, &api_form_req.username, &api_req.username).to_string();
+    let password = get_non_empty(&timeshift_request.password, &api_form_req.password, &api_req.password).to_string();
     let stream_id = get_non_empty(&timeshift_request.stream_id, &api_req.stream_id, &api_form_req.stream_id).to_string();
     let duration = get_non_empty(&timeshift_request.duration, &timeshift_request.duration, &api_form_req.duration);
     let start = get_non_empty(&timeshift_request.start, &timeshift_request.start, &api_form_req.start);
-
-    // if api_req.session == 0 {
-    //     if let Some(credentials) = app_state.config.get_user_credentials(&timeshift_request.username) {
-    //         // create new session and redirect
-    //         // TODO avoid same tokens twice, this is a little bit hacky
-    //         let session_token = rand::rng().next_u32();
-    //         let server_info = app_state.config.get_user_server_info(&credentials);
-    //
-    //         let redirect_url = format!("{}/timeshift/{username}/{password}/{duration}/{start}/{stream_id}?session={session_token}",
-    //                                    server_info.get_base_url());
-    //         return redirect(&redirect_url).into_response();
-    //     }
-    //     return StatusCode::BAD_REQUEST.into_response();
-    // }
 
     let action_path = format!("{duration}/{start}");
     api_req.username = username.to_string();
     api_req.password = password.to_string();
     api_req.stream_id = stream_id.to_string();
 
-    xtream_player_api_stream(&fingerprint, &req_headers, &app_state, &api_req,  ApiStreamRequest::from(ApiStreamContext::Timeshift, username, password, &stream_id, &action_path), /*&addr*/).await.into_response()
+    xtream_player_api_stream(&fingerprint, &req_headers, &app_state, &api_req,  ApiStreamRequest::from(ApiStreamContext::Timeshift, &username, &password, &stream_id, &action_path), /*&addr*/).await.into_response()
 }
 
 async fn xtream_player_api_timeshift_query_stream(

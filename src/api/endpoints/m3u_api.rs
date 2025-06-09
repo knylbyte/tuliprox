@@ -141,7 +141,7 @@ async fn m3u_api_stream(
         return handle_hls_stream_request(fingerprint, app_state, &user, user_session.as_ref(), &pli.url, pli.virtual_id, input, connection_permission).await.into_response();
     }
 
-    stream_response(app_state, &session_key, pli.virtual_id, pli.item_type, session_url,req_headers, input, target, &user, connection_permission).await.into_response()
+    stream_response(app_state, &session_key, pli.virtual_id, pli.item_type, session_url, req_headers, input, target, &user, connection_permission).await.into_response()
 }
 
 async fn m3u_api_resource(
