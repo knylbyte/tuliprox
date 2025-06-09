@@ -1,4 +1,4 @@
-use crate::model::{Epg, TVGuide, XmlTag, EPG_ATTRIB_ID};
+use crate::model::{Epg, TVGuide, XmlTag, XmlTagIcon, EPG_ATTRIB_ID};
 use crate::model::{EpgConfig, EpgSmartMatchConfig};
 use crate::model::{FetchedPlaylist, PlaylistItem, XtreamCluster};
 use crate::processing::parser::xmltv::normalize_channel_name;
@@ -141,7 +141,7 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
             for epg_source in epg_sources {
                 // icon tags
                 let icon_tags: HashMap<&String, &XmlTag> = epg_source.children.iter()
-                    .filter(|tag| tag.icon.is_some() && tag.get_attribute_value(EPG_ATTRIB_ID).is_some())
+                    .filter(|tag| tag.icon != XmlTagIcon::Undefined && tag.get_attribute_value(EPG_ATTRIB_ID).is_some())
                     .map(|t| (t.get_attribute_value(EPG_ATTRIB_ID).unwrap(), t)).collect();
 
                 let assign_values = |chan: &mut PlaylistItem| {
@@ -165,7 +165,7 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
                         if !icon_assigned.contains(epg_channel_id) &&
                             (epg_source.logo_override || chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
                             if let Some(icon_tag) = icon_tags.get(chan.header.epg_channel_id.as_ref().unwrap()) {
-                                if let Some(icon) = icon_tag.icon.as_ref() {
+                                if let XmlTagIcon::Src(icon) = &icon_tag.icon {
                                     icon_assigned.insert(epg_channel_id.to_string());
                                     if epg_source.logo_override || chan.header.logo.is_empty() {
                                         trace!("Matched channel {} to epg icon {icon}", chan.header.name);
