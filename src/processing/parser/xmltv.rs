@@ -1,4 +1,4 @@
-use crate::model::{Epg, TVGuide, XmlTag, EPG_ATTRIB_CHANNEL, EPG_ATTRIB_ID, EPG_TAG_CHANNEL, EPG_TAG_DISPLAY_NAME, EPG_TAG_ICON, EPG_TAG_PROGRAMME, EPG_TAG_TV};
+use crate::model::{Epg, TVGuide, XmlTag, XmlTagIcon, EPG_ATTRIB_CHANNEL, EPG_ATTRIB_ID, EPG_TAG_CHANNEL, EPG_TAG_DISPLAY_NAME, EPG_TAG_ICON, EPG_TAG_PROGRAMME, EPG_TAG_TV};
 use crate::model::{EpgNamePrefix, EpgSmartMatchConfig, PersistedEpgSource};
 use crate::processing::processor::epg::EpgIdCache;
 use crate::utils::compressed_file_reader::CompressedFileReader;
@@ -90,6 +90,7 @@ pub fn normalize_channel_name(name: &str, normalize_config: &EpgSmartMatchConfig
     }
 }
 
+
 impl TVGuide {
     pub fn merge(mut epgs: Vec<Epg>) -> Option<Epg> {
         if let Some(first_epg) = epgs.get_mut(0) {
@@ -122,7 +123,8 @@ impl TVGuide {
                     EPG_TAG_ICON => {
                         if let Some(src) = child.get_attribute_value("src") {
                             if !src.is_empty() {
-                                tag.icon = Some(src.to_string());
+                                tag.icon = XmlTagIcon::Src(src.to_string());
+                                child.icon = XmlTagIcon::Exists;
                             }
                         }
                     }

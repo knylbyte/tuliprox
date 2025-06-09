@@ -1,4 +1,6 @@
 # Changelog
+# 3.1.4 (2025-06-xx)
+- fixed custom stream loop
 
 # 3.1.3 (2025-06-06)
 - Fixed xtream codes series info duplicate fields problem.
