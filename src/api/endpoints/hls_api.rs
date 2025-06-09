@@ -25,13 +25,10 @@ struct HlsApiPathParams {
     token: String,
 }
 
-fn hls_response(hls_content: String, cookie: Option<String>) -> impl IntoResponse + Send {
+fn hls_response(hls_content: String) -> impl IntoResponse + Send {
     let mut builder = axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, "application/x-mpegurl");
-    if let Some(cookie) = cookie {
-        builder = builder.header(axum::http::header::SET_COOKIE, cookie);
-    }
     builder.body(hls_content)
         .unwrap()
         .into_response()
@@ -85,7 +82,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
                 user_token: session_token.as_deref(),
             };
             let hls_content = rewrite_hls(user, &rewrite_hls_props);
-            hls_response(hls_content, session_token).into_response()
+            hls_response(hls_content).into_response()
         }
         Err(err) => {
             error!("Failed to download m3u8 {}", sanitize_sensitive_info(err.to_string().as_str()));
