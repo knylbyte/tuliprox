@@ -534,10 +534,8 @@ impl ApiProxyConfig {
                 return Some((credentials.clone(), target_name.to_string()));
             }
         }
-        if log::log_enabled!(log::Level::Debug) {
-            if !username.eq("api") {
-                debug!("Could not find any target for user {username}");
-            }
+        if log::log_enabled!(log::Level::Debug) && !username.eq("api") {
+           debug!("Could not find any target for user {username}");
         }
         None
     }

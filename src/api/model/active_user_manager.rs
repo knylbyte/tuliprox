@@ -1,14 +1,15 @@
-use crate::model::{ProxyUserCredentials, UserConnectionPermission};
 use crate::model::Config;
+use crate::model::{ProxyUserCredentials, UserConnectionPermission};
 use crate::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs};
 use jsonwebtoken::get_current_timestamp;
 use log::{debug, info};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
+const USER_SESSION_LIMIT: usize = 50;
 
 pub struct UserConnectionGuard {
     manager: Arc<ActiveUserManager>,
@@ -50,6 +51,17 @@ impl UserConnectionData {
             granted_grace: false,
             grace_ts: 0,
             sessions: Vec::new(),
+        }
+    }
+
+    fn add_session(&mut self, session: UserSession) {
+        self.gc();
+        self.sessions.push(session);
+    }
+    fn gc(&mut self) {
+        if self.sessions.len() > USER_SESSION_LIMIT {
+            self.sessions.sort_by_key(|e| std::cmp::Reverse(e.ts));
+            self.sessions.truncate(USER_SESSION_LIMIT);
         }
     }
 }
@@ -183,7 +195,7 @@ impl ActiveUserManager {
                 connection_data.connections -= 1;
             }
 
-            if connection_data.connections == 0  || connection_data.connections < connection_data.max_connections {
+            if connection_data.connections == 0 || connection_data.connections < connection_data.max_connections {
                 // Grace timeout expired, reset grace counters
                 connection_data.granted_grace = false;
                 connection_data.grace_ts = 0;
@@ -214,13 +226,12 @@ impl ActiveUserManager {
         self.gc().await;
         let mut lock = self.user.write().await;
         if let Some(connection_data) = lock.get_mut(&user.username) {
-
             // check existing session
             for session in &mut connection_data.sessions {
                 if session.token.eq(&session_token) {
                     session.ts = current_time_secs();
                     if !session.stream_url.eq(&stream_url) {
-                        session.stream_url =  stream_url.to_string();
+                        session.stream_url = stream_url.to_string();
                     }
                     if !provider.eq(&session.provider) {
                         session.provider = provider.to_string();
@@ -235,14 +246,14 @@ impl ActiveUserManager {
             debug!("Creating session for user {} with token {session_token} {stream_url}", user.username);
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
             let token = session.token.clone();
-            connection_data.sessions.push(session);
+            connection_data.add_session(session);
             Some(token)
         } else {
             debug!("Creating session for user {} with token {session_token} {stream_url}", user.username);
             let mut connection_data = UserConnectionData::new(0, user.max_connections);
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
             let token = session.token.clone();
-            connection_data.sessions.push(session);
+            connection_data.add_session(session);
             lock.insert(user.username.to_string(), connection_data);
             Some(token)
         }
@@ -293,14 +304,14 @@ impl ActiveUserManager {
 
     async fn gc(&self) {
         if let Some(gc_ts) = &self.gc_ts {
-            let ts = gc_ts.load(Ordering::SeqCst);
+            let ts = gc_ts.load(Ordering::Acquire);
             let now = current_time_secs();
-            if  now - ts > USER_CON_TTL {
+            if now - ts > USER_CON_TTL {
                 let mut lock = self.user.write().await;
                 for (_, connection_data) in lock.iter_mut() {
-                    connection_data.sessions.retain(|s| now  - s.ts < USER_CON_TTL);
+                    connection_data.sessions.retain(|s| now - s.ts < USER_CON_TTL);
                 }
-                gc_ts.store(now, Ordering::SeqCst);
+                gc_ts.store(now, Ordering::Release);
             }
         }
     }
