@@ -28,22 +28,29 @@ impl Fingerprint {
             .await
             .map_err(|_| (StatusCode::BAD_REQUEST, "IP-Addr is missing"))?;
 
-        let user_agent = req
-            .headers
-            .get(axum::http::header::USER_AGENT)
-            .ok_or((StatusCode::BAD_REQUEST, "User-Agent header is missing"))?
-            .to_str()
-            .map_err(|_| (StatusCode::BAD_REQUEST, "User-Agent header contains invalid characters"))?;
+        let mut user_agent = None;
+        let mut forwarded_for = None;
+        let mut real_ip = None;
+        for header in &req.headers {
+            if  header.0.as_str().eq_ignore_ascii_case("user-agent") {
+                if let Ok(val) = header.1.to_str() {
+                    user_agent = Some(val.to_string());
+                }
+            } else if  header.0.as_str().eq_ignore_ascii_case("x-forwared-for") {
+                if let Ok(val) = header.1.to_str() {
+                    forwarded_for = Some(val.to_string());
+                }
+            } else if  header.0.as_str().eq_ignore_ascii_case("x-real-ip") {
+                if let Ok(val) = header.1.to_str() {
+                    real_ip = Some(val.to_string());
+                }
+            }
+        }
 
-        let x_forwarded_for = req
-            .headers
-            .get("x-forwarded-for")
-            .and_then(|value| value.to_str().ok())
-            .map(std::string::ToString::to_string);
-
-        let key = match x_forwarded_for {
-            Some(xff) => format!("{}{xff}{user_agent}", addr.ip()),
-            None => format!("{}{user_agent}", addr.ip()),
+        let ua = user_agent.unwrap_or_else(String::new);
+        let key = match real_ip.or(forwarded_for) {
+            Some(xff) => format!("{}{xff}{ua}", addr.ip()),
+            None => format!("{}{ua}", addr.ip()),
         };
 
         Ok(Fingerprint(key))
