@@ -482,9 +482,9 @@ async fn cleanup_strm_output_directory(
 
 fn filter_strm_item(pli: &PlaylistItem) -> bool {
     let item_type = pli.header.item_type;
-    item_type == PlaylistItemType::Series
-        || item_type == PlaylistItemType::Live
+    item_type == PlaylistItemType::Live
         || item_type == PlaylistItemType::Video
+        || item_type == PlaylistItemType::Series
 }
 
 fn get_relative_path_str(full_path: &Path, root_path: &Path) -> String {

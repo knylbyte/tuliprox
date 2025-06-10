@@ -1,9 +1,6 @@
 use crate::api::api_utils::serve_file;
 use crate::api::model::app_state::AppState;
-use crate::auth::auth_bearer::AuthBearer;
-use crate::auth::authenticator::{create_jwt_admin, create_jwt_user, is_admin, verify_token};
-use crate::auth::password::verify_password;
-use crate::auth::user::UserCredential;
+use crate::auth::{AuthBearer, UserCredential, verify_password, create_jwt_admin, create_jwt_user, is_admin, verify_token};
 use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;

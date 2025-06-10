@@ -1,6 +1,6 @@
 use crate::api::api_utils::{get_user_target_by_username, get_username_from_auth_header};
 use crate::api::model::app_state::AppState;
-use crate::auth::authenticator::validator_user;
+use crate::auth::validator_user;
 use crate::model::{Config, ConfigTarget, TargetType};
 use crate::model::XtreamCluster;
 use crate::model::PlaylistBouquetDto;
@@ -14,7 +14,7 @@ use log::error;
 use std::collections::HashSet;
 use std::sync::Arc;
 use axum::response::IntoResponse;
-use crate::auth::auth_bearer::AuthBearer;
+use crate::auth::AuthBearer;
 
 fn get_categories_from_xtream(categories: Option<Vec<PlaylistXtreamCategory>>) -> Vec<String> {
     let mut groups: Vec<String> = Vec::new();

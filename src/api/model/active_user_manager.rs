@@ -1,15 +1,15 @@
-use crate::model::{ProxyUserCredentials, UserConnectionPermission};
 use crate::model::Config;
+use crate::model::{ProxyUserCredentials, UserConnectionPermission};
 use crate::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs};
 use jsonwebtoken::get_current_timestamp;
 use log::{debug, info};
-use rand::RngCore;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
+const USER_SESSION_LIMIT: usize = 50;
 
 pub struct UserConnectionGuard {
     manager: Arc<ActiveUserManager>,
@@ -27,7 +27,7 @@ impl Drop for UserConnectionGuard {
 
 #[derive(Clone, Debug)]
 pub struct UserSession {
-    pub token: u32,
+    pub token: String,
     pub virtual_id: u32,
     pub provider: String,
     pub stream_url: String,
@@ -51,6 +51,17 @@ impl UserConnectionData {
             granted_grace: false,
             grace_ts: 0,
             sessions: Vec::new(),
+        }
+    }
+
+    fn add_session(&mut self, session: UserSession) {
+        self.gc();
+        self.sessions.push(session);
+    }
+    fn gc(&mut self) {
+        if self.sessions.len() > USER_SESSION_LIMIT {
+            self.sessions.sort_by_key(|e| std::cmp::Reverse(e.ts));
+            self.sessions.truncate(USER_SESSION_LIMIT);
         }
     }
 }
@@ -184,7 +195,7 @@ impl ActiveUserManager {
                 connection_data.connections -= 1;
             }
 
-            if connection_data.connections == 0  || connection_data.connections < connection_data.max_connections {
+            if connection_data.connections == 0 || connection_data.connections < connection_data.max_connections {
                 // Grace timeout expired, reset grace counters
                 connection_data.granted_grace = false;
                 connection_data.grace_ts = 0;
@@ -195,14 +206,13 @@ impl ActiveUserManager {
         self.log_active_user();
     }
 
-    fn find_user_session(token: u32, sessions: &[UserSession]) -> Option<&UserSession> {
-        sessions.iter().find(|&session| session.token == token)
+    fn find_user_session<'a>(token: &'a str, sessions: &'a [UserSession]) -> Option<&'a UserSession> {
+        sessions.iter().find(|&session| session.token.eq(token))
     }
 
-    fn new_user_session(virtual_id: u32, provider: &str, stream_url: &str, connection_permission: UserConnectionPermission) -> UserSession {
-        let session_token = rand::rng().next_u32();
+    fn new_user_session(session_token: &str, virtual_id: u32, provider: &str, stream_url: &str, connection_permission: UserConnectionPermission) -> UserSession {
         UserSession {
-            token: session_token,
+            token: session_token.to_string(),
             virtual_id,
             provider: provider.to_string(),
             stream_url: stream_url.to_string(),
@@ -211,29 +221,49 @@ impl ActiveUserManager {
         }
     }
 
-    pub async fn create_user_session(&self, user: &ProxyUserCredentials, virtual_id: u32, provider: &str, stream_url: &str, connection_permission: UserConnectionPermission) -> Option<u32> {
+    pub async fn create_user_session(&self, user: &ProxyUserCredentials, session_token: &str, virtual_id: u32,
+                                     provider: &str, stream_url: &str, connection_permission: UserConnectionPermission) -> Option<String> {
         self.gc().await;
         let mut lock = self.user.write().await;
         if let Some(connection_data) = lock.get_mut(&user.username) {
-            let session = Self::new_user_session(virtual_id, provider, stream_url, connection_permission);
-            let token = session.token;
-            connection_data.sessions.push(session);
+            // check existing session
+            for session in &mut connection_data.sessions {
+                if session.token.eq(&session_token) {
+                    session.ts = current_time_secs();
+                    if !session.stream_url.eq(&stream_url) {
+                        session.stream_url = stream_url.to_string();
+                    }
+                    if !provider.eq(&session.provider) {
+                        session.provider = provider.to_string();
+                    }
+                    session.permission = connection_permission;
+                    debug!("Using session for user {} with token {session_token} {stream_url}", user.username);
+                    return Some(session.token.to_string());
+                }
+            }
+
+            // no session create new one
+            debug!("Creating session for user {} with token {session_token} {stream_url}", user.username);
+            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
+            let token = session.token.clone();
+            connection_data.add_session(session);
             Some(token)
         } else {
+            debug!("Creating session for user {} with token {session_token} {stream_url}", user.username);
             let mut connection_data = UserConnectionData::new(0, user.max_connections);
-            let session = Self::new_user_session(virtual_id, provider, stream_url, connection_permission);
-            let token = session.token;
-            connection_data.sessions.push(session);
+            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
+            let token = session.token.clone();
+            connection_data.add_session(session);
             lock.insert(user.username.to_string(), connection_data);
             Some(token)
         }
     }
 
-    pub async fn get_user_session(&self, username: &str, token: u32) -> Option<UserSession> {
+    pub async fn get_user_session(&self, username: &str, token: &str) -> Option<UserSession> {
         self.update_user_session(username, token).await
     }
 
-    async fn update_user_session(&self, username: &str, token: u32) -> Option<UserSession> {
+    async fn update_user_session(&self, username: &str, token: &str) -> Option<UserSession> {
         let mut lock = self.user.write().await;
         if let Some(connection_data) = lock.get_mut(username) {
             if connection_data.max_connections == 0 {
@@ -274,14 +304,14 @@ impl ActiveUserManager {
 
     async fn gc(&self) {
         if let Some(gc_ts) = &self.gc_ts {
-            let ts = gc_ts.load(Ordering::SeqCst);
+            let ts = gc_ts.load(Ordering::Acquire);
             let now = current_time_secs();
-            if  now - ts > USER_CON_TTL {
+            if now - ts > USER_CON_TTL {
                 let mut lock = self.user.write().await;
                 for (_, connection_data) in lock.iter_mut() {
-                    connection_data.sessions.retain(|s| now  - s.ts < USER_CON_TTL);
+                    connection_data.sessions.retain(|s| now - s.ts < USER_CON_TTL);
                 }
-                gc_ts.store(now, Ordering::SeqCst);
+                gc_ts.store(now, Ordering::Release);
             }
         }
     }
