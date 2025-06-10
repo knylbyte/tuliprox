@@ -192,6 +192,7 @@ fn prepare_client(request_client: &Arc<reqwest::Client>, stream_options: &Provid
     }
 
     let mut headers = HeaderMap::default();
+
     for (key, value) in original_headers {
         if filter_request_header(key.as_str()) {
             headers.insert(key.clone(), value.clone());
@@ -251,7 +252,7 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
                     let response_headers: Vec<(String, String)> = get_response_headers(response.headers());
                     //let url = stream_options.get_url();
                     // debug!("First  headers {headers:?} {} {}", sanitize_sensitive_info(url.as_str()));
-                    Some((response_headers, response.status()))
+                    Some((response_headers, response.status(), Some(response.url().clone())))
                 };
 
                 let provider_stream = response.bytes_stream().map_err(|err| {
@@ -268,16 +269,39 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
 
             if status.is_client_error() {
                 debug!("Client error status response : {status}");
+                return match status {
+                    StatusCode::NOT_FOUND
+                    | StatusCode::FORBIDDEN
+                    | StatusCode::UNAUTHORIZED
+                    | StatusCode::METHOD_NOT_ALLOWED
+                    | StatusCode::BAD_REQUEST => {
+                        if let (Some(boxed_provider_stream), response_info) =
+                            create_channel_unavailable_stream(cfg, &get_response_headers(stream_options.get_headers()), StatusCode::BAD_GATEWAY)
+                        {
+                            Ok(Some((boxed_provider_stream, response_info)))
+                        } else {
+                            Err(StatusCode::SERVICE_UNAVAILABLE)
+                        }
+                    }
+                    _ => Err(status)
+                };
             }
             if status.is_server_error() {
-                match status {
+                debug!("Server error status response : {status}");
+                return match status {
                     StatusCode::INTERNAL_SERVER_ERROR |
                     StatusCode::BAD_GATEWAY |
                     StatusCode::SERVICE_UNAVAILABLE |
-                    StatusCode::GATEWAY_TIMEOUT => {}
-                    _ => {
-                        debug!("Server error status response : {status}");
+                    StatusCode::GATEWAY_TIMEOUT => {
+                        if let (Some(boxed_provider_stream), response_info) =
+                            create_channel_unavailable_stream(cfg, &get_response_headers(stream_options.get_headers()), StatusCode::BAD_GATEWAY)
+                        {
+                            Ok(Some((boxed_provider_stream, response_info)))
+                        } else {
+                            Err(StatusCode::SERVICE_UNAVAILABLE)
+                        }
                     }
+                    _ => Err(status)
                 }
             }
             Err(status)
@@ -356,7 +380,7 @@ pub async fn create_provider_stream(cfg: Arc<Config>,
 
     match get_provider_stream(&cfg, Arc::clone(&client), &stream_options).await {
         Ok(Some((init_stream, info))) => {
-            let is_media_stream_or_not_piped = if let Some((headers, _)) = &info {
+            let is_media_stream_or_not_piped = if let Some((headers, _, _)) = &info {
                 // if it is piped or no video stream, then we don't reconnect
                 !stream_options.pipe_stream && classify_content_type(headers) == MimeCategory::Video
             } else {

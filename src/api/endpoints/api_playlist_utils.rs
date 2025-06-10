@@ -67,13 +67,13 @@ fn group_playlist_items_by_cluster(params: Option<(utils::FileReadGuard,
     for (item, _) in iter {
         match item.item_type {
             PlaylistItemType::Live
-            | PlaylistItemType::Catchup
             | PlaylistItemType::LiveUnknown
             | PlaylistItemType::LiveHls
             | PlaylistItemType::LiveDash => {
                 live.push(item);
             }
-            PlaylistItemType::Video => {
+            PlaylistItemType::Catchup
+            | PlaylistItemType::Video => {
                 video.push(item);
             }
             PlaylistItemType::Series

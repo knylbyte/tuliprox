@@ -1,4 +1,4 @@
-use crate::api::api_utils::{create_session_cookie, force_provider_stream_response, get_stream_alternative_url, is_seek_request, read_session_token};
+use crate::api::api_utils::{force_provider_stream_response, get_stream_alternative_url, is_seek_request};
 use crate::api::api_utils::{try_option_bad_request};
 use crate::api::model::app_state::AppState;
 use crate::api::model::streams::provider_stream::{create_custom_video_stream_response, CustomVideoStreamType};
@@ -14,6 +14,7 @@ use log::{debug, error};
 use serde::Deserialize;
 use std::sync::Arc;
 use crate::api::model::active_user_manager::UserSession;
+use crate::auth::Fingerprint;
 
 #[derive(Debug, Deserialize)]
 struct HlsApiPathParams {
@@ -24,25 +25,25 @@ struct HlsApiPathParams {
     token: String,
 }
 
-fn hls_response(hls_content: String, cookie: Option<String>) -> impl IntoResponse + Send {
-    let mut builder = axum::response::Response::builder()
+fn hls_response(hls_content: String) -> impl IntoResponse + Send {
+    let builder = axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, "application/x-mpegurl");
-    if let Some(cookie) = cookie {
-        builder = builder.header(axum::http::header::SET_COOKIE, cookie);
-    }
     builder.body(hls_content)
         .unwrap()
         .into_response()
 }
 
-pub(in crate::api) async fn handle_hls_stream_request(app_state: &Arc<AppState>,
-                                                      user: &ProxyUserCredentials,
-                                                      user_session: Option<&UserSession>,
-                                                      hls_url: &str,
-                                                      virtual_id: u32,
-                                                      input: &ConfigInput,
-                                                      connection_permission: UserConnectionPermission) -> impl IntoResponse + Send {
+#[allow(clippy::too_many_arguments)]
+pub(in crate::api) async fn handle_hls_stream_request(
+        fingerprint: &str,
+        app_state: &Arc<AppState>,
+        user: &ProxyUserCredentials,
+        user_session: Option<&UserSession>,
+        hls_url: &str,
+        virtual_id: u32,
+        input: &ConfigInput,
+        connection_permission: UserConnectionPermission) -> impl IntoResponse + Send {
     let url = replace_url_extension(hls_url, HLS_EXT);
     let server_info = app_state.config.get_user_server_info(user);
 
@@ -51,7 +52,7 @@ pub(in crate::api) async fn handle_hls_stream_request(app_state: &Arc<AppState>,
             match app_state.active_provider.force_exact_acquire_connection(&session.provider).await.get_provider_config() {
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
-                    (stream_url, Some(session.token))
+                    (stream_url, Some(session.token.to_string()))
                 },
                 None => (url, None),
             }
@@ -60,7 +61,8 @@ pub(in crate::api) async fn handle_hls_stream_request(app_state: &Arc<AppState>,
             match app_state.active_provider.get_next_provider(&input.name).await {
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
-                    let session_token= app_state.active_users.create_user_session(user, virtual_id, &provider_cfg.name, &stream_url, connection_permission).await;
+                    let user_session_token = format!("{fingerprint}{virtual_id}");
+                    let session_token= app_state.active_users.create_user_session(user, &user_session_token, virtual_id, &provider_cfg.name, &stream_url, connection_permission).await;
                     (stream_url, session_token)
                 },
                 None => (url, None),
@@ -77,10 +79,10 @@ pub(in crate::api) async fn handle_hls_stream_request(app_state: &Arc<AppState>,
                 hls_url: response_url,
                 virtual_id,
                 input_id: input.id,
-                user_token: session_token,
+                user_token: session_token.as_deref(),
             };
             let hls_content = rewrite_hls(user, &rewrite_hls_props);
-            hls_response(hls_content, session_token.map(create_session_cookie)).into_response()
+            hls_response(hls_content).into_response()
         }
         Err(err) => {
             error!("Failed to download m3u8 {}", sanitize_sensitive_info(err.to_string().as_str()));
@@ -90,6 +92,7 @@ pub(in crate::api) async fn handle_hls_stream_request(app_state: &Arc<AppState>,
 }
 
 async fn hls_api_stream(
+    Fingerprint(fingerprint): Fingerprint,
     req_headers: axum::http::HeaderMap,
     axum::extract::Path(params): axum::extract::Path<HlsApiPathParams>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
@@ -105,10 +108,8 @@ async fn hls_api_stream(
     let virtual_id = params.stream_id;
     let input = try_option_bad_request!(app_state.config.get_input_by_id(params.input_id), true, format!("Cant find input for target {target_name}, context {}, stream_id {virtual_id}", XtreamCluster::Live));
 
-    let mut user_session = match read_session_token(&req_headers) {
-        None => None,
-        Some(token) => app_state.active_users.get_user_session(&user.username, token).await,
-    };
+    let user_session_token = format!("{fingerprint}{virtual_id}");
+    let mut user_session = app_state.active_users.get_user_session(&user.username, &user_session_token).await;
 
     if let Some(session)  = &mut user_session {
         if session.permission == UserConnectionPermission::Exhausted {
@@ -120,7 +121,7 @@ async fn hls_api_stream(
         }
 
         let hls_url = match get_hls_session_token_and_url_from_token(&app_state.config.t_encrypt_secret, &params.token) {
-            Some((Some(session_token), hls_url)) if session_token == session.token => hls_url,
+            Some((Some(session_token), hls_url)) if session.token.eq(&session_token) => hls_url,
             _ => return axum::http::StatusCode::BAD_REQUEST.into_response(),
         };
 
@@ -140,7 +141,7 @@ async fn hls_api_stream(
         }
 
         if is_hls_url(&session.stream_url) {
-            return handle_hls_stream_request(&app_state, &user, Some(session), &session.stream_url, virtual_id, input, connection_permission).await.into_response();
+            return handle_hls_stream_request(&fingerprint, &app_state, &user, Some(session), &session.stream_url, virtual_id, input, connection_permission).await.into_response();
         }
 
         force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, input, &user).await.into_response()

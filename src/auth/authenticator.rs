@@ -4,7 +4,7 @@ use jsonwebtoken::{Algorithm, DecodingKey, encode, decode, EncodingKey, Header, 
 use crate::api::api_utils::get_username_from_auth_header;
 use crate::model::WebAuthConfig;
 use crate::api::model::app_state::AppState;
-use crate::auth::auth_bearer::AuthBearer;
+use crate::auth::AuthBearer;
 use crate::tuliprox_error::to_io_error;
 
 const ROLE_ADMIN: &str = "ADMIN";
