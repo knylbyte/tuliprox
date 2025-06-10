@@ -631,8 +631,7 @@ pub async fn stream_response(app_state: &AppState,
             debug_if_enabled!("Streaming shared stream request from {}", sanitize_sensitive_info(stream_url));
             // Shared Stream response
             let shared_headers = provider_response.as_ref().map_or_else(Vec::new, |(h, _)| h.clone());
-            SharedStreamManager::subscribe(app_state, stream_url, stream, shared_headers, stream_options.buffer_size).await;
-            if let Some(broadcast_stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url).await {
+            if let Some(broadcast_stream) = SharedStreamManager::subscribe(app_state, stream_url, stream, shared_headers, stream_options.buffer_size).await {
                 let (status_code, header_map) = get_stream_response_with_headers(provider_response);
                 let mut response = axum::response::Response::builder()
                     .status(status_code);

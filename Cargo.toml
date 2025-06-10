@@ -63,6 +63,7 @@ bitflags = "2"
 indexmap = "2"
 notify = "8"
 arc-swap = "1"
+dashmap = "6"
 #[cfg(target_os = "macos")]
 libc = "0"
 #[cfg(target_os = "windows")]
