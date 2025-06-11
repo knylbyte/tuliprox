@@ -77,81 +77,92 @@ impl SharedStreamState {
         convert_stream(ReceiverStream::new(rx).boxed())
     }
 
-    fn broadcast<S, E>(&self, stream_url: &str, bytes_stream: S, shared_streams: Arc<SharedStreamManager>)
+    fn broadcast<S, E>(
+        &self,
+        stream_url: &str,
+        bytes_stream: S,
+        shared_streams: Arc<SharedStreamManager>,
+    )
     where
-        S: Stream<Item=Result<Bytes, E>> + Unpin + 'static + std::marker::Send,
-        E: std::fmt::Debug + std::marker::Send
+        S: Stream<Item = Result<Bytes, E>> + Unpin + 'static + Send,
+        E: std::fmt::Debug + Send,
     {
         let mut source_stream = Box::pin(bytes_stream);
-        let subscriber = self.subscribers.clone();
+        let subscribers = self.subscribers.clone();
         let streaming_url = stream_url.to_string();
 
-        //Spawn a task to forward items from the source stream to the broadcast channel
         tokio::spawn(async move {
             while let Some(item) = source_stream.next().await {
-                if let Ok(data) = item {
-                    if subscriber.is_empty() {
-                        debug_if_enabled!("No active subscribers. Closing shared provider stream {}", sanitize_sensitive_info(&streaming_url));
-                        // Cleanup for removing unused shared streams
-                        shared_streams.unregister(&streaming_url).await;
-                        break;
-                    }
+                let Ok(data) = item else {
+                    trace!("Shared stream received Err, skipping...");
+                    continue;
+                };
 
-                    // backpressure
-                    let mut all_full = true;
-                    // Check if at least one sender still has capacity.
-                    for sender in &*subscriber {
-                        if sender.capacity() > 0 {
-                            all_full = false;
-                            break;
+                if subscribers.is_empty() {
+                    debug_if_enabled!("No active subscribers. Closing shared provider stream {}", sanitize_sensitive_info(&streaming_url));
+                    shared_streams.unregister(&streaming_url).await;
+                    break;
+                }
+
+                // Fast-path: at least one has capacity
+                if subscribers.iter().any(|sender| sender.value().capacity() > 0) {
+                    // Try sending immediately
+                    subscribers.retain(|_id, sender| match sender.try_send(data.clone()) {
+                        Ok(()) => true,
+                        Err(TrySendError::Closed(_)) => false,
+                        Err(err) => {
+                            trace!("broadcast try_send error: {:?}", err);
+                            true
                         }
-                    }
+                    });
+                    continue;
+                }
 
-                    // If all are full, wait asynchronously until one has free capacity.
-                    if all_full {
-                        let mut futures = FuturesUnordered::new();
-                        for sender in &*subscriber {
-                            futures.push(async move {
-                                match sender.value().reserve().await {
-                                    Ok(permit) => {
-                                        drop(permit);
-                                        Ok(())
-                                    },
-                                    Err(_) => Err(()),
-                                }
-                            });
-                        }
-
-                        loop {
-                            match futures.next().await {
-                                Some(Ok(())) => {
-                                    break;
-                                }
-                                Some(Err(())) => {
-                                    // One closed – continue
-                                }
-                                None => {
-                                    // All futures failed
-                                    log::debug!("All senders are closed. Shutting down stream.");
-                                    shared_streams.unregister(&streaming_url).await;
-                                    break;
-                                }
+                // All are full → wait until one becomes available
+                let mut futures = FuturesUnordered::new();
+                for sender in subscribers.iter() {
+                    let tx = sender.value().clone();
+                    futures.push(async move {
+                        match tx.reserve().await {
+                            Ok(permit) => {
+                                drop(permit);
+                                Ok(())
                             }
-                        }
-                    }
-
-                    subscriber.retain(|_id, sender| {
-                        match sender.try_send(data.clone()) {
-                            Ok(()) => true,
-                            Err(TrySendError::Closed(_)) => false,
-                            Err(err) => {
-                                trace!("broadcast send error {err}");
-                                true
-                            }
+                            Err(_) => Err(()),
                         }
                     });
                 }
+
+                let mut has_fillable_subscriber = false;
+                while let Some(result) = futures.next().await {
+                    match result {
+                        Ok(_) => {
+                            has_fillable_subscriber = true;
+                            break;
+                        }
+                        Err(_) => {
+                            // ignore; continue waiting
+                        }
+                    }
+                }
+
+                if !has_fillable_subscriber {
+                    debug_if_enabled!("All subscribers closed. Shutting down shared provider stream {}",sanitize_sensitive_info(&streaming_url));
+                    shared_streams.unregister(&streaming_url).await;
+                    break;
+                }
+
+                // Re-validate subscribers and send again
+                subscribers.retain(|_id, sender| match sender.try_send(data.clone()) {
+                    Ok(()) => true,
+                    Err(TrySendError::Closed(_)) => false,
+                    Err(err) => {
+                        trace!("broadcast try_send error after reserve: {:?}", err);
+                        true
+                    }
+                });
             }
+
             debug_if_enabled!("Shared stream exhausted. Closing shared provider stream {}", sanitize_sensitive_info(&streaming_url));
             shared_streams.unregister(&streaming_url).await;
         });
