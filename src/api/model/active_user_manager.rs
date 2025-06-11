@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use crate::utils::request::sanitize_sensitive_info;
 
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
 const USER_SESSION_LIMIT: usize = 50;
@@ -237,19 +238,19 @@ impl ActiveUserManager {
                         session.provider = provider.to_string();
                     }
                     session.permission = connection_permission;
-                    debug!("Using session for user {} with token {session_token} {stream_url}", user.username);
+                    debug!("Using session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
                     return Some(session.token.to_string());
                 }
             }
 
             // no session create new one
-            debug!("Creating session for user {} with token {session_token} {stream_url}", user.username);
+            debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
             let token = session.token.clone();
             connection_data.add_session(session);
             Some(token)
         } else {
-            debug!("Creating session for user {} with token {session_token} {stream_url}", user.username);
+            debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
             let mut connection_data = UserConnectionData::new(0, user.max_connections);
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
             let token = session.token.clone();
