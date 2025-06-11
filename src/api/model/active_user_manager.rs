@@ -196,10 +196,14 @@ impl ActiveUserManager {
                 connection_data.connections -= 1;
             }
 
-            if connection_data.connections == 0 || connection_data.connections < connection_data.max_connections {
-                // Grace timeout expired, reset grace counters
-                connection_data.granted_grace = false;
-                connection_data.grace_ts = 0;
+            if connection_data.connections == 0 {
+                lock.remove(username);
+            } else {
+                if connection_data.connections < connection_data.max_connections {
+                    // Grace timeout expired, reset grace counters
+                    connection_data.granted_grace = false;
+                    connection_data.grace_ts = 0;
+                }
             }
         }
         drop(lock);
