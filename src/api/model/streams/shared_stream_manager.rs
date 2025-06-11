@@ -1,25 +1,25 @@
 use crate::api::model::app_state::AppState;
-use crate::api::model::streams::provider_stream_factory::STREAM_QUEUE_SIZE;
 use crate::api::model::stream_error::StreamError;
+use crate::api::model::streams::provider_stream_factory::STREAM_QUEUE_SIZE;
 use crate::utils::debug_if_enabled;
 use crate::utils::request::sanitize_sensitive_info;
 use bytes::Bytes;
 use futures::stream::{BoxStream, FuturesUnordered};
 use futures::{Stream, StreamExt};
 use std::collections::HashMap;
-use std::sync::{Arc};
+use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
-use tokio::sync::mpsc::{Sender};
 
+use crate::api::model::stream::BoxedProviderStream;
+use dashmap::DashMap;
+use log::trace;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
-use dashmap::DashMap;
-use log::{trace};
-use tokio::sync::{mpsc};
 use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use crate::api::model::stream::BoxedProviderStream;
 
 ///
 /// Wraps a `ReceiverStream` as Stream<Item = Result<Bytes, `StreamError`>>
@@ -84,7 +84,7 @@ impl SharedStreamState {
         shared_streams: Arc<SharedStreamManager>,
     )
     where
-        S: Stream<Item = Result<Bytes, E>> + Unpin + 'static + Send,
+        S: Stream<Item=Result<Bytes, E>> + Unpin + 'static + Send,
         E: std::fmt::Debug + Send,
     {
         let mut source_stream = Box::pin(bytes_stream);
@@ -111,7 +111,7 @@ impl SharedStreamState {
                         Ok(()) => true,
                         Err(TrySendError::Closed(_)) => false,
                         Err(err) => {
-                            trace!("broadcast try_send error: {:?}", err);
+                            trace!("broadcast try_send error: {err:?}");
                             true
                         }
                     });
@@ -135,14 +135,9 @@ impl SharedStreamState {
 
                 let mut has_fillable_subscriber = false;
                 while let Some(result) = futures.next().await {
-                    match result {
-                        Ok(_) => {
-                            has_fillable_subscriber = true;
-                            break;
-                        }
-                        Err(_) => {
-                            // ignore; continue waiting
-                        }
+                    if let Ok(()) = result {
+                        has_fillable_subscriber = true;
+                        break;
                     }
                 }
 
@@ -157,7 +152,7 @@ impl SharedStreamState {
                     Ok(()) => true,
                     Err(TrySendError::Closed(_)) => false,
                     Err(err) => {
-                        trace!("broadcast try_send error after reserve: {:?}", err);
+                        trace!("broadcast try_send error after reserve: {err:?}");
                         true
                     }
                 });
@@ -196,7 +191,7 @@ impl SharedStreamManager {
     }
 
     async fn register(&self, stream_url: &str, shared_state: SharedStreamState) {
-        let _= self.shared_streams.write().await.insert(stream_url.to_string(), shared_state);
+        let _ = self.shared_streams.write().await.insert(stream_url.to_string(), shared_state);
     }
 
     pub(crate) async fn subscribe<S, E>(
@@ -204,10 +199,10 @@ impl SharedStreamManager {
         stream_url: &str,
         bytes_stream: S,
         headers: Vec<(String, String)>,
-        buffer_size: usize,)  -> Option<BoxedProviderStream>
+        buffer_size: usize, ) -> Option<BoxedProviderStream>
     where
         S: Stream<Item=Result<Bytes, E>> + Unpin + 'static + std::marker::Send,
-        E: std::fmt::Debug + std::marker::Send
+        E: std::fmt::Debug + std::marker::Send,
     {
         let buf_size = std::cmp::max(buffer_size, STREAM_QUEUE_SIZE);
         let shared_state = SharedStreamState::new(headers, buf_size);

@@ -1,6 +1,11 @@
 # Changelog
 # 3.1.4 (2025-06-xx)
-- fixed custom stream loop
+- share live stream refactored
+- fixed active user count
+- fixed hls streaming
+- more logs sanitized
+- added session key for session management
+- added sleep timer  `sleep_timer_mins`  to config.yml
 
 # 3.1.3 (2025-06-06)
 - Fixed xtream codes series info duplicate fields problem.

@@ -169,6 +169,8 @@ pub struct ConfigDto {
     pub user_access_control: bool,
     #[serde(default = "default_connect_timeout_secs")]
     pub connect_timeout_secs: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sleep_timer_mins: Option<u32>,
     #[serde(default)]
     pub config_hot_reload: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -378,6 +380,8 @@ pub struct Config {
     pub user_access_control: bool,
     #[serde(default = "default_connect_timeout_secs")]
     pub connect_timeout_secs: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sleep_timer_mins: Option<u32>,
     #[serde(default)]
     pub update_on_boot: bool,
     #[serde(default)]

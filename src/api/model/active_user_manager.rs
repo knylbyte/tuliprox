@@ -1,5 +1,6 @@
 use crate::model::Config;
 use crate::model::{ProxyUserCredentials, UserConnectionPermission};
+use crate::utils::request::sanitize_sensitive_info;
 use crate::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs};
 use jsonwebtoken::get_current_timestamp;
 use log::{debug, info};
@@ -7,7 +8,6 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::utils::request::sanitize_sensitive_info;
 
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
 const USER_SESSION_LIMIT: usize = 50;
@@ -198,12 +198,10 @@ impl ActiveUserManager {
 
             if connection_data.connections == 0 {
                 lock.remove(username);
-            } else {
-                if connection_data.connections < connection_data.max_connections {
-                    // Grace timeout expired, reset grace counters
-                    connection_data.granted_grace = false;
-                    connection_data.grace_ts = 0;
-                }
+            } else if connection_data.connections < connection_data.max_connections {
+                // Grace timeout expired, reset grace counters
+                connection_data.granted_grace = false;
+                connection_data.grace_ts = 0;
             }
         }
         drop(lock);
