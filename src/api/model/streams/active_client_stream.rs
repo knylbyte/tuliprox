@@ -14,6 +14,8 @@ use std::pin::Pin;
 use std::sync::atomic::AtomicU8;
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
+use crate::api::model::streams::timed_client_stream::TimedClientStream;
+use futures::{StreamExt};
 
 const INNER_STREAM: u8 = 0_u8;
 const GRACE_BLOCK_STREAM: u8 = 1_u8;
@@ -55,8 +57,21 @@ impl ActiveClientStream {
                     c.provider_connections_exhausted.clone()
                 ));
 
+        let stream = stream_details.stream.take().unwrap();
+        let stream = match app_state.config.sleep_timer_mins {
+            None => stream,
+            Some(mins) => {
+                let secs = u32::try_from((u64::from(mins) * 60).min(u64::from(u32::MAX))).unwrap_or(0);
+                if secs > 0 {
+                    TimedClientStream::new(stream,  secs).boxed()
+                } else {
+                    stream
+                }
+            }
+        };
+
         Self {
-            inner: stream_details.stream.take().unwrap(),
+            inner: stream,
             user_connection_guard,
             provider_connection_guard: stream_details.provider_connection_guard,
             send_custom_stream_flag: grace_stop_flag,

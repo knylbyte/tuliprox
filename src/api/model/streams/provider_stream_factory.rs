@@ -5,7 +5,7 @@ use crate::api::model::stream_error::StreamError;
 use crate::api::model::streams::buffered_stream::BufferedStream;
 use crate::api::model::streams::client_stream::ClientStream;
 use crate::api::model::streams::provider_stream::{create_channel_unavailable_stream, get_header_filter_for_item_type};
-use crate::api::model::streams::timed_client_stream::TimeoutClientStream;
+use crate::api::model::streams::timed_client_stream::TimedClientStream;
 use crate::model::PlaylistItemType;
 use crate::model::{Config, DEFAULT_USER_AGENT};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
@@ -260,7 +260,7 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
                     StreamError::reqwest(&err)
                 }).boxed();
                 let boxed_provider_stream = if stream_options.get_reconnect_force_secs() > 0 {
-                    TimeoutClientStream::new(provider_stream, stream_options.get_reconnect_force_secs()).boxed()
+                    TimedClientStream::new(provider_stream, stream_options.get_reconnect_force_secs()).boxed()
                 } else {
                     provider_stream
                 };

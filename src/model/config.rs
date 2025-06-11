@@ -169,6 +169,8 @@ pub struct ConfigDto {
     pub user_access_control: bool,
     #[serde(default = "default_connect_timeout_secs")]
     pub connect_timeout_secs: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sleep_timer_mins: Option<u32>,
     #[serde(default)]
     pub config_hot_reload: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -378,6 +380,8 @@ pub struct Config {
     pub user_access_control: bool,
     #[serde(default = "default_connect_timeout_secs")]
     pub connect_timeout_secs: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sleep_timer_mins: Option<u32>,
     #[serde(default)]
     pub update_on_boot: bool,
     #[serde(default)]
@@ -641,6 +645,13 @@ impl Config {
         if let Some(mapping_path) = &self.mapping_path {
             self.t_mapping_file_path = mapping_path.to_string();
         }
+
+        if let Some(mins) = self.sleep_timer_mins {
+            if mins == 0 {
+                return Err(TuliproxError::new(TuliproxErrorKind::Info, "`sleep_timer_mins` must be > 0 when specified".to_string()));
+            }
+        }
+
         if include_computed {
             self.t_access_token_secret = generate_secret();
             self.t_encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;
