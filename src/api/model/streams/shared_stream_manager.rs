@@ -44,7 +44,7 @@ where
 }
 
 fn convert_stream(stream: BoxStream<Bytes>) -> BoxStream<Result<Bytes, StreamError>> {
-    Box::pin(ReceiverStreamWrapper { stream }.boxed())
+    ReceiverStreamWrapper { stream }.boxed()
 }
 
 type SubscriberId = usize;
