@@ -38,10 +38,10 @@ impl ConfigSortGroup {
 
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         let processed_sequence = match (&self.sequence, templates) {
-            (Some(seqs), Some(tmpls)) => {
+            (Some(seqs), Some(_templs)) => {
                 let mut result = Vec::new();
                 for s in seqs {
-                    match apply_templates_to_pattern(s, tmpls, true)? {
+                    match apply_templates_to_pattern(s, templates, true)? {
                         TemplateValue::Single(val) => result.push(val),
                         TemplateValue::Multi(vals) => result.extend(vals),
                     }
@@ -75,9 +75,7 @@ pub struct ConfigSortChannel {
 
 impl ConfigSortChannel {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
-        if let Some(templ) =  templates {
-            self.group_pattern = apply_templates_to_pattern_single(&self.group_pattern, templ)?;
-        }
+        self.group_pattern = apply_templates_to_pattern_single(&self.group_pattern, templates)?;
         // Compile group_pattern
         self.t_re_group_pattern = Some(
             Regex::new(&self.group_pattern).map_err(|err| {
@@ -90,7 +88,7 @@ impl ConfigSortChannel {
             (Some(seqs), Some(tmpls)) => {
                 let mut result = Vec::new();
                 for s in seqs {
-                    match apply_templates_to_pattern(s, tmpls, true)? {
+                    match apply_templates_to_pattern(s, Some(tmpls), true)? {
                         TemplateValue::Single(val) => result.push(val),
                         TemplateValue::Multi(vals) => result.extend(vals),
                     }

@@ -8,7 +8,6 @@ use pest::iterators::Pair;
 use pest::Parser;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-
 use crate::model::{FieldGetAccessor, FieldSetAccessor, ItemField};
 use crate::model::{PlaylistItem, PlaylistItemType};
 use crate::tools::directed_graph::DirectedGraph;
@@ -286,7 +285,7 @@ fn get_parser_item_field(expr: &Pair<Rule>) -> Result<ItemField, TuliproxError> 
 
 fn get_parser_regexp(
     expr: &Pair<Rule>,
-    templates: &Vec<PatternTemplate>,
+    templates: Option<&Vec<PatternTemplate>>,
 ) -> Result<CompiledRegex, TuliproxError> {
     if expr.as_rule() == Rule::regexp {
         let mut parsed_text = String::from(expr.as_str());
@@ -311,7 +310,7 @@ fn get_parser_regexp(
 
 fn get_parser_field_comparison(
     expr: Pair<Rule>,
-    templates: &Vec<PatternTemplate>,
+    templates: Option<&Vec<PatternTemplate>>,
 ) -> Result<Filter, TuliproxError> {
     let mut expr_inner = expr.into_inner();
     match get_parser_item_field(&expr_inner.next().unwrap()) {
@@ -372,7 +371,7 @@ macro_rules! handle_expr {
 
 fn get_parser_expression(
     expr: Pair<Rule>,
-    templates: &Vec<PatternTemplate>,
+    templates: Option<&Vec<PatternTemplate>>,
     errors: &mut Vec<String>,
 ) -> Result<Filter, String> {
     let mut stmts = Vec::with_capacity(128);
@@ -450,9 +449,7 @@ pub fn get_filter(
     filter_text: &str,
     templates: Option<&Vec<PatternTemplate>>,
 ) -> Result<Filter, TuliproxError> {
-    let empty_list = Vec::with_capacity(0);
-    let template_list: &Vec<PatternTemplate> = templates.unwrap_or(&empty_list);
-    let source = apply_templates_to_pattern_single(filter_text, template_list)?;
+    let source = apply_templates_to_pattern_single(filter_text, templates)?;
 
     match FilterParser::parse(Rule::main, &source) {
         Ok(pairs) => {
@@ -465,7 +462,7 @@ pub fn get_filter(
                         for expr in pair.into_inner() {
                             match expr.as_rule() {
                                 Rule::expr => {
-                                    match get_parser_expression(expr, template_list, &mut errors) {
+                                    match get_parser_expression(expr, templates, &mut errors) {
                                         Ok(expr) => {
                                             match &op {
                                                 Some(binop) => {
@@ -652,59 +649,61 @@ pub fn prepare_templates(templates: &mut Vec<PatternTemplate>) -> Result<Vec<Pat
 
 pub fn apply_templates_to_pattern(
     pattern: &str,
-    templates: &Vec<PatternTemplate>,
+    templates_list: Option<&Vec<PatternTemplate>>,
     allow_multi: bool,
 ) -> Result<TemplateValue, TuliproxError> {
     let mut new_pattern = TemplateValue::Single(pattern.to_string());
 
-    for template in templates {
-        match &template.value {
-            TemplateValue::Single(val) => {
-                match new_pattern {
-                    TemplateValue::Single(ref mut pat) => {
-                        let replaced = pat.replace(&template.placeholder, val);
-                        if replaced != *pat {
-                            *pat = replaced;
-                        }
-                    }
-                    TemplateValue::Multi(ref mut pats) => {
-                        for pat in pats.iter_mut() {
+    if let Some(templates) = templates_list {
+        for template in templates {
+            match &template.value {
+                TemplateValue::Single(val) => {
+                    match new_pattern {
+                        TemplateValue::Single(ref mut pat) => {
                             let replaced = pat.replace(&template.placeholder, val);
                             if replaced != *pat {
                                 *pat = replaced;
                             }
                         }
-                    }
-                }
-            }
-
-            TemplateValue::Multi(ref multi_vals) => {
-                new_pattern = match &new_pattern {
-                    TemplateValue::Single(pat) => {
-                        let mut new_values = IndexSet::new();
-                        for val in multi_vals {
-                            if pat.contains(&template.placeholder) {
-                                new_values.insert(pat.replace(&template.placeholder, val));
-                            } else {
-                                new_values.insert(pat.clone());
+                        TemplateValue::Multi(ref mut pats) => {
+                            for pat in pats.iter_mut() {
+                                let replaced = pat.replace(&template.placeholder, val);
+                                if replaced != *pat {
+                                    *pat = replaced;
+                                }
                             }
                         }
-                        TemplateValue::Multi(new_values.into_iter().collect())
                     }
-                    TemplateValue::Multi(pats) => {
-                        let mut new_values = IndexSet::new();
-                        for val in multi_vals {
-                            for pat in pats {
+                }
+
+                TemplateValue::Multi(ref multi_vals) => {
+                    new_pattern = match &new_pattern {
+                        TemplateValue::Single(pat) => {
+                            let mut new_values = IndexSet::new();
+                            for val in multi_vals {
                                 if pat.contains(&template.placeholder) {
                                     new_values.insert(pat.replace(&template.placeholder, val));
                                 } else {
                                     new_values.insert(pat.clone());
                                 }
                             }
+                            TemplateValue::Multi(new_values.into_iter().collect())
                         }
-                        TemplateValue::Multi(new_values.into_iter().collect())
-                    }
-                };
+                        TemplateValue::Multi(pats) => {
+                            let mut new_values = IndexSet::new();
+                            for val in multi_vals {
+                                for pat in pats {
+                                    if pat.contains(&template.placeholder) {
+                                        new_values.insert(pat.replace(&template.placeholder, val));
+                                    } else {
+                                        new_values.insert(pat.clone());
+                                    }
+                                }
+                            }
+                            TemplateValue::Multi(new_values.into_iter().collect())
+                        }
+                    };
+                }
             }
         }
     }
@@ -731,7 +730,7 @@ pub fn apply_templates_to_pattern(
     Ok(new_pattern)
 }
 
-pub fn apply_templates_to_pattern_single(pattern: &str, templates: &Vec<PatternTemplate>) -> Result<String, TuliproxError> {
+pub fn apply_templates_to_pattern_single(pattern: &str, templates: Option<&Vec<PatternTemplate>>) -> Result<String, TuliproxError> {
     match apply_templates_to_pattern(pattern, templates, false)? {
         TemplateValue::Single(value) => Ok(value),
         TemplateValue::Multi(_) => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Multi value templates are not supported for pattern!"),

@@ -129,8 +129,8 @@ impl MapperOperation {
                     return Err(info_err!(format!("Invalid mapper attribute field {field}")));
                 }
 
-                if let Some(template_list) = templates {
-                    *value = apply_templates_to_pattern_single(value, template_list)?;
+                if templates.is_some() {
+                    *value = apply_templates_to_pattern_single(value, templates)?;
                 }
             }
         }
@@ -158,12 +158,13 @@ impl Mapper {
             Ok(filter) => self.t_filter = Some(filter),
             Err(err) => return Err(err),
         }
-        let script = match templates {
-            None => self.script.to_string(),
-            Some(tmpls) => apply_templates_to_pattern_single(&self.script, tmpls)?,
+        let script = if templates.is_some() {
+            apply_templates_to_pattern_single(&self.script, templates)?
+        } else {
+            self.script.to_string()
         };
         trace!("Mapper script: {script}");
-        self.t_script = Some(MapperScript::parse(&script)?);
+        self.t_script = Some(MapperScript::parse(&script, templates)?);
         Ok(())
     }
 }
@@ -178,10 +179,13 @@ pub struct Mapping {
     pub counter: Option<Vec<MappingCounterDefinition>>,
     #[serde(skip_serializing, skip_deserializing)]
     pub t_counter: Option<Vec<MappingCounter>>,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub(crate) templates: Option<Vec<PatternTemplate>>
 }
 
 impl Mapping {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
+        self.templates = templates.map(|t| t.iter().map(PatternTemplate::clone).collect::<Vec<_>>());
         if let Some(mapper_list) = &mut self.mapper {
             for mapper in mapper_list {
                 mapper.prepare(templates)?;

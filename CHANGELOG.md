@@ -6,6 +6,13 @@
 - more logs sanitized
 - added session key for session management
 - added sleep timer  `sleep_timer_mins`  to config.yml
+- added mapper script builtin function `template` to access template definitions.
+```
+   station_prefix = template(concat("US_", station, "_PREFIX")),
+```
+If we assume the variable `station` contains the value `WINK`, 
+this script receives the template with the concatenated name `US_WINK_PREFIX` which should be defined in `templates` section,
+and assigns it to the variable `station_prefix`.
 
 # 3.1.3 (2025-06-06)
 - Fixed xtream codes series info duplicate fields problem.
