@@ -17,7 +17,6 @@ use crate::model::{FetchedPlaylist, FieldGetAccessor, FieldSetAccessor, Playlist
 use crate::model::{InputStats, PlaylistStats, SourceStats, TargetStats};
 use crate::processing::playlist_watch::process_group_watch;
 use crate::processing::processor::xtream_series::playlist_resolve_series;
-use crate::processing::processor::xtream_vod::playlist_resolve_vod;
 use crate::repository::playlist_repository::persist_playlist;
 use crate::tuliprox_error::{get_errors_notify_message, notify_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::debug_if_enabled;
@@ -28,6 +27,7 @@ use std::time::Instant;
 use crate::model::Epg;
 use crate::processing::parser::xmltv::flatten_tvguide;
 use crate::processing::processor::epg::process_playlist_epg;
+use crate::processing::processor::xtream_vod::playlist_resolve_vod;
 use crate::processing::processor::sort::sort_playlist;
 use crate::utils::StepMeasure;
 

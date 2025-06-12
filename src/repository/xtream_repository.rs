@@ -3,6 +3,7 @@ use crate::model::{ProxyUserCredentials};
 use crate::model::{Config, ConfigInput, ConfigTarget, XtreamTargetOutput};
 use crate::model::{PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
 use crate::model::{rewrite_doc_urls, PlaylistXtreamCategory, XtreamMappingOptions, XtreamSeriesEpisode};
+use crate::model::normalize_release_date;
 use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery, BPlusTreeUpdate};
 use crate::repository::indexed_document::{IndexedDocumentDirectAccess, IndexedDocumentGarbageCollector, IndexedDocumentIterator, IndexedDocumentWriter};
 use crate::repository::playlist_repository::get_target_id_mapping;
@@ -29,6 +30,7 @@ use std::io::{BufReader, Error, ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
         create_tuliprox_error!(
@@ -50,10 +52,11 @@ macro_rules! try_option_ok {
 }
 
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct InputVodInfoRecord {
     pub(crate) tmdb_id: u32,
     pub(crate) ts: u64,
+    pub(crate) release_date: Option<String>,
 }
 
 fn get_collection_path(path: &Path, collection: &str) -> PathBuf {
@@ -529,6 +532,7 @@ fn rewrite_xtream_vod_info<P>(
     // we need to update the info data.
     if config.is_reverse_proxy_resource_rewrite_enabled() {
         if let Some(Value::Object(info_data)) = doc.get_mut(crate::model::XC_TAG_INFO_DATA) {
+            normalize_release_date(info_data); // info data is muteable, so we do not need to clone it.
             let item_type = pli.get_item_type();
             if user.proxy.is_reverse(item_type) && !target.is_force_redirect(item_type) {
                 let server_info = config.get_user_server_info(user);
@@ -783,22 +787,50 @@ pub async fn xtream_update_input_vod_record_from_wal_file(
         let mut tmdb_id_bytes = [0u8; 4];
         let mut ts_bytes = [0u8; 8];
         let mut tree_record_index: BPlusTree<u32, InputVodInfoRecord> = BPlusTree::load(&record_path).unwrap_or_else(|_| BPlusTree::new());
+        
         loop {
             if reader.read_exact(&mut provider_id_bytes).is_err() {
                 break; // End of file
             }
             let provider_id = u32::from_le_bytes(provider_id_bytes);
+            
             if reader.read_exact(&mut tmdb_id_bytes).is_err() {
-                break; // End of file
+                error!("Unexpected EOF after reading provider_id {} for VOD record.", provider_id);
+                break;
             }
             let tmdb_id = u32::from_le_bytes(tmdb_id_bytes);
+
             if reader.read_exact(&mut ts_bytes).is_err() {
-                break; // End of file
+                error!("Unexpected EOF after reading tmdb_id for VOD record with provider_id {}.", provider_id);
+                break;
             }
             let ts = u64::from_le_bytes(ts_bytes);
-            tree_record_index.insert(provider_id, InputVodInfoRecord { tmdb_id, ts });
+
+            // Read the date string length as a 4-byte u32.
+            let mut len_bytes = [0u8; 4];
+            if reader.read_exact(&mut len_bytes).is_err() { 
+                error!("Unexpected EOF when reading release_date length for VOD record with provider_id {}.", provider_id);
+                break; 
+            }
+            let len = u32::from_le_bytes(len_bytes) as usize;
+
+            let release_date = if len > 0 {
+                let mut date_buffer = vec![0u8; len];
+                if reader.read_exact(&mut date_buffer).is_err() { 
+                    error!("Unexpected EOF when reading release_date string for VOD record with provider_id {}.", provider_id);
+                    break; 
+                }
+                String::from_utf8(date_buffer).ok()
+            } else {
+                // If length is 0, set release_date to None
+                None
+            };
+
+            tree_record_index.insert(provider_id, InputVodInfoRecord { tmdb_id, ts, release_date });
         }
+
         tree_record_index.store(&record_path).map_err(|err| notify_err!(format!("Could not store vod record info {err}")))?;
+        
         drop(reader);
         if let Err(err) = fs::remove_file(wal_path) {
             error!("Failed to delete record WAL file for vod {err}");
