@@ -129,10 +129,10 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
             let templates = mapping.templates.as_ref();
             for m in mapper {
                 if let Some(script) = m.t_script.as_ref() {
-                    let provider = ValueProvider { pli: &ref_chan.clone() };
-                    let mut accessor = ValueAccessor { pli: ref_chan };
                     if let Some(filter) = &m.t_filter {
+                        let provider = ValueProvider { pli: ref_chan };
                         if filter.filter(&provider) {
+                            let mut accessor = ValueAccessor { pli: ref_chan };
                             script.eval(&mut accessor, templates);
                         }
                     }

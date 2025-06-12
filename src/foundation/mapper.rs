@@ -1028,12 +1028,7 @@ impl Expression {
                                 Value(value) => {
                                     Some(value)
                                 }
-                                Named(values) => {
-                                    match values.first() {
-                                        None => None,
-                                        Some((_key, val)) => Some(val),
-                                    }
-                                }
+                                Named(values) => values.first().map(|(_key, val)| val),
                                 _ => None
                             };
                             if let Some(val) = value {

@@ -38,10 +38,10 @@ impl ConfigSortGroup {
 
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         let processed_sequence = match (&self.sequence, templates) {
-            (Some(seqs), Some(tmpls)) => {
+            (Some(seqs), Some(_templs)) => {
                 let mut result = Vec::new();
                 for s in seqs {
-                    match apply_templates_to_pattern(s, Some(tmpls), true)? {
+                    match apply_templates_to_pattern(s, templates, true)? {
                         TemplateValue::Single(val) => result.push(val),
                         TemplateValue::Multi(vals) => result.extend(vals),
                     }
