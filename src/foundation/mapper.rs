@@ -1,6 +1,6 @@
 #![allow(clippy::empty_docs)]
 
-use crate::foundation::filter::ValueAccessor;
+use crate::foundation::filter::{PatternTemplate, TemplateValue, ValueAccessor};
 use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Number, Undefined, Value};
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::Capitalize;
@@ -35,7 +35,7 @@ block_expr = { "{" ~ statements ~ "}" }
 condition = { function_call | var_access | field_access }
 assignment = { (field_access | identifier) ~ "=" ~ expression }
 expression = { assignment | map_block | match_block | function_call | regex_expr | string_literal | number | var_access | field_access | null | block_expr }
-function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" }
+function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" | "template" }
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
 match_case_key = { any_match | identifier }
@@ -104,6 +104,7 @@ enum BuiltInFunction {
     Print,
     ToNumber,
     First,
+    Template,
 }
 
 impl FromStr for BuiltInFunction {
@@ -119,6 +120,7 @@ impl FromStr for BuiltInFunction {
             "print" => Ok(Self::Print),
             "number" => Ok(Self::ToNumber),
             "first" => Ok(Self::First),
+            "template" => Ok(Self::Template),
             _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown function {}", s),
         }
     }
@@ -165,8 +167,8 @@ pub struct MapperScript {
 }
 
 impl MapperScript {
-    pub fn eval(&self, setter: &mut ValueAccessor) {
-        let ctx = &mut MapperContext::new(&self.expressions);
+    pub fn eval(&self, setter: &mut ValueAccessor, templates: Option<&Vec<PatternTemplate>>) {
+        let ctx = &mut MapperContext::new(&self.expressions, templates);
         self.eval_with_context(ctx, setter);
     }
 
@@ -201,8 +203,8 @@ impl Statement {
 }
 
 impl MapperScript {
-    fn validate(expressions: &Vec<Expression>, statements: &Vec<Statement>) -> Result<(), TuliproxError> {
-        let ctx = &mut MapperContext::new(expressions);
+    fn validate(expressions: &Vec<Expression>, statements: &Vec<Statement>, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
+        let ctx = &mut MapperContext::new(expressions, templates);
 
         let mut identifiers: HashSet<String> = HashSet::new();
         for stmt in statements {
@@ -216,7 +218,7 @@ impl MapperScript {
         Ok(())
     }
 
-    pub fn parse(input: &str) -> Result<Self, TuliproxError> {
+    pub fn parse(input: &str, templates: Option<&Vec<PatternTemplate>>) -> Result<Self, TuliproxError> {
         let mut parsed = MapperParser::parse(Rule::main, input).map_err(|e| info_err!(e.to_string()))?;
         let program_pair = parsed.next().unwrap();
         let mut statements = Vec::new();
@@ -227,7 +229,7 @@ impl MapperScript {
             }
         }
 
-        MapperScript::validate(&expressions, &statements)?;
+        MapperScript::validate(&expressions, &statements, templates)?;
         Ok(Self { expressions, statements })
     }
     fn parse_statement(pair: Pair<Rule>, expressions: &mut Vec<Expression>) -> Result<Option<Statement>, TuliproxError> {
@@ -536,13 +538,37 @@ impl MapperScript {
 pub struct MapperContext<'a> {
     expressions: &'a Vec<Expression>,
     variables: HashMap<String, EvalResult>,
+    templates: Option<HashMap<String, &'a PatternTemplate>>,
 }
 
 impl<'a> MapperContext<'a> {
-    fn new(expressions: &'a Vec<Expression>) -> Self {
+    fn new(expressions: &'a Vec<Expression>, templates: Option<&'a Vec<PatternTemplate>>) -> Self {
         Self {
             expressions,
             variables: HashMap::new(),
+            templates: templates.and_then(|vec_templates| {
+                if vec_templates.is_empty() {
+                    None
+                } else {
+                    let mut hash_map = HashMap::new();
+                    for template in vec_templates {
+                        hash_map.insert(template.name.to_string(), template);
+                    }
+                    Some(hash_map)
+                }
+            })
+        }
+    }
+
+    fn get_template(&self, name: &str) -> Option<&str> {
+        match self.templates.as_ref() {
+            None => None,
+            Some(templates) => templates.get(name).and_then(|&template| {
+                match &template.value {
+                    TemplateValue::Single(v) => Some(v.as_str()),
+                    TemplateValue::Multi(_) => None,
+                }
+            })
         }
     }
 
@@ -601,6 +627,7 @@ impl<'a> MapperContext<'a> {
                 }
                 match name {
                     BuiltInFunction::ToNumber
+                    | BuiltInFunction::Template
                     | BuiltInFunction::First => {
                         if args.len() > 1 {
                             return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Function accepts only one argument {:?}, {} given", name, args.len());
@@ -993,6 +1020,29 @@ impl Expression {
                                     }
                                 }
                                 None => Undefined,
+                            }
+                        }
+                        BuiltInFunction::Template => {
+                            let evaluated_arg = &evaluated_args[0];
+                            let value = match evaluated_arg {
+                                Value(value) => {
+                                    Some(value)
+                                }
+                                Named(values) => {
+                                    match values.first() {
+                                        None => None,
+                                        Some((_key, val)) => Some(val),
+                                    }
+                                }
+                                _ => None
+                            };
+                            if let Some(val) = value {
+                                match ctx.get_template(val) {
+                                    Some(v) => Value(v.to_string()),
+                                    None => Undefined,
+                                }
+                            } else {
+                                Undefined
                             }
                         }
                     }
