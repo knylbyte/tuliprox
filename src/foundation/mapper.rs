@@ -4,7 +4,7 @@ use crate::foundation::filter::{PatternTemplate, TemplateValue, ValueAccessor};
 use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Number, Undefined, Value};
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::Capitalize;
-use log::{debug, info, trace};
+use log::{debug, trace};
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 use regex::Regex;
@@ -981,7 +981,6 @@ impl Expression {
                 evaluated_args.retain(|er| !matches!(er, Undefined | Failure(_) | AnyValue));
                 if evaluated_args.is_empty() {
                     if matches!(name, BuiltInFunction::Print) {
-                        info!("[MapperScript] undefined");
                         trace!("[MapperScript] undefined");
                     }
                     Undefined
@@ -993,7 +992,6 @@ impl Expression {
                         BuiltInFunction::Lowercase => Value(concat_args(&evaluated_args).join(" ").to_lowercase()),
                         BuiltInFunction::Capitalize => Value(concat_args(&evaluated_args).iter().map(Capitalize::capitalize).collect::<Vec<_>>().join(" ")),
                         BuiltInFunction::Print => {
-                            info!("[MapperScript] {}", concat_args(&evaluated_args).join(""));
                             trace!("[MapperScript] {}", concat_args(&evaluated_args).join(""));
                             Undefined
                         }
