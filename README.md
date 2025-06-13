@@ -1392,7 +1392,9 @@ Now you can do `nginx`  configuration like
       proxy_redirect off;
    }
 ```
-You can also use traefik as reverse proxy server in front of your tuliprox instance with the following labels in your docker-compose file:
+You can also use traefik as reverse proxy server in front of your tuliprox instance. However if you wan't to use paths, you must note that the path for web-ui and api-proxy must be different. In this short example used paths are:
+* web-ui: tuliprox
+* api-proxy: tv
 ```yaml
 labels:
   # ----- Service -----
@@ -1400,7 +1402,7 @@ labels:
 
   # ----- HTTP (Port 80) -----
   - "traefik.http.routers.tuliprox.entrypoints=web"
-  - "traefik.http.routers.tuliprox.rule=Host(``tv.my-domain.io`) && (PathPrefix(`/tv`) || PathPrefix(`/tuliprox`))" # 1. path: api-proxy endpoint || 2. path: web-ui endpoint
+  - "traefik.http.routers.tuliprox.rule=Host(`tv.my-domain.io`) && (PathPrefix(`/tv`) || PathPrefix(`/tuliprox`))" # 1. path: api-proxy endpoint || 2. path: web-ui endpoint
 
   # ----- HTTPS (Port 443) -----
   - "traefik.http.routers.tuliprox-secure.entrypoints=websecure"
