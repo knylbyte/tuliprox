@@ -13,6 +13,7 @@
 If we assume the variable `station` contains the value `WINK`, 
 this script receives the template with the concatenated name `US_WINK_PREFIX` which should be defined in `templates` section,
 and assigns it to the variable `station_prefix`.
+- Enhanced the STRM export functionality by adding configurable naming styles and an optional flat directory structure for Kodi,Plex,Jellyfin,Emby.
 
 # 3.1.4 (???)
 - Extended STRM export functionality with:

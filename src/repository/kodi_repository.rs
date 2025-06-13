@@ -552,7 +552,7 @@ fn format_for_emby(
     match strm_item_info.item_type {
         PlaylistItemType::Video => {
             // Emby prefers the ID in the filename.
-            let id_string = if tmdb_id > 0 { format!("{separator} [tmdbid={tmdb_id}]") } else { String::new() };
+            let id_string = if tmdb_id > 0 { format!("{separator}[tmdbid={tmdb_id}]") } else { String::new() };
             let (name, year) = style_rename_year(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
             let sanitized_title = sanitize_for_filename(name.trim(), false);
             let year_string = year.map_or(String::new(), |y| format!("{separator}({y})"));
@@ -571,7 +571,7 @@ fn format_for_emby(
         }
         PlaylistItemType::Series => {
             // For series, the ID goes in the folder name.
-            let id_string = if tmdb_id > 0 { format!("{separator} [tmdbid={tmdb_id}]") } else { String::new() };
+            let id_string = if tmdb_id > 0 { format!("{separator}[tmdbid={tmdb_id}]") } else { String::new() };
             let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
             let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
             let sanitized_series_name = sanitize_for_filename(name.trim(), false);
@@ -616,7 +616,7 @@ fn format_for_jellyfin(
 
     match strm_item_info.item_type {
         PlaylistItemType::Video => {
-            let id_string = if tmdb_id > 0 { format!("{separator} [tmdbid-{tmdb_id}]") } else { String::new() };
+            let id_string = if tmdb_id > 0 { format!("{separator}[tmdbid-{tmdb_id}]") } else { String::new() };
             let (name, year) = style_rename_year(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
             let sanitized_title = sanitize_for_filename(name.trim(), false);
             let year_string = year.map_or(String::new(), |y| format!("{separator}({y})"));
@@ -634,7 +634,7 @@ fn format_for_jellyfin(
             (dir_path, final_filename)
         }
         PlaylistItemType::Series => {
-            let id_string = if tmdb_id > 0 { format!("{separator} [tmdbid-{tmdb_id}]") } else { String::new() };
+            let id_string = if tmdb_id > 0 { format!("{separator}[tmdbid-{tmdb_id}]") } else { String::new() };
             let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
             let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
             let sanitized_series_name = sanitize_for_filename(name.trim(), false);
