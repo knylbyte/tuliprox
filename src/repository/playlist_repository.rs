@@ -4,7 +4,7 @@ use crate::model::{Config, ConfigTarget, TargetOutput};
 use crate::model::{PlaylistGroup, PlaylistItemType};
 use crate::model::Epg;
 use crate::repository::epg_repository::epg_write;
-use crate::repository::kodi_repository::kodi_write_strm_playlist;
+use crate::repository::kodi_repository::write_strm_playlist;
 use crate::repository::m3u_repository::m3u_write_playlist;
 use crate::repository::storage::{ensure_target_storage_path, get_target_id_mapping_file};
 use crate::repository::target_id_mapping::TargetIdMapping;
@@ -51,7 +51,7 @@ pub async fn persist_playlist(playlist: &mut [PlaylistGroup], epg: Option<&Epg>,
         let result = match output {
             TargetOutput::Xtream(_xtream_output) => xtream_write_playlist(target, cfg, playlist).await,
             TargetOutput::M3u(m3u_output) => m3u_write_playlist(cfg, target, m3u_output, &target_path, playlist).await,
-            TargetOutput::Strm(strm_output) => kodi_write_strm_playlist(target, strm_output, cfg, playlist).await,
+            TargetOutput::Strm(strm_output) => write_strm_playlist(target, strm_output, cfg, playlist).await,
             TargetOutput::HdHomeRun(_hdhomerun_output) => Ok(()),
         };
 

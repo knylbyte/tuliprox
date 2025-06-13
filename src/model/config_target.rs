@@ -12,6 +12,19 @@ use std::fmt::Display;
 use std::sync::Arc;
 use arc_swap::{ArcSwapOption};
 
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash, Default)]
+pub enum ExportStyle {
+    #[serde(rename = "kodi")]
+    #[default]
+    Kodi,
+    #[serde(rename = "plex")]
+    Plex,
+    #[serde(rename = "emby")]
+    Emby,
+    #[serde(rename = "jellyfin")]
+    Jellyfin,
+}
+
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash)]
 pub enum TargetType {
     #[serde(rename = "m3u")]
@@ -131,15 +144,16 @@ pub struct StrmTargetOutput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(default)]
+    pub style: ExportStyle,
+    #[serde(default)]
+    pub flat: bool,
+    #[serde(default)]
     pub underscore_whitespace: bool,
     #[serde(default)]
     pub cleanup: bool,
-    #[serde(default)]
-    pub kodi_style: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strm_props: Option<Vec<String>>,
 }
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HdHomeRunTargetOutput {

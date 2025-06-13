@@ -3,14 +3,14 @@ use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ApiProxyServerInfo, ProxyUserCredentials};
 use crate::model::{ClusterFlags, Config, ConfigTarget, StrmTargetOutput};
 use crate::model::{
-    FieldGetAccessor, PlaylistGroup, PlaylistItem, PlaylistItemType, UUIDType,
+    FieldGetAccessor, PlaylistGroup, PlaylistItem, PlaylistItemType, UUIDType, ExportStyle,
 };
 use crate::model::XtreamSeriesEpisode;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage::{ensure_target_storage_path, get_input_storage_path, hash_bytes};
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::{xtream_get_record_file_path, InputVodInfoRecord};
-use crate::utils::{KodiStyle, CONSTANTS};
+use crate::utils::{ExportStyleConfig, CONSTANTS};
 use crate::utils::FileReadGuard;
 use crate::utils::request::extract_extension_from_url;
 use chrono::Datelike;
@@ -25,24 +25,51 @@ use tokio::fs::{create_dir_all, remove_dir, remove_file, File};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use crate::utils;
 
+/// Sanitizes a string to be safe for use as a file or directory name by
+/// following a strict "allow-list" approach and discarding invalid characters.
 fn sanitize_for_filename(text: &str, underscore_whitespace: bool) -> String {
-    text.trim()
+    // A default placeholder for filenames that become empty after sanitization.
+    const EMPTY_FILENAME_REPLACEMENT: &str = "unnamed";
+
+    // 1. Trim leading/trailing whitespace.
+    let trimmed = text.trim();
+
+    // 2. Build the sanitized string by filtering and mapping characters.
+    let mut sanitized: String = trimmed
         .chars()
-        .filter(|c| c.is_alphanumeric() || c.is_whitespace() || (*c == '(') || (*c == ')'))
-        .map(|c| {
-            if underscore_whitespace {
-                if c.is_whitespace() {
-                    '_'
+        .filter_map(|c| {
+            // Decide which characters to keep or transform.
+            if c.is_alphanumeric() {
+                Some(c)
+            } else if "+=,._-@#()".contains(c) { // <-- Allow list of safe punctuation.
+                Some(c)
+            } else if c.is_whitespace() {
+                if underscore_whitespace {
+                    Some('_')
                 } else {
-                    c
+                    Some(' ')
                 }
             } else {
-                c
+                // Discard all other characters.
+                None
             }
         })
-        .collect::<String>()
+        .collect();
+
+    // 3. Remove any leading periods to prevent creating hidden files/directories.
+    while sanitized.starts_with('.') {
+        sanitized.remove(0);
+    }
+    
+    // 4. Final check: If sanitization resulted in an empty string, return a default.
+    if sanitized.is_empty() {
+        EMPTY_FILENAME_REPLACEMENT.to_string()
+    } else {
+        sanitized
+    }
 }
 
+/// Finds and removes the first regex match, returning the modified string and the match.
 fn extract_match(name: &str, pattern: &Regex) -> (String, Option<String>) {
     pattern.find(name).map_or_else(
         || (name.to_string(), None),
@@ -54,6 +81,7 @@ fn extract_match(name: &str, pattern: &Regex) -> (String, Option<String>) {
     )
 }
 
+//// Extracts a number from a pattern (e.g., "S01" -> 1), falling back to a default value.
 fn extract_season_or_episode_match_with_default(
     name: &str,
     pattern: &Regex,
@@ -68,25 +96,28 @@ fn extract_season_or_episode_match_with_default(
     (new_name, new_value)
 }
 
-fn kodi_style_rename_season(
+// Extracts and removes an episode number (e.g., "E01") based on style patterns.
+fn style_rename_season(
     name: &str,
-    style: &KodiStyle,
+    style: &ExportStyleConfig,
     series_season: Option<&String>,
 ) -> (String, Option<u32>) {
     extract_season_or_episode_match_with_default(name, &style.season, series_season)
 }
 
-fn kodi_style_rename_episode(
+/// Renames episode numbers in media titles according to style patterns
+fn style_rename_episode(
     name: &str,
-    style: &KodiStyle,
+    style: &ExportStyleConfig,
     series_episode: Option<&String>,
 ) -> (String, Option<u32>) {
     extract_season_or_episode_match_with_default(name, &style.episode, series_episode)
 }
 
-fn kodi_style_rename_year<'a>(
+/// Extracts and formats year information from media titles
+fn style_rename_year<'a>(
     name: &'a str,
-    style: &KodiStyle,
+    style: &ExportStyleConfig,
     release_date: Option<&'a String>,
 ) -> (&'a str, Option<u32>) {
     let mut years = Vec::new();
@@ -96,13 +127,15 @@ fn kodi_style_rename_year<'a>(
     let mut last_index = 0;
 
     for caps in style.year.captures_iter(name) {
-        if let Ok(year) = caps[0].parse::<u32>() {
-            if (1900..=cur_year).contains(&year) {
-                years.push(year);
-                let match_start = caps.get(0).unwrap().start();
-                let match_end = caps.get(0).unwrap().end();
-                new_name.push_str(&name[last_index..match_start]);
-                last_index = match_end;
+        if let Some(year_match) = caps.get(1) {
+            if let Ok(year) = year_match.as_str().parse::<u32>() {
+                 if (1900..=cur_year).contains(&year) {
+                    years.push(year);
+                    let match_start = caps.get(0).unwrap().start();
+                    let match_end = caps.get(0).unwrap().end();
+                    new_name.push_str(&name[last_index..match_start]);
+                    last_index = match_end;
+                }
             }
         }
     }
@@ -121,131 +154,6 @@ fn kodi_style_rename_year<'a>(
     }
 
     (Box::leak(new_name.into_boxed_str()), smallest_year)
-}
-
-fn trim_string_after_pos(input: &str, start_pos: usize) -> Option<String> {
-    if let Some(slice) = input.get(start_pos..) {
-        if let Some(index) = slice.find(|c: char| c.is_alphanumeric()) {
-            return Some(String::from(&slice[index..]));
-        }
-    }
-    None
-}
-
-fn trim_whitespace(pattern: &Regex, input: &str) -> String {
-    pattern.replace_all(input, " ").to_string()
-}
-
-async fn kodi_style_rename(
-    cfg: &Config,
-    strm_item_info: &StrmItemInfo,
-    style: &KodiStyle,
-    input_tmdb_indexes: &mut InputTmdbIndexMap,
-    underscore_whitespace: bool,
-) -> (PathBuf, String) {
-    let separator = if underscore_whitespace { "_" } else { " " };
-    let (name_1, year_from_title) = kodi_style_rename_year(
-        &strm_item_info.title,
-        style,
-        strm_item_info.release_date.as_ref(),
-    );
-    let mut series_year = year_from_title;
-    let (name_2, season) = kodi_style_rename_season(name_1, style, strm_item_info.season.as_ref());
-    let (name_3, episode) =
-        kodi_style_rename_episode(&name_2, style, strm_item_info.episode.as_ref());
-    let name_4 = trim_whitespace(
-        &style.whitespace,
-        &style.alphanumeric.replace_all(&name_3, ""),
-    );
-    let title = &strm_item_info
-        .series_name
-        .as_ref()
-        .filter(|&series_name| name_4.starts_with(series_name))
-        .and_then(|series_name| trim_string_after_pos(&name_3, series_name.len()));
-    let tmdb_id = if let Some(value) = match strm_item_info.item_type {
-        PlaylistItemType::Series | PlaylistItemType::Video => {
-            get_tmdb_value(
-                cfg,
-                strm_item_info.provider_id,
-                strm_item_info.input_name.as_str(),
-                input_tmdb_indexes,
-                strm_item_info.item_type,
-            ).await
-        }
-        _ => None,
-    } {
-        match value {
-            InputTmdbIndexValue::Video(vod_record) => vod_record.tmdb_id,
-            InputTmdbIndexValue::Series(episode) => episode.tmdb_id,
-        }
-    } else {
-        0
-    };
-
-    let mut file_dir = vec![strm_item_info.group.to_string()];
-    let mut filename = vec![];
-
-    let sanitized_name = sanitize_for_filename(&name_4, underscore_whitespace);
-    filename.push(sanitized_name.clone());
-
-    let dir_name = if let Some(series_name) = &strm_item_info.series_name {
-        let (folder_name, year) =
-            kodi_style_rename_year(series_name, style, strm_item_info.release_date.as_ref());
-        if let (Some(y), Some(sy)) = (year, series_year) {
-            if y < sy {
-                series_year = year;
-            }
-        }
-        trim_whitespace(
-            &style.whitespace,
-            &style.alphanumeric.replace_all(folder_name, ""),
-        )
-    } else {
-        name_4
-    };
-
-    let sanitized_dir_name = sanitize_for_filename(&dir_name, underscore_whitespace);
-    if let Some(value) = series_year {
-        filename.push(format!("{separator}({value})"));
-        file_dir.push(format!("{sanitized_dir_name}{separator}({value})"));
-    } else {
-        file_dir.push(sanitized_dir_name);
-    }
-
-    if let Some(value) = season {
-        filename.push(format!("{separator}S{value:02}"));
-        file_dir.push(format!("Season{separator}{value}"));
-    }
-
-    if let Some(value) = episode {
-        if season.is_none() {
-            filename.push(separator.to_string());
-        }
-        filename.push(format!("E{value:02}"));
-    }
-    if let Some(value) = title {
-        let sanitized_value = sanitize_for_filename(
-            &trim_whitespace(
-                &style.whitespace,
-                &style.alphanumeric.replace_all(value, ""),
-            ),
-            underscore_whitespace,
-        );
-        if !filename.iter().any(|e| e.contains(&sanitized_value)) {
-            filename.push(format!("{separator}-{separator}{sanitized_value}", ));
-        }
-    }
-
-    if tmdb_id > 0 {
-        filename.push(format!("{separator}{{tmdb={tmdb_id}}}"));
-    }
-    let kodi_filename = filename.join("");
-
-    let mut path = PathBuf::new();
-    for dir in file_dir {
-        path.push(sanitize_for_filename(&dir, underscore_whitespace));
-    }
-    (path, kodi_filename)
 }
 
 #[derive(Clone)]
@@ -336,6 +244,7 @@ pub fn strm_get_file_paths(target_path: &Path) -> PathBuf {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct StrmItemInfo {
     group: String,
     title: String,
@@ -503,12 +412,301 @@ struct StrmFile {
     strm_info: StrmItemInfo,
 }
 
+/// Formats names according to the official Kodi documentation, with TMDb ID for better matching.
+/// Movie: /Movie Name (Year) {tmdb=XXXXX}/Movie Name (Year).strm
+/// Series: /Show Name (Year) {tmdb=XXXXX}/Season 01/Show Name S01E01.strm
+fn format_for_kodi(
+    strm_item_info: &StrmItemInfo,
+    tmdb_id: u32,
+    separator: &str,
+    flat: bool,
+) -> (PathBuf, String) {
+    let mut dir_path = PathBuf::new();
+    let category = sanitize_for_filename(&strm_item_info.group, false);
+
+    match strm_item_info.item_type {
+        PlaylistItemType::Video => {
+            let id_string = if tmdb_id > 0 { format!("{}{{tmdb={}}}", separator, tmdb_id) } else { String::new() };
+            let (name, year) = style_rename_year(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
+            let sanitized_title = sanitize_for_filename(name.trim(), false);
+            let year_string = year.map_or(String::new(), |y| format!("{}({})", separator, y));
+
+            let base_name = format!("{}{}", sanitized_title, year_string);
+            let folder_name = format!("{}{}", base_name, id_string);
+            let final_filename = base_name; // Kodi is flexible, filename without ID is clean. The folder has the ID.
+
+            if flat {
+                dir_path.push(format!("{}{separator}[{}]", folder_name, category));
+            } else {
+                dir_path.push(category);
+                dir_path.push(folder_name);
+            }
+            (dir_path, final_filename)
+        }
+        PlaylistItemType::Series => {
+            let id_string = if tmdb_id > 0 { format!("{}{{tmdb={}}}", separator, tmdb_id) } else { String::new() };
+            let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
+            let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
+            let sanitized_series_name = sanitize_for_filename(name.trim(), false);
+            let year_string = year.map_or(String::new(), |y| format!("{}({})", separator, y));
+
+            let series_folder_name = format!("{}{}{}", sanitized_series_name, year_string, id_string);
+
+            let (_, season) = style_rename_season(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.season.as_ref());
+            let (_, episode) = style_rename_episode(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.episode.as_ref());
+            let season_num = season.unwrap_or(1);
+            let episode_num = episode.unwrap_or(1);
+
+            let final_filename = format!("{}{separator}S{:02}E{:02}", sanitized_series_name, season_num, episode_num);
+            let season_folder = format!("Season{}{:02}", separator, season_num);
+
+            if flat {
+                dir_path.push(format!("{}{separator}[{}]", series_folder_name, category));
+                dir_path.push(season_folder);
+            } else {
+                dir_path.push(category);
+                dir_path.push(series_folder_name);
+                dir_path.push(season_folder);
+            }
+            (dir_path, final_filename)
+        }
+        _ => (PathBuf::new(), sanitize_for_filename(&strm_item_info.title, separator == "_")),
+    }
+}
+
+/// Formats names according to the official Plex documentation.
+/// Movie: /Movie Name (Year) {tmdb-XXXXX}/Movie Name (Year).strm
+/// Series: /Show Name (Year) {tmdb-XXXXX}/Season 01/Show Name - s01e01.strm
+fn format_for_plex(
+    strm_item_info: &StrmItemInfo,
+    tmdb_id: u32,
+    separator: &str,
+    flat: bool,
+) -> (PathBuf, String) {
+    let mut dir_path = PathBuf::new();
+    let category = sanitize_for_filename(&strm_item_info.group, false);
+
+    match strm_item_info.item_type {
+        PlaylistItemType::Video => {
+            let id_string = if tmdb_id > 0 { format!("{}{{tmdb-{}}}", separator, tmdb_id) } else { String::new() };
+            let (name, year) = style_rename_year(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
+            let sanitized_title = sanitize_for_filename(name.trim(), false);
+            let year_string = year.map_or(String::new(), |y| format!("{}({})", separator, y));
+
+            let base_name = format!("{}{}", sanitized_title, year_string);
+            let folder_name = format!("{}{}", base_name, id_string);
+            let final_filename = base_name; // Plex: ID is only in the folder name.
+
+            if flat {
+                dir_path.push(format!("{}{separator}[{}]", folder_name, category));
+            } else {
+                dir_path.push(category);
+                dir_path.push(folder_name);
+            }
+            (dir_path, final_filename)
+        }
+        PlaylistItemType::Series => {
+            let id_string = if tmdb_id > 0 { format!("{}{{tmdb-{}}}", separator, tmdb_id) } else { String::new() };
+            let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
+            let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
+            let sanitized_series_name = sanitize_for_filename(name.trim(), false);
+            let year_string = year.map_or(String::new(), |y| format!("{}({})", separator, y));
+
+            let series_folder_name = format!("{}{}{}", sanitized_series_name, year_string, id_string);
+
+            let (_, season) = style_rename_season(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.season.as_ref());
+            let (_, episode) = style_rename_episode(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.episode.as_ref());
+            let season_num = season.unwrap_or(1);
+            let episode_num = episode.unwrap_or(1);
+
+            // Plex standard: lowercase 's' and hyphens as separators.
+            let final_filename = format!("{} - s{:02}e{:02}", sanitized_series_name, season_num, episode_num);
+            let season_folder = format!("Season{}{:02}", separator, season_num);
+
+            if flat {
+                dir_path.push(format!("{}{separator}[{}]", series_folder_name, category));
+                dir_path.push(season_folder);
+            } else {
+                dir_path.push(category);
+                dir_path.push(series_folder_name);
+                dir_path.push(season_folder);
+            }
+            (dir_path, final_filename)
+        }
+        _ => (PathBuf::new(), sanitize_for_filename(&strm_item_info.title, separator == "_")),
+    }
+}
+
+/// Formats names according to the official Emby documentation.
+/// Movie: /Movie Name (Year)/Movie Name (Year) [tmdbid=XXXXX].strm
+/// Series: /Show Name (Year) [tmdbid=XXXXX]/Season 01/Show Name - S01E01.strm
+fn format_for_emby(
+    strm_item_info: &StrmItemInfo,
+    tmdb_id: u32,
+    separator: &str,
+    flat: bool,
+) -> (PathBuf, String) {
+    let mut dir_path = PathBuf::new();
+    let category = sanitize_for_filename(&strm_item_info.group, false);
+
+    match strm_item_info.item_type {
+        PlaylistItemType::Video => {
+            // Emby prefers the ID in the filename.
+            let id_string = if tmdb_id > 0 { format!("{} [tmdbid={}]", separator, tmdb_id) } else { String::new() };
+            let (name, year) = style_rename_year(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
+            let sanitized_title = sanitize_for_filename(name.trim(), false);
+            let year_string = year.map_or(String::new(), |y| format!("{}({})", separator, y));
+
+            let base_name = format!("{}{}", sanitized_title, year_string);
+            let folder_name = base_name.clone(); // Folder name does not contain the ID.
+            let final_filename = format!("{}{}", base_name, id_string);
+
+            if flat {
+                dir_path.push(format!("{}{separator}[{}]", folder_name, category));
+            } else {
+                dir_path.push(category);
+                dir_path.push(folder_name);
+            }
+            (dir_path, final_filename)
+        }
+        PlaylistItemType::Series => {
+            // For series, the ID goes in the folder name.
+            let id_string = if tmdb_id > 0 { format!("{} [tmdbid={}]", separator, tmdb_id) } else { String::new() };
+            let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
+            let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
+            let sanitized_series_name = sanitize_for_filename(name.trim(), false);
+            let year_string = year.map_or(String::new(), |y| format!("{}({})", separator, y));
+
+            let series_folder_name = format!("{}{}{}", sanitized_series_name, year_string, id_string);
+
+            let (_, season) = style_rename_season(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.season.as_ref());
+            let (_, episode) = style_rename_episode(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.episode.as_ref());
+            let season_num = season.unwrap_or(1);
+            let episode_num = episode.unwrap_or(1);
+            
+            // Emby/Jellyfin standard: uppercase 'S' and hyphens.
+            let final_filename = format!("{} - S{:02}E{:02}", sanitized_series_name, season_num, episode_num);
+            let season_folder = format!("Season{}{:02}", separator, season_num);
+
+            if flat {
+                dir_path.push(format!("{}{separator}[{}]", series_folder_name, category));
+                dir_path.push(season_folder);
+            } else {
+                dir_path.push(category);
+                dir_path.push(series_folder_name);
+                dir_path.push(season_folder);
+            }
+            (dir_path, final_filename)
+        }
+        _ => (PathBuf::new(), sanitize_for_filename(&strm_item_info.title, separator == "_")),
+    }
+}
+
+/// Formats names according to the official Jellyfin documentation.
+/// Movie: /Movie Name (Year) [tmdbid-XXXXX]/Movie Name (Year).strm
+/// Series: /Show Name (Year) [tmdbid-XXXXX]/Season 01/Show Name - S01E01.strm
+fn format_for_jellyfin(
+    strm_item_info: &StrmItemInfo,
+    tmdb_id: u32,
+    separator: &str,
+    flat: bool,
+) -> (PathBuf, String) {
+    let mut dir_path = PathBuf::new();
+    let category = sanitize_for_filename(&strm_item_info.group, false);
+
+    match strm_item_info.item_type {
+        PlaylistItemType::Video => {
+            let id_string = if tmdb_id > 0 { format!("{} [tmdbid-{}]", separator, tmdb_id) } else { String::new() };
+            let (name, year) = style_rename_year(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
+            let sanitized_title = sanitize_for_filename(name.trim(), false);
+            let year_string = year.map_or(String::new(), |y| format!("{}({})", separator, y));
+
+            let base_name = format!("{}{}", sanitized_title, year_string);
+            let folder_name = format!("{}{}", base_name, id_string);
+            let final_filename = base_name; // Jellyfin: ID is only in the folder name.
+
+            if flat {
+                dir_path.push(format!("{}{separator}[{}]", folder_name, category));
+            } else {
+                dir_path.push(category);
+                dir_path.push(folder_name);
+            }
+            (dir_path, final_filename)
+        }
+        PlaylistItemType::Series => {
+            let id_string = if tmdb_id > 0 { format!("{} [tmdbid-{}]", separator, tmdb_id) } else { String::new() };
+            let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
+            let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
+            let sanitized_series_name = sanitize_for_filename(name.trim(), false);
+            let year_string = year.map_or(String::new(), |y| format!("{}({})", separator, y));
+            
+            let series_folder_name = format!("{}{}{}", sanitized_series_name, year_string, id_string);
+
+            let (_, season) = style_rename_season(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.season.as_ref());
+            let (_, episode) = style_rename_episode(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.episode.as_ref());
+            let season_num = season.unwrap_or(1);
+            let episode_num = episode.unwrap_or(1);
+            
+            // Emby/Jellyfin standard: uppercase 'S' and hyphens.
+            let final_filename = format!("{} - S{:02}E{:02}", sanitized_series_name, season_num, episode_num);
+            let season_folder = format!("Season{}{:02}", separator, season_num);
+
+            if flat {
+                dir_path.push(format!("{}{separator}[{}]", series_folder_name, category));
+                dir_path.push(season_folder);
+            } else {
+                dir_path.push(category);
+                dir_path.push(series_folder_name);
+                dir_path.push(season_folder);
+            }
+            (dir_path, final_filename)
+        }
+        _ => (PathBuf::new(), sanitize_for_filename(&strm_item_info.title, separator == "_")),
+    }
+}
+
+
+/// Generates style-compliant directory and file names by dispatching
+/// the call to a dedicated formatting function for the respective style.
+async fn style_based_rename(
+    cfg: &Config,
+    strm_item_info: &StrmItemInfo,
+    input_tmdb_indexes: &mut InputTmdbIndexMap,
+    style: &ExportStyle,
+    underscore_whitespace: bool,
+    flat: bool,
+) -> (PathBuf, String) {
+    let separator = if underscore_whitespace { "_" } else { " " };
+
+    let tmdb_id_val = get_tmdb_value(
+        cfg,
+        strm_item_info.provider_id,
+        strm_item_info.input_name.as_str(),
+        input_tmdb_indexes,
+        strm_item_info.item_type,
+    ).await;
+
+    let tmdb_id = tmdb_id_val.map_or(0, |v| match v {
+        InputTmdbIndexValue::Video(r) => r.tmdb_id,
+        InputTmdbIndexValue::Series(e) => e.tmdb_id,
+    });
+    
+    // Dispatch the call to the responsible function based on the style.
+    match style {
+        ExportStyle::Kodi => format_for_kodi(strm_item_info, tmdb_id, separator, flat),
+        ExportStyle::Plex => format_for_plex(strm_item_info, tmdb_id, separator, flat),
+        ExportStyle::Emby => format_for_emby(strm_item_info, tmdb_id, separator, flat),
+        ExportStyle::Jellyfin => format_for_jellyfin(strm_item_info, tmdb_id, separator, flat),
+    }
+}
+
 async fn prepare_strm_files(
     cfg: &Config,
     new_playlist: &mut [PlaylistGroup],
-    root_path: &Path,
+    _root_path: &Path,
     underscore_whitespace: bool,
-    kodi_style: bool,
+    style: &ExportStyle,
+    flat: bool,
 ) -> Vec<StrmFile> {
     let channel_count = new_playlist
         .iter()
@@ -525,23 +723,16 @@ async fn prepare_strm_files(
     for pg in new_playlist.iter_mut() {
         for pli in pg.channels.iter_mut().filter(|c| filter_strm_item(c)) {
             let strm_item_info = extract_item_info(pli);
-            let (dir_path, strm_file_name) = if kodi_style {
-                kodi_style_rename(
+
+            let (dir_path, strm_file_name) = style_based_rename(
                     cfg,
                     &strm_item_info,
-                    &CONSTANTS.kodi_style,
                     &mut input_tmdb_indexes,
+                    style,
                     underscore_whitespace,
-                ).await
-            } else {
-                let dir_path = root_path.join(sanitize_for_filename(
-                    &strm_item_info.group,
-                    underscore_whitespace,
-                ));
-                let strm_file_name =
-                    sanitize_for_filename(&strm_item_info.title, underscore_whitespace);
-                (dir_path, strm_file_name)
-            };
+                    flat,
+                ).await;
+            
             let filename = Arc::new(strm_file_name);
             if all_filenames.contains(&filename) {
                 collisions.insert(Arc::clone(&filename));
@@ -562,7 +753,7 @@ async fn prepare_strm_files(
             .filter(|s| collisions.contains(&s.file_name))
             .for_each(|s| {
                 s.file_name = Arc::new(format!(
-                    "{}{separator}-{separator}[{}]",
+                    "{}{separator}[{}]",
                     s.file_name, s.strm_info.virtual_id
                 ));
             });
@@ -570,7 +761,7 @@ async fn prepare_strm_files(
     result
 }
 
-pub async fn kodi_write_strm_playlist(
+pub async fn write_strm_playlist(
     target: &ConfigTarget,
     target_output: &StrmTargetOutput,
     cfg: &Config,
@@ -620,7 +811,8 @@ pub async fn kodi_write_strm_playlist(
         new_playlist,
         &root_path,
         target_output.underscore_whitespace,
-        target_output.kodi_style,
+        &target_output.style,
+        target_output.flat,
     ).await;
     for strm_file in strm_files {
         // file paths

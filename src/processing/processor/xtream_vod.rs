@@ -5,8 +5,9 @@ use crate::processing::processor::xtream::{create_resolve_info_wal_files, playli
 use crate::repository::xtream_repository::{xtream_update_input_info_file, xtream_update_input_vod_record_from_wal_file, InputVodInfoRecord};
 use crate::tuliprox_error::{notify_err};
 use crate::processing::processor::{handle_error, handle_error_and_return, create_resolve_options_function_for_xtream_target};
-use crate::utils::{get_u32_from_serde_value, get_u64_from_serde_value};
-use serde_json::{Map, Value};
+use crate::utils::{get_u32_from_serde_value, get_u64_from_serde_value, get_string_from_serde_value};
+use crate::repository::xtream_repository::xtream_get_input_info;
+use serde_json::{from_str, Map, Value};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -14,6 +15,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use log::{info, log_enabled, Level};
 use crate::utils;
+use crate::processing::processor::xtream::normalize_json_content;
+use crate::tuliprox_error::to_io_error;
 
 create_resolve_options_function_for_xtream_target!(vod);
 
@@ -34,14 +37,21 @@ fn extract_info_record_from_vod_info(content: &str) -> Option<(u32, InputVodInfo
         .and_then(get_u64_from_serde_value)
         .unwrap_or(0);
 
-    let tmdb_id = doc.get(crate::model::XC_TAG_VOD_INFO_INFO)?.as_object()
-        .and_then(|info| info.get(crate::model::XC_TAG_VOD_INFO_TMDB_ID))
+    let info_section = doc.get(crate::model::XC_TAG_VOD_INFO_INFO)?.as_object()?;
+
+    let tmdb_id = info_section
+        .get(crate::model::XC_TAG_VOD_INFO_TMDB_ID)
         .and_then(get_u32_from_serde_value)
         .unwrap_or(0);
+
+    let release_date = info_section
+        .get(crate::model::XC_TAG_VOD_INFO_RELEASEDATE)
+        .and_then(get_string_from_serde_value);
 
     Some((provider_id, InputVodInfoRecord {
         tmdb_id,
         ts: added,
+        release_date,
     }))
 }
 
@@ -53,6 +63,19 @@ fn write_vod_info_record_to_wal_file(
     writer.write_all(&provider_id.to_le_bytes())?;
     writer.write_all(&record.tmdb_id.to_le_bytes())?;
     writer.write_all(&record.ts.to_le_bytes())?;
+
+    match &record.release_date {
+        Some(date_str) => {
+            // Write the length as a 4-byte u32 to prevent overflow.
+            let len = u32::try_from(date_str.len()).map_err(to_io_error)?;
+            writer.write_all(&len.to_le_bytes())?;
+            writer.write_all(date_str.as_bytes())?;
+        }
+        None => {
+            // Write a length of 0 as 4 bytes.
+            writer.write_all(&0u32.to_le_bytes())?;
+        }
+    }
     Ok(())
 }
 
@@ -93,9 +116,10 @@ pub async fn playlist_resolve_vod(client: Arc<reqwest::Client>, cfg: &Config, ta
         let (should_update, _provider_id, _ts) = should_update_vod_info(pli, &processed_info_ids);
         if should_update {
             if let Some(content) = playlist_resolve_download_playlist_item(Arc::clone(&client), pli, fpl.input, errors, resolve_delay, XtreamCluster::Video).await {
-                if let Some((provider_id, info_record)) = extract_info_record_from_vod_info(&content) {
+                let normalized_content = normalize_json_content(content);
+                if let Some((provider_id, info_record)) = extract_info_record_from_vod_info(&normalized_content) {
                     let ts = info_record.ts;
-                    handle_error_and_return!(write_info_content_to_wal_file(&mut content_writer, provider_id, &content),
+                    handle_error_and_return!(write_info_content_to_wal_file(&mut content_writer, provider_id, &normalized_content),
                         |err| errors.push(notify_err!(format!("Failed to resolve vod, could not write to content wal file {err}"))));
                     processed_info_ids.insert(provider_id, ts);
                     handle_error_and_return!(write_vod_info_record_to_wal_file(&mut record_writer, provider_id, &info_record),
@@ -129,5 +153,19 @@ pub async fn playlist_resolve_vod(client: Arc<reqwest::Client>, cfg: &Config, ta
             |err| errors.push(err));
         handle_error!(xtream_update_input_vod_record_from_wal_file(cfg, fpl.input, &wal_record_path).await,
             |err| errors.push(err));
+    }
+    
+    // Update in-memory playlist items with the newly fetched vod info.
+    // This makes the data available for subsequent processing steps like STRM export.
+    let vod_info_iter = fpl.playlistgroups.iter_mut()
+        .flat_map(|plg| &mut plg.channels)
+        .filter(|pli| pli.header.xtream_cluster == XtreamCluster::Video);
+
+    for pli in vod_info_iter {
+        if let Some(provider_id) = pli.header.get_provider_id() {
+            if let Some(content) = xtream_get_input_info(cfg, fpl.input, provider_id, XtreamCluster::Video) {
+                pli.header.additional_properties = from_str::<Map<String, Value>>(&content).ok().and_then(|info_doc| info_doc.get("info").cloned());
+            }
+        }
     }
 }

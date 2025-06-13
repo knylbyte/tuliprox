@@ -8,6 +8,13 @@ export enum SortOrder {
     desc = "desc"
 }
 
+export enum ExportStyle {
+    kodi = "kodi",
+    plex = "plex",
+    emby = "emby",
+    jellyfin = "jellyfin"
+}
+
 export enum TargetType {
     m3u = "m3u",
     xtream = "xtream",
@@ -78,12 +85,15 @@ export interface TargetConfig {
             resolve_vod: boolean,
             resolve_vod_delay: number,
             // strm
+            style: ExportStyle,
+            flat?: boolean,
             cleanup: boolean,
-            kodi_style: boolean,
             directory: string,
             username?: string, // hdhomerun & strm
             underscore_whitespace: boolean,
             strm_props?: string[],
+            /** @deprecated Use style="kodi" instead */
+            kodi_style?: boolean,
             // hdhomerun
             device: String,
             use_output?: TargetType,

@@ -60,7 +60,8 @@ pub fn filter_request_header(key: &str) -> bool {
     true
 }
 
-pub struct KodiStyle {
+/// Configuration for media export naming styles (Kodi, Plex, Emby, Jellyfin)
+pub struct ExportStyleConfig {
     pub year: Regex,
     pub season: Regex,
     pub episode: Regex,
@@ -86,7 +87,7 @@ pub struct Constants {
     pub re_whitespace: Regex,
     pub re_hls_uri: Regex,
     pub sanitize: AtomicBool,
-    pub kodi_style: KodiStyle,
+    pub export_style_config: ExportStyleConfig,
     pub country_codes: HashSet<&'static str>,
     pub allowed_output_formats: Vec<String>,
 }
@@ -111,10 +112,10 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
         re_hls_uri: Regex::new(r#"URI="([^"]+)""#).unwrap(),
 
         sanitize: AtomicBool::new(true),
-        kodi_style: KodiStyle {
+        export_style_config: ExportStyleConfig {
             season: Regex::new(r"[Ss]\d{1,2}").unwrap(),
             episode: Regex::new(r"[Ee]\d{1,2}").unwrap(),
-            year: Regex::new(r"\d{4}").unwrap(),
+            year: Regex::new(r"(\d{4})").unwrap(),
             whitespace: Regex::new(r"\s+").unwrap(),
             alphanumeric: Regex::new(r"[^\w\s]").unwrap(),
         },

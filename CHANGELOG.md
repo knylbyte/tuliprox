@@ -14,6 +14,11 @@ If we assume the variable `station` contains the value `WINK`,
 this script receives the template with the concatenated name `US_WINK_PREFIX` which should be defined in `templates` section,
 and assigns it to the variable `station_prefix`.
 
+# 3.1.4 (???)
+- Extended STRM export functionality with:
+  - Support for various media tools (Kodi, Plex, Emby, Jellyfin), with consideration for recommended naming conventions and file organization.
+  - Optional flat directory structure via 'flat' parameter (nested folder structures are not supported by some media scanners).
+
 # 3.1.3 (2025-06-06)
 - Fixed xtream codes series info duplicate fields problem.
 - Fixed series info container_extension problem.

@@ -396,19 +396,23 @@ impl XtreamMappingOptions {
     }
 }
 
-fn append_release_date(document: &mut serde_json::Map<String, Value>) {
-    let release_date = document
-        .get("release_date")
+pub fn normalize_release_date(document: &mut serde_json::Map<String, Value>) {
+    // Find the first non-empty release date key
+    let date_value = document.get("release_date")
         .or_else(|| document.get("releaseDate"))
         .or_else(|| document.get("releasedate"))
-        .cloned()
-        .unwrap_or(Value::Null);
+        .filter(|v| v.as_str().is_some_and(|s| !s.is_empty())) 
+        .cloned();
 
-    if !document.contains_key("release_date") {
-        document.insert("release_date".to_string(), release_date.clone());
-    }
-    if !document.contains_key("releaseDate") {
-        document.insert("releaseDate".to_string(), release_date);
+    // Remove unused keys (optional)
+    document.remove("releaseDate");
+    document.remove("releasedate");
+
+    // Insert the normalized release date or null if not found
+    if let Some(date) = date_value {
+        document.insert("release_date".to_string(), date);
+    } else {
+        document.insert("release_date".to_string(), Value::Null);
     }
 }
 
@@ -516,7 +520,6 @@ pub fn xtream_playlistitem_to_document(pli: &XtreamPlaylistItem, url: &str, opti
         XtreamCluster::Series => {
             append_prepared_series_properties(props.as_ref(), &mut document);
             append_mandatory_fields(&mut document, xtream_const::SERIES_STREAM_FIELDS);
-            append_release_date(&mut document);
         }
     }
 

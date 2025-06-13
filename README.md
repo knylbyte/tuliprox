@@ -10,7 +10,9 @@ designed for processing, filtering, and serving media playlists with minimal res
 ## 🔧 Core Features:
 
 - **Advanced Playlist Processing**: Filter, rename, map, and sort entries with ease.
-- **Flexible Proxy Support**: Acts as a reverse/redirect proxy for EXTM3U, Xtream Codes, HDHomeRun, and STRM (Kodi) formats.
+- **Flexible Proxy Support**: Acts as a reverse/redirect proxy for EXTM3U, Xtream Codes, HDHomeRun, and STRM formats (Kodi, Plex, Emby, Jellyfin) with:
+  - app-specific naming conventions
+  - flat directory structure option (for compatibility reasons of some media scanners)
 - **Multi-Source Handling**: Supports multiple input and output sources. Merge various playlists and generate custom outputs.
 - **Scheduled Updates**: Keep playlists fresh with automatic updates in server mode.
 - **Web Delivery**: Run as a CLI tool to create m3u playlist to serve with web servers like Nginx or Apache.
@@ -786,10 +788,11 @@ Each format has different properties
 `strm`
 - directory: _mandatory_,
 - username: _optional_,
-- underscore_whitespace: _optional_,  true|false, default false
-- cleanup:  _optional_,  true|false, default false
-- kodi_style:  _optional_,  true|false, default false
-- strm_props: _optional_,  list of strings,
+- underscore_whitespace: _optional_, true|false, default false
+- cleanup: _optional_, true|false, default false
+- style: _mandatory_, kodi|plex|emby|jellyfin
+- flat: _optional_, true|false, default false
+- strm_props: _optional_, list of strings,
 
 `hdhomerun`
 - device: _mandatory_,
@@ -831,12 +834,20 @@ Target options are:
 - `share_live_streams` to share live stream connections  in reverse proxy mode.
 - `remove_duplicates` tries to remove duplicates by `url`.
 
-`strm` output has additional options
-- `underscore_whitespace` replaces all whitespaces with `_` in the path.
-- `cleanup` deletes the directory given at `filename`. Don't point at existing media folder or everything will be deleted.
-- `kodi_style` tries to rename `filename` with [kodi style](https://kodi.wiki/view/Naming_video_files/TV_shows).
-- `strm_props` is a list of properties written to the strm file.
-  If `kodi_style` set to `true` the property `#KODIPROP:seekable=true|false` is added. If `strm_props` is not given `#KODIPROP:inputstream=inputstream.ffmpeg`, `"#KODIPROP:http-reconnect=true` are set too for `kody_style`.
+`strm` output has additional options:
+- `underscore_whitespace`: replaces all whitespaces with `_` in the path
+- `cleanup`: deletes the directory given at `filename`. Don't point at existing media folder or everything will be deleted
+- `style`: determines naming convention (kodi, plex, emby, jellyfin)
+- `flat`: creates flat directory structure with category tags in folder names
+- `strm_props`: list of properties written to the strm file
+
+Supported styles:
+- Kodi: `Movie Name (Year) {tmdb=ID}/Movie Name (Year).strm`
+- Plex: `Movie Name (Year) {tmdb-ID}/Movie Name (Year).strm`
+- Emby: `Movie Name (Year) [tmdbid=ID]/Movie Name (Year).strm`
+- Jellyfin: `Movie Name (Year) [tmdbid-ID]/Movie Name (Year).strm`
+
+If style is set to 'kodi', the property `#KODIPROP:seekable=true|false` is added. And if `strm_props` is not given `#KODIPROP:inputstream=inputstream.ffmpeg`, `"#KODIPROP:http-reconnect=true` are set too for style `kodi`.
 
 `m3u` output has additional options
 - `include_type_in_url`, default false, if true adds the stream type `live`, `movie`, `series` to the url of the stream.
@@ -966,8 +977,9 @@ sources:
         options:
           ignore_logo: true
           underscore_whitespace: false
-          kodi_style: true
+          style: kodi
           cleanup: true
+          flat: true
         sort:
           order: asc
         filter: "!PROV1_ALL!"

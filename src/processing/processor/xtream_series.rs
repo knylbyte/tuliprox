@@ -18,6 +18,7 @@ use log::{info, log_enabled, Level};
 use crate::model::{XtreamSeriesEpisode, XtreamSeriesInfoEpisode};
 use crate::utils;
 use crate::utils::bincode_serialize;
+use crate::processing::processor::xtream::normalize_json_content;
 
 create_resolve_options_function_for_xtream_target!(series);
 
@@ -87,7 +88,8 @@ async fn playlist_resolve_series_info(client: Arc<reqwest::Client>, cfg: &Config
         let (should_update, provider_id, ts) = should_update_series_info(pli, &processed_info_ids);
         if should_update {
             if let Some(content) = playlist_resolve_download_playlist_item(Arc::clone(&client), pli, fpl.input, errors, resolve_delay, XtreamCluster::Series).await {
-                handle_error_and_return!(write_info_content_to_wal_file(&mut content_writer, provider_id, &content),
+                let normalized_content = normalize_json_content(content);
+                handle_error_and_return!(write_info_content_to_wal_file(&mut content_writer, provider_id, &normalized_content),
                     |err| errors.push(notify_err!(format!("Failed to resolve series, could not write to content wal file {err}"))));
                 processed_info_ids.insert(provider_id, ts);
                 handle_error_and_return!(write_series_info_record_to_wal_file(&mut record_writer, provider_id, ts),

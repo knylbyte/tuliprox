@@ -2,6 +2,7 @@ use crate::tuliprox_error::{info_err, notify_err};
 use crate::tuliprox_error::{str_to_io_error, to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::{Config, ConfigInput};
 use crate::model::{FetchedPlaylist, PlaylistEntry, PlaylistItem, PlaylistItemType, XtreamCluster};
+use crate::model::normalize_release_date;
 use crate::repository::storage::get_input_storage_path;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -14,6 +15,7 @@ use crate::repository::storage_const;
 use crate::repository::xtream_repository::xtream_get_record_file_path;
 use crate::utils;
 use crate::utils::xtream;
+use serde_json::{from_str, to_string, Value};
 
 pub(in crate::processing) async fn playlist_resolve_download_playlist_item(client: Arc<reqwest::Client>, pli: &PlaylistItem, input: &ConfigInput, errors: &mut Vec<TuliproxError>, resolve_delay: u16, cluster: XtreamCluster) -> Option<String> {
     let mut result = None;
@@ -31,6 +33,18 @@ pub(in crate::processing) async fn playlist_resolve_download_playlist_item(clien
         tokio::time::sleep(std::time::Duration::new(u64::from(resolve_delay), 0)).await;
     }
     result
+}
+
+pub(in crate::processing) fn normalize_json_content(content: String) -> String {
+    match from_str::<Value>(&content) {
+        Ok(mut json_value) => {
+            if let Some(info) = json_value.get_mut("info").and_then(Value::as_object_mut) {
+                normalize_release_date(info);
+            }
+            to_string(&json_value).unwrap_or(content)
+        },
+        Err(_) => content,
+    }
 }
 
 pub(in crate::processing) fn write_info_content_to_wal_file(writer: &mut BufWriter<&File>, provider_id: u32, content: &str) -> std::io::Result<()> {
