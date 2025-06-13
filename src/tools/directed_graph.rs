@@ -210,7 +210,7 @@ mod tests {
     use crate::tools::directed_graph::DirectedGraph;
     use std::collections::HashSet;
 
-    fn are_vecs_equal(vec1: &Vec<&str>, vec2: Vec<&str>) -> bool {
+    fn are_vecs_equal(vec1: &Vec<&str>, vec2: &Vec<&str>) -> bool {
         let set1: HashSet<String> = vec1.iter().map(|s| (*s).to_string()).collect();
         let set2: HashSet<String> = vec2.iter().map(|s| (*s).to_string()).collect();
 
@@ -263,13 +263,13 @@ mod tests {
         let dependencies = dependencies_opt.unwrap();
         let a_deps = dependencies.get("A");
         assert!(a_deps.is_some(), "No dependencies for A found");
-        assert!(are_vecs_equal(a_deps.unwrap(), vec!["B"]), "Dependencies for A not match");
+        assert!(are_vecs_equal(a_deps.unwrap(), &vec!["B"]), "Dependencies for A not match");
         let b_deps = dependencies.get("B");
         assert!(b_deps.is_some(), "No dependencies for B found");
-        assert!(are_vecs_equal(b_deps.unwrap(), vec!["C", "D"]), "Dependencies for B not match");
+        assert!(are_vecs_equal(b_deps.unwrap(), &vec!["C", "D"]), "Dependencies for B not match");
         let c_deps = dependencies.get("C");
         assert!(c_deps.is_some(), "No dependencies for C found");
-        assert!(are_vecs_equal(c_deps.unwrap(), vec!["D"]), "Dependencies for C not match");
+        assert!(are_vecs_equal(c_deps.unwrap(), &vec!["D"]), "Dependencies for C not match");
         let d_deps = dependencies.get("D");
         assert!(d_deps.is_none(), "No dependencies for D found");
     }
@@ -302,7 +302,7 @@ mod tests {
         let sorted = graph.topological_sort();
         assert!(sorted.is_some(), "Could not sort");
         let sorted_list = sorted.unwrap();
-        assert!(are_vecs_equal(&sorted_list, vec!["D", "A", "C", "B"]), "sort order wrong");
+        assert!(are_vecs_equal(&sorted_list, &vec!["D", "A", "C", "B"]), "sort order wrong");
     }
 
     #[test]
@@ -327,7 +327,7 @@ mod tests {
         let sorted = graph.topological_sort();
         assert!(sorted.is_some(), "Could not sort");
         let sorted_list = sorted.unwrap();
-        assert!(are_vecs_equal(&sorted_list, vec!["F", "B", "A", "C", "E", "D", "G"]), "sort order wrong");
+        assert!(are_vecs_equal(&sorted_list, &vec!["F", "B", "A", "C", "E", "D", "G"]), "sort order wrong");
 
         // should be {"D": ["C", "E"], "G": ["C", "F"], "C": ["A", "B"]}
         assert!(graph.get_dependencies().is_some(), "No dependencies");

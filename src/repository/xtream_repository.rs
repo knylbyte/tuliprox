@@ -795,13 +795,13 @@ pub async fn xtream_update_input_vod_record_from_wal_file(
             let provider_id = u32::from_le_bytes(provider_id_bytes);
             
             if reader.read_exact(&mut tmdb_id_bytes).is_err() {
-                error!("Unexpected EOF after reading provider_id {} for VOD record.", provider_id);
+                error!("Unexpected EOF after reading provider_id {provider_id} for VOD record.");
                 break;
             }
             let tmdb_id = u32::from_le_bytes(tmdb_id_bytes);
 
             if reader.read_exact(&mut ts_bytes).is_err() {
-                error!("Unexpected EOF after reading tmdb_id for VOD record with provider_id {}.", provider_id);
+                error!("Unexpected EOF after reading tmdb_id for VOD record with provider_id {provider_id}.");
                 break;
             }
             let ts = u64::from_le_bytes(ts_bytes);
@@ -809,7 +809,7 @@ pub async fn xtream_update_input_vod_record_from_wal_file(
             // Read the date string length as a 4-byte u32.
             let mut len_bytes = [0u8; 4];
             if reader.read_exact(&mut len_bytes).is_err() { 
-                error!("Unexpected EOF when reading release_date length for VOD record with provider_id {}.", provider_id);
+                error!("Unexpected EOF when reading release_date length for VOD record with provider_id {provider_id}.");
                 break; 
             }
             let len = u32::from_le_bytes(len_bytes) as usize;
@@ -817,7 +817,7 @@ pub async fn xtream_update_input_vod_record_from_wal_file(
             let release_date = if len > 0 {
                 let mut date_buffer = vec![0u8; len];
                 if reader.read_exact(&mut date_buffer).is_err() { 
-                    error!("Unexpected EOF when reading release_date string for VOD record with provider_id {}.", provider_id);
+                    error!("Unexpected EOF when reading release_date string for VOD record with provider_id {provider_id}.");
                     break; 
                 }
                 String::from_utf8(date_buffer).ok()

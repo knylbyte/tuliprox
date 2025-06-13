@@ -835,7 +835,7 @@ mod tests {
                 };
                 tree_update.update(&i, new_record)?;
             } else {
-                assert!(false, "{content} {i} not found");
+                panic!("{content} {i} not found");
             }
         }
 
@@ -857,7 +857,7 @@ mod tests {
 
 
     #[test]
-    fn insert_dulplicate_test() -> io::Result<()> {
+    fn insert_dulplicate_test() {
         let content = "Entry";
         let mut tree = BPlusTree::<u32, Record>::new();
         for i in 0u32..=500 {
@@ -879,7 +879,6 @@ mod tests {
             });
         });
 
-        Ok(())
     }
 
     #[test]

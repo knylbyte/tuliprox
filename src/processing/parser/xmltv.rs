@@ -533,10 +533,8 @@ mod tests {
     /// // This will assert that various channel names are normalized as expected.
     /// ```
     fn normalize() {
-        let mut epg_smart_cfg = EpgSmartMatchConfig::default();
-        epg_smart_cfg.enabled = true;
-        epg_smart_cfg.name_prefix = EpgNamePrefix::Suffix(".".to_string());
-        let _ = epg_smart_cfg.prepare();
+        let mut epg_smart_cfg = EpgSmartMatchConfig { enabled: true, name_prefix: EpgNamePrefix::Suffix(".".to_string()), ..Default::default() };
+       let _ = epg_smart_cfg.prepare();
         println!("{epg_smart_cfg:?}");
         assert_eq!("supersport6.ru", normalize_channel_name("RU: SUPERSPORT 6 ᴿᴬᵂ", &epg_smart_cfg));
         assert_eq!("odisea.sat", normalize_channel_name("SAT: ODISEA ᴿᴬᵂ", &epg_smart_cfg));
@@ -562,9 +560,7 @@ mod tests {
     /// ```
     fn test_metaphone() {
         let metaphone = Metaphone::default();
-        let mut epg_smart_cfg = EpgSmartMatchConfig::default();
-        epg_smart_cfg.enabled = true;
-        epg_smart_cfg.name_prefix = EpgNamePrefix::Suffix(".".to_string());
+        let mut epg_smart_cfg = EpgSmartMatchConfig { enabled: true, name_prefix: EpgNamePrefix::Suffix(".".to_string()), ..Default::default() };
         let _ = epg_smart_cfg.prepare();
         println!("{epg_smart_cfg:?}");
         // assert_eq!("supersport6.ru", metaphone.encode(&normalize_channel_name("RU: SUPERSPORT 6 ᴿᴬᵂ", &epg_normalize_cfg)));

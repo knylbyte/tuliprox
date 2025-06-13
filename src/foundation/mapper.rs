@@ -1212,7 +1212,7 @@ mod tests {
             @Group = "United States - Entertainment"
     "#;
 
-        let mapper = MapperScript::parse(dsl).expect("Parsing failed");
+        let mapper = MapperScript::parse(dsl, None).expect("Parsing failed");
         println!("Program: {mapper:?}");
         let mut channels: Vec<PlaylistItem> = vec![
             ("D", "HD"), ("A", "FHD"), ("Z", ""), ("K", "HD"), ("B", "HD"), ("A", "HD"),
@@ -1223,7 +1223,7 @@ mod tests {
             let mut accessor = ValueAccessor {
                 pli,
             };
-            mapper.eval(&mut accessor);
+            mapper.eval(&mut accessor, None);
             println!("Result: {pli:?}");
         }
 
@@ -1241,7 +1241,7 @@ mod tests {
 
     #[test]
     fn test_complex() {
-        let script = r##"
+        let script = r#"
         print("LOCAL")
             coast = @Caption ~ "!COAST!"
             quality = uppercase(@Caption ~ "!QUALITY!")
@@ -1297,8 +1297,8 @@ mod tests {
                 @Group = concat("🇺🇸 > USA - ", network, " Locals")
               }
             }
-        "##;
-        let mapper = MapperScript::parse(script).expect("Parsing failed");
+        "#;
+        let mapper = MapperScript::parse(script, None).expect("Parsing failed");
         println!("Program: {mapper:?}");
     }
 }
