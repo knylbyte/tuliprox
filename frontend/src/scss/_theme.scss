@@ -21,6 +21,7 @@
   --tool-button-color: #fff;
   --tool-button-hover-color: #ffffff;
   --tool-button-hover-background-color: #0c8a13;
+  --default-button-background-color: #124a9b;
 
   --toolbar-background-color: #282A36;
   --toolbar-button-hover-color: #ffffff;
@@ -47,16 +48,21 @@
   --border-radius: 8px;
 
   --icon-button-border-radius: 4px;
-  --icon-button-background-color: #124a9b;
+  --icon-button-background-color: var(--default-button-background-color);
   --icon-button-color: #ffffff;
   --icon-button-hover-background-color: #0d6efd;
   --icon-button-hover-color: #ffffff;
   --icon-button-hover-border-color: #ced9fb;
 
+  --menu-button-color:#fffff;
+  --menu-button-background-color: #20273344;
+
+  --menu-button-hover-color:#fffff;
+  --menu-button-hover-background-color: #202733;
 
   --text-button-border-radius: 4px;
   --text-button-border-color: transparent;
-  --text-button-background-color: #124a9b;
+  --text-button-background-color: var(--default-button-background-color);
   --text-button-color: #ffffff;
   --text-button-hover-background-color: #0d6efd;
   --text-button-hover-color: #ffffff;
@@ -92,4 +98,13 @@
   --breadcrumb-color: #c4c4c4;
   --breadcrumb-active-background-color: #4ad96e;
   --breadcrumb-active-color: #000;
+
+  --menu-icon-color-update: #A3D8FF;
+  --menu-icon-color-user: #0ABAB5;
+  --menu-icon-color-api_server: #FF9D23;
+  --menu-icon-color-main_config: #FF2DF1;
+  --menu-icon-color-status : #F9E400;
+
+  --toolbar-bg-color: #161b25;
+
 }

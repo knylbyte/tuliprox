@@ -44,6 +44,7 @@
       min-width: 32px;
     }
     gap: 12px;
+    padding: 8px 4px;
 
     button {
       @include common.iconButton();
@@ -62,13 +63,20 @@
       gap: 8px;
       align-items: center;
       cursor: pointer;
-      //color: var(--icon-button-hover-color);
-      //color: var(--icon-button-hover-background-color);
+      color: var(--menu-button-color);
+      background-color: var(--menu-button-background-color);
       border: 1px solid transparent;
-      border-radius: 4px;
-      padding: 4px;
+      border-radius: var(--border-radius);
+      padding: 8px 16px;
       user-select: none;
       white-space: nowrap;
+
+      &_update { svg { fill: var(--menu-icon-color-update); } }
+      &_user { svg { fill: var(--menu-icon-color-user); } }
+      &_api_server { svg { fill: var(--menu-icon-color-api_server); } }
+      &_main_config { svg { fill: var(--menu-icon-color-main_config); } }
+      &_status { svg { fill: var(--menu-icon-color-status); } }
+
 
       * {
         pointer-events: none;
@@ -86,7 +94,8 @@
     }
 
     &-menu-action.selected {
-      color: var(--label-color);
+      color: var(--menu-button-hover-color);
+      background-color: var(--menu-button-hover-background-color);
     }
   }
 

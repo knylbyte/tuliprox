@@ -27,7 +27,8 @@
     justify-content: flex-end;
     align-items: center;
     gap: 12px;
-    background-color: inherit;
+    background-color: var(--toolbar-bg-color);
+    padding: 8px 16px;
 
     label {
       flex: 1 1 auto;

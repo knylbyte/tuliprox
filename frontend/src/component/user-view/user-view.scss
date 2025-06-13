@@ -221,9 +221,17 @@ dialog:not([open]) {
             padding-left: 4px;
           }
           span {
+            //padding: 4px;
+            //transform: scale(0.9) translateY(5px);
             padding: 4px;
-            transform: scale(0.9) translateY(5px);
             @include common.iconButton();
+            &:first-child {
+              border-radius: var(--icon-button-border-radius) 0 0 var(--icon-button-border-radius) !important;
+            }
+
+            &:last-child {
+              border-radius: 0 var(--icon-button-border-radius) var(--icon-button-border-radius) 0 !important;
+            }
           }
         }
       }
