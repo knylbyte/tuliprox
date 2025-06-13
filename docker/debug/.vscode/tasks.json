@@ -1,0 +1,27 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "docker-compose-up-debug",
+            "type": "shell",
+            "command": "docker compose -f docker-compose.yml -f docker-compose.debug-override.yml up --build --force-recreate -d --wait",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "clear": true
+            },
+            "detail": "Builds and starts the Docker Compose stack for debugging."
+        },
+        {
+            "label": "docker-compose-down",
+            "type": "shell",
+            "command": "docker compose -f docker-compose.yml -f docker-compose.debug-override.yml down",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "silent",
+                "clear": true
+            },
+            "detail": "Stops and removes all containers defined in the Docker Compose files."
+        }
+    ]
+}
