@@ -1,4 +1,15 @@
-# Build rust stage
+# =================================================================
+#
+# Part 1: Prerequisite Build Stages
+#
+# These stages are used as building blocks for the final images.
+# They prepare the Rust binary, the Node.js frontend, and other resources.
+#
+# =================================================================
+
+# -----------------------------------------------------------------
+# Stage 1: Build the Rust binary for production
+# -----------------------------------------------------------------
 FROM rust:bookworm AS rust-build
 
 # Get target architecture
@@ -24,7 +35,9 @@ RUN cargo build --target $RUST_TARGET --release || true
 COPY . .
 RUN cargo build --target $RUST_TARGET --release
 
-# Build node stage
+# -----------------------------------------------------------------
+# Stage 2: Build the Node.js frontend
+# -----------------------------------------------------------------
 FROM node:lts AS node-build
 
 ENV NODE_OPTIONS=--openssl-legacy-provider
@@ -43,7 +56,9 @@ COPY ./frontend /app
 # Build the frontend
 RUN yarn build && rm -rf node_modules
 
-# Build resource stage (using ffmpeg)
+# -----------------------------------------------------------------
+# Stage 3: Build video resources with ffmpeg
+# -----------------------------------------------------------------
 FROM linuxserver/ffmpeg:latest AS resource-build
 
 WORKDIR /src
@@ -67,7 +82,9 @@ RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
      -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
      ./resources/user_account_expired.ts
 
-# Stage to prepare /etc/localtime for scratch
+# -----------------------------------------------------------------
+# Stage 4: Prepare timezone data
+# -----------------------------------------------------------------
 FROM alpine:latest AS tz-prep
 
 ARG TZ=UTC
@@ -80,7 +97,56 @@ RUN apk add --no-cache tzdata \
   && ln -sf /usr/share/zoneinfo/${TZ} /output/etc/localtime
 
 
-# Final container (Scratch)
+# =================================================================
+#
+# Part 2: Final Image Stages
+#
+# These stages build the final, runnable images by assembling
+# the artifacts from the prerequisite stages above.
+#
+# =================================================================
+
+# -----------------------------------------------------------------
+# Final Image #1: Debugging Environment (Alpine-based)
+# -----------------------------------------------------------------
+FROM rust:alpine AS debug
+
+# For Alpine, the correct target architecture uses 'musl'
+ARG RUST_TARGET=x86_64-unknown-linux-musl
+ARG TZ=UTC
+
+# Make the build-time argument available as a run-time environment variable
+ENV RUST_TARGET=${RUST_TARGET}
+ENV TZ=${TZ}
+
+# Install build dependencies and the lldb debugger for Alpine
+# Added 'perl' which is required to build the native OpenSSL library.
+RUN apk add --no-cache bash build-base openssl-dev lldb gdb perl
+
+# Update Rust toolchain and add the necessary target
+RUN rustup update && rustup target add $RUST_TARGET
+
+# Create the final application layout to mimic production
+WORKDIR /app
+COPY --from=node-build /app/build ./web
+COPY --from=resource-build /src/resources ./resources
+
+# Create a separate directory for the source code
+WORKDIR /usr/src/tuliprox
+COPY . .
+
+# Copy the entrypoint script and set it as the entrypoint for the container.
+COPY ./docker/debug/debug-entrypoint.sh /usr/local/bin/entrypoint.sh
+# Ensure the script is executable
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# The CMD will be passed as arguments to the entrypoint script.
+CMD ["tail", "-f", "/dev/null"]
+
+# -----------------------------------------------------------------
+# Final Image #2: Production image based on scratch
+# -----------------------------------------------------------------
 FROM scratch AS scratch-final
 
 ARG RUST_TARGET
@@ -103,7 +169,9 @@ COPY --from=resource-build /src/resources ./resources
 ENTRYPOINT ["/app/tuliprox"]
 CMD ["-s", "-p", "/app/config"]
 
-# Final container (Alpine)
+# -----------------------------------------------------------------
+# Final Image #3: Production image based on Alpine
+# -----------------------------------------------------------------
 FROM alpine:latest AS alpine-final
 
 ARG RUST_TARGET
@@ -122,5 +190,6 @@ WORKDIR /app
 COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
 COPY --from=node-build /app/build ./web
 COPY --from=resource-build /src/resources ./resources
+
 ENTRYPOINT ["/sbin/tini", "--", "/app/tuliprox"]
 CMD ["-s", "-p", "/app/config"]
