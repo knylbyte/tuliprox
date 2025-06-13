@@ -17,9 +17,7 @@ use crate::processing::processor::playlist;
 use crate::tools::lru_cache::LRUResourceCache;
 use log::{error, info};
 use reqwest::Client;
-use std::future::IntoFuture;
 use std::io::ErrorKind;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,6 +26,7 @@ use tokio::sync::Mutex;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use crate::api::api_utils::{get_build_time, get_server_time};
 use crate::api::config_watch::exec_config_watch;
+use crate::api::serve::serve;
 use crate::utils::request::create_client;
 use crate::VERSION;
 
@@ -196,9 +195,10 @@ fn start_hdhomerun(cfg: &Arc<Config>, app_state: &Arc<AppState>, infos: &mut Vec
 
                         match tokio::net::TcpListener::bind(format!("{}:{}", app_host.clone(), port)).await {
                             Ok(listener) => {
-                                if let Err(err) = axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await {
-                                    error!("{err}");
-                                }
+                                serve(listener, router).await;
+                                // if let Err(err) = axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await {
+                                //     error!("{err}");
+                                // }
                             }
                             Err(err) => error!("{err}"),
                         }
@@ -290,7 +290,8 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
 
     let router: axum::Router<()> = router.with_state(shared_data.clone());
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
-     axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await
+    serve(listener, router).await
+    //axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await
 }
 
 

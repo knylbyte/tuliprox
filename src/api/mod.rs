@@ -4,3 +4,4 @@ mod scheduler;
 mod endpoints;
 pub mod main_api;
 mod config_watch;
+mod serve;

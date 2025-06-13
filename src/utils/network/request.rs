@@ -6,7 +6,7 @@ use std::io::{BufWriter, Error, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use flate2::read::{GzDecoder, ZlibDecoder};
 use futures::StreamExt;
@@ -513,7 +513,10 @@ pub fn get_base_url_from_str(url: &str) -> Option<String> {
 }
 
 pub fn create_client(cfg: &Config) -> reqwest::ClientBuilder {
-    let mut client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::limited(10));
+    let mut client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .pool_idle_timeout(Duration::from_secs(30))
+        .pool_max_idle_per_host(10);
 
     if let Some(proxy_cfg) = cfg.proxy.as_ref() {
         let proxy = match reqwest::Proxy::all(&proxy_cfg.url) {
