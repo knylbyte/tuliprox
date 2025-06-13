@@ -1392,7 +1392,29 @@ Now you can do `nginx`  configuration like
       proxy_redirect off;
    }
 ```
+You can also use traefik as reverse proxy server in front of your tuliprox instance with the following labels in your docker-compose file:
+```yaml
+labels:
+  # ----- Service -----
+  - "traefik.enable=true"
 
+  # ----- HTTP (Port 80) -----
+  - "traefik.http.routers.tuliprox.entrypoints=web"
+  - "traefik.http.routers.tuliprox.rule=Host(``tv.my-domain.io`) && (PathPrefix(`/tv`) || PathPrefix(`/tuliprox`))" # 1. path: api-proxy endpoint || 2. path: web-ui endpoint
+
+  # ----- HTTPS (Port 443) -----
+  - "traefik.http.routers.tuliprox-secure.entrypoints=websecure"
+  - "traefik.http.routers.tuliprox-secure.rule=Host(`tv.my-domain.io`) && (PathPrefix(`/tv`) || PathPrefix(`/tuliprox`))" # 1. path: api-proxy endpoint || 2. path: web-ui endpoint
+  - "traefik.http.routers.tuliprox-secure.service=tuliprox"
+  
+  # ----- Serviceport -----
+  - "traefik.http.services.tuliprox.loadbalancer.server.port=8901"
+
+  # ----- Middlewares -----
+  - "traefik.http.middlewares.tuliprox-strip.stripprefix.prefixes=/tv"  # <-- important for api-proxy endpoint
+  - "traefik.http.routers.tuliprox.middlewares=forward-real-ip@file,tuliprox-strip@docker"
+  - "traefik.http.routers.tuliprox-secure.middlewares=forward-real-ip@file,tuliprox-strip@docker"
+```
 Example:
 ```yaml
 server:
