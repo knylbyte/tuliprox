@@ -44,6 +44,7 @@ pub async fn serve(listener: tokio::net::TcpListener, router: axum::Router<()>) 
         let Ok((socket, remote_addr)) = listener.accept().await else { continue };
 
         let Ok(tcp_stream_std) = socket.into_std() else { continue; };
+        tcp_stream_std.set_nonblocking(true).ok(); // this is not necessary
 
         // Configure keep alive with socket2
         let sock_ref = SockRef::from(&tcp_stream_std);
