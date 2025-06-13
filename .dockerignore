@@ -1,5 +1,12 @@
+# Ignore build artifacts
 target/
 bin/
+
+# Ignore the entire docker directory...
 docker/
+# ...but make an exception for the essential debug entrypoint script
+!docker/debug/debug-entrypoint.sh
+
+# Ignore frontend dependencies
 frontend/node_modules/
 frontend/build/

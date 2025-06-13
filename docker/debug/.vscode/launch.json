@@ -1,0 +1,56 @@
+{
+    "version": "0.2.0",
+    "configurations": 
+    [
+        {
+            "name": "Docker Remote Debug (start & attach)",
+            "type": "lldb",
+            "request": "launch",
+
+            "initCommands": [
+                "platform select remote-linux",
+                "platform connect connect://localhost:10586"
+            ],
+
+            "targetCreateCommands": [
+                "target create /usr/src/tuliprox/target/x86_64-unknown-linux-musl/debug/tuliprox"
+            ],
+
+            "processCreateCommands": [
+                // Attache to the process and continue after attaching
+                "attach -n tuliprox",
+                "continue"
+            ],
+            
+            "sourceMap": {
+                "/usr/src/tuliprox": "${workspaceFolder}"
+            },
+            
+            "preLaunchTask": "docker-compose-up-debug"
+        },
+        {
+            "name": "Docker Remote Debug (attach only)",
+            "type": "lldb",
+            "request": "launch",
+
+            "initCommands": [
+                "platform select remote-linux",
+                "platform connect connect://localhost:10586"
+            ],
+
+            "targetCreateCommands": [
+                "target create /usr/src/tuliprox/target/x86_64-unknown-linux-musl/debug/tuliprox"
+            ],
+
+            "processCreateCommands": [
+                // Attache to the process and continue after attaching
+                "attach -n tuliprox",
+                "continue"
+            ],
+            
+            "sourceMap": {
+                "/usr/src/tuliprox": "${workspaceFolder}"
+            }
+        }
+    ]
+}

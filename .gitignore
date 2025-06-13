@@ -23,3 +23,6 @@ yarn.lock
 docker/web
 docker/tuliprox
 docker/resources
+
+# Ignore VSCode settings and files
+/.vscode
