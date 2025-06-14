@@ -747,15 +747,39 @@ async fn prepare_strm_files(
     }
 
     if !collisions.is_empty() {
+        // This separator is specifically for the multi-version naming convention.
+        // According to the docs (Plex, Jellyfin), this should be " - " (space-hyphen-space).
+        // The user's `underscore_whitespace` setting should not apply to this structural separator.
+        let version_separator = " - ";
         let separator = if underscore_whitespace { "_" } else { " " };
         result
             .iter_mut()
             .filter(|s| collisions.contains(&s.file_name))
             .for_each(|s| {
-                s.file_name = Arc::new(format!(
-                    "{}{separator}[{}]",
-                    s.file_name, s.strm_info.virtual_id
-                ));
+                // Create a descriptive and unique identifier for this version.
+                // This will become the "ArbitraryText" or "Label".
+                let version_label = format!("Version{}id#{}", separator, s.strm_info.virtual_id);
+
+                // The base filename is the part that is identical for all versions.
+                let base_filename = &s.file_name;
+
+                // Apply the specific multi-version naming convention for the selected style.
+                // NOTE: For multi-versioning, all four platforms use the same " - Suffix" logic.
+                // A style-specific match is not strictly necessary here but is good practice for future flexibility.
+                let new_filename = match style {
+                    // Plex, Emby, and Kodi all follow the `Filename - Suffix` pattern.
+                    ExportStyle::Plex | ExportStyle::Emby | ExportStyle::Kodi => {
+                        format!("{}{}{}", base_filename, version_separator, version_label)
+                    }
+                    
+                    // Jellyfin also follows this pattern, but explicitly shows an option for " - [Label]".
+                    // Using brackets makes the version distinct and is a clean implementation.
+                    ExportStyle::Jellyfin => {
+                        format!("{}{}[{}]", base_filename, version_separator, version_label)
+                    }
+                };
+
+                s.file_name = Arc::new(new_filename);
             });
     }
     result
