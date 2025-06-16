@@ -3,9 +3,9 @@ use crate::tuliprox_error::TuliproxError;
 use reqwest::header::{HeaderMap, HeaderValue};
 use std::collections::HashMap;
 use std::sync::Arc;
-use log::{info, warn};
-
-use super::errors::{handle_trakt_api_error, create_fetch_error, create_parse_error, create_read_error, create_header_error};
+use log::{debug, info, warn};
+use crate::tuliprox_error::{info_err, TuliproxErrorKind};
+use super::errors::{handle_trakt_api_error};
 
 pub struct TraktClient {
     client: Arc<reqwest::Client>,
@@ -15,40 +15,31 @@ pub struct TraktClient {
 }
 
 impl TraktClient {
-    pub fn new(client: Arc<reqwest::Client>, api_config: TraktApiConfig) -> Result<Self, TuliproxError> {
-        let headers = Self::create_headers(&api_config)?;
-        Ok(Self {
+    pub fn new(client: Arc<reqwest::Client>, api_config: TraktApiConfig) -> Self {
+        let headers = Self::create_headers(&api_config);
+        Self {
             client,
             api_config,
             headers,
-        })
+        }
     }
 
-    fn create_headers(api_config: &TraktApiConfig) -> Result<HeaderMap, TuliproxError> {
+    fn create_headers(api_config: &TraktApiConfig) -> axum::http::HeaderMap {
         let mut headers = HeaderMap::new();
         
-        headers.insert(
-            "Content-Type",
-            HeaderValue::from_static("application/json")
-        );
-        
-        let api_key_header = HeaderValue::from_str(api_config.get_api_key())
-            .map_err(|e| create_header_error("Trakt API key", &e))?;
-        headers.insert("trakt-api-key", api_key_header);
-        
-        let api_version_header = HeaderValue::from_str(api_config.get_api_version())
-            .map_err(|e| create_header_error("API version", &e))?;
-        headers.insert("trakt-api-version", api_version_header);
+        headers.insert(reqwest::header::CONTENT_TYPE, HeaderValue::from_static(mime::APPLICATION_JSON.as_ref()));
+        headers.insert("trakt-api-key", HeaderValue::from_static(api_config.get_api_key()));
+        headers.insert("trakt-api-version", HeaderValue::from_static(api_config.get_api_version()));
 
-        Ok(headers)
+        headers
     }
 
     fn build_list_url(&self, user: &str, list_slug: &str) -> String {
-        format!("{}/users/{}/lists/{}/items", self.api_config.get_base_url(), user, list_slug)
+        format!("{}/users/{user}/lists/{list_slug}/items", self.api_config.get_base_url())
     }
 
     pub async fn get_list_items(&self, list_config: &TraktListConfig) -> Result<Vec<TraktListItem>, TuliproxError> {
-        info!("Fetching Trakt list {}:{}", list_config.user, list_config.list_slug);
+        debug!("Fetching Trakt list {}:{}", list_config.user, list_config.list_slug);
         
         let url = self.build_list_url(&list_config.user, &list_config.list_slug);
         
@@ -57,23 +48,21 @@ impl TraktClient {
             .headers(self.headers.clone())
             .send()
             .await
-            .map_err(|e| create_fetch_error(&url, &e))?;
+            .map_err(|err| info_err!(format!("Failed to fetch Trakt list {url}: {err}")))?;
 
         if !response.status().is_success() {
             handle_trakt_api_error(response.status(), &list_config.user, &list_config.list_slug)?;
-            unreachable!()
         }
 
         let response_text = response
             .text()
             .await
-            .map_err(|error: reqwest::Error| create_read_error(&error))?;
+            .map_err(|error: reqwest::Error| info_err!(format!("Failed to read Trakt response: {error}")))?;
 
-        let items: Vec<TraktListItem> = serde_json::from_str(&response_text)
-            .map_err(|error: serde_json::Error| create_parse_error(&error))?;
-
-        info!("Successfully fetched {} items from Trakt list {}:{}", 
-              items.len(), list_config.user, list_config.list_slug);
+        let mut items: Vec<TraktListItem> = serde_json::from_str(&response_text)
+            .map_err(|error: serde_json::Error| info_err!(format!("Failed to parse Trakt response: {error}")))?;
+        items.iter_mut().for_each(TraktListItem::prepare);
+        info!("Successfully fetched {} items from Trakt list {}:{}", items.len(), list_config.user, list_config.list_slug);
 
         Ok(items)
     }

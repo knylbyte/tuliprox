@@ -17,7 +17,7 @@ use crate::model::{FetchedPlaylist, FieldGetAccessor, FieldSetAccessor, Playlist
 use crate::model::{InputStats, PlaylistStats, SourceStats, TargetStats};
 use crate::processing::playlist_watch::process_group_watch;
 use crate::processing::processor::xtream_series::playlist_resolve_series;
-use crate::processing::processor::trakt_categories::process_trakt_categories_for_target;
+use crate::processing::processor::trakt::process_trakt_categories_for_target;
 use crate::repository::playlist_repository::persist_playlist;
 use crate::tuliprox_error::{get_errors_notify_message, notify_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::debug_if_enabled;
@@ -25,6 +25,7 @@ use crate::utils::default_as_default;
 use deunicode::deunicode;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use std::time::Instant;
+use reqwest::Client;
 use crate::model::Epg;
 use crate::processing::parser::xmltv::flatten_tvguide;
 use crate::processing::processor::epg::process_playlist_epg;
@@ -479,18 +480,7 @@ async fn process_playlist_for_target(client: Arc<reqwest::Client>,
 
         // Process Trakt categories
         step.tick("Processing Trakt categories");
-        match process_trakt_categories_for_target(Arc::clone(&client), &mut flat_new_playlist, target).await {
-            Ok(trakt_categories) => {
-                if !trakt_categories.is_empty() {
-                    info!("Adding {} Trakt categories to playlist", trakt_categories.len());
-                    flat_new_playlist.extend(trakt_categories);
-                }
-            }
-            Err(trakt_errors) => {
-                warn!("Trakt processing failed with {} errors", trakt_errors.len());
-                errors.extend(trakt_errors);
-            }
-        }
+        trakt_playlist(&client, target, errors, &mut flat_new_playlist).await;
 
         step.tick("Processed group watches");
         process_watch(&client, target, cfg, &flat_new_playlist);
@@ -498,6 +488,21 @@ async fn process_playlist_for_target(client: Arc<reqwest::Client>,
         let result = persist_playlist(&mut flat_new_playlist, flatten_tvguide(&new_epg).as_ref(), target, cfg).await;
         step.stop();
         result
+    }
+}
+
+async fn trakt_playlist(client: &Arc<Client>, target: &ConfigTarget, errors: &mut Vec<TuliproxError>, flat_new_playlist: &mut Vec<PlaylistGroup>) {
+    match process_trakt_categories_for_target(Arc::clone(client), flat_new_playlist, target).await {
+        Ok(trakt_categories) => {
+            if !trakt_categories.is_empty() {
+                info!("Adding {} Trakt categories to playlist", trakt_categories.len());
+                flat_new_playlist.extend(trakt_categories);
+            }
+        }
+        Err(trakt_errors) => {
+            warn!("Trakt processing failed with {} errors", trakt_errors.len());
+            errors.extend(trakt_errors);
+        }
     }
 }
 

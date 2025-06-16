@@ -3,16 +3,7 @@ pub mod client;
 pub mod errors;
 
 use deunicode::deunicode;
-use std::sync::OnceLock;
-
-static YEAR_REGEX: OnceLock<regex::Regex> = OnceLock::new();
-
-/// Get cached year regex pattern
-fn get_year_regex() -> &'static regex::Regex {
-    YEAR_REGEX.get_or_init(|| {
-        regex::Regex::new(r"\(?(\d{4})\)?$").unwrap()
-    })
-}
+use crate::utils::CONSTANTS;
 
 /// Normalize title for matching - optimized version with reduced allocations
 pub fn normalize_title_for_matching(title: &str) -> String {
@@ -30,9 +21,7 @@ pub fn normalize_title_for_matching(title: &str) -> String {
 
 /// Extract year from title using cached regex pattern - optimized version
 pub fn extract_year_from_title(title: &str) -> Option<u32> {
-    let year_regex = get_year_regex();
-    
-    if let Some(captures) = year_regex.captures(title) {
+    if let Some(captures) = CONSTANTS.re_trakt_year.captures(title) {
         if let Some(year_str) = captures.get(1) {
             if let Ok(year) = year_str.as_str().parse::<u32>() {
                 if (1900..=2100).contains(&year) {

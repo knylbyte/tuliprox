@@ -1,20 +1,23 @@
 use serde::{Deserialize, Serialize};
+use crate::model::{PlaylistItem};
+use crate::utils::trakt::normalize_title_for_matching;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[derive(Default)]
-pub struct TraktApiConfig {
-
-}
+pub struct TraktApiConfig {}
 
 impl TraktApiConfig {
+    #[inline]
     pub fn get_api_key(&self) -> &'static str {
         "0183a05ad97098d87287fe46da4ae286f434f32e8e951caad4cc147c947d79a3"
     }
 
+    #[inline]
     pub fn get_api_version(&self) -> &'static str {
         "2"
     }
 
+    #[inline]
     pub fn get_base_url(&self) -> &'static str {
         "https://api.trakt.tv"
     }
@@ -59,28 +62,40 @@ pub struct TraktConfig {
 // API Response structures
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraktListItem {
-    pub rank: Option<u32>,
     pub id: u64,
+    pub rank: Option<u32>,
     pub listed_at: String,
     pub notes: Option<String>,
     #[serde(rename = "type")]
     pub item_type: String,
     pub movie: Option<TraktMovie>,
     pub show: Option<TraktShow>,
+    #[serde(skip)]
+    pub content_type: TraktContentType,
+}
+
+impl TraktListItem {
+    pub fn prepare(&mut self) {
+        self.content_type = match self.item_type.as_str() {
+            "movie" => TraktContentType::Vod,
+            "show" => if self.show.is_some() { TraktContentType::Series } else { TraktContentType::Both },
+            _ => TraktContentType::Both,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraktMovie {
+    pub ids: TraktIds,
     pub title: String,
     pub year: Option<u32>,
-    pub ids: TraktIds,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraktShow {
+    pub ids: TraktIds,
     pub title: String,
     pub year: Option<u32>,
-    pub ids: TraktIds,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,8 +110,9 @@ pub struct TraktIds {
 
 // Internal matching structures
 #[derive(Debug, Clone)]
-pub struct TraktMatchItem {
-    pub title: String,
+pub struct TraktMatchItem<'a> {
+    pub title: &'a str,
+    pub normalized_title: String,
     pub year: Option<u32>,
     pub tmdb_id: Option<u32>,
     pub trakt_id: u32,
@@ -104,60 +120,42 @@ pub struct TraktMatchItem {
     pub rank: Option<u32>,
 }
 
-impl From<&TraktListItem> for TraktMatchItem {
-    fn from(item: &TraktListItem) -> Self {
+impl<'a> TraktMatchItem<'a> {
+    pub fn from_trakt_list_item(item: &'a TraktListItem) -> Option<Self> {
         match item.item_type.as_str() {
             "movie" => {
-                if let Some(movie) = &item.movie {
-                    TraktMatchItem {
-                        title: movie.title.clone(),
+                item.movie.as_ref().map(|movie| TraktMatchItem {
+                        title: movie.title.as_str(),
+                        normalized_title: normalize_title_for_matching(movie.title.as_str()),
                         year: movie.year,
                         tmdb_id: movie.ids.tmdb,
                         trakt_id: movie.ids.trakt,
                         content_type: TraktContentType::Vod,
                         rank: item.rank,
-                    }
-                } else {
-                    TraktMatchItem::default()
-                }
+                    })
             }
             "show" => {
-                if let Some(show) = &item.show {
-                    TraktMatchItem {
-                        title: show.title.clone(),
+                item.show.as_ref().map(|show| TraktMatchItem {
+                        title: show.title.as_str(),
+                        normalized_title: normalize_title_for_matching(show.title.as_str()),
                         year: show.year,
                         tmdb_id: show.ids.tmdb,
                         trakt_id: show.ids.trakt,
                         content_type: TraktContentType::Series,
                         rank: item.rank,
-                    }
-                } else {
-                    TraktMatchItem::default()
-                }
+                    })
             }
-            _ => TraktMatchItem::default(),
+            _ => None,
         }
     }
 }
 
-impl Default for TraktMatchItem {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            year: None,
-            tmdb_id: None,
-            trakt_id: 0,
-            content_type: TraktContentType::Both,
-            rank: None,
-        }
-    }
-}
 
 // Matching results
 #[derive(Debug, Clone)]
-pub struct TraktMatchResult {
-    pub playlist_item_uuid: String,
-    pub trakt_item: TraktMatchItem,
+pub struct TraktMatchResult<'a> {
+    pub playlist_item: &'a PlaylistItem,
+    pub trakt_item: &'a TraktMatchItem<'a>,
     pub match_score: f64,
     pub match_type: MatchType,
 }
