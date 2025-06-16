@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, TuliproxError, TuliproxErrorKind};
+use crate::tuliprox_error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::{ProxyUserCredentials};
 use crate::model::{Config, ConfigInput, ConfigTarget, XtreamTargetOutput};
 use crate::model::{PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
@@ -26,10 +26,9 @@ use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
-use std::io::{BufReader, Error, ErrorKind, Read};
+use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
@@ -981,4 +980,68 @@ pub(crate) async fn xtream_get_playlist_categories(config: &Config, target_name:
         }
     }
     None
+}
+
+pub fn write_series_info_to_wal_file(provider_id: u32, ts: u64, content: &str, content_write: &mut BufWriter<&File>, record_writer: &mut BufWriter<&File>) -> std::io::Result<()> {
+
+    let encoded_content = encode_info_content_for_wal_file(provider_id, content)?;
+    let encoded_record = encode_series_info_record_for_wal_file(provider_id, ts);
+    content_write.write_all(&encoded_content)?;
+    record_writer.write_all(&encoded_record)?;
+    Ok(())
+}
+
+
+pub fn write_vod_info_to_wal_file(provider_id: u32, content: &str, info_record: &InputVodInfoRecord, content_write: &mut BufWriter<&File>, record_writer: &mut BufWriter<&File>) -> std::io::Result<()> {
+
+    let encoded_content = encode_info_content_for_wal_file(provider_id, content)?;
+    let encoded_record = encode_vod_info_record_for_wal_file(provider_id, info_record)?;
+    content_write.write_all(&encoded_content)?;
+    record_writer.write_all(&encoded_record)?;
+    Ok(())
+}
+
+
+fn encode_info_content_for_wal_file(provider_id: u32, content: &str) -> std::io::Result<Vec<u8>> {
+    let length = u32::try_from(content.len()).map_err(to_io_error)?;
+    let mut buffer = Vec::with_capacity(8 + content.len());
+
+    buffer.extend_from_slice(&provider_id.to_le_bytes());
+    buffer.extend_from_slice(&length.to_le_bytes());
+    buffer.extend_from_slice(content.as_bytes());
+
+    Ok(buffer)
+}
+
+
+fn encode_vod_info_record_for_wal_file(provider_id: u32, record: &InputVodInfoRecord) -> std::io::Result<Vec<u8>> {
+    let estimated_capacity = 30;
+    let mut buffer = Vec::with_capacity(estimated_capacity);
+
+    buffer.extend_from_slice(&provider_id.to_le_bytes());
+    buffer.extend_from_slice(&record.tmdb_id.to_le_bytes());
+    buffer.extend_from_slice(&record.ts.to_le_bytes());
+
+    match &record.release_date {
+        Some(date_str) => {
+            // Write the length as a 4-byte u32 to prevent overflow.
+            let len = u32::try_from(date_str.len()).map_err(to_io_error)?;
+            buffer.extend_from_slice(&len.to_le_bytes());
+            buffer.extend_from_slice(date_str.as_bytes());
+        }
+        None => {
+            // Write a length of 0 as 4 bytes.
+            buffer.extend_from_slice(&0u32.to_le_bytes());
+        }
+    }
+
+    Ok(buffer)
+}
+
+
+fn encode_series_info_record_for_wal_file(provider_id: u32, ts: u64) -> Vec<u8> {
+    let mut buffer = Vec::with_capacity(12);
+    buffer.extend_from_slice(&provider_id.to_le_bytes());
+    buffer.extend_from_slice(&ts.to_le_bytes());
+    buffer
 }

@@ -1,5 +1,5 @@
 use crate::tuliprox_error::{info_err, notify_err};
-use crate::tuliprox_error::{str_to_io_error, to_io_error, TuliproxError, TuliproxErrorKind};
+use crate::tuliprox_error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::{Config, ConfigInput};
 use crate::model::{FetchedPlaylist, PlaylistEntry, PlaylistItem, PlaylistItemType, XtreamCluster};
 use crate::model::normalize_release_date;
@@ -7,7 +7,6 @@ use crate::repository::storage::get_input_storage_path;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use crate::repository::bplustree::BPlusTree;
@@ -45,16 +44,6 @@ pub(in crate::processing) fn normalize_json_content(content: String) -> String {
         },
         Err(_) => content,
     }
-}
-
-pub(in crate::processing) fn write_info_content_to_wal_file(writer: &mut BufWriter<&File>, provider_id: u32, content: &str) -> std::io::Result<()> {
-    let length = u32::try_from(content.len()).map_err(to_io_error)?;
-    if length > 0 {
-        writer.write_all(&provider_id.to_le_bytes())?;
-        writer.write_all(&length.to_le_bytes())?;
-        writer.write_all(content.as_bytes())?;
-    }
-    Ok(())
 }
 
 pub(in crate::processing) fn create_resolve_episode_wal_files(cfg: &Config, input: &ConfigInput) -> Option<(File, PathBuf)> {
