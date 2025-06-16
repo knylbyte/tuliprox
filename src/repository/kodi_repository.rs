@@ -60,7 +60,7 @@ fn sanitize_for_filename(text: &str, underscore_whitespace: bool) -> String {
     while sanitized.starts_with('.') {
         sanitized.remove(0);
     }
-    
+
     // 4. Final check: If sanitization resulted in an empty string, return a default.
     if sanitized.is_empty() {
         EMPTY_FILENAME_REPLACEMENT.to_string()
@@ -129,7 +129,7 @@ fn style_rename_year<'a>(
     for caps in style.year.captures_iter(name) {
         if let Some(year_match) = caps.get(1) {
             if let Ok(year) = year_match.as_str().parse::<u32>() {
-                 if (1900..=cur_year).contains(&year) {
+                if (1900..=cur_year).contains(&year) {
                     years.push(year);
                     let match_start = caps.get(0).unwrap().start();
                     let match_end = caps.get(0).unwrap().end();
@@ -583,7 +583,7 @@ fn format_for_emby(
             let (_, episode) = style_rename_episode(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.episode.as_ref());
             let season_num = season.unwrap_or(1);
             let episode_num = episode.unwrap_or(1);
-            
+
             // Emby/Jellyfin standard: uppercase 'S' and hyphens.
             let final_filename = format!("{sanitized_series_name} - S{season_num:02}E{episode_num:02}");
             let season_folder = format!("Season{separator}{season_num:02}");
@@ -639,14 +639,14 @@ fn format_for_jellyfin(
             let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
             let sanitized_series_name = sanitize_for_filename(name.trim(), false);
             let year_string = year.map_or(String::new(), |y| format!("{separator}({y})"));
-            
+
             let series_folder_name = format!("{sanitized_series_name}{year_string}{id_string}");
 
             let (_, season) = style_rename_season(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.season.as_ref());
             let (_, episode) = style_rename_episode(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.episode.as_ref());
             let season_num = season.unwrap_or(1);
             let episode_num = episode.unwrap_or(1);
-            
+
             // Emby/Jellyfin standard: uppercase 'S' and hyphens.
             let final_filename = format!("{sanitized_series_name} - S{season_num:02}E{episode_num:02}");
             let season_folder = format!("Season{separator}{season_num:02}");
@@ -690,7 +690,7 @@ async fn style_based_rename(
         InputTmdbIndexValue::Video(r) => r.tmdb_id,
         InputTmdbIndexValue::Series(e) => e.tmdb_id,
     });
-    
+
     // Dispatch the call to the responsible function based on the style.
     match style {
         ExportStyle::Kodi => format_for_kodi(strm_item_info, tmdb_id, separator, flat),
@@ -725,14 +725,14 @@ async fn prepare_strm_files(
             let strm_item_info = extract_item_info(pli);
 
             let (dir_path, strm_file_name) = style_based_rename(
-                    cfg,
-                    &strm_item_info,
-                    &mut input_tmdb_indexes,
-                    style,
-                    underscore_whitespace,
-                    flat,
-                ).await;
-            
+                cfg,
+                &strm_item_info,
+                &mut input_tmdb_indexes,
+                style,
+                underscore_whitespace,
+                flat,
+            ).await;
+
             let filename = Arc::new(strm_file_name);
             if all_filenames.contains(&filename) {
                 collisions.insert(Arc::clone(&filename));
@@ -769,13 +769,13 @@ async fn prepare_strm_files(
                 let new_filename = match style {
                     // Plex, Emby, and Kodi all follow the `Filename - Suffix` pattern.
                     ExportStyle::Plex | ExportStyle::Emby | ExportStyle::Kodi => {
-                        format!("{}{}{}", base_filename, version_separator, version_label)
+                        format!("{base_filename}{version_separator}{version_label}")
                     }
-                    
+
                     // Jellyfin also follows this pattern, but explicitly shows an option for " - [Label]".
                     // Using brackets makes the version distinct and is a clean implementation.
                     ExportStyle::Jellyfin => {
-                        format!("{}{}[{}]", base_filename, version_separator, version_label)
+                        format!("{base_filename}{version_separator}[{version_label}]")
                     }
                 };
 
