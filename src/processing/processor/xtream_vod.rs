@@ -1,22 +1,20 @@
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{Config, ConfigTarget, InputType};
 use crate::model::{FetchedPlaylist, PlaylistItem, PlaylistItemType, XtreamCluster};
-use crate::processing::processor::xtream::{create_resolve_info_wal_files, playlist_resolve_download_playlist_item, read_processed_info_ids, should_update_info, write_info_content_to_wal_file};
-use crate::repository::xtream_repository::{xtream_update_input_info_file, xtream_update_input_vod_record_from_wal_file, InputVodInfoRecord};
+use crate::processing::processor::xtream::{create_resolve_info_wal_files, playlist_resolve_download_playlist_item, read_processed_info_ids, should_update_info};
+use crate::repository::xtream_repository::{write_vod_info_to_wal_file, xtream_update_input_info_file, xtream_update_input_vod_record_from_wal_file, InputVodInfoRecord};
 use crate::tuliprox_error::{notify_err};
 use crate::processing::processor::{handle_error, handle_error_and_return, create_resolve_options_function_for_xtream_target};
 use crate::utils::{get_u32_from_serde_value, get_u64_from_serde_value, get_string_from_serde_value};
 use crate::repository::xtream_repository::xtream_get_input_info;
 use serde_json::{from_str, Map, Value};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{Write};
 use std::sync::Arc;
 use std::time::Instant;
 use log::{info, log_enabled, Level};
 use crate::utils;
 use crate::processing::processor::xtream::normalize_json_content;
-use crate::tuliprox_error::to_io_error;
 
 create_resolve_options_function_for_xtream_target!(vod);
 
@@ -53,30 +51,6 @@ fn extract_info_record_from_vod_info(content: &str) -> Option<(u32, InputVodInfo
         ts: added,
         release_date,
     }))
-}
-
-fn write_vod_info_record_to_wal_file(
-    writer: &mut BufWriter<&File>,
-    provider_id: u32,
-    record: &InputVodInfoRecord,
-) -> std::io::Result<()> {
-    writer.write_all(&provider_id.to_le_bytes())?;
-    writer.write_all(&record.tmdb_id.to_le_bytes())?;
-    writer.write_all(&record.ts.to_le_bytes())?;
-
-    match &record.release_date {
-        Some(date_str) => {
-            // Write the length as a 4-byte u32 to prevent overflow.
-            let len = u32::try_from(date_str.len()).map_err(to_io_error)?;
-            writer.write_all(&len.to_le_bytes())?;
-            writer.write_all(date_str.as_bytes())?;
-        }
-        None => {
-            // Write a length of 0 as 4 bytes.
-            writer.write_all(&0u32.to_le_bytes())?;
-        }
-    }
-    Ok(())
 }
 
 fn should_update_vod_info(pli: &mut PlaylistItem, processed_provider_ids: &HashMap<u32, u64>) -> (bool, u32, u64) {
@@ -119,11 +93,9 @@ pub async fn playlist_resolve_vod(client: Arc<reqwest::Client>, cfg: &Config, ta
                 let normalized_content = normalize_json_content(content);
                 if let Some((provider_id, info_record)) = extract_info_record_from_vod_info(&normalized_content) {
                     let ts = info_record.ts;
-                    handle_error_and_return!(write_info_content_to_wal_file(&mut content_writer, provider_id, &normalized_content),
-                        |err| errors.push(notify_err!(format!("Failed to resolve vod, could not write to content wal file {err}"))));
+                    handle_error_and_return!(write_vod_info_to_wal_file(provider_id, &normalized_content, &info_record, &mut content_writer, &mut record_writer),
+                        |err| errors.push(notify_err!(format!("Failed to resolve vod, could not write to wal file {err}"))));
                     processed_info_ids.insert(provider_id, ts);
-                    handle_error_and_return!(write_vod_info_record_to_wal_file(&mut record_writer, provider_id, &info_record),
-                        |err| errors.push(notify_err!(format!("Failed to resolve vod wal, could not write to record wal file {err}"))));
                     content_updated = true;
                 }
             }
@@ -141,10 +113,14 @@ pub async fn playlist_resolve_vod(client: Arc<reqwest::Client>, cfg: &Config, ta
         info!("resolved {processed_vod_info_count}/{vod_info_count} vod info");
     }
     if content_updated {
+        // TODO better approach for transactional updates is multiplexed WAL file.
+
         handle_error!(content_writer.flush(),
             |err| errors.push(notify_err!(format!("Failed to resolve vod, could not write to wal file {err}"))));
         handle_error!(record_writer.flush(),
             |err| errors.push(notify_err!(format!("Failed to resolve vod tmdb, could not write to wal file {err}"))));
+        handle_error!(content_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync vod info to wal file {err}"))));
+        handle_error!(record_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync vod info record to wal file {err}"))));
         drop(content_writer);
         drop(record_writer);
         drop(wal_content_file);

@@ -3,9 +3,9 @@ use crate::model::{Config, ConfigTarget, InputType};
 use crate::model::{FetchedPlaylist, PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster};
 use crate::processing::processor::playlist::ProcessingPipe;
 use crate::processing::parser::xtream::parse_xtream_series_info;
-use crate::processing::processor::xtream::{create_resolve_episode_wal_files, create_resolve_info_wal_files, playlist_resolve_download_playlist_item, read_processed_info_ids, should_update_info, write_info_content_to_wal_file};
+use crate::processing::processor::xtream::{create_resolve_episode_wal_files, create_resolve_info_wal_files, playlist_resolve_download_playlist_item, read_processed_info_ids, should_update_info};
 use crate::repository::storage::get_input_storage_path;
-use crate::repository::xtream_repository::{xtream_get_info_file_paths, xtream_update_input_info_file, xtream_update_input_series_episodes_record_from_wal_file, xtream_update_input_series_record_from_wal_file};
+use crate::repository::xtream_repository::{write_series_info_to_wal_file, xtream_get_info_file_paths, xtream_update_input_info_file, xtream_update_input_series_episodes_record_from_wal_file, xtream_update_input_series_record_from_wal_file};
 use crate::repository::IndexedDocumentReader;
 use crate::tuliprox_error::{notify_err, info_err};
 use crate::processing::processor::{handle_error, handle_error_and_return, create_resolve_options_function_for_xtream_target};
@@ -24,16 +24,6 @@ create_resolve_options_function_for_xtream_target!(series);
 
 async fn read_processed_series_info_ids(cfg: &Config, errors: &mut Vec<TuliproxError>, fpl: &FetchedPlaylist<'_>) -> HashMap<u32, u64> {
     read_processed_info_ids(cfg, errors, fpl, PlaylistItemType::SeriesInfo, |ts: &u64| *ts).await
-}
-
-fn write_series_info_record_to_wal_file(
-    writer: &mut BufWriter<&File>,
-    provider_id: u32,
-    ts: u64,
-) -> std::io::Result<()> {
-    writer.write_all(&provider_id.to_le_bytes())?;
-    writer.write_all(&ts.to_le_bytes())?;
-    Ok(())
 }
 
 fn write_series_episode_record_to_wal_file(
@@ -89,11 +79,9 @@ async fn playlist_resolve_series_info(client: Arc<reqwest::Client>, cfg: &Config
         if should_update {
             if let Some(content) = playlist_resolve_download_playlist_item(Arc::clone(&client), pli, fpl.input, errors, resolve_delay, XtreamCluster::Series).await {
                 let normalized_content = normalize_json_content(content);
-                handle_error_and_return!(write_info_content_to_wal_file(&mut content_writer, provider_id, &normalized_content),
-                    |err| errors.push(notify_err!(format!("Failed to resolve series, could not write to content wal file {err}"))));
+                handle_error_and_return!(write_series_info_to_wal_file(provider_id, ts, &normalized_content, &mut content_writer, &mut record_writer),
+                        |err| errors.push(notify_err!(format!("Failed to resolve series, could not write to wal file {err}"))));
                 processed_info_ids.insert(provider_id, ts);
-                handle_error_and_return!(write_series_info_record_to_wal_file(&mut record_writer, provider_id, ts),
-                    |err| errors.push(notify_err!(format!("Failed to resolve series wal, could not write to record wal file {err}"))));
                 content_updated = true;
             }
         }
@@ -114,10 +102,12 @@ async fn playlist_resolve_series_info(client: Arc<reqwest::Client>, cfg: &Config
     if content_updated {
         handle_error!(content_writer.flush(),
             |err| errors.push(notify_err!(format!("Failed to resolve vod, could not write to wal file {err}"))));
-        drop(content_writer);
-        drop(wal_content_file);
         handle_error!(record_writer.flush(),
             |err| errors.push(notify_err!(format!("Failed to resolve vod tmdb, could not write to wal file {err}"))));
+        handle_error!(content_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync series info to wal file {err}"))));
+        handle_error!(record_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync series info record to wal file {err}"))));
+        drop(content_writer);
+        drop(wal_content_file);
         drop(record_writer);
         drop(wal_record_file);
         handle_error!(xtream_update_input_info_file(cfg, fpl.input, &wal_content_path, XtreamCluster::Series).await,
@@ -126,6 +116,7 @@ async fn playlist_resolve_series_info(client: Arc<reqwest::Client>, cfg: &Config
             |err| errors.push(err));
     }
 
+    // TODO better approach for transactional updates is multiplexed WAL file.
     // we updated now
     // - series_info.db  which contains the original series_info json
     // - series_record.db which contains the series_info provider_id and timestamp
