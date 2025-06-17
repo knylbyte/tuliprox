@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::model::{ConfigTarget, FieldGetAccessor, FieldSetAccessor, PlaylistGroup, PlaylistItem, XtreamCluster};
 use crate::model::{MatchType, TraktConfig, TraktContentType, TraktListConfig, TraktListItem, TraktMatchItem, TraktMatchResult};
 use crate::tuliprox_error::TuliproxError;
@@ -200,16 +201,15 @@ fn create_category_from_matches<'a>(
             // Synchronize name with title so both fields show the same value
             // header.title.clone_from(&match_result.trakt_item.title.to_string());
             // header.name.clone_from(&match_result.trakt_item.title.to_string());
-            if let Some(quality) = extract_quality(&header.group) {
-                if let Some(title) = header.get_field("caption") {
+            let title = header.get_field("caption").unwrap_or_else(|| Cow::Borrowed(&header.title));
+            if extract_quality(&title).is_none() {
+                if let Some(quality) = extract_quality(&header.group) {
                     let mut caption = String::with_capacity(title.len() + 6);
-                    caption.push_str("[");
+                    caption.push('[');
                     caption.push_str(quality);
                     caption.push_str("] ");
                     caption.push_str(&title);
                     header.set_field("caption", &caption);
-                } else {
-                    header.set_field("caption", &format!("[{quality}] {}", match_result.trakt_item.title));
                 }
             }
             header.group = String::from(group_title);
