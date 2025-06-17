@@ -17,7 +17,7 @@ and assigns it to the variable `station_prefix`.
   - Support for various media tools (Kodi, Plex, Emby, Jellyfin), with consideration for recommended naming conventions and file organization.
   - Optional flat directory structure via 'flat' parameter (nested folder structures are not supported by some media scanners).
 - Added Trakt support for XC targets
-```
+```yaml
       - name: iptv-trakt-example
         output:
           - type: xtream
@@ -27,6 +27,9 @@ and assigns it to the variable `station_prefix`.
             resolve_series: false
             resolve_vod: false
             trakt:
+              api:
+                key: <my private trakt api key>
+                version: 2
               lists:
                 - user: "linaspurinis"
                   list_slug: "top-watched-movies-of-the-week"
@@ -37,11 +40,6 @@ and assigns it to the variable `station_prefix`.
                   list_slug: "latest-tv-shows"
                   category_name: "📺 Latest TV Shows"
                   content_type: "series"
-                  fuzzy_match_threshold: 75
-                - user: "trakt"
-                  list_slug: "trending"
-                  category_name: "🔥 Trending"
-                  content_type: "both"
                   fuzzy_match_threshold: 80
 ```
 

@@ -10,6 +10,7 @@ fn default_fuzzy_threshold() -> u8 {
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TraktApiConfig {
     #[serde(default)]
     pub(crate) key: String,
@@ -31,11 +32,11 @@ impl TraktApiConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TraktListConfig {
     pub user: String,
     pub list_slug: String,
     pub category_name: String,
-    #[serde(default)]
     pub content_type: TraktContentType,
     #[serde(default = "default_fuzzy_threshold")]
     pub fuzzy_match_threshold: u8, // Percentage (0-100)
@@ -56,6 +57,7 @@ impl Default for TraktContentType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TraktConfig {
     #[serde(default)]
     pub api: TraktApiConfig,
