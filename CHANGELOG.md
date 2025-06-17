@@ -1,5 +1,5 @@
 # Changelog
-# 3.1.4 (2025-06-xx)
+# 3.1.4 (2025-06-17)
 - share live stream refactored
 - fixed active user count
 - fixed hls streaming

@@ -779,6 +779,7 @@ Each format has different properties
 - resolve_series_delay: seconds,
 - resolve_vod: true|false,
 - resolve_vod_delay: true|false,
+- trakt: Trakt Configuration
 
 `m3u`
 - type: m3u
@@ -886,6 +887,34 @@ There is a difference for `resolve_vod` and `resolve_series`.
 `resolve_series` works only when input: `xtream` and output: `m3u`.
 `resolve_vod` works only when input: `xtream`.
 
+
+- `xtream` `trakt`:
+Trakt.tv is an online platform that helps you track, manage, and discover TV shows and movies. Think of it like Goodreads for TV and film.
+You can add trakt list matches into your playlist.
+You can define a `Trakt` config like
+```yaml
+      - name: iptv-trakt-example
+        output:
+          - type: xtream
+            skip_live_direct_source: true
+            skip_video_direct_source: true
+            skip_series_direct_source: true
+            resolve_series: false
+            resolve_vod: false
+            trakt:
+              lists:
+                - user: "linaspurinis"
+                  list_slug: "top-watched-movies-of-the-week"
+                  category_name: "📈 Top Weekly Movies"
+                  content_type: "vod"
+                  fuzzy_match_threshold: 80
+                - user: "garycrawfordgc"
+                  list_slug: "latest-tv-shows"
+                  category_name: "📺 Latest TV Shows"
+                  content_type: "series"
+                  fuzzy_match_threshold: 80
+```
+This will create 2 new categories with matched entries. 
 
 ### 2.2.2.5 `filter`
 The filter is a string with a filter statement.
@@ -1085,6 +1114,7 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
   - number(a)
   - print(a, b, c)
   - first(a)
+  - template(a)
 Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
 When you use Regular expressions it could be that your match contains multiple results. The builtin function `first` returns the first match.
 Example `print(uppercase("hello"))`. output is only visible in `trace` log level you can enable it like `log_level: debug,tuliprox::foundation::mapper=trace` in config

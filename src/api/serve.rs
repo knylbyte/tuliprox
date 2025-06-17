@@ -1,6 +1,7 @@
 use axum::body::Body;
 use axum::extract::Request;
 use axum::response::Response;
+use futures::FutureExt;
 use hyper::body::Incoming;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
@@ -14,7 +15,6 @@ use std::pin::pin;
 use std::time::Duration;
 use tokio::sync::watch;
 use tower::{Service, ServiceExt};
-use futures::FutureExt;
 
 #[derive(Debug)]
 struct IncomingStream
@@ -51,13 +51,15 @@ pub async fn serve(listener: tokio::net::TcpListener, router: axum::Router<()>) 
 
         let keep_alive_first_probe = 10;
         let keep_alive_interval = 5;
-        let keep_alive_retries = 3;
 
-        let keepalive = TcpKeepalive::new()
-            .with_time(Duration::from_secs(keep_alive_first_probe)) // Time until the first keepalive probe (idle time)
-            .with_interval(Duration::from_secs(keep_alive_interval)) // Interval between keepalive probes
-            .with_retries(keep_alive_retries); // Number of failed probes before the connection is closed
-
+        let mut keepalive = TcpKeepalive::new();
+        keepalive = keepalive.with_time(Duration::from_secs(keep_alive_first_probe)) // Time until the first keepalive probe (idle time)
+            .with_interval(Duration::from_secs(keep_alive_interval)); // Interval between keep alives
+        #[cfg(not(target_os = "windows"))]
+        {
+            let keep_alive_retries = 3;
+            keepalive = keepalive.with_retries(keep_alive_retries); // Number of failed probes before the connection is closed
+        }
 
         if let Err(e) = sock_ref.set_tcp_keepalive(&keepalive) {
             error!("Failed to set keepalive for {remote_addr}: {e}");
@@ -65,7 +67,7 @@ pub async fn serve(listener: tokio::net::TcpListener, router: axum::Router<()>) 
 
         let Ok(socket) = tokio::net::TcpStream::from_std(tcp_stream_std) else { continue; };
 
-        let io  = TokioIo::new(socket);
+        let io = TokioIo::new(socket);
         handle_connection(&mut make_service, &signal_tx, &close_rx, io, remote_addr).await;
     }
 }
@@ -83,7 +85,6 @@ where
     S: Service<Request, Response=Response, Error=Infallible> + Clone + Send + 'static,
     S::Future: Send,
 {
-
     trace!("connection {remote_addr:?} accepted");
 
     make_service
