@@ -1,14 +1,23 @@
-use crate::model::{ConfigTarget, PlaylistGroup, PlaylistItem, XtreamCluster};
+use crate::model::{ConfigTarget, FieldGetAccessor, FieldSetAccessor, PlaylistGroup, PlaylistItem, XtreamCluster};
 use crate::model::{MatchType, TraktConfig, TraktContentType, TraktListConfig, TraktListItem, TraktMatchItem, TraktMatchResult};
 use crate::tuliprox_error::TuliproxError;
 use crate::utils::trakt::client::TraktClient;
 use crate::utils::trakt::extract_year_from_title;
 use crate::utils::trakt::normalize_title_for_matching;
-use crate::utils::get_u32_from_serde_value;
-use std::sync::Arc;
-use strsim::{normalized_levenshtein};
-use log::{debug, info, trace, warn};
+use crate::utils::{get_u32_from_serde_value, CONSTANTS};
 use crate::utils::{trace_if_enabled, with};
+use log::{debug, info, trace, warn};
+use std::sync::Arc;
+use strsim::normalized_levenshtein;
+
+fn extract_quality(value: &str) -> Option<&str> {
+    if let Some(caps) = CONSTANTS.re_quality.captures(value) {
+        if let Some(val) = caps.get(0) {
+            return Some(val.as_str());
+        }
+    }
+    None
+}
 
 
 /// Utility functions for content type compatibility
@@ -171,10 +180,16 @@ fn create_category_from_matches<'a>(
     let mut matched_items = Vec::new();
 
     let mut sorted_matches = matches;
-    // Simple sort by rank only
     sorted_matches.sort_by(|a, b| {
-        a.trakt_item.rank.unwrap_or(9999).cmp(&b.trakt_item.rank.unwrap_or(9999))
+        (
+            a.trakt_item.rank.unwrap_or(9999),
+            a.trakt_item.title.to_lowercase(),
+        ).cmp(&(
+            b.trakt_item.rank.unwrap_or(9999),
+            b.trakt_item.title.to_lowercase(),
+        ))
     });
+
 
     let group_title = &list_config.category_name;
 
@@ -182,9 +197,21 @@ fn create_category_from_matches<'a>(
         let mut modified_item = match_result.playlist_item.clone();
         // Use the (possibly numbered) title from the match result (which now contains the original playlist title)
         with!(mut modified_item.header => header {
-            header.title.clone_from(&match_result.trakt_item.title.to_string());
             // Synchronize name with title so both fields show the same value
-            header.name.clone_from(&match_result.trakt_item.title.to_string());
+            // header.title.clone_from(&match_result.trakt_item.title.to_string());
+            // header.name.clone_from(&match_result.trakt_item.title.to_string());
+            if let Some(quality) = extract_quality(&header.group) {
+                if let Some(title) = header.get_field("caption") {
+                    let mut caption = String::with_capacity(title.len() + 6);
+                    caption.push_str("[");
+                    caption.push_str(quality);
+                    caption.push_str("] ");
+                    caption.push_str(&title);
+                    header.set_field("caption", &caption);
+                } else {
+                    header.set_field("caption", &format!("[{quality}] {}", match_result.trakt_item.title));
+                }
+            }
             header.group = String::from(group_title);
             header.gen_uuid();
         });
@@ -293,14 +320,12 @@ impl TraktCategoriesProcessor {
 
         Ok(new_categories)
     }
-
 }
 pub async fn process_trakt_categories_for_target(
     http_client: Arc<reqwest::Client>,
     playlist: &[PlaylistGroup],
     target: &ConfigTarget,
 ) -> Result<Vec<PlaylistGroup>, Vec<TuliproxError>> {
-
     let Some(trakt_config) = target.get_xtream_output().and_then(|output| output.trakt.as_ref()) else {
         debug!("No Trakt configuration found for target {}", target.name);
         return Ok(vec![]);
@@ -308,4 +333,17 @@ pub async fn process_trakt_categories_for_target(
 
     let processor = TraktCategoriesProcessor::new(http_client, trakt_config);
     processor.process_trakt_categories(playlist, target, trakt_config).await
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn test_quality() {
+        let quality = extract_quality("Hello HD UHD 720p");
+        assert_eq!(true, quality.is_some());
+        assert_eq!("UHD", quality.unwrap());
+    }
 }

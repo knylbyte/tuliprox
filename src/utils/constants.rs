@@ -91,6 +91,7 @@ pub struct Constants {
     pub country_codes: HashSet<&'static str>,
     pub allowed_output_formats: Vec<String>,
     pub re_trakt_year:  Regex,
+    pub re_quality:  Regex,
 }
 
 pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
@@ -137,5 +138,6 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
             "ye", "zm", "zw",
         ].into_iter().collect::<HashSet<&str>>(),
         re_trakt_year: Regex::new(r"\(?(\d{4})\)?$").unwrap(),
+        re_quality: Regex::new(r"(?i)\b(4K|UHD|8K|2160p?|1080p?|720p?|480p?|BLURAY|HDTV|DVDRIP|CAM|TS|HDR|DV|SDR)\b").unwrap(),
     }
 );
