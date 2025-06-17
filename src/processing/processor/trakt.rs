@@ -60,6 +60,8 @@ fn calculate_year_bonus(playlist_year: Option<u32>, trakt_year: Option<u32>) -> 
         if p_year == t_year {
             // Perfect year match gets substantial bonus
             return 0.15;
+        } else {
+            return -0.15;
         }
     }
     0.0
@@ -122,7 +124,7 @@ fn find_best_fuzzy_match_for_item<'a>(channel: (&'a PlaylistItem, String, Option
                     best_match = Some((trakt_item, combined_score));
                 }
                 // early exit strategy
-                if combined_score >= 99.0 {
+                if combined_score >= 0.99 {
                     break;
                 }
             }

@@ -128,7 +128,6 @@ pub struct XtreamTargetOutput {
     pub trakt: Option<TraktConfig>,
 }
 
-
 impl XtreamTargetOutput {
     pub fn prepare(&mut self) {
         if let Some(trakt) = &mut self.trakt {

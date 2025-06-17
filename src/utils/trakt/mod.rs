@@ -18,7 +18,7 @@ pub fn normalize_title_for_matching(title: &str) -> String {
     }
 
     if CONSTANTS.re_trakt_year.is_match(&result) {
-        result[..result.len() - 4].to_string()
+        CONSTANTS.re_trakt_year.replace(&result, "").into_owned()
     } else {
         result
     }
