@@ -27,6 +27,7 @@ mod config_web_auth;
 mod config_log;
 mod config_healthcheck;
 mod config_cache;
+mod trakt;
 
 // Re-export modules for easier access
 pub use self::config_cache::*;
@@ -58,3 +59,4 @@ pub use self::config_download::*;
 pub use self::config_web_auth::*;
 pub use self::config_log::*;
 pub use self::config_healthcheck::*;
+pub use self::trakt::*;

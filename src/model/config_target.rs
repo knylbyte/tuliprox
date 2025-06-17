@@ -6,6 +6,7 @@ use crate::model::config_sort::ConfigSort;
 use crate::model::mapping::Mapping;
 use crate::model::processing_order::ProcessingOrder;
 use crate::model::PlaylistItemType;
+use crate::model::trakt::TraktConfig;
 use crate::utils::{default_as_default, default_as_true, default_resolve_delay_secs};
 use enum_iterator::Sequence;
 use std::fmt::Display;
@@ -123,8 +124,17 @@ pub struct XtreamTargetOutput {
     pub resolve_vod: bool,
     #[serde(default = "default_resolve_delay_secs")]
     pub resolve_vod_delay: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trakt: Option<TraktConfig>,
 }
 
+impl XtreamTargetOutput {
+    pub fn prepare(&mut self) {
+        if let Some(trakt) = &mut self.trakt {
+            trakt.prepare();
+        }
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -170,6 +180,17 @@ pub enum TargetOutput {
     M3u(M3uTargetOutput),
     Strm(StrmTargetOutput),
     HdHomeRun(HdHomeRunTargetOutput),
+}
+
+impl TargetOutput {
+    pub fn prepare(&mut self) {
+        match  self {
+            TargetOutput::Xtream(output) => output.prepare(),
+            TargetOutput::M3u(_)
+            | TargetOutput::Strm(_)
+            | TargetOutput::HdHomeRun(_) => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
@@ -219,6 +240,7 @@ impl ConfigTarget {
         let mut hdhomerun_needs_xtream = false;
 
         for target_output in &mut self.output {
+            target_output.prepare();
             match target_output {
                 TargetOutput::Xtream(_) => {
                     xtream_cnt += 1;

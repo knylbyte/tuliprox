@@ -13,12 +13,35 @@
 If we assume the variable `station` contains the value `WINK`, 
 this script receives the template with the concatenated name `US_WINK_PREFIX` which should be defined in `templates` section,
 and assigns it to the variable `station_prefix`.
-- Enhanced the STRM export functionality by adding configurable naming styles and an optional flat directory structure for Kodi,Plex,Jellyfin,Emby.
-
-# 3.1.4 (???)
 - Extended STRM export functionality with:
   - Support for various media tools (Kodi, Plex, Emby, Jellyfin), with consideration for recommended naming conventions and file organization.
   - Optional flat directory structure via 'flat' parameter (nested folder structures are not supported by some media scanners).
+- Added Trakt support for XC targets
+```yaml
+      - name: iptv-trakt-example
+        output:
+          - type: xtream
+            skip_live_direct_source: true
+            skip_video_direct_source: true
+            skip_series_direct_source: true
+            resolve_series: false
+            resolve_vod: false
+            trakt:
+              api:
+                key: <my private trakt api key>
+                version: 2
+              lists:
+                - user: "linaspurinis"
+                  list_slug: "top-watched-movies-of-the-week"
+                  category_name: "📈 Top Weekly Movies"
+                  content_type: "vod"
+                  fuzzy_match_threshold: 80
+                - user: "garycrawfordgc"
+                  list_slug: "latest-tv-shows"
+                  category_name: "📺 Latest TV Shows"
+                  content_type: "series"
+                  fuzzy_match_threshold: 80
+```
 
 # 3.1.3 (2025-06-06)
 - Fixed xtream codes series info duplicate fields problem.

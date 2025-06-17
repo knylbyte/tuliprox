@@ -90,6 +90,8 @@ pub struct Constants {
     pub export_style_config: ExportStyleConfig,
     pub country_codes: HashSet<&'static str>,
     pub allowed_output_formats: Vec<String>,
+    pub re_trakt_year:  Regex,
+    pub re_quality:  Regex,
 }
 
 pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
@@ -119,7 +121,6 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
             whitespace: Regex::new(r"\s+").unwrap(),
             alphanumeric: Regex::new(r"[^\w\s]").unwrap(),
         },
-
         allowed_output_formats: Vec::from(["m3u8".to_string(), "ts".to_string()]),
         country_codes: vec![
             "af", "al", "dz", "ad", "ao", "ag", "ar", "am", "au", "at", "az", "bs", "bh", "bd", "bb", "by",
@@ -136,5 +137,7 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
             "tt", "tn", "tr", "tm", "tv", "ug", "ua", "ae", "gb", "us", "uy", "uz", "vu", "va", "ve", "vn",
             "ye", "zm", "zw",
         ].into_iter().collect::<HashSet<&str>>(),
+        re_trakt_year: Regex::new(r"\(?(\d{4})\)?$").unwrap(),
+        re_quality: Regex::new(r"(?i)\b(4K|UHD|8K|2160p?|1080p?|720p?|480p?|BLURAY|HDTV|DVDRIP|CAM|TS|HDR|DV|SDR)\b").unwrap(),
     }
 );
