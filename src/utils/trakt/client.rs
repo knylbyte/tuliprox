@@ -1,9 +1,8 @@
 use crate::model::{TraktApiConfig, TraktListConfig, TraktListItem};
 use crate::tuliprox_error::TuliproxError;
 use reqwest::header::{HeaderMap, HeaderValue};
-use std::collections::HashMap;
 use std::sync::Arc;
-use log::{debug, info, warn};
+use log::{debug, info};
 use crate::tuliprox_error::{info_err, TuliproxErrorKind};
 use super::errors::{handle_trakt_api_error};
 
@@ -26,23 +25,23 @@ impl TraktClient {
 
     fn create_headers(api_config: &TraktApiConfig) -> axum::http::HeaderMap {
         let mut headers = HeaderMap::new();
-        
+
         headers.insert(reqwest::header::CONTENT_TYPE, HeaderValue::from_static(mime::APPLICATION_JSON.as_ref()));
-        headers.insert("trakt-api-key", HeaderValue::from_static(api_config.get_api_key()));
-        headers.insert("trakt-api-version", HeaderValue::from_static(api_config.get_api_version()));
+        headers.insert("trakt-api-key", HeaderValue::from_str(api_config.key.as_str()).unwrap_or_else(|_| HeaderValue::from_static("")));
+        headers.insert("trakt-api-version", HeaderValue::from_str(api_config.version.as_str()).unwrap_or_else(|_| HeaderValue::from_static("")));
 
         headers
     }
 
     fn build_list_url(&self, user: &str, list_slug: &str) -> String {
-        format!("{}/users/{user}/lists/{list_slug}/items", self.api_config.get_base_url())
+        format!("{}/users/{user}/lists/{list_slug}/items", self.api_config.url)
     }
 
     pub async fn get_list_items(&self, list_config: &TraktListConfig) -> Result<Vec<TraktListItem>, TuliproxError> {
         debug!("Fetching Trakt list {}:{}", list_config.user, list_config.list_slug);
-        
+
         let url = self.build_list_url(&list_config.user, &list_config.list_slug);
-        
+
         let response = self.client
             .get(&url)
             .headers(self.headers.clone())
@@ -67,28 +66,4 @@ impl TraktClient {
         Ok(items)
     }
 
-    pub async fn get_all_lists(&self, list_configs: &[TraktListConfig]) -> Result<HashMap<String, Vec<TraktListItem>>, Vec<TuliproxError>> {
-        let mut results = HashMap::new();
-        let mut errors = Vec::new();
-
-        for list_config in list_configs {
-            let cache_key = format!("{}:{}", list_config.user, list_config.list_slug);
-            
-            match self.get_list_items(list_config).await {
-                Ok(items) => {
-                    results.insert(cache_key, items);
-                }
-                Err(err) => {
-                    warn!("Failed to fetch Trakt list {}: {}", cache_key, err.message);
-                    errors.push(err);
-                }
-            }
-        }
-
-        if results.is_empty() && !errors.is_empty() {
-            Err(errors)
-        } else {
-            Ok(results)
-        }
-    }
 } 

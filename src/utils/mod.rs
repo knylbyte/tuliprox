@@ -45,8 +45,21 @@ macro_rules! trace_if_enabled {
     };
 }
 
+#[macro_export]
+macro_rules! with {
+    (mut $target:expr => $alias:ident $block:block) => {{
+        let $alias = &mut $target;
+        $block
+    }};
+    ($target:expr => $alias:ident $block:block) => {{
+        let $alias = &$target;
+        $block
+    }};
+}
+
 pub use debug_if_enabled;
 pub use trace_if_enabled;
+pub use with;
 
 pub use self::default_utils::*;
 pub use self::string_utils::*;

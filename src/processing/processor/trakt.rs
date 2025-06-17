@@ -5,9 +5,11 @@ use crate::utils::trakt::client::TraktClient;
 use crate::utils::trakt::extract_year_from_title;
 use crate::utils::trakt::normalize_title_for_matching;
 use crate::utils::get_u32_from_serde_value;
-use log::{debug, info, trace, warn};
 use std::sync::Arc;
-use strsim::jaro_winkler;
+use strsim::{normalized_levenshtein};
+use log::{debug, info, trace, warn};
+use crate::utils::{trace_if_enabled, with};
+
 
 /// Utility functions for content type compatibility
 fn should_include_item(item: &TraktListItem, content_type: &TraktContentType) -> bool {
@@ -44,62 +46,75 @@ fn extract_tmdb_id_from_playlist_item(item: &PlaylistItem) -> Option<u32> {
 }
 
 fn calculate_year_bonus(playlist_year: Option<u32>, trakt_year: Option<u32>) -> f64 {
-    match (playlist_year, trakt_year) {
-        (Some(p_year), Some(t_year)) => {
-            if p_year == t_year {
-                // Perfect year match gets substantial bonus
-                0.15
-            } else {
-                let year_diff = p_year.abs_diff(t_year);
-
-                if year_diff <= 1 {
-                    // 1-year difference gets small bonus (could be release date differences)
-                    0.05
-                } else if year_diff <= 3 {
-                    // 2-3 years difference gets small penalty
-                    -0.05
-                } else {
-                    // More than 3 years difference gets larger penalty
-                    -0.15
-                }
-            }
-        }
-        (Some(_), None) | (None, Some(_)) => {
-            // One has year, other doesn't - small penalty
-            -0.05
-        }
-        (None, None) => {
-            // Neither has year - no bonus/penalty
-            0.0
+    if let (Some(p_year), Some(t_year)) = (playlist_year, trakt_year) {
+        if p_year == t_year {
+            // Perfect year match gets substantial bonus
+            return 0.15;
         }
     }
+    0.0
+    // match (playlist_year, trakt_year) {
+    //     (Some(p_year), Some(t_year)) => {
+    //         if p_year == t_year {
+    //             // Perfect year match gets substantial bonus
+    //             0.15
+    //         } else {
+    //             let year_diff = p_year.abs_diff(t_year);
+    //
+    //             if year_diff <= 1 {
+    //                 // 1-year difference gets small bonus (could be release date differences)
+    //                 0.05
+    //             } else if year_diff <= 3 {
+    //                 // 2-3 years difference gets small penalty
+    //                 -0.05
+    //             } else {
+    //                 // More than 3 years difference gets larger penalty
+    //                 -0.15
+    //             }
+    //         }
+    //     }
+    //     (Some(_), None) | (None, Some(_)) => {
+    //         // One has year, other doesn't - small penalty
+    //         -0.05
+    //     }
+    //     (None, None) => {
+    //         // Neither has year - no bonus/penalty
+    //         0.0
+    //     }
+    // }
 }
 
-fn find_best_fuzzy_match_for_item<'a>(channel: &'a PlaylistItem, trakt_items: &'a [TraktMatchItem], list_config: &'a TraktListConfig) -> Option<TraktMatchResult<'a>> {
+fn find_best_fuzzy_match_for_item<'a>(channel: (&'a PlaylistItem, String, Option<u32>, Option<u32>), trakt_items: &'a [TraktMatchItem], list_config: &'a TraktListConfig) -> Option<TraktMatchResult<'a>> {
     // Try fuzzy matching if no exact match found
-    let normalized_playlist_title = normalize_title_for_matching(&channel.header.title);
-    let playlist_year = extract_year_from_title(&channel.header.title);
+    let normalized_playlist_title = channel.1;
+    let playlist_year = channel.2;
     let threshold = f64::from(list_config.fuzzy_match_threshold) / 100.0;
     let mut best_match: Option<(&TraktMatchItem, f64)> = None;
 
     for trakt_item in trakt_items {
-        let title_score = jaro_winkler(&normalized_playlist_title, &trakt_item.normalized_title);
+        let title_score = normalized_levenshtein(&normalized_playlist_title, &trakt_item.normalized_title);
 
-        // Calculate year bonus
-        let year_bonus = calculate_year_bonus(playlist_year, trakt_item.year);
-        let mut combined_score = title_score + year_bonus;
+        if title_score >= threshold {
+            // Calculate year bonus
+            let year_bonus = calculate_year_bonus(playlist_year, trakt_item.year);
+            let mut combined_score = title_score + year_bonus;
 
-        // Clamp score to [0.0, 1.0]
-        combined_score = combined_score.clamp(0.0, 1.0);
+            // Clamp score to [0.0, 1.0]
+            combined_score = combined_score.clamp(0.0, 1.0);
 
-        // Check if this is the best match so far and meets threshold
-        if combined_score >= threshold {
-            if let Some((_, current_best_score)) = &best_match {
-                if combined_score > *current_best_score {
+            // Check if this is the best match so far and meets threshold
+            if combined_score >= threshold {
+                if let Some((_, current_best_score)) = &best_match {
+                    if combined_score > *current_best_score {
+                        best_match = Some((trakt_item, combined_score));
+                    }
+                } else {
                     best_match = Some((trakt_item, combined_score));
                 }
-            } else {
-                best_match = Some((trakt_item, combined_score));
+                // early exit strategy
+                if combined_score >= 99.0 {
+                    break;
+                }
             }
         }
     }
@@ -111,11 +126,10 @@ fn find_best_fuzzy_match_for_item<'a>(channel: &'a PlaylistItem, trakt_items: &'
             MatchType::FuzzyTitle
         };
 
-        debug!("Fuzzy match: '{}' -> '{}' (final: {combined_score:.3}, type: {match_type:?})",
-                      channel.header.title, trakt_item.title);
+        trace_if_enabled!("Fuzzy match: '{}' -> '{}' (final: {combined_score:.3}, type: {match_type:?})", channel.0.header.title, trakt_item.title);
 
         return Some(TraktMatchResult {
-            playlist_item: channel,
+            playlist_item: channel.0,
             trakt_item,
             match_score: combined_score,
             match_type: match_type.clone(),
@@ -126,17 +140,17 @@ fn find_best_fuzzy_match_for_item<'a>(channel: &'a PlaylistItem, trakt_items: &'
 }
 
 fn find_best_match_for_item<'a>(
-    channel: &'a PlaylistItem,
+    channel: (&'a PlaylistItem, String, Option<u32>, Option<u32>),
     trakt_items: &'a [TraktMatchItem<'a>],
     list_config: &'a TraktListConfig,
 ) -> Option<TraktMatchResult<'a>> {
     // Try TMDB exact matching first
-    if let Some(playlist_tmdb_id) = extract_tmdb_id_from_playlist_item(channel) {
+    if let Some(playlist_tmdb_id) = channel.3 {
         for trakt_item in trakt_items {
             if Some(playlist_tmdb_id) == trakt_item.tmdb_id {
-                trace!("TMDB exact match: '{}' (TMDB: {})", channel.header.title, playlist_tmdb_id);
+                trace!("TMDB exact match: '{}' (TMDB: {})", channel.0.header.title, playlist_tmdb_id);
                 return Some(TraktMatchResult {
-                    playlist_item: channel,
+                    playlist_item: channel.0,
                     trakt_item,
                     match_score: 1.0,
                     match_type: MatchType::TmdbExact,
@@ -147,7 +161,6 @@ fn find_best_match_for_item<'a>(
 
     find_best_fuzzy_match_for_item(channel, trakt_items, list_config)
 }
-
 
 fn create_category_from_matches<'a>(
     matches: Vec<TraktMatchResult<'a>>,
@@ -163,14 +176,23 @@ fn create_category_from_matches<'a>(
         a.trakt_item.rank.unwrap_or(9999).cmp(&b.trakt_item.rank.unwrap_or(9999))
     });
 
+    let group_title = &list_config.category_name;
+
     for match_result in sorted_matches {
         let mut modified_item = match_result.playlist_item.clone();
         // Use the (possibly numbered) title from the match result (which now contains the original playlist title)
-        modified_item.header.title.clone_from(&match_result.trakt_item.title.to_string());
-        // Synchronize name with title so both fields show the same value
-        modified_item.header.name.clone_from(&match_result.trakt_item.title.to_string());
+        with!(mut modified_item.header => header {
+            header.title.clone_from(&match_result.trakt_item.title.to_string());
+            // Synchronize name with title so both fields show the same value
+            header.name.clone_from(&match_result.trakt_item.title.to_string());
+            header.group = String::from(group_title);
+            header.gen_uuid();
+        });
         matched_items.push(modified_item);
     }
+
+    if matched_items.is_empty() { return None; }
+
 
     let cluster = match list_config.content_type {
         TraktContentType::Vod => XtreamCluster::Video,
@@ -181,11 +203,9 @@ fn create_category_from_matches<'a>(
         }
     };
 
-    if matched_items.is_empty() { return None; }
-
     Some(PlaylistGroup {
         id: 0,
-        title: list_config.category_name.clone(),
+        title: String::from(group_title),
         channels: matched_items,
         xtream_cluster: cluster,
     })
@@ -208,7 +228,12 @@ fn match_trakt_items_with_playlist<'a>(
     for playlist_group in playlist {
         for channel in &playlist_group.channels {
             if is_compatible_content_type(channel.header.xtream_cluster, &list_config.content_type) {
-                matches.extend(find_best_match_for_item(channel, &trakt_match_items, list_config));
+                let normalized_title = normalize_title_for_matching(&channel.header.title);
+                let channel_year = extract_year_from_title(&channel.header.title);
+                let channel_tmdb_id = extract_tmdb_id_from_playlist_item(channel);
+                if let Some(matched) = find_best_match_for_item((channel, normalized_title, channel_year, channel_tmdb_id), &trakt_match_items, list_config) {
+                    matches.push(matched);
+                }
             }
         }
     }
@@ -228,7 +253,7 @@ impl TraktCategoriesProcessor {
 
     pub async fn process_trakt_categories(
         &self,
-        playlist: &mut [PlaylistGroup],
+        playlist: &[PlaylistGroup],
         target: &ConfigTarget,
         trakt_config: &TraktConfig,
     ) -> Result<Vec<PlaylistGroup>, Vec<TuliproxError>> {
@@ -238,40 +263,33 @@ impl TraktCategoriesProcessor {
         }
 
         info!("Processing {} Trakt lists for target {}", trakt_config.lists.len(), target.name);
-
-        let trakt_lists = match self.client.get_all_lists(&trakt_config.lists).await {
-            Ok(lists) => lists,
-            Err(errors) => {
-                warn!("Failed to fetch some Trakt lists: {} errors", errors.len());
-                return Err(errors);
-            }
-        };
-
         let mut new_categories = Vec::new();
         let mut total_matches = 0;
-
         for list_config in &trakt_config.lists {
             let cache_key = format!("{}:{}", list_config.user, list_config.list_slug);
 
-            if let Some(trakt_items) = trakt_lists.get(&cache_key) {
-                info!("Processing Trakt list {} with {} items", cache_key, trakt_items.len());
+            match self.client.get_list_items(list_config).await {
+                Ok(trakt_items) => {
+                    debug!("Processing Trakt list {cache_key} with {} items", trakt_items.len());
 
-                if let Some(category) = match_trakt_items_with_playlist(trakt_items, playlist, list_config) {
-                    if !category.channels.is_empty() {
-                        total_matches += category.channels.len();
-                        let category_len = category.channels.len();
-                        new_categories.push(category);
-                        info!("Created Trakt category '{}' with {} items",
-                             list_config.category_name, category_len);
+                    if let Some(category) = match_trakt_items_with_playlist(&trakt_items, playlist, list_config) {
+                        if !category.channels.is_empty() {
+                            total_matches += category.channels.len();
+                            let category_len = category.channels.len();
+                            new_categories.push(category);
+                            debug!("Created Trakt category '{}' with {category_len} items", list_config.category_name);
+                        }
                     }
                 }
-            } else {
-                warn!("No items found for Trakt list {cache_key}");
+                Err(err) => {
+                    warn!("Failed to fetch Trakt list {cache_key}: {}", err.message);
+                }
             }
         }
 
-        info!("Trakt processing complete: created {} categories with {} total matches",
-             new_categories.len(), total_matches);
+
+        info!("Trakt processing complete: created {} categories with {total_matches} total matches",
+             new_categories.len());
 
         Ok(new_categories)
     }
@@ -279,11 +297,11 @@ impl TraktCategoriesProcessor {
 }
 pub async fn process_trakt_categories_for_target(
     http_client: Arc<reqwest::Client>,
-    playlist: &mut [PlaylistGroup],
+    playlist: &[PlaylistGroup],
     target: &ConfigTarget,
 ) -> Result<Vec<PlaylistGroup>, Vec<TuliproxError>> {
 
-    let Some(trakt_config) = target.get_xtream_output().and_then(|output| output.trakt_lists.as_ref()) else {
+    let Some(trakt_config) = target.get_xtream_output().and_then(|output| output.trakt.as_ref()) else {
         debug!("No Trakt configuration found for target {}", target.name);
         return Ok(vec![]);
     };

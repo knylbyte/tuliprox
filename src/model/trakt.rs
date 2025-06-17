@@ -2,27 +2,33 @@ use serde::{Deserialize, Serialize};
 use crate::model::{PlaylistItem};
 use crate::utils::trakt::normalize_title_for_matching;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
-pub struct TraktApiConfig {}
-
-impl TraktApiConfig {
-    #[inline]
-    pub fn get_api_key(&self) -> &'static str {
-        "0183a05ad97098d87287fe46da4ae286f434f32e8e951caad4cc147c947d79a3"
-    }
-
-    #[inline]
-    pub fn get_api_version(&self) -> &'static str {
-        "2"
-    }
-
-    #[inline]
-    pub fn get_base_url(&self) -> &'static str {
-        "https://api.trakt.tv"
-    }
+const  TRAKT_API_KEY: &str = "0183a05ad97098d87287fe46da4ae286f434f32e8e951caad4cc147c947d79a3";
+const  TRAKT_API_VERSION: &str = "2";
+const  TRAKT_API_URL: &str = "https://api.trakt.tv";
+fn default_fuzzy_threshold() -> u8 {
+    80
 }
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct TraktApiConfig {
+    #[serde(default)]
+    pub(crate) key: String,
+    #[serde(default)]
+    pub(crate) version: String,
+    #[serde(default)]
+    pub(crate) url: String,
+}
+
+impl TraktApiConfig {
+    pub fn prepare(&mut self) {
+        let key  =  self.key.trim();
+        self.key = String::from(if key.is_empty() { TRAKT_API_KEY } else { key });
+        let version = self.version.trim();
+        self.version = String::from(if version.is_empty() { TRAKT_API_VERSION } else { version });
+        let url = self.url.trim();
+        self.url = String::from(if url.is_empty() { TRAKT_API_URL } else { url });
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraktListConfig {
@@ -33,10 +39,6 @@ pub struct TraktListConfig {
     pub content_type: TraktContentType,
     #[serde(default = "default_fuzzy_threshold")]
     pub fuzzy_match_threshold: u8, // Percentage (0-100)
-}
-
-fn default_fuzzy_threshold() -> u8 {
-    80
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -55,8 +57,15 @@ impl Default for TraktContentType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraktConfig {
+    #[serde(default)]
     pub api: TraktApiConfig,
     pub lists: Vec<TraktListConfig>,
+}
+
+impl TraktConfig {
+    pub fn prepare(&mut self) {
+        self.api.prepare();
+    }
 }
 
 // API Response structures

@@ -33,7 +33,7 @@ sources:
             skip_series_direct_source: false
             resolve_series: false
             resolve_vod: false
-            trakt_lists:
+            trakt:
               lists:
                 - user: "linaspurinis"
                   list_slug: "top-watched-movies-of-the-week"

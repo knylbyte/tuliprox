@@ -8,15 +8,20 @@ use crate::utils::CONSTANTS;
 /// Normalize title for matching - optimized version with reduced allocations
 pub fn normalize_title_for_matching(title: &str) -> String {
     let normalized = deunicode(title.trim());
+
     let mut result = String::with_capacity(normalized.len());
-    
+
     for ch in normalized.chars() {
         if ch.is_alphanumeric() {
             result.push(ch.to_ascii_lowercase());
         }
     }
-    
-    result
+
+    if CONSTANTS.re_trakt_year.is_match(&result) {
+        result[..result.len() - 4].to_string()
+    } else {
+        result
+    }
 }
 
 /// Extract year from title using cached regex pattern - optimized version

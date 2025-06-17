@@ -125,9 +125,17 @@ pub struct XtreamTargetOutput {
     #[serde(default = "default_resolve_delay_secs")]
     pub resolve_vod_delay: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trakt_lists: Option<TraktConfig>,
+    pub trakt: Option<TraktConfig>,
 }
 
+
+impl XtreamTargetOutput {
+    pub fn prepare(&mut self) {
+        if let Some(trakt) = &mut self.trakt {
+            trakt.prepare();
+        }
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -173,6 +181,17 @@ pub enum TargetOutput {
     M3u(M3uTargetOutput),
     Strm(StrmTargetOutput),
     HdHomeRun(HdHomeRunTargetOutput),
+}
+
+impl TargetOutput {
+    pub fn prepare(&mut self) {
+        match  self {
+            TargetOutput::Xtream(output) => output.prepare(),
+            TargetOutput::M3u(_)
+            | TargetOutput::Strm(_)
+            | TargetOutput::HdHomeRun(_) => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
@@ -222,6 +241,7 @@ impl ConfigTarget {
         let mut hdhomerun_needs_xtream = false;
 
         for target_output in &mut self.output {
+            target_output.prepare();
             match target_output {
                 TargetOutput::Xtream(_) => {
                     xtream_cnt += 1;

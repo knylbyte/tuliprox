@@ -463,24 +463,26 @@ async fn process_playlist_for_target(client: Arc<reqwest::Client>,
     }
 
     step.tick("Processed epg");
-    let (new_epg, new_playlist) = process_epg(&mut processed_fetched_playlists);
+    let (new_epg, mut new_playlist) = process_epg(&mut processed_fetched_playlists);
 
     if new_playlist.is_empty() {
         info!("Playlist is empty: {}", &target.name);
         Ok(())
     } else {
+
+        // Process Trakt categories
+        step.tick("Processing Trakt categories");
+        trakt_playlist(&client, target, errors, &mut new_playlist).await;
+
         step.tick("Merged playlists");
         let mut flat_new_playlist = flatten_groups(new_playlist);
+
         step.tick("Sorted playlists");
         sort_playlist(target, &mut flat_new_playlist);
         step.tick("Assigned channel number");
         assign_channel_no_playlist(&mut flat_new_playlist);
         step.tick("Assigned channel counter");
         map_playlist_counter(target, &mut flat_new_playlist);
-
-        // Process Trakt categories
-        step.tick("Processing Trakt categories");
-        trakt_playlist(&client, target, errors, &mut flat_new_playlist).await;
 
         step.tick("Processed group watches");
         process_watch(&client, target, cfg, &flat_new_playlist);
@@ -491,12 +493,12 @@ async fn process_playlist_for_target(client: Arc<reqwest::Client>,
     }
 }
 
-async fn trakt_playlist(client: &Arc<Client>, target: &ConfigTarget, errors: &mut Vec<TuliproxError>, flat_new_playlist: &mut Vec<PlaylistGroup>) {
-    match process_trakt_categories_for_target(Arc::clone(client), flat_new_playlist, target).await {
+async fn trakt_playlist(client: &Arc<Client>, target: &ConfigTarget, errors: &mut Vec<TuliproxError>, playlist: &mut Vec<PlaylistGroup>) {
+    match process_trakt_categories_for_target(Arc::clone(client), playlist, target).await {
         Ok(trakt_categories) => {
             if !trakt_categories.is_empty() {
                 info!("Adding {} Trakt categories to playlist", trakt_categories.len());
-                flat_new_playlist.extend(trakt_categories);
+                playlist.extend(trakt_categories);
             }
         }
         Err(trakt_errors) => {
