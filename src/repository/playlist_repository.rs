@@ -4,7 +4,7 @@ use crate::model::{Config, ConfigTarget, TargetOutput};
 use crate::model::{PlaylistGroup, PlaylistItemType};
 use crate::model::Epg;
 use crate::repository::epg_repository::epg_write;
-use crate::repository::kodi_repository::write_strm_playlist;
+use crate::repository::strm_repository::write_strm_playlist;
 use crate::repository::m3u_repository::m3u_write_playlist;
 use crate::repository::storage::{ensure_target_storage_path, get_target_id_mapping_file};
 use crate::repository::target_id_mapping::TargetIdMapping;

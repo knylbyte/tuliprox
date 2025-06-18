@@ -226,18 +226,22 @@ pub struct ConfigTarget {
 }
 
 impl ConfigTarget {
+    #[allow(clippy::too_many_lines)]
     pub fn prepare(&mut self, id: u16, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         self.id = id;
         if self.output.is_empty() {
             return Err(info_err!(format!("Missing output format for {}", self.name)));
         }
         let mut m3u_cnt = 0;
-        let mut strm_cnt = 0;
         let mut xtream_cnt = 0;
+        let mut strm_cnt = 0;
         let mut strm_needs_xtream = false;
         let mut hdhr_cnt = 0;
         let mut hdhomerun_needs_m3u = false;
         let mut hdhomerun_needs_xtream = false;
+
+        let mut strm_export_styles = vec![];
+        let mut strm_directories: Vec<&str> = vec![];
 
         for target_output in &mut self.output {
             target_output.prepare();
@@ -253,7 +257,7 @@ impl ConfigTarget {
                     m3u_output.filename = m3u_output.filename.as_ref().map(|s| s.trim().to_string());
                 }
                 TargetOutput::Strm(strm_output) => {
-                    strm_cnt += 1;
+                    strm_cnt +=1;
                     strm_output.directory = strm_output.directory.trim().to_string();
                     if strm_output.directory.trim().is_empty() {
                         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "directory is required for strm type: {}", self.name);
@@ -266,6 +270,14 @@ impl ConfigTarget {
                     if has_username {
                         strm_needs_xtream = true;
                     }
+                    if strm_export_styles.contains(&strm_output.style) {
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "strm outputs with same export style are not allowed: {}", self.name);
+                    }
+                    strm_export_styles.push(strm_output.style);
+                    if strm_directories.contains(&strm_output.directory.as_str()) {
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "strm outputs with same export directory are not allowed: {}", self.name);
+                    }
+                    strm_directories.push(strm_output.directory.as_str());
                 }
                 TargetOutput::HdHomeRun(hdhomerun_output) => {
                     hdhr_cnt += 1;
@@ -290,7 +302,7 @@ impl ConfigTarget {
             }
         }
 
-        if m3u_cnt > 1 || strm_cnt > 1 || xtream_cnt > 1 || hdhr_cnt > 1 {
+        if m3u_cnt > 1 || xtream_cnt > 1 || hdhr_cnt > 1 {
             return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Multiple output formats with same type : {}", self.name);
         }
 
