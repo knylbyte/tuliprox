@@ -88,7 +88,7 @@ pub struct TraktListItem {
 impl TraktListItem {
     pub fn prepare(&mut self) {
         self.content_type = match self.item_type.as_str() {
-            "movie" => TraktContentType::Vod,
+            "movie" => if self.movie.is_some() { TraktContentType::Vod } else { TraktContentType::Both },
             "show" => if self.show.is_some() { TraktContentType::Series } else { TraktContentType::Both },
             _ => TraktContentType::Both,
         }
@@ -168,12 +168,12 @@ pub struct TraktMatchResult<'a> {
     pub playlist_item: &'a PlaylistItem,
     pub trakt_item: &'a TraktMatchItem<'a>,
     pub match_score: f64,
-    pub match_type: MatchType,
+    // pub match_type: MatchType,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum MatchType {
-    TmdbExact,
-    FuzzyTitle,
-    FuzzyTitleYear,
-} 
+// #[derive(Debug, Clone, PartialEq)]
+// pub enum MatchType {
+//     TmdbExact,
+//     FuzzyTitle,
+//     FuzzyTitleYear,
+// }

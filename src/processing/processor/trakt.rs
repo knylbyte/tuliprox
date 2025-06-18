@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use crate::model::{ConfigTarget, FieldGetAccessor, FieldSetAccessor, PlaylistGroup, PlaylistItem, XtreamCluster};
-use crate::model::{MatchType, TraktConfig, TraktContentType, TraktListConfig, TraktListItem, TraktMatchItem, TraktMatchResult};
+use crate::model::{TraktConfig, TraktContentType, TraktListConfig, TraktListItem, TraktMatchItem, TraktMatchResult};
 use crate::tuliprox_error::TuliproxError;
 use crate::utils::trakt::client::TraktClient;
 use crate::utils::trakt::extract_year_from_title;
@@ -59,41 +59,11 @@ fn calculate_year_bonus(playlist_year: Option<u32>, trakt_year: Option<u32>) -> 
     if let (Some(p_year), Some(t_year)) = (playlist_year, trakt_year) {
         if p_year == t_year {
             // Perfect year match gets substantial bonus
-            return 0.15;
-        } else {
-            return -0.15;
+            return 0.5;
         }
+        return -0.5;
     }
     0.0
-    // match (playlist_year, trakt_year) {
-    //     (Some(p_year), Some(t_year)) => {
-    //         if p_year == t_year {
-    //             // Perfect year match gets substantial bonus
-    //             0.15
-    //         } else {
-    //             let year_diff = p_year.abs_diff(t_year);
-    //
-    //             if year_diff <= 1 {
-    //                 // 1-year difference gets small bonus (could be release date differences)
-    //                 0.05
-    //             } else if year_diff <= 3 {
-    //                 // 2-3 years difference gets small penalty
-    //                 -0.05
-    //             } else {
-    //                 // More than 3 years difference gets larger penalty
-    //                 -0.15
-    //             }
-    //         }
-    //     }
-    //     (Some(_), None) | (None, Some(_)) => {
-    //         // One has year, other doesn't - small penalty
-    //         -0.05
-    //     }
-    //     (None, None) => {
-    //         // Neither has year - no bonus/penalty
-    //         0.0
-    //     }
-    // }
 }
 
 fn find_best_fuzzy_match_for_item<'a>(channel: (&'a PlaylistItem, String, Option<u32>, Option<u32>), trakt_items: &'a [TraktMatchItem], list_config: &'a TraktListConfig) -> Option<TraktMatchResult<'a>> {
@@ -132,19 +102,19 @@ fn find_best_fuzzy_match_for_item<'a>(channel: (&'a PlaylistItem, String, Option
     }
 
     if let Some((trakt_item, combined_score)) = best_match {
-        let match_type = if playlist_year.is_some() && trakt_item.year.is_some() {
-            MatchType::FuzzyTitleYear
-        } else {
-            MatchType::FuzzyTitle
-        };
+        // let match_type = if playlist_year.is_some() && trakt_item.year.is_some() {
+        //     MatchType::FuzzyTitleYear
+        // } else {
+        //     MatchType::FuzzyTitle
+        // };
 
-        trace_if_enabled!("Fuzzy match: '{}' -> '{}' (final: {combined_score:.3}, type: {match_type:?})", channel.0.header.title, trakt_item.title);
+        trace_if_enabled!("Fuzzy match: '{}' -> '{}' (final: {combined_score:.3}" /*, type: {match_type:?})"*/, channel.0.header.title, trakt_item.title);
 
         return Some(TraktMatchResult {
             playlist_item: channel.0,
             trakt_item,
             match_score: combined_score,
-            match_type: match_type.clone(),
+            // match_type: match_type.clone(),
         });
     }
 
@@ -165,7 +135,7 @@ fn find_best_match_for_item<'a>(
                     playlist_item: channel.0,
                     trakt_item,
                     match_score: 1.0,
-                    match_type: MatchType::TmdbExact,
+                    // match_type: MatchType::TmdbExact,
                 });
             }
         }
@@ -192,7 +162,6 @@ fn create_category_from_matches<'a>(
             b.trakt_item.title.to_lowercase(),
         ))
     });
-
 
     let group_title = &list_config.category_name;
 

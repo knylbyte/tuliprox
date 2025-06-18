@@ -50,5 +50,10 @@ sources:
                   category_name: "🔥 Trending"
                   content_type: "both"
                   fuzzy_match_threshold: 80
+                - user: "mmozeiko"
+                  list_slug: "star-wars-universe"
+                  category_name: "🌌 Univers Star Wars"
+                  content_type: "both"
+                  fuzzy_match_threshold: 80
         filter: "!final_channel_lineup!"
         options: { ignore_logo: false, share_live_streams: true }
