@@ -18,10 +18,13 @@ jobs:
         include:
           - platform: linux/amd64
             runner: ubuntu-22.04
+            rust_target: x86_64-unknown-linux-musl
           - platform: linux/arm64
             runner: ubuntu-22.04-arm
+            rust_target: aarch64-unknown-linux-musl
           - platform: linux/armv7
             runner: ubuntu-22.04-arm
+            rust_target: armv7-unknown-linux-musleabihf
     runs-on: ${{ matrix.runner || 'ubuntu-22.04' }}
     steps:
       - name: Checkout source
@@ -59,6 +62,8 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           platforms: ${{ matrix.platform }}
+          build-args: |
+            RUST_TARGET=${{ matrix.rust_target }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.GHCR_REPO }},push-by-digest=true,name-canonical=true,push=true
 
