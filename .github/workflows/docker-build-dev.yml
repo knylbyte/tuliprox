@@ -22,7 +22,7 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-22.04-arm
             rust_target: aarch64-unknown-linux-musl
-          - platform: linux/armv7
+          - platform: linux/arm/v7
             runner: ubuntu-22.04-arm
             rust_target: armv7-unknown-linux-musleabihf
     runs-on: ${{ matrix.runner || 'ubuntu-22.04' }}
