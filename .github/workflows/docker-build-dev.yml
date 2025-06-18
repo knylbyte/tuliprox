@@ -20,8 +20,13 @@ jobs:
             runner: ubuntu-22.04
           - platform: linux/arm64
             runner: ubuntu-22.04-arm
+          - platform: linux/armv7
+            runner: ubuntu-22.04-arm
     runs-on: ${{ matrix.runner || 'ubuntu-22.04' }}
     steps:
+      - name: Checkout source
+        uses: actions/checkout@v4 
+        
       - name: Prepare
         run: |
           platform=${{ matrix.platform }}
@@ -51,6 +56,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
+          context: .
+          file: ./docker/Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.GHCR_REPO }},push-by-digest=true,name-canonical=true,push=true
