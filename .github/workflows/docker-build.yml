@@ -54,12 +54,6 @@ jobs:
           - platform: linux/amd64
             rust_target: x86_64-unknown-linux-musl
             tag: linux-amd64
-          - platform: linux/arm64
-            rust_target: aarch64-unknown-linux-musl
-            tag: linux-arm64
-          - platform: linux/arm/v7
-            rust_target: armv7-unknown-linux-musleabihf
-            tag: linux-armv7
 
     steps:
       - uses: actions/checkout@v3
@@ -91,9 +85,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - platform: linux/amd64
-            rust_target: x86_64-unknown-linux-musl
-            tag: linux-amd64
           - platform: linux/arm64
             rust_target: aarch64-unknown-linux-musl
             tag: linux-arm64
