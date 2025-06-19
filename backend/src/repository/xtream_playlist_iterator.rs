@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use log::error;
-use shared::model::XtreamCluster;
+use shared::model::{TargetType, XtreamCluster};
 use shared::error::info_err;
 use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ProxyUserCredentials};
-use crate::model::{Config, ConfigTarget, TargetType};
+use crate::model::{Config, ConfigTarget};
 use crate::model::{XtreamPlaylistItem};
 use crate::model::XtreamMappingOptions;
 use crate::repository::indexed_document::{IndexedDocumentIterator};

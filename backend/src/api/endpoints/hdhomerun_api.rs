@@ -1,9 +1,9 @@
 use crate::api::model::app_state::HdHomerunAppState;
 use crate::auth::AuthBasic;
-use crate::model::ProxyUserCredentials;
-use crate::model::{Config, ConfigTarget, TargetType};
+use crate::model::{ConfigTarget, ProxyUserCredentials};
+use crate::model::{Config};
 use crate::model::{M3uPlaylistItem, XtreamPlaylistItem};
-use shared::model::{PlaylistItemType, XtreamCluster};
+use shared::model::{PlaylistItemType, TargetType, XtreamCluster};
 use crate::processing::parser::xtream::get_xtream_url;
 use crate::repository::m3u_playlist_iterator::M3uPlaylistIterator;
 use crate::repository::xtream_playlist_iterator::XtreamPlaylistIterator;

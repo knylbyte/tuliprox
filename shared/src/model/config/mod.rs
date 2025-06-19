@@ -17,8 +17,13 @@ mod reverse_proxy;
 mod cache;
 mod rate_limit;
 mod proxy;
+mod rename;
+mod api_proxy;
+mod api_user;
 
 pub use base::*;
+pub use api_proxy::*;
+pub use api_user::*;
 pub use web::*;
 pub use messaging::*;
 pub use hdhomerun::*;
@@ -37,3 +42,4 @@ pub use rate_limit::*;
 pub use reverse_proxy::*;
 pub use proxy::*;
 pub use trakt::*;
+pub use rename::*;

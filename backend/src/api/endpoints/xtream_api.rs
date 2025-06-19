@@ -9,10 +9,9 @@ use crate::api::model::app_state::AppState;
 use crate::api::model::request::UserApiRequest;
 use crate::api::model::streams::provider_stream::{create_custom_video_stream_response, CustomVideoStreamType};
 use crate::api::model::xtream::XtreamAuthorizationResponse;
-use crate::model::TargetType;
-use crate::model::{get_backdrop_path_value, XtreamPlaylistItem};
-use crate::model::{Config, ConfigInput, ConfigTarget};
-use crate::model::{ProxyType, ProxyUserCredentials, UserConnectionPermission};
+use crate::model::{get_backdrop_path_value, ConfigTarget, XtreamPlaylistItem};
+use crate::model::{Config, ConfigInput};
+use crate::model::{ProxyUserCredentials};
 use crate::repository::playlist_repository::get_target_id_mapping;
 use crate::repository::storage::{get_target_storage_path};
 use crate::repository::{storage_const, user_repository, xtream_repository};
@@ -41,7 +40,7 @@ use std::fmt::{Display, Formatter};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
-use shared::model::{PlaylistItemType, XtreamCluster, FieldGetAccessor, PlaylistEntry};
+use shared::model::{PlaylistItemType, XtreamCluster, FieldGetAccessor, PlaylistEntry, TargetType, UserConnectionPermission, ProxyType};
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ApiStreamContext {

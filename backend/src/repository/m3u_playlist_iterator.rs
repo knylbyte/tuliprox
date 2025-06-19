@@ -1,9 +1,9 @@
 use shared::error::info_err;
 use shared::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::{ProxyType, ProxyUserCredentials};
-use crate::model::{Config, ConfigTarget, ConfigTargetOptions, TargetType};
+use crate::model::{ProxyUserCredentials};
+use crate::model::{Config, ConfigTarget, ConfigTargetOptions};
 use crate::model::{M3uPlaylistItem};
-use shared::model::{PlaylistItemType, XtreamCluster};
+use shared::model::{PlaylistItemType, ProxyType, TargetType, XtreamCluster};
 use crate::repository::indexed_document::IndexedDocumentIterator;
 use crate::repository::m3u_repository::m3u_get_file_paths;
 use crate::repository::storage::ensure_target_storage_path;

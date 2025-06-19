@@ -1,8 +1,8 @@
 use crate::api::api_utils::{get_user_target_by_username, get_username_from_auth_header};
 use crate::api::model::app_state::AppState;
 use crate::auth::validator_user;
-use crate::model::{Config, ConfigTarget, TargetType};
-use shared::model::XtreamCluster;
+use crate::model::{Config, ConfigTarget};
+use shared::model::{TargetType, XtreamCluster};
 use crate::model::PlaylistBouquetDto;
 use crate::model::PlaylistXtreamCategory;
 use crate::repository::user_repository::{load_user_bouquet_as_json, save_user_bouquet};

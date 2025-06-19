@@ -1,5 +1,5 @@
 use crate::model::Config;
-use crate::model::{ProxyUserCredentials, UserConnectionPermission};
+use crate::model::{ProxyUserCredentials};
 use crate::utils::request::sanitize_sensitive_info;
 use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs};
 use jsonwebtoken::get_current_timestamp;
@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use shared::model::UserConnectionPermission;
 
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
 const USER_SESSION_LIMIT: usize = 50;

@@ -1,6 +1,6 @@
-use crate::model::{ProxyType, ProxyUserCredentials, ProxyUserStatus, TargetUser};
-use crate::model::{Config, TargetType};
-use shared::model::XtreamCluster;
+use crate::model::{ProxyUserCredentials, TargetUser};
+use crate::model::{Config};
+use shared::model::{ProxyType, ProxyUserStatus, TargetType, XtreamCluster};
 use crate::model::{PlaylistBouquetDto, TargetBouquetDto};
 use crate::model::PlaylistXtreamCategory;
 use crate::repository::bplustree::BPlusTree;

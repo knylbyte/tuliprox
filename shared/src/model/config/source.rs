@@ -1,4 +1,4 @@
-use crate::model::{ConfigInputDto, ItemField};
+use crate::model::{ConfigInputDto};
 use crate::model::config::target::ConfigTargetDto;
 
 
@@ -15,14 +15,6 @@ pub struct PatternTemplateDto {
     pub value: TemplateValue,
     #[serde(skip)]
     pub placeholder: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ConfigRenameDto {
-    pub field: ItemField,
-    pub pattern: String,
-    pub new_name: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

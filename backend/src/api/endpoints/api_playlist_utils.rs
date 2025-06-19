@@ -1,6 +1,6 @@
-use crate::model::{Config, ConfigInput, ConfigTarget, InputType, TargetType};
+use crate::model::{Config, ConfigInput, ConfigTarget, InputType};
 use crate::model::{M3uPlaylistItem, PlaylistGroup};
-use shared::model::{PlaylistItemType, XtreamCluster};
+use shared::model::{PlaylistItemType, TargetType, XtreamCluster};
 use crate::repository::{m3u_repository, xtream_repository};
 use crate::utils::{m3u, xtream};
 use axum::response::IntoResponse;

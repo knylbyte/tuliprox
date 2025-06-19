@@ -2,9 +2,9 @@ use crate::api::api_utils::{force_provider_stream_response, get_stream_alternati
 use crate::api::api_utils::{try_option_bad_request};
 use crate::api::model::app_state::AppState;
 use crate::api::model::streams::provider_stream::{create_custom_video_stream_response, CustomVideoStreamType};
-use crate::model::{ProxyUserCredentials, UserConnectionPermission};
+use crate::model::{ProxyUserCredentials};
 use crate::model::ConfigInput;
-use shared::model::{PlaylistItemType, XtreamCluster};
+use shared::model::{PlaylistItemType, UserConnectionPermission, XtreamCluster};
 use crate::processing::parser::hls::{get_hls_session_token_and_url_from_token, rewrite_hls, RewriteHlsProps};
 use shared::utils::HLS_EXT;
 use crate::utils::request;

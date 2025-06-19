@@ -1,5 +1,4 @@
-use crate::model::{ClusterFlags, ConfigSortDto, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
-use crate::model::config::source::ConfigRenameDto;
+use crate::model::{ClusterFlags, ConfigRenameDto, ConfigSortDto, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
 use crate::utils::{default_as_true, default_resolve_delay_secs, default_as_default};
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]

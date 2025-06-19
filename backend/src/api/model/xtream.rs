@@ -1,6 +1,7 @@
-use crate::model::{ApiProxyServerInfo, ProxyUserCredentials, ProxyUserStatus};
+use crate::model::{ApiProxyServerInfo, ProxyUserCredentials};
 use chrono::{Duration, Local};
 use serde::{Deserialize, Serialize};
+use shared::model::ProxyUserStatus;
 use shared::utils::CONSTANTS;
 
 #[derive(Serialize, Deserialize, Clone)]
