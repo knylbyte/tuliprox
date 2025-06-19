@@ -1,8 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use crate::foundation::filter::{prepare_templates, PatternTemplate};
 use shared::error::{TuliproxError, TuliproxErrorKind, handle_tuliprox_error_result_list, create_tuliprox_error_result};
-use crate::model::{ConfigInput, ProcessTargets};
-use crate::model::config_target::ConfigTarget;
+use crate::model::{ConfigInput, ConfigTarget, ProcessTargets};
 use shared::utils::default_as_default;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

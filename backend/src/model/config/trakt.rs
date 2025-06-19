@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::model::{PlaylistItem};
-use crate::utils::trakt::normalize_title_for_matching;
+use crate::utils::normalize_title_for_matching;
 
 const  TRAKT_API_KEY: &str = "0183a05ad97098d87287fe46da4ae286f434f32e8e951caad4cc147c947d79a3";
 const  TRAKT_API_VERSION: &str = "2";

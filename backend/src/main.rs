@@ -10,7 +10,7 @@ mod modules;
 include_modules!();
 
 use crate::auth::generate_password;
-use crate::model::{Config, HealthcheckConfig, Healthcheck, ProcessTargets};
+use crate::model::{Config, Healthcheck, HealthcheckConfig, ProcessTargets};
 use crate::processing::processor::playlist;
 use crate::utils::{config_file_reader, resolve_env_var};
 use crate::utils::request::{create_client, set_sanitize_sensitive_info};
@@ -20,7 +20,7 @@ use log::{error, info};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use crate::utils::logging::init_logger;
+use crate::utils::init_logger;
 
 #[derive(Parser)]
 #[command(name = "tuliprox")]

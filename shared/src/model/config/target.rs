@@ -75,7 +75,7 @@ pub struct HdHomeRunTargetOutputDto {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields, tag = "type", rename_all = "lowercase")]
-pub enum TargetOutput {
+pub enum TargetOutputDto {
     Xtream(XtreamTargetOutputDto),
     M3u(M3uTargetOutputDto),
     Strm(StrmTargetOutputDto),
@@ -98,7 +98,7 @@ pub struct ConfigTargetDto {
     pub sort: Option<ConfigSortDto>,
     pub filter: String,
     #[serde(default)]
-    pub output: Vec<TargetOutput>,
+    pub output: Vec<TargetOutputDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rename: Option<Vec<ConfigRenameDto>>,
     #[serde(skip_serializing_if = "Option::is_none")]

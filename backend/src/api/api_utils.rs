@@ -12,9 +12,9 @@ use crate::api::model::streams::provider_stream_factory::{create_provider_stream
 use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
 use crate::api::model::streams::throttled_stream::ThrottledStream;
 use crate::auth::Claims;
-use crate::model::{ProxyUserCredentials, UserConnectionPermission};
-use crate::model::{ConfigInput, ConfigTarget, InputFetchMethod, TargetType};
-use shared::model::{PlaylistEntry, PlaylistItemType, XtreamCluster};
+use crate::model::{ConfigTarget, ProxyUserCredentials, UserConnectionPermission};
+use crate::model::{ConfigInput, InputFetchMethod};
+use shared::model::{PlaylistEntry, PlaylistItemType, TargetType, XtreamCluster};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::tools::lru_cache::LRUResourceCache;
 use shared::utils::{DASH_EXT, HLS_EXT};

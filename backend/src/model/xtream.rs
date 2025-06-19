@@ -1,7 +1,7 @@
 use crate::model::{ProxyUserCredentials};
 use crate::model::{Config, ConfigTarget, XtreamTargetOutput};
 use crate::model::{PlaylistItem,XtreamPlaylistItem};
-use crate::model::serde_utils::{deserialize_as_option_rc_string, deserialize_as_rc_string, deserialize_as_string_array, deserialize_number_from_string};
+use crate::utils::{deserialize_as_option_rc_string, deserialize_as_rc_string, deserialize_as_string_array, deserialize_number_from_string};
 use crate::model::xtream_const;
 use crate::utils::{opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
 use shared::utils::{get_non_empty_str};

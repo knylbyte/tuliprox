@@ -5,17 +5,14 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use log::{debug, error, warn};
+use log::{debug, error};
 use path_clean::PathClean;
 use rand::Rng;
 
-use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Mappings, ProxyUserCredentials, SourcesConfig};
+use crate::model::{ApiProxyConfig, ApiProxyServerInfo, CustomStreamResponse, Mappings, ProxyUserCredentials, ReverseProxyConfig, ScheduleConfig, SourcesConfig};
 use crate::model::{ConfigInput, ConfigInputOptions, ConfigTarget, HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, TargetOutput, VideoConfig, WebUiConfig};
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
-use shared::utils::{parse_to_kbps, default_connect_timeout_secs, default_grace_period_millis, default_grace_period_timeout_secs};
-
-const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with 8192byte chunks and 2Mbit/s approx 8MB
-
+use shared::utils::{default_connect_timeout_secs};
 
 const CHANNEL_UNAVAILABLE: &str = "channel_unavailable.ts";
 const USER_CONNECTIONS_EXHAUSTED: &str = "user_connections_exhausted.ts";
@@ -37,7 +34,6 @@ macro_rules! valid_property {
 }
 pub use valid_property;
 use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
-use crate::model::config_cache::CacheConfig;
 use crate::utils;
 
 
@@ -136,142 +132,6 @@ impl ConfigDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct ScheduleConfig {
-    #[serde(default)]
-    pub schedule: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub targets: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct StreamBufferConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub size: usize,
-}
-
-impl StreamBufferConfig {
-    fn prepare(&mut self) {
-        if self.enabled && self.size == 0 {
-            self.size = STREAM_QUEUE_SIZE;
-        }
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct StreamConfig {
-    #[serde(default)]
-    pub retry: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub buffer: Option<StreamBufferConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub throttle: Option<String>,
-    #[serde(default = "default_grace_period_millis")]
-    pub grace_period_millis: u64,
-    #[serde(default = "default_grace_period_timeout_secs")]
-    pub grace_period_timeout_secs: u64,
-    #[serde(default)]
-    pub forced_retry_interval_secs: u32,
-    #[serde(default, skip)]
-    pub throttle_kbps: u64,
-}
-
-impl StreamConfig {
-    fn prepare(&mut self) -> Result<(), TuliproxError> {
-        if let Some(buffer) = self.buffer.as_mut() {
-            buffer.prepare();
-        }
-        if let Some(throttle) = &self.throttle {
-            self.throttle_kbps = parse_to_kbps(throttle).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err))?;
-        }
-
-        if self.grace_period_millis > 0 {
-            if self.grace_period_timeout_secs == 0 {
-                let triple_ms = self.grace_period_millis * 3;
-                self.grace_period_timeout_secs = std::cmp::max(1, triple_ms.div_ceil(1000));
-            } else if self.grace_period_millis / 1000 > self.grace_period_timeout_secs {
-                return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("Grace time period timeout {} sec should be more than grace time period {} ms", self.grace_period_timeout_secs, self.grace_period_millis)));
-            }
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct RateLimitConfig {
-    pub enabled: bool,
-    pub period_millis: u64,
-    pub burst_size: u32,
-}
-
-impl RateLimitConfig {
-    fn prepare(&self) -> Result<(), TuliproxError> {
-        if self.period_millis == 0 {
-            return Err(TuliproxError::new(TuliproxErrorKind::Info, "Rate limiter period can't be 0".to_string()));
-        }
-        if self.burst_size == 0 {
-            return Err(TuliproxError::new(TuliproxErrorKind::Info, "Rate limiter bust can't be 0".to_string()));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct ReverseProxyConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stream: Option<StreamConfig>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cache: Option<CacheConfig>,
-    #[serde(default)]
-    pub resource_rewrite_disabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rate_limit: Option<RateLimitConfig>,
-    #[serde(default)]
-    pub disable_referer_header: bool,
-}
-
-impl ReverseProxyConfig {
-    fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {
-        if let Some(stream) = self.stream.as_mut() {
-            stream.prepare()?;
-        }
-        if let Some(cache) = self.cache.as_mut() {
-            if cache.enabled && self.resource_rewrite_disabled {
-                warn!("The cache is disabled because resource rewrite is disabled");
-                cache.enabled = false;
-            }
-            cache.prepare(working_dir)?;
-        }
-
-        if let Some(rate_limit) = self.rate_limit.as_mut() {
-            if rate_limit.enabled {
-                rate_limit.prepare()?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub struct CustomStreamResponse {
-    #[serde(default, skip)]
-    pub channel_unavailable: Option<TransportStreamBuffer>,
-    #[serde(default, skip)]
-    pub user_connections_exhausted: Option<TransportStreamBuffer>, // user has no more connections
-    #[serde(default, skip)]
-    pub provider_connections_exhausted: Option<TransportStreamBuffer>, // provider limit reached, has no more connections
-    #[serde(default, skip)]
-    pub user_account_expired: Option<TransportStreamBuffer>,
-}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]

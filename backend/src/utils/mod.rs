@@ -7,8 +7,14 @@ mod network;
 mod bincode_utils;
 mod crypto_utils;
 mod step_measure;
-pub mod logging;
-pub mod trakt;
+mod logging;
+mod trakt;
+mod serde_utils;
+
+pub use self::logging::*;
+pub use self::trakt::*;
+pub use self::serde_utils::*;
+
 
 #[macro_export]
 macro_rules! debug_if_enabled {

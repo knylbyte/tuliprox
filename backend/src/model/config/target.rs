@@ -1,67 +1,14 @@
 use crate::foundation::filter::{get_filter, Filter, PatternTemplate, ValueProvider};
-use crate::model::config_rename::ConfigRename;
-use crate::model::config_sort::ConfigSort;
 use crate::model::mapping::Mapping;
-use crate::model::trakt::TraktConfig;
+use crate::model::config::trakt::TraktConfig;
 use shared::error::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
 use shared::utils::{default_as_default, default_as_true, default_resolve_delay_secs};
 use arc_swap::ArcSwapOption;
-use enum_iterator::Sequence;
-use shared::model::{ClusterFlags, ProcessingOrder, StrmExportStyle};
+use shared::model::{ClusterFlags, ProcessingOrder, StrmExportStyle, TargetType};
 use shared::model::PlaylistItemType;
-use std::fmt::Display;
 use std::sync::Arc;
+use crate::model::{ConfigRename, ConfigSort};
 
-
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash)]
-pub enum TargetType {
-    #[serde(rename = "m3u")]
-    M3u,
-    #[serde(rename = "xtream")]
-    Xtream,
-    #[serde(rename = "strm")]
-    Strm,
-    #[serde(rename = "hdhomerun")]
-    HdHomeRun,
-}
-
-impl TargetType {
-    const M3U: &'static str = "M3u";
-    const XTREAM: &'static str = "Xtream";
-    const STRM: &'static str = "Strm";
-    const HDHOMERUN: &'static str = "HdHomeRun";
-}
-
-impl Display for TargetType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", match *self {
-            Self::M3u => Self::M3U,
-            Self::Xtream => Self::XTREAM,
-            Self::Strm => Self::STRM,
-            Self::HdHomeRun => Self::HDHOMERUN,
-        })
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash)]
-enum HdHomeRunUseTargetType {
-    #[serde(rename = "m3u")]
-    M3u,
-    #[serde(rename = "xtream")]
-    Xtream,
-}
-
-impl TryFrom<TargetType> for HdHomeRunUseTargetType {
-    type Error = &'static str;
-
-    fn try_from(value: TargetType) -> Result<Self, Self::Error> {
-        match value {
-            TargetType::Xtream => Ok(Self::Xtream),
-            TargetType::M3u => Ok(Self::M3u),
-            _ => Err("Not allowed!"),
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct ProcessTargets {
