@@ -11,7 +11,7 @@ LLDB_MAX_PORT=${LLDB_MAX_PORT:-10700}
 # --- Build Step ---
 # 1. Ensure the Rust binary is up-to-date.
 echo ">>> [debug-entrypoint] Ensuring the binary is up-to-date for target: ${RUST_TARGET}..."
-cargo build --target "${RUST_TARGET}"
+cargo build -p tuliprox --target "${RUST_TARGET}"
 
 
 # --- LLDB Server Start ---

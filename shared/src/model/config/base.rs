@@ -10,6 +10,7 @@ pub struct ConfigApiDto {
     pub web_root: String,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigDto {
@@ -53,4 +54,26 @@ pub struct ConfigDto {
     pub proxy: Option<ProxyConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ipcheck: Option<IpCheckConfigDto>,
+}
+
+impl ConfigDto {
+    pub fn is_valid(&self) -> bool {
+        if self.api.host.is_empty() {
+            return false;
+        }
+
+        if let Some(video) = &self.video {
+            if let Some(download) = &video.download {
+                if let Some(episode_pattern) = &download.episode_pattern {
+                    if !episode_pattern.is_empty() {
+                        let re = regex::Regex::new(episode_pattern);
+                        if re.is_err() {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
 }

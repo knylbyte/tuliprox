@@ -29,11 +29,11 @@ COPY Cargo.toml Cargo.lock ./
 
 # Create a dummy src/main.rs to build dependencies only
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --target $RUST_TARGET --release || true
+RUN cargo build -p tuliprox --target $RUST_TARGET --release || true
 
 # Now copy the actual source code and build the project
 COPY . .
-RUN cargo build --target $RUST_TARGET --release
+RUN cargo build -p tuliprox --target $RUST_TARGET --release
 
 # -----------------------------------------------------------------
 # Stage 2: Build the Node.js frontend
