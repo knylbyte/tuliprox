@@ -2,7 +2,23 @@ use std::borrow::BorrowMut;
 use shared::model::{PlaylistItemType, XtreamCluster};
 use crate::model::{Config, ConfigInput};
 use crate::model::{PlaylistGroup, PlaylistItem, PlaylistItemHeader};
-use crate::utils::{extract_id_from_url, get_title_group};
+use crate::utils::{extract_id_from_url};
+
+
+// other implementations like calculating text_distance on all titles took too much time
+// we keep it now as simple as possible and less memory intensive.
+fn get_title_group(text: &str) -> String {
+    let alphabetic_only: String = text.chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect();
+    let parts = alphabetic_only.split_whitespace();
+    let mut combination = String::new();
+    for p in parts {
+        combination = format!("{combination} {p}").trim().to_string();
+        if combination.len() > 2 {
+            return combination;
+        }
+    }
+    text.to_string()
+}
 
 #[inline]
 fn token_value(stack: &mut String, it: &mut std::str::Chars) -> String {

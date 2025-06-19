@@ -2,7 +2,7 @@ use reqwest::{StatusCode};
 use std::collections::{HashSet};
 use std::str::FromStr;
 use reqwest::header::HeaderMap;
-use crate::utils::{filter_response_header};
+use shared::utils::{filter_response_header};
 
 pub fn get_response_headers(headers: &HeaderMap) -> Vec<(String, String)> {
     let mut response_headers: Vec<(String, String)> = headers.iter()

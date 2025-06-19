@@ -2,7 +2,7 @@ use crate::model::{Epg, TVGuide, XmlTag, XmlTagIcon, EPG_ATTRIB_CHANNEL, EPG_ATT
 use crate::model::{EpgNamePrefix, EpgSmartMatchConfig, PersistedEpgSource};
 use crate::processing::processor::epg::EpgIdCache;
 use crate::utils::compressed_file_reader::CompressedFileReader;
-use crate::utils::CONSTANTS;
+use shared::utils::CONSTANTS;
 use deunicode::deunicode;
 use quick_xml::events::{BytesStart, BytesText, Event};
 use quick_xml::Reader;

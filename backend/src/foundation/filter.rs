@@ -13,7 +13,7 @@ use crate::model::{PlaylistItem, ItemField};
 use crate::tools::directed_graph::DirectedGraph;
 use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
-use crate::utils::CONSTANTS;
+use shared::utils::CONSTANTS;
 
 pub fn get_field_value(pli: &PlaylistItem, field: ItemField) -> String {
     let header = &pli.header;

@@ -1,4 +1,4 @@
-use crate::utils::default_as_true;
+use shared::utils::default_as_true;
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
 use crate::model::WebAuthConfig;
 

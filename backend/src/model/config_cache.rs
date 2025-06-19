@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use log::error;
 use path_clean::PathClean;
 use crate::tuliprox_error::{info_err, TuliproxError, TuliproxErrorKind};
-use crate::utils::parse_size_base_2;
+use shared::utils::parse_size_base_2;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]

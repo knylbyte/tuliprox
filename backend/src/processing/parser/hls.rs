@@ -1,5 +1,5 @@
 use crate::model::ProxyUserCredentials;
-use crate::utils::{CONSTANTS, HLS_PREFIX};
+use shared::utils::{CONSTANTS, HLS_PREFIX};
 use crate::utils::{deobfuscate_text, obfuscate_text};
 use std::str;
 

@@ -1,9 +1,12 @@
 // Common utilities for Trakt functionality
-pub mod client;
-pub mod errors;
+mod client;
+mod errors;
+
+pub use self::client::*;
+pub use self::errors::*;
 
 use deunicode::deunicode;
-use crate::utils::CONSTANTS;
+use shared::utils::CONSTANTS;
 
 /// Normalize title for matching - optimized version with reduced allocations
 pub fn normalize_title_for_matching(title: &str) -> String {

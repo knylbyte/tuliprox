@@ -15,8 +15,7 @@ use rand::Rng;
 use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Mappings, ProxyUserCredentials, SourcesConfig};
 use crate::model::{ConfigInput, ConfigInputOptions, ConfigTarget, HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, TargetOutput, VideoConfig, WebUiConfig};
 use crate::tuliprox_error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
-use crate::utils::{default_connect_timeout_secs, default_grace_period_millis, default_grace_period_timeout_secs};
-use crate::utils::{parse_to_kbps};
+use shared::utils::{parse_to_kbps, default_connect_timeout_secs, default_grace_period_millis, default_grace_period_timeout_secs};
 
 const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with 8192byte chunks and 2Mbit/s approx 8MB
 

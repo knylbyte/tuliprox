@@ -6,7 +6,7 @@ use crate::model::{ProxyUserCredentials, UserConnectionPermission};
 use crate::model::ConfigInput;
 use shared::model::{PlaylistItemType, XtreamCluster};
 use crate::processing::parser::hls::{get_hls_session_token_and_url_from_token, rewrite_hls, RewriteHlsProps};
-use crate::utils::HLS_EXT;
+use shared::utils::HLS_EXT;
 use crate::utils::request;
 use crate::utils::request::{is_hls_url, replace_url_extension, sanitize_sensitive_info};
 use axum::response::IntoResponse;

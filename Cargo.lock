@@ -2581,6 +2581,8 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.9.1",
+ "rand",
+ "regex",
  "serde",
 ]
 

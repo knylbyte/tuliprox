@@ -4,7 +4,7 @@ use crate::tuliprox_error::{create_tuliprox_error,  info_err, to_io_error, Tulip
 use crate::utils::{open_file, EnvResolvingReader};
 use crate::utils::{file_reader};
 use crate::utils::sys_utils::exit;
-use crate::utils::CONSTANTS;
+use shared::utils::CONSTANTS;
 use chrono::Local;
 use log::{error, info, warn};
 use serde::Serialize;

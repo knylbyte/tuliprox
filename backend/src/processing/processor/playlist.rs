@@ -22,7 +22,7 @@ use crate::processing::processor::trakt::process_trakt_categories_for_target;
 use crate::repository::playlist_repository::persist_playlist;
 use crate::tuliprox_error::{get_errors_notify_message, notify_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::debug_if_enabled;
-use crate::utils::default_as_default;
+use shared::utils::default_as_default;
 use deunicode::deunicode;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use std::time::Instant;

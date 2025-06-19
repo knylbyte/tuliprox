@@ -22,13 +22,10 @@ use crate::model::{ConfigInput, InputFetchMethod};
 use crate::repository::storage::{get_input_storage_path};
 use crate::repository::storage_const;
 use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
-use crate::utils::{debug_if_enabled, filter_request_header, short_hash};
+use crate::utils::{debug_if_enabled, short_hash};
+use shared::utils::{filter_request_header};
 use crate::utils::{get_file_path, persist_file};
-use crate::utils::{CONSTANTS, DASH_EXT, DASH_EXT_FRAGMENT, DASH_EXT_QUERY, ENCODING_DEFLATE, ENCODING_GZIP, HLS_EXT, HLS_EXT_FRAGMENT, HLS_EXT_QUERY};
-
-pub const fn bytes_to_megabytes(bytes: u64) -> u64 {
-    bytes / 1_048_576
-}
+use shared::utils::{CONSTANTS, DASH_EXT, DASH_EXT_FRAGMENT, DASH_EXT_QUERY, ENCODING_DEFLATE, ENCODING_GZIP, HLS_EXT, HLS_EXT_FRAGMENT, HLS_EXT_QUERY};
 
 pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
     debug_if_enabled!("getting input epg content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(url_str));

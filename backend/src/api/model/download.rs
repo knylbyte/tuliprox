@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{VideoDownloadConfig};
 use crate::utils::hash_string_as_hex;
-use crate::utils::{CONSTANTS, FILENAME_TRIM_PATTERNS};
+use shared::utils::{CONSTANTS, FILENAME_TRIM_PATTERNS};
 
 /// File-Download information.
 #[derive(Clone)]

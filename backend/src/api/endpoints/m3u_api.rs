@@ -10,7 +10,7 @@ use shared::model::{FieldGetAccessor, PlaylistEntry, PlaylistItemType, XtreamClu
 use crate::repository::m3u_repository::{m3u_get_item_for_stream_id, m3u_load_rewrite_playlist};
 use crate::repository::storage_const;
 use crate::utils::request::{extract_extension_from_url, sanitize_sensitive_info};
-use crate::utils::HLS_EXT;
+use shared::utils::HLS_EXT;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use bytes::Bytes;

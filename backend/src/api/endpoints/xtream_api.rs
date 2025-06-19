@@ -24,7 +24,7 @@ use crate::utils::get_u32_from_serde_value;
 use crate::utils::request::{extract_extension_from_url, sanitize_sensitive_info};
 use crate::utils::trace_if_enabled;
 use crate::utils::xtream::create_vod_info_from_item;
-use crate::utils::HLS_EXT;
+use shared::utils::HLS_EXT;
 use crate::utils::{request, xtream};
 use crate::auth::Fingerprint;
 use axum::http::{HeaderMap, StatusCode};

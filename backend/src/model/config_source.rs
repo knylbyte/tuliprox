@@ -3,7 +3,7 @@ use crate::foundation::filter::{prepare_templates, PatternTemplate};
 use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, handle_tuliprox_error_result_list, create_tuliprox_error_result};
 use crate::model::{ConfigInput, ProcessTargets};
 use crate::model::config_target::ConfigTarget;
-use crate::utils::default_as_default;
+use shared::utils::default_as_default;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]

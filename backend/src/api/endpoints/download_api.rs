@@ -12,6 +12,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::{fs};
 use axum::response::IntoResponse;
+use shared::utils::bytes_to_megabytes;
 use crate::tuliprox_error::to_io_error;
 use crate::utils::request::create_client;
 
@@ -39,7 +40,7 @@ async fn download_file(active: Arc<RwLock<Option<FileDownload>>>, client: &reqwe
                                                     Err(err) => return Err(format!("Error while writing to file: {file_path_str} {err}"))
                                                 }
                                             } else {
-                                                let megabytes = request::bytes_to_megabytes(downloaded);
+                                                let megabytes = bytes_to_megabytes(downloaded);
                                                 info!("Downloaded {file_path_str}, filesize: {megabytes}MB");
                                                 active.write().await.as_mut().unwrap().size = downloaded;
                                                 return Ok(());

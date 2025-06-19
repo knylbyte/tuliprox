@@ -1,5 +1,5 @@
 
-use crate::utils::default_as_true;
+use shared::utils::default_as_true;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]

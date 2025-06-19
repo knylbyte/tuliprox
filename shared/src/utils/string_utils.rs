@@ -1,20 +1,5 @@
 use rand::Rng;
 
-// other implementations like calculating text_distance on all titles took too much time
-// we keep it now as simple as possible and less memory intensive.
-pub fn get_title_group(text: &str) -> String {
-    let alphabetic_only: String = text.chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect();
-    let parts = alphabetic_only.split_whitespace();
-    let mut combination = String::new();
-    for p in parts {
-        combination = format!("{combination} {p}").trim().to_string();
-        if combination.len() > 2 {
-            return combination;
-        }
-    }
-    text.to_string()
-}
-
 pub trait Capitalize {
     fn capitalize(&self) -> String;
 }
@@ -70,7 +55,7 @@ pub fn get_non_empty_str<'a>(first: &'a str, second: &'a str, third: &'a str) ->
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
-    use crate::utils::{generate_random_string, Capitalize};
+    use super::generate_random_string;
 
     #[test]
     fn test_generate_random_string() {

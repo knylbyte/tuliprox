@@ -1,7 +1,7 @@
 use crate::model::{ApiProxyServerInfo, ProxyUserCredentials, ProxyUserStatus};
 use chrono::{Duration, Local};
 use serde::{Deserialize, Serialize};
-use crate::utils::CONSTANTS;
+use shared::utils::CONSTANTS;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct XtreamUserInfoResponse {

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use crate::api::model::provider_config::{ProviderConfig, ProviderConfigWrapper};
-use crate::utils::{default_grace_period_millis, default_grace_period_timeout_secs};
+use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs};
 
 pub struct ProviderConnectionGuard {
     // manager: Arc<ActiveProviderManager>,

@@ -7,7 +7,7 @@ macro_rules! exit {
 }
 pub use exit;
 #[cfg(target_os = "linux")]
-use crate::utils::CONSTANTS;
+use shared::utils::CONSTANTS;
 
 #[cfg(target_os = "linux")]
 fn get_memory_usage_linux() -> std::io::Result<u64> {

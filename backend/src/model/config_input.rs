@@ -1,7 +1,7 @@
 use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
 use crate::model::{EpgConfig};
-use crate::utils::default_as_true;
-use crate::utils::get_trimmed_string;
+use shared::utils::default_as_true;
+use shared::utils::get_trimmed_string;
 use crate::utils::request::{get_base_url_from_str, get_credentials_from_url, get_credentials_from_url_str, sanitize_sensitive_info};
 use enum_iterator::Sequence;
 use log::{debug};

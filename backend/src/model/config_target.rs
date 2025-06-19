@@ -5,7 +5,7 @@ use crate::model::mapping::Mapping;
 use crate::model::processing_order::ProcessingOrder;
 use crate::model::trakt::TraktConfig;
 use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
-use crate::utils::{default_as_default, default_as_true, default_resolve_delay_secs};
+use shared::utils::{default_as_default, default_as_true, default_resolve_delay_secs};
 use arc_swap::ArcSwapOption;
 use enum_iterator::Sequence;
 use shared::model::ClusterFlags;
