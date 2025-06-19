@@ -54,7 +54,7 @@ impl StreamConfig {
 
         if self.grace_period_millis > 0 {
             if self.grace_period_timeout_secs == 0 {
-                let triple_ms = self.grace_period_millis * 3;
+                let triple_ms = self.grace_period_millis.saturating_mul(3);
                 self.grace_period_timeout_secs = std::cmp::max(1, triple_ms.div_ceil(1000));
             } else if self.grace_period_millis / 1000 > self.grace_period_timeout_secs {
                 return Err(info_err!(format!("Grace time period timeout {} sec should be more than grace time period {} ms", self.grace_period_timeout_secs, self.grace_period_millis)));
