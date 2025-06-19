@@ -45,7 +45,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
   echo "🛠️ Building binary for architecture: $ARCHITECTURE"
 
   cargo clean || true
-  env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build --release --target "$ARCHITECTURE"
+  env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target "$ARCHITECTURE"
 
   BINARY_PATH="${WORKING_DIR}/target/${ARCHITECTURE}/release/tuliprox"
   if [ ! -f "$BINARY_PATH" ]; then
