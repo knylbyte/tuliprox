@@ -1,5 +1,5 @@
 use crate::model::ProxyUserCredentials;
-use crate::model::{Config, ConfigInput, ConfigTarget, ProxyUserStatus};
+use crate::model::{Config, ConfigInput, ConfigTarget};
 use crate::model::{PlaylistGroup, XtreamPlaylistItem};
 use crate::processing::parser::xtream;
 use crate::repository::xtream_repository;
@@ -15,7 +15,7 @@ use std::io::Error;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use shared::model::{MsgKind, PlaylistEntry, XtreamCluster};
+use shared::model::{MsgKind, PlaylistEntry, ProxyUserStatus, XtreamCluster};
 use crate::messaging::{send_message};
 
 #[inline]

@@ -14,7 +14,7 @@ impl RateLimitConfig {
             return Err(TuliproxError::new(TuliproxErrorKind::Info, "Rate limiter period can't be 0".to_string()));
         }
         if self.burst_size == 0 {
-            return Err(TuliproxError::new(TuliproxErrorKind::Info, "Rate limiter bust can't be 0".to_string()));
+            return Err(TuliproxError::new(TuliproxErrorKind::Info, "Rate limiter burst can't be 0".to_string()));
         }
         Ok(())
     }

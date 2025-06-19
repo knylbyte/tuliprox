@@ -1,5 +1,5 @@
 use crate::model::{ApiProxyConfig, SourcesConfig};
-use crate::model::{Config, ConfigDto};
+use crate::model::{Config};
 use shared::error::{create_tuliprox_error,  info_err, to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::utils::{open_file, EnvResolvingReader};
 use crate::utils::{file_reader};
@@ -13,6 +13,7 @@ use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::{PathBuf};
 use std::sync::Arc;
+use shared::model::ConfigDto;
 use crate::utils;
 
 enum EitherReader<L, R> {

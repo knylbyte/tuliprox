@@ -9,7 +9,7 @@ use crate::auth::validator_admin;
 use shared::error::TuliproxError;
 use crate::model::{ConfigTarget, StatusCheck};
 use crate::model::XtreamPlaylistItem;
-use crate::model::{Config, ConfigDto, ConfigInput, ConfigInputOptions, ConfigSource,  InputType};
+use crate::model::{Config, ConfigInput, ConfigInputOptions, ConfigSource,  InputType};
 use crate::model::{ApiProxyConfig, ApiProxyServerInfo, ProxyUserCredentials, TargetUser};
 use crate::processing::processor::playlist;
 use crate::repository::user_repository::store_api_user;
@@ -21,6 +21,7 @@ use log::error;
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
+use shared::model::ConfigDto;
 
 fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfig, file_path: &str) -> Option<TuliproxError> {
     match utils::save_api_proxy(file_path, backup_dir, api_proxy) {

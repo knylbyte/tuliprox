@@ -6,7 +6,7 @@ use crate::api::model::app_state::AppState;
 use crate::api::model::stream::BoxedProviderStream;
 use crate::api::model::stream_error::StreamError;
 use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
-use crate::model::{ProxyUserCredentials, UserConnectionPermission};
+use crate::model::{ProxyUserCredentials};
 use bytes::Bytes;
 use futures::Stream;
 use log::{error, info};
@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 use crate::api::model::streams::timed_client_stream::TimedClientStream;
 use futures::{StreamExt};
+use shared::model::UserConnectionPermission;
 
 const INNER_STREAM: u8 = 0_u8;
 const GRACE_BLOCK_STREAM: u8 = 1_u8;
