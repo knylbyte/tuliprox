@@ -83,7 +83,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     # Build for each platform
     cd "$WORKING_DIR"
     cargo clean || true # Clean before each build to avoid conflicts
-    env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build --release --target "$ARCHITECTURE"
+    env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target "$ARCHITECTURE"
 
     # Create directories and copy binaries and config files
     cd target

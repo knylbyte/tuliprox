@@ -1,7 +1,6 @@
-[package]
-name = "tuliprox"
-version = "3.1.4"
-edition = "2021"
+[workspace]
+members = ["backend", "shared"]
+resolver = "2"
 
 [profile.release]
 debug = false
@@ -11,68 +10,3 @@ codegen-units = 1   # Reduce number of codegen units to increase optimizations.
 panic = 'abort'     # Abort on panic
 strip = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-serde = { version = "1.0", features = ["derive", "rc"] }
-serde_yaml = "0.9"
-serde_json = { version = "1", features = ["arbitrary_precision"] }
-quick-xml = "0.37"
-regex = "1.11"
-clap = { version = "4", features = ["derive"] }
-url = "2.5"
-reqwest = { version = "0", features = ["blocking", "json", "stream", "rustls-tls"] }
-chrono = "0.4"
-cron = "0.15"
-axum = { version = "0" , features = ["macros", "default"]}
-tower = "0"
-tower-http = { version = "0", features = ["cors", "auth", "fs", "compression-full"]}
-tower_governor = { version = "0.7", features = ["axum"] }
-jsonwebtoken = "9.3"
-rust-argon2 = "2.1"
-futures = "0.3"
-path-clean = "1"
-pest = "2.8"
-pest_derive = "2.8"
-enum-iterator = "2"
-openssl = { version = "*", features = ["vendored"] } #https://docs.rs/openssl/0.10.34/openssl/#vendored
-deunicode = "1.6.2"
-mime = "0.3"
-log = "0.4"
-env_logger = "0.11"
-rustelebot = "0.3"
-bincode = { version = "2.0.1",  features = ["std", "serde"] }
-rand = "0.9"
-rpassword = "7.4"
-flate2 = "1"
-blake3 = "1.8"
-bytes = "1.10"
-tokio-stream = { version = "0.1", features = ["sync"] }
-tokio = { version = "1.45", features = ["rt-multi-thread", "parking_lot", "fs"] }
-tokio-util = "0.7"
-tempfile = "3.20"
-ruzstd = "0"
-filetime = "0.2"
-zeroize = "1.8"
-strsim = "0.11"
-rphonetic = "3"
-rayon = "1.10"
-base64 = "0"
-paste = "1"
-bitflags = "2"
-indexmap = "2"
-notify = "8"
-arc-swap = "1"
-dashmap = "6"
-hyper = "1"
-hyper-util = "0"
-socket2 = "0"
-#[cfg(target_os = "macos")]
-libc = "0"
-#[cfg(target_os = "windows")]
-winapi = { version = "0", features = ["psapi", "minwindef", "processthreadsapi"] }
-# [target.'cfg(not(target_env = "msvc"))'.dependencies]
-# tikv-jemallocator =  { version = "*", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
-
-[build-dependencies]
-vergen = { version = "9", features = ["build"] }

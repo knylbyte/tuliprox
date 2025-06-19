@@ -1,3 +1,4 @@
+dist
 /resources/*.ts
 /release
 /target

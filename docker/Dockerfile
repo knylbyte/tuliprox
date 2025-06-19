@@ -29,11 +29,11 @@ COPY Cargo.toml Cargo.lock ./
 
 # Create a dummy src/main.rs to build dependencies only
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --target $RUST_TARGET --release || true
+RUN cargo build -p tuliprox --target $RUST_TARGET --release || true
 
 # Now copy the actual source code and build the project
 COPY . .
-RUN cargo build --target $RUST_TARGET --release
+RUN cargo build -p tuliprox --target $RUST_TARGET --release
 
 # -----------------------------------------------------------------
 # Stage 2: Build the Node.js frontend
@@ -129,7 +129,7 @@ RUN rustup update && rustup target add $RUST_TARGET
 # Create the final application layout to mimic production
 WORKDIR /app
 COPY --from=node-build /app/build ./web
-COPY --from=resource-build /src/resources ./resources
+COPY --from=resource-build //resources ./resources
 
 # Create a separate directory for the source code
 WORKDIR /usr/src/tuliprox
@@ -162,9 +162,9 @@ COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # App
 WORKDIR /app
-COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
+COPY --from=rust-build //target/${RUST_TARGET}/release/tuliprox ./tuliprox
 COPY --from=node-build /app/build ./web
-COPY --from=resource-build /src/resources ./resources
+COPY --from=resource-build //resources ./resources
 
 ENTRYPOINT ["/app/tuliprox"]
 CMD ["-s", "-p", "/app/config"]
@@ -187,9 +187,9 @@ COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 WORKDIR /app
-COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
+COPY --from=rust-build //target/${RUST_TARGET}/release/tuliprox ./tuliprox
 COPY --from=node-build /app/build ./web
-COPY --from=resource-build /src/resources ./resources
+COPY --from=resource-build //resources ./resources
 
 ENTRYPOINT ["/sbin/tini", "--", "/app/tuliprox"]
 CMD ["-s", "-p", "/app/config"]

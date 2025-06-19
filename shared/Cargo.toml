@@ -1,0 +1,11 @@
+[package]
+name = "shared"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitflags = "2.9.1"
+serde = { version = "1.0.219", features = ["derive"] }
+rand = "0.9.1"
+regex = "1.11.1"
+enum-iterator = "2"

@@ -35,7 +35,7 @@ if [ ! -d "$FRONTEND_DIR/build" ]; then
 fi
 
 cargo clean
-env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build --release --target "$TARGET"
+env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target "$TARGET"
 
 # Check if the binary exists
 if [ ! -f "${WORKING_DIR}/target/${TARGET}/release/tuliprox" ]; then

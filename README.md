@@ -1516,7 +1516,7 @@ Ease way to compile is a docker toolchain `cross`
 
 ```shell
 rust install cross
-env  RUSTFLAGS="--remap-path-prefix $HOME=~" cross build --release --target x86_64-unknown-linux-musl
+env  RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target x86_64-unknown-linux-musl
 ```
 
 #### Manual compile - install prerequisites
@@ -1527,7 +1527,7 @@ rustup target add x86_64-unknown-linux-musl
 ```
 #### Build statically linked binary
 ```shell
-cargo build --target x86_64-unknown-linux-musl --release
+cargo build -p tuliprox --target x86_64-unknown-linux-musl --release
 ```
 #### Dockerize
 There is a Dockerfile in `docker` directory. 
@@ -1645,7 +1645,7 @@ rustup toolchain install stable-x86_64-pc-windows-gnu
 
 Compile it with:
 ```shell
-cargo build --release --target x86_64-pc-windows-gnu
+cargo build -p tuliprox --release --target x86_64-pc-windows-gnu
 ```
 
 ### Cross compile for raspberry pi 2/3/4
@@ -1654,7 +1654,7 @@ Ease way to compile is a docker toolchain `cross`
 
 ```shell
 rust install cross
-env  RUSTFLAGS="--remap-path-prefix $HOME=~" cross build --release --target armv7-unknown-linux-musleabihf
+env  RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target armv7-unknown-linux-musleabihf
 ```
 
 # Different Scenarios
