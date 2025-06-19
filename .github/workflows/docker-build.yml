@@ -19,6 +19,9 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-22.04
             rust_target: x86_64-unknown-linux-musl
+          - platform: linux/aarch64
+            runner: ubuntu-22.04-arm
+            rust_target: aarch64-unknown-linux-musl
           - platform: linux/arm64
             runner: ubuntu-22.04-arm
             rust_target: aarch64-unknown-linux-musl
