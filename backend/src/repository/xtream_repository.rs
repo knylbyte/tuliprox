@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::{ProxyUserCredentials};
 use crate::model::{Config, ConfigInput, ConfigTarget, XtreamTargetOutput};
 use crate::model::{PlaylistGroup, PlaylistItem, XtreamPlaylistItem};

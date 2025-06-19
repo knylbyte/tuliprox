@@ -1,5 +1,5 @@
-use crate::tuliprox_error::info_err;
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
+use shared::error::info_err;
+use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{Config, ConfigTarget, TargetOutput};
 use crate::model::{PlaylistGroup};
 use shared::model::{PlaylistItemType};

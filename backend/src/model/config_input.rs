@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
 use crate::model::{EpgConfig};
 use shared::utils::default_as_true;
 use shared::utils::get_trimmed_string;

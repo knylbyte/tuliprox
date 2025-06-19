@@ -2581,6 +2581,7 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.9.1",
+ "enum-iterator",
  "rand",
  "regex",
  "serde",

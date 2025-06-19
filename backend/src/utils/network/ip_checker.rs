@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::IpCheckConfig;
 use regex::Regex;
 use reqwest::Client;

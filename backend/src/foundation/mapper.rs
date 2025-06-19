@@ -2,7 +2,7 @@
 
 use crate::foundation::filter::{PatternTemplate, TemplateValue, ValueAccessor};
 use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Number, Undefined, Value};
-use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use shared::utils::Capitalize;
 use log::{debug, trace};
 use pest::iterators::{Pair, Pairs};

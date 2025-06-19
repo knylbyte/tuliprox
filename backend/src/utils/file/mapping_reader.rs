@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::foundation::filter::PatternTemplate;
 use crate::model::{Mapping, MappingDefinition, Mappings};
-use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::utils::traverse_dir;
 use crate::utils::{config_file_reader, open_file};
 use log::{warn};

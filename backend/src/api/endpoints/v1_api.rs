@@ -6,7 +6,7 @@ use crate::api::model::config::{ServerConfig, ServerInputConfig, ServerSourceCon
 use crate::api::model::request::{PlaylistRequest, PlaylistRequestType};
 use crate::auth::create_access_token;
 use crate::auth::validator_admin;
-use crate::tuliprox_error::TuliproxError;
+use shared::error::TuliproxError;
 use crate::model::StatusCheck;
 use crate::model::XtreamPlaylistItem;
 use crate::model::{Config, ConfigDto, ConfigInput, ConfigInputOptions, ConfigSource, ConfigTarget, InputType};

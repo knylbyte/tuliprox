@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::BufRead;
 use std::path::PathBuf;
 use crate::auth::UserCredential;
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
+use shared::error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
 use crate::utils;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -1,5 +1,5 @@
 use crate::model::{ConfigInput, ConfigInputAlias, InputType};
-use crate::tuliprox_error::{str_to_io_error, to_io_error};
+use shared::error::{str_to_io_error, to_io_error};
 use crate::utils::request::{get_credentials_from_url, get_local_file_content};
 use crate::utils::EnvResolvingReader;
 use crate::utils::{file_reader, resolve_relative_path};

@@ -2,18 +2,7 @@ use std::sync::Arc;
 use crate::model::{MessagingConfig};
 use log::{debug, error};
 use reqwest::{header};
-
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub enum MsgKind {
-    #[serde(rename = "info")]
-    Info,
-    #[serde(rename = "stats")]
-    Stats,
-    #[serde(rename = "error")]
-    Error,
-    #[serde(rename = "watch")]
-    Watch,
-}
+use shared::model::MsgKind;
 
 fn is_enabled(kind: MsgKind, cfg: &MessagingConfig) -> bool {
     cfg.notify_on.contains(&kind)

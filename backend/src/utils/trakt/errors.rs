@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use reqwest::StatusCode;
 
 /// Handle Trakt API response status and convert to appropriate error

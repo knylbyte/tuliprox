@@ -1,9 +1,9 @@
 use crate::model::{TraktApiConfig, TraktListConfig, TraktListItem};
-use crate::tuliprox_error::TuliproxError;
+use shared::error::TuliproxError;
 use reqwest::header::{HeaderMap, HeaderValue};
 use std::sync::Arc;
 use log::{debug, info};
-use crate::tuliprox_error::{info_err, TuliproxErrorKind};
+use shared::error::{info_err, TuliproxErrorKind};
 use super::errors::{handle_trakt_api_error};
 
 pub struct TraktClient {

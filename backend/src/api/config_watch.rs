@@ -1,5 +1,5 @@
 use crate::api::model::app_state::AppState;
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::utils;
 use crate::utils::is_directory;
 use log::{debug, error, info};

@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{Config, ConfigTarget, InputType};
 use crate::model::{FetchedPlaylist, PlaylistGroup, PlaylistItem};
 use shared::model::{PlaylistItemType, XtreamCluster};
@@ -8,7 +8,7 @@ use crate::processing::processor::xtream::{create_resolve_episode_wal_files, cre
 use crate::repository::storage::get_input_storage_path;
 use crate::repository::xtream_repository::{write_series_info_to_wal_file, xtream_get_info_file_paths, xtream_update_input_info_file, xtream_update_input_series_episodes_record_from_wal_file, xtream_update_input_series_record_from_wal_file};
 use crate::repository::IndexedDocumentReader;
-use crate::tuliprox_error::{notify_err, info_err};
+use shared::error::{notify_err, info_err};
 use crate::processing::processor::{handle_error, handle_error_and_return, create_resolve_options_function_for_xtream_target};
 use std::collections::HashMap;
 use std::fs::File;

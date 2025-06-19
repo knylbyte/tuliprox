@@ -3,7 +3,7 @@ use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::Path;
-use crate::tuliprox_error::{str_to_io_error, to_io_error};
+use shared::error::{str_to_io_error, to_io_error};
 use log::error;
 use ruzstd::decoding::StreamingDecoder;
 use ruzstd::encoding::{compress_to_vec, CompressionLevel};

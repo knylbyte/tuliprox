@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use crate::model::{ConfigTarget, PlaylistGroup, PlaylistItem};
 use shared::model::{FieldGetAccessor, FieldSetAccessor, XtreamCluster};
 use crate::model::{TraktConfig, TraktContentType, TraktListConfig, TraktListItem, TraktMatchItem, TraktMatchResult};
-use crate::tuliprox_error::TuliproxError;
+use shared::error::TuliproxError;
 use crate::utils::trakt::TraktClient;
 use crate::utils::trakt::extract_year_from_title;
 use crate::utils::trakt::normalize_title_for_matching;

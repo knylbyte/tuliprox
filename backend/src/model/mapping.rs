@@ -7,8 +7,8 @@ use log::{trace};
 use crate::foundation::filter::{apply_templates_to_pattern_single, get_filter, prepare_templates, Filter, PatternTemplate};
 use crate::foundation::mapper::MapperScript;
 use crate::model::valid_property;
-use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, info_err};
+use shared::error::{TuliproxError, TuliproxErrorKind};
 
 pub const COUNTER_FIELDS: &[&str] = &["name", "title", "caption", "chno"];
 

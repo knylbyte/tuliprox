@@ -8,7 +8,7 @@ use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery};
 use log::error;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
-use crate::tuliprox_error::{str_to_io_error, to_io_error};
+use shared::error::{str_to_io_error, to_io_error};
 use crate::utils;
 use crate::utils::{bincode_deserialize, bincode_serialize};
 

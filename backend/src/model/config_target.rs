@@ -2,40 +2,16 @@ use crate::foundation::filter::{get_filter, Filter, PatternTemplate, ValueProvid
 use crate::model::config_rename::ConfigRename;
 use crate::model::config_sort::ConfigSort;
 use crate::model::mapping::Mapping;
-use crate::model::processing_order::ProcessingOrder;
 use crate::model::trakt::TraktConfig;
-use crate::tuliprox_error::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err, TuliproxError, TuliproxErrorKind};
 use shared::utils::{default_as_default, default_as_true, default_resolve_delay_secs};
 use arc_swap::ArcSwapOption;
 use enum_iterator::Sequence;
-use shared::model::ClusterFlags;
+use shared::model::{ClusterFlags, ProcessingOrder, StrmExportStyle};
 use shared::model::PlaylistItemType;
 use std::fmt::Display;
 use std::sync::Arc;
 
-#[derive(
-    Debug,
-    Copy,
-    Clone,
-    serde::Serialize,
-    serde::Deserialize,
-    Sequence,
-    PartialEq,
-    Eq,
-    Hash,
-    Default
-)]
-pub enum ExportStyle {
-    #[serde(rename = "kodi")]
-    #[default]
-    Kodi,
-    #[serde(rename = "plex")]
-    Plex,
-    #[serde(rename = "emby")]
-    Emby,
-    #[serde(rename = "jellyfin")]
-    Jellyfin,
-}
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash)]
 pub enum TargetType {
@@ -165,7 +141,7 @@ pub struct StrmTargetOutput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(default)]
-    pub style: ExportStyle,
+    pub style: StrmExportStyle,
     #[serde(default)]
     pub flat: bool,
     #[serde(default)]

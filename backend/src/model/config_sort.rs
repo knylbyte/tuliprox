@@ -1,7 +1,7 @@
 use regex::Regex;
 use crate::foundation::filter::{apply_templates_to_pattern, apply_templates_to_pattern_single, PatternTemplate, TemplateValue};
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error, handle_tuliprox_error_result_list};
-use crate::model::{ItemField};
+use shared::error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error, handle_tuliprox_error_result_list};
+use shared::model::ItemField;
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
 pub enum SortOrder {

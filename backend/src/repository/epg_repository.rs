@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{notify_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{notify_err, TuliproxError, TuliproxErrorKind};
 use crate::model::{Config, ConfigTarget, TargetOutput};
 use crate::model::Epg;
 use crate::repository::m3u_repository::m3u_get_epg_file_path;

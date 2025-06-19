@@ -1,6 +1,6 @@
 use crate::model::{ApiProxyConfig, SourcesConfig};
 use crate::model::{Config, ConfigDto};
-use crate::tuliprox_error::{create_tuliprox_error,  info_err, to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error,  info_err, to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::utils::{open_file, EnvResolvingReader};
 use crate::utils::{file_reader};
 use crate::utils::sys_utils::exit;
@@ -72,8 +72,6 @@ pub fn read_sources(sources_file: &str, resolve_env: bool, include_computed: boo
         Err(err) => Err(info_err!(format!("Can't read the sources-config file: {sources_file}: {err}")))
     }
 }
-
-
 
 pub fn read_config(config_path: &str, config_file: &str, sources_file: &str, api_proxy_file: &str, mappings_file: Option<String>, include_computed: bool) -> Result<Config, TuliproxError> {
 

@@ -1,5 +1,5 @@
 use crate::api::model::app_state::AppState;
-use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::model::{Config};
 use crate::repository::user_repository::{backup_api_user_db_file, get_api_user_db_path, load_api_user, merge_api_user};
 use crate::utils::{save_api_proxy};

@@ -1,4 +1,4 @@
-use crate::messaging::MsgKind;
+use shared::model::MsgKind;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]

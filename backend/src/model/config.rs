@@ -1,11 +1,8 @@
 use arc_swap::{ArcSwapOption};
-use enum_iterator::Sequence;
 use std::collections::{HashSet};
-use std::fmt::Display;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::Arc;
 
 use log::{debug, error, warn};
@@ -14,7 +11,7 @@ use rand::Rng;
 
 use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Mappings, ProxyUserCredentials, SourcesConfig};
 use crate::model::{ConfigInput, ConfigInputOptions, ConfigTarget, HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, TargetOutput, VideoConfig, WebUiConfig};
-use crate::tuliprox_error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use shared::utils::{parse_to_kbps, default_connect_timeout_secs, default_grace_period_millis, default_grace_period_timeout_secs};
 
 const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with 8192byte chunks and 2Mbit/s approx 8MB
@@ -42,84 +39,6 @@ pub use valid_property;
 use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
 use crate::model::config_cache::CacheConfig;
 use crate::utils;
-
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, Eq, PartialEq)]
-pub enum ItemField {
-    #[serde(rename = "group")]
-    Group,
-    #[serde(rename = "name")]
-    Name,
-    #[serde(rename = "title")]
-    Title,
-    #[serde(rename = "url")]
-    Url,
-    #[serde(rename = "input")]
-    Input,
-    #[serde(rename = "type")]
-    Type,
-    #[serde(rename = "caption")]
-    Caption,
-}
-
-impl ItemField {
-    const GROUP: &'static str = "Group";
-    const NAME: &'static str = "Name";
-    const TITLE: &'static str = "Title";
-    const URL: &'static str = "Url";
-    const INPUT: &'static str = "Input";
-    const TYPE: &'static str = "Type";
-    const CAPTION: &'static str = "Caption";
-
-    pub fn as_str(&self) -> &'static str {
-        match *self {
-            Self::Group => Self::GROUP,
-            Self::Name => Self::NAME,
-            Self::Title => Self::TITLE,
-            Self::Url => Self::URL,
-            Self::Input => Self::INPUT,
-            Self::Type => Self::TYPE,
-            Self::Caption => Self::CAPTION,
-        }
-    }
-}
-
-impl Display for ItemField {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", match *self {
-            Self::Group => Self::GROUP,
-            Self::Name => Self::NAME,
-            Self::Title => Self::TITLE,
-            Self::Url => Self::URL,
-            Self::Input => Self::INPUT,
-            Self::Type => Self::TYPE,
-            Self::Caption => Self::CAPTION,
-        })
-    }
-}
-
-impl FromStr for ItemField {
-    type Err = TuliproxError;
-
-    fn from_str(s: &str) -> Result<Self, TuliproxError> {
-        if s.eq_ignore_ascii_case(Self::GROUP) {
-            Ok(Self::Group)
-        } else if s.eq_ignore_ascii_case(Self::NAME) {
-            Ok(Self::Name)
-        } else if s.eq_ignore_ascii_case(Self::TITLE) {
-            Ok(Self::Title)
-        } else if s.eq_ignore_ascii_case(Self::CAPTION) {
-            Ok(Self::Caption)
-        } else if s.eq_ignore_ascii_case(Self::URL) {
-            Ok(Self::Url)
-        } else if s.eq_ignore_ascii_case(Self::INPUT) {
-            Ok(Self::Input)
-        } else if s.eq_ignore_ascii_case(Self::TYPE) {
-            Ok(Self::Type)
-        } else {
-            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
-        }
-    }
-}
 
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]

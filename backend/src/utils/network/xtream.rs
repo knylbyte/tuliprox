@@ -4,7 +4,7 @@ use crate::model::{PlaylistGroup, XtreamPlaylistItem};
 use crate::processing::parser::xtream;
 use crate::repository::xtream_repository;
 use crate::repository::xtream_repository::{rewrite_xtream_series_info_content, rewrite_xtream_vod_info_content, xtream_get_input_info};
-use crate::tuliprox_error::{str_to_io_error, TuliproxError};
+use shared::error::{str_to_io_error, TuliproxError};
 use crate::utils;
 use crate::utils::{get_string_from_serde_value, request};
 use crate::utils::request::extract_extension_from_url;
@@ -15,8 +15,8 @@ use std::io::Error;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use shared::model::{PlaylistEntry, XtreamCluster};
-use crate::messaging::{send_message, MsgKind};
+use shared::model::{MsgKind, PlaylistEntry, XtreamCluster};
+use crate::messaging::{send_message};
 
 #[inline]
 pub fn get_xtream_stream_url_base(url: &str, username: &str, password: &str) -> String {

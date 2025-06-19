@@ -1,5 +1,5 @@
-use crate::tuliprox_error::{create_tuliprox_error,info_err};
-use crate::tuliprox_error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error,info_err};
+use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::ProxyUserCredentials;
 use crate::model::{Config, ConfigTarget, M3uTargetOutput};
 use crate::model::{M3uPlaylistItem, PlaylistGroup, PlaylistItem};

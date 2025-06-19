@@ -1,4 +1,4 @@
-use crate::tuliprox_error::TuliproxError;
+use shared::error::TuliproxError;
 use crate::model::{Config, ConfigInput, PersistedEpgSource};
 use crate::model::TVGuide;
 use crate::utils::{add_prefix_to_filename, cleanup_unlisted_files_with_suffix, prepare_file_path, short_hash};

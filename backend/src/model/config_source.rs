@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use crate::foundation::filter::{prepare_templates, PatternTemplate};
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, handle_tuliprox_error_result_list, create_tuliprox_error_result};
+use shared::error::{TuliproxError, TuliproxErrorKind, handle_tuliprox_error_result_list, create_tuliprox_error_result};
 use crate::model::{ConfigInput, ProcessTargets};
 use crate::model::config_target::ConfigTarget;
 use shared::utils::default_as_default;

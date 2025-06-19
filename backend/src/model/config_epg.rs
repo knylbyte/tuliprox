@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use shared::utils::CONSTANTS;
 use log::warn;
 use regex::Regex;

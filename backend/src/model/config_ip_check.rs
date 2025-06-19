@@ -1,5 +1,5 @@
 use regex::Regex;
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError, TuliproxErrorKind};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]

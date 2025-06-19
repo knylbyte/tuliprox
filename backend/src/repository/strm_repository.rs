@@ -1,9 +1,8 @@
-use crate::tuliprox_error::{create_tuliprox_error_result, info_err};
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, info_err};
+use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ApiProxyServerInfo, ProxyUserCredentials};
 use crate::model::{Config, ConfigTarget, StrmTargetOutput};
-use crate::model::{PlaylistGroup, PlaylistItem, ExportStyle,
-};
+use crate::model::{PlaylistGroup, PlaylistItem};
 use crate::model::XtreamSeriesEpisode;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage::{ensure_target_storage_path, get_input_storage_path};
@@ -23,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::{create_dir_all, remove_dir, remove_file, File};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
-use shared::model::{ClusterFlags, FieldGetAccessor, PlaylistItemType, UUIDType};
+use shared::model::{ClusterFlags, FieldGetAccessor, PlaylistItemType, StrmExportStyle, UUIDType};
 use crate::utils;
 
 /// Sanitizes a string to be safe for use as a file or directory name by
@@ -673,7 +672,7 @@ async fn style_based_rename(
     cfg: &Config,
     strm_item_info: &StrmItemInfo,
     input_tmdb_indexes: &mut InputTmdbIndexMap,
-    style: &ExportStyle,
+    style: &StrmExportStyle,
     underscore_whitespace: bool,
     flat: bool,
 ) -> (PathBuf, String) {
@@ -694,10 +693,10 @@ async fn style_based_rename(
 
     // Dispatch the call to the responsible function based on the style.
     match style {
-        ExportStyle::Kodi => format_for_kodi(strm_item_info, tmdb_id, separator, flat),
-        ExportStyle::Plex => format_for_plex(strm_item_info, tmdb_id, separator, flat),
-        ExportStyle::Emby => format_for_emby(strm_item_info, tmdb_id, separator, flat),
-        ExportStyle::Jellyfin => format_for_jellyfin(strm_item_info, tmdb_id, separator, flat),
+        StrmExportStyle::Kodi => format_for_kodi(strm_item_info, tmdb_id, separator, flat),
+        StrmExportStyle::Plex => format_for_plex(strm_item_info, tmdb_id, separator, flat),
+        StrmExportStyle::Emby => format_for_emby(strm_item_info, tmdb_id, separator, flat),
+        StrmExportStyle::Jellyfin => format_for_jellyfin(strm_item_info, tmdb_id, separator, flat),
     }
 }
 
@@ -706,7 +705,7 @@ async fn prepare_strm_files(
     new_playlist: &mut [PlaylistGroup],
     _root_path: &Path,
     underscore_whitespace: bool,
-    style: &ExportStyle,
+    style: &StrmExportStyle,
     flat: bool,
 ) -> Vec<StrmFile> {
     let channel_count = new_playlist
@@ -769,13 +768,13 @@ async fn prepare_strm_files(
                 // A style-specific match is not strictly necessary here but is good practice for future flexibility.
                 let new_filename = match style {
                     // Plex, Emby, and Kodi all follow the `Filename - Suffix` pattern.
-                    ExportStyle::Plex | ExportStyle::Emby | ExportStyle::Kodi => {
+                    StrmExportStyle::Plex | StrmExportStyle::Emby | StrmExportStyle::Kodi => {
                         format!("{base_filename}{version_separator}{version_label}")
                     }
 
                     // Jellyfin also follows this pattern, but explicitly shows an option for " - [Label]".
                     // Using brackets makes the version distinct and is a clean implementation.
-                    ExportStyle::Jellyfin => {
+                    StrmExportStyle::Jellyfin => {
                         format!("{base_filename}{version_separator}[{version_label}]")
                     }
                 };

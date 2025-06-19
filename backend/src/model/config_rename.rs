@@ -1,6 +1,6 @@
+use shared::model::ItemField;
 use crate::foundation::filter::{apply_templates_to_pattern_single, PatternTemplate};
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
-use crate::model::ItemField;
+use shared::error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -8,7 +8,6 @@ macro_rules! include_modules {
         extern crate pest_derive;
         pub mod api;
         pub mod auth;
-        pub mod tuliprox_error;
         pub mod messaging;
         pub mod model;
         pub mod processing;

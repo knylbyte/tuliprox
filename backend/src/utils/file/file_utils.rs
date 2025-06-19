@@ -5,7 +5,7 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
-use crate::tuliprox_error::str_to_io_error;
+use shared::error::str_to_io_error;
 use crate::utils::debug_if_enabled;
 use shared::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE};
 use log::{debug, error};

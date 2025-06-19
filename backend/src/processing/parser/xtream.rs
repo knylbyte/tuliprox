@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use crate::model::ConfigInput;
 use crate::model::{PlaylistGroup, PlaylistItem, PlaylistItemHeader};
 use crate::model::{XtreamCategory, XtreamSeriesInfo, XtreamSeriesInfoEpisode, XtreamStream};

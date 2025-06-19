@@ -1,5 +1,5 @@
 use shared::utils::default_as_true;
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::WebAuthConfig;
 
 const RESERVED_PATHS: &[&str] = &[

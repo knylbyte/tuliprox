@@ -544,7 +544,7 @@ mod tests {
         assert_eq!("odisea.bg", normalize_channel_name("BG | ODISEA ᵁᴴᴰ ³⁸⁴⁰ᴾ", &epg_smart_cfg));
     }
 
-    use crate::tuliprox_error::TuliproxError;
+    use shared::error::TuliproxError;
     use rphonetic::{Encoder, Metaphone};
 
     #[test]

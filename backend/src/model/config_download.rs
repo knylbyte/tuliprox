@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use regex::Regex;
 use std::borrow::BorrowMut;
 use std::collections::HashMap;

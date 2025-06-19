@@ -1,4 +1,4 @@
-use crate::tuliprox_error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError, TuliproxErrorKind};
 use base64::{engine::general_purpose, Engine as _};
 use openssl::symm::{Cipher, Crypter, Mode};
 use rand::Rng;

@@ -15,8 +15,8 @@ use reqwest::header::CONTENT_ENCODING;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use url::Url;
 
-use crate::tuliprox_error::create_tuliprox_error_result;
-use crate::tuliprox_error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::error::create_tuliprox_error_result;
+use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::model::{format_elapsed_time, Config};
 use crate::model::{ConfigInput, InputFetchMethod};
 use crate::repository::storage::{get_input_storage_path};
