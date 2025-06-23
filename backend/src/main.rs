@@ -10,16 +10,17 @@ mod modules;
 include_modules!();
 
 use crate::auth::generate_password;
-use crate::model::{Config, Healthcheck, HealthcheckConfig, ProcessTargets};
+use crate::model::{AppConfig, Config, Healthcheck, HealthcheckConfig, ProcessTargets};
 use crate::processing::processor::playlist;
 use crate::utils::{config_file_reader, resolve_env_var};
-use crate::utils::request::{create_client, set_sanitize_sensitive_info};
+use crate::utils::request::{create_client};
 use chrono::{DateTime, Utc};
-use clap::Parser;
+use clap::{Parser};
 use log::{error, info};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use shared::utils::set_sanitize_sensitive_info;
 use crate::utils::init_logger;
 
 #[derive(Parser)]
@@ -108,56 +109,56 @@ fn main() {
     }
 
     let sources_file: String = args.source_file.unwrap_or_else(|| utils::get_default_sources_file_path(&config_path));
-    let cfg = utils::read_config(config_path.as_str(), config_file.as_str(),
+    let app_config = utils::read_config(config_path.as_str(), config_file.as_str(),
                                              sources_file.as_str(), api_proxy_file.as_str(),
                                              mappings_file.cloned(), true).unwrap_or_else(|err| exit!("{}", err));
 
-    set_sanitize_sensitive_info(cfg.log.as_ref().is_none_or(|l| l.sanitize_sensitive_info));
+    let config = app_config.config.load();
+    set_sanitize_sensitive_info(config.log.as_ref().is_none_or(|l| l.sanitize_sensitive_info));
 
-    let temp_path = PathBuf::from(&cfg.working_dir).join("tmp");
-    create_directories(&cfg, &temp_path);
+    let temp_path = PathBuf::from(&config.working_dir).join("tmp");
+    create_directories(&config, &temp_path);
     let _ = tempfile::env::override_temp_dir(&temp_path);
 
-    let targets = cfg.sources.validate_targets(args.target.as_ref()).unwrap_or_else(|err| exit!("{}", err));
+    let sources = app_config.sources.load();
+    let targets = sources.validate_targets(args.target.as_ref()).unwrap_or_else(|err| exit!("{}", err));
 
     info!("Current time: {}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"));
     info!("Temp dir: {}", temp_path.display());
-    info!("Working dir: {:?}", &cfg.working_dir);
-    info!("Config dir: {:?}", &cfg.t_config_path);
-    info!("Config file: {:?}", &cfg.t_config_file_path);
-    info!("Source file: {:?}", &cfg.t_sources_file_path);
-    info!("Api Proxy File: {:?}", &cfg.t_api_proxy_file_path);
-    match utils::read_mappings(&cfg.t_mapping_file_path, true) {
+    info!("Working dir: {:?}", &config.working_dir);
+    info!("Config dir: {:?}", &app_config.t_config_path);
+    info!("Config file: {:?}", &app_config.t_config_file_path);
+    info!("Source file: {:?}", &app_config.t_sources_file_path);
+    info!("Api Proxy File: {:?}", &app_config.t_api_proxy_file_path);
+    match utils::read_mappings(&app_config.t_mapping_file_path, true) {
         Ok(Some(mappings)) => {
-            info!("Mapping file: {:?}", &cfg.t_mapping_file_path);
-            cfg.set_mappings(&mappings);
+            info!("Mapping file: {:?}", &app_config.t_mapping_file_path);
+            app_config.set_mappings(&mappings);
         }
         Ok(None) => {
             info!("Mapping file: not used");
         },
         Err(err) => exit!("{err}"),
     }
-    if let Some(cache) = cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
+    if let Some(cache) = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
         if cache.enabled {
-            if let Some(cache_dir) = cache.dir.as_ref() {
-                info!("Cache dir: {cache_dir}");
-            }
+           info!("Cache dir: {}", cache.dir);
         }
     }
-    if let Some(resource_path) = cfg.t_custom_stream_response_path.as_ref() {
+    if let Some(resource_path) = app_config.t_custom_stream_response_path.as_ref() {
         info!("Resource path: {resource_path}");
     }
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let () = rt.block_on(async {
         if args.server {
-            match utils::read_api_proxy_config(&cfg) {
+            match utils::read_api_proxy_config(&app_config) {
                 Ok(()) => {}
                 Err(err) => exit!("{err}"),
             }
-            start_in_server_mode(Arc::new(cfg), Arc::new(targets)).await;
+            start_in_server_mode(Arc::new(app_config), Arc::new(targets)).await;
         } else {
-            start_in_cli_mode(Arc::new(cfg), Arc::new(targets)).await;
+            start_in_cli_mode(Arc::new(app_config), Arc::new(targets)).await;
         }
     });
 }
@@ -169,7 +170,7 @@ fn create_directories(cfg: &Config, temp_path: &Path) {
         cfg.backup_dir.clone(),
         cfg.user_config_dir.clone(),
         cfg.video.as_ref().and_then(|v| v.download.as_ref()).and_then(|d| d.directory.clone()),
-        cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref().and_then(|c| if c.enabled { c.dir.clone() } else { None }))
+        cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref().and_then(|c| if c.enabled { Some(c.dir.to_string()) } else { None }))
     ];
 
     let mut paths: Vec<PathBuf> = paths_strings.iter()
@@ -191,7 +192,7 @@ fn create_directories(cfg: &Config, temp_path: &Path) {
     }
 }
 
-async fn start_in_cli_mode(cfg: Arc<Config>, targets: Arc<ProcessTargets>) {
+async fn start_in_cli_mode(cfg: Arc<AppConfig>, targets: Arc<ProcessTargets>) {
     let client = create_client(&cfg).build().unwrap_or_else(|err| {
         error!("Failed to build client {err}");
         reqwest::Client::new()
@@ -199,7 +200,7 @@ async fn start_in_cli_mode(cfg: Arc<Config>, targets: Arc<ProcessTargets>) {
     playlist::exec_processing(Arc::new(client), cfg, targets).await;
 }
 
-async fn start_in_server_mode(cfg: Arc<Config>, targets: Arc<ProcessTargets>) {
+async fn start_in_server_mode(cfg: Arc<AppConfig>, targets: Arc<ProcessTargets>) {
     if let Err(err) = api::main_api::start_server(cfg, targets).await {
         exit!("Can't start server: {err}");
     }

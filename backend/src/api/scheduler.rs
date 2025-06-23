@@ -5,7 +5,7 @@ use chrono::{DateTime, FixedOffset, Local};
 use cron::Schedule;
 use crate::utils::{exit};
 use log::{error};
-use crate::model::{Config, ProcessTargets};
+use crate::model::{AppConfig, ProcessTargets};
 use crate::processing::processor::playlist::exec_processing;
 
 pub fn datetime_to_instant(datetime: DateTime<FixedOffset>) -> Instant {
@@ -24,7 +24,7 @@ pub fn datetime_to_instant(datetime: DateTime<FixedOffset>) -> Instant {
     Instant::now() + duration_until
 }
 
-pub async fn start_scheduler(client: Arc<reqwest::Client>, expression: &str, config: Arc<Config>, targets: Arc<ProcessTargets>) -> ! {
+pub async fn start_scheduler(client: Arc<reqwest::Client>, expression: &str, config: Arc<AppConfig>, targets: Arc<ProcessTargets>) -> ! {
     match Schedule::from_str(expression) {
         Ok(schedule) => {
             let offset = *Local::now().offset();

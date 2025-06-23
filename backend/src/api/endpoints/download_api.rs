@@ -1,6 +1,6 @@
 use crate::api::model::app_state::AppState;
 use crate::api::model::download::{DownloadQueue, FileDownload, FileDownloadRequest};
-use crate::model::{Config, VideoDownloadConfig};
+use crate::model::{AppConfig, Config, VideoDownloadConfig};
 use crate::utils::request;
 use tokio::sync::RwLock;
 use futures::stream::TryStreamExt;
@@ -11,6 +11,8 @@ use std::io::{Write};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::{fs};
+use arc_swap::access::Access;
+use arc_swap::ArcSwap;
 use axum::response::IntoResponse;
 use shared::utils::bytes_to_megabytes;
 use shared::error::to_io_error;
@@ -63,7 +65,7 @@ async fn download_file(active: Arc<RwLock<Option<FileDownload>>>, client: &reqwe
     }
 }
 
-async fn run_download_queue(cfg: &Config, download_cfg: &VideoDownloadConfig, download_queue: &Arc<DownloadQueue>) -> Result<(), String> {
+async fn run_download_queue(cfg: &AppConfig, download_cfg: &VideoDownloadConfig, download_queue: &Arc<DownloadQueue>) -> Result<(), String> {
     let next_download = download_queue.as_ref().queue.lock().await.pop_front();
     if next_download.is_some() {
         { *download_queue.as_ref().active.write().await = next_download; }
@@ -116,7 +118,10 @@ pub async fn queue_download_file(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::extract::Json(req): axum::extract::Json<FileDownloadRequest>,
 ) ->  impl axum::response::IntoResponse + Send {
-    if let Some(download_cfg) = &app_state.config.video.as_ref().unwrap().download {
+    let app_config = &*app_state.config;
+
+    let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_config.config);
+    if let Some(download_cfg) = config.video.as_ref().unwrap().download.as_ref() {
         if download_cfg.directory.is_none() {
             return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Server config missing video.download.directory configuration"}))).into_response();
         }

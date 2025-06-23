@@ -1,10 +1,11 @@
 use crate::api::model::active_provider_manager::ProviderAllocation;
-use crate::model::{ConfigInput, ConfigInputAlias, InputType, InputUserInfo};
+use crate::model::{ConfigInput, ConfigInputAlias, InputUserInfo};
 use jsonwebtoken::get_current_timestamp;
 use log::debug;
 use std::ops::Deref;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use shared::model::InputType;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProviderConfigAllocation {

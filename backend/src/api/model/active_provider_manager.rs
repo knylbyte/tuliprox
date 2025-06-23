@@ -1,4 +1,4 @@
-use crate::model::{Config, ConfigInput};
+use crate::model::{AppConfig, ConfigInput};
 use log::{debug, log_enabled};
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -401,8 +401,8 @@ pub struct ActiveProviderManager {
 }
 
 impl ActiveProviderManager {
-    pub async fn new(cfg: &Config) -> Self {
-        let (grace_period_millis, grace_period_timeout_secs) = cfg.reverse_proxy.as_ref()
+    pub async fn new(cfg: &AppConfig) -> Self {
+        let (grace_period_millis, grace_period_timeout_secs) = cfg.config.load().reverse_proxy.as_ref()
             .and_then(|r| r.stream.as_ref())
             .map_or_else(|| (default_grace_period_millis(), default_grace_period_timeout_secs()), |s| (s.grace_period_millis, s.grace_period_timeout_secs));
 
@@ -411,7 +411,7 @@ impl ActiveProviderManager {
             grace_period_timeout_secs,
             providers: Arc::new(RwLock::new(Vec::new())),
         };
-        for source in &cfg.sources.sources {
+        for source in &cfg.sources.load().sources {
             for input in &source.inputs {
                 this.add_provider(input).await;
             }
@@ -575,9 +575,10 @@ impl ActiveProviderManager {
 mod tests {
     use std::sync::atomic::AtomicU16;
     use super::*;
-    use crate::model::{ConfigInputAlias, InputFetchMethod, InputType};
+    use crate::model::{ConfigInputAlias};
     use crate::Arc;
     use std::thread;
+    use shared::model::{InputFetchMethod, InputType};
 
     macro_rules! should_available {
         ($lineup:expr, $provider_id:expr, $grace_period_timeout_secs: expr) => {
@@ -629,7 +630,6 @@ mod tests {
             headers: HashMap::default(),
             options: None,
             method: InputFetchMethod::default(),
-            t_base_url: String::default(),
         }
     }
 
@@ -643,7 +643,6 @@ mod tests {
             password: Some("alias_pass".to_string()),
             priority,
             max_connections,
-            t_base_url: String::default(),
         }
     }
 

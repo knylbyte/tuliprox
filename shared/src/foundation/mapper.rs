@@ -1,17 +1,19 @@
 #![allow(clippy::empty_docs)]
 
-use crate::foundation::filter::{PatternTemplate, TemplateValue, ValueAccessor};
-use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Number, Undefined, Value};
-use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
-use shared::utils::Capitalize;
+use crate::foundation::filter::{ValueAccessor};
 use log::{debug, trace};
 use pest::iterators::{Pair, Pairs};
-use pest::Parser;
+use pest_derive::Parser;
 use regex::Regex;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+use pest::Parser;
+use crate::error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result, info_err};
+use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Number, Undefined, Value};
+use crate::model::{PatternTemplate, TemplateValue};
+use crate::utils::Capitalize;
 
 #[derive(Parser)]
 #[grammar_inline = r##"

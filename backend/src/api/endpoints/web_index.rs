@@ -18,7 +18,8 @@ async fn token(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::extract::Json(mut req): axum::extract::Json<UserCredential>,
 ) -> impl axum::response::IntoResponse + Send {
-    match &app_state.config.web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
+    let config = &app_state.config.config.load();
+    match config.web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
         None => no_web_auth_token().into_response(),
         Some(web_auth) => {
             if !web_auth.enabled {
@@ -56,7 +57,8 @@ async fn token_refresh(
     AuthBearer(token): AuthBearer,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
-    match &app_state.config.web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
+    let config = &app_state.config.config.load();
+    match &config.web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
         None => no_web_auth_token().into_response(),
         Some(web_auth) => {
             if !web_auth.enabled {
@@ -83,8 +85,9 @@ async fn token_refresh(
 async fn index(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
-    let path: PathBuf = [&app_state.config.api.web_root, "index.html"].iter().collect();
-    if let Some(web_ui_path) = &app_state.config.web_ui.as_ref().and_then(|c| c.path.as_ref()) {
+    let config = &app_state.config.config.load();
+    let path: PathBuf = [&config.api.web_root, "index.html"].iter().collect();
+    if let Some(web_ui_path) = &config.web_ui.as_ref().and_then(|c| c.path.as_ref()) {
         match tokio::fs::read_to_string(&path).await {
             Ok(content) => {
                 let mut new_content = CONSTANTS.re_base_href.replace_all(&content, |caps: &regex::Captures| {
@@ -112,8 +115,9 @@ async fn index(
 async fn index_config(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
-    let path: PathBuf = [&app_state.config.api.web_root, "config.json"].iter().collect();
-    if let Some(web_ui_path) = &app_state.config.web_ui.as_ref().and_then(|c| c.path.as_ref()) {
+    let config = &app_state.config.config.load();
+    let path: PathBuf = [&config.api.web_root, "config.json"].iter().collect();
+    if let Some(web_ui_path) = &config.web_ui.as_ref().and_then(|c| c.path.as_ref()) {
         match tokio::fs::read_to_string(&path).await {
             Ok(content) => {
                 if let Ok(mut json_data) = serde_json::from_str::<serde_json::Value>(&content) {

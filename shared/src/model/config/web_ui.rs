@@ -1,6 +1,6 @@
-use shared::utils::default_as_true;
-use shared::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::WebAuthConfig;
+use crate::error::{TuliproxError, TuliproxErrorKind};
+use crate::model::WebAuthConfigDto;
+use crate::utils::{default_as_true};
 
 const RESERVED_PATHS: &[&str] = &[
     "live", "movie", "series", "m3u-stream", "healthcheck", "status",
@@ -8,9 +8,10 @@ const RESERVED_PATHS: &[&str] = &[
     "get.php", "apiget", "m3u", "resource"
 ];
 
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-pub struct WebUiConfig {
+pub struct WebUiConfigDto {
     #[serde(default = "default_as_true")]
     pub enabled: bool,
     #[serde(default = "default_as_true")]
@@ -18,13 +19,13 @@ pub struct WebUiConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auth: Option<WebAuthConfig>,
+    pub auth: Option<WebAuthConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub player_server: Option<String>,
 }
 
-impl WebUiConfig {
-    pub fn prepare(&mut self, config_path: &str) -> Result<(), TuliproxError> {
+impl WebUiConfigDto {
+    pub fn prepare(&mut self) -> Result<(), TuliproxError> {
         if !self.enabled {
             self.auth = None;
         }
@@ -39,14 +40,6 @@ impl WebUiConfig {
                     return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("web ui path is a reserved path. Do not use {RESERVED_PATHS:?}")));
                 }
                 self.path = Some(web_path);
-            }
-        }
-
-        if let Some(web_auth) = &mut self.auth {
-            if web_auth.enabled {
-                web_auth.prepare(config_path)?;
-            } else {
-                self.auth = None;
             }
         }
         Ok(())

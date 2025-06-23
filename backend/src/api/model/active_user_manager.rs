@@ -1,7 +1,6 @@
 use crate::model::Config;
 use crate::model::{ProxyUserCredentials};
-use crate::utils::request::sanitize_sensitive_info;
-use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs};
+use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info};
 use jsonwebtoken::get_current_timestamp;
 use log::{debug, info};
 use std::collections::HashMap;

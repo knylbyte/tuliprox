@@ -1,13 +1,10 @@
 use crate::api::model::app_state::HdHomerunAppState;
 use crate::auth::AuthBasic;
-use crate::model::{ConfigTarget, ProxyUserCredentials};
-use crate::model::{Config};
-use crate::model::{M3uPlaylistItem, XtreamPlaylistItem};
-use shared::model::{PlaylistItemType, TargetType, XtreamCluster};
+use crate::model::{AppConfig, ConfigTarget, ProxyUserCredentials};
+use shared::model::{M3uPlaylistItem, PlaylistItemType, TargetType, XtreamCluster, XtreamPlaylistItem};
 use crate::processing::parser::xtream::get_xtream_url;
 use crate::repository::m3u_playlist_iterator::M3uPlaylistIterator;
 use crate::repository::xtream_playlist_iterator::XtreamPlaylistIterator;
-use crate::utils::get_string_from_serde_value;
 use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::{stream, Stream, StreamExt};
@@ -15,7 +12,7 @@ use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
-
+use shared::utils::get_string_from_serde_value;
 // https://info.hdhomerun.com/info/http_api
 
 // const DISCOVERY_BYTES: &[u8] =  &[0, 2, 0, 12, 1, 4, 255, 255, 255, 255, 2, 4, 255, 255, 255, 255, 115, 204, 125, 143];
@@ -87,7 +84,7 @@ impl Device {
     }
 }
 
-fn xtream_item_to_lineup_stream<I>(cfg: Arc<Config>, cluster: XtreamCluster, credentials: Arc<ProxyUserCredentials>,
+fn xtream_item_to_lineup_stream<I>(cfg: Arc<AppConfig>, cluster: XtreamCluster, credentials: Arc<ProxyUserCredentials>,
                                    base_url: Option<String>, channels: Option<I>) -> impl Stream<Item=Result<Bytes, String>>
 where
     I: Iterator<Item=(XtreamPlaylistItem, bool)> + 'static,
@@ -223,7 +220,7 @@ async fn lineup_status() -> impl IntoResponse {
             }))
 }
 
-async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<Config>, credentials: &Arc<ProxyUserCredentials>, target: &ConfigTarget) -> impl IntoResponse {
+async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<AppConfig>, credentials: &Arc<ProxyUserCredentials>, target: &ConfigTarget) -> impl IntoResponse {
     let use_output = target.get_hdhomerun_output().as_ref().and_then(|o| o.use_output);
     let use_all = use_output.is_none();
     let use_m3u = use_output.as_ref() == Some(&TargetType::M3u);
@@ -282,7 +279,7 @@ async fn auth_lineup_json(AuthBasic((username, password)): AuthBasic, axum::extr
             return axum::http::StatusCode::UNAUTHORIZED.into_response();
         }
         let user_credentials = Arc::new(credentials);
-        return lineup(&app_state, &cfg, &user_credentials, target).await.into_response();
+        return lineup(&app_state, &cfg, &user_credentials, &target).await.into_response();
     }
     axum::http::StatusCode::NOT_FOUND.into_response()
 }
@@ -291,7 +288,7 @@ async fn lineup_json(axum::extract::State(app_state): axum::extract::State<Arc<H
     let cfg = Arc::clone(&app_state.app_state.config);
     if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username) {
         let user_credentials = Arc::new(credentials);
-        return lineup(&app_state, &cfg, &user_credentials, target).await.into_response();
+        return lineup(&app_state, &cfg, &user_credentials, &target).await.into_response();
     }
     axum::http::StatusCode::NOT_FOUND.into_response()
 }

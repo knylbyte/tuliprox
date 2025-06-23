@@ -1,5 +1,5 @@
-use crate::utils::{hash_string_as_hex, traverse_dir};
-use shared::utils::human_readable_byte_size;
+use crate::utils::{traverse_dir};
+use shared::utils::{hash_string_as_hex, human_readable_byte_size};
 use log::{debug, error, info, trace};
 use std::collections::{HashMap, VecDeque};
 use std::fs;

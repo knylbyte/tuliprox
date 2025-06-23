@@ -11,7 +11,7 @@ use crate::api::model::app_state::{AppState, HdHomerunAppState};
 use crate::api::model::download::DownloadQueue;
 use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
 use crate::api::scheduler::start_scheduler;
-use crate::model::{Config, ProcessTargets, RateLimitConfig, ScheduleConfig};
+use crate::model::{AppConfig, Config, ProcessTargets, RateLimitConfig, ScheduleConfig};
 use crate::model::{Healthcheck};
 use crate::processing::processor::playlist;
 use crate::tools::lru_cache::LRUResourceCache;
@@ -54,9 +54,10 @@ async fn healthcheck() -> impl axum::response::IntoResponse {
     axum::Json(create_healthcheck())
 }
 
-async fn create_shared_data(cfg: &Arc<Config>) -> AppState {
-    let lru_cache = cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()).and_then(|c| if c.enabled {
-        Some(Mutex::new(LRUResourceCache::new(c.t_size, &PathBuf::from(c.dir.as_ref().unwrap()))))
+async fn create_shared_data(app_config: &Arc<AppConfig>) -> AppState {
+    let config = app_config.config.load();
+    let lru_cache = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()).and_then(|c| if c.enabled {
+        Some(Mutex::new(LRUResourceCache::new(c.size, &PathBuf::from(c.dir.as_str()))))
     } else { None });
     let cache = Arc::new(lru_cache);
     let cache_scanner = Arc::clone(&cache);
@@ -69,18 +70,18 @@ async fn create_shared_data(cfg: &Arc<Config>) -> AppState {
         }
     });
 
-    let active_users = Arc::new(ActiveUserManager::new(cfg));
-    let active_provider = Arc::new(ActiveProviderManager::new(cfg).await);
+    let active_users = Arc::new(ActiveUserManager::new(&config));
+    let active_provider = Arc::new(ActiveProviderManager::new(app_config).await);
 
-    let mut builder = create_client(cfg).http1_only(); // because of RAII connection dropping
-    if cfg.connect_timeout_secs > 0 {
-        builder = builder.connect_timeout(Duration::from_secs(u64::from(cfg.connect_timeout_secs)));
+    let mut builder = create_client(app_config).http1_only(); // because of RAII connection dropping
+    if config.connect_timeout_secs > 0 {
+        builder = builder.connect_timeout(Duration::from_secs(u64::from(config.connect_timeout_secs)));
     }
 
     let client = builder.build().unwrap_or_else(|_| Client::new());
 
     AppState {
-        config: Arc::clone(cfg),
+        config: Arc::clone(app_config),
         http_client: Arc::new(client),
         downloads: Arc::new(DownloadQueue::new()),
         cache,
@@ -90,8 +91,9 @@ async fn create_shared_data(cfg: &Arc<Config>) -> AppState {
     }
 }
 
-fn exec_update_on_boot(client: Arc<reqwest::Client>, cfg: &Arc<Config>, targets: &Arc<ProcessTargets>) {
-    if cfg.update_on_boot {
+fn exec_update_on_boot(client: Arc<reqwest::Client>, cfg: &Arc<AppConfig>, targets: &Arc<ProcessTargets>) {
+    let config = cfg.config.load();
+    if config.update_on_boot {
         let cfg_clone = Arc::clone(cfg);
         let targets_clone = Arc::clone(targets);
         tokio::spawn(
@@ -101,8 +103,9 @@ fn exec_update_on_boot(client: Arc<reqwest::Client>, cfg: &Arc<Config>, targets:
 }
 
 
-fn get_process_targets(cfg: &Arc<Config>, process_targets: &Arc<ProcessTargets>, exec_targets: Option<&Vec<String>>) -> Arc<ProcessTargets> {
-    if let Ok(user_targets) = cfg.sources.validate_targets(exec_targets) {
+fn get_process_targets(cfg: &Arc<AppConfig>, process_targets: &Arc<ProcessTargets>, exec_targets: Option<&Vec<String>>) -> Arc<ProcessTargets> {
+    let sources = cfg.sources.load();
+    if let Ok(user_targets) = sources.validate_targets(exec_targets) {
         if user_targets.enabled {
             if !process_targets.enabled {
                 return Arc::new(user_targets);
@@ -126,8 +129,9 @@ fn get_process_targets(cfg: &Arc<Config>, process_targets: &Arc<ProcessTargets>,
     Arc::clone(process_targets)
 }
 
-fn exec_scheduler(client: &Arc<reqwest::Client>, cfg: &Arc<Config>, targets: &Arc<ProcessTargets>) {
-    let schedules: Vec<ScheduleConfig> = if let Some(schedules) = &cfg.schedules {
+fn exec_scheduler(client: &Arc<reqwest::Client>, cfg: &Arc<AppConfig>, targets: &Arc<ProcessTargets>) {
+    let config = cfg.config.load();
+    let schedules: Vec<ScheduleConfig> = if let Some(schedules) = &config.schedules {
         schedules.clone()
     } else {
         vec![]
@@ -168,9 +172,10 @@ fn create_compression_layer() -> tower_http::compression::CompressionLayer {
         .zstd(true)
 }
 
-fn start_hdhomerun(cfg: &Arc<Config>, app_state: &Arc<AppState>, infos: &mut Vec<String>) {
-    let host = cfg.api.host.to_string();
-    let guard = cfg.t_hdhomerun.load();
+fn start_hdhomerun(app_config: &Arc<AppConfig>, app_state: &Arc<AppState>, infos: &mut Vec<String>) {
+    let config = app_config.config.load();
+    let host = config.api.host.to_string();
+    let guard = app_config.t_hdhomerun.load();
     if let Some(hdhomerun) = &*guard {
         if hdhomerun.enabled {
             for device in &hdhomerun.devices {
@@ -214,8 +219,9 @@ fn start_hdhomerun(cfg: &Arc<Config>, app_state: &Arc<AppState>, infos: &mut Vec
 //     next.run(request).await
 // }
 
-pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> futures::io::Result<()> {
+pub async fn start_server(app_config: Arc<AppConfig>, targets: Arc<ProcessTargets>) -> futures::io::Result<()> {
     let mut infos = Vec::new();
+    let cfg = app_config.config.load();
     let host = cfg.api.host.to_string();
     let port = cfg.api.port;
     let web_ui_enabled = cfg.web_ui.as_ref().is_some_and(|c| c.enabled);
@@ -226,12 +232,12 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
     if web_ui_enabled {
         infos.push(format!("Web root: {}", web_dir_path.display()));
     }
-    let app_shared_data = create_shared_data(&cfg).await;
+    let app_shared_data = create_shared_data(&app_config).await;
     let app_state = Arc::new(app_shared_data);
     let shared_data = Arc::clone(&app_state);
 
-    exec_scheduler(&Arc::clone(&shared_data.http_client), &cfg, &targets);
-    exec_update_on_boot(Arc::clone(&shared_data.http_client), &cfg, &targets);
+    exec_scheduler(&Arc::clone(&shared_data.http_client), &app_config, &targets);
+    exec_update_on_boot(Arc::clone(&shared_data.http_client), &app_config, &targets);
 
     if cfg.config_hot_reload {
         if let Err(err) = exec_config_watch(&app_state).await {
@@ -241,8 +247,8 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
 
     let web_auth_enabled = is_web_auth_enabled(&cfg, web_ui_enabled);
 
-    if cfg.t_api_proxy.load().is_some() {
-        start_hdhomerun(&cfg, &app_state, &mut infos);
+    if app_config.t_api_proxy.load().is_some() {
+        start_hdhomerun(&app_config, &app_state, &mut infos);
     }
 
 
@@ -271,7 +277,7 @@ pub async fn start_server(cfg: Arc<Config>, targets: Arc<ProcessTargets>) -> fut
         .merge(xmltv_api_register())
         .merge(hls_api_register());
     // let mut rate_limiting = false;
-    if let Some(rate_limiter) = app_state.config.reverse_proxy.as_ref().and_then(|r| r.rate_limit.clone()) {
+    if let Some(rate_limiter) = cfg.reverse_proxy.as_ref().and_then(|r| r.rate_limit.clone()) {
         // rate_limiting = rate_limiter.enabled;
         api_router = add_rate_limiter(api_router, &rate_limiter);
     }

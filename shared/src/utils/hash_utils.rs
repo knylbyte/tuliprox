@@ -1,7 +1,7 @@
 use base64::Engine;
 use base64::engine::general_purpose;
-use shared::model::{PlaylistItemType, UUIDType};
 use std::fmt::Write;
+use crate::model::{PlaylistItemType, UUIDType};
 
 #[inline]
 pub fn hash_bytes(bytes: &[u8]) -> UUIDType {

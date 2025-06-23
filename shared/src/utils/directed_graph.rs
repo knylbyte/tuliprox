@@ -207,8 +207,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::tools::directed_graph::DirectedGraph;
     use std::collections::HashSet;
+    use crate::utils::DirectedGraph;
 
     fn are_vecs_equal(vec1: &Vec<&str>, vec2: &Vec<&str>) -> bool {
         let set1: HashSet<String> = vec1.iter().map(|s| (*s).to_string()).collect();

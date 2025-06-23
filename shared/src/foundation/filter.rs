@@ -1,5 +1,6 @@
 #![allow(clippy::empty_docs)]
 
+use pest_derive::Parser;
 use std::borrow::Cow;
 use enum_iterator::all;
 use indexmap::IndexSet;
@@ -8,12 +9,10 @@ use pest::iterators::Pair;
 use pest::Parser;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use shared::model::{FieldGetAccessor, FieldSetAccessor, ItemField, PlaylistItemType};
-use crate::model::{PlaylistItem};
-use crate::tools::directed_graph::DirectedGraph;
-use shared::error::{create_tuliprox_error_result, info_err};
-use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::utils::CONSTANTS;
+use crate::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use crate::info_err;
+pub use crate::model::{ItemField, PatternTemplate, PlaylistItem, PlaylistItemType, FieldGetAccessor, FieldSetAccessor, TemplateValue};
+use crate::utils::{DirectedGraph, CONSTANTS};
 
 pub fn get_field_value(pli: &PlaylistItem, field: ItemField) -> String {
     let header = &pli.header;
@@ -71,32 +70,6 @@ impl ValueAccessor<'_> {
         } else {
             error!("Can't set unknown field {field} set to {value}");
         }
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(untagged)]
-pub enum TemplateValue {
-    Single(String),
-    Multi(Vec<String>),
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct PatternTemplate {
-    pub name: String,
-    pub value: TemplateValue,
-    #[serde(skip)]
-    pub placeholder: String,
-}
-
-impl PatternTemplate {
-    pub fn prepare(&mut self) {
-        let mut placeholder = String::with_capacity(self.name.len() + 2);
-        placeholder.push('!');
-        placeholder.push_str(&self.name);
-        placeholder.push('!');
-
-        self.placeholder = placeholder;
     }
 }
 

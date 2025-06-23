@@ -6,9 +6,8 @@ use crate::model::{ProxyUserCredentials};
 use crate::model::ConfigInput;
 use shared::model::{PlaylistItemType, UserConnectionPermission, XtreamCluster};
 use crate::processing::parser::hls::{get_hls_session_token_and_url_from_token, rewrite_hls, RewriteHlsProps};
-use shared::utils::HLS_EXT;
+use shared::utils::{is_hls_url, replace_url_extension, sanitize_sensitive_info, HLS_EXT};
 use crate::utils::request;
-use crate::utils::request::{is_hls_url, replace_url_extension, sanitize_sensitive_info};
 use axum::response::IntoResponse;
 use log::{debug, error};
 use serde::Deserialize;
@@ -129,7 +128,7 @@ async fn hls_api_stream(
         if session.virtual_id == virtual_id {
             if is_seek_request(XtreamCluster::Live, &req_headers).await {
                 // partial request means we are in reverse proxy mode, seek happened
-                return force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, input, &user).await.into_response()
+                return force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, &input, &user).await.into_response()
             }
         } else {
             return axum::http::StatusCode::BAD_REQUEST.into_response();
@@ -141,10 +140,10 @@ async fn hls_api_stream(
         }
 
         if is_hls_url(&session.stream_url) {
-            return handle_hls_stream_request(&fingerprint, &app_state, &user, Some(session), &session.stream_url, virtual_id, input, connection_permission).await.into_response();
+            return handle_hls_stream_request(&fingerprint, &app_state, &user, Some(session), &session.stream_url, virtual_id, &input, connection_permission).await.into_response();
         }
 
-        force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, input, &user).await.into_response()
+        force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, &input, &user).await.into_response()
     } else {
         axum::http::StatusCode::BAD_REQUEST.into_response()
     }

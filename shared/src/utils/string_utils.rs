@@ -55,6 +55,7 @@ pub fn get_non_empty_str<'a>(first: &'a str, second: &'a str, third: &'a str) ->
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
+    use crate::utils::Capitalize;
     use super::generate_random_string;
 
     #[test]

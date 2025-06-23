@@ -2580,11 +2580,21 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "bitflags 2.9.1",
+ "blake3",
+ "clap",
  "enum-iterator",
+ "indexmap",
+ "log",
+ "path-clean",
+ "pest",
+ "pest_derive",
  "rand",
  "regex",
  "serde",
+ "serde_json",
+ "url",
 ]
 
 [[package]]

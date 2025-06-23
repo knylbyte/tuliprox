@@ -59,7 +59,7 @@ impl ActiveClientStream {
                 ));
 
         let stream = stream_details.stream.take().unwrap();
-        let stream = match app_state.config.sleep_timer_mins {
+        let stream = match app_state.config.config.load().sleep_timer_mins {
             None => stream,
             Some(mins) => {
                 let secs = u32::try_from((u64::from(mins) * 60).min(u64::from(u32::MAX))).unwrap_or(0);

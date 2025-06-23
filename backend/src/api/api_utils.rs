@@ -13,15 +13,14 @@ use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
 use crate::api::model::streams::throttled_stream::ThrottledStream;
 use crate::auth::Claims;
 use crate::model::{ConfigTarget, ProxyUserCredentials};
-use crate::model::{ConfigInput, InputFetchMethod};
-use shared::model::{PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission, XtreamCluster};
+use crate::model::{ConfigInput};
+use shared::model::{InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission, XtreamCluster};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::tools::lru_cache::LRUResourceCache;
-use shared::utils::{DASH_EXT, HLS_EXT};
+use shared::utils::{extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT};
 use shared::utils::{default_grace_period_millis, human_readable_byte_size};
 use crate::utils::create_new_file_for_write;
 use crate::utils::request;
-use crate::utils::request::{extract_extension_from_url, replace_url_extension, sanitize_sensitive_info};
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::{BUILD_TIMESTAMP};
 use axum::body::Body;
@@ -119,7 +118,7 @@ pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl axum::r
     axum::http::StatusCode::NOT_FOUND.into_response()
 }
 
-pub fn get_user_target_by_username<'a>(username: &str, app_state: &'a AppState) -> Option<(ProxyUserCredentials, &'a ConfigTarget)> {
+pub fn get_user_target_by_username(username: &str, app_state: &AppState) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
     if !username.is_empty() {
         return app_state.config.get_target_for_username(username);
     }
@@ -127,7 +126,7 @@ pub fn get_user_target_by_username<'a>(username: &str, app_state: &'a AppState) 
 }
 
 pub fn get_user_target_by_credentials<'a>(username: &str, password: &str, api_req: &'a UserApiRequest,
-                                                app_state: &'a AppState) -> Option<(ProxyUserCredentials, &'a ConfigTarget)> {
+                                                app_state: &'a AppState) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
     if !username.is_empty() && !password.is_empty() {
         app_state.config.get_target_for_user(username, password)
     } else {
@@ -140,7 +139,7 @@ pub fn get_user_target_by_credentials<'a>(username: &str, password: &str, api_re
     }
 }
 
-pub fn get_user_target<'a>(api_req: &'a UserApiRequest, app_state: &'a AppState) -> Option<(ProxyUserCredentials, &'a ConfigTarget)> {
+pub fn get_user_target<'a>(api_req: &'a UserApiRequest, app_state: &'a AppState) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
     let username = api_req.username.as_str().trim();
     let password = api_req.password.as_str().trim();
     get_user_target_by_credentials(username, password, api_req, app_state)
@@ -175,7 +174,7 @@ pub struct StreamOptions {
 /// Returns a `StreamOptions` instance with the resolved configuration.
 fn get_stream_options(app_state: &AppState) -> StreamOptions {
     let (stream_retry, stream_force_retry_secs, buffer_enabled, buffer_size) = app_state
-        .config
+        .config.config.load()
         .reverse_proxy
         .as_ref()
         .and_then(|reverse_proxy| reverse_proxy.stream.as_ref())
@@ -346,7 +345,7 @@ async fn create_stream_response_details(app_state: &AppState,
                                         force_provider: Option<&str>) -> StreamDetails {
     let mut streaming_strategy =
         resolve_streaming_strategy(app_state, stream_url, input, force_provider).await;
-    let config_grace_period_millis = app_state.config.reverse_proxy.as_ref()
+    let config_grace_period_millis = app_state.config.config.load().reverse_proxy.as_ref()
         .and_then(|r| r.stream.as_ref()).map_or_else(default_grace_period_millis, |s| s.grace_period_millis);
     let grace_period_millis = get_grace_period_millis(connection_permission, &streaming_strategy.provider_stream_state, config_grace_period_millis);
     match streaming_strategy.provider_stream_state {
@@ -647,7 +646,7 @@ pub async fn stream_response(app_state: &AppState,
 }
 
 fn get_stream_throttle(app_state: &AppState) -> u64 {
-    app_state.config
+    app_state.config.config.load()
         .reverse_proxy
         .as_ref()
         .and_then(|reverse_proxy| reverse_proxy.stream.as_ref())
@@ -776,7 +775,7 @@ pub fn get_username_from_auth_header(
     token: &str,
     app_state: &Arc<AppState>,
 ) -> Option<String> {
-    if let Some(web_auth_config) = &app_state.config.web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
+    if let Some(web_auth_config) = &app_state.config.config.load().web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
         let secret_key: &str = web_auth_config.secret.as_ref();
         if let Ok(token_data) = decode::<Claims>(
             token,

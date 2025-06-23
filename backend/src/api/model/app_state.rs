@@ -5,12 +5,12 @@ use crate::api::model::active_provider_manager::ActiveProviderManager;
 use crate::api::model::active_user_manager::ActiveUserManager;
 use crate::api::model::download::DownloadQueue;
 use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
-use crate::model::{Config, HdHomeRunDeviceConfig};
+use crate::model::{AppConfig, HdHomeRunDeviceConfig};
 use crate::tools::lru_cache::LRUResourceCache;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub config: Arc<Config>,
+    pub config: Arc<AppConfig>,
     pub http_client: Arc<reqwest::Client>,
     pub downloads: Arc<DownloadQueue>,
     pub cache: Arc<Option<Mutex<LRUResourceCache>>>,
