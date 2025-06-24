@@ -1,8 +1,12 @@
+use shared::utils::get_credentials_from_url_str;
+use log::debug;
+use shared::info_err;
 use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{macros, EpgConfig};
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};
 use std::collections::{HashMap};
 use url::Url;
+use shared::check_input_credentials;
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType};
 use crate::utils;
 
@@ -112,7 +116,9 @@ pub struct ConfigInput {
 impl ConfigInput {
 
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
-        self.prepare_batch()
+        self.prepare_batch()?;
+        check_input_credentials!(self, self.input_type, false);
+        Ok(())
     }
 
     pub fn get_user_info(&self) -> Option<InputUserInfo> {

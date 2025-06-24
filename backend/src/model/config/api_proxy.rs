@@ -187,7 +187,7 @@ impl ApiProxyConfig {
             .flat_map(|target_user| &target_user.credentials)
             .find(|credential| credential.username == username)
             .cloned();
-        if result.is_none() && username != "test" {
+        if result.is_none() && (username != "test" || username != "api") {
             debug!("Could not find any user {username}");
         }
         result

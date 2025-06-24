@@ -2,33 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::str::FromStr;
 use enum_iterator::Sequence;
-use crate::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
+use crate::{check_input_credentials, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{EpgConfigDto};
 use crate::utils::{default_as_true, get_base_url_from_str, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info};
 use log::debug;
 
-macro_rules! check_input_credentials {
-    ($this:ident, $input_type:expr) => {
-     match $input_type {
-            InputType::M3u | InputType::M3uBatch => {
-                if $this.username.is_some() || $this.password.is_some() {
-                    debug!("for input type m3u: username and password are ignored");
-                }
-                if $this.username.is_none() && $this.password.is_none() {
-                    let (username, password) = get_credentials_from_url_str(&$this.url);
-                    $this.username = username;
-                    $this.password = password;
-                }
-            }
-            InputType::Xtream | InputType::XtreamBatch => {
-                if $this.username.is_none() || $this.password.is_none() {
-                    return Err(info_err!("for input type xtream: username and password are mandatory".to_string()));
-                }
-            }
-        }
-    };
-}
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence,
     PartialEq, Eq, Default)]
@@ -162,7 +141,7 @@ impl ConfigInputAliasDto {
         }
         self.username = get_trimmed_string(&self.username);
         self.password = get_trimmed_string(&self.password);
-        check_input_credentials!(self, input_type);
+        check_input_credentials!(self, input_type, true);
 
         Ok(())
     }
@@ -215,7 +194,7 @@ impl ConfigInputDto {
 
         self.username = get_trimmed_string(&self.username);
         self.password = get_trimmed_string(&self.password);
-        check_input_credentials!(self, self.input_type);
+        check_input_credentials!(self, self.input_type, true);
         self.persist = get_trimmed_string(&self.persist);
 
         if let Some(epg) = self.epg.as_mut() {

@@ -24,6 +24,7 @@ mod api_user;
 mod api;
 mod epg_smart_match;
 mod pattern_template;
+pub mod macros;
 
 pub use base::*;
 pub use api::*;

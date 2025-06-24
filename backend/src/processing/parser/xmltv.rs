@@ -547,7 +547,6 @@ mod tests {
     }
 
     use rphonetic::{Encoder, Metaphone};
-    use shared::error::TuliproxError;
     use shared::model::{EpgNamePrefix, EpgSmartMatchConfigDto};
 
     #[test]
