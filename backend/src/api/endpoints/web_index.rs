@@ -18,7 +18,7 @@ async fn token(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::extract::Json(mut req): axum::extract::Json<UserCredential>,
 ) -> impl axum::response::IntoResponse + Send {
-    let config = &app_state.config.config.load();
+    let config = &app_state.app_config.config.load();
     match config.web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
         None => no_web_auth_token().into_response(),
         Some(web_auth) => {
@@ -37,7 +37,7 @@ async fn token(
                         }
                     }
                 }
-                if let Some(credentials) = app_state.config.get_user_credentials(username) {
+                if let Some(credentials) = app_state.app_config.get_user_credentials(username) {
                     if credentials.password == password {
                         if let Ok(token) = create_jwt_user(web_auth, username) {
                             req.zeroize();
@@ -57,7 +57,7 @@ async fn token_refresh(
     AuthBearer(token): AuthBearer,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
-    let config = &app_state.config.config.load();
+    let config = &app_state.app_config.config.load();
     match &config.web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
         None => no_web_auth_token().into_response(),
         Some(web_auth) => {
@@ -85,7 +85,7 @@ async fn token_refresh(
 async fn index(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
-    let config = &app_state.config.config.load();
+    let config = &app_state.app_config.config.load();
     let path: PathBuf = [&config.api.web_root, "index.html"].iter().collect();
     if let Some(web_ui_path) = &config.web_ui.as_ref().and_then(|c| c.path.as_ref()) {
         match tokio::fs::read_to_string(&path).await {
@@ -115,7 +115,7 @@ async fn index(
 async fn index_config(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
-    let config = &app_state.config.config.load();
+    let config = &app_state.app_config.config.load();
     let path: PathBuf = [&config.api.web_root, "config.json"].iter().collect();
     if let Some(web_ui_path) = &config.web_ui.as_ref().and_then(|c| c.path.as_ref()) {
         match tokio::fs::read_to_string(&path).await {

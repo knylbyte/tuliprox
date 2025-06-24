@@ -81,7 +81,7 @@ async fn create_shared_data(app_config: &Arc<AppConfig>) -> AppState {
     let client = builder.build().unwrap_or_else(|_| Client::new());
 
     AppState {
-        config: Arc::clone(app_config),
+        app_config: Arc::clone(app_config),
         http_client: Arc::new(client),
         downloads: Arc::new(DownloadQueue::new()),
         cache,
@@ -175,7 +175,7 @@ fn create_compression_layer() -> tower_http::compression::CompressionLayer {
 fn start_hdhomerun(app_config: &Arc<AppConfig>, app_state: &Arc<AppState>, infos: &mut Vec<String>) {
     let config = app_config.config.load();
     let host = config.api.host.to_string();
-    let guard = app_config.t_hdhomerun.load();
+    let guard = app_config.hdhomerun.load();
     if let Some(hdhomerun) = &*guard {
         if hdhomerun.enabled {
             for device in &hdhomerun.devices {
@@ -247,7 +247,7 @@ pub async fn start_server(app_config: Arc<AppConfig>, targets: Arc<ProcessTarget
 
     let web_auth_enabled = is_web_auth_enabled(&cfg, web_ui_enabled);
 
-    if app_config.t_api_proxy.load().is_some() {
+    if app_config.api_proxy.load().is_some() {
         start_hdhomerun(&app_config, &app_state, &mut infos);
     }
 

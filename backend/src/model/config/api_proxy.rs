@@ -7,7 +7,7 @@ use std::fs;
 use std::sync::Arc;
 use arc_swap::access::Access;
 use arc_swap::ArcSwap;
-use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, TargetUserDto};
+use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigPaths, TargetUserDto};
 use crate::{utils};
 
 #[derive(Debug, Clone)]
@@ -98,6 +98,8 @@ impl ApiProxyConfig {
     // When we switch from one to other we need to migrate the existing data.
     /// # Panics
     pub fn migrate_api_user(&mut self, cfg: &AppConfig, errors: &mut Vec<String>) {
+        let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&cfg.paths);
+        let api_proxy_file = paths.api_proxy_file_path.as_str();
         if self.use_user_db {
             // we have user defined in config file.
             // we migrate them to the db and delete them from the config file
@@ -105,7 +107,6 @@ impl ApiProxyConfig {
                 if let Err(err) = merge_api_user(cfg, &self.user) {
                     errors.push(err.to_string());
                 } else {
-                    let api_proxy_file = cfg.t_api_proxy_file_path.as_str();
                     let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&cfg.config);
                     let backup_dir = config.backup_dir.as_ref().unwrap().as_str();
                     self.user = vec![];
@@ -141,7 +142,6 @@ impl ApiProxyConfig {
                         }
                     }
                 }
-                let api_proxy_file = cfg.t_api_proxy_file_path.as_str();
 
                 let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&cfg.config);
                 let backup_dir = config.backup_dir.as_ref().unwrap().as_str();

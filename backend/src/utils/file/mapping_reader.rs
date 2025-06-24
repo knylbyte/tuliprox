@@ -113,14 +113,14 @@ fn read_mappings_from_directory(path: &Path, resolve_env: bool) -> Result<Option
     merge_mapping_definitions(mappings)
 }
 
-pub fn read_mappings(mappings_file: &str, resolve_env: bool) -> Result<Option<Mappings>, TuliproxError> {
+pub fn read_mappings_file(mappings_file: &str, resolve_env: bool) -> Result<Option<MappingsDto>, TuliproxError> {
     let path = PathBuf::from(mappings_file);
     match std::fs::metadata(&path) {
         Ok(metadata) => {
             if metadata.is_file() {
-                read_mappings_from_file(&path, resolve_env).map(|s| s.map(Into::into))
+                read_mappings_from_file(&path, resolve_env)
             } else if metadata.is_dir() {
-                read_mappings_from_directory(&path, resolve_env).map(|s| s.map(Into::into))
+                read_mappings_from_directory(&path, resolve_env)
             } else {
                 Ok(None)
             }
@@ -128,5 +128,12 @@ pub fn read_mappings(mappings_file: &str, resolve_env: bool) -> Result<Option<Ma
         Err(_err) => {
             Ok(None)
         }
+    }
+}
+
+pub fn read_mappings(mappings_file: &str, resolve_env: bool) -> Result<Option<Mappings>, TuliproxError> {
+    match read_mappings_file(mappings_file, resolve_env)? {
+        Some(dto) => Ok(Some(Mappings::from(&dto))),
+        None => Ok(None),
     }
 }

@@ -77,7 +77,7 @@ impl ProxyUserCredentials {
     }
 
     pub fn has_permissions(&self, app_state: &AppState) -> bool {
-        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.config.config);
+        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.app_config.config);
         if config.user_access_control {
             if let Some(exp_date) = self.exp_date.as_ref() {
                 let now = Local::now();
@@ -103,7 +103,7 @@ impl ProxyUserCredentials {
     }
 
     pub async fn connection_permission(&self, app_state: &AppState) -> UserConnectionPermission {
-        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.config.config);
+        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.app_config.config);
         if self.max_connections > 0 && config.user_access_control {
             // we allow requests with max connection reached, but we should block streaming after grace period
             return app_state.get_connection_permission(&self.username, self.max_connections).await;

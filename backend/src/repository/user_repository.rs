@@ -109,7 +109,8 @@ impl StoredProxyUserCredentials {
 
 
 pub fn get_api_user_db_path(cfg: &AppConfig) -> PathBuf {
-    PathBuf::from(&cfg.t_config_path).join(storage_const::API_USER_DB_FILE)
+    let paths = cfg.paths.load();
+    PathBuf::from(&paths.config_path).join(storage_const::API_USER_DB_FILE)
 }
 
 
@@ -397,10 +398,10 @@ pub async fn user_get_bouquet_filter(config: &Config, username: &str, category_i
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::model::{ProxyType, ProxyUserStatus};
+    use shared::model::{ConfigPaths, ProxyType, ProxyUserStatus};
     use std::env::temp_dir;
     use std::sync::Arc;
-    use arc_swap::ArcSwapAny;
+    use arc_swap::{ArcSwap, ArcSwapAny, ArcSwapOption};
     use crate::utils::FileLockManager;
 
     #[test]
@@ -471,21 +472,22 @@ mod tests {
         let mut cfg = AppConfig {
             config: Arc::new(ArcSwapAny::default()),
             sources: Arc::new(ArcSwapAny::default()),
-            t_hdhomerun: Arc::new(ArcSwapAny::default()),
-            t_api_proxy: Arc::new(ArcSwapAny::default()),
-            t_config_path: String::new(),
-            t_config_file_path: String::new(),
-            t_sources_file_path: String::new(),
-            t_mapping_file_path: String::new(),
-            t_api_proxy_file_path: String::new(),
-            t_custom_stream_response_path: None,
+            hdhomerun: Arc::new(ArcSwapAny::default()),
+            api_proxy: Arc::new(ArcSwapAny::default()),
+            paths: Arc::new(ArcSwap::from(Arc::new(ConfigPaths {
+                config_path: temp_dir().to_string_lossy().to_string(),
+                config_file_path: "".to_string(),
+                sources_file_path: "".to_string(),
+                mapping_file_path: None,
+                api_proxy_file_path: "".to_string(),
+                custom_stream_response_path: None,
+            }))),
             file_locks: Arc::new(FileLockManager::default()),
-            t_custom_stream_response: None,
-            t_access_token_secret: Default::default(),
-            t_encrypt_secret: Default::default(),
+            custom_stream_response: Arc::new(ArcSwapAny::default()),
+            access_token_secret: Default::default(),
+            encrypt_secret: Default::default(),
         };
         let target_user = vec![user];
-        cfg.t_config_path = temp_dir().to_string_lossy().to_string();
         let _ = store_api_user(&cfg, &target_user);
 
         let user_list = load_api_user(&cfg);

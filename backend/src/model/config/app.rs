@@ -10,6 +10,7 @@ use log::{debug, error};
 use rand::Rng;
 use shared::create_tuliprox_error_result;
 use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::model::ConfigPaths;
 use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
 use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Config, ConfigInput, ConfigInputOptions, ConfigTarget, CustomStreamResponse, HdHomeRunConfig, Mappings, ProxyUserCredentials, SourcesConfig, TargetOutput};
 use crate::utils;
@@ -31,24 +32,50 @@ fn generate_secret() -> [u8; 32] {
 pub struct AppConfig {
     pub config: Arc<ArcSwap<Config>>,
     pub sources: Arc<ArcSwap<SourcesConfig>>,
-    pub t_hdhomerun: Arc<ArcSwapOption<HdHomeRunConfig>>,
-    pub t_api_proxy: Arc<ArcSwapOption<ApiProxyConfig>>,
-    pub t_config_path: String,
-    pub t_config_file_path: String,
-    pub t_sources_file_path: String,
-    pub t_mapping_file_path: String,
-    pub t_api_proxy_file_path: String,
-    pub t_custom_stream_response_path: Option<String>,
+    pub hdhomerun: Arc<ArcSwapOption<HdHomeRunConfig>>,
+    pub api_proxy: Arc<ArcSwapOption<ApiProxyConfig>>,
     pub file_locks: Arc<utils::FileLockManager>,
-    pub t_custom_stream_response: Option<CustomStreamResponse>,
-    pub t_access_token_secret: [u8; 32],
-    pub t_encrypt_secret: [u8; 16],
+    pub paths: Arc<ArcSwap<ConfigPaths>>,
+    pub custom_stream_response: Arc<ArcSwapOption<CustomStreamResponse>>,
+    pub access_token_secret: [u8; 32],
+    pub encrypt_secret: [u8; 16],
 }
 
 impl AppConfig {
-    pub fn set_api_proxy(&self, api_proxy: Option<Arc<ApiProxyConfig>>) -> Result<(), TuliproxError> {
-        self.t_api_proxy.store(api_proxy);
+
+    pub fn set_config(&self, config: Config) -> Result<(), TuliproxError> {
+        self.config.store(Arc::new(config));
+        self.prepare_custom_stream_response();
+        Ok(())
+    }
+
+    pub fn set_sources(&self, sources: SourcesConfig) -> Result<(), TuliproxError> {
+        self.sources.store(Arc::new(sources));
+        self.prepare_sources()?;
+        Ok(())
+    }
+
+    pub fn set_api_proxy(&self, api_proxy: ApiProxyConfig) -> Result<(), TuliproxError> {
+        self.api_proxy.store(Some(Arc::new(api_proxy)));
         self.check_target_user()
+    }
+
+    pub fn set_mappings(&self, mappings_cfg: &Mappings) {
+        let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
+        for source in &sources.sources {
+            for target in &source.targets {
+                if let Some(mapping_ids) = &target.mapping_ids {
+                    let mut target_mappings = Vec::with_capacity(128);
+                    for mapping_id in mapping_ids {
+                        let mapping = mappings_cfg.get_mapping(mapping_id);
+                        if let Some(mappings) = mapping {
+                            target_mappings.push(mappings);
+                        }
+                    }
+                    target.mapping.store(if target_mappings.is_empty() { None } else { Some(Arc::new(target_mappings)) });
+                }
+            }
+        }
     }
 
     fn check_username(&self, output_username: Option<&str>, target_name: &str) -> Result<(), TuliproxError> {
@@ -66,7 +93,7 @@ impl AppConfig {
         }
     }
     fn check_target_user(&self) -> Result<(), TuliproxError> {
-        let check_homerun = self.t_hdhomerun.load().as_ref().is_some_and(|h| h.enabled);
+        let check_homerun = self.hdhomerun.load().as_ref().is_some_and(|h| h.enabled);
         let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
         for source in &sources.sources {
             for target in &source.targets {
@@ -80,7 +107,7 @@ impl AppConfig {
                             if check_homerun {
                                 let hdhr_name = &hdhomerun_output.device;
                                 self.check_username(Some(&hdhomerun_output.username), &target.name)?;
-                                if let Some(old_hdhomerun) = self.t_hdhomerun.load().clone() {
+                                if let Some(old_hdhomerun) = self.hdhomerun.load().clone() {
                                     let mut hdhomerun = (*old_hdhomerun).clone();
                                     for device in &mut hdhomerun.devices {
                                         if &device.name == hdhr_name {
@@ -88,7 +115,7 @@ impl AppConfig {
                                             device.t_enabled = true;
                                         }
                                     }
-                                    self.t_hdhomerun.store(Some(Arc::new(hdhomerun)));
+                                    self.hdhomerun.store(Some(Arc::new(hdhomerun)));
                                 }
                             }
                         }
@@ -97,7 +124,7 @@ impl AppConfig {
             }
         }
 
-        let guard = self.t_hdhomerun.load();
+        let guard = self.hdhomerun.load();
         if let Some(hdhomerun) = &*guard {
             for device in &hdhomerun.devices {
                 if !device.t_enabled {
@@ -142,22 +169,22 @@ impl AppConfig {
 
     pub fn get_target_for_username(&self, username: &str) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
         if let Some(credentials) = self.get_user_credentials(username) {
-            return self.t_api_proxy.load().as_ref()
+            return self.api_proxy.load().as_ref()
                 .and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name(&credentials.username, &credentials.password)));
         }
         None
     }
 
     pub fn get_target_for_user(&self, username: &str, password: &str) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
-        self.t_api_proxy.load().as_ref().and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name(username, password)))
+        self.api_proxy.load().as_ref().and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name(username, password)))
     }
 
     pub fn get_target_for_user_by_token(&self, token: &str) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
-        self.t_api_proxy.load().as_ref().as_ref().and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name_by_token(token)))
+        self.api_proxy.load().as_ref().as_ref().and_then(|api_proxy| self.intern_get_target_for_user(api_proxy.get_target_name_by_token(token)))
     }
 
     pub fn get_user_credentials(&self, username: &str) -> Option<ProxyUserCredentials> {
-        self.t_api_proxy.load().as_ref().as_ref().and_then(|api_proxy| api_proxy.get_user_credentials(username))
+        self.api_proxy.load().as_ref().as_ref().and_then(|api_proxy| api_proxy.get_user_credentials(username))
     }
 
     pub fn get_input_by_name(&self, input_name: &str) -> Option<Arc<ConfigInput>> {
@@ -201,24 +228,6 @@ impl AppConfig {
         sources.get_target_by_id(target_id)
     }
 
-    pub fn set_mappings(&self, mappings_cfg: &Mappings) {
-        let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
-        for source in &sources.sources {
-            for target in &source.targets {
-                if let Some(mapping_ids) = &target.mapping_ids {
-                    let mut target_mappings = Vec::with_capacity(128);
-                    for mapping_id in mapping_ids {
-                        let mapping = mappings_cfg.get_mapping(mapping_id);
-                        if let Some(mappings) = mapping {
-                            target_mappings.push(mappings);
-                        }
-                    }
-                    target.mapping.store(if target_mappings.is_empty() { None } else { Some(Arc::new(target_mappings)) });
-                }
-            }
-        }
-    }
-
     fn check_unique_input_names(&self) -> Result<(), TuliproxError> {
         let mut seen_names = HashSet::new();
         let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
@@ -250,7 +259,7 @@ impl AppConfig {
     }
 
 
-    fn check_scheduled_targets(&mut self, target_names: &HashSet<Cow<str>>) -> Result<(), TuliproxError> {
+    fn check_scheduled_targets(&self, target_names: &HashSet<Cow<str>>) -> Result<(), TuliproxError> {
         let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
         if let Some(schedules) = &config.schedules {
             for schedule in schedules {
@@ -272,21 +281,25 @@ impl AppConfig {
     pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
 
         if include_computed {
-            self.t_access_token_secret = generate_secret();
-            self.t_encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;
+            self.access_token_secret = generate_secret();
+            self.encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;
             self.prepare_custom_stream_response();
         }
 
-        let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
-        let target_names = sources.get_unique_target_names();
-        self.check_scheduled_targets(&target_names)?;
-        self.check_unique_input_names()?;
+        self.prepare_sources()?;
 
         Ok(())
     }
 
+    fn prepare_sources(&self) -> Result<(), TuliproxError> {
+        let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
+        let target_names = sources.get_unique_target_names();
+        self.check_scheduled_targets(&target_names)?;
+        self.check_unique_input_names()?;
+        Ok(())
+    }
 
-    fn prepare_custom_stream_response(&mut self) {
+    fn prepare_custom_stream_response(&self) {
         let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
         if let Some(custom_stream_response_path) = config.custom_stream_response_path.as_ref() {
             fn load_and_set_file(file_path: &Path) -> Option<TransportStreamBuffer> {
@@ -323,17 +336,22 @@ impl AppConfig {
 
             let path = PathBuf::from(custom_stream_response_path);
             let path = utils::make_path_absolute(&path, &config.working_dir);
-            self.t_custom_stream_response_path = Some(path.to_string_lossy().to_string());
+
+            let paths = self.paths.load_full();
+            let mut new_paths = paths.as_ref().clone();
+            new_paths.custom_stream_response_path = Some(path.to_string_lossy().to_string());
+            self.paths.store(Arc::new(new_paths));
+
             let channel_unavailable = load_and_set_file(&path.join(CHANNEL_UNAVAILABLE));
             let user_connections_exhausted = load_and_set_file(&path.join(USER_CONNECTIONS_EXHAUSTED));
             let provider_connections_exhausted = load_and_set_file(&path.join(PROVIDER_CONNECTIONS_EXHAUSTED));
             let user_account_expired = load_and_set_file(&path.join(USER_ACCOUNT_EXPIRED));
-            self.t_custom_stream_response = Some(CustomStreamResponse {
+            self.custom_stream_response.store(Some(Arc::new(CustomStreamResponse {
                 channel_unavailable,
                 user_connections_exhausted,
                 provider_connections_exhausted,
                 user_account_expired,
-            });
+            })));
         }
     }
 
@@ -342,7 +360,7 @@ impl AppConfig {
     ///
     /// Will panic if default server invalid
     pub fn get_server_info(&self, server_info_name: &str) -> ApiProxyServerInfo {
-        let guard = self.t_api_proxy.load();
+        let guard = self.api_proxy.load();
         if let Ok(api_proxy) = guard.as_ref().ok_or_else(|| {
             TuliproxError::new(TuliproxErrorKind::Info, "API proxy config not loaded".to_string())
         }) {

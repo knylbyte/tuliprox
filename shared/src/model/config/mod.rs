@@ -25,6 +25,8 @@ mod api;
 mod epg_smart_match;
 mod pattern_template;
 pub mod macros;
+mod paths;
+mod app_config;
 
 pub use base::*;
 pub use api::*;
@@ -52,3 +54,5 @@ pub use proxy::*;
 pub use trakt::*;
 pub use rename::*;
 pub use pattern_template::*;
+pub use paths::*;
+pub use app_config::*;

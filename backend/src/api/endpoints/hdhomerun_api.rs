@@ -157,8 +157,8 @@ where
 }
 
 fn create_device(app_state: &Arc<HdHomerunAppState>) -> Option<Device> {
-    if let Some(credentials) = app_state.app_state.config.get_user_credentials(&app_state.device.t_username) {
-        let server_info = app_state.app_state.config.get_user_server_info(&credentials);
+    if let Some(credentials) = app_state.app_state.app_config.get_user_credentials(&app_state.device.t_username) {
+        let server_info = app_state.app_state.app_config.get_user_server_info(&credentials);
         let device = &app_state.device;
         let device_url = format!("{}://{}:{}", server_info.protocol, server_info.host, device.port);
         Some(Device {
@@ -237,7 +237,7 @@ async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<AppConfig>, creden
             .body(axum::body::Body::from_stream(body_stream))
             .unwrap().into_response();
     } else if (use_all || use_xtream) && target.has_output(&TargetType::Xtream) {
-        let server_info = app_state.app_state.config.get_user_server_info(credentials);
+        let server_info = app_state.app_state.app_config.get_user_server_info(credentials);
         let base_url = server_info.get_base_url();
 
         let base_url_live = if credentials.proxy.is_redirect(PlaylistItemType::Live) || target.is_force_redirect(PlaylistItemType::Live) { None } else { Some(base_url.clone()) };
@@ -273,7 +273,7 @@ async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<AppConfig>, creden
 }
 
 async fn auth_lineup_json(AuthBasic((username, password)): AuthBasic, axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
-    let cfg = Arc::clone(&app_state.app_state.config);
+    let cfg = Arc::clone(&app_state.app_state.app_config);
     if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username) {
         if !username.eq(&credentials.username) || !password.eq(&credentials.password) {
             return axum::http::StatusCode::UNAUTHORIZED.into_response();
@@ -285,7 +285,7 @@ async fn auth_lineup_json(AuthBasic((username, password)): AuthBasic, axum::extr
 }
 
 async fn lineup_json(axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
-    let cfg = Arc::clone(&app_state.app_state.config);
+    let cfg = Arc::clone(&app_state.app_state.app_config);
     if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username) {
         let user_credentials = Arc::new(credentials);
         return lineup(&app_state, &cfg, &user_credentials, &target).await.into_response();

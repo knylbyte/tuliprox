@@ -118,7 +118,7 @@ pub async fn queue_download_file(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::extract::Json(req): axum::extract::Json<FileDownloadRequest>,
 ) ->  impl axum::response::IntoResponse + Send {
-    let app_config = &*app_state.config;
+    let app_config = &*app_state.app_config;
 
     let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_config.config);
     if let Some(download_cfg) = config.video.as_ref().unwrap().download.as_ref() {
@@ -129,7 +129,7 @@ pub async fn queue_download_file(
             Some(file_download) => {
                 app_state.downloads.queue.lock().await.push_back(file_download.clone());
                 if app_state.downloads.active.read().await.is_none() {
-                    match run_download_queue(&app_state.config, download_cfg, &app_state.downloads).await {
+                    match run_download_queue(&app_state.app_config, download_cfg, &app_state.downloads).await {
                         Ok(()) => {}
                         Err(err) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err}))).into_response(),
                     }

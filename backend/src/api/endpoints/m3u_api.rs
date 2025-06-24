@@ -22,7 +22,7 @@ async fn m3u_api(
 ) -> impl axum::response::IntoResponse + Send {
     match get_user_target(api_req, app_state) {
         Some((user, target)) => {
-            match m3u_load_rewrite_playlist(&app_state.config, &target, &user).await {
+            match m3u_load_rewrite_playlist(&app_state.app_config, &target, &user).await {
                 Ok(m3u_iter) => {
                     // Convert the iterator into a stream of `Bytes`
                     let content_stream = stream::iter(m3u_iter.map(|line| Ok::<Bytes, String>(Bytes::from([line.to_string().as_bytes(), b"\n"].concat()))));
@@ -69,7 +69,7 @@ async fn m3u_api_stream(
 ) -> impl axum::response::IntoResponse + Send {
     let (user, target) = try_option_bad_request!(get_user_target_by_credentials(stream_req.username, stream_req.password, api_req, app_state), false, format!("Could not find any user {}", stream_req.username));
     if user.permission_denied(app_state) {
-        return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserAccountExpired).into_response();
+        return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserAccountExpired).into_response();
     }
 
     let target_name = &target.name;
@@ -80,8 +80,8 @@ async fn m3u_api_stream(
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
     let virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
-    let pli = try_result_bad_request!(m3u_get_item_for_stream_id(virtual_id, &app_state.config, &target).await, true, format!("Failed to read m3u item for stream id {}", virtual_id));
-    let input = try_option_bad_request!(app_state.config.get_input_by_name(pli.input_name.as_str()), true, format!("Cant find input for target {target_name}, stream_id {virtual_id}"));
+    let pli = try_result_bad_request!(m3u_get_item_for_stream_id(virtual_id, &app_state.app_config, &target).await, true, format!("Failed to read m3u item for stream id {}", virtual_id));
+    let input = try_option_bad_request!(app_state.app_config.get_input_by_name(pli.input_name.as_str()), true, format!("Cant find input for target {target_name}, stream_id {virtual_id}"));
     let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
 
 
@@ -90,11 +90,11 @@ async fn m3u_api_stream(
 
     let session_url = if let Some(session) = &user_session {
         if session.permission == UserConnectionPermission::Exhausted {
-            return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
+            return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
         }
 
         if app_state.active_provider.is_over_limit(&session.provider).await {
-            return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
+            return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::ProviderConnectionsExhausted).into_response();
         }
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
@@ -107,7 +107,7 @@ async fn m3u_api_stream(
 
     let connection_permission = user.connection_permission(app_state).await;
     if connection_permission == UserConnectionPermission::Exhausted {
-        return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
+        return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
     }
 
     let context = ApiStreamContext::try_from(cluster).unwrap_or(ApiStreamContext::Live);
@@ -159,7 +159,7 @@ async fn m3u_api_resource(
         debug!("Target has no m3u playlist {target_name}");
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let m3u_item = match m3u_get_item_for_stream_id(m3u_stream_id, &app_state.config, &target).await {
+    let m3u_item = match m3u_get_item_for_stream_id(m3u_stream_id, &app_state.app_config, &target).await {
         Ok(item) => item,
         Err(err) => {
             error!("Failed to get m3u url: {}", sanitize_sensitive_info(err.to_string().as_str()));

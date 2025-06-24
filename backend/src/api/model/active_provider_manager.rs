@@ -2,21 +2,19 @@ use crate::model::{AppConfig, ConfigInput};
 use log::{debug, log_enabled};
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use crate::api::model::provider_config::{ProviderConfig, ProviderConfigWrapper};
 use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs};
 
 pub struct ProviderConnectionGuard {
-    // manager: Arc<ActiveProviderManager>,
     allocation: ProviderAllocation,
 }
 
 impl ProviderConnectionGuard {
-    pub fn new(_manager: Arc<ActiveProviderManager>, allocation: ProviderAllocation) -> Self {
+    pub fn new(allocation: ProviderAllocation) -> Self {
         Self {
-            // manager,
             allocation,
         }
     }
@@ -395,20 +393,18 @@ impl MultiProviderLineup {
 }
 
 pub struct ActiveProviderManager {
-    grace_period_millis: u64,
-    grace_period_timeout_secs: u64,
+    grace_period_millis: AtomicU64,
+    grace_period_timeout_secs: AtomicU64,
     providers: Arc<RwLock<Vec<ProviderLineup>>>,
 }
 
 impl ActiveProviderManager {
     pub async fn new(cfg: &AppConfig) -> Self {
-        let (grace_period_millis, grace_period_timeout_secs) = cfg.config.load().reverse_proxy.as_ref()
-            .and_then(|r| r.stream.as_ref())
-            .map_or_else(|| (default_grace_period_millis(), default_grace_period_timeout_secs()), |s| (s.grace_period_millis, s.grace_period_timeout_secs));
+        let (grace_period_millis, grace_period_timeout_secs) = Self::get_grace_options(cfg);
 
         let mut this = Self {
-            grace_period_millis,
-            grace_period_timeout_secs,
+            grace_period_millis: AtomicU64::new(grace_period_millis),
+            grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
             providers: Arc::new(RwLock::new(Vec::new())),
         };
         for source in &cfg.sources.load().sources {
@@ -419,12 +415,17 @@ impl ActiveProviderManager {
         this
     }
 
-    fn clone_inner(&self) -> Self {
-        Self {
-            grace_period_millis: self.grace_period_millis,
-            grace_period_timeout_secs: self.grace_period_timeout_secs,
-            providers: Arc::clone(&self.providers),
-        }
+    fn get_grace_options(cfg: &AppConfig) -> (u64, u64) {
+        let (grace_period_millis, grace_period_timeout_secs) = cfg.config.load().reverse_proxy.as_ref()
+            .and_then(|r| r.stream.as_ref())
+            .map_or_else(|| (default_grace_period_millis(), default_grace_period_timeout_secs()), |s| (s.grace_period_millis, s.grace_period_timeout_secs));
+        (grace_period_millis, grace_period_timeout_secs)
+    }
+
+    pub fn update_config(&self, cfg: &AppConfig) {
+        let (grace_period_millis, grace_period_timeout_secs) = Self::get_grace_options(cfg);
+        self.grace_period_millis.store(grace_period_millis, Ordering::Relaxed);
+        self.grace_period_timeout_secs.store(grace_period_timeout_secs, Ordering::Relaxed);
     }
 
     pub async fn add_provider(&mut self, input: &ConfigInput) {
@@ -474,7 +475,7 @@ impl ActiveProviderManager {
             Some((_lineup, config)) => config.force_allocate().await,
         };
 
-        ProviderConnectionGuard::new(Arc::new(self.clone_inner()), allocation)
+        ProviderConnectionGuard::new(allocation)
     }
 
     // Returns the next available provider connection
@@ -482,7 +483,8 @@ impl ActiveProviderManager {
         let providers = self.providers.read().await;
         let allocation = match Self::get_provider_config(input_name, &providers) {
             None => ProviderAllocation::Exhausted, // No Name matched, we don't have this provider
-            Some((lineup, _config)) => lineup.acquire(self.grace_period_millis > 0, self.grace_period_timeout_secs).await
+            Some((lineup, _config)) => lineup.acquire(self.grace_period_millis.load(Ordering::Relaxed) > 0,
+                                                      self.grace_period_timeout_secs.load(Ordering::Relaxed)).await
         };
 
         if log_enabled!(log::Level::Debug) {
@@ -495,7 +497,7 @@ impl ActiveProviderManager {
             }
         }
 
-        ProviderConnectionGuard::new(Arc::new(self.clone_inner()), allocation)
+        ProviderConnectionGuard::new(allocation)
     }
 
     // This method is used for redirects to cycle through provider
@@ -505,7 +507,7 @@ impl ActiveProviderManager {
         match Self::get_provider_config(input_name, &providers) {
             None => None,
             Some((lineup, _config)) => {
-                let cfg = lineup.get_next(self.grace_period_timeout_secs).await;
+                let cfg = lineup.get_next(self.grace_period_timeout_secs.load(Ordering::Relaxed)).await;
                 if log_enabled!(log::Level::Debug) {
                     if let Some(ref c) = cfg {
                         debug!("Using provider {}", c.name);
@@ -564,7 +566,7 @@ impl ActiveProviderManager {
     pub async fn is_over_limit(&self, provider_name: &str) -> bool {
         let providers = self.providers.read().await;
         if let Some((_, config)) = Self::get_provider_config(provider_name, &providers) {
-            config.is_over_limit(self.grace_period_timeout_secs).await
+            config.is_over_limit(self.grace_period_timeout_secs.load(Ordering::Relaxed)).await
         } else {
             false
         }

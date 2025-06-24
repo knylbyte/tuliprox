@@ -192,7 +192,7 @@ async fn xmltv_api(
         return axum::http::StatusCode::FORBIDDEN.into_response();
     }
 
-    let config = &app_state.config.config.load();
+    let config = &app_state.app_config.config.load();
     let Some(epg_path) = get_epg_path_for_target(config, &target) else {
         // No epg configured,  No processing or timeshift, epg can't be mapped to the channels.
         // we do not deliver epg

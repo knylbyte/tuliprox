@@ -30,22 +30,26 @@ fn create_video_stream(video_buffer: Option<&TransportStreamBuffer>, headers: &[
 }
 
 pub fn create_channel_unavailable_stream(cfg: &AppConfig, headers: &[(String, String)], status: StatusCode) -> ProviderStreamResponse {
-    let video = cfg.t_custom_stream_response.as_ref().and_then(|c| c.channel_unavailable.as_ref());
+    let custom_stream_response = cfg.custom_stream_response.load();
+    let video = custom_stream_response.as_ref().and_then(|c| c.channel_unavailable.as_ref());
     create_video_stream(video, headers, &format!("Streaming response channel unavailable for status {status}"))
 }
 
 pub fn create_user_connections_exhausted_stream(cfg: &AppConfig, headers: &[(String, String)]) -> ProviderStreamResponse {
-    let video = cfg.t_custom_stream_response.as_ref().and_then(|c| c.user_connections_exhausted.as_ref());
+    let custom_stream_response = cfg.custom_stream_response.load();
+    let video = custom_stream_response.as_ref().and_then(|c| c.user_connections_exhausted.as_ref());
     create_video_stream(video, headers, "Streaming response user connections exhausted")
 }
 
 pub fn create_provider_connections_exhausted_stream(cfg: &AppConfig, headers: &[(String, String)]) -> ProviderStreamResponse {
-    let video = cfg.t_custom_stream_response.as_ref().and_then(|c| c.provider_connections_exhausted.as_ref());
+    let custom_stream_response = cfg.custom_stream_response.load();
+    let video = custom_stream_response.as_ref().and_then(|c| c.provider_connections_exhausted.as_ref());
     create_video_stream(video, headers, "Streaming response provider connections exhausted")
 }
 
 pub fn create_user_account_expired_stream(cfg: &AppConfig, headers: &[(String, String)]) -> ProviderStreamResponse {
-    let video = cfg.t_custom_stream_response.as_ref().and_then(|c| c.user_account_expired.as_ref());
+    let custom_stream_response = cfg.custom_stream_response.load();
+    let video = custom_stream_response.as_ref().and_then(|c| c.user_account_expired.as_ref());
     create_video_stream(video, headers, "Streaming response user account expired")
 }
 

@@ -120,7 +120,7 @@ pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl axum::r
 
 pub fn get_user_target_by_username(username: &str, app_state: &AppState) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
     if !username.is_empty() {
-        return app_state.config.get_target_for_username(username);
+        return app_state.app_config.get_target_for_username(username);
     }
     None
 }
@@ -128,13 +128,13 @@ pub fn get_user_target_by_username(username: &str, app_state: &AppState) -> Opti
 pub fn get_user_target_by_credentials<'a>(username: &str, password: &str, api_req: &'a UserApiRequest,
                                                 app_state: &'a AppState) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
     if !username.is_empty() && !password.is_empty() {
-        app_state.config.get_target_for_user(username, password)
+        app_state.app_config.get_target_for_user(username, password)
     } else {
         let token = api_req.token.as_str().trim();
         if token.is_empty() {
             None
         } else {
-            app_state.config.get_target_for_user_by_token(token)
+            app_state.app_config.get_target_for_user_by_token(token)
         }
     }
 }
@@ -174,7 +174,7 @@ pub struct StreamOptions {
 /// Returns a `StreamOptions` instance with the resolved configuration.
 fn get_stream_options(app_state: &AppState) -> StreamOptions {
     let (stream_retry, stream_force_retry_secs, buffer_enabled, buffer_size) = app_state
-        .config.config.load()
+        .app_config.config.load()
         .reverse_proxy
         .as_ref()
         .and_then(|reverse_proxy| reverse_proxy.stream.as_ref())
@@ -298,7 +298,7 @@ async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, inpu
     let stream_response_params = match &*provider_connection_guard {
         ProviderAllocation::Exhausted => {
             debug!("Input  {} is exhausted. No connections allowed.", input.name);
-            let stream = create_provider_connections_exhausted_stream(&app_state.config, &[]);
+            let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
             ProviderStreamState::Custom(stream)
         }
         ProviderAllocation::Available(ref provider)
@@ -345,7 +345,7 @@ async fn create_stream_response_details(app_state: &AppState,
                                         force_provider: Option<&str>) -> StreamDetails {
     let mut streaming_strategy =
         resolve_streaming_strategy(app_state, stream_url, input, force_provider).await;
-    let config_grace_period_millis = app_state.config.config.load().reverse_proxy.as_ref()
+    let config_grace_period_millis = app_state.app_config.config.load().reverse_proxy.as_ref()
         .and_then(|r| r.stream.as_ref()).map_or_else(default_grace_period_millis, |s| s.grace_period_millis);
     let grace_period_millis = get_grace_period_millis(connection_permission, &streaming_strategy.provider_stream_state, config_grace_period_millis);
     match streaming_strategy.provider_stream_state {
@@ -367,7 +367,7 @@ async fn create_stream_response_details(app_state: &AppState,
             let ((stream, stream_info), reconnect_flag) = if let Ok(url) = parsed_url {
                 let provider_stream_factory_options = ProviderStreamFactoryOptions::new(item_type, share_stream, stream_options, &url, req_headers, streaming_strategy.input_headers.as_ref());
                 let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
-                let provider_stream = match create_provider_stream(Arc::clone(&app_state.config), Arc::clone(&app_state.http_client), provider_stream_factory_options).await {
+                let provider_stream = match create_provider_stream(Arc::clone(&app_state.app_config), Arc::clone(&app_state.http_client), provider_stream_factory_options).await {
                     None => (None, None),
                     Some((stream, info)) => {
                         (Some(stream), info)
@@ -555,7 +555,7 @@ pub async fn force_provider_stream_response(app_state: &AppState,
     }
     drop(stream_details.provider_connection_guard.take());
     if let (Some(stream), _stream_info) =
-        create_channel_unavailable_stream(&app_state.config, &[], StatusCode::BAD_GATEWAY)
+        create_channel_unavailable_stream(&app_state.app_config, &[], StatusCode::BAD_GATEWAY)
     {
         debug!("Streaming custom stream");
         axum::response::Response::builder().status(StatusCode::OK).body(Body::from_stream(stream)).unwrap().into_response()
@@ -579,7 +579,7 @@ pub async fn stream_response(app_state: &AppState,
     if log_enabled!(log::Level::Trace) { trace!("Try to open stream {}", sanitize_sensitive_info(stream_url)); }
 
     if connection_permission == UserConnectionPermission::Exhausted {
-        return create_custom_video_stream_response(&app_state.config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
+        return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
     }
 
     let share_stream = is_stream_share_enabled(item_type, target);
@@ -646,7 +646,7 @@ pub async fn stream_response(app_state: &AppState,
 }
 
 fn get_stream_throttle(app_state: &AppState) -> u64 {
-    app_state.config.config.load()
+    app_state.app_config.config.load()
         .reverse_proxy
         .as_ref()
         .and_then(|reverse_proxy| reverse_proxy.stream.as_ref())
@@ -775,7 +775,7 @@ pub fn get_username_from_auth_header(
     token: &str,
     app_state: &Arc<AppState>,
 ) -> Option<String> {
-    if let Some(web_auth_config) = &app_state.config.config.load().web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
+    if let Some(web_auth_config) = &app_state.app_config.config.load().web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
         let secret_key: &str = web_auth_config.secret.as_ref();
         if let Ok(token_data) = decode::<Claims>(
             token,

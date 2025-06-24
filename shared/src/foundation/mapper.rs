@@ -597,7 +597,7 @@ impl<'a> MapperContext<'a> {
             Expression::Identifier(ident)
             | Expression::VarAccess(ident, _) => {
                 if !identifiers.contains(ident.as_str()) {
-                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}", ident);
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}, {:?}", ident, expr);
                 }
             }
             Expression::NullValue
@@ -608,7 +608,7 @@ impl<'a> MapperContext<'a> {
                 match field {
                     RegexSource::Identifier(ident) => {
                         if !identifiers.contains(ident.as_str()) {
-                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}", ident);
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Regex identifier unknown {}, {:?}", ident, expr);
                         }
                     }
                     RegexSource::Field(_) => {}
@@ -665,7 +665,7 @@ impl<'a> MapperContext<'a> {
                 match identifier {
                     MatchCaseKey::Identifier(ident) => {
                         if !identifiers.contains(ident.as_str()) {
-                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}", ident);
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Match case identifier unknown {}", ident);
                         }
                         identifier_key.push_str(ident.as_str());
                         identifier_key.push_str(", ");
@@ -693,7 +693,7 @@ impl<'a> MapperContext<'a> {
             MapKey::Identifier(ident)
             | MapKey::VarAccess(ident, _) => {
                 if !identifiers.contains(ident.as_str()) {
-                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Identifier unknown {}", ident);
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Map key identifier unknown {}", ident);
                 }
             }
             MapKey::FieldAccess(_) => {}
