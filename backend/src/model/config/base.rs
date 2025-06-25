@@ -1,10 +1,42 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use log::{error, info};
 use path_clean::PathClean;
 use shared::error::{TuliproxError};
 use shared::model::ConfigDto;
+use shared::utils::set_sanitize_sensitive_info;
 use crate::model::{macros, ConfigApi, ReverseProxyConfig, ScheduleConfig};
 use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
-use crate::utils;
+use crate::{utils};
+
+
+fn create_directories(cfg: &Config, temp_path: &Path) {
+    // Collect the paths into a vector.
+    let paths_strings = [
+        Some(cfg.working_dir.clone()),
+        cfg.backup_dir.clone(),
+        cfg.user_config_dir.clone(),
+        cfg.video.as_ref().and_then(|v| v.download.as_ref()).and_then(|d| d.directory.clone()),
+        cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref().and_then(|c| if c.enabled { Some(c.dir.to_string()) } else { None }))
+    ];
+
+    let mut paths: Vec<PathBuf> = paths_strings.iter()
+        .filter_map(|opt| opt.as_ref()) // Get rid of the `Option`
+        .map(PathBuf::from).collect();
+    paths.push(temp_path.to_path_buf());
+
+    // Iterate over the paths, filter out `None` values, and process the `Some(path)` values.
+    for path in &paths {
+        if !path.exists() {
+            // Create the directory tree if it doesn't exist
+            let path_value = path.to_str().unwrap_or("?");
+            if let Err(e) = std::fs::create_dir_all(path) {
+                error!("Failed to create directory {path_value}: {e}");
+            } else {
+                info!("Created directory: {path_value}");
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Config {
@@ -45,7 +77,6 @@ impl Config {
         Ok(())
     }
 
-
     fn prepare_directories(&mut self) {
         fn set_directory(path: &mut Option<String>, default_subdir: &str, working_dir: &str) {
             *path = Some(match path.as_ref() {
@@ -64,6 +95,12 @@ impl Config {
         }
     }
 
+    pub fn update_runtime(&self) {
+        set_sanitize_sensitive_info(self.log.as_ref().is_none_or(|l| l.sanitize_sensitive_info));
+        let temp_path = PathBuf::from(&self.working_dir).join("tmp");
+        create_directories(self, &temp_path);
+        let _ = tempfile::env::override_temp_dir(&temp_path);
+    }
 }
 
 macros::from_impl!(Config);

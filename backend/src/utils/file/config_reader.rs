@@ -10,7 +10,7 @@ use log::{error, info, warn};
 use serde::Serialize;
 use shared::error::{create_tuliprox_error, info_err, to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigPaths, SourcesConfigDto};
-use shared::utils::CONSTANTS;
+use shared::utils::{CONSTANTS};
 use std::env;
 use std::fs::File;
 use std::io::{self, BufReader, Read};
@@ -125,7 +125,7 @@ pub fn read_app_config_dto(paths: &ConfigPaths,
 }
 
 
-pub fn read_app_config(paths: &mut ConfigPaths,
+pub fn read_initial_app_config(paths: &mut ConfigPaths,
                        resolve_env: bool,
                        include_computed: bool,
                        server_mode: bool) -> Result<AppConfig, TuliproxError> {
@@ -138,6 +138,7 @@ pub fn read_app_config(paths: &mut ConfigPaths,
     let config_dto = read_config_file(config_file, resolve_env)?;
     let mut config: Config = Config::from(config_dto);
     config.prepare(config_path)?;
+    config.update_runtime();
 
     if paths.mapping_file_path.is_none() {
         let mut path = config.mapping_path.as_ref().map_or_else(|| utils::get_default_mappings_path(config_path), ToString::to_string);
@@ -159,6 +160,7 @@ pub fn read_app_config(paths: &mut ConfigPaths,
         encrypt_secret: Default::default(),
     };
     app_config.prepare(include_computed)?;
+    app_config.print_info();
 
     if let Some(mappings_file) = &paths.mapping_file_path {
         match utils::read_mappings(mappings_file.as_str(), resolve_env) {

@@ -620,7 +620,7 @@ async fn xtream_get_stream_info_response(app_state: &AppState, user: &ProxyUserC
                     // Redirect is only possible for live streams, vod and series info needs to be modified
                     if user.proxy == ProxyType::Redirect && cluster == XtreamCluster::Live {
                         return redirect(&info_url).into_response();
-                    } else if let Ok(content) = xtream::get_xtream_stream_info(Arc::clone(&app_state.http_client), &app_state.app_config, user, &input, target, &pli, info_url.as_str(), cluster).await {
+                    } else if let Ok(content) = xtream::get_xtream_stream_info(Arc::clone(&app_state.http_client.load()), &app_state.app_config, user, &input, target, &pli, info_url.as_str(), cluster).await {
                         return axum::response::Response::builder()
                             .status(StatusCode::OK)
                             .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
@@ -680,7 +680,7 @@ async fn xtream_get_short_epg(app_state: &AppState, user: &ProxyUserCredentials,
                         }
 
                         // TODO serve epg from own db
-                        return match request::download_text_content(Arc::clone(&app_state.http_client), &input, info_url.as_str(), None).await {
+                        return match request::download_text_content(Arc::clone(&app_state.http_client.load()), &input, info_url.as_str(), None).await {
                             Ok(content) => (axum::http::StatusCode::OK, axum::Json(content)).into_response(),
                             Err(err) => {
                                 error!("Failed to download epg {}", sanitize_sensitive_info(err.to_string().as_str()));
@@ -731,7 +731,7 @@ async fn xtream_get_catchup_response(app_state: &AppState, target: &ConfigTarget
     let input = try_option_bad_request!(app_state.app_config.get_input_by_name(pli.input_name.as_str()));
     let info_url = try_option_bad_request!(xtream::get_xtream_player_api_action_url(&input, crate::model::XC_ACTION_GET_CATCHUP_TABLE)
         .map(|action_url| format!("{action_url}&{}={}&start={start}&end={end}", crate::model::XC_TAG_STREAM_ID, pli.provider_id)));
-    let content = try_result_bad_request!(xtream::get_xtream_stream_info_content(Arc::clone(&app_state.http_client), info_url.as_str(), &input).await);
+    let content = try_result_bad_request!(xtream::get_xtream_stream_info_content(Arc::clone(&app_state.http_client.load()), info_url.as_str(), &input).await);
     let mut doc: Map<String, Value> = try_result_bad_request!(serde_json::from_str(&content));
     let epg_listings = try_option_bad_request!(doc.get_mut(crate::model::XC_TAG_EPG_LISTINGS).and_then(Value::as_array_mut));
     let config = &app_state.app_config.config.load();

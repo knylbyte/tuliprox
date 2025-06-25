@@ -18,10 +18,8 @@ use chrono::{DateTime, Utc};
 use clap::{Parser};
 use log::{error, info};
 use std::fs::File;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use shared::model::ConfigPaths;
-use shared::utils::set_sanitize_sensitive_info;
 use crate::utils::init_logger;
 
 #[derive(Parser)]
@@ -95,6 +93,11 @@ fn main() {
 
     let mut config_paths = get_file_paths(&args);
 
+    if args.healthcheck {
+        healthcheck(config_paths.config_file_path.as_str());
+        return;
+    }
+
     init_logger(args.log_level.as_ref(), config_paths.config_file_path.as_str());
 
     info!("Version: {VERSION}");
@@ -102,40 +105,10 @@ fn main() {
         info!("Build time: {bts}");
     }
 
-    if args.healthcheck {
-        healthcheck(config_paths.config_file_path.as_str());
-    }
-
-    let app_config = utils::read_app_config(&mut config_paths, true, true, args.server).unwrap_or_else(|err| exit!("{}", err));
-
-    let config = app_config.config.load();
-    set_sanitize_sensitive_info(config.log.as_ref().is_none_or(|l| l.sanitize_sensitive_info));
-
-    let temp_path = PathBuf::from(&config.working_dir).join("tmp");
-    create_directories(&config, &temp_path);
-    let _ = tempfile::env::override_temp_dir(&temp_path);
+    let app_config = utils::read_initial_app_config(&mut config_paths, true, true, args.server).unwrap_or_else(|err| exit!("{}", err));
 
     let sources = app_config.sources.load();
     let targets = sources.validate_targets(args.target.as_ref()).unwrap_or_else(|err| exit!("{}", err));
-
-    let paths = app_config.paths.load();
-    info!("Current time: {}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"));
-    info!("Temp dir: {}", temp_path.display());
-    info!("Working dir: {:?}", &config.working_dir);
-    info!("Config dir: {:?}", &paths.config_path);
-    info!("Config file: {:?}", &paths.config_file_path);
-    info!("Source file: {:?}", &paths.sources_file_path);
-    info!("Api Proxy File: {:?}", &paths.api_proxy_file_path);
-    info!("Mapping file: {:?}", &paths.mapping_file_path.as_ref().map_or_else(|| "not used",  |v| v.as_str()));
-
-    if let Some(cache) = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
-        if cache.enabled {
-           info!("Cache dir: {}", cache.dir);
-        }
-    }
-    if let Some(resource_path) = paths.custom_stream_response_path.as_ref() {
-        info!("Resource path: {resource_path}");
-    }
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let () = rt.block_on(async {
@@ -161,35 +134,6 @@ fn get_file_paths(args: &Args) -> ConfigPaths {
         mapping_file_path: mappings_file, // need to be set after config read
         api_proxy_file_path: api_proxy_file,
         custom_stream_response_path: None,
-    }
-}
-
-fn create_directories(cfg: &Config, temp_path: &Path) {
-    // Collect the paths into a vector.
-    let paths_strings = [
-        Some(cfg.working_dir.clone()),
-        cfg.backup_dir.clone(),
-        cfg.user_config_dir.clone(),
-        cfg.video.as_ref().and_then(|v| v.download.as_ref()).and_then(|d| d.directory.clone()),
-        cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref().and_then(|c| if c.enabled { Some(c.dir.to_string()) } else { None }))
-    ];
-
-    let mut paths: Vec<PathBuf> = paths_strings.iter()
-        .filter_map(|opt| opt.as_ref()) // Get rid of the `Option`
-        .map(PathBuf::from).collect();
-    paths.push(temp_path.to_path_buf());
-
-    // Iterate over the paths, filter out `None` values, and process the `Some(path)` values.
-    for path in &paths {
-        if !path.exists() {
-            // Create the directory tree if it doesn't exist
-            let path_value = path.to_str().unwrap_or("?");
-            if let Err(e) = std::fs::create_dir_all(path) {
-                error!("Failed to create directory {path_value}: {e}");
-            } else {
-                info!("Created directory: {path_value}");
-            }
-        }
     }
 }
 
@@ -219,6 +163,4 @@ fn healthcheck(config_file: &str) {
             }
         }
     }
-
-    std::process::exit(1);
 }

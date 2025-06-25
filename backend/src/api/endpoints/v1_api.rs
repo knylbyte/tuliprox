@@ -141,7 +141,7 @@ async fn playlist_update(
     let process_targets = app_state.app_config.sources.load().validate_targets(user_targets.as_ref());
     match process_targets {
         Ok(valid_targets) => {
-            tokio::spawn(playlist::exec_processing(Arc::clone(&app_state.http_client), Arc::clone(&app_state.app_config), Arc::new(valid_targets)));
+            tokio::spawn(playlist::exec_processing(Arc::clone(&app_state.http_client.load()), Arc::clone(&app_state.app_config), Arc::new(valid_targets)));
             axum::http::StatusCode::OK.into_response()
         }
         Err(err) => {
@@ -198,7 +198,7 @@ async fn playlist_content(
     match playlist_req.rtype {
         PlaylistRequestType::Input => {
             if let Some(source_id) = playlist_req.source_id {
-                get_playlist(Arc::clone(&app_state.http_client), app_state.app_config.get_input_by_id(source_id).as_deref(), &config).await.into_response()
+                get_playlist(Arc::clone(&app_state.http_client.load()), app_state.app_config.get_input_by_id(source_id).as_deref(), &config).await.into_response()
             } else {
                 (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid input"}))).into_response()
             }
@@ -213,7 +213,7 @@ async fn playlist_content(
         PlaylistRequestType::Xtream => {
             if let (Some(url), Some(username), Some(password)) = (playlist_req.url.as_ref(), playlist_req.username.as_ref(), playlist_req.password.as_ref()) {
                 let input = create_config_input_for_xtream(username, password, url);
-                get_playlist(Arc::clone(&app_state.http_client), Some(&input), &config).await.into_response()
+                get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config).await.into_response()
             } else {
                 (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url"}))).into_response()
             }
@@ -221,7 +221,7 @@ async fn playlist_content(
         PlaylistRequestType::M3U => {
             if let Some(url) = playlist_req.url.as_ref() {
                 let input = create_config_input_for_m3u(url);
-                get_playlist(Arc::clone(&app_state.http_client), Some(&input), &config).await.into_response()
+                get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config).await.into_response()
             } else {
                 (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url"}))).into_response()
             }
@@ -268,7 +268,7 @@ struct IpCheck {
 async fn create_ipinfo_check(app_state: &Arc<AppState>) -> Option<(Option<String>, Option<String>)> {
     let config = app_state.app_config.config.load();
     if let Some(ipcheck) = config.ipcheck.as_ref() {
-        if let Ok(check) = get_ips(&app_state.http_client, ipcheck).await {
+        if let Ok(check) = get_ips(&app_state.http_client.load(), ipcheck).await {
             return Some(check);
         }
     }
@@ -276,7 +276,7 @@ async fn create_ipinfo_check(app_state: &Arc<AppState>) -> Option<(Option<String
 }
 
 async fn create_status_check(app_state: &Arc<AppState>) -> StatusCheck {
-    let cache = match app_state.cache.as_ref().as_ref() {
+    let cache = match app_state.cache.load().as_ref().as_ref() {
         None => None,
         Some(lock) => {
             Some(lock.lock().await.get_size_text())

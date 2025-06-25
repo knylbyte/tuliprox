@@ -7,27 +7,23 @@ use crate::api::endpoints::xmltv_api::xmltv_api_register;
 use crate::api::endpoints::xtream_api::xtream_api_register;
 use crate::api::model::active_provider_manager::ActiveProviderManager;
 use crate::api::model::active_user_manager::ActiveUserManager;
-use crate::api::model::app_state::{AppState, HdHomerunAppState};
+use crate::api::model::app_state::{create_cache, create_http_client, AppState, HdHomerunAppState};
 use crate::api::model::download::DownloadQueue;
 use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
 use crate::api::scheduler::start_scheduler;
 use crate::model::{AppConfig, Config, ProcessTargets, RateLimitConfig, ScheduleConfig};
 use crate::model::{Healthcheck};
 use crate::processing::processor::playlist;
-use crate::tools::lru_cache::LRUResourceCache;
 use log::{error, info};
-use reqwest::Client;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use axum::Router;
-use tokio::sync::Mutex;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use crate::api::api_utils::{get_build_time, get_server_time};
 use crate::api::config_watch::exec_config_watch;
 use crate::api::serve::serve;
-use crate::utils::request::create_client;
 use crate::VERSION;
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
@@ -56,35 +52,16 @@ async fn healthcheck() -> impl axum::response::IntoResponse {
 
 fn create_shared_data(app_config: &Arc<AppConfig>) -> AppState {
     let config = app_config.config.load();
-    let lru_cache = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()).and_then(|c| if c.enabled {
-        Some(Mutex::new(LRUResourceCache::new(c.size, &PathBuf::from(c.dir.as_str()))))
-    } else { None });
-    let cache = Arc::new(lru_cache);
-    let cache_scanner = Arc::clone(&cache);
-    tokio::spawn(async move {
-        if let Some(m) = cache_scanner.as_ref() {
-            let mut c = m.lock().await;
-            if let Err(err) = (*c).scan() {
-                error!("Failed to scan cache {err}");
-            }
-        }
-    });
-
+    let cache = create_cache(&config);
     let active_users = Arc::new(ActiveUserManager::new(&config));
     let active_provider = Arc::new(ActiveProviderManager::new(app_config));
-
-    let mut builder = create_client(app_config).http1_only(); // because of RAII connection dropping
-    if config.connect_timeout_secs > 0 {
-        builder = builder.connect_timeout(Duration::from_secs(u64::from(config.connect_timeout_secs)));
-    }
-
-    let client = builder.build().unwrap_or_else(|_| Client::new());
+    let client = create_http_client(app_config);
 
     AppState {
         app_config: Arc::clone(app_config),
-        http_client: Arc::new(client),
+        http_client: Arc::new(ArcSwap::from_pointee(client)),
         downloads: Arc::new(DownloadQueue::new()),
-        cache,
+        cache: Arc::new(ArcSwapOption::from(cache)),
         shared_stream_manager: Arc::new(SharedStreamManager::new()),
         active_users,
         active_provider,
@@ -236,8 +213,8 @@ pub async fn start_server(app_config: Arc<AppConfig>, targets: Arc<ProcessTarget
     let app_state = Arc::new(app_shared_data);
     let shared_data = Arc::clone(&app_state);
 
-    exec_scheduler(&Arc::clone(&shared_data.http_client), &app_config, &targets);
-    exec_update_on_boot(Arc::clone(&shared_data.http_client), &app_config, &targets);
+    exec_scheduler(&Arc::clone(&shared_data.http_client.load()), &app_config, &targets);
+    exec_update_on_boot(Arc::clone(&shared_data.http_client.load()), &app_config, &targets);
 
     if cfg.config_hot_reload {
         if let Err(err) = exec_config_watch(&app_state).await {

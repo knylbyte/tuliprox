@@ -1,7 +1,7 @@
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
 use crate::api::model::active_provider_manager::{ProviderAllocation, ProviderConnectionGuard};
 use crate::api::model::app_state::AppState;
-use crate::api::model::model_utils::{ get_stream_response_with_headers};
+use crate::api::model::model_utils::get_stream_response_with_headers;
 use crate::api::model::request::UserApiRequest;
 use crate::api::model::stream::{BoxedProviderStream, ProviderStreamInfo, ProviderStreamResponse};
 use crate::api::model::stream_error::StreamError;
@@ -12,25 +12,26 @@ use crate::api::model::streams::provider_stream_factory::{create_provider_stream
 use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
 use crate::api::model::streams::throttled_stream::ThrottledStream;
 use crate::auth::Claims;
+use crate::model::ConfigInput;
 use crate::model::{ConfigTarget, ProxyUserCredentials};
-use crate::model::{ConfigInput};
-use shared::model::{InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission, XtreamCluster};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::tools::lru_cache::LRUResourceCache;
-use shared::utils::{extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT};
-use shared::utils::{default_grace_period_millis, human_readable_byte_size};
 use crate::utils::create_new_file_for_write;
 use crate::utils::request;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
-use crate::{BUILD_TIMESTAMP};
+use crate::BUILD_TIMESTAMP;
+use arc_swap::ArcSwapOption;
 use axum::body::Body;
-use axum::http::{HeaderMap};
+use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, log_enabled, trace};
 use reqwest::StatusCode;
+use shared::model::{InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission, XtreamCluster};
+use shared::utils::{default_grace_period_millis, human_readable_byte_size};
+use shared::utils::{extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::BufWriter;
@@ -126,7 +127,7 @@ pub fn get_user_target_by_username(username: &str, app_state: &AppState) -> Opti
 }
 
 pub fn get_user_target_by_credentials<'a>(username: &str, password: &str, api_req: &'a UserApiRequest,
-                                                app_state: &'a AppState) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
+                                          app_state: &'a AppState) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
     if !username.is_empty() && !password.is_empty() {
         app_state.app_config.get_target_for_user(username, password)
     } else {
@@ -321,7 +322,7 @@ async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, inpu
     StreamingStrategy {
         provider_connection_guard: Some(provider_connection_guard),
         provider_stream_state: stream_response_params,
-        input_headers: Some(input.headers.clone())
+        input_headers: Some(input.headers.clone()),
     }
 }
 
@@ -367,7 +368,7 @@ async fn create_stream_response_details(app_state: &AppState,
             let ((stream, stream_info), reconnect_flag) = if let Ok(url) = parsed_url {
                 let provider_stream_factory_options = ProviderStreamFactoryOptions::new(item_type, share_stream, stream_options, &url, req_headers, streaming_strategy.input_headers.as_ref());
                 let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
-                let provider_stream = match create_provider_stream(Arc::clone(&app_state.app_config), Arc::clone(&app_state.http_client), provider_stream_factory_options).await {
+                let provider_stream = match create_provider_stream(Arc::clone(&app_state.app_config), Arc::clone(&app_state.http_client.load()), provider_stream_factory_options).await {
                     None => (None, None),
                     Some((stream, info)) => {
                         (Some(stream), info)
@@ -540,10 +541,10 @@ pub async fn force_provider_stream_response(app_state: &AppState,
         create_stream_response_details(app_state, &stream_options, &user_session.stream_url, req_headers, input, item_type, share_stream, connection_permission, Some(&user_session.provider)).await;
 
     if stream_details.has_stream() {
-        let provider_response = stream_details.stream_info.as_ref().map(|(h, sc,url)| (h.clone(), *sc, url.clone()));
+        let provider_response = stream_details.stream_info.as_ref().map(|(h, sc, url)| (h.clone(), *sc, url.clone()));
         let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission).await;
 
-        let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h,s,_)| (h, s)));
+        let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
         let mut response = axum::response::Response::builder().status(status_code);
         for (key, value) in &header_map {
             response = response.header(key, value);
@@ -604,7 +605,7 @@ pub async fn stream_response(app_state: &AppState,
             let shared_headers = provider_response.as_ref().map_or_else(Vec::new, |(h, _, _)| h.clone());
             SharedStreamManager::subscribe(app_state, stream_url, stream, shared_headers, stream_options.buffer_size).await;
             if let Some(broadcast_stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url).await {
-                let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h,s,_)| (h, s)));
+                let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
                 let mut response = axum::response::Response::builder()
                     .status(status_code);
                 for (key, value) in &header_map {
@@ -615,7 +616,7 @@ pub async fn stream_response(app_state: &AppState,
                 axum::http::StatusCode::BAD_REQUEST.into_response()
             }
         } else {
-            let session_url = provider_response.as_ref().and_then(|(_,_,u)| u.as_ref()).map_or_else(|| Cow::Borrowed(stream_url), |url| Cow::Owned(url.to_string()));
+            let session_url = provider_response.as_ref().and_then(|(_, _, u)| u.as_ref()).map_or_else(|| Cow::Borrowed(stream_url), |url| Cow::Owned(url.to_string()));
             if log_enabled!(log::Level::Debug) {
                 if session_url.eq(&stream_url) {
                     debug!("Streaming stream request from {}", sanitize_sensitive_info(stream_url));
@@ -623,7 +624,7 @@ pub async fn stream_response(app_state: &AppState,
                     debug!("Streaming stream request for {} from {}", sanitize_sensitive_info(stream_url), sanitize_sensitive_info(&session_url));
                 }
             }
-            let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h,s,_)| (h, s)));
+            let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
             let mut response = axum::response::Response::builder().status(status_code);
             for (key, value) in &header_map {
                 response = response.header(key, value);
@@ -687,14 +688,14 @@ pub fn get_headers_from_request(req_headers: &HeaderMap, filter: &HeaderFilter) 
         .collect()
 }
 
-fn get_add_cache_content(res_url: &str, cache: &Arc<Option<Mutex<LRUResourceCache>>>) -> Arc<dyn Fn(usize) + Send + Sync> {
+fn get_add_cache_content(res_url: &str, cache: &Arc<ArcSwapOption<Mutex<LRUResourceCache>>>) -> Arc<dyn Fn(usize) + Send + Sync> {
     let resource_url = String::from(res_url);
     let cache = Arc::clone(cache);
     let add_cache_content: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |size| {
         let res_url = resource_url.clone();
         let cache = Arc::clone(&cache);
         tokio::spawn(async move {
-            if let Some(cache) = cache.as_ref() {
+            if let Some(cache) = cache.load().as_ref() {
                 let _ = cache.lock().await.add_content(&res_url, size);
             }
         });
@@ -709,7 +710,7 @@ pub async fn resource_response(app_state: &AppState, resource_url: &str, req_hea
     }
     let filter: HeaderFilter = Some(Box::new(|key| key != "if-none-match" && key != "if-modified-since"));
     let req_headers = get_headers_from_request(req_headers, &filter);
-    if let Some(cache) = app_state.cache.as_ref() {
+    if let Some(cache) = app_state.cache.load().as_ref() {
         let mut guard = cache.lock().await;
         if let Some(resource_path) = guard.get_content(resource_url) {
             trace_if_enabled!("Responding resource from cache {}", sanitize_sensitive_info(resource_url));
@@ -718,7 +719,7 @@ pub async fn resource_response(app_state: &AppState, resource_url: &str, req_hea
     }
     trace_if_enabled!("Try to fetch resource {}", sanitize_sensitive_info(resource_url));
     if let Ok(url) = Url::parse(resource_url) {
-        let client = request::get_client_request(&app_state.http_client, input.map_or(InputFetchMethod::GET, |i| i.method), input.map(|i| &i.headers), &url, Some(&req_headers));
+        let client = request::get_client_request(&app_state.http_client.load(), input.map_or(InputFetchMethod::GET, |i| i.method), input.map(|i| &i.headers), &url, Some(&req_headers));
         match client.send().await {
             Ok(response) => {
                 let status = response.status();
@@ -730,8 +731,14 @@ pub async fn resource_response(app_state: &AppState, resource_url: &str, req_hea
                     }
 
                     let byte_stream = response.bytes_stream().map_err(|err| StreamError::reqwest(&err));
-                    if let Some(cache) = app_state.cache.as_ref() {
-                        let resource_path = cache.lock().await.store_path(resource_url);
+                    let cache_resource_path = {
+                        if let Some(cache) = app_state.cache.load().as_ref() {
+                            Some(cache.lock().await.store_path(resource_url))
+                        } else {
+                            None
+                        }
+                    };
+                    if let Some(resource_path) = cache_resource_path {
                         if let Ok(file) = create_new_file_for_write(&resource_path) {
                             let writer = BufWriter::new(file);
                             let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);

@@ -69,7 +69,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
         }
     };
 
-    match request::download_text_content(Arc::clone(&app_state.http_client), input, &request_url, None).await {
+    match request::download_text_content(Arc::clone(&app_state.http_client.load()), input, &request_url, None).await {
         Ok((content, response_url)) => {
             let rewrite_hls_props = RewriteHlsProps {
                 secret: &app_state.app_config.encrypt_secret,
