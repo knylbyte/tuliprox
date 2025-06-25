@@ -67,7 +67,7 @@ async fn m3u_api_stream(
     stream_req: ApiStreamRequest<'_>,
     // _addr: &std::net::SocketAddr,
 ) -> impl axum::response::IntoResponse + Send {
-    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(stream_req.username, stream_req.password, api_req, app_state), false, format!("Could not find any user {}", stream_req.username));
+    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(stream_req.username, stream_req.password, api_req, app_state), false, format!("Could not find any user for m3u stream {}", stream_req.username));
     if user.permission_denied(app_state) {
         return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserAccountExpired).into_response();
     }

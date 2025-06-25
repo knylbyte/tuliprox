@@ -10,7 +10,7 @@ mod modules;
 include_modules!();
 
 use crate::auth::generate_password;
-use crate::model::{AppConfig, Config, Healthcheck, HealthcheckConfig, ProcessTargets};
+use crate::model::{AppConfig, Config, Healthcheck, HealthcheckConfig, ProcessTargets, SourcesConfig};
 use crate::processing::processor::playlist;
 use crate::utils::{config_file_reader, resolve_env_var};
 use crate::utils::request::{create_client};
@@ -19,6 +19,8 @@ use clap::{Parser};
 use log::{error, info};
 use std::fs::File;
 use std::sync::Arc;
+use arc_swap::access::Access;
+use arc_swap::ArcSwap;
 use shared::model::ConfigPaths;
 use crate::utils::init_logger;
 
@@ -106,8 +108,9 @@ fn main() {
     }
 
     let app_config = utils::read_initial_app_config(&mut config_paths, true, true, args.server).unwrap_or_else(|err| exit!("{}", err));
+    print_info(&app_config);
 
-    let sources = app_config.sources.load();
+    let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&app_config.sources);
     let targets = sources.validate_targets(args.target.as_ref()).unwrap_or_else(|err| exit!("{}", err));
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -118,6 +121,28 @@ fn main() {
             start_in_cli_mode(Arc::new(app_config), Arc::new(targets)).await;
         }
     });
+}
+
+fn print_info(app_config: &AppConfig) {
+    let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_config.config);
+    let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&app_config.paths);
+    info!("Current time: {}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"));
+    info!("Temp dir: {}", tempfile::env::temp_dir().display());
+    info!("Working dir: {:?}", &config.working_dir);
+    info!("Config dir: {:?}", &paths.config_path);
+    info!("Config file: {:?}", &paths.config_file_path);
+    info!("Source file: {:?}", &paths.sources_file_path);
+    info!("Api Proxy File: {:?}", &paths.api_proxy_file_path);
+    info!("Mapping file: {:?}", &paths.mapping_file_path.as_ref().map_or_else(|| "not used",  |v| v.as_str()));
+
+    if let Some(cache) = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
+        if cache.enabled {
+            info!("Cache dir: {}", cache.dir);
+        }
+    }
+    if let Some(resource_path) = paths.custom_stream_response_path.as_ref() {
+        info!("Resource path: {resource_path}");
+    }
 }
 
 fn get_file_paths(args: &Args) -> ConfigPaths {

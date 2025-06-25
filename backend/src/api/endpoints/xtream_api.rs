@@ -178,7 +178,7 @@ async fn xtream_player_api_stream(
     api_req: &UserApiRequest,
     stream_req: ApiStreamRequest<'_>,
 ) -> impl IntoResponse + Send {
-    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(stream_req.username, stream_req.password, api_req, app_state), false, format!("Could not find any user {}", stream_req.username));
+    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(stream_req.username, stream_req.password, api_req, app_state), false, format!("Could not find any user for xc stream {}", stream_req.username));
     if user.permission_denied(app_state) {
         return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserAccountExpired).into_response();
     }
@@ -464,7 +464,7 @@ async fn xtream_player_api_resource(
     app_state: &Arc<AppState>,
     resource_req: ApiStreamRequest<'_>,
 ) -> impl IntoResponse {
-    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(resource_req.username, resource_req.password, api_req, app_state), false, format!("Could not find any user {}", resource_req.username));
+    let (user, target) = try_option_bad_request!(get_user_target_by_credentials(resource_req.username, resource_req.password, api_req, app_state), false, format!("Could not find any user xc resource {}", resource_req.username));
     if user.permission_denied(app_state) {
         return axum::http::StatusCode::FORBIDDEN.into_response();
     }

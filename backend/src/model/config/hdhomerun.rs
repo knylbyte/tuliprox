@@ -1,7 +1,7 @@
 use shared::model::{HdHomeRunConfigDto, HdHomeRunDeviceConfigDto};
 use crate::model::macros;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HdHomeRunDeviceConfig {
     pub friendly_name: String,
     pub manufacturer: String,

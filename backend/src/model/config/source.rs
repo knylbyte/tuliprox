@@ -78,6 +78,7 @@ impl SourcesConfig {
         let mut enabled = true;
         let mut inputs: Vec<u16> = vec![];
         let mut targets: Vec<u16> = vec![];
+        let mut target_names: Vec<String> = vec![];
         if let Some(user_targets) = target_args {
             let mut check_targets: HashMap<String, u16> = user_targets.iter().map(|t| (t.to_lowercase(), 0)).collect();
             for source in &self.sources {
@@ -87,6 +88,7 @@ impl SourcesConfig {
                         let key = user_target.to_lowercase();
                         if target.name.eq_ignore_ascii_case(key.as_str()) {
                             targets.push(target.id);
+                            target_names.push(target.name.to_string());
                             target_added = true;
                             if let Some(value) = check_targets.get(key.as_str()) {
                                 check_targets.insert(key, value + 1);
@@ -113,6 +115,7 @@ impl SourcesConfig {
             enabled,
             inputs,
             targets,
+            target_names,
         })
     }
 

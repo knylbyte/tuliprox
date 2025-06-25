@@ -1,5 +1,5 @@
-use crate::api::model::app_state::AppState;
-use crate::utils;
+use crate::utils::exit;
+use crate::api::model::app_state::{update_app_state, AppState};
 use crate::utils::{is_directory, read_config_file, read_sources_file};
 use log::{debug, error, info};
 use notify::event::{AccessKind, AccessMode};
@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
 use crate::model::{Config, SourcesConfig};
+use crate::utils;
 
 enum ConfigFile {
     Config,
@@ -65,7 +66,7 @@ impl ConfigFile {
         let mut config: Config = Config::from(config_dto);
         config.prepare(paths.config_path.as_str())?;
         info!("Loaded config file {config_file}");
-        app_state.set_config(config).await?;
+        update_app_state(app_state, config).await?;
         Ok(())
     }
 
@@ -75,7 +76,11 @@ impl ConfigFile {
         let sources_dto = read_sources_file(sources_file, true, true)?;
         let sources: SourcesConfig = sources_dto.into();
         info!("Loaded sources file {sources_file}");
+
+        let targets = sources.validate_targets(Some(&app_state.forced_targets.load().target_names)).unwrap_or_else(|err| exit!("{}", err));
+        app_state.forced_targets.store(Arc::new(targets));
         app_state.app_config.set_sources(sources)?;
+
         Ok(())
     }
 

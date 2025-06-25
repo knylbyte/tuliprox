@@ -42,6 +42,20 @@ pub fn generate_random_string(length: usize) -> String {
     random_string
 }
 
+// compare 2 small vecs without HashSet
+pub fn small_vecs_equal_unordered<T: PartialEq>(a: &[T], b: &[T]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+
+    for item in a {
+        if !b.iter().any(|x| x == item) {
+            return false;
+        }
+    }
+    true
+}
+
 pub fn get_non_empty_str<'a>(first: &'a str, second: &'a str, third: &'a str) -> &'a str {
     if !first.is_empty() {
         first

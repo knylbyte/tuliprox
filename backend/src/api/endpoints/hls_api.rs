@@ -98,7 +98,7 @@ async fn hls_api_stream(
 ) -> impl axum::response::IntoResponse + Send {
     let (user, target) = try_option_bad_request!(
         app_state.app_config.get_target_for_user(&params.username, &params.password), false,
-        format!("Could not find any user {}", params.username));
+        format!("Could not find any user for hls stream {}", params.username));
     if user.permission_denied(&app_state) {
         return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserAccountExpired).into_response();
     }

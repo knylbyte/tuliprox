@@ -188,7 +188,7 @@ impl ApiProxyConfig {
             .find(|credential| credential.username == username)
             .cloned();
         if result.is_none() && (username != "test" || username != "api") {
-            debug!("Could not find any user {username}");
+            debug!("Could not find any user credentials for: {username}");
         }
         result
     }

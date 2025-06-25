@@ -15,6 +15,7 @@ pub struct ProcessTargets {
     pub enabled: bool,
     pub inputs: Vec<u16>,
     pub targets: Vec<u16>,
+    pub target_names: Vec<String>,
 }
 
 impl ProcessTargets {

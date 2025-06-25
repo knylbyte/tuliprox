@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use arc_swap::access::Access;
-use log::{debug, error, info};
+use log::{debug, error};
 use rand::Rng;
 use shared::create_tuliprox_error_result;
 use shared::error::{TuliproxError, TuliproxErrorKind};
@@ -46,7 +46,6 @@ impl AppConfig {
     pub fn set_config(&self, config: Config) -> Result<(), TuliproxError> {
         self.config.store(Arc::new(config));
         self.prepare_custom_stream_response();
-        self.print_info();
         Ok(())
     }
 
@@ -377,27 +376,6 @@ impl AppConfig {
         self.get_server_info(server_info_name)
     }
 
-    pub fn print_info(&self) {
-        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
-        let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&self.paths);
-        info!("Current time: {}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"));
-        info!("Temp dir: {}", tempfile::env::temp_dir().display());
-        info!("Working dir: {:?}", &config.working_dir);
-        info!("Config dir: {:?}", &paths.config_path);
-        info!("Config file: {:?}", &paths.config_file_path);
-        info!("Source file: {:?}", &paths.sources_file_path);
-        info!("Api Proxy File: {:?}", &paths.api_proxy_file_path);
-        info!("Mapping file: {:?}", &paths.mapping_file_path.as_ref().map_or_else(|| "not used",  |v| v.as_str()));
-
-        if let Some(cache) = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
-            if cache.enabled {
-                info!("Cache dir: {}", cache.dir);
-            }
-        }
-        if let Some(resource_path) = paths.custom_stream_response_path.as_ref() {
-            info!("Resource path: {resource_path}");
-        }
-    }
 }
 
 
