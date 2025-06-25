@@ -22,9 +22,9 @@ pub struct AppState {
 
 impl AppState {
 
-    pub fn set_config(&self, config: Config) -> Result<(), TuliproxError> {
+    pub async fn set_config(&self, config: Config) -> Result<(), TuliproxError> {
         self.active_users.update_config(&config);
-        self.active_provider.update_config(&self.app_config);
+        self.active_provider.update_config(&self.app_config).await;
         self.app_config.set_config(config)
     }
 

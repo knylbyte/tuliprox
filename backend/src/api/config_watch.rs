@@ -58,14 +58,14 @@ impl ConfigFile {
         Ok(())
     }
 
-    fn load_config(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+    async fn load_config(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
         let paths =  app_state.app_config.paths.load();
         let config_file = paths.config_file_path.as_str();
         let config_dto = read_config_file(config_file, true)?;
         let mut config: Config = Config::from(config_dto);
         config.prepare(paths.config_path.as_str())?;
         info!("Loaded config file {config_file}");
-        app_state.set_config(config)?;
+        app_state.set_config(config).await?;
         Ok(())
     }
 
@@ -79,12 +79,12 @@ impl ConfigFile {
         Ok(())
     }
 
-    pub(crate) fn reload(&self, file_path: &Path, app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+    pub(crate) async fn reload(&self, file_path: &Path, app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
         debug!("File change detected {}", file_path.display());
         match self {
             ConfigFile::ApiProxy => ConfigFile::load_api_proxy(app_state),
             ConfigFile::Mapping => ConfigFile::load_mappping(app_state),
-            ConfigFile::Config => ConfigFile::load_config(app_state),
+            ConfigFile::Config => ConfigFile::load_config(app_state).await,
             ConfigFile::Sources => ConfigFile::load_sources(app_state),
         }
     }
@@ -126,13 +126,13 @@ pub async fn exec_config_watch(app_state: &Arc<AppState>) -> Result<(), Tuliprox
                     if let EventKind::Access(AccessKind::Close(AccessMode::Write)) = event.kind {
                         for path in event.paths {
                             if let Some((config_file, _is_dir)) = files.get(&path) {
-                                if let Err(err) = config_file.reload(&path, &watcher_app_state) {
+                                if let Err(err) = config_file.reload(&path, &watcher_app_state).await {
                                     error!("Failed to reload config file {}: {err}", path.display());
                                 }
                             } else if recursive_mode == RecursiveMode::Recursive && path.extension().is_some_and(|ext| ext == "yml") {
                                 for (key, (config_file, is_dir)) in &files {
                                     if *is_dir && path.starts_with(key) {
-                                        if let Err(err) = config_file.reload(&path, &watcher_app_state) {
+                                        if let Err(err) = config_file.reload(&path, &watcher_app_state).await {
                                             error!("Failed to reload config file {}: {err}", path.display());
                                         }
                                     }

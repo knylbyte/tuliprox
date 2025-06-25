@@ -93,7 +93,6 @@ impl From<&ConfigInputAliasDto> for ConfigInputAlias {
     }
 }
 
-
 #[derive(Debug, Clone, Default)]
 pub struct ConfigInput {
     pub id: u16,

@@ -54,7 +54,7 @@ async fn healthcheck() -> impl axum::response::IntoResponse {
     axum::Json(create_healthcheck())
 }
 
-async fn create_shared_data(app_config: &Arc<AppConfig>) -> AppState {
+fn create_shared_data(app_config: &Arc<AppConfig>) -> AppState {
     let config = app_config.config.load();
     let lru_cache = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()).and_then(|c| if c.enabled {
         Some(Mutex::new(LRUResourceCache::new(c.size, &PathBuf::from(c.dir.as_str()))))
@@ -71,7 +71,7 @@ async fn create_shared_data(app_config: &Arc<AppConfig>) -> AppState {
     });
 
     let active_users = Arc::new(ActiveUserManager::new(&config));
-    let active_provider = Arc::new(ActiveProviderManager::new(app_config).await);
+    let active_provider = Arc::new(ActiveProviderManager::new(app_config));
 
     let mut builder = create_client(app_config).http1_only(); // because of RAII connection dropping
     if config.connect_timeout_secs > 0 {
@@ -232,7 +232,7 @@ pub async fn start_server(app_config: Arc<AppConfig>, targets: Arc<ProcessTarget
     if web_ui_enabled {
         infos.push(format!("Web root: {}", web_dir_path.display()));
     }
-    let app_shared_data = create_shared_data(&app_config).await;
+    let app_shared_data = create_shared_data(&app_config);
     let app_state = Arc::new(app_shared_data);
     let shared_data = Arc::clone(&app_state);
 
