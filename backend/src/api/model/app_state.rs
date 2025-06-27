@@ -284,7 +284,7 @@ fn hdhomerun_changed(a: &HdHomeRunConfig, b: &HdHomeRunConfig) -> bool {
 }
 
 fn string_changed(a: &str, b: &str) -> bool {
-    a == b
+    a != b
 }
 
 #[derive(Clone)]

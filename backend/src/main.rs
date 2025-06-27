@@ -188,4 +188,5 @@ fn healthcheck(config_file: &str) {
             }
         }
     }
+    std::process::exit(1);
 }
