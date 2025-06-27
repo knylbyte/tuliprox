@@ -96,10 +96,3 @@ pub struct TraktMatchResult<'a> {
     pub match_score: f64,
     // pub match_type: MatchType,
 }
-
-// #[derive(Debug, Clone, PartialEq)]
-// pub enum MatchType {
-//     TmdbExact,
-//     FuzzyTitle,
-//     FuzzyTitleYear,
-// }

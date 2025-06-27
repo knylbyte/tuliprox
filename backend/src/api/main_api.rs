@@ -174,19 +174,14 @@ pub async fn start_server(app_config: Arc<AppConfig>, targets: Arc<ProcessTarget
     let app_state = Arc::new(app_shared_data);
     let shared_data = Arc::clone(&app_state);
 
-    let (cancel_token_scheduler, cancel_token_hdhomerun) = {
+    let (cancel_token_scheduler, cancel_token_hdhomerun, cancel_token_file_watch) = {
         let cancel_tokens = app_state.cancel_tokens.load();
-        (cancel_tokens.scheduler.clone(), cancel_tokens.hdhomerun.clone())
+        (cancel_tokens.scheduler.clone(), cancel_tokens.hdhomerun.clone(), cancel_tokens.file_watch.clone())
     };
 
     exec_scheduler(&Arc::clone(&shared_data.http_client.load()), &app_config, &targets, &cancel_token_scheduler);
     exec_update_on_boot(Arc::clone(&shared_data.http_client.load()), &app_config, &targets);
-
-    if cfg.config_hot_reload {
-        if let Err(err) = exec_config_watch(&app_state).await {
-            error!("Failed to start config watch: {err}");
-        }
-    }
+    exec_config_watch(&app_state, &cancel_token_file_watch);
 
     let web_auth_enabled = is_web_auth_enabled(&cfg, web_ui_enabled);
 

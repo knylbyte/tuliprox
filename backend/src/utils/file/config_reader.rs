@@ -134,7 +134,7 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
     let sources_file = paths.sources_file_path.as_str();
 
     let sources_dto = read_sources_file(sources_file, resolve_env, include_computed)?;
-    let sources: SourcesConfig = sources_dto.into();
+    let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
     let config_dto = read_config_file(config_file, resolve_env)?;
     let mut config: Config = Config::from(config_dto);
     config.prepare(config_path)?;

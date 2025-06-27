@@ -5,11 +5,11 @@ use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{macros, EpgConfig};
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};
 use std::collections::{HashMap};
+use std::path::PathBuf;
 use url::Url;
 use shared::check_input_credentials;
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType};
 use crate::utils;
-
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
@@ -114,10 +114,10 @@ pub struct ConfigInput {
 
 impl ConfigInput {
 
-    pub fn prepare(&mut self) -> Result<(), TuliproxError> {
-        self.prepare_batch()?;
+    pub fn prepare(&mut self) -> Result<Option<PathBuf>, TuliproxError> {
+        let batch_file_path = self.prepare_batch()?;
         check_input_credentials!(self, self.input_type, false);
-        Ok(())
+        Ok(batch_file_path)
     }
 
     pub fn get_user_info(&self) -> Option<InputUserInfo> {
@@ -139,7 +139,7 @@ impl ConfigInput {
         None
     }
 
-    fn prepare_batch(&mut self) -> Result<(), TuliproxError> {
+    fn prepare_batch(&mut self) -> Result<Option<PathBuf>, TuliproxError> {
         if self.input_type == InputType::M3uBatch || self.input_type == InputType::XtreamBatch {
             let input_type = if self.input_type == InputType::M3uBatch {
                 InputType::M3u
@@ -148,7 +148,7 @@ impl ConfigInput {
             };
 
             match utils::csv_read_inputs(self) {
-                Ok(mut batch_aliases) => {
+                Ok((file_path, mut batch_aliases)) => {
                     if !batch_aliases.is_empty() {
                         batch_aliases.reverse();
                         if let Some(mut first) = batch_aliases.pop() {
@@ -170,14 +170,15 @@ impl ConfigInput {
                             }
                         }
                     }
+                    self.input_type = input_type;
+                    return Ok(Some(file_path));
                 }
                 Err(err) => {
                     return Err(TuliproxError::new(TuliproxErrorKind::Info, err.to_string()));
                 }
             }
-            self.input_type = input_type;
         }
-        Ok(())
+        Ok(None)
     }
 }
 

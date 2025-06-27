@@ -3,7 +3,7 @@ use crate::api::model::active_user_manager::ActiveUserManager;
 use crate::api::model::download::DownloadQueue;
 use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
 use crate::api::scheduler::exec_scheduler;
-use crate::model::{AppConfig, Config, HdHomeRunConfig, HdHomeRunDeviceConfig, ProcessTargets, ScheduleConfig};
+use crate::model::{AppConfig, Config, HdHomeRunConfig, HdHomeRunDeviceConfig, ProcessTargets, ScheduleConfig, SourcesConfig};
 use crate::tools::lru_cache::LRUResourceCache;
 use crate::utils::request::create_client;
 use arc_swap::{ArcSwap, ArcSwapAny};
@@ -16,19 +16,76 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
+use crate::api::config_watch::exec_config_watch;
+
+macro_rules! cancel_service {
+    ($field: ident, $changes:expr, $cancel_tokens:expr) => {
+       if $changes.$field {
+            $cancel_tokens.$field.cancel();
+            CancellationToken::default()
+        } else {
+            $cancel_tokens.$field.clone()
+        }
+    };
+}
 
 pub(in crate::api) struct UpdateChanges {
     scheduler: bool,
     hdhomerun: bool,
+    file_watch: bool,
 }
 
-pub async fn update_app_state(app_state: &Arc<AppState>, config: Config) -> Result<(), TuliproxError> {
+impl UpdateChanges {
+    pub(in crate::api) fn modified(&self) -> bool {
+        self.scheduler || self.hdhomerun || self.file_watch
+    }
+}
+
+pub async fn update_app_state_config(app_state: &Arc<AppState>, config: Config) -> Result<(), TuliproxError> {
     let updates = app_state.set_config(config).await?;
-    start_services(app_state, &updates);
+    restart_services(app_state, &updates);
     Ok(())
 }
 
+pub async fn update_app_state_sources(app_state: &Arc<AppState>, sources: SourcesConfig) -> Result<(), TuliproxError> {
+    let targets = sources.validate_targets(Some(&app_state.forced_targets.load().target_names))?;
+    app_state.forced_targets.store(Arc::new(targets));
+    let updates = app_state.set_sources(sources).await?;
+    restart_services(app_state, &updates);
+    Ok(())
+}
+
+fn restart_services(app_state: &Arc<AppState>, changes: &UpdateChanges) {
+    if !changes.modified() {
+        return;
+    }
+    cancel_services(app_state, changes);
+    start_services(app_state, changes);
+}
+
+fn cancel_services(app_state: &Arc<AppState>, changes: &UpdateChanges) {
+    if !changes.modified() {
+        return;
+    }
+    let cancel_tokens = app_state.cancel_tokens.load();
+
+    let scheduler = cancel_service!(scheduler, changes, cancel_tokens);
+    let hdhomerun = cancel_service!(hdhomerun, changes, cancel_tokens);
+    let file_watch = cancel_service!(file_watch, changes, cancel_tokens);
+
+    let tokens = CancelTokens {
+        scheduler,
+        hdhomerun,
+        file_watch,
+    };
+
+    app_state.cancel_tokens.store(Arc::new(tokens));
+}
+
 fn start_services(app_state: &Arc<AppState>, changes: &UpdateChanges) {
+    if !changes.modified() {
+        return;
+    }
     if changes.scheduler {
         exec_scheduler(&Arc::clone(&app_state.http_client.load()), &app_state.app_config,
                        &app_state.forced_targets.load(), &app_state.cancel_tokens.load().scheduler);
@@ -36,7 +93,12 @@ fn start_services(app_state: &Arc<AppState>, changes: &UpdateChanges) {
 
     if changes.hdhomerun && app_state.app_config.api_proxy.load().is_some() {
         let mut infos = Vec::new();
-        crate::api::main_api::start_hdhomerun(&app_state.app_config, app_state, &mut infos, &app_state.cancel_tokens.load().hdhomerun);
+        crate::api::main_api::start_hdhomerun(&app_state.app_config, app_state, &mut infos,
+                                              &app_state.cancel_tokens.load().hdhomerun);
+    }
+
+    if changes.file_watch {
+        exec_config_watch(app_state, &app_state.cancel_tokens.load().file_watch);
     }
 }
 
@@ -73,12 +135,14 @@ pub fn create_cache(config: &Config) -> Option<Arc<Mutex<LRUResourceCache>>> {
 pub struct CancelTokens {
     pub(crate) scheduler: CancellationToken,
     pub(crate) hdhomerun: CancellationToken,
+    pub(crate) file_watch: CancellationToken,
 }
 impl Default for CancelTokens {
     fn default() -> Self {
         Self {
             scheduler: CancellationToken::new(),
             hdhomerun: CancellationToken::new(),
+            file_watch: CancellationToken::new(),
         }
     }
 }
@@ -109,11 +173,11 @@ pub struct AppState {
 
 impl AppState {
     pub(in crate::api::model) async fn set_config(&self, config: Config) -> Result<UpdateChanges, TuliproxError> {
-        let changes = self.detect_changes(&config);
+        let changes = self.detect_changes_for_config(&config);
         config.update_runtime();
         self.active_users.update_config(&config);
-        self.active_provider.update_config(&self.app_config).await;
         self.app_config.set_config(config)?;
+        self.active_provider.update_config(&self.app_config).await;
         self.update_config().await;
         Ok(changes)
     }
@@ -144,6 +208,13 @@ impl AppState {
         }
     }
 
+    pub(in crate::api::model) async fn set_sources(&self, sources: SourcesConfig) -> Result<UpdateChanges, TuliproxError> {
+        let changes = self.detect_changes_for_sources(&sources);
+        self.app_config.set_sources(sources)?;
+        self.active_provider.update_config(&self.app_config).await;
+        Ok(changes)
+    }
+
     pub async fn get_active_connections_for_user(&self, username: &str) -> u32 {
         self.active_users.user_connections(username).await
     }
@@ -152,29 +223,29 @@ impl AppState {
         self.active_users.connection_permission(username, max_connections).await
     }
 
-    fn detect_changes(&self, config: &Config) -> UpdateChanges {
+    fn detect_changes_for_config(&self, config: &Config) -> UpdateChanges {
         let old_config = self.app_config.config.load();
         let changed_schedules = change_detect!(schedules_changed, old_config.schedules.as_ref(), config.schedules.as_ref());
         let changed_hdhomerun = change_detect!(hdhomerun_changed, old_config.hdhomerun.as_ref(), config.hdhomerun.as_ref());
+        let changed_file_watch = change_detect!(string_changed, old_config.mapping_path.as_ref(), config.mapping_path.as_ref());
 
-        if changed_schedules || changed_hdhomerun {
-            let cancel_tokens = self.cancel_tokens.load();
-            if changed_schedules {
-                cancel_tokens.scheduler.cancel();
-            }
-            if changed_hdhomerun {
-                cancel_tokens.hdhomerun.cancel();
-            }
-
-            let tokens = CancelTokens {
-                scheduler: if changed_schedules { CancellationToken::default() } else { cancel_tokens.scheduler.clone() },
-                hdhomerun: if changed_hdhomerun { CancellationToken::default() } else { cancel_tokens.hdhomerun.clone() },
-            };
-            self.cancel_tokens.store(Arc::new(tokens));
-        }
         UpdateChanges {
             scheduler: changed_schedules,
             hdhomerun: changed_hdhomerun,
+            file_watch: changed_file_watch,
+        }
+    }
+
+    fn detect_changes_for_sources(&self, sources: &SourcesConfig) -> UpdateChanges {
+        let file_watch_changed = {
+            let old_sources = self.app_config.sources.load();
+            old_sources.get_input_files() !=  sources.get_input_files()
+        };
+
+        UpdateChanges {
+            scheduler: false,
+            hdhomerun: false,
+            file_watch: file_watch_changed,
         }
     }
 }
@@ -210,6 +281,10 @@ fn hdhomerun_changed(a: &HdHomeRunConfig, b: &HdHomeRunConfig) -> bool {
         return true;
     }
     false
+}
+
+fn string_changed(a: &str, b: &str) -> bool {
+    a == b
 }
 
 #[derive(Clone)]

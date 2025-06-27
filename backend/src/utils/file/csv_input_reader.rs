@@ -151,12 +151,12 @@ pub fn csv_read_inputs_from_reader(batch_input_type: InputType, reader: impl Buf
 }
 
 
-pub fn csv_read_inputs(input: &ConfigInput) -> Result<Vec<ConfigInputAlias>, io::Error> {
+pub fn csv_read_inputs(input: &ConfigInput) -> Result<(PathBuf, Vec<ConfigInputAlias>), io::Error> {
     let file_uri = input.url.to_string();
     let file_path = get_csv_file_path(&file_uri)?;
     match get_local_file_content(&file_path) {
         Ok(content) => {
-            csv_read_inputs_from_reader(input.input_type, EnvResolvingReader::new(file_reader(Cursor::new(content))))
+            Ok((file_path, csv_read_inputs_from_reader(input.input_type, EnvResolvingReader::new(file_reader(Cursor::new(content))))?))
         }
         Err(err) => {
             Err(err)
@@ -164,7 +164,7 @@ pub fn csv_read_inputs(input: &ConfigInput) -> Result<Vec<ConfigInputAlias>, io:
     }
 }
 
-fn get_csv_file_path(file_uri: &String) -> Result<PathBuf, Error> {
+fn get_csv_file_path(file_uri: &str) -> Result<PathBuf, Error> {
     if let Ok(url) = file_uri.parse::<url::Url>() {
         if url.scheme() == "file" {
             match url.to_file_path() {

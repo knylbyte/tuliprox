@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::{Mutex};
+use tokio::sync::Mutex;
 
 pub struct ProviderConnectionGuard {
     allocation: ProviderAllocation,
@@ -408,7 +408,7 @@ struct ProviderLineupManager {
 }
 impl ProviderLineupManager {
     pub fn new(inputs: Vec<Arc<ConfigInput>>, grace_period_millis: u64, grace_period_timeout_secs: u64) -> Self {
-        let lineups = inputs.iter().map(|i|Self::create_lineup(i, None)).collect();
+        let lineups = inputs.iter().map(|i| Self::create_lineup(i, None)).collect();
         Self {
             grace_period_millis: AtomicU64::new(grace_period_millis),
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
@@ -417,7 +417,7 @@ impl ProviderLineupManager {
         }
     }
     fn create_lineup(input: &ConfigInput, provider_connections: Option<&HashMap<&str, ProviderConfigConnection>>) -> ProviderLineup {
-        let get_connections = provider_connections.map(|c| |name:&str| c.get(name));
+        let get_connections = provider_connections.map(|c| |name: &str| c.get(name));
 
         if input.aliases.as_ref().is_some_and(|a| !a.is_empty()) {
             ProviderLineup::Multi(MultiProviderLineup::new(input, get_connections))
@@ -519,11 +519,15 @@ impl ProviderLineupManager {
         let mut new_lineups: Vec<ProviderLineup> = Vec::with_capacity(new_inputs.len());
         let connections = Some(provider_connections);
         for input in &new_inputs {
-           new_lineups.push(Self::create_lineup(input, connections.as_ref()));
+            new_lineups.push(Self::create_lineup(input, connections.as_ref()));
         }
+
+        debug!("inputs {new_inputs:?}");
+        debug!("lineup {new_lineups:?}");
 
         self.inputs.store(Arc::new(new_inputs));
         self.providers.store(Arc::new(new_lineups));
+
     }
 
     fn get_provider_config<'a>(name: &str, providers: &'a Vec<ProviderLineup>) -> Option<(&'a ProviderLineup, &'a ProviderConfigWrapper)> {
@@ -690,7 +694,7 @@ impl ActiveProviderManager {
     pub async fn update_config(&self, cfg: &AppConfig) {
         let (grace_period_millis, grace_period_timeout_secs) = Self::get_grace_options(cfg);
         let inputs = Self::get_config_inputs(cfg);
-        self.providers.update_config(inputs,grace_period_millis, grace_period_timeout_secs).await;
+        self.providers.update_config(inputs, grace_period_millis, grace_period_timeout_secs).await;
     }
 
     pub async fn force_exact_acquire_connection(&self, provider_name: &str) -> ProviderConnectionGuard {

@@ -1,17 +1,20 @@
+use crate::model::{macros, ConfigInput, ConfigTarget, ProcessTargets};
+use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use shared::model::{ConfigSourceDto, PatternTemplate, SourcesConfigDto};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
-use shared::error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
-use shared::model::{ConfigSourceDto, PatternTemplate, SourcesConfigDto};
-use crate::model::{macros, ConfigInput, ConfigTarget, ProcessTargets};
 
 #[derive(Debug, Clone)]
 pub struct ConfigSource {
+    pub batch_files: Vec<PathBuf>,
     pub inputs: Vec<Arc<ConfigInput>>,
     pub targets: Vec<Arc<ConfigTarget>>,
 }
 
 impl ConfigSource {
+
     pub fn get_inputs_for_target(&self, target_name: &str) -> Option<Vec<Arc<ConfigInput>>> {
         for target in &self.targets {
             if target.name.eq(target_name) {
@@ -25,13 +28,22 @@ impl ConfigSource {
     }
 }
 
-macros::from_impl!(ConfigSource);
-impl From<&ConfigSourceDto> for ConfigSource {
-    fn from(dto: &ConfigSourceDto) -> Self {
-        Self {
-            inputs: dto.inputs.iter().map(|c| Arc::new(ConfigInput::from(c))).collect(),
-            targets: dto.targets.iter().map(|c| Arc::new(ConfigTarget::from(c))).collect(),
+macros::try_from_impl!(ConfigSource);
+impl TryFrom<&ConfigSourceDto> for ConfigSource {
+    type Error = TuliproxError;
+    fn try_from(dto: &ConfigSourceDto) -> Result<ConfigSource, TuliproxError> {
+        let mut batch_files = Vec::new();
+        let mut inputs: Vec<ConfigInput> = dto.inputs.iter().map(ConfigInput::from).collect();
+        for input in &mut inputs {
+            if let Some(batch_file_path) = input.prepare()? {
+                batch_files.push(batch_file_path);
+            }
         }
+        Ok(Self {
+            batch_files,
+            inputs: inputs.into_iter().map(Arc::new).collect(),
+            targets: dto.targets.iter().map(|c| Arc::new(ConfigTarget::from(c))).collect(),
+        })
     }
 }
 
@@ -41,12 +53,19 @@ pub struct SourcesConfig {
     pub sources: Vec<ConfigSource>,
 }
 
-impl From<SourcesConfigDto> for SourcesConfig {
-    fn from(dto: SourcesConfigDto) -> Self {
-        Self {
+macros::try_from_impl!(SourcesConfig);
+impl TryFrom<&SourcesConfigDto> for SourcesConfig {
+    type Error = TuliproxError;
+    fn try_from(dto: &SourcesConfigDto) -> Result<Self, TuliproxError> {
+        let sources = dto.sources
+            .iter()
+            .map(ConfigSource::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self {
             templates: dto.templates.clone(),
-            sources: dto.sources.iter().map(Into::into).collect(),
-        }
+            sources,
+        })
     }
 }
 
@@ -129,5 +148,15 @@ impl SourcesConfig {
             }
         }
         seen_names
+    }
+
+    pub fn get_input_files(&self) -> HashSet<PathBuf> {
+        let mut file_names = HashSet::new();
+        for source in &self.sources {
+            for file in &source.batch_files {
+                file_names.insert(file.clone());
+            }
+        }
+        file_names
     }
 }
