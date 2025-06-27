@@ -2,14 +2,16 @@
   --media-size-mobile: 600px;
   --text-color: #ffffff;
   --hint-color: #888888;
+  --input-background-color: #242427;
   --label-color: #73d6fe;
-  --background-color: #303946; //#121212;
+  --background-color: rgb(9, 9, 11);//#303946; //#121212;
   --app-header-color: #73d6fe; //#6495b1;
   --sidebar-toggle-color: #ffffff;
   --sidebar-toggle-hover-color: #47495d;
   --playlist-color: #aeb0b2;
-  --border-color: #47495d;
-  --border-light-color: #68686c;
+  --border-color: #222224;
+  --input-border-color: #454548;
+  --input-focus-border-color: #12499a;
   --hover-border-color: #aaaab0;
   --spinner-color: #ffffff66;
   --spinner-highlight-color: #5599f0;
@@ -38,7 +40,7 @@
   --warn-color: orange;
   --ok-color: #21e821;
 
-  --card-background-color: #202733; //#282828;
+  --card-background-color: #18181b; //#282828;
   --card-background-color-darker: #1c2026;
   --card-color: #ffffff;
   --card-border-color: #47495d;
@@ -60,7 +62,7 @@
   --menu-button-hover-color:#fffff;
   --menu-button-hover-background-color: #202733;
 
-  --text-button-border-radius: 4px;
+  --text-button-border-radius: var(--border-radius);
   --text-button-border-color: transparent;
   --text-button-background-color: var(--default-button-background-color);
   --text-button-color: #ffffff;

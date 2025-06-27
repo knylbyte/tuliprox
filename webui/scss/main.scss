@@ -1,9 +1,7 @@
 @use "theme";
 @use "default";
 @use "common";
-@use "app";
-@use "login";
-@use "preferences";
+@use "component";
 
 html {
   height: 100%;
@@ -25,14 +23,6 @@ body {
     font-family: inherit;
   }
 
-  input {
-    height: 2rem;
-    border-radius: 6px;
-  }
-
-  select {
-    border-color: var(--border-color);
-  }
 }
 
 #root {

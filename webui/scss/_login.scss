@@ -4,17 +4,19 @@
   display: flex;
   flex-flow: column;
   gap: 8px;
-  margin: 10% auto auto auto;
-  border: 1px solid var(--border-color);
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
+  margin: auto;
   overflow: hidden;
   position: relative;
   z-index: 1;
+  padding: 60px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background-color: var(--card-background-color);
+  width: 400px;
 
   &__header {
     display: flex;
-    flex-flow: row;
+    flex-flow: column;
     align-items: center;
     background-color: var(--card-background-color);
     padding: 0 8px;
@@ -26,8 +28,8 @@
     &-logo {
       overflow: hidden;
       img, svg {
-        height: 1.5rem;
-        width: 1.5rem;
+        height: 4rem;
+        width: 4rem;
       }
     }
 
@@ -51,19 +53,13 @@
     flex-flow: column;
     gap: 20px;
     padding: 8px;
-    width: 300px;
 
-    input {
-      height: 2rem;
-      border: none;
-      border-radius: 6px;
-      font-size: 1.4rem;
-      background-color: var(--card-background-color);
-      padding: 4px 8px;
-    }
-    input[type="password"] {
-      caret-color:  var(--card-color);
-    }
+    &-action {
+      display: flex;
+      flex-flow: column;
+      gap: 20px;
+      padding-top: 20px;
+   }
 
     button {
       @include common.textButton();

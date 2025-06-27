@@ -4,6 +4,7 @@ mod authentication;
 mod home;
 mod login;
 mod preferences;
+mod input;
 
 pub use self::svg_icon::*;
 pub use self::panel::*;

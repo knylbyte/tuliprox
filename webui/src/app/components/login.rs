@@ -4,6 +4,8 @@ use crate::app::components::svg_icon::AppIcon;
 use crate::hooks::use_service_context;
 use yew::prelude::*;
 use yew_hooks::use_async;
+use yew_i18n::use_translation;
+use crate::app::components::input::Input;
 
 #[function_component]
 pub fn Login() -> Html {
@@ -11,6 +13,7 @@ pub fn Login() -> Html {
     let username_ref = use_node_ref();
     let password_ref = use_node_ref();
     let auth_success = use_state(|| true);
+    let translation = use_translation();
 
     let app_title = services.config.ui_config.app_title.as_ref().map_or("tuliprox", |v| v.as_str());
 
@@ -64,8 +67,6 @@ pub fn Login() -> Html {
     };
 
     html! {
-        <>
-        // <div class={"login-view__logo"}><AppIcon name="Logo"  width={"100%"} height={"100%"}/></div>
         <div class="login-view">
            <div class={"login-view__header"}>
                 <div class={"login-view__header-logo"}>{app_logo.as_ref().clone()}</div>
@@ -73,13 +74,14 @@ pub fn Login() -> Html {
             </div>
             <form>
                 <div class="login-view__form">
-                    <input ref={username_ref} type="text" name="username" placeholder="username" autocomplete="on" autofocus={true}/>
-                    <input ref={password_ref} type="password" name="password" placeholder="password" onkeydown={handle_key_down} autocomplete="on"/>
-                    <button type="button" class="btn" onclick={handle_login}>{"Login"}</button>
-                    <span class={if *auth_success { "hidden" }  else { "error-text" }}>{ "Failed to login" }</span>
+                    <Input label={translation.t("LABEL.USERNAME")} input_ref={username_ref} input_type="text" name="username" autocomplete={true} autofocus={true}/>
+                    <Input label={translation.t("LABEL.PASSWORD")} input_ref={password_ref} input_type="password" name="password"  autocomplete={true} onkeydown={handle_key_down}/>
+                    <div class="login-view__form-action">
+                        <button type="button" class="btn" onclick={handle_login}>{"Login"}</button>
+                        <span class={if *auth_success { "hidden" }  else { "error-text" }}>{ "Failed to login" }</span>
+                    </div>
                 </div>
             </form>
         </div>
-        </>
     }
 }
