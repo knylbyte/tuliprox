@@ -1,6 +1,6 @@
 use crate::api::api_utils::serve_file;
 use crate::api::model::app_state::AppState;
-use crate::auth::{AuthBearer, UserCredential, verify_password, create_jwt_admin, create_jwt_user, is_admin, verify_token};
+use crate::auth::{AuthBearer, verify_password, create_jwt_admin, create_jwt_user, is_admin, verify_token};
 use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc};
 use tower::Service;
+use shared::model::UserCredential;
 use shared::utils::CONSTANTS;
 
 fn no_web_auth_token() -> impl axum::response::IntoResponse + Send {

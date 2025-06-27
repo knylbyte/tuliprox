@@ -469,7 +469,7 @@ mod tests {
                 ],
             };
 
-        let mut cfg = AppConfig {
+        let cfg = AppConfig {
             config: Arc::new(ArcSwapAny::default()),
             sources: Arc::new(ArcSwapAny::default()),
             hdhomerun: Arc::new(ArcSwapAny::default()),

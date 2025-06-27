@@ -1,9 +1,5 @@
 $media-size-mobile: 600px;
 
-.hidden {
-  display: none;
-}
-
 @mixin container_common($justify-content: flex-start, $padding: 12px) {
   display: flex;
   justify-content: $justify-content;
@@ -71,10 +67,16 @@ $media-size-mobile: 600px;
 
   svg {
     color: var(--text-color);
+    path {
+      fill: var(--text-color);
+    }
   }
   &:hover {
     svg {
       color: var(--text-button-hover-color);
+      path {
+        fill: var(--text-button-hover-color);
+      }
     }
   }
 

@@ -1,9 +1,8 @@
 use std::fs::File;
 use std::io::BufRead;
 use std::path::PathBuf;
-use crate::auth::UserCredential;
 use shared::error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result};
-use shared::model::WebAuthConfigDto;
+use shared::model::{UserCredential, WebAuthConfigDto};
 use crate::model::macros;
 use crate::utils;
 

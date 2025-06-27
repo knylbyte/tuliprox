@@ -1,5 +1,3 @@
-use rand::Rng;
-
 pub trait Capitalize {
     fn capitalize(&self) -> String;
 }
@@ -30,11 +28,10 @@ pub fn get_trimmed_string(value: &Option<String>) -> Option<String> {
 
 pub fn generate_random_string(length: usize) -> String {
     let charset = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let mut rng = rand::rng();
-
+    let range = ..charset.len();
     let random_string: String = (0..length)
         .map(|_| {
-            let idx = rng.random_range(0..charset.len());
+            let idx = fastrand::usize(range);
             charset[idx] as char
         })
         .collect();
