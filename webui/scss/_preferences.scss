@@ -112,10 +112,6 @@
     gap: 12px;
     padding: 8px 4px;
 
-    button {
-      @include common.iconButton();
-      border: 1px solid transparent;
-    }
 
     button.selected {
       color: var(--icon-button-hover-color);

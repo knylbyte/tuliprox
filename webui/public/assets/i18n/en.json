@@ -118,7 +118,9 @@
     "IP": "IP",
     "TARGET": "Target",
     "TARGETS": "Targets",
-    "NOTES": "Notes"
+    "NOTES": "Notes",
+    "DASHBOARD": "Dashboard",
+    "SETTINGS": "Settings"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

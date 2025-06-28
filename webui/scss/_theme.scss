@@ -1,17 +1,31 @@
 :root {
-  --media-size-mobile: 600px;
+   --app-header-height: 56px;
+
   --text-color: #ffffff;
-  --hint-color: #888888;
+  --background-color: #09090B;
   --input-background-color: #242427;
-  --label-color: #73d6fe;
-  --background-color: rgb(9, 9, 11);//#303946; //#121212;
+  --input-border-color: #454548;
+  --input-focus-border-color: #12499a;
+  --input-autofill-background-color: #323a48;
+  --button-background-color: #124a9b;
+  --border-color: #222224;
+  --menu-text-color: #e2e2e5;
+  --menu-icon-color: #707079;
+  --menu-item-hover-background-color: #242427;
+  --menu-text-active-color: #124a9b;
+  --menu-item-active-background-color: var(--menu-item-hover-background-color);
+  --icon-button-hover-color: #8f8f97;
+
+  --app-header-background-color: #18181b;
   --app-header-color: #73d6fe; //#6495b1;
+
+  --media-size-mobile: 600px;
+  --hint-color: #888888;
+  --label-color: #73d6fe;
+
   --sidebar-toggle-color: #ffffff;
   --sidebar-toggle-hover-color: #47495d;
   --playlist-color: #aeb0b2;
-  --border-color: #222224;
-  --input-border-color: #454548;
-  --input-focus-border-color: #12499a;
   --hover-border-color: #aaaab0;
   --spinner-color: #ffffff66;
   --spinner-highlight-color: #5599f0;
@@ -23,7 +37,6 @@
   --tool-button-color: #fff;
   --tool-button-hover-color: #ffffff;
   --tool-button-hover-background-color: #0c8a13;
-  --default-button-background-color: #124a9b;
 
   --toolbar-background-color: #282A36;
   --toolbar-button-hover-color: #ffffff;
@@ -50,10 +63,10 @@
   --border-radius: 8px;
 
   --icon-button-border-radius: 4px;
-  --icon-button-background-color: var(--default-button-background-color);
+  --icon-button-background-color: var(--button-background-color);
   --icon-button-color: #ffffff;
   --icon-button-hover-background-color: #0d6efd;
-  --icon-button-hover-color: #ffffff;
+
   --icon-button-hover-border-color: #ced9fb;
 
   --menu-button-color:#fffff;
@@ -64,7 +77,7 @@
 
   --text-button-border-radius: var(--border-radius);
   --text-button-border-color: transparent;
-  --text-button-background-color: var(--default-button-background-color);
+  --text-button-background-color: var(--button-background-color);
   --text-button-color: #ffffff;
   --text-button-hover-background-color: #0d6efd;
   --text-button-hover-color: #ffffff;
@@ -108,5 +121,16 @@
   --menu-icon-color-status : #F9E400;
 
   --toolbar-bg-color: #161b25;
+
+}
+
+body[data-theme="bright"] {
+  --text-color: #09090b;
+  --background-color: #f8f8f8;
+  --input-background-color: #fdfdfd;
+  --input-border-color: #dcdcdc;
+  --input-focus-border-color: #12499a;
+  --button-background-color: #124a9b;
+  --border-color: #eaeaeb;
 
 }

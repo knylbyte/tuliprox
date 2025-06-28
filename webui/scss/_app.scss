@@ -1,9 +1,10 @@
 @use 'common';
 
+$sidebar-width: 270px;
+
 .app {
   display: flex;
-  flex-flow: column;
-  justify-content: center;
+  flex-flow: row;
   overflow: hidden;
   flex: 1 1 auto;
   box-sizing: border-box;
@@ -11,67 +12,53 @@
   color: var(--text-color);
   background-color: inherit;
 
-  &-header {
+  &-sidebar {
     display: flex;
-    flex-flow: row;
-    font-size: 2rem;
-    font-weight: bold;
-    color: var(--app-header-color);
-    align-content: center;
-    padding: 10px;
-    @media (max-width: common.$media-size-mobile) {
-      padding: 10px 0;
-    }
+    flex-flow: column;
+    gap: 12px;
+    min-width: $sidebar-width;
 
-    &__logo {
+    &__content {
       display: flex;
-      justify-content: center;
-      align-items: center;
-
-      svg, img {
-        width: 2em;
-        aspect-ratio: 1 / 1;
-        transform: translate(-10px, 0);
-      }
-    }
-
-    &__caption {
-      display: flex;
-      flex-flow: row nowrap;
-      flex: 1 1 auto;
-      justify-content: center;
-      align-items: center;
-    }
-
-    &__toolbar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      button {
-        height: 60%;
-        @include common.iconButton();
-      }
-      padding-right: 4px;
+      flex-flow: column;
+      padding: 2rem 1.5rem;
     }
   }
 
   &-main {
     display: flex;
     flex-flow: column;
-    justify-content: center;
     flex: 1 1 auto;
-    overflow: hidden;
-    box-sizing: border-box;
-    max-width: 100%;
-    background-color: inherit;
-  }
-  &-content {
+    align-content: flex-start;
+    justify-content: flex-start;
+    &__content {
       display: flex;
       flex-flow: column;
-      flex: 1 1 auto;
-      box-sizing: border-box;
-      overflow: hidden;
-      max-width: 100%;
-      background-color: inherit;
+      padding: 2rem 1.5rem;
     }
+  }
+
+  &-sidebar__header,
+  &-main__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-left: 2rem;
+      height: var(--app-header-height);
+      background-color: var(--app-header-background-color);
+      border-bottom: 1px solid var(--border-color);
+      fill: var(--menu-icon-color);
+      img, svg {
+        width: 2.5rem;
+        height: 2.5rem;
+      }
+      &-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        button {
+          width: 2.5rem;
+        }
+      }
+  }
 }

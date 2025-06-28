@@ -51,43 +51,6 @@ $media-size-mobile: 600px;
     }
 }
 
-@mixin iconButton {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: var(--icon-button-color);
-  background-color: var(--icon-button-background-color);
-  border: none;
-  border-radius: var(--icon-button-border-radius);
-  aspect-ratio: 1 / 1;
-  cursor: pointer;
-  box-sizing: border-box;
-  max-height: 100%;
-  width: min-content;
-
-  svg {
-    color: var(--text-color);
-    path {
-      fill: var(--text-color);
-    }
-  }
-  &:hover {
-    svg {
-      color: var(--text-button-hover-color);
-      path {
-        fill: var(--text-button-hover-color);
-      }
-    }
-  }
-
-  &:focus,
-  &:hover {
-    color: var(--icon-button-hover-color);
-    background-color: var(--icon-button-hover-background-color);
-    outline: none;
-  }
-}
-
 @mixin textButton {
   border: 1px solid var(--text-button-border-color);
   font-size: 1.2rem;
