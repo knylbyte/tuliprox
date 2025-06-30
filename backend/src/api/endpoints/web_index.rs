@@ -4,15 +4,17 @@ use crate::auth::{AuthBearer, verify_password, create_jwt_admin, create_jwt_user
 use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc};
 use tower::Service;
-use shared::model::UserCredential;
+use shared::model::{TokenResponse, UserCredential};
 use shared::utils::CONSTANTS;
 
 fn no_web_auth_token() -> impl axum::response::IntoResponse + Send {
-    axum::Json(HashMap::from([("token", "authorized")])).into_response()
+    axum::Json(TokenResponse {
+        token: "authorized".to_string(),
+        username: "admin".to_string(),
+    }).into_response()
 }
 
 async fn token(
@@ -34,7 +36,11 @@ async fn token(
                     if verify_password(hash, password.as_bytes()) {
                         if let Ok(token) = create_jwt_admin(web_auth, username) {
                             req.zeroize();
-                            return axum::Json(HashMap::from([("token", token)])).into_response();
+                            return axum::Json(
+                                TokenResponse {
+                                    token,
+                                    username: req.username.to_string(),
+                                }).into_response();
                         }
                     }
                 }
@@ -42,7 +48,11 @@ async fn token(
                     if credentials.password == password {
                         if let Ok(token) = create_jwt_user(web_auth, username) {
                             req.zeroize();
-                            return axum::Json(HashMap::from([("token", token)])).into_response();
+                            return axum::Json(
+                                TokenResponse {
+                                    token,
+                                    username: req.username.to_string(),
+                                }).into_response();
                         }
                     }
                 }
@@ -75,7 +85,11 @@ async fn token_refresh(
                     create_jwt_user(web_auth, &username)
                 };
                 if let Ok(token) = new_token {
-                    return axum::Json(HashMap::from([("token", token)])).into_response();
+                    return axum::Json(
+                        TokenResponse {
+                            token,
+                            username: username.to_string(),
+                        }).into_response();
                 }
             }
             axum::http::StatusCode::BAD_REQUEST.into_response()

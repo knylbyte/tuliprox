@@ -46,6 +46,6 @@ pub fn AppIcon(props: &AppIconProps) -> Html {
                 <SvgIcon path={(*definition.path).to_string()} name={name} width={props.width.clone()} height={props.height.clone()} viewport={viewport}/>
             }
         },
-        None => html! {}
+        None => html! { <img src={props.name.to_string()} /> }
     }
 }

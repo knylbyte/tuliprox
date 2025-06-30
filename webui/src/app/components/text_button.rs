@@ -1,18 +1,18 @@
 use web_sys::MouseEvent;
-use yew::prelude::*;
+use yew::{function_component, html, Callback, Html, Properties};
 use crate::app::components::AppIcon;
 
 #[derive(Properties, Clone, PartialEq, Debug)]
-pub struct MenuItemProps {
+pub struct TextButtonProps {
     pub name: String,
-    pub label: String,
-    pub icon: String,
     #[prop_or_default]
+    pub icon: String,
+    pub title: String,
     pub onclick: Callback<String>,
 }
 
 #[function_component]
-pub fn MenuItem(props: &MenuItemProps) -> Html {
+pub fn TextButton(props: &TextButtonProps) -> Html {
 
     let handle_click = {
         let click = props.onclick.clone();
@@ -24,9 +24,11 @@ pub fn MenuItem(props: &MenuItemProps) -> Html {
     };
 
     html! {
-        <div class="menu-item" onclick={ handle_click }>
+        <button class="text-button" onclick={handle_click}>
+         if !props.icon.is_empty() {
             <AppIcon name={props.icon.clone()}></AppIcon>
-            <label>{props.label.clone()}</label>
-        </div>
+         }
+         <span>{props.title.clone()}</span>
+        </button>
     }
 }

@@ -558,7 +558,7 @@ pub fn prepare_templates(templates: &mut Vec<PatternTemplate>) -> Result<Vec<Pat
                                 match templ_value {
                                     TemplateValue::Single(templ_val) => {
                                         if templ_val.contains(&dep_templ.placeholder) {
-                                            TemplateValue::Single(templ_val.replace(&dep_templ.placeholder, dep_val))
+                                            TemplateValue::Single(templ_val.replace(&dep_templ.placeholder, dep_val.as_str()))
                                         } else {
                                             TemplateValue::Single(templ_val)
                                         }
@@ -567,7 +567,7 @@ pub fn prepare_templates(templates: &mut Vec<PatternTemplate>) -> Result<Vec<Pat
                                         let mut new_values = vec![];
                                         for val in templ_vals {
                                             if val.contains(&dep_templ.placeholder) {
-                                                new_values.push(val.replace(&dep_templ.placeholder, dep_val));
+                                                new_values.push(val.replace(&dep_templ.placeholder, dep_val.as_str()));
                                             } else {
                                                 new_values.push(val);
                                             }
@@ -582,7 +582,7 @@ pub fn prepare_templates(templates: &mut Vec<PatternTemplate>) -> Result<Vec<Pat
                                         let mut new_values = vec![];
                                         for dep_val in dep_vals {
                                             if templ_val.contains(&dep_templ.placeholder) {
-                                                new_values.push(templ_val.replace(&dep_templ.placeholder, dep_val));
+                                                new_values.push(templ_val.replace(&dep_templ.placeholder, dep_val.as_str()));
                                             } else {
                                                 new_values.push(templ_val.clone());
                                             }
@@ -594,7 +594,7 @@ pub fn prepare_templates(templates: &mut Vec<PatternTemplate>) -> Result<Vec<Pat
                                         for dep_val in dep_vals {
                                             for templ_val in &templ_vals {
                                                 if templ_val.contains(&dep_templ.placeholder) {
-                                                    new_values.push(templ_val.replace(&dep_templ.placeholder, dep_val));
+                                                    new_values.push(templ_val.replace(&dep_templ.placeholder, dep_val.as_str()));
                                                 } else {
                                                     new_values.push(templ_val.clone());
                                                 }

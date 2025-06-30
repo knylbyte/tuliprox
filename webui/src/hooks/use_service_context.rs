@@ -1,21 +1,23 @@
 use std::rc::Rc;
 use yew::prelude::*;
 use crate::config::Config;
-use crate::services::auth_service::AuthService;
-use crate::services::config_service::ConfigService;
+use crate::services::{AuthService, ConfigService, StatusService};
 
 pub struct Services {
     pub auth: Rc<AuthService>,
     pub config: Rc<ConfigService>,
+    pub status: Rc<StatusService>,
 }
 
 impl Services {
     pub fn new(config: &Config) -> Self {
         let auth = Rc::new(AuthService::new());
         let config = Rc::new(ConfigService::new(config));
+        let status = Rc::new(StatusService::new());
         Self {
             auth,
-            config
+            config,
+            status
         }
     }
 }

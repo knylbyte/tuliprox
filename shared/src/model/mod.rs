@@ -9,6 +9,7 @@ mod strm_export_style;
 mod mapping;
 pub mod xtream_const;
 mod auth;
+mod status_check;
 
 pub use self::cluster_flags::*;
 pub use self::playlist::*;
@@ -20,3 +21,4 @@ pub use self::config::*;
 pub use self::strm_export_style::*;
 pub use self::mapping::*;
 pub use self::auth::*;
+pub use self::status_check::*;

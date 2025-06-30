@@ -120,7 +120,9 @@
     "TARGETS": "Targets",
     "NOTES": "Notes",
     "DASHBOARD": "Dashboard",
-    "SETTINGS": "Settings"
+    "SETTINGS": "Settings",
+    "WELCOME": "Welcome",
+    "RELEASES": "Releases"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

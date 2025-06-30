@@ -1,7 +1,5 @@
 @use 'common';
 
-$sidebar-width: 270px;
-
 .app {
   display: flex;
   flex-flow: row;
@@ -12,53 +10,18 @@ $sidebar-width: 270px;
   color: var(--text-color);
   background-color: inherit;
 
-  &-sidebar {
-    display: flex;
-    flex-flow: column;
-    gap: 12px;
-    min-width: $sidebar-width;
-
-    &__content {
-      display: flex;
-      flex-flow: column;
-      padding: 2rem 1.5rem;
-    }
-  }
-
   &-main {
     display: flex;
     flex-flow: column;
     flex: 1 1 auto;
     align-content: flex-start;
     justify-content: flex-start;
-    &__content {
+    &__body {
       display: flex;
       flex-flow: column;
-      padding: 2rem 1.5rem;
-    }
-  }
-
-  &-sidebar__header,
-  &-main__header {
-      display: flex;
+      box-sizing: border-box;
+      padding: 0 var(--padding-large);
       align-items: center;
-      justify-content: space-between;
-      padding-left: 2rem;
-      height: var(--app-header-height);
-      background-color: var(--app-header-background-color);
-      border-bottom: 1px solid var(--border-color);
-      fill: var(--menu-icon-color);
-      img, svg {
-        width: 2.5rem;
-        height: 2.5rem;
-      }
-      &-toolbar {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        button {
-          width: 2.5rem;
-        }
-      }
+    }
   }
 }

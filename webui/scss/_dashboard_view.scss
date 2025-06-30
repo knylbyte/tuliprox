@@ -1,0 +1,56 @@
+.dashboard {
+  display: flex;
+  flex-flow: column;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 1280px;
+
+  &__header {
+    display: flex;
+    flex-flow: row nowrap;
+  }
+  &__body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--gap-larger);
+
+    .span-two {
+       grid-column: span 2;
+    }
+  }
+}
+
+
+.action-card {
+  display: flex;
+  flex-flow: row nowrap;
+  align-content: flex-start;
+  flex: 1 1 auto;
+  gap: var(--gap-default);
+
+  &__icon {
+    fill: var(--card-color);
+    width: 3rem;
+    transform: translateY(-0.5rem);
+    img {
+      width: 3rem;
+    }
+  }
+  &__body {
+    display: flex;
+    flex-flow: column;
+    align-content: flex-start;
+    flex: 1 1 auto;
+    gap: var(--gap-small);
+  }
+
+  &__title {
+    color: var(--text-color);
+    font-weight: bold;
+    font-size: 1.1rem;
+  }
+  &__content {
+
+  }
+}

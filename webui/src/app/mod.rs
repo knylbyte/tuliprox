@@ -1,20 +1,18 @@
 pub mod components;
+mod model;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 use futures::future::join_all;
 use log::{error};
 use serde_json::Value;
-use crate::app::components::Authentication;
-use crate::app::components::Home;
 use crate::provider::icon_context_provider::IconContextProvider;
 use crate::provider::service_context_provider::ServiceContextProvider;
-use components::Login;
 use yew_i18n::I18nProvider;
 use yew::prelude::*;
 use yew_hooks::{use_async_with_options, UseAsyncOptions};
 use yew_router::prelude::*;
-use crate::app::components::Preferences;
+use self::components::*;
 use crate::config::Config;
 use crate::error::Error;
 use crate::hooks::IconDefinition;

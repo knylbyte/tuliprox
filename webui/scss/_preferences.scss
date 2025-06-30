@@ -26,7 +26,7 @@
     flex: 0 0 auto;
     justify-content: flex-end;
     align-items: center;
-    gap: 12px;
+    gap: var(--gap-default);
     background-color: var(--toolbar-bg-color);
     padding: 8px 16px;
 
@@ -109,7 +109,7 @@
       max-width: 32px;
       min-width: 32px;
     }
-    gap: 12px;
+    gap: var(--gap-default);
     padding: 8px 4px;
 
 

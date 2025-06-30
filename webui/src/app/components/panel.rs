@@ -1,4 +1,4 @@
-use yew::{function_component, html, Children, Html, Properties};
+use yew::prelude::*;
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct PanelProps {

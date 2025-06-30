@@ -5,7 +5,7 @@ dist = "dist"
 port = 9899
 
 [[proxy]]
-backend = "http://localhost:9901/api/v1/"
+backend = "http://localhost:8901/api/v1/"
 
 [[proxy]]
-backend = "http://localhost:9901/auth/"
+backend = "http://localhost:8901/auth/"

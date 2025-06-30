@@ -8,7 +8,7 @@
   aspect-ratio: 1 / 1;
   cursor: pointer;
   box-sizing: border-box;
-  max-height: 100%;
+  height: min-content;
   width: min-content;
 
   svg {
@@ -17,7 +17,7 @@
 
   &:focus,
   &:hover {
-    fill: var(--text-button-hover-color);
+    fill: var(--icon-button-hover-color);
     outline: none;
   }
 }

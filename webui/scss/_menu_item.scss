@@ -2,7 +2,7 @@
   display: flex;
   flex-flow: row nowrap;
   align-items: center;
-  gap: 12px;
+  gap: var(--gap-default);
   fill: var(--menu-icon-color);
   color: var(--menu-text-color);
   padding: 12px;

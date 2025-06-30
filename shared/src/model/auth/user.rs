@@ -15,4 +15,5 @@ impl UserCredential {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Eq, PartialEq, Default)]
 pub struct TokenResponse {
     pub token: String,
+    pub username: String,
 }
