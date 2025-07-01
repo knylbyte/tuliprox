@@ -97,3 +97,20 @@ $media-size-mobile: 600px;
     }
   }
 }
+
+
+@keyframes pulse-bg {
+  0% {
+    background-color: var(--pulse-color-1);
+  }
+  50% {
+    background-color: var(--pulse-color-2);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.pulse {
+  animation: pulse-bg 500ms ease-out;
+}

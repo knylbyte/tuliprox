@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use yew::prelude::*;
-use crate::config::Config;
+use crate::model::WebConfig;
 use crate::services::{AuthService, ConfigService, StatusService};
 
 pub struct Services {
@@ -10,7 +10,7 @@ pub struct Services {
 }
 
 impl Services {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(config: &WebConfig) -> Self {
         let auth = Rc::new(AuthService::new());
         let config = Rc::new(ConfigService::new(config));
         let status = Rc::new(StatusService::new());
@@ -36,7 +36,7 @@ pub struct ServiceContext {
 }
 
 impl ServiceContext {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(config: &WebConfig) -> Self {
         Self {
             services: Rc::new(Services::new(config))
         }

@@ -5,7 +5,7 @@ use crate::app::components::{CollapsePanel};
 use crate::hooks::use_service_context;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::app::model::ViewType;
+use crate::model::ViewType;
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct SidebarProps {

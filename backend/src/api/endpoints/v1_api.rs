@@ -15,7 +15,7 @@ use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
 use shared::error::TuliproxError;
-use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputType, StatusCheck, TargetUserDto, XtreamPlaylistItem};
+use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputType, IpCheckDto, StatusCheck, TargetUserDto, XtreamPlaylistItem};
 use shared::utils::sanitize_sensitive_info;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -257,14 +257,6 @@ async fn config(
 }
 
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
-struct IpCheck {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ipv4: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ipv6: Option<String>,
-}
-
 async fn create_ipinfo_check(app_state: &Arc<AppState>) -> Option<(Option<String>, Option<String>)> {
     let config = app_state.app_config.config.load();
     if let Some(ipcheck) = config.ipcheck.as_ref() {
@@ -312,7 +304,7 @@ async fn status(axum::extract::State(app_state): axum::extract::State<Arc<AppSta
 
 async fn ipinfo(axum::extract::State(app_state): axum::extract::State<Arc<AppState>>) -> axum::response::Response {
     if let Some((ipv4, ipv6)) = create_ipinfo_check(&app_state).await {
-        let ipcheck = IpCheck {
+        let ipcheck = IpCheckDto {
             ipv4,
             ipv6,
         };

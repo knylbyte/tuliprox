@@ -1,12 +1,12 @@
 
 use yew::prelude::*;
-use crate::config::Config;
 use crate::hooks::ServiceContext;
+use crate::model::WebConfig;
 
 #[derive(Properties, Clone, PartialEq)]
 pub struct ServiceContextProps {
     pub children: Children,
-    pub config: Config
+    pub config: WebConfig
 }
 
 /// User context provider.

@@ -32,9 +32,20 @@
   --text-button-color: #ffffff;
   --text-button-border-color: #2F2F31;
   --text-button-hover-color: #303032;
+  --text-button-primary-background-color: #124a9b;
+  --text-button-primary-color: #ffffff;
+  --text-button-primary-hover-background-color: #2f68be;
+  --text-button-primary-hover-color: #ffffff;
+
+  --discord-color: #5764f0;
+  --documenation-color: #2b944b;
 
   --app-header-background-color: #18181b;
-  --app-header-color: #73d6fe; //#6495b1;
+  --app-header-color: #73d6fe;
+
+  --pulse-color-1: #837f80;
+  --pulse-color-2: #545454;
+
 
   --media-size-mobile: 600px;
   --hint-color: #888888;
@@ -136,12 +147,40 @@
 }
 
 body[data-theme="bright"] {
-  --text-color: #09090b;
-  --background-color: #f8f8f8;
-  --input-background-color: #fdfdfd;
-  --input-border-color: #dcdcdc;
-  --input-focus-border-color: #12499a;
-  --button-background-color: #124a9b;
-  --border-color: #eaeaeb;
+
+  --action-item-background-color: #e0e2e7;
+
+  --text-color: #1a1a1a;
+  --modest-text-color: #6b7280ff;
+  --background-color: #f9fafb;
+  --input-background-color: var(--action-item-background-color);
+  --input-border-color: #cbd5e1;
+  --input-focus-border-color: #2563eb;
+  --input-autofill-background-color: #d1d5db;
+  --button-background-color: #2563eb;
+  --border-color: #d1d5db;
+  --menu-text-color: #374151;
+  --menu-icon-color: #9ca3af;
+  --menu-item-hover-background-color: var(--action-item-background-color);
+  --menu-text-active-color: #2563eb;
+  --menu-item-active-background-color: var(--menu-item-hover-background-color);
+  --icon-button-hover-color: #6b7280;
+  --card-background-color: #ffffff;
+  --card-color: var(--modest-text-color);
+
+  --text-button-background-color: var(--action-item-background-color);
+  --text-button-color: #1a1a1a;
+  --text-button-border-color: #d1d5db;
+  --text-button-hover-background-color: #e5e7eb;
+  --text-button-primary-background-color: #2563eb;
+  --text-button-primary-color: #ffffff;
+  --text-button-primary-hover-background-color: #3b82f6;
+  --text-button-primary-hover-color: #ffffff;
+
+  --discord-color: #5865f2;
+  --documenation-color: #22c55e;
+
+  --app-header-background-color: #e0e7ff;
+  --app-header-color: #2563eb;
 
 }

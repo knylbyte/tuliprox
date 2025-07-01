@@ -10,7 +10,7 @@ pub struct ApiConfig {
 }
 
 #[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Debug)]
-pub struct Config {
+pub struct WebConfig {
     #[serde(alias = "tabTitle")]
     pub tab_title: Option<String>,
     #[serde(alias = "appTitle")]
@@ -18,6 +18,10 @@ pub struct Config {
     #[serde(alias = "appLogo")]
     pub app_logo: Option<String>,
     pub api: ApiConfig,
+    #[serde(default)]
+    pub discord: String,
+    #[serde(default)]
+    pub documentation: String,
     #[serde(alias = "wsUrl")]
     pub ws_url: String,
     #[serde(alias = "protocolVersion")]

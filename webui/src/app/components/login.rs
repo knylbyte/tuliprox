@@ -6,6 +6,7 @@ use yew::prelude::*;
 use yew_hooks::use_async;
 use yew_i18n::use_translation;
 use crate::app::components::input::Input;
+use crate::app::components::TextButton;
 
 #[function_component]
 pub fn Login() -> Html {
@@ -51,8 +52,7 @@ pub fn Login() -> Html {
 
     let handle_login = {
         let login = do_login.clone();
-        Callback::from(move |e: MouseEvent| {
-            e.prevent_default();
+        Callback::from(move |_: String| {
             login.emit(());
         })
     };
@@ -77,7 +77,7 @@ pub fn Login() -> Html {
                     <Input label={translation.t("LABEL.USERNAME")} input_ref={username_ref} input_type="text" name="username" autocomplete={true} autofocus={true}/>
                     <Input label={translation.t("LABEL.PASSWORD")} input_ref={password_ref} input_type="password" name="password"  autocomplete={true} onkeydown={handle_key_down}/>
                     <div class="login-view__form-action">
-                        <button type="button" class="btn" onclick={handle_login}>{"Login"}</button>
+                        <TextButton style="primary" name="login" title={ translation.t("LABEL.LOGIN")} onclick={handle_login}></TextButton>
                         <span class={if *auth_success { "hidden" }  else { "error-text" }}>{ "Failed to login" }</span>
                     </div>
                 </div>

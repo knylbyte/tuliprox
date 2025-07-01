@@ -15,6 +15,7 @@
     "CLEAR": "Clear",
     "REGEXP": "Regexp",
     "LOGOUT": "Logout",
+    "LOGIN": "Login",
     "CONFIGURATION": "Configuration",
     "HOST": "Host",
     "PORT": "Port",
@@ -115,14 +116,21 @@
     "PATTERN_IPV6": "Pattern IPv6",
     "IPv4": "IPv4",
     "IPv6": "IPv6",
-    "IP": "IP",
+    "IP_INFO": "IP Info",
     "TARGET": "Target",
     "TARGETS": "Targets",
     "NOTES": "Notes",
     "DASHBOARD": "Dashboard",
     "SETTINGS": "Settings",
     "WELCOME": "Welcome",
-    "RELEASES": "Releases"
+    "RELEASES": "Releases",
+    "DISCORD": "Discord",
+    "OPEN_DISCORD": "Open Discord",
+    "JOIN_ON_DISCORD": "Join us on Discord",
+    "DOCUMENTATION": "Documentation",
+    "DOCUMENTATION_CONTENT": "Get started with tuliprox: features, setup, and examples",
+    "OPEN_DOCUMENTATION": "Documentation",
+    "NOT_ACTIVATED": "Feature is not activated"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

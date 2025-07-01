@@ -1,10 +1,9 @@
-pub mod components;
-mod model;
+mod components;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 use futures::future::join_all;
-use log::{error};
+use log::error;
 use serde_json::Value;
 use crate::provider::icon_context_provider::IconContextProvider;
 use crate::provider::service_context_provider::ServiceContextProvider;
@@ -12,10 +11,10 @@ use yew_i18n::I18nProvider;
 use yew::prelude::*;
 use yew_hooks::{use_async_with_options, UseAsyncOptions};
 use yew_router::prelude::*;
-use self::components::*;
-use crate::config::Config;
+use crate::app::components::{Authentication, Home, Login, Preferences};
 use crate::error::Error;
 use crate::hooks::IconDefinition;
+use crate::model::WebConfig;
 use crate::services::request_get;
 
 fn flatten_json(value: &Value, prefix: String, map: &mut HashMap<String, serde_json::Value>) {
@@ -125,7 +124,7 @@ pub fn App() -> Html {
         return html! { <div>{ "Loading..." }</div> };
     }
     let transl = translations_state.as_ref().unwrap();
-    let config: &Config = configuration_state.as_ref().unwrap();
+    let config: &WebConfig = configuration_state.as_ref().unwrap();
     let icons: &Vec<Rc<IconDefinition>> = icon_state.as_ref().unwrap();
 
     html! {
@@ -141,4 +140,9 @@ pub fn App() -> Html {
             </ServiceContextProvider>
         </BrowserRouter>
     }
+}
+
+#[derive(Clone, PartialEq)]
+pub(in crate::app) struct CardContext {
+    pub custom_class: UseStateHandle<String>,
 }

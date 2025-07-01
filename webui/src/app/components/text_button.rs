@@ -8,6 +8,8 @@ pub struct TextButtonProps {
     #[prop_or_default]
     pub icon: String,
     pub title: String,
+    #[prop_or_default]
+    pub style: String,
     pub onclick: Callback<String>,
 }
 
@@ -24,7 +26,7 @@ pub fn TextButton(props: &TextButtonProps) -> Html {
     };
 
     html! {
-        <button class="text-button" onclick={handle_click}>
+        <button class={if props.style.is_empty() {"text-button".to_string()} else {format!("text-button button-{}", props.style)}} onclick={handle_click}>
          if !props.icon.is_empty() {
             <AppIcon name={props.icon.clone()}></AppIcon>
          }

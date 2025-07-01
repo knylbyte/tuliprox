@@ -9,8 +9,6 @@ pub struct VersionActionProps {
     pub build_time: String,
 }
 
-
-
 #[function_component]
 pub fn VersionActionCard(props: &VersionActionProps) -> Html {
     let translate = use_translation();

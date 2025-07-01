@@ -15,8 +15,8 @@ mod card;
 mod text_button;
 
 pub use self::svg_icon::*;
-pub use self::input::*;
-pub use self::menu_item::*;
+// pub use self::input::*;
+// pub use self::menu_item::*;
 pub use self::icon_button::*;
 pub use self::text_button::*;
 pub use self::panel::*;

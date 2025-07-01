@@ -1,6 +1,6 @@
 use yew::prelude::*;
 use crate::app::components::{IconButton, Sidebar, DashboardView};
-use crate::app::model::ViewType;
+use crate::model::ViewType;
 use crate::hooks::use_service_context;
 
 #[function_component]
