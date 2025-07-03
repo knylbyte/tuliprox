@@ -23,9 +23,17 @@
         th {
           font-size: 1.1rem;
           font-weight: bold;
-          text-align: center;
+          //text-align: center;
           padding: 0.875rem;
           background-color: var(--table-header-background-color);
+        }
+      }
+    }
+
+    tbody {
+      tr {
+        td {
+          padding: 0.875rem;
         }
       }
     }

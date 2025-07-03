@@ -1,8 +1,12 @@
+use std::future;
 use std::rc::Rc;
+use log::info;
 use yew::prelude::*;
+use yew::suspense::use_future;
 use yew_i18n::use_translation;
-use shared::model::ConfigTargetDto;
+use shared::model::{ConfigTargetDto};
 use crate::app::components::{PlaylistContext, Table, TableDefinition, ToggleSwitch};
+use crate::hooks::use_service_context;
 
 const HEADERS: [&str; 11] = [
 "TABLE.ID",
@@ -21,6 +25,7 @@ const HEADERS: [&str; 11] = [
 #[function_component]
 pub fn TargetTable() -> Html {
     let translate = use_translation();
+    let services = use_service_context();
     let playlist_ctx = use_context::<PlaylistContext>();
 
     let render_header_cell = {
@@ -38,42 +43,78 @@ pub fn TargetTable() -> Html {
     };
 
     let render_data_cell = {
-        Callback::<(usize, usize, &ConfigTargetDto), Html>::from(
-            move |(_row, col, dto): (usize, usize, &ConfigTargetDto)| {
+        Callback::<(usize, usize, Rc<ConfigTargetDto>), Html>::from(
+            move |(_row, col, dto): (usize, usize, Rc<ConfigTargetDto>)| {
                 match col {
-                    0 =>  html! { &dto.name.to_string() },
+                    0 =>  html! { &dto.id.to_string() },
                     1 => html! { <ToggleSwitch value={&dto.enabled} /> },
                     2 => html! { &dto.name.to_string() },
                     3 => html! { "options" },
-                    4 => html! { "sort" },
-                    5 => html! { "filter" },
+                    4 => html! { dto.sort.as_ref().map_or_else(String::new, |s| format!("{s:?}")) },
+                    5 => html! { &dto.filter.clone() },
                     6 => html! { "output" },
                     7 => html! { "rename" },
-                    8 => html! { "mapping" },
-                    9 => html! { "processing order" },
-                    10 => html! { "watch" },
+                    8 => html! { dto.mapping.as_ref().map_or_else(String::new, |m| format!("{m:?}")) },
+                    9 => html! { &dto.processing_order.to_string() },
+                    10 => html! { dto.watch.as_ref().map_or_else(String::new, |w| format!("{w:?}"))},
                     _ => html! {""},
                 }
         })
     };
 
-    let items: Vec<&ConfigTargetDto> = vec![];
-
     let table_definition = {
-        let render_header_cell = render_header_cell.clone();
-        let render_data_cell = render_data_cell.clone();
-
-        use_state(|| Rc::new(TableDefinition::<&ConfigTargetDto> {
-            items,
+        let render_header_cell_cb = render_header_cell.clone();
+        let render_data_cell_cb = render_data_cell.clone();
+        use_state(|| Rc::new(TableDefinition::<ConfigTargetDto> {
+            items: Rc::new(Vec::new()),
             num_cols: 11,
-            render_header_cell,
-            render_data_cell,
+            render_header_cell: render_header_cell_cb,
+            render_data_cell: render_data_cell_cb,
         }))
     };
 
+    {
+        // first register for config update
+        let services_ctx = services.clone();
+        let table_definition_state  = table_definition.clone();
+        let render_header_cell_cb = render_header_cell.clone();
+        let render_data_cell_cb = render_data_cell.clone();
+        let _ = use_future(|| async move {
+            services_ctx.config.config_subscribe(
+                &mut |cfg| {
+                    let render_header_cell_cb = render_header_cell_cb.clone();
+                    let render_data_cell_cb = render_data_cell_cb.clone();
+                    if let Some(app_cfg) = cfg.clone() {
+                        let mut targets = vec![];
+                        info!("{:?}", &app_cfg.sources.sources);
+                        for source in &app_cfg.sources.sources {
+                            for target in &source.targets {
+                                targets.push(Rc::new(target.clone()));
+                            }
+                        }
+                        table_definition_state.set(Rc::new(TableDefinition::<ConfigTargetDto> {
+                            items: Rc::new(targets),
+                            num_cols: 11,
+                            render_header_cell: render_header_cell_cb,
+                            render_data_cell: render_data_cell_cb,
+                        }));
+                    };
+                    future::ready(())
+                }
+            ).await
+        });
+    }
+
+    {
+        let services_ctx = services.clone();
+        let _ = use_future(|| async move {
+            let _cfg = services_ctx.config.get_server_config().await;
+        });
+    }
+
     html! {
         <div class="tp__target-table">
-            <Table::<&ConfigTargetDto> definition={(*table_definition).clone()} />
+            <Table::<ConfigTargetDto> definition={(*table_definition).clone()} />
         </div>
     }
 }

@@ -190,7 +190,7 @@ impl From<&ConfigInputDto> for ConfigInput {
             name: dto.name.to_string(),
             input_type: dto.input_type,
             headers: dto.headers.clone(),
-            url: get_base_url_from_str(&dto.url).map_or_else(|| dto.url.to_string(), |base_url| base_url),
+            url: dto.url.clone(), //get_base_url_from_str(&dto.url).map_or_else(|| dto.url.to_string(), |base_url| base_url),
             epg: dto.epg.as_ref().map(std::convert::Into::into),
             username: dto.username.clone(),
             password: dto.password.clone(),

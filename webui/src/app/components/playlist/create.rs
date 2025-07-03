@@ -1,4 +1,3 @@
-use wasm_logger::Config;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use crate::app::components::{PlaylistContext, PlaylistPage, TextButton};
