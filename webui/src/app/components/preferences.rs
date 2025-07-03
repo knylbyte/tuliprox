@@ -79,15 +79,15 @@ pub fn Preferences() -> Html {
     };
 
     html! {
-        <div class="preferences">
-            <div class="preferences__content">
-                <div class="preferences__sidebar">
+        <div class="tp__preferences">
+            <div class="tp__preferences__content">
+                <div class="tp__preferences__sidebar">
                 {
                     SIDEBAR_ACTIONS.iter().map(|action| {
                       html! {
                             <div key={format!("pref_{:?}", action.page).to_lowercase()}
                                 data-page={action.page.to_string()}
-                                class={format!("preferences__sidebar-menu-action preferences__sidebar-menu-action_{}{}",
+                                class={format!("tp__preferences__sidebar-menu-action preferences__sidebar-menu-action_{}{}",
                                          action.page.to_string(),
                                          if action.page == *active_page { " selected" } else { "" })}
                                 onclick={handle_sidebar_action.clone()}
@@ -99,21 +99,21 @@ pub fn Preferences() -> Html {
                       }).collect::<Vec<_>>()
                     }
                 </div>
-                <div class="preferences__panels">
+                <div class="tp__preferences__panels">
                     <Panel value={PrefPage::Update.to_string()} active={active_page.to_string()}>
-                        <div class="card">{"Update"}</div>
+                        <div class="tp__card">{"Update"}</div>
                     </Panel>
                     <Panel value={PrefPage::User.to_string()} active={active_page.to_string()}>
-                        <div class="card">{"User"}</div>
+                        <div class="tp__card">{"User"}</div>
                     </Panel>
                     <Panel value={PrefPage::ApiServer.to_string()} active={active_page.to_string()}>
-                        <div class="card">{"Api"}</div>
+                        <div class="tp__card">{"Api"}</div>
                     </Panel>
                     <Panel value={PrefPage::MainConfig.to_string()} active={active_page.to_string()}>
-                        <div class="card">{"MainConfig"}</div>
+                        <div class="tp__card">{"MainConfig"}</div>
                     </Panel>
                     <Panel value={PrefPage::Status.to_string()} active={active_page.to_string()}>
-                        <div class="card">{"Status"}</div>
+                        <div class="tp__card">{"Status"}</div>
                     </Panel>
                 </div>
             </div>

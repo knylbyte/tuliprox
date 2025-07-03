@@ -14,7 +14,7 @@ pub fn Card(props: &CardProps) -> Html {
     };
     html! {
         <ContextProvider<CardContext> context={context}>
-            <div class={classes!("card", &*custom_class)}>
+            <div class={classes!("tp__card", &*custom_class)}>
                 { for props.children.iter() }
             </div>
         </ContextProvider<CardContext>>

@@ -21,47 +21,13 @@ button {
   cursor: pointer;
 }
 
-.hidden {
+.tp__hidden {
   display: none !important;
-}
-
-.vert-group {
-  display: flex;
-  flex-flow: column;
-  gap: 20px;
-  overflow: hidden;
-  padding: 0 4px 4px 0;
 }
 
 select {
   padding: 2px 4px;
 }
-//
-//.tool-button {
-//  display: flex;
-//  align-items: center;
-//  justify-content: center;
-//  height: 1.1rem;
-//  width: 1.1rem;
-//  border-radius: var(--border-radius);
-//  background-color: var(--tool-button-background-color);
-//  color: var(--tool-button-color);
-//  cursor: pointer;
-//
-//  svg {
-//    width: 1rem;
-//    height: 1rem;
-//  }
-//
-//  &:hover {
-//    color: var(--tool-button-hover-color);
-//    background-color: var(--tool-button-hover-background-color);
-//  }
-//
-//  &:active {
-//    transform: scale(0.9);
-//  }
-//}
 
 :not(input[type="text"]) {
   caret-color: transparent;
@@ -69,18 +35,6 @@ select {
 input[type="text"] {
   caret-color: auto;
 }
-//
-//select {
-//  height: 2rem;
-//  border-radius: var(--border-radius);
-//  font-size: 1.2rem;
-//  padding: 0 8px;
-//  cursor: pointer;
-//  &:hover {
-//    color: var(--text-button-hover-color);
-//    background-color: var(--text-button-hover-background-color);
-//  }
-//}
 
 option {
   cursor: pointer;

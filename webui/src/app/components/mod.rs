@@ -13,6 +13,11 @@ mod dashboard_view;
 mod dashboard;
 mod card;
 mod text_button;
+mod playlist_view;
+mod breadcrumbs;
+mod playlist;
+mod table;
+mod toggle_switch;
 
 pub use self::svg_icon::*;
 // pub use self::input::*;
@@ -29,4 +34,8 @@ pub use self::sidebar::*;
 pub use self::preferences::*;
 pub use self::dashboard_view::*;
 pub use self::dashboard::*;
-
+pub use self::playlist_view::*;
+pub use self::breadcrumbs::*;
+pub use self::playlist::*;
+pub use self::table::*;
+pub use self::toggle_switch::*;

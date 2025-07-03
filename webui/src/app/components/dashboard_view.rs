@@ -40,12 +40,12 @@ pub fn DashboardView() -> Html {
     }
 
     html! {
-      <div class="dashboard">
-        <div class="dashboard__header">
+      <div class="tp__dashboard">
+        <div class="tp__dashboard__header">
          <h1>{ translate.t("LABEL.DASHBOARD")}</h1>
         </div>
-        <div class="dashboard__body">
-            <div class="dashboard__body-actions">
+        <div class="tp__dashboard__body">
+            <div class="tp__dashboard__body-actions">
               <Card>
                  <VersionActionCard version={(*status).as_ref().map_or_else(String::new,  |s| s.version.clone())}
                      build_time={(*status).as_ref().map_or_else(String::new,  |s| s.build_time.as_ref().map_or_else(String::new, |v| v.clone()))}/>
@@ -55,7 +55,7 @@ pub fn DashboardView() -> Html {
               <Card><DiscordActionCard /></Card>
               <Card><IpinfoActionCard /></Card>
             </div>
-            <div class="dashboard__body-stats">
+            <div class="tp__dashboard__body-stats">
                 <Card><StatusCard title={translate.t("LABEL.MEMORY")} data={status.as_ref().map_or_else(|| "n/a".to_string(), |status| status.memory.clone())} /></Card>
                 <Card><StatusCard title={translate.t("LABEL.CACHE")} data={status.as_ref().map_or_else(|| "n/a".to_string(), |status| status.cache.as_ref().map_or_else(|| "n/a".to_string(), |c| c.clone()))} /></Card>
                 <Card><StatusCard title={translate.t("LABEL.ACTIVE_USERS")} data={status.as_ref().map_or_else(|| "n/a".to_string(), |status| status.active_users.to_string())} /></Card>

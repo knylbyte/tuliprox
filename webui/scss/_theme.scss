@@ -8,6 +8,8 @@
   --padding-default: 1.5rem;
   --padding-large: 2rem;
 
+  --primary-color: #124a9b;
+
   --action-item-background-color: #242427;
 
   --text-color: #ffffff;
@@ -17,12 +19,12 @@
   --input-border-color: #454548;
   --input-focus-border-color: #12499a;
   --input-autofill-background-color: #323a48;
-  --button-background-color: #124a9b;
+  --button-background-color: var(--primary-color);
   --border-color: #222224;
   --menu-text-color: #e2e2e5;
   --menu-icon-color: #707079;
   --menu-item-hover-background-color: var(--action-item-background-color);
-  --menu-text-active-color: #124a9b;
+  --menu-text-active-color: var(--primary-color);
   --menu-item-active-background-color: var(--menu-item-hover-background-color);
   --icon-button-hover-color: #8f8f97;
   --card-background-color: #18181b;
@@ -32,10 +34,16 @@
   --text-button-color: #ffffff;
   --text-button-border-color: #2F2F31;
   --text-button-hover-color: #303032;
-  --text-button-primary-background-color: #124a9b;
+  --text-button-primary-background-color: var(--primary-color);
   --text-button-primary-color: #ffffff;
   --text-button-primary-hover-background-color: #2f68be;
   --text-button-primary-hover-color: #ffffff;
+
+  --toggle-switch-on-background-color: var(--primary-color);
+  --toggle-switch-off-background-color: #888888;
+  --toggle-switch-toggle-color: #ffffff;
+
+  --table-header-background-color: #242427;
 
   --discord-color: #5764f0;
   --documenation-color: #2b944b;

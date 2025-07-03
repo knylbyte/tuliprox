@@ -22,15 +22,15 @@ pub struct ActionProps {
 pub fn ActionCard(props: &ActionProps) -> Html {
 
     html! {
-        <div class={if props.classname.is_empty() {"action-card".to_string()} else {format!("action-card {}", props.classname)}}>
-            <div class="action-card__icon">
+        <div class={classes!("tp__action-card", if props.classname.is_empty() {String::new()} else {props.classname.to_string()})}>
+            <div class="tp__action-card__icon">
                 <AppIcon name={props.icon.clone()} />
             </div>
-            <div class="action-card__body">
-                <span class="action-card__title">
+            <div class="tp__action-card__body">
+                <span class="tp__action-card__title">
                     {props.title.clone()}
                 </span>
-                <span class="action-card__content">
+                <span class="tp__action-card__content">
                     { props.subtitle.clone() }
                     {
                         if !props.subtitle_html.is_empty() {

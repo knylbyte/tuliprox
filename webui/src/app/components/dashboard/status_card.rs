@@ -14,16 +14,15 @@ pub struct StatusCardProps {
 
 #[function_component]
 pub fn StatusCard(props: &StatusCardProps) -> Html {
-
     html! {
-        <div class={if props.classname.is_empty() {"status-card".to_string()} else {format!("status-card {}", props.classname)}}>
-            <span class="status-card__title">
+        <div class={classes!("tp__status-card", if props.classname.is_empty() { String::new() } else {props.classname.to_string()})}>
+            <span class="tp__status-card__title">
                 {props.title.clone()}
             </span>
-            <div class="status-card__body">
+            <div class="tp__status-card__body">
                 {props.data.clone()}
             </div>
-            <div class="status-card__footer">
+            <div class="stp__tatus-card__footer">
                 {props.footer.clone()}
             </div>
         </div>

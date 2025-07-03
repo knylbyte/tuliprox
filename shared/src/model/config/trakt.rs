@@ -21,7 +21,7 @@ impl Default for TraktContentType {
     }
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TraktApiConfigDto {
     #[serde(default)]
@@ -44,7 +44,7 @@ impl TraktApiConfigDto {
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TraktListConfigDto {
     pub user: String,
@@ -55,7 +55,7 @@ pub struct TraktListConfigDto {
     pub fuzzy_match_threshold: u8, // Percentage (0-100)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TraktConfigDto {
     #[serde(default)]

@@ -24,7 +24,7 @@ pub fn MenuItem(props: &MenuItemProps) -> Html {
     };
 
     html! {
-        <div class="menu-item" onclick={ handle_click }>
+        <div class="tp__menu-item" onclick={ handle_click }>
             <AppIcon name={props.icon.clone()}></AppIcon>
             <label>{props.label.clone()}</label>
         </div>

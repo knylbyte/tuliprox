@@ -9,7 +9,6 @@ pub struct ServiceContextProps {
     pub config: WebConfig
 }
 
-/// User context provider.
 #[function_component]
 pub fn ServiceContextProvider(props: &ServiceContextProps) -> Html {
     let service_ctx = use_state(||ServiceContext::new(&props.config));

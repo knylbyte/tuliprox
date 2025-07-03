@@ -3,7 +3,7 @@ use crate::{create_tuliprox_error_result, handle_tuliprox_error_result_list, inf
 use crate::foundation::filter::{get_filter, Filter};
 use crate::model::{ClusterFlags, ConfigRenameDto, ConfigSortDto, PatternTemplate, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
 use crate::utils::{default_as_true, default_resolve_delay_secs, default_as_default};
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigTargetOptions {
     #[serde(default)]
@@ -17,7 +17,7 @@ pub struct ConfigTargetOptions {
 }
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct XtreamTargetOutputDto {
     #[serde(default = "default_as_true")]
@@ -46,7 +46,7 @@ impl XtreamTargetOutputDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct M3uTargetOutputDto {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -57,7 +57,7 @@ pub struct M3uTargetOutputDto {
     pub mask_redirect_url: bool,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StrmTargetOutputDto {
     pub directory: String,
@@ -74,7 +74,7 @@ pub struct StrmTargetOutputDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strm_props: Option<Vec<String>>,
 }
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HdHomeRunTargetOutputDto {
     pub device: String,
@@ -83,7 +83,7 @@ pub struct HdHomeRunTargetOutputDto {
     pub use_output: Option<TargetType>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, tag = "type", rename_all = "lowercase")]
 pub enum TargetOutputDto {
     Xtream(XtreamTargetOutputDto),
@@ -103,7 +103,7 @@ impl TargetOutputDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigTargetDto {
     #[serde(skip)]

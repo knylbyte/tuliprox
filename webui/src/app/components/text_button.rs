@@ -26,7 +26,7 @@ pub fn TextButton(props: &TextButtonProps) -> Html {
     };
 
     html! {
-        <button class={if props.style.is_empty() {"text-button".to_string()} else {format!("text-button button-{}", props.style)}} onclick={handle_click}>
+        <button class={if props.style.is_empty() {"tp__text-button".to_string()} else {format!("tp__text-button tp__button-{}", props.style)}} onclick={handle_click}>
          if !props.icon.is_empty() {
             <AppIcon name={props.icon.clone()}></AppIcon>
          }

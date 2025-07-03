@@ -10,7 +10,7 @@ pub struct PanelProps {
 #[function_component]
 pub fn Panel(props: &PanelProps) -> Html {
     html! {
-        <div class={format!("panel{}", if props.value == props.active {""} else {" hidden"} ).to_lowercase()}>
+        <div class={classes!("panel", if props.value == props.active {""} else {"tp__hidden"} )}>
             { for props.children.iter() }
         </div>
     }

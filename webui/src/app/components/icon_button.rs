@@ -22,7 +22,7 @@ pub fn IconButton(props: &IconButtonProps) -> Html {
     };
 
     html! {
-        <button class="icon-button" onclick={handle_click}>
+        <button class="tp__icon-button" onclick={handle_click}>
             <AppIcon name={props.icon.clone()}></AppIcon>
         </button>
     }

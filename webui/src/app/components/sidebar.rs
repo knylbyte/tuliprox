@@ -34,16 +34,20 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
     };
 
     html! {
-        <div class="app-sidebar">
-            <div class="app-sidebar__header app-header">
-                <span class="app-header__logo">{app_logo}</span>
+        <div class="tp__app-sidebar">
+            <div class="tp__app-sidebar__header tp__app-header">
+                <span class="tp__app-header__logo">{app_logo}</span>
                 <AppIcon name={"ChevronLeft"}></AppIcon>
             </div>
-            <div class="app-sidebar__content">
-                <MenuItem icon="Dashboard" name="dashboard" label={translate.t("LABEL.DASHBOARD")}
+            <div class="tp__app-sidebar__content">
+                <MenuItem icon="DashboardOutline" name="dashboard" label={translate.t("LABEL.DASHBOARD")}
                     onclick={&handle_menu_click}></MenuItem>
                 <CollapsePanel title={translate.t("LABEL.SETTINGS")}>
-                    <MenuItem icon="User" name="users" label={translate.t("LABEL.USER")}
+                    <MenuItem icon="UserOutline" name="users" label={translate.t("LABEL.USER")}
+                        onclick={&handle_menu_click}></MenuItem>
+                </CollapsePanel>
+                <CollapsePanel title={translate.t("LABEL.PLAYLIST")}>
+                    <MenuItem icon="PlayArrowOutline" name="playlists" label={translate.t("LABEL.PLAYLIST")}
                         onclick={&handle_menu_click}></MenuItem>
                 </CollapsePanel>
             </div>

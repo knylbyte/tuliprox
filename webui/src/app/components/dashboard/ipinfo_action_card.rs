@@ -24,7 +24,7 @@ pub fn IpinfoActionCard() -> Html {
             if exists {
                 let card_ctx_2 = card_ctx.clone();
                 if let Some(card_context) = card_ctx_1.as_ref() {
-                    card_context.custom_class.set("pulse".to_string());
+                    card_context.custom_class.set("tp__pulse".to_string());
                 }
                 let services_ctx = services_ctx.clone();
                 let ip_address_state = ip_address_state.clone();
@@ -87,7 +87,7 @@ pub fn IpinfoActionCard() -> Html {
     }
 
     html! {
-        <ActionCard icon="Network" classname="ipinfo" title={translate.t("LABEL.IP_INFO")}
+        <ActionCard icon="Network" classname="tp__ipinfo" title={translate.t("LABEL.IP_INFO")}
         subtitle_html={if *config_exists {
             if let Some(ip_info) = &*ip_address {
                 let ip4 = ip_info.ipv4.as_ref().map_or_else(|| "n/a".to_string(), |ip| ip.to_string());

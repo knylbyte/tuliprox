@@ -1,5 +1,4 @@
-
-.app-header {
+.tp__app-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -16,7 +15,7 @@
     display: flex;
     align-items: center;
     gap: var(--gap-small);
-    .icon-button {
+    .tp__icon-button {
       width: 2.5rem;
     }
   }

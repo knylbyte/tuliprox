@@ -22,7 +22,7 @@ pub fn SvgIcon(props: &SvgIconProps) -> Html {
    }
 }
 
-#[derive(Properties, Clone, PartialEq, Eq)]
+#[derive(Properties, Clone, PartialEq)]
 pub struct AppIconProps {
     pub name: AttrValue,
     #[prop_or(AttrValue::Static("100%"))]

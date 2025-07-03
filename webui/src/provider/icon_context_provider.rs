@@ -8,7 +8,6 @@ pub struct IconContextProps {
     pub icons: Vec<Rc<IconDefinition>>,
 }
 
-/// User context provider.
 #[function_component]
 pub fn IconContextProvider(props: &IconContextProps) -> Html {
     let icon_ctx = use_state(||IconContext::new(&props.icons));

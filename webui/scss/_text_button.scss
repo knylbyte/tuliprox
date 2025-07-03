@@ -1,4 +1,4 @@
-.text-button {
+.tp__text-button {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -32,12 +32,14 @@
   }
 }
 
-.text-button.button-primary {
+.tp__text-button.tp__button-primary {
    background-color: var(--text-button-primary-background-color);
    color: var(--text-button-primary-color);
+   fill : var(--text-button-primary-color);
    &:hover {
       background-color: var(--text-button-primary-hover-background-color);
       color: var(--text-button-primary-hover-color);
+      fill : var(--text-button-primary-hover-color);
       outline: none;
    }
 }

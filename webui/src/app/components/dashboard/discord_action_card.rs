@@ -22,7 +22,7 @@ pub fn DiscordActionCard() -> Html {
     };
 
     html! {
-        <ActionCard icon="Discord" classname="discord" title={translate.t("LABEL.DISCORD")}
+        <ActionCard icon="Discord" classname="tp__discord" title={translate.t("LABEL.DISCORD")}
         subtitle={translate.t("LABEL.JOIN_ON_DISCORD")}>
           <TextButton name="discord" title={translate.t("LABEL.OPEN_DISCORD")} icon="Link" onclick={handle_url} />
         </ActionCard>

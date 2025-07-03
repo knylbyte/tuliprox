@@ -1,8 +1,8 @@
-use regex::Regex;
-use crate::{create_tuliprox_error, handle_tuliprox_error_result_list};
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::foundation::filter::{apply_templates_to_pattern, apply_templates_to_pattern_single};
 use crate::model::{ItemField, PatternTemplate, TemplateValue};
+use crate::{create_tuliprox_error, handle_tuliprox_error_result_list};
+use regex::Regex;
 
 fn compile_regex_vec(patterns: Option<&Vec<String>>) -> Result<Option<Vec<Regex>>, TuliproxError> {
     patterns.as_ref()
@@ -16,7 +16,7 @@ fn compile_regex_vec(patterns: Option<&Vec<String>>) -> Result<Option<Vec<Regex>
         .transpose() // convert Option<Result<...>> to Result<Option<...>>
 }
 
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub enum SortOrder {
     #[serde(rename = "asc")]
     Asc,
@@ -34,8 +34,14 @@ pub struct ConfigSortGroupDto {
     pub t_sequence: Option<Vec<Regex>>,
 }
 
-impl ConfigSortGroupDto {
+impl PartialEq for ConfigSortGroupDto {
+    fn eq(&self, other: &Self) -> bool {
+        self.order == other.order
+            && self.sequence == other.sequence
+    }
+}
 
+impl ConfigSortGroupDto {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         let processed_sequence = match (&self.sequence, templates) {
             (Some(seqs), Some(_templs)) => {
@@ -47,7 +53,7 @@ impl ConfigSortGroupDto {
                     }
                 }
                 Some(result)
-            },
+            }
             (Some(seqs), None) => Some(seqs.clone()),
             (None, _) => None,
         };
@@ -71,6 +77,16 @@ pub struct ConfigSortChannelDto {
     pub t_sequence: Option<Vec<Regex>>,
 }
 
+impl PartialEq for ConfigSortChannelDto {
+    fn eq(&self, other: &Self) -> bool {
+        self.field == other.field
+            && self.group_pattern == other.group_pattern
+            && self.order == other.order
+            && self.sequence == other.sequence
+    }
+}
+
+
 impl ConfigSortChannelDto {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         self.group_pattern = apply_templates_to_pattern_single(&self.group_pattern, templates)?;
@@ -90,7 +106,7 @@ impl ConfigSortChannelDto {
                     }
                 }
                 Some(result)
-            },
+            }
             (Some(seqs), None) => Some(seqs.clone()),
             (None, _) => None,
         };
@@ -101,7 +117,7 @@ impl ConfigSortChannelDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigSortDto {
     #[serde(default)]

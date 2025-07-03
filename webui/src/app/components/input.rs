@@ -22,14 +22,14 @@ pub struct InputProps {
 #[function_component]
 pub fn Input(props: &InputProps) -> Html {
     html! {
-        <div class="input">
+        <div class="tp__input">
             { if props.label.is_some() {
                    html! {
                        <label>{props.label.clone().unwrap_or_default()}</label>
                    }
                 } else { html!{} }
             }
-            <div class="input-wrapper">
+            <div class="tp__input-wrapper">
                 <input ref={props.input_ref.clone().unwrap_or_default()}
                     type={props.input_type.clone()}
                     name={props.name.clone()}

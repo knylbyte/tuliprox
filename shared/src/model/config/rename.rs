@@ -2,7 +2,7 @@ use crate::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKin
 use crate::foundation::filter::apply_templates_to_pattern_single;
 use crate::model::{ItemField, PatternTemplate};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigRenameDto {
     pub field: ItemField,

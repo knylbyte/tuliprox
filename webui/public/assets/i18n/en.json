@@ -107,8 +107,8 @@
     "BUILD_TIME": "Build time",
     "MEMORY": "Memory",
     "ACTIVE_USERS": "Active users",
-    "ACTIVE_USER_CONNECTIONS": "Active user conn...",
-    "ACTIVE_PROVIDER_CONNECTIONS": "Active provider conn...",
+    "ACTIVE_USER_CONNECTIONS": "Active user connections",
+    "ACTIVE_PROVIDER_CONNECTIONS": "Active provider connections",
     "IP_CHECK": "IP Check",
     "URL_IPV4": "Url IPv4",
     "URL_IPV6": "Url IPv6",
@@ -130,7 +130,25 @@
     "DOCUMENTATION": "Documentation",
     "DOCUMENTATION_CONTENT": "Get started with tuliprox: features, setup, and examples",
     "OPEN_DOCUMENTATION": "Documentation",
-    "NOT_ACTIVATED": "Feature is not activated"
+    "NOT_ACTIVATED": "Feature is not activated",
+    "CREATE": "Create",
+    "PLAYLIST": "Playlist",
+    "PLAYLISTS": "Playlists",
+    "LIST": "List",
+    "NEW_PLAYLIST": "New Playlist"
+  },
+  "TABLE": {
+    "ID":  "Id",
+    "ENABLED":  "Enabled",
+    "NAME":  "Name",
+    "OPTIONS":  "Options",
+    "SORT":  "Sort",
+    "FILTER":  "Filter",
+    "OUTPUT":  "Output",
+    "RENAME":  "Rename",
+    "MAPPING":  "Mapping",
+    "PROCESSING_ORDER":  "Processing order",
+    "WATCH": "Watch"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

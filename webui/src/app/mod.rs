@@ -1,5 +1,4 @@
 mod components;
-
 use std::collections::HashMap;
 use std::rc::Rc;
 use futures::future::join_all;

@@ -1,0 +1,39 @@
+.tp__playlist-view  {
+  display: flex;
+  flex-flow: column;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 1280px;
+  padding: var(--padding-default) 0;
+  gap: var(--gap-default);
+
+  &__body {
+    display: flex;
+    flex-flow: column;
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+
+.tp__playlist-create,
+.tp__playlist-list {
+  display: flex;
+  flex-flow: column;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 1280px;
+  gap: var(--gap-default);
+
+  &__header {
+    display: flex;
+    flex-flow: row nowrap;
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+  }
+}

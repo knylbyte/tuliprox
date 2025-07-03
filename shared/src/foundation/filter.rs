@@ -78,6 +78,11 @@ pub struct CompiledRegex {
     pub restr: String,
     pub re: regex::Regex,
 }
+impl PartialEq for CompiledRegex {
+    fn eq(&self, other: &Self) -> bool {
+        self.restr == other.restr
+    }
+}
 
 #[derive(Parser)]
 #[grammar_inline = r#"
@@ -105,12 +110,12 @@ main = _{ SOI ~ stmt ~ EOI }
 "#]
 struct FilterParser;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UnaryOperator {
     Not,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BinaryOperator {
     And,
     Or,
@@ -130,7 +135,7 @@ impl std::fmt::Display for BinaryOperator {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Filter {
     Group(Box<Filter>),
     FieldComparison(ItemField, CompiledRegex),

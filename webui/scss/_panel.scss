@@ -1,10 +1,6 @@
-.panel {
+.tp__panel {
   display: flex;
   flex-flow: column;
-  gap: 8px;
   overflow: hidden;
-  padding: 60px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
-  background-color: var(--card-background-color);
+  background-color: transparent;
 }

@@ -21,7 +21,7 @@ pub fn DocumentationActionCard() -> Html {
     };
 
     html! {
-        <ActionCard icon="Book" classname="documentation" title={translate.t("LABEL.DOCUMENTATION")}
+        <ActionCard icon="Book" classname="tp__documentation" title={translate.t("LABEL.DOCUMENTATION")}
         subtitle={translate.t("LABEL.DOCUMENTATION_CONTENT")}>
           <TextButton name="documentation" title={translate.t("LABEL.OPEN_DOCUMENTATION")} icon="Link" onclick={handle_url} />
         </ActionCard>

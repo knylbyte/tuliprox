@@ -1,5 +1,5 @@
 use yew::prelude::*;
-use crate::app::components::{IconButton, Sidebar, DashboardView};
+use crate::app::components::{IconButton, Sidebar, DashboardView, PlaylistView};
 use crate::model::ViewType;
 use crate::hooks::use_service_context;
 
@@ -8,7 +8,7 @@ pub fn Home() -> Html {
     let services = use_service_context();
     let app_title = services.config.ui_config.app_title.as_ref().map_or("tuliprox", |v| v.as_str());
 
-    let view_visible = use_state(|| ViewType::Dashboard);
+    let view_visible = use_state(|| ViewType::Playlists);
 
     let handle_logout = {
         let services_ctx = services.clone();
@@ -24,13 +24,13 @@ pub fn Home() -> Html {
     // <div class={"app-header__toolbar"}><button data-tooltip={preferencesVisible ? "LABEL.PLAYLIST_BROWSER" : "LABEL.CONFIGURATION"} onClick={handlePreferences}>{getIconByName(preferencesVisible ? "Live" : "Config")}</button></div>
 
     html! {
-        <div class="app">
+        <div class="tp__app">
            <Sidebar onview={handle_view_change}/>
 
-          <div class="app-main">
-                <div class="app-main__header app-header">
+          <div class="tp__app-main">
+                <div class="tp__app-main__header tp__app-header">
                     {app_title}
-                    <div class={"app-header-toolbar"}>
+                    <div class={"tp__app-header-toolbar"}>
                         // <select onchange={handle_language} defaultValue={i18next.language}>{
                         //     services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)
                         // }</select>
@@ -47,10 +47,11 @@ pub fn Home() -> Html {
                         <IconButton name="Logout" icon="Logout" onclick={handle_logout} />
                     </div>
                 </div>
-                <div class="app-main__body">
+                <div class="tp__app-main__body">
                    {
                         match *view_visible {
                             ViewType::Dashboard => html! { <DashboardView/> },
+                            ViewType::Playlists => html! { <PlaylistView/> },
                             _ => html! { <div>{"Unknown view"}</div> },
                         }
                     }

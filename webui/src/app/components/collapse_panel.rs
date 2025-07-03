@@ -19,13 +19,13 @@ pub fn CollapsePanel(props: &CollapsePanelProps) -> Html {
     };
 
     html! {
-        <div class="collapse-panel">
-            <div class="collapse-panel__header" onclick={toggle}>
+        <div class="tp__collapse-panel">
+            <div class="tp__collapse-panel__header" onclick={toggle}>
                 <span>{ props.title.clone() }</span>
                 <AppIcon name={ if *expanded { "ChevronUp" } else {"ChevronDown"} }/>
             </div>
             if *expanded {
-                <div class="collapse-panel__body">
+                <div class="tp__collapse-panel__body">
                 { for props.children.iter() }
                 </div>
             }
