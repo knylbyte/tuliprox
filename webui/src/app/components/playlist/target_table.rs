@@ -10,7 +10,7 @@ use crate::app::components::reveal_content::RevealContent;
 use crate::hooks::use_service_context;
 
 const HEADERS: [&str; 11] = [
-"TABLE.ID",
+"TABLE.EMPTY",
 "TABLE.ENABLED",
 "TABLE.NAME",
 "TABLE.OPTIONS",
@@ -47,14 +47,14 @@ pub fn TargetTable() -> Html {
         Callback::<(usize, usize, Rc<ConfigTargetDto>), Html>::from(
             move |(_row, col, dto): (usize, usize, Rc<ConfigTargetDto>)| {
                 match col {
-                    0 =>  html! { &dto.id.to_string() },
-                    1 => html! { <ToggleSwitch readonly={false} value={&dto.enabled} /> },
+                     0 => html! { String::new() },
+                    1 => html! { <ToggleSwitch readonly={true} value={&dto.enabled} /> },
                     2 => html! { &dto.name.to_string() },
                     3 => html! { <RevealContent>{"Hello"}</RevealContent> },
                     4 => html! { <RevealContent>{dto.sort.as_ref().map_or_else(String::new, |s| format!("{s:?}"))}</RevealContent> },
                     5 => html! { &dto.filter.clone() },
                     6 => html! { <TargetOutput target={Rc::clone(&dto)} /> },
-                    7 => html! { "rename" },
+                    7 => html! { <RevealContent>{"Hello"}</RevealContent> },
                     8 => html! { dto.mapping.as_ref().map_or_else(String::new, |m| format!("{m:?}")) },
                     9 => html! { &dto.processing_order.to_string() },
                     10 => html! { dto.watch.as_ref().map_or_else(String::new, |w| format!("{w:?}"))},

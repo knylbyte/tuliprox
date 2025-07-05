@@ -32,6 +32,9 @@
 
     tbody {
       tr {
+        &:not(:last-child) {
+          border-bottom: 1px solid var(--border-color);
+        }
         td {
           padding: 0.875rem;
         }

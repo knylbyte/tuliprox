@@ -1,7 +1,6 @@
 @use "theme";
 @use "default";
-@use "common";
-@use "component";
+@use "app/component";
 
 html {
   height: 100%;

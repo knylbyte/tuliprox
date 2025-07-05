@@ -5,6 +5,7 @@ mod discord_action_card;
 mod documentation_action_card;
 mod status_card;
 mod ipinfo_action_card;
+pub mod dashboard_view;
 
 pub use self::action_card::*;
 pub use self::status_card::*;

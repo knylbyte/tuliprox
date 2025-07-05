@@ -92,6 +92,9 @@
     "XTREAM_CODES": "xtream codes",
     "XC": "xc",
     "M3U": "m3u",
+    "XTREAM": "Xtream",
+    "HDHOMERUN": "HdHomerun",
+    "STRM": "strm",
     "PLAYLIST_BROWSER": "Playlist Browser",
     "RATE_LIMIT": "Rate Limit",
     "PERIOD_MILLIS": "Period Millis",
@@ -135,9 +138,16 @@
     "PLAYLIST": "Playlist",
     "PLAYLISTS": "Playlists",
     "LIST": "List",
-    "NEW_PLAYLIST": "New Playlist"
+    "NEW_PLAYLIST": "New Playlist",
+    "SKIP_DIRECT_SOURCE": "Skip direct source",
+    "RESOLVE": "Resolve",
+    "DELAY": "Delay",
+    "FILENAME": "Filename",
+    "INCLUDE_TYPE_IN_URL": "Include type in url",
+    "MASK_REDIRECT_URL": "Mask redirect url"
   },
   "TABLE": {
+    "EMPTY": "",
     "ID":  "Id",
     "ENABLED":  "Enabled",
     "NAME":  "Name",

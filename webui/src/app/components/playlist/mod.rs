@@ -5,6 +5,7 @@ mod context;
 mod page;
 mod target_table;
 mod target;
+pub mod playlist_view;
 
 pub use self::assistant::*;
 pub use self::list::*;

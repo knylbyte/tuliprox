@@ -1,7 +1,13 @@
 use yew::prelude::*;
+use shared::model::HdHomeRunTargetOutputDto;
+
+#[derive(Properties, PartialEq, Clone)]
+pub struct HdHomeRunOutputProps {
+    pub output: HdHomeRunTargetOutputDto,
+}
 
 #[function_component]
-pub fn HdHomerunOutput() -> Html {
+pub fn HdHomeRunOutput(props: &HdHomeRunOutputProps) -> Html {
 
     html! {
       <div class="tp__hdhomerun_output">

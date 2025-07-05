@@ -1,10 +1,14 @@
 :root {
+  --media-size-mobile: 600px;
   --app-header-height: 56px;
-  --gap-default: 0.5rem;
   --gap-small: 0.3rem;
+  --gap-default: 0.5rem;
   --gap-large: 1rem;
   --gap-larger: 1.5rem;
 
+  --padding-micro: 0.2rem;
+  --padding-mini: 0.5rem;
+  --padding-small: 1rem;
   --padding-default: 1.5rem;
   --padding-large: 2rem;
 
@@ -40,10 +44,11 @@
   --text-button-primary-hover-color: #ffffff;
 
   --toggle-switch-on-background-color: #36c55a;
-  --toggle-switch-off-background-color: #b3b3b6;
-  --toggle-switch-toggle-color: #ffffff;
+  --toggle-switch-off-background-color: #3f3f45;
+  --toggle-switch-toggle-color: #fdfdfd;
 
   --table-header-background-color: #242427;
+  --table-card-background-color: #242427;
 
   --discord-color: #5764f0;
   --documenation-color: #2b944b;
@@ -54,8 +59,21 @@
   --pulse-color-1: #837f80;
   --pulse-color-2: #545454;
 
+  --tag-padding:  0.3rem 0.5rem;
+  --tag-border-radius: 0.5rem;
+  --tag-border-color: #3a3a3a;
+  --tag-color:  #e0e0e0;
+  --tag-background-color:  #2c2f36;
 
-  --media-size-mobile: 600px;
+  --tag-active-border-color: #2b6140;
+  --tag-active-color: #49dc7f;
+  --tag-active-background-color: #1e2d25;
+
+  --tag-inactive-border-color: #555;
+  --tag-inactive-color:  #6f6f6f;
+  --tag-inactive-background-color:  #3a3a3a;
+
+
   --hint-color: #888888;
   --label-color: #73d6fe;
 

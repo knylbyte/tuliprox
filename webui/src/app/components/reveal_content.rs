@@ -12,7 +12,7 @@ pub struct RevealContentProps {
 pub fn RevealContent(props: &RevealContentProps) -> Html {
     html! {
         <div class={"tp__reveal_content"}>
-            <AppIcon name={if props.icon.is_empty() {"Visibility".to_string()} else {props.icon.to_string()} } />
+            <AppIcon name={if props.icon.is_empty() {"Ellipsis".to_string()} else {props.icon.to_string()} } />
             // { for props.children.iter() }
         </div>
     }
