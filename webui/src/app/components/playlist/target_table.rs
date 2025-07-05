@@ -5,7 +5,8 @@ use yew::prelude::*;
 use yew::suspense::use_future;
 use yew_i18n::use_translation;
 use shared::model::{ConfigTargetDto};
-use crate::app::components::{PlaylistContext, Table, TableDefinition, ToggleSwitch};
+use crate::app::components::{PlaylistContext, Table, TableDefinition, TargetOutput, ToggleSwitch};
+use crate::app::components::reveal_content::RevealContent;
 use crate::hooks::use_service_context;
 
 const HEADERS: [&str; 11] = [
@@ -47,12 +48,12 @@ pub fn TargetTable() -> Html {
             move |(_row, col, dto): (usize, usize, Rc<ConfigTargetDto>)| {
                 match col {
                     0 =>  html! { &dto.id.to_string() },
-                    1 => html! { <ToggleSwitch value={&dto.enabled} /> },
+                    1 => html! { <ToggleSwitch readonly={false} value={&dto.enabled} /> },
                     2 => html! { &dto.name.to_string() },
-                    3 => html! { "options" },
-                    4 => html! { dto.sort.as_ref().map_or_else(String::new, |s| format!("{s:?}")) },
+                    3 => html! { <RevealContent>{"Hello"}</RevealContent> },
+                    4 => html! { <RevealContent>{dto.sort.as_ref().map_or_else(String::new, |s| format!("{s:?}"))}</RevealContent> },
                     5 => html! { &dto.filter.clone() },
-                    6 => html! { "output" },
+                    6 => html! { <TargetOutput target={Rc::clone(&dto)} /> },
                     7 => html! { "rename" },
                     8 => html! { dto.mapping.as_ref().map_or_else(String::new, |m| format!("{m:?}")) },
                     9 => html! { &dto.processing_order.to_string() },

@@ -15,3 +15,8 @@ $media-size-mobile: 600px;
 .tp__pulse {
   animation: tp__pulse-bg 500ms ease-out;
 }
+
+.tp__error-text {
+  color: var(--attention-color);
+  font-size: 1rem;
+}

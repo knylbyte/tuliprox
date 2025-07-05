@@ -18,6 +18,7 @@ mod breadcrumbs;
 mod playlist;
 mod table;
 mod toggle_switch;
+mod reveal_content;
 
 pub use self::svg_icon::*;
 // pub use self::input::*;

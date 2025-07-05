@@ -1,0 +1,15 @@
+.tp__reveal_content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  fill: var(--modest-text-color);
+  &:hover {
+    fill: var(--text-color);
+  }
+  .svg-icon {
+    height: 2rem;
+    pointer-events: none;
+  }
+
+}

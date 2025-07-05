@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use crate::foundation::filter::{get_filter, Filter};
@@ -86,10 +87,10 @@ pub struct HdHomeRunTargetOutputDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields, tag = "type", rename_all = "lowercase")]
 pub enum TargetOutputDto {
-    Xtream(XtreamTargetOutputDto),
-    M3u(M3uTargetOutputDto),
-    Strm(StrmTargetOutputDto),
-    HdHomeRun(HdHomeRunTargetOutputDto),
+    Xtream(Rc<XtreamTargetOutputDto>),
+    M3u(Rc<M3uTargetOutputDto>),
+    Strm(Rc<StrmTargetOutputDto>),
+    HdHomeRun(Rc<HdHomeRunTargetOutputDto>),
 }
 
 impl TargetOutputDto {

@@ -147,7 +147,6 @@ impl ConfigInputAliasDto {
     }
 }
 
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputDto {
