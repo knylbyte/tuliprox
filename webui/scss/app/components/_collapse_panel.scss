@@ -25,4 +25,15 @@
       width: 1.2rem;
     }
   }
+
+  &__body {
+    max-height: 5000px;
+  //  transition: max-height 0.5s ease;
+  //  max-height: 5000px;
+  }
+  &.tp__collapsed {
+    .tp__collapse-panel__body {
+       max-height: 0;
+     }
+  }
 }

@@ -63,8 +63,7 @@ dialog {
   padding: 0 !important;
 }
 
-.tp__rotated_text {
-  writing-mode: vertical-rl; // or vertical-lr
-  text-orientation: upright;
-  font-size: 1rem;
+.tp__delete_action {
+   color: var(--attention-color) !important;
+   fill: var(--attention-color) !important;
 }

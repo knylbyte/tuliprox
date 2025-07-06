@@ -3,3 +3,35 @@
   flex-flow: column;
   gap: var(--gap-small);
 }
+
+.tp__target_output__output {
+  display: flex;
+  justify-content: center;
+  flex-flow: column;
+  gap: var(--gap-small);
+
+  &__section {
+    display: flex;
+    flex-flow: column;
+    gap: var(--gap-small);
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: var(--padding-micro) var(--padding-mini);
+    background-color: var(--table-card-background-color);
+
+    .tp__tag_list {
+      flex-flow: row nowrap;
+    }
+  }
+
+  &__label {
+    font-size: 1.1rem;
+    white-space: nowrap;
+    vertical-align: middle;
+
+    &:after {
+      content: ":";
+    }
+  }
+}

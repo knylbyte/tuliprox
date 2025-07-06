@@ -10,7 +10,7 @@ pub struct StrmOutputProps {
 pub fn StrmOutput(props: &StrmOutputProps) -> Html {
 
     html! {
-      <div class="tp__strm_output">
+      <div class="tp__strm_output tp__target_output__output">
       </div>
     }
 }

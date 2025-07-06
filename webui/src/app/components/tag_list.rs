@@ -46,12 +46,12 @@ pub fn tag_list(props: &TagListProps) -> Html {
     };
 
     let on_keypress = {
-        let new_tag = new_tag.clone();
-        let tag_state = tag_state.clone();
-        let on_change = on_change.clone();
+        // TODO
+        // let new_tag = new_tag.clone();
+        // let tag_state = tag_state.clone();
+        // let on_change = on_change.clone();
         Callback::from(move |e: KeyboardEvent| {
             if e.key() == "Enter" {
-                // TODO
                 // let val = (*new_tag).trim().to_string();
                 // if !val.is_empty() && !tag_state.contains(&val) {
                 //     let mut updated = (*tag_state).clone();

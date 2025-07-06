@@ -8,6 +8,8 @@ pub struct MenuItemProps {
     pub label: String,
     pub icon: String,
     #[prop_or_default]
+    pub style: String,
+    #[prop_or_default]
     pub onclick: Callback<String>,
 }
 
@@ -24,7 +26,7 @@ pub fn MenuItem(props: &MenuItemProps) -> Html {
     };
 
     html! {
-        <div class="tp__menu-item" onclick={ handle_click }>
+        <div class={classes!("tp__menu-item", props.style.to_string())} onclick={ handle_click }>
             <AppIcon name={props.icon.clone()}></AppIcon>
             <label>{props.label.clone()}</label>
         </div>

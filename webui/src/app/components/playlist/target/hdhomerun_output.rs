@@ -10,7 +10,7 @@ pub struct HdHomeRunOutputProps {
 pub fn HdHomeRunOutput(props: &HdHomeRunOutputProps) -> Html {
 
     html! {
-      <div class="tp__hdhomerun_output">
+      <div class="tp__hdhomerun_output tp__target_output__output">
       </div>
     }
 }

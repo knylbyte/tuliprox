@@ -19,6 +19,7 @@ mod toggle_switch;
 mod reveal_content;
 mod tag_list;
 mod chip;
+mod popup_menu;
 
 pub use self::svg_icon::*;
 // pub use self::input::*;
@@ -42,3 +43,4 @@ pub use self::table::*;
 pub use self::toggle_switch::*;
 use self::chip::*;
 use self::tag_list::*;
+use self::popup_menu::*;

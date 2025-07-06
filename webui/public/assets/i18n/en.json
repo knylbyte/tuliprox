@@ -92,8 +92,8 @@
     "XTREAM_CODES": "xtream codes",
     "XC": "xc",
     "M3U": "m3u",
-    "XTREAM": "Xtream",
-    "HDHOMERUN": "HdHomerun",
+    "XTREAM": "xtream",
+    "HDHOMERUN": "hdHomerun",
     "STRM": "strm",
     "PLAYLIST_BROWSER": "Playlist Browser",
     "RATE_LIMIT": "Rate Limit",
@@ -144,7 +144,9 @@
     "DELAY": "Delay",
     "FILENAME": "Filename",
     "INCLUDE_TYPE_IN_URL": "Include type in url",
-    "MASK_REDIRECT_URL": "Mask redirect url"
+    "MASK_REDIRECT_URL": "Mask redirect url",
+    "EDIT": "Edit",
+    "DELETE": "Delete"
   },
   "TABLE": {
     "EMPTY": "",
