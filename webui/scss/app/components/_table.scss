@@ -12,31 +12,43 @@
   &__container {
     display: flex;
     flex-flow: column;
-    overflow-x: auto;
+    overflow: auto;
+    padding-right: 1px;
   }
 
   &__table {
     width: 100%;
     border-collapse: collapse;
+    position: relative;
 
     thead {
       tr {
         th {
+          position: sticky;
+          top: 0;
+          z-index: 2;
           font-size: 1.1rem;
           font-weight: bold;
           //text-align: center;
-          padding: 0.875rem;
+          padding: var(--padding-default);
           background-color: var(--table-header-background-color);
+          box-shadow: inset 0 -1px 0 var(--border-color);
         }
       }
     }
 
     tbody {
       tr {
+        &:nth-child(even) {
+          background-color: var(--table-alternate-background-color);
+        }
+        &:nth-child(odd) {
+        }
         &:not(:last-child) {
           border-bottom: 1px solid var(--border-color);
         }
         td {
+          vertical-align: top;
           padding: 0.875rem;
         }
       }

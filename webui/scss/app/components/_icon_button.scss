@@ -11,10 +11,6 @@
   height: min-content;
   width: min-content;
 
-  svg {
-    pointer-events: none;
-  }
-
   &:focus,
   &:hover {
     fill: var(--icon-button-hover-color);

@@ -4,9 +4,10 @@
   box-sizing: border-box;
   flex: 1 1 auto;
   width: 100%;
-  max-width: 1280px;
+  //max-width: var(--max-view-width);
   padding: var(--padding-default) 0;
   gap: var(--gap-default);
+  overflow: hidden;
 
   &__body {
     display: flex;
@@ -14,6 +15,7 @@
     box-sizing: border-box;
     flex: 1 1 auto;
     width: 100%;
+    overflow: hidden;
   }
 }
 
@@ -22,9 +24,10 @@
   display: flex;
   flex-flow: column;
   box-sizing: border-box;
+  overflow: hidden;
   flex: 1 1 auto;
   width: 100%;
-  max-width: 1280px;
+  //max-width: var(--max-view-width);
   gap: var(--gap-default);
 
   &__header {
@@ -35,5 +38,14 @@
     width: 100%;
     justify-content: space-between;
     align-items: center;
+  }
+
+  &__body {
+    display: flex;
+    flex-flow: column;
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    width: 100%;
+    overflow: hidden;
   }
 }

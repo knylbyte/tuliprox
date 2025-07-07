@@ -2,7 +2,8 @@ use std::rc::Rc;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::XtreamTargetOutputDto;
-use crate::app::components::chip::{convert_bool_to_chip_style, Tag};
+use crate::app::components::chip::{convert_bool_to_chip_style};
+use crate::app::components::Tag;
 use crate::app::components::tag_list::{TagList};
 
 #[derive(Properties, PartialEq, Clone)]
@@ -39,13 +40,13 @@ pub fn XtreamOutput(props: &XtreamOutputProps) -> Html {
     };
 
     html! {
-      <div class="tp__xtream_output tp__target_output__output">
-        <div class="tp__target_output__output__section">
-            <span class="tp__target_output__output__label">{translator.t("LABEL.SKIP_DIRECT_SOURCE")}</span>
+      <div class="tp__xtream-output tp__target-output__output">
+        <div class="tp__target-output__output__section">
+            <span class="tp__target-output__output__label">{translator.t("LABEL.SKIP_DIRECT_SOURCE")}</span>
             <TagList tags={(*tags_skip_direct_source).clone()} />
         </div>
-        <div class="tp__target_output__output__section">
-          <span class="tp__target_output__output__label">{translator.t("LABEL.RESOLVE")}</span>
+        <div class="tp__target-output__output__section">
+          <span class="tp__target-output__output__label">{translator.t("LABEL.RESOLVE")}</span>
           <TagList tags={(*tags_resolve).clone()} />
         </div>
       </div>
@@ -54,7 +55,7 @@ pub fn XtreamOutput(props: &XtreamOutputProps) -> Html {
 
 /*
 
-    <div class="tp__tp__target_output_row"><label>{translate.t("LABEL.RESOVE")}</label></div>
+    <div class="tp__tp__target-output_row"><label>{translate.t("LABEL.RESOVE")}</label></div>
 
                         #[serde(default = "default_as_true")]
     #[serde(default, skip_serializing_if = "Option::is_none")]

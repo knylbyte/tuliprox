@@ -28,7 +28,7 @@ wasm-bindgen-futures = "0"
 
 [dependencies.web-sys]
 version = "0.3"
-features = ["Document", "Element", "Node", "Window", "HtmlCollection", "HtmlInputElement", "DomRect"]
+features = ["Document", "Element", "Node", "Window", "HtmlCollection", "HtmlInputElement", "DomRect", "HtmlDialogElement"]
 
 [dev-dependencies]
 js-sys = "0.3"

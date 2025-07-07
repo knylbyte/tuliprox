@@ -2,7 +2,8 @@ use std::rc::Rc;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::M3uTargetOutputDto;
-use crate::app::components::chip::{convert_bool_to_chip_style, Chip, Tag};
+use crate::app::components::chip::{convert_bool_to_chip_style};
+use crate::app::components::Tag;
 use crate::app::components::tag_list::TagList;
 
 #[derive(Properties, PartialEq, Clone)]
@@ -26,12 +27,12 @@ pub fn M3uOutput(props: &M3uOutputProps) -> Html {
 
 
     html! {
-      <div class="tp__m3u_output tp__target_output__output">
-        <div class="tp__target_output__output__section">
-            <span class="tp__target_output__output__label">{translator.t("LABEL.FILENAME")}</span>
+      <div class="tp__m3u-output tp__target-output__output">
+        <div class="tp__target-output__output__section">
+            <span class="tp__target-output__output__label">{translator.t("LABEL.FILENAME")}</span>
            { props.output.filename.as_ref().map(|f| html! {<span>{ f }</span>}) }
         </div>
-        <div class="tp__target_output__output__section">
+        <div class="tp__target-output__output__section">
             <TagList tags={(*tags).clone()} />
         </div>
       </div>

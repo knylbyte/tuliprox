@@ -21,17 +21,18 @@
 
 ::-webkit-scrollbar-track {
   -webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
-  border-radius: 10px;
+  border-radius: var(--scrollbar-border-radius);
   background-color: var(--scrollbar-track-color);
 }
 
 ::-webkit-scrollbar {
-  width: 12px;
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-width);
   background-color: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  border-radius: 10px;
+  border-radius: var(--scrollbar-width);
   //-webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, .3);
   background-color: var(--scrollbar-handle-color);
 }
@@ -59,11 +60,23 @@ option {
   cursor: pointer;
 }
 
-dialog {
-  padding: 0 !important;
-}
-
 .tp__delete_action {
    color: var(--attention-color) !important;
    fill: var(--attention-color) !important;
+}
+
+.svg-icon {
+  pointer-events: none;
+  width: 1rem;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: transparent;
+}
+
+li {
+  background: transparent;
 }

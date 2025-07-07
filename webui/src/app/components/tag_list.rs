@@ -1,7 +1,13 @@
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use std::rc::Rc;
-use crate::app::components::chip::{Chip, Tag};
+use crate::app::components::chip::{Chip};
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct Tag {
+    pub label: String,
+    pub class: Option<String>,
+}
 
 #[derive(Properties, Clone, PartialEq)]
 pub struct TagListProps {
@@ -29,9 +35,9 @@ pub fn tag_list(props: &TagListProps) -> Html {
     let on_remove = {
         let tag_state = tag_state.clone();
         let on_change = on_change.clone();
-        Callback::from(move |tag: Rc<Tag>| {
+        Callback::from(move |tag_label: String| {
             let mut updated = (*tag_state).clone();
-            updated.retain(|t| t != &tag);
+            updated.retain(|t| t.label != tag_label);
             on_change.emit(updated.clone());
             tag_state.set(updated);
         })
@@ -66,7 +72,10 @@ pub fn tag_list(props: &TagListProps) -> Html {
 
     html! {
     <div class="tp__tag_list">
-        { for (*tag_state).iter().map(|tag| html! { <Chip tag={tag.clone()} /> }) }
+        { for (*tag_state).iter().map(|tag| html! {
+            <Chip label={tag.label.clone()} class={tag.class.clone()} removable={props.removable} on_remove={on_remove.clone()}/>
+          })
+        }
         {
             if allow_add {
                 html! {

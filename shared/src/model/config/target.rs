@@ -44,6 +44,15 @@ impl XtreamTargetOutputDto {
             trakt.prepare();
         }
     }
+
+    pub fn has_any_option(&self) -> bool {
+        self.skip_live_direct_source
+            || self.skip_video_direct_source
+            || self.skip_series_direct_source
+            || self.resolve_series
+            || self.resolve_vod
+            || self.trakt.is_some()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -55,6 +64,14 @@ pub struct M3uTargetOutputDto {
     pub include_type_in_url: bool,
     #[serde(default)]
     pub mask_redirect_url: bool,
+}
+
+impl M3uTargetOutputDto {
+    pub fn has_any_option(&self) -> bool {
+        self.filename.is_some()
+            || self.include_type_in_url
+            || self.mask_redirect_url
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]

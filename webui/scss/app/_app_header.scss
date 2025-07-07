@@ -4,6 +4,8 @@
   justify-content: space-between;
   padding-left: 2rem;
   height: var(--app-header-height);
+  min-height: var(--app-header-height);
+  max-height: var(--app-header-height);
   background-color: var(--app-header-background-color);
   border-bottom: 1px solid var(--border-color);
   fill: var(--menu-icon-color);

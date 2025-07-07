@@ -64,11 +64,11 @@
         width: 2rem;
       }
 
-      &_update { svg { path { fill: var(--menu-icon-color-update); } } }
-      &_user { svg { path { fill: var(--menu-icon-color-user); } } }
-      &_apiserver { svg { path { fill: var(--menu-icon-color-api_server); } } }
-      &_mainconfig { svg { path { fill: var(--menu-icon-color-main_config); } } }
-      &_status { svg { path { fill: var(--menu-icon-color-status); } } }
+      &_update {  fill: var(--menu-icon-color-update); }
+      &_user {  fill: var(--menu-icon-color-user); }
+      &_apiserver {  fill: var(--menu-icon-color-api_server); }
+      &_mainconfig {  fill: var(--menu-icon-color-main_config);}
+      &_status {  fill: var(--menu-icon-color-status); }
 
 
       * {

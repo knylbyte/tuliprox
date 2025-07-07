@@ -35,12 +35,3 @@ body {
   background-color: inherit;
 }
 
-dialog {
-  border: none;
-  border-radius: var(--border-radius);
-  background-color: var(--card-background-color);
-  filter: drop-shadow(6px 6px 6px var(--popup-shadow-color));
-  &::backdrop {
-    background: rgba(0, 0, 0, 0.3); /* Schwarzer, halbtransparenter Hintergrund */
-  }
-}

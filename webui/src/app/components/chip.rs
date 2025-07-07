@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{ MouseEvent};
 use yew::{classes, function_component, html, Callback, Html, Properties};
@@ -8,21 +7,15 @@ pub fn convert_bool_to_chip_style(value: bool) -> Option<String> {
     Option::from((if value { "active" } else { "inactive" }).to_string())
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub struct Tag {
-    pub label: String,
-    pub class: Option<String>,
-}
-
 #[derive(Properties, Clone, PartialEq)]
 pub struct ChipProps {
-    pub(crate) tag: Rc<Tag>,
+    pub label: String,
+    pub class: Option<String>,
     #[prop_or(false)]
-    removable: bool,
+    pub removable: bool,
     #[prop_or_else(|| Callback::noop())]
-    on_remove: Callback<String>,
+    pub on_remove: Callback<String>,
 }
-
 
 #[function_component]
 pub fn Chip(props: &ChipProps) -> Html {
@@ -45,8 +38,8 @@ pub fn Chip(props: &ChipProps) -> Html {
     };
 
     html! {
-         <span class={classes!("tp__chip", props.tag.class.clone())}>
-            { &props.tag.label }
+         <span class={classes!("tp__chip", props.class.clone())}>
+            { &props.label }
             if props.removable {
                 <span class="tp__remove" onclick={handle_remove}>{"×"}</span>
             }

@@ -20,8 +20,7 @@
     width: 1.5rem;
   }
 
-  span,
-  svg {
+  span {
     pointer-events: none;
   }
 
@@ -42,4 +41,15 @@
       fill : var(--text-button-primary-hover-color);
       outline: none;
    }
+}
+.tp__text-button.tp__button-secondary {
+  background-color: var(--text-button-secondary-background-color);
+  color: var(--text-button-secondary-color);
+  fill : var(--text-button-secondary-color);
+  &:hover {
+    background-color: var(--text-button-secondary-hover-background-color);
+    color: var(--text-button-secondary-hover-color);
+    fill : var(--text-button-secondary-hover-color);
+    outline: none;
+  }
 }

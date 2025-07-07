@@ -1,6 +1,10 @@
 :root {
+  --max-view-width: 1280px;
+  --max-table-cell-width: 240px;
   --media-size-mobile: 600px;
   --app-header-height: 56px;
+  --scrollbar-width: 8px;
+  --scrollbar-border-radius: 4px;
   --gap-small: 0.3rem;
   --gap-default: 0.5rem;
   --gap-large: 1rem;
@@ -8,13 +12,16 @@
 
   --padding-micro: 0.2rem;
   --padding-mini: 0.5rem;
-  --padding-small: 1rem;
-  --padding-default: 1.5rem;
-  --padding-large: 2rem;
+  --padding-small: 0.875rem;
+  --padding-default: 1rem;
+  --padding-large: 1.5rem;
+  --padding-larger: 2rem;
 
   --primary-color: #124a9b;
+  --secondary-color: #f67070;
 
   --action-item-background-color: #242427;
+  --action-item-color: #ffffff;
 
   --text-color: #ffffff;
   --modest-text-color: #A1A1AAFF;
@@ -28,6 +35,7 @@
   --menu-text-color: #e2e2e5;
   --menu-icon-color: #707079;
   --menu-item-hover-background-color: var(--action-item-background-color);
+  --menu-item-hover-color: var(--action-item-color);
   --menu-text-active-color: var(--primary-color);
   --menu-item-active-background-color: var(--menu-item-hover-background-color);
   --icon-button-hover-color: #8f8f97;
@@ -42,6 +50,10 @@
   --text-button-primary-color: #ffffff;
   --text-button-primary-hover-background-color: #2f68be;
   --text-button-primary-hover-color: #ffffff;
+  --text-button-secondary-background-color: #e53d3d;
+  --text-button-secondary-color: #ffffff;
+  --text-button-secondary-hover-background-color: var(--secondary-color);
+  --text-button-secondary-hover-color: #ffffff;
 
   --toggle-switch-on-background-color: #36c55a;
   --toggle-switch-off-background-color: #3f3f45;
@@ -49,9 +61,10 @@
 
   --table-header-background-color: #242427;
   --table-card-background-color: #242427;
+  --table-alternate-background-color: #1b1b1e;
 
   --discord-color: #5764f0;
-  --documenation-color: #2b944b;
+  --documentation-color: #2b944b;
 
   --app-header-background-color: #18181b;
   --app-header-color: #73d6fe;
@@ -74,7 +87,7 @@
   --tag-inactive-background-color:  #3a3a3a;
 
 
-  --popup-background-color: #18181b;
+  --popup-background-color: #313133; //#18181b;
   --popup-shadow: 0 3px 8px #06070a;
   --popup-border-color: #2f2f31;
   --popup-color: #fff;
@@ -83,7 +96,12 @@
 
   --attention-color: #f67070;
   --warn-color: #b88e22;
+  --active-color: #34d399;
 
+  --output-xtream-color: #06b6d4;
+  --output-m3u-color: #10b981;
+  --output-hdhomerun-color: #6366f1;
+  --output-strm-color: #f43f5e;
 
 
   --hint-color: #888888;
@@ -207,7 +225,7 @@ body[data-theme="bright"] {
   --text-button-primary-hover-color: #ffffff;
 
   --discord-color: #5865f2;
-  --documenation-color: #22c55e;
+  --documentation-color: #22c55e;
 
   --app-header-background-color: #e0e7ff;
   --app-header-color: #2563eb;

@@ -49,7 +49,9 @@ impl ConfigService {
             return;
         }
         let result = match request_get::<AppConfigDto>(CONFIG_PATH).await {
-            Ok(cfg) => Some(Rc::new(cfg)),
+            Ok(cfg) => {
+                Some(Rc::new(cfg))
+            },
             Err(err) => {
                 error!("{err}");
                 None

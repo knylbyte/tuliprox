@@ -12,28 +12,31 @@ pub struct TargetOutputProps {
 #[function_component]
 pub fn TargetOutput(props: &TargetOutputProps) -> Html {
     let translate = use_translation();
+
     html! {
-        <div class="tp__target_output">
+        <div class="tp__target-output">
             {
-                props.target.output.iter().map(|output| {
+                props.target.output.iter().map(|output: &TargetOutputDto| {
                     match output {
                     TargetOutputDto::Xtream(xc) => html! {
-                        <CollapsePanel expanded={false} title={translate.t("LABEL.XTREAM")}>
+                        <CollapsePanel class={format!("tp__target-output__xtream{}", if xc.has_any_option() { " tp__target-output__has_options" } else {""}) }
+                            expanded={false} title={translate.t("LABEL.XTREAM")}>
                             <XtreamOutput output={xc.clone()} />
                         </CollapsePanel>
                     },
                     TargetOutputDto::M3u(m3u) => html! {
-                        <CollapsePanel expanded={false} title={translate.t("LABEL.M3U")}>
+                        <CollapsePanel class={format!("tp__target-output__m3u{}", if m3u.has_any_option() { " tp__target-output__has_options" } else {""}) }
+                            expanded={false} title={translate.t("LABEL.M3U")}>
                             <M3uOutput output={m3u.clone()}/>
                         </CollapsePanel>
                     },
                     TargetOutputDto::Strm(strm) => html! {
-                        <CollapsePanel expanded={false} title={translate.t("LABEL.STRM")}>
+                        <CollapsePanel class="tp__target-output__strm" expanded={false} title={translate.t("LABEL.STRM")}>
                             <StrmOutput output={strm.clone()}/>
                         </CollapsePanel>
                     },
                     TargetOutputDto::HdHomeRun(hdhr) => html! {
-                        <CollapsePanel expanded={false} title={translate.t("LABEL.HDHOMERUN")}>
+                        <CollapsePanel class="tp__target-output__hdhomerun" expanded={false} title={translate.t("LABEL.HDHOMERUN")}>
                                 <HdHomeRunOutput output={hdhr.clone()}/>
                         </CollapsePanel>
                     },

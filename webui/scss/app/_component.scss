@@ -1,3 +1,5 @@
+@forward "app_header";
+@forward "app";
 @forward "components/input";
 @forward "components/menu_item";
 @forward "components/icon_button";
@@ -17,14 +19,17 @@
 @forward "components/playlist/playlist_view";
 @forward "components/playlist/assistant/playlist_assistant";
 @forward "components/reveal_content";
-@forward  "app_header";
-@forward  "app";
+@forward "components/playlist/target/target_watch";
+@forward "components/playlist/target/target_options";
 @forward "components/playlist/target/target_output";
 @forward "components/playlist/target/xtream_output";
 @forward "components/playlist/target/m3u_output";
 @forward "components/playlist/target/strm_output";
 @forward "components/playlist/target/hdhomerun_output";
 @forward "components/playlist/target/target_table";
+@forward "components/playlist/playlist_mappings";
+@forward "components/playlist/playlist_processing";
 @forward "components/tag_list";
 @forward "components/chip";
 @forward "components/popup_menu";
+@forward "components/dialog";

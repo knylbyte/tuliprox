@@ -20,8 +20,9 @@
       display: flex;
       flex-flow: column;
       box-sizing: border-box;
-      padding: 0 var(--padding-large);
+      padding: 0 var(--padding-larger);
       align-items: center;
+      overflow: hidden;
     }
   }
 }

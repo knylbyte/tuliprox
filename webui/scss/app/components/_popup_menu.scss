@@ -1,22 +1,12 @@
 .tp__popup-menu {
   display: flex;
   flex-flow: column;
-  padding: 8px;
+  padding: var(--padding-mini);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--border-radius);
   background-color: var(--popup-background-color);
   color: var(--popup-color);
   box-shadow: var(--popup-shadow);
   z-index: 9999;
 
-  ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    background: transparent;
-  }
-
-  li {
-    background: transparent;
-  }
 }

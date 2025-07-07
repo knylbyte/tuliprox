@@ -1,24 +1,28 @@
+use std::fmt::Display;
 use crate::app::components::popup_menu::PopupMenu;
 use crate::app::components::reveal_content::RevealContent;
-use crate::app::components::{AppIcon, Table, TableDefinition, TargetOutput, ToggleSwitch};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, PlaylistMappings, PlaylistProcessing, Table, TableDefinition, TargetOptions, TargetOutput, TargetWatch};
 use crate::hooks::use_service_context;
-use shared::model::ConfigTargetDto;
+use shared::model::{ConfigTargetDto};
 use std::future;
 use std::rc::Rc;
-use log::info;
+use std::str::FromStr;
+use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew::suspense::use_future;
 use yew_i18n::use_translation;
+use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use crate::app::components::menu_item::MenuItem;
+use crate::services::{DialogResult, DialogService};
 
 const HEADERS: [&str; 11] = [
     "TABLE.EMPTY",
     "TABLE.ENABLED",
     "TABLE.NAME",
+    "TABLE.OUTPUT",
     "TABLE.OPTIONS",
     "TABLE.SORT",
     "TABLE.FILTER",
-    "TABLE.OUTPUT",
     "TABLE.RENAME",
     "TABLE.MAPPING",
     "TABLE.PROCESSING_ORDER",
@@ -29,6 +33,7 @@ const HEADERS: [&str; 11] = [
 pub fn TargetTable() -> Html {
     let translate = use_translation();
     let services = use_service_context();
+    let dialog = use_context::<DialogService>().expect("Dialog service not found");
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
     let selected_dto = use_state(|| None::<Rc<ConfigTargetDto>>);
@@ -70,6 +75,7 @@ pub fn TargetTable() -> Html {
     };
 
     let render_data_cell = {
+        let translator = translate.clone();
         let popup_onclick = handle_popup_onclick.clone();
         Callback::<(usize, usize, Rc<ConfigTargetDto>), Html>::from(
             move |(row, col, dto): (usize, usize, Rc<ConfigTargetDto>)| {
@@ -84,16 +90,18 @@ pub fn TargetTable() -> Html {
                             </button>
                         }
                     }
-                    1 => html! { <ToggleSwitch readonly={true} value={&dto.enabled} /> },
+                    1 => html! { <Chip class={ convert_bool_to_chip_style(dto.enabled) }
+                                 label={if dto.enabled {translator.t("LABEL.ACTIVE")} else { translator.t("LABEL.DISABLED")} }
+                                  /> },
                     2 => html! { &dto.name.to_string() },
-                    3 => html! { <RevealContent>{"Hello"}</RevealContent> },
-                    4 => html! { <RevealContent>{dto.sort.as_ref().map_or_else(String::new, |s| format!("{s:?}"))}</RevealContent> },
-                    5 => html! { &dto.filter.clone() },
-                    6 => html! { <TargetOutput target={Rc::clone(&dto)} /> },
+                    3 => html! { <TargetOutput target={Rc::clone(&dto)} /> },
+                    4 => html! { <TargetOptions target={Rc::clone(&dto)} /> },
+                    5 => dto.sort.as_ref().map_or_else(|| html! {}, |s| html! { <RevealContent>{format!("{s:?}")}</RevealContent> }),
+                    6 => html! { &dto.filter.clone() },
                     7 => html! { <RevealContent>{"Hello"}</RevealContent> },
-                    8 => html! { dto.mapping.as_ref().map_or_else(String::new, |m| format!("{m:?}")) },
-                    9 => html! { &dto.processing_order.to_string() },
-                    10 => html! { dto.watch.as_ref().map_or_else(String::new, |w| format!("{w:?}"))},
+                    8 => html! { <PlaylistMappings mappings={dto.mapping.clone()} /> },
+                    9 => html! { <PlaylistProcessing order={dto.processing_order} /> },
+                    10 => html! { <TargetWatch  target={Rc::clone(&dto)} /> },
                     _ => html! {""},
                 }
             })
@@ -140,8 +148,24 @@ pub fn TargetTable() -> Html {
 
     let handle_menu_edit = {
         let popup_is_open_state = popup_is_open.clone();
+        let confirm = dialog.clone();
+        let translate = translate.clone();
         Callback::from(move |name:String| {
-            info!("Menu selected {name}");
+            if let Ok(action) = TableAction::from_str(&name) {
+                match action {
+                    TableAction::Edit => {}
+                    TableAction::Delete => {
+                        let confirm = confirm.clone();
+                        let translator = translate.clone();
+                        spawn_local(async move {
+                            let result = confirm.confirm(&translator.t("MESSAGES.CONFIRM_DELETE")).await;
+                            if result == DialogResult::Ok {
+                                // TODO edit
+                            }
+                        });
+                    }
+                }
+            }
             popup_is_open_state.set(false);
         })
     };
@@ -154,8 +178,8 @@ pub fn TargetTable() -> Html {
                     <>
                        <Table::<ConfigTargetDto> definition={(*table_definition).as_ref().unwrap().clone()} />
                         <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
-                            <MenuItem icon="Edit" name="edit" label={translate.t("LABEL.EDIT")} onclick={&handle_menu_edit}></MenuItem>
-                            <MenuItem style="tp__delete_action" icon="Delete" name="delete" label={translate.t("LABEL.DELETE")} onclick={&handle_menu_edit}></MenuItem>
+                            <MenuItem icon="Edit" name={TableAction::Edit.to_string()} label={translate.t("LABEL.EDIT")} onclick={&handle_menu_edit}></MenuItem>
+                            <MenuItem icon="Delete" name={TableAction::Delete.to_string()} label={translate.t("LABEL.DELETE")} onclick={&handle_menu_edit} style="tp__delete_action"></MenuItem>
                         </PopupMenu>
                     </>
                   }
@@ -165,5 +189,36 @@ pub fn TargetTable() -> Html {
           }
 
         </div>
+    }
+}
+
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum TableAction {
+    Edit,
+    Delete,
+}
+
+impl Display for TableAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            Self::Edit => "edit",
+            Self::Delete => "delete",
+        })
+    }
+}
+
+impl FromStr for TableAction {
+    type Err = TuliproxError;
+
+    fn from_str(s: &str) -> Result<Self, TuliproxError> {
+        if s.eq("edit") {
+            Ok(Self::Edit)
+        } else if s.eq("delete") {
+            Ok(Self::Delete)
+        } else {
+            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
+        }
     }
 }

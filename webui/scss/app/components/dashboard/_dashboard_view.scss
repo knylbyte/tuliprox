@@ -6,7 +6,7 @@ $dashboard-mobile-size: 1280px;
   box-sizing: border-box;
   flex: 1 1 auto;
   width: 100%;
-  max-width: 1280px;
+  max-width: var(--max-view-width);
 
   &__header {
     display: flex;
@@ -44,7 +44,7 @@ $dashboard-mobile-size: 1280px;
   }
 
   .tp__documentation {
-    fill: var(--documenation-color);
+    fill: var(--documentation-color);
 
     svg {
       transform: scale(1.4);

@@ -6,6 +6,8 @@ mod page;
 mod target_table;
 mod target;
 pub mod playlist_view;
+mod processing;
+mod mappings;
 
 pub use self::assistant::*;
 pub use self::list::*;
@@ -14,3 +16,5 @@ pub use self::context::*;
 pub use self::page::*;
 pub use self::target_table::*;
 pub use self::target::*;
+pub use self::processing::*;
+pub use self::mappings::*;

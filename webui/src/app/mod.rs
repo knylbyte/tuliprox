@@ -14,8 +14,9 @@ use crate::app::components::{Authentication, Home, Login, Preferences};
 use crate::error::Error;
 use crate::hooks::IconDefinition;
 use crate::model::WebConfig;
+use crate::provider::dialog_provider::DialogProvider;
 use crate::services::request_get;
-
+pub use crate::app::components::ConfirmDialog;
 fn flatten_json(value: &Value, prefix: String, map: &mut HashMap<String, serde_json::Value>) {
     match value {
         Value::Object(obj) => {
@@ -132,7 +133,9 @@ pub fn App() -> Html {
                 <IconContextProvider icons={icons.clone()}>
                     <I18nProvider supported_languages={supported_languages} translations={transl.clone()}>
                         <Authentication>
-                            <Switch<AppRoute> render={switch} />
+                            <DialogProvider>
+                                <Switch<AppRoute> render={switch} />
+                            </DialogProvider>
                         </Authentication>
                     </I18nProvider>
                 </IconContextProvider>
