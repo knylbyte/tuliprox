@@ -15,7 +15,7 @@ wasm-bindgen = {version = "0.2", features = ["serde-serialize"]}
 anyhow = "1"
 thiserror = "2"
 reqwasm = {version = "0.5", features = ["json"]}
-log = "0.4.27"
+log = "0.4"
 wasm-logger = "0.2"
 gloo-storage = "0"
 gloo-utils = "0"

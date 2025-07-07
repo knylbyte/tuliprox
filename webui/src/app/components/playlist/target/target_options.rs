@@ -2,7 +2,18 @@ use crate::app::components::{convert_bool_to_chip_style, CollapsePanel, Tag, Tag
 use shared::model::{ClusterFlags, ConfigTargetDto};
 use std::rc::Rc;
 use yew::prelude::*;
-use yew_i18n::use_translation;
+use yew_i18n::{use_translation, YewI18n};
+
+fn make_tags(data: &[(bool, &str)], translate: &YewI18n) -> Vec<Rc<Tag>> {
+    data.iter()
+        .map(|(o, t)| {
+            Rc::new(Tag {
+                class: convert_bool_to_chip_style(*o),
+                label: translate.t(t),
+            })
+        })
+        .collect()
+}
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct TargetOptionsProps {
@@ -13,6 +24,12 @@ pub struct TargetOptionsProps {
 pub fn TargetOptions(props: &TargetOptionsProps) -> Html {
     let translate = use_translation();
     let tags = use_memo(props.target.clone(), |target| {
+        let redirect_default= vec![
+            (false, "LABEL.LIVE"),
+            (false, "LABEL.VOD"),
+            (false, "LABEL.SERIES"),
+
+        ];
         let (flags, options, redirect) = match target.options.as_ref() {
             None => (
                 vec![false, false, false, false, false, false],
@@ -21,20 +38,11 @@ pub fn TargetOptions(props: &TargetOptionsProps) -> Html {
                 (false, "LABEL.SHARE_LIVE_STREAMS"),
                 (false, "LABEL.REMOVE_DUPLICATES"),
                 ],
-                vec![
-                    (false, "LABEL.LIVE"),
-                    (false, "LABEL.VOD"),
-                    (false, "LABEL.SERIES"),
-
-                ],
+                redirect_default.clone(),
             ),
             Some(options) => {
                 let force_redirect =                     match options.force_redirect {
-                    None => vec![
-                        (false, "LABEL.LIVE"),
-                        (false, "LABEL.VOD"),
-                        (false, "LABEL.SERIES"),
-                    ],
+                    None => redirect_default.clone(),
                     Some(force_redirect) => vec![
                         (force_redirect.contains(ClusterFlags::Live), "LABEL.LIVE"),
                         (force_redirect.contains(ClusterFlags::Vod), "LABEL.VOD"),
@@ -53,11 +61,10 @@ pub fn TargetOptions(props: &TargetOptionsProps) -> Html {
             }
         };
 
-
         (
          flags.iter().any(|&v| v),
-         options.iter().map(|(o, t)| Rc::new(Tag { class: convert_bool_to_chip_style(*o), label: translate.t(t) })).collect::<Vec<Rc<Tag>>>(),
-         redirect.iter().map(|(o, t)| Rc::new(Tag { class: convert_bool_to_chip_style(*o), label: translate.t(t) })).collect::<Vec<Rc<Tag>>>(),
+         make_tags(&options, &translate),
+         make_tags(&redirect, &translate),
         )
     });
 

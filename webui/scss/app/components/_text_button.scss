@@ -35,6 +35,7 @@
    background-color: var(--text-button-primary-background-color);
    color: var(--text-button-primary-color);
    fill : var(--text-button-primary-color);
+   &:focus,
    &:hover {
       background-color: var(--text-button-primary-hover-background-color);
       color: var(--text-button-primary-hover-color);
@@ -46,6 +47,7 @@
   background-color: var(--text-button-secondary-background-color);
   color: var(--text-button-secondary-color);
   fill : var(--text-button-secondary-color);
+  &:focus,
   &:hover {
     background-color: var(--text-button-secondary-hover-background-color);
     color: var(--text-button-secondary-hover-color);

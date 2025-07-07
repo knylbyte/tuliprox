@@ -11,6 +11,8 @@ pub struct TextButtonProps {
     #[prop_or_default]
     pub style: String,
     pub onclick: Callback<String>,
+    #[prop_or_default]
+    pub autofocus: bool,
 }
 
 #[function_component]
@@ -26,7 +28,7 @@ pub fn TextButton(props: &TextButtonProps) -> Html {
     };
 
     html! {
-        <button class={if props.style.is_empty() {"tp__text-button".to_string()} else {format!("tp__text-button tp__button-{}", props.style)}} onclick={handle_click}>
+        <button autofocus={props.autofocus} class={if props.style.is_empty() {"tp__text-button".to_string()} else {format!("tp__text-button tp__button-{}", props.style)}} onclick={handle_click}>
          if !props.icon.is_empty() {
             <AppIcon name={props.icon.clone()}></AppIcon>
          }

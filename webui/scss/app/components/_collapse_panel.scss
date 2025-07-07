@@ -5,16 +5,19 @@
   overflow: hidden;
 
   &__header {
-    color: var(--modest-text-color);
-    fill: var(--modest-text-color);
     display: flex;
     flex-flow: row nowrap;
+    color: var(--modest-text-color);
+    fill: var(--modest-text-color);
     max-height: 1.2rem;
     cursor: pointer;
+    box-sizing: border-box;
+    width: 100%;
+
     &:hover {
       color: var(--menu-button-hover-color);
     }
-    span {
+    &-title {
       flex: 1 1 auto;
     }
     span {

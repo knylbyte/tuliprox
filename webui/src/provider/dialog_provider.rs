@@ -1,6 +1,7 @@
+use crate::services::{DialogRequest, DialogService};
 use yew::{function_component, html, use_effect_with, use_state, Callback, Children, ContextProvider, Html, Properties};
-use crate::app::ConfirmDialog;
-use crate::services::{ConfirmRequest, DialogResult, DialogService};
+use crate::app::{ConfirmDialog, ContentDialog};
+use crate::model::DialogResult;
 
 #[derive(Properties, PartialEq)]
 pub struct ConfirmProviderProps {
@@ -10,14 +11,14 @@ pub struct ConfirmProviderProps {
 #[function_component]
 pub fn DialogProvider(props: &ConfirmProviderProps) -> Html {
     let service = use_state(DialogService::new);
-    let confirm_request = use_state(|| None::<ConfirmRequest>);
+    let dialog_request = use_state(|| None::<DialogRequest>);
 
     {
         let service = service.clone();
-        let request = confirm_request.clone();
+        let request = dialog_request.clone();
         use_effect_with((),
             move |_| {
-                service.register_confirm(Callback::from(move |req: ConfirmRequest| {
+                service.register(Callback::from(move |req: DialogRequest| {
                     request.set(Some(req));
                 }));
                 || ()
@@ -26,11 +27,20 @@ pub fn DialogProvider(props: &ConfirmProviderProps) -> Html {
     }
 
     let on_confirm = {
-        let request = confirm_request.clone();
-        Callback::from(move |result: bool| {
+        let request = dialog_request.clone();
+        Callback::from(move |result: DialogResult| {
             if let Some(req) = &*request {
-                if let Some(cb) = req.resolve.borrow_mut().take() {
-                    cb( if result {DialogResult::Ok} else { DialogResult::Cancel});
+                match req {
+                    DialogRequest::Confirm(confirm) => {
+                        if let Some(cb) = confirm.resolve.borrow_mut().take() {
+                            cb(result);
+                        }
+                    },
+                    DialogRequest::Content(content) => {
+                        if let Some(cb) = content.resolve.borrow_mut().take() {
+                            cb(result);
+                        }
+                    }
                 }
             }
             request.set(None);
@@ -41,14 +51,27 @@ pub fn DialogProvider(props: &ConfirmProviderProps) -> Html {
         <ContextProvider<DialogService> context={(*service).clone()}>
             { for props.children.iter() }
             {
-                if let Some(req) = &*confirm_request {
-                    html! {
-                        <ConfirmDialog
-                            title={req.title.clone()}
-                            ok_caption={req.ok_caption.clone()}
-                            cancel_caption={req.cancel_caption.clone()}
-                            on_confirm={on_confirm.clone()}
-                        />
+                if let Some(request) = &*dialog_request {
+                     match request {
+                        DialogRequest::Confirm(confirm) => {
+                            html! {
+                              <ConfirmDialog
+                                    title={confirm.title.clone()}
+                                    ok_caption={confirm.ok_caption.clone()}
+                                    cancel_caption={confirm.cancel_caption.clone()}
+                                    on_confirm={on_confirm.clone()}
+                                />
+                            }
+                        }
+                        DialogRequest::Content(content) => {
+                            html! {
+                              <ContentDialog
+                                    content={content.content.clone()}
+                                    actions={content.actions.clone()}
+                                    on_confirm={on_confirm.clone()}
+                                />
+                            }
+                        }
                     }
                 } else {
                     html! {}

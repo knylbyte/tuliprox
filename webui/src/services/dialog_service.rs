@@ -3,13 +3,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
-use yew::{Callback};
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum DialogResult {
-    Ok,
-    Cancel,
-}
+use yew::{Callback, Html};
+use crate::model::{DialogAction, DialogActions, DialogResult};
 
 #[derive(Clone)]
 pub struct DialogFuture {
@@ -60,9 +55,22 @@ pub struct ConfirmRequest {
     pub resolve: Rc<RefCell<Option<Box<dyn Fn(DialogResult)>>>>,
 }
 
+#[derive(Clone)]
+pub struct ContentRequest {
+    pub content: Html,
+    pub actions: DialogActions,
+    pub resolve: Rc<RefCell<Option<Box<dyn Fn(DialogResult)>>>>,
+}
+
+#[derive(Clone)]
+pub enum DialogRequest {
+    Confirm(ConfirmRequest),
+    Content(ContentRequest),
+}
+
 #[derive(Default, Clone, PartialEq)]
 pub struct DialogService {
-    inner: Rc<RefCell<Option<Callback<ConfirmRequest>>>>,
+    inner: Rc<RefCell<Option<Callback<DialogRequest>>>>,
 }
 
 impl DialogService {
@@ -70,7 +78,7 @@ impl DialogService {
         Self::default()
     }
 
-    pub fn register_confirm(&self, cb: Callback<ConfirmRequest>) {
+    pub fn register(&self, cb: Callback<DialogRequest>) {
         *self.inner.borrow_mut() = Some(cb);
     }
 
@@ -84,7 +92,25 @@ impl DialogService {
         };
 
         if let Some(cb) = &*self.inner.borrow() {
-            cb.emit(request);
+            cb.emit(DialogRequest::Confirm(request));
+        }
+
+        future
+    }
+
+    pub fn content(&self, content: Html, actions: Option<DialogActions>) -> DialogFuture {
+        let (future, resolver) = DialogFuture::new();
+        let request = ContentRequest {
+            content,
+            actions: actions.unwrap_or_else(||  DialogActions {
+                left: None,
+                right: vec![ DialogAction::new_focused("close", "LABEL.CLOSE",  DialogResult::Cancel, Some("Close".to_string()), None) ],
+            }),
+            resolve: Rc::new(RefCell::new(Some(Box::new(resolver)))),
+        };
+
+        if let Some(cb) = &*self.inner.borrow() {
+            cb.emit(DialogRequest::Content(request));
         }
 
         future

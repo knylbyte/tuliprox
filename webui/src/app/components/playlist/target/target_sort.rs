@@ -4,20 +4,18 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 
 #[derive(Properties, Clone, PartialEq, Debug)]
-pub struct TargetWatchProps {
+pub struct TargetSortProps {
     pub target: Rc<ConfigTargetDto>,
 }
 
 #[function_component]
-pub fn TargetWatch(props: &TargetWatchProps) -> Html {
+pub fn TargetSort(props: &TargetSortProps) -> Html {
     let translate = use_translation();
-    match props.target.watch.as_ref() {
+    match props.target.sort.as_ref() {
         None => html! {},
         Some(watch) => html! {
-            <div class="tp__target-watch">
-                <ul>
-                    { watch.iter().map(|item| html! { <li>{ item }</li> }).collect::<Html>() }
-                </ul>
+            <div class="tp__target-sort">
+                {"Sort"}
             </div>
         }
     }

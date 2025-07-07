@@ -16,7 +16,9 @@ use crate::hooks::IconDefinition;
 use crate::model::WebConfig;
 use crate::provider::dialog_provider::DialogProvider;
 use crate::services::request_get;
-pub use crate::app::components::ConfirmDialog;
+pub use crate::app::components::{ConfirmDialog, ContentDialog};
+
+
 fn flatten_json(value: &Value, prefix: String, map: &mut HashMap<String, serde_json::Value>) {
     match value {
         Value::Object(obj) => {

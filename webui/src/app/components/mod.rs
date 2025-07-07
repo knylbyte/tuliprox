@@ -21,6 +21,7 @@ mod tag_list;
 mod chip;
 mod popup_menu;
 mod confirm_dialog;
+mod content_dialog;
 
 pub use self::svg_icon::*;
 // pub use self::input::*;
@@ -46,3 +47,4 @@ pub use self::chip::*;
 pub use self::tag_list::*;
 pub use self::popup_menu::*;
 pub use self::confirm_dialog::*;
+pub use self::content_dialog::*;

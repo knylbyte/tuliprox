@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use crate::app::components::popup_menu::PopupMenu;
 use crate::app::components::reveal_content::RevealContent;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, PlaylistMappings, PlaylistProcessing, Table, TableDefinition, TargetOptions, TargetOutput, TargetWatch};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, PlaylistMappings, PlaylistProcessing, Table, TableDefinition, TargetOptions, TargetOutput, TargetSort, TargetWatch};
 use crate::hooks::use_service_context;
 use shared::model::{ConfigTargetDto};
 use std::future;
@@ -13,7 +13,8 @@ use yew::suspense::use_future;
 use yew_i18n::use_translation;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use crate::app::components::menu_item::MenuItem;
-use crate::services::{DialogResult, DialogService};
+use crate::model::DialogResult;
+use crate::services::{DialogService};
 
 const HEADERS: [&str; 11] = [
     "TABLE.EMPTY",
@@ -98,7 +99,7 @@ pub fn TargetTable() -> Html {
                     4 => html! { <TargetOptions target={Rc::clone(&dto)} /> },
                     5 => dto.sort.as_ref().map_or_else(|| html! {}, |s| html! { <RevealContent>{format!("{s:?}")}</RevealContent> }),
                     6 => html! { &dto.filter.clone() },
-                    7 => html! { <RevealContent>{"Hello"}</RevealContent> },
+                    7 => html! { <RevealContent><TargetSort target={Rc::clone(&dto)} /></RevealContent> },
                     8 => html! { <PlaylistMappings mappings={dto.mapping.clone()} /> },
                     9 => html! { <PlaylistProcessing order={dto.processing_order} /> },
                     10 => html! { <TargetWatch  target={Rc::clone(&dto)} /> },
@@ -144,7 +145,6 @@ pub fn TargetTable() -> Html {
             let _cfg = services_ctx.config.get_server_config().await;
         });
     }
-
 
     let handle_menu_edit = {
         let popup_is_open_state = popup_is_open.clone();
