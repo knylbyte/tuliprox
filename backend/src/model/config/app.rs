@@ -93,7 +93,11 @@ impl AppConfig {
         }
     }
     fn check_target_user(&self) -> Result<(), TuliproxError> {
-        let check_homerun = self.hdhomerun.load().as_ref().is_some_and(|h| h.enabled);
+        let check_homerun = {
+            let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
+            self.hdhomerun.store(config.hdhomerun.as_ref().map(|h| Arc::new(h.clone())));
+            config.hdhomerun.as_ref().is_some_and(|h| h.enabled)
+        };
         let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
         for source in &sources.sources {
             for target in &source.targets {

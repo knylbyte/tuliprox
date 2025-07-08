@@ -116,7 +116,7 @@ impl ApiProxyConfigDto {
                     if token.is_empty() {
                         user.token = None;
                     } else if tokens.contains(token) {
-                        errors.push(format!("Non unique token found {}", &user.username));
+                        errors.push(format!("Non unique user token found {} for user {}", &user.token.as_ref().map_or_else(String::new, ToString::to_string), &user.username));
                     } else {
                         tokens.insert(token.to_string());
                     }
