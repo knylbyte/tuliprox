@@ -20,7 +20,7 @@ use shared::error::info_err;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use crate::utils::trace_if_enabled;
 use crate::utils::xtream::create_vod_info_from_item;
-use shared::utils::{extract_extension_from_url, generate_playlist_uuid, get_u32_from_serde_value, hex_encode, sanitize_sensitive_info, HLS_EXT};
+use shared::utils::{extract_extension_from_url, generate_playlist_uuid, get_u32_from_serde_value, hex_encode, sanitize_sensitive_info, trim_slash, HLS_EXT};
 use crate::utils::{request, xtream};
 use crate::auth::Fingerprint;
 use axum::http::{HeaderMap, StatusCode};
@@ -150,14 +150,16 @@ pub(in crate::api) fn get_xtream_player_api_stream_url(
             | ApiStreamContext::Series
             | ApiStreamContext::Timeshift => context.to_string()
         };
-        let ctx_path = if ctx.is_empty() { String::new() } else { format!("{ctx}/") };
-        Some(format!("{}/{}{}/{}/{}",
-                     &input_user_info.base_url,
-                     ctx_path,
-                     &input_user_info.username,
-                     &input_user_info.password,
-                     action_path
-        ))
+        let mut parts = vec![
+            trim_slash(&input_user_info.base_url),
+            trim_slash(&ctx),
+            trim_slash(&input_user_info.username),
+            trim_slash(&input_user_info.password),
+            trim_slash(action_path),
+        ];
+        parts.retain(|s| !s.is_empty());
+        Some(parts.join("/"))
+
     } else if !fallback_url.is_empty() {
         Some(String::from(fallback_url))
     } else {

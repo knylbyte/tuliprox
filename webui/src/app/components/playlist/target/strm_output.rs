@@ -26,24 +26,24 @@ pub fn StrmOutput(props: &StrmOutputProps) -> Html {
     };
 
     html! {
-      <div class="tp__strm-output tp__target-output__output">
-        <div class="tp__target-output__output__section  tp__target-output__output__row">
-            <span class="tp__target-output__output__label">{translator.t("LABEL.DIRECTORY")}</span>
+      <div class="tp__strm-output tp__target-common">
+        <div class="tp__target-common__section  tp__target-common__row">
+            <span class="tp__target-common__label">{translator.t("LABEL.DIRECTORY")}</span>
             <span>{ props.output.directory.clone() }</span>
         </div>
-        <div class="tp__target-output__output__section tp__target-output__output__row">
-            <span class="tp__target-output__output__label">{translator.t("LABEL.USERNAME")}</span>
+        <div class="tp__target-common__section tp__target-common__row">
+            <span class="tp__target-common__label">{translator.t("LABEL.USERNAME")}</span>
            { props.output.username.as_ref().map(|f| html! {<span>{ f }</span>}) }
         </div>
-        <div class="tp__target-output__output__section">
+        <div class="tp__target-common__section">
             <TagList tags={(*tags).clone()} />
         </div>
         {
             match props.output.strm_props.as_ref() {
                 None => html! {},
                 Some(props) =>  html! {
-                    <div class="tp__target-output__output__section">
-                        <span class="tp__target-output__output__label">{translator.t("LABEL.PROPERTIES")}</span>
+                    <div class="tp__target-common__section">
+                        <span class="tp__target-common__label">{translator.t("LABEL.PROPERTIES")}</span>
                         <ul>
                             { props.iter().map(|p| html! { <li>{p}</li> }).collect::<Html>() }
                         </ul>

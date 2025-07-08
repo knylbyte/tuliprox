@@ -9,7 +9,7 @@ use std::io::{BufRead, Cursor, Error};
 use std::path::PathBuf;
 use url::Url;
 use shared::model::InputType;
-use shared::utils::get_credentials_from_url;
+use shared::utils::{get_credentials_from_url, trim_last_slash};
 
 const CSV_SEPARATOR: char = ';';
 const HEADER_PREFIX: char = '#';
@@ -33,7 +33,7 @@ fn csv_assign_mandatory_fields(alias: &mut ConfigInputAlias, input_type: InputTy
                         alias.url = url.origin().ascii_serialization().to_string();
                     } else if input_type == InputType::M3uBatch && alias.username.is_some() && alias.password.is_some() {
                         alias.url = format!("{}/get.php?username={}&password={}&type=m3u_plus",
-                                            url.origin().ascii_serialization(),
+                                            trim_last_slash(&url.origin().ascii_serialization()),
                                             alias.username.as_deref().unwrap_or(""),
                                             alias.password.as_deref().unwrap_or("")
                         );

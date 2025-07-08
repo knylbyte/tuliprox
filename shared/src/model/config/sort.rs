@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::foundation::filter::{apply_templates_to_pattern, apply_templates_to_pattern_single};
 use crate::model::{ItemField, PatternTemplate, TemplateValue};
@@ -22,6 +23,16 @@ pub enum SortOrder {
     Asc,
     #[serde(rename = "desc")]
     Desc,
+}
+
+impl Display for SortOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            SortOrder::Asc => "asc".to_string(),
+            SortOrder::Desc => "desc".to_string(),
+        };
+        write!(f, "{}", str)
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

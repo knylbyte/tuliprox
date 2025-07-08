@@ -1,7 +1,6 @@
 use shared::model::{ConfigTargetDto};
 use std::rc::Rc;
 use yew::prelude::*;
-use yew_i18n::use_translation;
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct TargetWatchProps {
@@ -10,7 +9,6 @@ pub struct TargetWatchProps {
 
 #[function_component]
 pub fn TargetWatch(props: &TargetWatchProps) -> Html {
-    let translate = use_translation();
     match props.target.watch.as_ref() {
         None => html! {},
         Some(watch) => html! {

@@ -158,7 +158,12 @@
     "CLEANUP": "Cleanup",
     "PROPERTIES": "Properties",
     "DEVICE": "Device",
-    "USE_OUTPUT": "Use output"
+    "USE_OUTPUT": "Use output",
+    "MATCH_AS_ASCII": "Match as ascii",
+    "SORT_SETTINGS": "Sort Settings",
+    "ORDER": "Order",
+    "SEQUENCE": "Sequence",
+    "GROUPS": "Groups"
   },
   "TABLE": {
     "EMPTY": "",

@@ -27,12 +27,12 @@ pub fn M3uOutput(props: &M3uOutputProps) -> Html {
 
 
     html! {
-      <div class="tp__m3u-output tp__target-output__output">
-        <div class="tp__target-output__output__section">
-            <span class="tp__target-output__output__label">{translator.t("LABEL.FILENAME")}</span>
+      <div class="tp__m3u-output tp__target-common">
+        <div class="tp__target-common__section">
+            <span class="tp__target-common__label">{translator.t("LABEL.FILENAME")}</span>
            { props.output.filename.as_ref().map(|f| html! {<span>{ f }</span>}) }
         </div>
-        <div class="tp__target-output__output__section">
+        <div class="tp__target-common__section">
             <TagList tags={(*tags).clone()} />
         </div>
       </div>

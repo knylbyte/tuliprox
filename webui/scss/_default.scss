@@ -65,6 +65,11 @@ option {
    fill: var(--attention-color) !important;
 }
 
+.tp__update_action {
+  color: var(--active-color) !important;
+  fill: var(--active-color) !important;
+}
+
 .svg-icon {
   pointer-events: none;
   width: 1rem;

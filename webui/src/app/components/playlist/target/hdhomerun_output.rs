@@ -11,17 +11,17 @@ pub struct HdHomeRunOutputProps {
 pub fn HdHomeRunOutput(props: &HdHomeRunOutputProps) -> Html {
     let translator = use_translation();
     html! {
-      <div class="tp__hdhomerun-output tp__target-output__output">
-        <div class="tp__target-output__output__section  tp__target-output__output__row">
-            <span class="tp__target-output__output__label">{translator.t("LABEL.DEVICE")}</span>
+      <div class="tp__hdhomerun-output tp__target-common">
+        <div class="tp__target-common__section tp__target-common__row">
+            <span class="tp__target-common__label">{translator.t("LABEL.DEVICE")}</span>
             <span>{ props.output.device.clone() }</span>
         </div>
-        <div class="tp__target-output__output__section tp__target-output__output__row">
-            <span class="tp__target-output__output__label">{translator.t("LABEL.USERNAME")}</span>
+        <div class="tp__target-common__section tp__target-common__row">
+            <span class="tp__target-common__label">{translator.t("LABEL.USERNAME")}</span>
             <span>{ props.output.username.clone() }</span>
         </div>
-        <div class="tp__target-output__output__section tp__target-output__output__row">
-            <span class="tp__target-output__output__label">{translator.t("LABEL.USE_OUTPUT")}</span>
+        <div class="tp__target-common__section tp__target-common__row">
+            <span class="tp__target-common__label">{translator.t("LABEL.USE_OUTPUT")}</span>
             <span>{ props.output.use_output.map_or_else(String::new, |o| o.to_string()) }</span>
         </div>
       </div>

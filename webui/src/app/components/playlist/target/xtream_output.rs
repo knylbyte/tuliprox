@@ -40,26 +40,15 @@ pub fn XtreamOutput(props: &XtreamOutputProps) -> Html {
     };
 
     html! {
-      <div class="tp__xtream-output tp__target-output__output">
-        <div class="tp__target-output__output__section">
-            <span class="tp__target-output__output__label">{translator.t("LABEL.SKIP_DIRECT_SOURCE")}</span>
+      <div class="tp__xtream-output tp__target-common">
+        <div class="tp__target-common__section">
+            <span class="tp__target-common__label">{translator.t("LABEL.SKIP_DIRECT_SOURCE")}</span>
             <TagList tags={(*tags_skip_direct_source).clone()} />
         </div>
-        <div class="tp__target-output__output__section">
-          <span class="tp__target-output__output__label">{translator.t("LABEL.RESOLVE")}</span>
+        <div class="tp__target-common__section">
+          <span class="tp__target-common__label">{translator.t("LABEL.RESOLVE")}</span>
           <TagList tags={(*tags_resolve).clone()} />
         </div>
       </div>
     }
 }
-
-/*
-
-    <div class="tp__tp__target-output_row"><label>{translate.t("LABEL.RESOVE")}</label></div>
-
-                        #[serde(default = "default_as_true")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trakt: Option<TraktConfigDto>,
-                                <span>{"xc"}</span>
-                        },
- */

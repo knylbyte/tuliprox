@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 pub trait Capitalize {
     fn capitalize(&self) -> String;
 }
@@ -60,6 +62,23 @@ pub fn get_non_empty_str<'a>(first: &'a str, second: &'a str, third: &'a str) ->
         second
     } else {
         third
+    }
+}
+
+pub fn trim_slash(s: &str) -> Cow<str> {
+    let trimmed = s.trim_matches('/');
+    if trimmed.len() == s.len() {
+        Cow::Borrowed(s) // Keine Änderung → kein Clone
+    } else {
+        Cow::Owned(trimmed.to_string()) // Änderung → neue String
+    }
+}
+
+pub fn trim_last_slash(s: &str) -> Cow<str> {
+    if s.ends_with('/') {
+        Cow::Owned(s[..s.len() - 1].to_string())
+    } else {
+        Cow::Borrowed(s)
     }
 }
 

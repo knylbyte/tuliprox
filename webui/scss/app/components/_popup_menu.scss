@@ -9,4 +9,9 @@
   box-shadow: var(--popup-shadow);
   z-index: 9999;
 
+  hr {
+    border: none;
+    height: 2px;
+    background-color: var(--border-color);
+  }
 }

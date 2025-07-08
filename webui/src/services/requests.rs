@@ -44,16 +44,18 @@ where
         request = request.header("Authorization", format!("Bearer {token}").as_str());
     }
     match request.send().await {
-
         Ok(response) => {
             match response.status() {
                 200 => {
-                    let data: Result<T, _> = response.json::<T>().await;
-                    if let Ok(data) = data {
-                        // debug!("Response: {:?}", data);
-                        Ok(data)
+                    if std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
+                        Ok(serde_json::from_str("null").unwrap()) // `T = ()` valid
                     } else {
-                        Err(Error::DeserializeError)
+                        let data: Result<T, _> = response.json::<T>().await;
+                        if let Ok(data) = data {
+                            Ok(data)
+                        } else {
+                            Err(Error::DeserializeError)
+                        }
                     }
                 },
                 401 => Err(Error::Unauthorized),

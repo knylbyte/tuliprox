@@ -1,12 +1,13 @@
 use std::rc::Rc;
 use yew::prelude::*;
 use crate::model::WebConfig;
-use crate::services::{AuthService, ConfigService, StatusService};
+use crate::services::{AuthService, ConfigService, PlaylistService, StatusService};
 
 pub struct Services {
     pub auth: Rc<AuthService>,
     pub config: Rc<ConfigService>,
     pub status: Rc<StatusService>,
+    pub playlist: Rc<PlaylistService>,
 }
 
 impl Services {
@@ -14,10 +15,12 @@ impl Services {
         let auth = Rc::new(AuthService::new());
         let config = Rc::new(ConfigService::new(config));
         let status = Rc::new(StatusService::new());
+        let playlist = Rc::new(PlaylistService::new());
         Self {
             auth,
             config,
-            status
+            status,
+            playlist
         }
     }
 }
