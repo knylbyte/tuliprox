@@ -6,7 +6,7 @@ use crate::api::model::streams::buffered_stream::BufferedStream;
 use crate::api::model::streams::client_stream::ClientStream;
 use crate::api::model::streams::provider_stream::{create_channel_unavailable_stream, get_header_filter_for_item_type};
 use crate::api::model::streams::timed_client_stream::TimedClientStream;
-use shared::model::{PlaylistItemType};
+use shared::model::{PlaylistItemType, DEFAULT_USER_AGENT};
 use crate::model::{AppConfig};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::utils::request::{classify_content_type, get_request_headers, MimeCategory};

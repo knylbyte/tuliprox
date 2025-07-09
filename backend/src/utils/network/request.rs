@@ -53,8 +53,6 @@ pub fn classify_content_type(headers: &[(String, String)]) -> MimeCategory {
         })
 }
 
-pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
-
 pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
     debug_if_enabled!("getting input epg content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(url_str));
     if url_str.parse::<url::Url>().is_ok() {
