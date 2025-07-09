@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::borrow::BorrowMut;
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
-
-
-pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
+use crate::model::DEFAULT_USER_AGENT;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]
