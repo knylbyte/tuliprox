@@ -27,8 +27,13 @@ echo "    Session Ports: ${LLDB_MIN_PORT}-${LLDB_MAX_PORT}"
   --min-gdbserver-port ${LLDB_MIN_PORT} \
   --max-gdbserver-port ${LLDB_MAX_PORT} &
 
+# Optionally start Shadowsocks client in background
+if [ "$SS_CLIENT_ENABLE" = "1" ] || [ "$SS_CLIENT_ENABLE" = "true" ]; then
+  echo ">>> [debug-entrypoint] Starting sslocal client..."
+  sslocal &
+fi
+
 # --- Application Start ---
 # 3. Start the actual application in the foreground.
 #    `exec` replaces the shell process, making the application the main process.
-echo ">>> [debug-entrypoint] Starting application 'tuliprox'. Ready for debugger to attach..."
-exec /usr/src/tuliprox/target/${RUST_TARGET}/debug/tuliprox -s -p /app/config
+echo ">>> [debug-entrypoint] Starting application 'tuliprox'. Ready for debugger to attach..."exec /usr/src/tuliprox/target/${RUST_TARGET}/debug/tuliprox -s -p /app/config

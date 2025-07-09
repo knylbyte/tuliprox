@@ -97,6 +97,12 @@ RUN apk add --no-cache tzdata \
   && ln -sf /usr/share/zoneinfo/${TZ} /output/etc/localtime
 
 
+# -----------------------------------------------------------------
+# Stage 5: Shadowsocks client (sslocal)
+# -----------------------------------------------------------------
+FROM ghcr.io/shadowsocks/sslocal-rust:latest AS sslocal   # pre-built /usr/bin/sslocal
+
+
 # =================================================================
 #
 # Part 2: Final Image Stages
@@ -166,6 +172,9 @@ COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
 COPY --from=node-build /app/build ./web
 COPY --from=resource-build /src/resources ./resources
 
+# Shadowsocks client
+COPY --from=sslocal /usr/bin/sslocal /usr/local/bin/sslocal
+
 ENTRYPOINT ["/app/tuliprox"]
 CMD ["-s", "-p", "/app/config"]
 
@@ -180,6 +189,9 @@ ENV TZ=${TZ}
 
 RUN apk add --no-cache bash curl ca-certificates tini
 
+# Optional Shadowsocks client
+ENV SS_CLIENT_ENABLE=0
+
 COPY --from=rust-build /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
@@ -191,5 +203,12 @@ COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
 COPY --from=node-build /app/build ./web
 COPY --from=resource-build /src/resources ./resources
 
-ENTRYPOINT ["/sbin/tini", "--", "/app/tuliprox"]
-CMD ["-s", "-p", "/app/config"]
+# Shadowsocks client
+COPY --from=sslocal /usr/bin/sslocal /usr/local/bin/sslocal
+RUN chmod +x /usr/local/bin/sslocal
+
+# Entrypoint script to optionally start sslocal
+COPY ./docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+CMD ["/app/tuliprox", "-s", "-p", "/app/config"]
