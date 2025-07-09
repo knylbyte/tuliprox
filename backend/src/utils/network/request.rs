@@ -15,7 +15,7 @@ use url::Url;
 
 use shared::error::create_tuliprox_error_result;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
-use shared::model::InputFetchMethod;
+use shared::model::{InputFetchMethod, DEFAULT_USER_AGENT};
 use crate::model::{format_elapsed_time, AppConfig};
 use crate::model::{ConfigInput};
 use crate::repository::storage::{get_input_storage_path};
@@ -195,6 +195,9 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
         if !he.is_empty() {
             trace!("Request headers {he:?}");
         }
+    }
+    if !headers.contains_key(axum::http::header::USER_AGENT) {
+        headers.insert(axum::http::header::USER_AGENT, HeaderValue::from_static(DEFAULT_USER_AGENT));
     }
     headers
 }
