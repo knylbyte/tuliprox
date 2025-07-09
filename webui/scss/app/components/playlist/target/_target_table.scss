@@ -6,4 +6,7 @@
   .tp__icon-button {
      width: 2rem;
   }
+  .tp__filter {
+    max-width: var(--max-table-cell-width);
+  }
 }

@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use crate::app::components::popup_menu::PopupMenu;
 use crate::app::components::reveal_content::RevealContent;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, PlaylistMappings, PlaylistProcessing, Table, TableDefinition, TargetOptions, TargetOutput, TargetRename, TargetSort, TargetWatch};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, FilterView, PlaylistMappings, PlaylistProcessing, Table, TableDefinition, TargetOptions, TargetOutput, TargetRename, TargetSort, TargetWatch};
 use crate::hooks::use_service_context;
 use shared::model::{ConfigTargetDto};
 use std::future;
@@ -99,7 +99,7 @@ pub fn TargetTable() -> Html {
                     3 => html! { <TargetOutput target={Rc::clone(&dto)} /> },
                     4 => html! { <TargetOptions target={Rc::clone(&dto)} /> },
                     5 => dto.sort.as_ref().map_or_else(|| html! {}, |s| html! { <RevealContent><TargetSort target={Rc::clone(&dto)} /></RevealContent> }),
-                    6 => html! { &dto.filter.clone() },
+                    6 => html! { <FilterView filter={dto.t_filter.clone()} /> },
                     7 => dto.rename.as_ref().map_or_else(|| html! {}, |r| html! { <RevealContent><TargetRename target={Rc::clone(&dto)} /></RevealContent> }),
                     8 => html! { <PlaylistMappings mappings={dto.mapping.clone()} /> },
                     9 => html! { <PlaylistProcessing order={dto.processing_order} /> },

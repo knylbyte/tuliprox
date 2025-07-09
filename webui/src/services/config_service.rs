@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use log::error;
 use futures_signals::signal::Mutable;
 use futures_signals::signal::SignalExt;
-
+use shared::foundation::filter::{get_filter, prepare_templates};
 
 const CONFIG_PATH: &str = "/api/v1/config";
 const IP_CHECK_PATH: &str = "/api/v1/ipinfo";
@@ -49,8 +49,21 @@ impl ConfigService {
             return;
         }
         let result = match request_get::<AppConfigDto>(CONFIG_PATH).await {
-            Ok(cfg) => {
-                Some(Rc::new(cfg))
+            Ok(mut app_config) => {
+                let templates = {
+                    if let Some(templ) = app_config.sources.templates.as_mut() {
+                        prepare_templates(templ).ok()
+                    }  else {
+                        None
+                    }
+                };
+
+                for source in app_config.sources.sources.iter_mut() {
+                    for target in source.targets.iter_mut() {
+                        target.t_filter = get_filter(target.filter.as_str(), templates.as_ref()).ok();
+                    }
+                }
+                Some(Rc::new(app_config))
             },
             Err(err) => {
                 error!("{err}");

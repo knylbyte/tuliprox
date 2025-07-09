@@ -248,13 +248,7 @@ async fn config(
 ) -> impl axum::response::IntoResponse + Send {
     let paths = app_state.app_config.paths.load();
     match utils::read_app_config_dto(&paths, true, false) {
-        Ok(mut app_config) => {
-            let templates = app_config.sources.templates.as_ref();
-            for source in app_config.sources.sources.iter_mut() {
-                for target in source.targets.iter_mut() {
-                    target.t_filter = get_filter(target.filter.as_str(), templates).ok();
-                }
-            }
+        Ok(app_config) => {
             axum::response::Json(app_config).into_response()
         },
         Err(err) => {
