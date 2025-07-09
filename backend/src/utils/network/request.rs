@@ -27,6 +27,8 @@ use shared::utils::{filter_request_header};
 use crate::utils::{get_file_path, persist_file};
 use shared::utils::{CONSTANTS, DASH_EXT, DASH_EXT_FRAGMENT, DASH_EXT_QUERY, ENCODING_DEFLATE, ENCODING_GZIP, HLS_EXT, HLS_EXT_FRAGMENT, HLS_EXT_QUERY};
 
+pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
+
 pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
     debug_if_enabled!("getting input epg content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(url_str));
     if url_str.parse::<url::Url>().is_ok() {
@@ -169,6 +171,9 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
         if !he.is_empty() {
             trace!("Request headers {he:?}");
         }
+    }
+    if !headers.contains_key(axum::http::header::USER_AGENT) {
+        headers.insert(axum::http::header::USER_AGENT, HeaderValue::from_static(DEFAULT_USER_AGENT));
     }
     headers
 }

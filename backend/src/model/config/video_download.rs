@@ -2,8 +2,7 @@ use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKi
 use regex::Regex;
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
-
-pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
+use crate::utils::request::DEFAULT_USER_AGENT;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 #[serde(deny_unknown_fields)]
