@@ -9,7 +9,26 @@
     margin-top: 0;
   }
 
-  .tp__target-sort__sequence {
+  &__card {
+    background-color: var(--table-card-background-color);
+    max-height: var(--max-dialog-card-height);
+    overflow: auto;
+  }
+
+  &__new-field {
+
+    &:before {
+      content: '-';
+      display: inline-block;
+      margin-left: -0.6rem;
+    }
+
+    &:not(:first-child) {
+       padding-top: var(--padding-default);
+    }
+  }
+
+  &__sequence {
     max-height: 300px;
     overflow: auto;
   }
@@ -19,9 +38,6 @@
     flex-flow: column;
     gap: var(--gap-small);
     padding: var(--padding-micro) var(--padding-mini);
-    overflow: hidden;
-    //border: 1px solid var(--border-color);
-    //border-radius: var(--border-radius);
 
     .tp__tag_list {
       flex-flow: row nowrap;

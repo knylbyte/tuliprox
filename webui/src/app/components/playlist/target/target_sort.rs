@@ -22,7 +22,7 @@ pub fn TargetSort(props: &TargetSortProps) -> Html {
         Some(groups) => {
             match groups.sequence.as_ref() {
                 Some(seq) => html! {
-                    <Card>
+                    <Card class="tp__target-sort__card">
                     <h2>{translator.t("LABEL.GROUPS")}</h2>
                     <div class="tp__target-sort__section tp__target-sort__row">
                         <span class="tp__target-sort__label">{translator.t("LABEL.ORDER")}</span>
@@ -44,6 +44,49 @@ pub fn TargetSort(props: &TargetSortProps) -> Html {
         None => html! {},
     };
 
+    let channels_html = match sort.channels.as_ref() {
+        Some(channels) => html! {
+        <Card class="tp__target-sort__card">
+            <h2>{ translator.t("LABEL.CHANNELS") }</h2>
+            {
+                for channels.iter().map(|channel| html! {
+                    <>
+                        <div class="tp__target-sort__section tp__target-sort__row tp__target-sort__new-field">
+                            <span class="tp__target-sort__label">{ translator.t("LABEL.FIELD") }</span>
+                            <span>{ channel.field.to_string() }</span>
+                        </div>
+                        <div class="tp__target-sort__section tp__target-sort__row">
+                            <span class="tp__target-sort__label">{ translator.t("LABEL.GROUP_PATTERN") }</span>
+                            <span>{ channel.group_pattern.to_string() }</span>
+                        </div>
+                        <div class="tp__target-sort__section tp__target-sort__row">
+                            <span class="tp__target-sort__label">{ translator.t("LABEL.ORDER") }</span>
+                            <span>{ channel.order.to_string() }</span>
+                        </div>
+                        {
+                            match channel.sequence.as_ref() {
+                                Some(seq) => html! {
+                                    <div class="tp__target-sort__section tp__target-sort__row">
+                                        <span class="tp__target-sort__label">{ translator.t("LABEL.SEQUENCE") }</span>
+                                        <span class="tp__target-sort__sequence">
+                                            <ul>
+                                                { for seq.iter().map(|p| html! { <li>{ p }</li> }) }
+                                            </ul>
+                                        </span>
+                                    </div>
+                                },
+                                None => html! {},
+                            }
+                        }
+                    </>
+                })
+            }
+        </Card>
+    },
+        None => html! {},
+    };
+
+
     html! {
         <div class="tp__target-sort">
             <h2>{translator.t("LABEL.SORT_SETTINGS")}</h2>
@@ -52,44 +95,7 @@ pub fn TargetSort(props: &TargetSortProps) -> Html {
                       label={translator.t("LABEL.MATCH_AS_ASCII")} />
             </div>
             { groups_html }
+            { channels_html }
         </div>
     }
 }
-
-//   </div>
-//   <div class="tp__target-output__output__section tp__target-output__output__row">
-//       <span class="tp__target-output__output__label">{translator.t("LABEL.USERNAME")}</span>
-//       <span>{ props.output.username.clone() }</span>
-//   </div>
-//   <div class="tp__target-output__output__section tp__target-output__output__row">
-//       <span class="tp__target-output__output__label">{translator.t("LABEL.USE_OUTPUT")}</span>
-//       <span>{ props.output.use_output.map_or_else(String::new, |o| o.to_string()) }</span>
-//   </div>
-// </div>
-
-// pub match_as_ascii: bool,
-// pub groups: Option<ConfigSortGroupDto>,
-// pub channels: Option<Vec<ConfigSortChannelDto>>,
-
-//
-// #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-// #[serde(deny_unknown_fields)]
-// pub struct ConfigSortGroupDto {
-//     pub order: SortOrder,
-//     #[serde(default, skip_serializing_if = "Option::is_none")]
-//     pub sequence: Option<Vec<String>>,
-//     #[serde(skip)]
-//     pub t_sequence: Option<Vec<Regex>>,
-// }
-
-// pub struct ConfigSortChannelDto {
-//     // channel field
-//     pub field: ItemField,
-//     // match against group title
-//     pub group_pattern: String,
-//     pub order: SortOrder,
-//     #[serde(default, skip_serializing_if = "Option::is_none")]
-//     pub sequence: Option<Vec<String>>,
-//     #[serde(skip)]
-//     pub t_sequence: Option<Vec<Regex>>,
-// }

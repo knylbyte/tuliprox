@@ -163,7 +163,13 @@
     "SORT_SETTINGS": "Sort Settings",
     "ORDER": "Order",
     "SEQUENCE": "Sequence",
-    "GROUPS": "Groups"
+    "GROUPS": "Groups",
+    "CHANNELS": "Channels",
+    "FIELD": "Field",
+    "GROUP_PATTERN": "Group Pattern",
+    "RENAME_SETTINGS": "Rename Settings",
+    "PATTERN": "Pattern",
+    "NEW_NAME": "New Name"
   },
   "TABLE": {
     "EMPTY": "",

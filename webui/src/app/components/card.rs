@@ -3,6 +3,8 @@ use crate::app::CardContext;
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct CardProps {
+    #[prop_or_default]
+    pub class: String,
     pub children: Children,
 }
 
@@ -14,7 +16,7 @@ pub fn Card(props: &CardProps) -> Html {
     };
     html! {
         <ContextProvider<CardContext> context={context}>
-            <div class={classes!("tp__card", &*custom_class)}>
+            <div class={classes!("tp__card", &props.class, &*custom_class)}>
                 { for props.children.iter() }
             </div>
         </ContextProvider<CardContext>>

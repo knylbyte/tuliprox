@@ -14,7 +14,7 @@ quick-xml = "0.37"
 regex = "1.11"
 clap = { version = "4", features = ["derive"] }
 url = "2.5"
-reqwest = { version = "0", features = ["blocking", "json", "stream", "rustls-tls"] }
+reqwest = { version = "0", features = ["blocking", "json", "stream", "rustls-tls", "socks"] }
 chrono = "0.4"
 cron = "0.15"
 axum = { version = "0" , features = ["macros", "default"]}

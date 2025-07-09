@@ -19,6 +19,7 @@ use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputTy
 use shared::utils::sanitize_sensitive_info;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
+use shared::foundation::filter::get_filter;
 
 fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfigDto, file_path: &str) -> Option<TuliproxError> {
     match utils::save_api_proxy(file_path, backup_dir, api_proxy) {
@@ -246,9 +247,16 @@ async fn config(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
     let paths = app_state.app_config.paths.load();
-    match utils::read_app_config_dto(&paths,
-                                     true, false) {
-        Ok(app_config) => axum::response::Json(app_config).into_response(),
+    match utils::read_app_config_dto(&paths, true, false) {
+        Ok(mut app_config) => {
+            let templates = app_config.sources.templates.as_ref();
+            for source in app_config.sources.sources.iter_mut() {
+                for target in source.targets.iter_mut() {
+                    target.t_filter = get_filter(target.filter.as_str(), templates).ok();
+                }
+            }
+            axum::response::Json(app_config).into_response()
+        },
         Err(err) => {
             error!("Failed to read config files: {err}");
             axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()

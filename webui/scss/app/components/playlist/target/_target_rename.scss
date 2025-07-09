@@ -5,19 +5,30 @@
   gap: var(--gap-small);
   box-sizing: border-box;
 
+  &__card {
+    background-color: var(--table-card-background-color);
+    max-height: var(--max-dialog-card-height);
+    overflow: auto;
+  }
+
+  &__new-field {
+
+    &:before {
+      content: '-';
+      display: inline-block;
+      margin-left: -0.6rem;
+    }
+
+    &:not(:first-child) {
+      padding-top: var(--padding-default);
+    }
+  }
+
   &__section {
     display: flex;
     flex-flow: column;
     gap: var(--gap-small);
-    border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
     padding: var(--padding-micro) var(--padding-mini);
-    background-color: var(--table-card-background-color);
-    overflow: hidden;
-
-    .tp__tag_list {
-      flex-flow: row nowrap;
-    }
 
     li {
       overflow: hidden;
@@ -25,6 +36,7 @@
     }
 
   }
+
   &__row {
     flex-flow: row;
   }
