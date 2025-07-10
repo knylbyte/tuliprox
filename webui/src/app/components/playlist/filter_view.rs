@@ -1,7 +1,32 @@
-use log::info;
 use shared::foundation::filter::Filter;
 use yew::prelude::*;
 
+#[derive(Properties, PartialEq, Clone)]
+pub struct FilterViewProps {
+    #[prop_or_default]
+    pub pretty: bool,
+    #[prop_or(false)]
+    pub inline: bool,
+    pub filter: Option<Filter>,
+}
+
+#[function_component]
+pub fn FilterView(props: &FilterViewProps) -> Html {
+    html! {
+        <div class={classes!("tp__filter", if props.inline {"tp__filter__inline"} else {""} )}>
+            {
+                match props.filter.as_ref() {
+                    Some(filter) => html! {
+                        <pre class="tp__filter__code">
+                            { render_filter(filter, props.pretty, 0, false, 1) }
+                        </pre>
+                    },
+                    None => html! { },
+                }
+            }
+        </div>
+    }
+}
 
 // Indents with spaces for pretty printing
 fn indent(level: usize, do_indent: bool) -> Html {
@@ -13,29 +38,33 @@ fn indent(level: usize, do_indent: bool) -> Html {
     }
 }
 
-fn newline() -> Html {
-    html! { <br /> }
+fn newline(pretty: bool) -> Html {
+    if pretty {
+        html! { <br /> }
+    } else {
+        html!{}
+    }
 }
 
-fn render_filter(filter: &Filter, level: usize, do_indent: bool, p_count: usize) -> Html {
+fn render_filter(filter: &Filter, pretty: bool, level: usize, do_indent: bool, p_count: usize) -> Html {
     match filter {
         Filter::Group(inner) => {
             html! {
             <>
-                { indent(level, do_indent) }
+                { indent(level, do_indent &&  pretty) }
                 <span class={format!("bracket bracket-{}", p_count % 6)}>{"("}</span>
-                {newline()}
-                { indent(level +1 , true) }
-                { render_filter(inner, level + 1, false, p_count+1) }
-                {newline()}
-                { indent(level , true) }
+                {newline(pretty)}
+                { indent(level +1 , pretty) }
+                { render_filter(inner, pretty, level + 1, false, p_count+1) }
+                {newline(pretty)}
+                { indent(level , pretty) }
                 <span class={format!("bracket bracket-{}", p_count % 6)}>{ ")" }</span>
             </>
          }
         }
         Filter::FieldComparison(field, regex) => html! {
             <>
-               { indent(level, do_indent) }
+               { indent(level, do_indent &&  pretty) }
                 <span class="comparison">
                     <span class="field">{format!("{:?}", field)}</span>
                     {" ~ "}
@@ -45,7 +74,7 @@ fn render_filter(filter: &Filter, level: usize, do_indent: bool, p_count: usize)
         },
         Filter::TypeComparison(field, t) => html! {
             <>
-               { indent(level, do_indent) }
+               { indent(level, do_indent && pretty) }
                 <span class="comparison">
                     <span class="field">{format!("{:?}", field)}</span>{" = "}
                     <span class="enum">{format!("{:?}", t)}</span>
@@ -55,46 +84,23 @@ fn render_filter(filter: &Filter, level: usize, do_indent: bool, p_count: usize)
         Filter::UnaryExpression(op, inner) => {
             html! {
                 <>
-                    { indent(level, do_indent) }
+                    { indent(level, do_indent && pretty) }
                     <span class="unary_op">{format!(" {:?} ", op)}</span>
-                    {newline()}
-                    { indent(level, true) }
-                    { render_filter(inner, level + 1, do_indent, p_count) }
+                    {newline(pretty)}
+                    { indent(level, pretty) }
+                    { render_filter(inner, pretty, level, do_indent && pretty, p_count) }
                 </>
             }
         },
         Filter::BinaryExpression(left, op, right) => html! {
             <span class="binary_op-wrapper">
-                 { render_filter(left, level, do_indent, p_count) }
-                 { newline() }
-                 { indent(level, true) }
+                 { render_filter(left, pretty, level, do_indent && pretty, p_count) }
+                 { newline(pretty) }
+                 { indent(level, pretty) }
                  <span class="binary_op">{format!(" {:?} ", op)}</span>
-                 { newline() }
-                 { render_filter(right, level, true, p_count) }
+                 { newline(pretty) }
+                 { render_filter(right, pretty, level, pretty, p_count) }
             </span>
         },
-    }
-}
-
-#[derive(Properties, PartialEq, Clone)]
-pub struct FilterViewProps {
-    pub filter: Option<Filter>,
-}
-
-#[function_component]
-pub fn FilterView(props: &FilterViewProps) -> Html {
-    html! {
-        <div class="tp__filter">
-            {
-                match props.filter.as_ref() {
-                    Some(filter) => html! {
-                        <pre class="tp__filter__code">
-                            { render_filter(filter, 0, false, 1) }
-                        </pre>
-                    },
-                    None => html! { },
-                }
-            }
-        </div>
     }
 }

@@ -19,7 +19,6 @@ use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputTy
 use shared::utils::sanitize_sensitive_info;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
-use shared::foundation::filter::get_filter;
 
 fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfigDto, file_path: &str) -> Option<TuliproxError> {
     match utils::save_api_proxy(file_path, backup_dir, api_proxy) {

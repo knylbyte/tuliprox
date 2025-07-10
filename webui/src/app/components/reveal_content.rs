@@ -9,6 +9,8 @@ use crate::services::DialogService;
 pub struct RevealContentProps {
     #[prop_or_default]
     pub icon: String,
+    #[prop_or_default]
+    pub preview: Html,
     pub children: Html,
     #[prop_or_default]
     pub actions: Option<DialogActions>
@@ -34,8 +36,9 @@ pub fn RevealContent(props: &RevealContentProps) -> Html {
     };
 
     html! {
-        <div class={"tp__reveal_content"} onclick={handle_click}>
-            <AppIcon name={if props.icon.is_empty() {"Ellipsis".to_string()} else {props.icon.to_string()} } />
+        <div class={"tp__reveal-content"} onclick={handle_click}>
+           <span class="tp__reveal-content__preview">{props.preview.clone()}</span>
+           <AppIcon name={if props.icon.is_empty() {"Expand".to_string()} else {props.icon.to_string()} } />
         </div>
     }
 }
