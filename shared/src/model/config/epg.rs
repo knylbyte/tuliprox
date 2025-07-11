@@ -2,7 +2,7 @@ use crate::{info_err};
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::EpgSmartMatchConfigDto;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EpgSourceDto {
     pub url: String,
@@ -24,7 +24,7 @@ impl EpgSourceDto {
 
 
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EpgConfigDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -107,7 +107,7 @@ impl FromStr for InputFetchMethod {
 
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputOptionsDto {
     #[serde(default)]
@@ -122,7 +122,7 @@ pub struct ConfigInputOptionsDto {
     pub xtream_live_stream_without_extension: bool,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputAliasDto {
     #[serde(skip)]
@@ -157,7 +157,7 @@ impl ConfigInputAliasDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputDto {
     #[serde(skip)]

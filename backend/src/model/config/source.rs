@@ -14,7 +14,6 @@ pub struct ConfigSource {
 }
 
 impl ConfigSource {
-
     pub fn get_inputs_for_target(&self, target_name: &str) -> Option<Vec<Arc<ConfigInput>>> {
         for target in &self.targets {
             if target.name.eq(target_name) {

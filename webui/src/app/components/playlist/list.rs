@@ -1,6 +1,6 @@
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::app::components::{PlaylistContext, PlaylistPage, TargetTable, TextButton};
+use crate::app::components::{InputTable, PlaylistContext, PlaylistPage, TargetTable, TextButton};
 
 #[function_component]
 pub fn PlaylistList() -> Html {
@@ -27,6 +27,7 @@ pub fn PlaylistList() -> Html {
         </div>
         <div class="tp__playlist-create__body">
         <TargetTable/>
+        <InputTable/>
         </div>
       </div>
     }

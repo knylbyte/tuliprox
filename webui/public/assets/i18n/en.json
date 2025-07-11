@@ -183,7 +183,18 @@
     "RENAME": "Rename",
     "MAPPING": "Mapping",
     "PROCESSING_ORDER": "Processing order",
-    "WATCH": "Watch"
+    "WATCH": "Watch",
+    "INPUT_TYPE": "Input Type",
+    "HEADERS": "Headers",
+    "URL": "Url",
+    "EPG": "Epg",
+    "USERNAME": "Username",
+    "PASSWORD": "Password",
+    "PERSIST": "Persist",
+    "ALIASES": "Aliases",
+    "PRIORITY": "Priority",
+    "MAX_CONNECTIONS": "Max Connections",
+    "METHOD": "Method"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

@@ -1,8 +1,7 @@
 use std::fmt::Display;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, FilterView, PlaylistMappings, PlaylistProcessing, RevealContent, Table, TableDefinition, TargetOptions, TargetOutput, TargetRename, TargetSort, TargetWatch};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, Table, TableDefinition};
 use crate::hooks::use_service_context;
-use shared::model::{ConfigTargetDto};
 use std::future;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -12,33 +11,38 @@ use yew::prelude::*;
 use yew::suspense::use_future;
 use yew_i18n::use_translation;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use shared::model::ConfigInputDto;
 use crate::app::components::menu_item::MenuItem;
 use crate::model::DialogResult;
 use crate::services::{DialogService};
 
-const HEADERS: [&str; 11] = [
-    "TABLE.EMPTY",
-    "TABLE.ENABLED",
-    "TABLE.NAME",
-    "TABLE.OUTPUT",
-    "TABLE.OPTIONS",
-    "TABLE.SORT",
-    "TABLE.FILTER",
-    "TABLE.RENAME",
-    "TABLE.MAPPING",
-    "TABLE.PROCESSING_ORDER",
-    "TABLE.WATCH",
+const HEADERS: [&str; 15] = [
+"TABLE.EMPTY",
+"TABLE.ENABLED",
+"TABLE.NAME",
+"TABLE.INPUT_TYPE",
+"TABLE.URL",
+"TABLE.USERNAME",
+"TABLE.PASSWORD",
+"TABLE.PERSIST",
+"TABLE.OPTIONS",
+"TABLE.ALIASES",
+"TABLE.PRIORITY",
+"TABLE.MAX_CONNECTIONS",
+"TABLE.METHOD",
+"TABLE.EPG",
+"TABLE.HEADERS",
 ];
 
 #[function_component]
-pub fn TargetTable() -> Html {
+pub fn InputTable() -> Html {
     let translate = use_translation();
     let services = use_service_context();
     let dialog = use_context::<DialogService>().expect("Dialog service not found");
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
-    let selected_dto = use_state(|| None::<Rc<ConfigTargetDto>>);
-    let table_definition = use_state(|| None::<Rc<TableDefinition<ConfigTargetDto>>>);
+    let selected_dto = use_state(|| None::<Rc<ConfigInputDto>>);
+    let table_definition = use_state(|| None::<Rc<TableDefinition<ConfigInputDto>>>);
 
     let handle_popup_close = {
         let set_is_open = popup_is_open.clone();
@@ -51,7 +55,7 @@ pub fn TargetTable() -> Html {
         let set_selected_dto = selected_dto.clone();
         let set_anchor_ref = popup_anchor_ref.clone();
         let set_is_open = popup_is_open.clone();
-        Callback::from(move |(dto, event): (Rc<ConfigTargetDto>, MouseEvent)| {
+        Callback::from(move |(dto, event): (Rc<ConfigInputDto>, MouseEvent)| {
             if let Some(target) = event.target_dyn_into::<web_sys::Element>() {
                 set_selected_dto.set(Some(dto.clone()));
                 set_anchor_ref.set(Some(target));
@@ -78,8 +82,8 @@ pub fn TargetTable() -> Html {
     let render_data_cell = {
         let translator = translate.clone();
         let popup_onclick = handle_popup_onclick.clone();
-        Callback::<(usize, usize, Rc<ConfigTargetDto>), Html>::from(
-            move |(row, col, dto): (usize, usize, Rc<ConfigTargetDto>)| {
+        Callback::<(usize, usize, Rc<ConfigInputDto>), Html>::from(
+            move |(row, col, dto): (usize, usize, Rc<ConfigInputDto>)| {
                 match col {
                     0 => {
                         let popup_onclick = popup_onclick.clone();
@@ -94,20 +98,38 @@ pub fn TargetTable() -> Html {
                     1 => html! { <Chip class={ convert_bool_to_chip_style(dto.enabled) }
                                  label={if dto.enabled {translator.t("LABEL.ACTIVE")} else { translator.t("LABEL.DISABLED")} }
                                   /> },
-                    2 => html! { &dto.name.to_string() },
-                    3 => html! { <TargetOutput target={Rc::clone(&dto)} /> },
-                    4 => html! { <TargetOptions target={Rc::clone(&dto)} /> },
-                    5 => dto.sort.as_ref().map_or_else(|| html! {}, |_s| html! { <RevealContent><TargetSort target={Rc::clone(&dto)} /></RevealContent> }),
-                    6 => dto.t_filter.as_ref().map_or_else(|| html! {}, |f| html! { <RevealContent preview={Some(html!{<FilterView inline={true} filter={f.clone()} />})}><FilterView pretty={true} filter={f.clone()} /></RevealContent> }),
-                    7 => dto.rename.as_ref().map_or_else(|| html! {}, |_r| html! { <RevealContent><TargetRename target={Rc::clone(&dto)} /></RevealContent> }),
-                    8 => html! { <PlaylistMappings mappings={dto.mapping.clone()} /> },
-                    9 => html! { <PlaylistProcessing order={dto.processing_order} /> },
-                    10 => html! { <TargetWatch  target={Rc::clone(&dto)} /> },
+                    2 => html! { dto.name.as_str() },
+                    3 => html! { dto.input_type.to_string() },
+                    4 => html! { dto.url.as_str() },
+                    5 => html! { dto.username.as_ref().map_or_else(String::new, ToString::to_string) },
+                    6 => dto.password.as_ref().map_or_else(|| html!{}, |pwd| html! { <HideContent content={pwd.to_string()}></HideContent>}),
+                    7 => html! { dto.persist.as_ref().map_or_else(String::new, ToString::to_string) },
+                    8 => html! { "" },
+                    9 => html! { "" },
+                    10 => html! { "" },
+                    11 => html! { "" },
+                    12 => html! { "" },
+                    13 => html! { "" },
+                    14 => html! { "" },
                     _ => html! {""},
                 }
             })
     };
 
+    // pub xtream_skip_live: bool,
+    // pub xtream_skip_vod: bool,
+    // pub xtream_skip_series: bool,
+    // pub xtream_live_stream_use_prefix: bool,
+    // pub xtream_live_stream_without_extension: bool,
+
+    // pub persist: Option<String>,
+    // pub options: Option<ConfigInputOptionsDto>,
+    // pub aliases: Option<Vec<ConfigInputAliasDto>>,
+    // pub priority: i16,
+    // pub max_connections: u16,
+    // pub method: InputFetchMethod,
+    // pub epg: Option<EpgConfigDto>,
+    // pub headers: HashMap<String, String>,
     {
         // first register for config update
         let services_ctx = services.clone();
@@ -121,14 +143,14 @@ pub fn TargetTable() -> Html {
                     let render_header_cell_cb = render_header_cell_cb.clone();
                     let render_data_cell_cb = render_data_cell_cb.clone();
                     if let Some(app_cfg) = cfg.clone() {
-                        let mut targets = vec![];
+                        let mut inputs = vec![];
                         for source in &app_cfg.sources.sources {
-                            for target in &source.targets {
-                                targets.push(Rc::new(target.clone()));
+                            for input in &source.inputs {
+                                inputs.push(Rc::new(input.clone()));
                             }
                         }
-                        table_definition_state.set(Some(Rc::new(TableDefinition::<ConfigTargetDto> {
-                            items: Rc::new(targets),
+                        table_definition_state.set(Some(Rc::new(TableDefinition::<ConfigInputDto> {
+                            items: Rc::new(inputs),
                             num_cols,
                             render_header_cell: render_header_cell_cb,
                             render_data_cell: render_data_cell_cb,
@@ -190,7 +212,7 @@ pub fn TargetTable() -> Html {
               if table_definition.is_some() {
                 html! {
                     <>
-                       <Table::<ConfigTargetDto> definition={(*table_definition).as_ref().unwrap().clone()} />
+                       <Table::<ConfigInputDto> definition={(*table_definition).as_ref().unwrap().clone()} />
                         <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
                             <MenuItem icon="Edit" name={TableAction::Edit.to_string()} label={translate.t("LABEL.EDIT")} onclick={&handle_menu_click}></MenuItem>
                             <MenuItem icon="Refresh" name={TableAction::Refresh.to_string()} label={translate.t("LABEL.REFRESH")} onclick={&handle_menu_click} style="tp__update_action"></MenuItem>

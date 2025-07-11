@@ -10,7 +10,7 @@ pub enum EpgNamePrefix {
     Prefix(String),
 }
 
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EpgSmartMatchConfigDto {
     #[serde(default)]
