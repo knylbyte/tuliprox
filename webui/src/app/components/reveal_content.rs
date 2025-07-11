@@ -1,4 +1,3 @@
-use wasm_bindgen::JsCast;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use crate::app::components::AppIcon;
@@ -10,7 +9,7 @@ pub struct RevealContentProps {
     #[prop_or_default]
     pub icon: String,
     #[prop_or_default]
-    pub preview: Html,
+    pub preview: Option<Html>,
     pub children: Html,
     #[prop_or_default]
     pub actions: Option<DialogActions>
@@ -37,8 +36,16 @@ pub fn RevealContent(props: &RevealContentProps) -> Html {
 
     html! {
         <div class={"tp__reveal-content"} onclick={handle_click}>
-           <span class="tp__reveal-content__preview">{props.preview.clone()}</span>
-           <AppIcon name={if props.icon.is_empty() {"Expand".to_string()} else {props.icon.to_string()} } />
+        {
+            match props.preview.as_ref() {
+              None => html! {},
+              Some(preview) => html! {
+                <span class="tp__reveal-content__preview">{preview.clone()}</span>
+              }
+            }
+        }
+
+         <AppIcon name={if props.icon.is_empty() { if props.preview.is_some() { "Expand".to_string() } else { "Ellipsis".to_string() } } else {props.icon.to_string()} } />
         </div>
     }
 }

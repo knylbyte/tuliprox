@@ -10,7 +10,7 @@ use crate::hooks::use_service_context;
 pub fn UserActionCard() -> Html {
     let services = use_service_context();
     let translate = use_translation();
-    let username = use_state(|| String::new());
+    let username = use_state(String::new);
 
     let handle_logout = {
         let services_ctx = services.clone();
@@ -32,7 +32,7 @@ pub fn UserActionCard() -> Html {
 
     html! {
         <ActionCard icon="User" title={translate.t("LABEL.WELCOME")}
-        subtitle={(&*username).clone()}>
+        subtitle={(*username).clone()}>
           <TextButton name="logout" title={translate.t("LABEL.LOGOUT")} icon="Logout" onclick={handle_logout} />
         </ActionCard>
     }

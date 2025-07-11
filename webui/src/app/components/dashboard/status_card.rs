@@ -22,7 +22,7 @@ pub fn StatusCard(props: &StatusCardProps) -> Html {
             <div class="tp__status-card__body">
                 {props.data.clone()}
             </div>
-            <div class="stp__tatus-card__footer">
+            <div class="tp__status-card__footer">
                 {props.footer.clone()}
             </div>
         </div>

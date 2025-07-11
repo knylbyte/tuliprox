@@ -46,20 +46,20 @@ impl Future for DialogFuture {
         }
     }
 }
-
+type DialogResultCallback = Box<dyn Fn(DialogResult)>;
 #[derive(Clone)]
 pub struct ConfirmRequest {
     pub title: String,
     pub ok_caption: String,
     pub cancel_caption: String,
-    pub resolve: Rc<RefCell<Option<Box<dyn Fn(DialogResult)>>>>,
+    pub resolve: Rc<RefCell<Option<DialogResultCallback>>>,
 }
 
 #[derive(Clone)]
 pub struct ContentRequest {
     pub content: Html,
     pub actions: DialogActions,
-    pub resolve: Rc<RefCell<Option<Box<dyn Fn(DialogResult)>>>>,
+    pub resolve: Rc<RefCell<Option<DialogResultCallback>>>,
 }
 
 #[derive(Clone)]

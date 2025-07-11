@@ -16,9 +16,18 @@ pub struct ConfigSourceDto {
 impl ConfigSourceDto {
     #[allow(clippy::cast_possible_truncation)]
     pub fn prepare(&mut self, index: u16, include_computed: bool) -> Result<u16, TuliproxError> {
-        handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, self.inputs.iter_mut().enumerate()
-            .map(|(idx, i)| i.prepare(index+(idx as u16), include_computed)));
-        Ok(index + (self.inputs.len() as u16))
+        let mut current_index = index;
+        handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, self.inputs.iter_mut()
+            .map(|i|
+                match i.prepare(current_index, include_computed) {
+                    Ok(new_idx) => {
+                        current_index = new_idx;
+                        Ok(())
+                    },
+                    Err(err) => Err(err)
+                }
+            ));
+        Ok(current_index)
     }
 }
 
@@ -40,7 +49,7 @@ impl SourcesConfigDto {
 
     fn prepare_sources(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         // prepare sources and set id's
-        let mut source_index: u16 = 1;
+        let mut source_index: u16 = 0;
         let mut target_index: u16 = 1;
         for source in &mut self.sources {
             source_index = source.prepare(source_index, include_computed)?;

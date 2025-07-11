@@ -1,12 +1,12 @@
+use crate::error::{TuliproxError, TuliproxErrorKind};
+use crate::model::EpgConfigDto;
+use crate::utils::{default_as_true, get_base_url_from_str, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info, trim_last_slash};
+use crate::{check_input_credentials, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
+use enum_iterator::Sequence;
+use log::debug;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::str::FromStr;
-use enum_iterator::Sequence;
-use crate::{check_input_credentials, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
-use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::{EpgConfigDto};
-use crate::utils::{default_as_true, get_base_url_from_str, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info, trim_last_slash};
-use log::debug;
 
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence,
@@ -60,7 +60,17 @@ impl FromStr for InputType {
     }
 }
 
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Default)]
+#[derive(
+    Debug,
+    Copy,
+    Clone,
+    serde::Serialize,
+    serde::Deserialize,
+    Sequence,
+    PartialEq,
+    Eq,
+    Default
+)]
 pub enum InputFetchMethod {
     #[default]
     GET,
@@ -129,8 +139,8 @@ pub struct ConfigInputAliasDto {
 }
 
 impl ConfigInputAliasDto {
-    pub fn prepare(&mut self, index: u16, input_type: &InputType) -> Result<(), TuliproxError> {
-        self.id = index;
+    pub fn prepare(&mut self, index: u16, input_type: &InputType) -> Result<u16, TuliproxError> {
+        self.id = index + 1;
         self.name = self.name.trim().to_string();
         if self.name.is_empty() {
             return Err(info_err!("name for input is mandatory".to_string()));
@@ -143,7 +153,7 @@ impl ConfigInputAliasDto {
         self.password = get_trimmed_string(&self.password);
         check_input_credentials!(self, input_type, true);
 
-        Ok(())
+        Ok(self.id)
     }
 }
 
@@ -183,7 +193,8 @@ pub struct ConfigInputDto {
 impl ConfigInputDto {
     #[allow(clippy::cast_possible_truncation)]
     pub fn prepare(&mut self, index: u16, include_computed: bool) -> Result<u16, TuliproxError> {
-        self.id = index;
+        let mut current_index = index + 1;
+        self.id = current_index;
         self.check_url()?;
 
         self.name = self.name.trim().to_string();
@@ -232,9 +243,16 @@ impl ConfigInputDto {
 
         if let Some(aliases) = self.aliases.as_mut() {
             let input_type = &self.input_type;
-            handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, aliases.iter_mut().enumerate().map(|(idx, i)| i.prepare(index+1+(idx as u16), input_type)));
+            handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, aliases.iter_mut()
+                .map(|i| match i.prepare(current_index, input_type) {
+                    Ok(new_idx) => {
+                        current_index = new_idx;
+                        Ok(())
+                    },
+                    Err(err) => Err(err)
+                }));
         }
-        Ok(index + self.aliases.as_ref().map_or(0, std::vec::Vec::len) as u16)
+        Ok(current_index)
     }
 
     fn check_url(&mut self) -> Result<(), TuliproxError> {
@@ -244,6 +262,4 @@ impl ConfigInputDto {
         }
         Ok(())
     }
-
-
 }

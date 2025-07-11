@@ -31,7 +31,7 @@ impl Display for SortOrder {
             SortOrder::Asc => "asc".to_string(),
             SortOrder::Desc => "desc".to_string(),
         };
-        write!(f, "{}", str)
+        write!(f, "{str}")
     }
 }
 

@@ -14,8 +14,8 @@ pub struct TagListProps {
     pub tags: Vec<Rc<Tag>>,
     #[prop_or_else(Callback::noop)]
     pub on_change: Callback<Vec<Rc<Tag>>>,
-    #[prop_or(false)]
-    pub removable: bool,
+    // #[prop_or(false)]
+    // pub removable: bool,
     #[prop_or(false)]
     pub allow_add: bool,
 }
@@ -25,7 +25,7 @@ pub fn tag_list(props: &TagListProps) -> Html {
     let TagListProps {
         tags,
         on_change,
-        removable,
+        // removable,
         allow_add,
     } = props.clone();
 
@@ -73,7 +73,7 @@ pub fn tag_list(props: &TagListProps) -> Html {
     html! {
     <div class="tp__tag_list">
         { for (*tag_state).iter().map(|tag| html! {
-            <Chip label={tag.label.clone()} class={tag.class.clone()} removable={props.removable} on_remove={on_remove.clone()}/>
+            <Chip label={tag.label.clone()} class={tag.class.clone()} /*removable={props.removable}*/ on_remove={on_remove.clone()}/>
           })
         }
         {

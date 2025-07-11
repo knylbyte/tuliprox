@@ -76,10 +76,11 @@ pub fn trim_slash(s: &str) -> Cow<str> {
 
 pub fn trim_last_slash(s: &str) -> Cow<str> {
     if s.ends_with('/') {
-        Cow::Owned(s[..s.len() - 1].to_string())
-    } else {
-        Cow::Borrowed(s)
+        if let Some(stripped) = s.strip_suffix('/') {
+          return  Cow::Owned(stripped.to_string())
+        }
     }
+    Cow::Borrowed(s)
 }
 
 #[cfg(test)]

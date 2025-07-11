@@ -13,7 +13,7 @@ pub struct ChipProps {
     pub class: Option<String>,
     #[prop_or(false)]
     pub removable: bool,
-    #[prop_or_else(|| Callback::noop())]
+    #[prop_or_else(Callback::noop)]
     pub on_remove: Callback<String>,
 }
 

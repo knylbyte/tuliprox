@@ -1,5 +1,5 @@
 use crate::app::components::{convert_bool_to_chip_style, Card, Chip};
-use shared::model::{ConfigTargetDto, ItemField, SortOrder};
+use shared::model::{ConfigTargetDto};
 use std::rc::Rc;
 use yew::prelude::*;
 use yew_i18n::use_translation;

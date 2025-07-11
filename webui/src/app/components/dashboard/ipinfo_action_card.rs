@@ -57,11 +57,7 @@ pub fn IpinfoActionCard() -> Html {
             services_ctx.config.config_subscribe(
                 &mut |cfg| {
                     let exists = if let Some(app_cfg) = &cfg {
-                        if app_cfg.config.ipcheck.is_some() {
-                            true
-                        } else {
-                            false
-                        }
+                        app_cfg.config.ipcheck.is_some()
                     } else {
                         false
                     };

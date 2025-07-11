@@ -41,7 +41,7 @@ impl FromStr for PlaylistAssistantStep {
 pub fn PlaylistAssistant() -> Html {
     let active_step = use_state(|| PlaylistAssistantStep::Name);
 
-    let custom_class = use_state(|| String::new());
+    let custom_class = use_state(String::new);
     let context = PlaylistAssistantContext {
         custom_class: custom_class.clone(),
     };

@@ -69,8 +69,8 @@ pub fn TargetOptions(props: &TargetOptionsProps) -> Html {
     });
 
     let has_options = tags.0;
-    let opts: Vec<Rc<Tag>> = (&tags.1).clone();
-    let redirect: Vec<Rc<Tag>> = (&tags.2).clone();
+    let opts: Vec<Rc<Tag>> = (tags.1).clone();
+    let redirect: Vec<Rc<Tag>> = (tags.2).clone();
 
     html! {
         <CollapsePanel expanded={false} class={format!("tp__target-options__panel{}", if has_options { " tp__target-options__has_options"} else {""})}

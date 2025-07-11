@@ -44,10 +44,7 @@ pub fn PopupMenu(props: &PopupMenuProps) -> Html {
                 top = rect.top() - 150.0;
             }
 
-            format!(
-                "position: fixed; top: {}px; left: {}px;",
-                top, left
-            )
+            format!("position: fixed; top: {top}px; left: {left}px;")
         })
     };
 
