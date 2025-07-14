@@ -15,7 +15,7 @@ use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
 use shared::error::TuliproxError;
-use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputType, IpCheckDto, StatusCheck, TargetUserDto, XtreamPlaylistItem};
+use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, AppConfigDto, ConfigDto, InputType, IpCheckDto, StatusCheck, TargetUserDto, XtreamPlaylistItem};
 use shared::utils::sanitize_sensitive_info;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -248,21 +248,12 @@ async fn config(
     let paths = app_state.app_config.paths.load();
     match utils::read_app_config_dto(&paths, true, false) {
         Ok(mut app_config) => {
-            for source in &mut app_config.sources.sources {
-                for input in &mut source.inputs {
-                    match get_batch_aliases(input.input_type, input.url.as_str()) {
-                        Ok((_, aliases)) => {
-                            input.prepare_batch(aliases);
-                        }
-                        Err(err) => {
-                            error!("Failed to read config files aliases: {err}");
-                            return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                        }
-                    }
-                }
+            if let Err(_err) = prepare_app_config(&mut app_config) {
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            } else {
+                axum::response::Json(app_config).into_response()
             }
-            axum::response::Json(app_config).into_response()
-        },
+        }
         Err(err) => {
             error!("Failed to read config files: {err}");
             axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -270,6 +261,23 @@ async fn config(
     }
 }
 
+fn prepare_app_config(app_config: &mut AppConfigDto) -> Result<(), TuliproxError> {
+    for source in &mut app_config.sources.sources {
+        for input in &mut source.inputs {
+            match get_batch_aliases(input.input_type, input.url.as_str()) {
+                Ok(Some((_, aliases))) => {
+                    input.prepare_batch(aliases);
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    error!("Failed to read config files aliases: {err}");
+                    return Err(err);
+                }
+            }
+        }
+    }
+    Ok(())
+}
 
 async fn create_ipinfo_check(app_state: &Arc<AppState>) -> Option<(Option<String>, Option<String>)> {
     let config = app_state.app_config.config.load();

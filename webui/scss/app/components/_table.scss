@@ -30,7 +30,7 @@
           font-size: 1.1rem;
           font-weight: bold;
           //text-align: center;
-          padding: var(--padding-default);
+          padding: var(--padding-mini);
           background-color: var(--table-header-background-color);
           box-shadow: inset 0 -1px 0 var(--border-color);
         }
@@ -48,8 +48,9 @@
           border-bottom: 1px solid var(--border-color);
         }
         td {
+          height: fit-content;
           vertical-align: top;
-          padding: 0.875rem;
+          padding: var(--padding-mini);
         }
       }
     }

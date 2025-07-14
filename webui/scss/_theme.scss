@@ -18,6 +18,8 @@
   --padding-large: 1.5rem;
   --padding-larger: 2rem;
 
+  --margin-default: 1rem;
+
   --primary-color: #124a9b;
   --secondary-color: #f67070;
 
@@ -87,6 +89,9 @@
   --tag-inactive-color:  #6f6f6f;
   --tag-inactive-background-color:  #3a3a3a;
 
+  --tag-alt-active-border-color: #2b4c61;
+  --tag-alt-active-color: #49dcdc;
+  --tag-alt-active-background-color: #1e252d;
 
   --popup-background-color: #313133; //#18181b;
   --popup-shadow: 0 3px 8px #06070a;
@@ -143,10 +148,10 @@
 
   --icon-button-hover-border-color: #ced9fb;
 
-  --menu-button-color: #fffff;
+  --menu-button-color: #ffffff;
   --menu-button-background-color: #20273344;
 
-  --menu-button-hover-color: #fffff;
+  --menu-button-hover-color: #ffffff;
   --menu-button-hover-background-color: #202733;
 
   --text-button-border-radius: var(--border-radius);

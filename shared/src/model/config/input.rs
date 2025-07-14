@@ -13,17 +13,6 @@ use std::str::FromStr;
 macro_rules! apply_batch_aliases {
     ($target:expr, $batch_aliases:expr) => {{
         if !$batch_aliases.is_empty() {
-            if let Some(mut first) = $batch_aliases.pop() {
-                $target.username = first.username.take();
-                $target.password = first.password.take();
-                $target.url = first.url.trim().to_string();
-                $target.max_connections = first.max_connections;
-                $target.priority = first.priority;
-                if $target.name.is_empty() {
-                    $target.name = first.name.to_string();
-                }
-            }
-
             if !$batch_aliases.is_empty() {
                 $batch_aliases.reverse();
                 if let Some(aliases) = $target.aliases.as_mut() {

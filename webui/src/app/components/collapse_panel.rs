@@ -11,7 +11,7 @@ pub struct CollapsePanelProps {
     pub title_content: Option<Html>,
     pub children: Children,
     #[prop_or_default]
-    pub class: Option<String>,
+    pub class: String,
 }
 
 #[function_component]
@@ -24,7 +24,7 @@ pub fn CollapsePanel(props: &CollapsePanelProps) -> Html {
     };
 
     html! {
-        <div class={classes!("tp__collapse-panel", if *expanded {""} else {"tp__collapsed"}, props.class.as_ref().map(ToString::to_string))}>
+        <div class={classes!("tp__collapse-panel", if *expanded {""} else {"tp__collapsed"}, props.class.to_string())}>
             <div class="tp__collapse-panel__header" onclick={toggle}>
                 <span class="tp__collapse-panel__header-title">
                     { props.title_content.clone().unwrap_or_else(|| html! { &props.title }) }

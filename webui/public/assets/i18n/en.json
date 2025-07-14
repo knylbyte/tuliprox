@@ -93,6 +93,8 @@
     "XC": "xc",
     "M3U": "m3u",
     "XTREAM": "xtream",
+    "M3U_BATCH": "m3u batch",
+    "XTREAM_BATCH": "xc batch",
     "HDHOMERUN": "hdhomerun",
     "STRM": "strm",
     "PLAYLIST_BROWSER": "Playlist Browser",
@@ -173,7 +175,8 @@
     "SKIP":  "Skip",
     "LIVE_STREAM_USE_PREFIX": "Live use prefix",
     "LIVE_STREAM_WITHOUT_EXTENSION": "Live w/o ext.",
-    "ALIAS": "Alias"
+    "ALIAS": "Alias",
+    "INPUTS": "Inputs"
   },
   "TABLE": {
     "EMPTY": "",

@@ -10,12 +10,18 @@
     fill: var(--text-color);
   }
   .svg-icon {
-    height: 2rem;
+    width: 1.2rem;
+    height: 1.2rem;
+    min-height: 1.2rem;
+    min-width: 1.2rem;
   }
 
   &__preview {
-    max-height: 2rem;
     overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-height: 2rem;
+    max-width: var(--max-table-cell-width);
   }
 
 }

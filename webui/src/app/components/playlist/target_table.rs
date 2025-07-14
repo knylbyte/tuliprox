@@ -1,20 +1,18 @@
-use std::fmt::Display;
+use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
 use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, FilterView, PlaylistMappings, PlaylistProcessing, RevealContent, Table, TableDefinition, TargetOptions, TargetOutput, TargetRename, TargetSort, TargetWatch};
 use crate::hooks::use_service_context;
-use shared::model::{ConfigTargetDto};
-use std::future;
+use crate::model::DialogResult;
+use crate::services::DialogService;
+use log::info;
+use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use shared::model::ConfigTargetDto;
+use std::fmt::Display;
 use std::rc::Rc;
 use std::str::FromStr;
-use log::info;
 use yew::platform::spawn_local;
 use yew::prelude::*;
-use yew::suspense::use_future;
 use yew_i18n::use_translation;
-use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
-use crate::app::components::menu_item::MenuItem;
-use crate::model::DialogResult;
-use crate::services::{DialogService};
 
 const HEADERS: [&str; 11] = [
     "TABLE.EMPTY",
@@ -30,15 +28,19 @@ const HEADERS: [&str; 11] = [
     "TABLE.WATCH",
 ];
 
+#[derive(Properties, PartialEq, Clone)]
+pub struct TargetTableProps {
+    pub targets: Option<Vec<Rc<ConfigTargetDto>>>,
+}
+
 #[function_component]
-pub fn TargetTable() -> Html {
+pub fn TargetTable(props: &TargetTableProps) -> Html {
     let translate = use_translation();
     let services = use_service_context();
     let dialog = use_context::<DialogService>().expect("Dialog service not found");
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
     let selected_dto = use_state(|| None::<Rc<ConfigTargetDto>>);
-    let table_definition = use_state(|| None::<Rc<TableDefinition<ConfigTargetDto>>>);
 
     let handle_popup_close = {
         let set_is_open = popup_is_open.clone();
@@ -108,44 +110,22 @@ pub fn TargetTable() -> Html {
             })
     };
 
-    {
+    let table_definition = {
         // first register for config update
-        let services_ctx = services.clone();
-        let table_definition_state = table_definition.clone();
         let render_header_cell_cb = render_header_cell.clone();
         let render_data_cell_cb = render_data_cell.clone();
         let num_cols = HEADERS.len();
-        let _ = use_future(|| async move {
-            services_ctx.config.config_subscribe(
-                &mut |cfg| {
-                    let render_header_cell_cb = render_header_cell_cb.clone();
-                    let render_data_cell_cb = render_data_cell_cb.clone();
-                    if let Some(app_cfg) = cfg.clone() {
-                        let mut targets = vec![];
-                        for source in &app_cfg.sources.sources {
-                            for target in &source.targets {
-                                targets.push(Rc::new(target.clone()));
-                            }
-                        }
-                        table_definition_state.set(Some(Rc::new(TableDefinition::<ConfigTargetDto> {
-                            items: Rc::new(targets),
-                            num_cols,
-                            render_header_cell: render_header_cell_cb,
-                            render_data_cell: render_data_cell_cb,
-                        })));
-                    };
-                    future::ready(())
-                }
-            ).await
-        });
-    }
+        use_memo(props.targets.clone(), move |targets| {
+            targets.as_ref().map(|list|
+                Rc::new(TableDefinition::<ConfigTargetDto> {
+                    items: Rc::new(list.clone()),
+                    num_cols,
+                    render_header_cell: render_header_cell_cb,
+                    render_data_cell: render_data_cell_cb,
+                }))
+        })
+    };
 
-    {
-        let services_ctx = services.clone();
-        let _ = use_future(|| async move {
-            let _cfg = services_ctx.config.get_server_config().await;
-        });
-    }
 
     let handle_menu_click = {
         let popup_is_open_state = popup_is_open.clone();
@@ -153,7 +133,7 @@ pub fn TargetTable() -> Html {
         let translate = translate.clone();
         let services_ctx = services.clone();
         let selected_dto = selected_dto.clone();
-        Callback::from(move |name:String| {
+        Callback::from(move |name: String| {
             if let Ok(action) = TableAction::from_str(&name) {
                 match action {
                     TableAction::Edit => {}
@@ -164,7 +144,7 @@ pub fn TargetTable() -> Html {
                             let targets = vec![dto_name.as_str()];
                             match services_ctx.playlist.update_targets(&targets).await {
                                 true => { info!("Ok"); }
-                                false => { info!("not ok");  }
+                                false => { info!("not ok"); }
                             }
                         });
                     }
@@ -187,27 +167,25 @@ pub fn TargetTable() -> Html {
     html! {
         <div class="tp__target-table">
           {
-              if table_definition.is_some() {
+            if let Some(definition) = table_definition.as_ref() {
                 html! {
-                    <>
-                       <Table::<ConfigTargetDto> definition={(*table_definition).as_ref().unwrap().clone()} />
-                        <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
-                            <MenuItem icon="Edit" name={TableAction::Edit.to_string()} label={translate.t("LABEL.EDIT")} onclick={&handle_menu_click}></MenuItem>
-                            <MenuItem icon="Refresh" name={TableAction::Refresh.to_string()} label={translate.t("LABEL.REFRESH")} onclick={&handle_menu_click} style="tp__update_action"></MenuItem>
-                            <hr/>
-                            <MenuItem icon="Delete" name={TableAction::Delete.to_string()} label={translate.t("LABEL.DELETE")} onclick={&handle_menu_click} style="tp__delete_action"></MenuItem>
-                        </PopupMenu>
-                    </>
+                  <>
+                   <Table::<ConfigTargetDto> definition={definition.clone()} />
+                    <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
+                        <MenuItem icon="Edit" name={TableAction::Edit.to_string()} label={translate.t("LABEL.EDIT")} onclick={&handle_menu_click}></MenuItem>
+                        <MenuItem icon="Refresh" name={TableAction::Refresh.to_string()} label={translate.t("LABEL.REFRESH")} onclick={&handle_menu_click} style="tp__update_action"></MenuItem>
+                        <hr/>
+                        <MenuItem icon="Delete" name={TableAction::Delete.to_string()} label={translate.t("LABEL.DELETE")} onclick={&handle_menu_click} style="tp__delete_action"></MenuItem>
+                    </PopupMenu>
+                </>
                   }
-              } else {
-                  html! {}
-              }
+            } else {
+              html! {}
+            }
           }
-
         </div>
     }
 }
-
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -234,7 +212,7 @@ impl FromStr for TableAction {
         if s.eq("edit") {
             Ok(Self::Edit)
         } else if s.eq("refresh") {
-                Ok(Self::Refresh)
+            Ok(Self::Refresh)
         } else if s.eq("delete") {
             Ok(Self::Delete)
         } else {

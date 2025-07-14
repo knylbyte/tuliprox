@@ -1,7 +1,6 @@
 .tp__collapse-panel {
   display: flex;
   flex-flow: column;
-  gap: 8px;
   overflow: hidden;
 
   &__header {
@@ -16,6 +15,8 @@
 
     &:hover {
       color: var(--menu-button-hover-color);
+      fill: var(--menu-button-hover-color);
+      background-color: var(--card-background-color);
     }
     &-title {
       flex: 1 1 auto;
@@ -33,11 +34,13 @@
     flex-flow: column;
     width: 100%;
     box-sizing: border-box;
+    height: fit-content;
   //  transition: max-height 0.5s ease;
   //  max-height: 5000px;
   }
   &.tp__collapsed {
     .tp__collapse-panel__body {
+       display: none;
        max-height: 0;
      }
   }

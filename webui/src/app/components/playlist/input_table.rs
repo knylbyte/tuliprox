@@ -1,14 +1,12 @@
 use std::fmt::Display;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, InputHeaders, InputOptions, Table, TableDefinition};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, InputHeaders, InputOptions, InputTypeView, RevealContent, Table, TableDefinition};
 use crate::hooks::use_service_context;
-use std::future;
 use std::rc::Rc;
 use std::str::FromStr;
 use log::info;
 use yew::platform::spawn_local;
 use yew::prelude::*;
-use yew::suspense::use_future;
 use yew_i18n::use_translation;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use shared::model::{ConfigInputAliasDto, ConfigInputDto};
@@ -16,7 +14,7 @@ use crate::app::components::menu_item::MenuItem;
 use crate::model::DialogResult;
 use crate::services::{DialogService};
 
-const HEADERS: [&str; 15] = [
+const HEADERS: [&str; 14] = [
 "TABLE.EMPTY",
 "TABLE.ENABLED",
 "TABLE.NAME",
@@ -26,7 +24,6 @@ const HEADERS: [&str; 15] = [
 "TABLE.PASSWORD",
 "TABLE.PERSIST",
 "TABLE.OPTIONS",
-"TABLE.ALIASES",
 "TABLE.PRIORITY",
 "TABLE.MAX_CONNECTIONS",
 "TABLE.METHOD",
@@ -35,20 +32,25 @@ const HEADERS: [&str; 15] = [
 ];
 
 #[derive(Clone, PartialEq)]
-enum InputRow {
+pub enum InputRow {
     Input(Rc<ConfigInputDto>),
     Alias(Rc<ConfigInputAliasDto>, Rc<ConfigInputDto>)
 }
 
+
+#[derive(Properties, PartialEq, Clone)]
+pub struct InputTableProps {
+    pub inputs: Option<Vec<Rc<InputRow>>>,
+}
+
 #[function_component]
-pub fn InputTable() -> Html {
+pub fn InputTable(props: &InputTableProps) -> Html {
     let translate = use_translation();
     let services = use_service_context();
     let dialog = use_context::<DialogService>().expect("Dialog service not found");
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
     let selected_dto = use_state(|| None::<Rc<InputRow>>);
-    let table_definition = use_state(|| None::<Rc<TableDefinition<InputRow>>>);
 
     let handle_popup_close = {
         let set_is_open = popup_is_open.clone();
@@ -107,18 +109,17 @@ pub fn InputTable() -> Html {
                                  label={if dto.enabled {translator.t("LABEL.ACTIVE")} else { translator.t("LABEL.DISABLED")} }
                                   /> },
                             2 => html! { dto.name.as_str() },
-                            3 => html! { dto.input_type.to_string() },
-                            4 => html! { dto.url.as_str() },
+                            3 => html! { <InputTypeView input_type={dto.input_type}/> },
+                            4 => html! { <RevealContent preview={html!{dto.url.to_string()}}>{ dto.url.as_str() }</RevealContent> },
                             5 => html! { dto.username.as_ref().map_or_else(String::new, ToString::to_string) },
                             6 => dto.password.as_ref().map_or_else(|| html!{}, |pwd| html! { <HideContent content={pwd.to_string()}></HideContent>}),
                             7 => html! { dto.persist.as_ref().map_or_else(String::new, ToString::to_string) },
                             8 => html! { <InputOptions input={dto.clone()} /> },
-                            9 => html! { "" },
-                            10 => html! { dto.priority.to_string() },
-                            11 => html! { dto.max_connections.to_string() },
-                            12 => html! { dto.method.to_string() },
-                            13 => html! {  },
-                            14 => html! { <InputHeaders input={dto.clone()} /> },
+                            9 => html! { dto.priority.to_string() },
+                            10 => html! { dto.max_connections.to_string() },
+                            11 => html! { dto.method.to_string() },
+                            12 => html! {  },
+                            13 => html! { <InputHeaders input={dto.clone()} /> },
                             _ => html! {""},
                         }
                     },
@@ -134,21 +135,22 @@ pub fn InputTable() -> Html {
                             // </button>
                                 }
                             }
-                            1 => html! { <Chip class={ convert_bool_to_chip_style(dto.enabled) }
-                                 label={translator.t("LABEL.ALIAS")}  /> },
+                            1 => html! {
+                                <Chip class={ format!("{} tp__input-table__alias", convert_bool_to_chip_style(dto.enabled).map_or_else(String::new, |s| if s == "active" { "alias".to_string() } else {s} )) }
+                                 label={translator.t("LABEL.ALIAS")}  />
+                            },
                             2 => html! { alias.name.as_str() },
-                            3 => html! { dto.input_type.to_string() },
+                            3 => html! { },
                             4 => html! { alias.url.as_str() },
                             5 => html! { alias.username.as_ref().map_or_else(String::new, ToString::to_string) },
                             6 => alias.password.as_ref().map_or_else(|| html!{}, |pwd| html! { <HideContent content={pwd.to_string()}></HideContent>}),
                             7 => html! { },
                             8 => html! { },
-                            9 => html! { },
-                            10 => html! { alias.priority.to_string() },
-                            11 => html! { alias.max_connections.to_string() },
+                            9 => html! { alias.priority.to_string() },
+                            10 => html! { alias.max_connections.to_string() },
+                            11 => html! { },
                             12 => html! { },
                             13 => html! { },
-                            14 => html! { },
                             _ => html! { },
                         }
                     }
@@ -156,56 +158,6 @@ pub fn InputTable() -> Html {
             })
     };
 
-    // pub aliases: Option<Vec<ConfigInputAliasDto>>,
-    // pub priority: i16,
-    // pub max_connections: u16,
-    // pub method: InputFetchMethod,
-    // pub epg: Option<EpgConfigDto>,
-    // pub headers: HashMap<String, String>,
-    {
-        // first register for config update
-        let services_ctx = services.clone();
-        let table_definition_state = table_definition.clone();
-        let render_header_cell_cb = render_header_cell.clone();
-        let render_data_cell_cb = render_data_cell.clone();
-        let num_cols = HEADERS.len();
-        let _ = use_future(|| async move {
-            services_ctx.config.config_subscribe(
-                &mut |cfg| {
-                    let render_header_cell_cb = render_header_cell_cb.clone();
-                    let render_data_cell_cb = render_data_cell_cb.clone();
-                    if let Some(app_cfg) = cfg.clone() {
-                        let mut inputs = vec![];
-                        for source in &app_cfg.sources.sources {
-                            for input_cfg in &source.inputs {
-                                let input = Rc::new(input_cfg.clone());
-                                inputs.push(Rc::new(InputRow::Input(Rc::clone(&input))));
-                                if let Some(aliases) = input_cfg.aliases.as_ref() {
-                                    for alias in aliases {
-                                        inputs.push(Rc::new(InputRow::Alias(Rc::new(alias.clone()), Rc::clone(&input))));
-                                    }
-                                }
-                            }
-                        }
-                        table_definition_state.set(Some(Rc::new(TableDefinition::<InputRow> {
-                            items: Rc::new(inputs),
-                            num_cols,
-                            render_header_cell: render_header_cell_cb,
-                            render_data_cell: render_data_cell_cb,
-                        })));
-                    };
-                    future::ready(())
-                }
-            ).await
-        });
-    }
-
-    {
-        let services_ctx = services.clone();
-        let _ = use_future(|| async move {
-            let _cfg = services_ctx.config.get_server_config().await;
-        });
-    }
 
     let handle_menu_click = {
         let popup_is_open_state = popup_is_open.clone();
@@ -247,17 +199,30 @@ pub fn InputTable() -> Html {
         })
     };
 
+    let table_definition = {
+        let render_header_cell_cb = render_header_cell.clone();
+        let render_data_cell_cb = render_data_cell.clone();
+        let num_cols = HEADERS.len();
+        use_memo(props.inputs.clone(), |inputs|
+            inputs.as_ref().map(|list|
+                Rc::new(TableDefinition::<InputRow> {
+                    items: Rc::new(list.clone()),
+                    num_cols,
+                    render_header_cell: render_header_cell_cb,
+                    render_data_cell: render_data_cell_cb,
+                }))
+        )
+    };
+
     html! {
-        <div class="tp__target-table">
+        <div class="tp__input-table">
           {
-              if table_definition.is_some() {
+              if let Some(definition) = table_definition.as_ref() {
                 html! {
                     <>
-                       <Table::<InputRow> definition={(*table_definition).as_ref().unwrap().clone()} />
+                       <Table::<InputRow> definition={definition.clone()} />
                         <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
                             <MenuItem icon="Edit" name={TableAction::Edit.to_string()} label={translate.t("LABEL.EDIT")} onclick={&handle_menu_click}></MenuItem>
-                            <MenuItem icon="Refresh" name={TableAction::Refresh.to_string()} label={translate.t("LABEL.REFRESH")} onclick={&handle_menu_click} style="tp__update_action"></MenuItem>
-                            <hr/>
                             <MenuItem icon="Delete" name={TableAction::Delete.to_string()} label={translate.t("LABEL.DELETE")} onclick={&handle_menu_click} style="tp__delete_action"></MenuItem>
                         </PopupMenu>
                     </>
@@ -266,12 +231,9 @@ pub fn InputTable() -> Html {
                   html! {}
               }
           }
-
         </div>
     }
 }
-
-
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum TableAction {

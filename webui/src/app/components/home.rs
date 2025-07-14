@@ -1,5 +1,5 @@
 use yew::prelude::*;
-use crate::app::components::{IconButton, Sidebar, DashboardView, PlaylistView};
+use crate::app::components::{IconButton, Sidebar, DashboardView, PlaylistView, Panel};
 use crate::model::ViewType;
 use crate::hooks::use_service_context;
 
@@ -48,13 +48,15 @@ pub fn Home() -> Html {
                     </div>
                 </div>
                 <div class="tp__app-main__body">
-                   {
-                        match *view_visible {
-                            ViewType::Dashboard => html! { <DashboardView/> },
-                            ViewType::Playlists => html! { <PlaylistView/> },
-                            _ => html! { <div>{"Unknown view"}</div> },
-                        }
-                    }
+                   <Panel value={ViewType::Dashboard.to_string()} active={view_visible.to_string()}>
+                    <DashboardView/>
+                   </Panel>
+                   <Panel class="tp__full-width" value={ViewType::Playlists.to_string()} active={view_visible.to_string()}>
+                    <PlaylistView/>
+                   </Panel>
+                   <Panel class="tp__full-width" value={ViewType::Users.to_string()} active={view_visible.to_string()}>
+                      {"Users"}
+                   </Panel>
                 </div>
           </div>
         </div>

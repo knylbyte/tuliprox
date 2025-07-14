@@ -10,6 +10,7 @@ pub fn convert_bool_to_chip_style(value: bool) -> Option<String> {
 #[derive(Properties, Clone, PartialEq)]
 pub struct ChipProps {
     pub label: String,
+    #[prop_or(None)]
     pub class: Option<String>,
     #[prop_or(false)]
     pub removable: bool,

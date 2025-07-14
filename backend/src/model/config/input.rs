@@ -145,13 +145,26 @@ impl ConfigInput {
             } else {
                 InputType::Xtream
             };
-            let (file_path, batch_aliases) = get_batch_aliases(input_type, self.url.as_str())?;
-            let mut aliases: Vec<ConfigInputAlias> = batch_aliases.into_iter()
-                .map(|item| ConfigInputAlias::from(item))
-                .collect();
-            apply_batch_aliases!(self, aliases);
-            self.input_type = input_type;
-            return Ok(Some(file_path));
+            if let Some((file_path, batch_aliases)) = get_batch_aliases(input_type, self.url.as_str())? {
+                let mut aliases: Vec<ConfigInputAlias> = batch_aliases.into_iter()
+                    .map(|item| ConfigInputAlias::from(item))
+                    .collect();
+                if let Some(mut first) = aliases.pop() {
+                    self.username = first.username.take();
+                    self.password = first.password.take();
+                    self.url = first.url.trim().to_string();
+                    self.max_connections = first.max_connections;
+                    self.priority = first.priority;
+                    if self.name.is_empty() {
+                        self.name = first.name.to_string();
+                    }
+                }
+                apply_batch_aliases!(self, aliases);
+                self.input_type = input_type;
+                return Ok(Some(file_path));
+            } else {
+                self.input_type = input_type;
+            }
         }
         Ok(None)
     }
@@ -180,16 +193,19 @@ impl From<&ConfigInputDto> for ConfigInput {
     }
 }
 
-pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<(PathBuf, Vec<ConfigInputAliasDto>), TuliproxError> {
-    match utils::csv_read_inputs(input_type, url) {
-        Ok((file_path, mut batch_aliases)) => {
-            if !batch_aliases.is_empty() {
-                batch_aliases.reverse();
+pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(PathBuf, Vec<ConfigInputAliasDto>)>, TuliproxError> {
+    if input_type == InputType::M3uBatch || input_type == InputType::XtreamBatch {
+        return match utils::csv_read_inputs(input_type, url) {
+            Ok((file_path, mut batch_aliases)) => {
+                if !batch_aliases.is_empty() {
+                    batch_aliases.reverse();
+                }
+                Ok(Some((file_path, batch_aliases)))
             }
-            Ok((file_path, batch_aliases))
-        }
-        Err(err) => {
-            Err(TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))
+            Err(err) => {
+                Err(TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))
+            }
         }
     }
+    Ok(None)
 }

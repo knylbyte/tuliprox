@@ -1,3 +1,4 @@
+use std::fmt;
 use std::str::FromStr;
 use shared::error::{info_err, TuliproxError, TuliproxErrorKind};
 
@@ -18,5 +19,16 @@ impl FromStr for ViewType {
             "playlists" => Ok(ViewType::Playlists),
             _ => Err(info_err!(format!("Unknown view type: {s}"))),
         }
+    }
+}
+
+impl fmt::Display for ViewType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            ViewType::Dashboard => "dashboard",
+            ViewType::Users => "users",
+            ViewType::Playlists => "playlists",
+        };
+        write!(f, "{s}")
     }
 }
