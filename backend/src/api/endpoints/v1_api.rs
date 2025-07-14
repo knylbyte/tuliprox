@@ -5,7 +5,7 @@ use crate::api::model::app_state::AppState;
 use crate::api::model::request::{PlaylistRequest, PlaylistRequestType};
 use crate::auth::create_access_token;
 use crate::auth::validator_admin;
-use crate::model::{TargetUser};
+use crate::model::{get_batch_aliases, TargetUser};
 use crate::model::{ConfigInput, ConfigInputOptions};
 use crate::processing::processor::playlist;
 use crate::repository::user_repository::store_api_user;
@@ -247,7 +247,20 @@ async fn config(
 ) -> impl axum::response::IntoResponse + Send {
     let paths = app_state.app_config.paths.load();
     match utils::read_app_config_dto(&paths, true, false) {
-        Ok(app_config) => {
+        Ok(mut app_config) => {
+            for source in &mut app_config.sources.sources {
+                for input in &mut source.inputs {
+                    match get_batch_aliases(input.input_type, input.url.as_str()) {
+                        Ok((_, aliases)) => {
+                            input.prepare_batch(aliases);
+                        }
+                        Err(err) => {
+                            error!("Failed to read config files aliases: {err}");
+                            return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                        }
+                    }
+                }
+            }
             axum::response::Json(app_config).into_response()
         },
         Err(err) => {

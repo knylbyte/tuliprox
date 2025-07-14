@@ -169,7 +169,11 @@
     "GROUP_PATTERN": "Group Pattern",
     "RENAME_SETTINGS": "Rename Settings",
     "PATTERN": "Pattern",
-    "NEW_NAME": "New Name"
+    "NEW_NAME": "New Name",
+    "SKIP":  "Skip",
+    "LIVE_STREAM_USE_PREFIX": "Live use prefix",
+    "LIVE_STREAM_WITHOUT_EXTENSION": "Live w/o ext.",
+    "ALIAS": "Alias"
   },
   "TABLE": {
     "EMPTY": "",

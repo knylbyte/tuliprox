@@ -14,13 +14,12 @@ pub struct InputProps {
     #[prop_or_default]
     pub autocomplete: bool,
     #[prop_or_default]
-    pub autofocus: bool,
-    #[prop_or_default]
     pub onkeydown: Option<Callback<KeyboardEvent>>,
 }
 
 #[function_component]
 pub fn Input(props: &InputProps) -> Html {
+
     html! {
         <div class="tp__input">
             { if props.label.is_some() {
@@ -34,7 +33,6 @@ pub fn Input(props: &InputProps) -> Html {
                     type={props.input_type.clone()}
                     name={props.name.clone()}
                     autocomplete={if props.autocomplete { "on".to_string() } else { "off".to_string() }}
-                    autofocus={props.autofocus}
                     onkeydown={props.onkeydown.clone().unwrap_or_default()}
                     />
             </div>

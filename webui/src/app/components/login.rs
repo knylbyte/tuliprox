@@ -66,6 +66,16 @@ pub fn Login() -> Html {
         })
     };
 
+    {
+        let input_ref = username_ref.clone();
+        use_effect(move || {
+            if let Some(input) = input_ref.cast::<HtmlInputElement>() {
+                input.focus().unwrap();
+            }
+            || ()
+        });
+    }
+
     html! {
         <div class="tp__login-view">
            <div class={"tp__login-view__header"}>
@@ -74,7 +84,7 @@ pub fn Login() -> Html {
             </div>
             <form>
                 <div class="tp__login-view__form">
-                    <Input label={translation.t("LABEL.USERNAME")} input_ref={username_ref} input_type="text" name="username" autocomplete={true} autofocus={true}/>
+                    <Input label={translation.t("LABEL.USERNAME")} input_ref={username_ref} input_type="text" name="username" autocomplete={true} />
                     <Input label={translation.t("LABEL.PASSWORD")} input_ref={password_ref} input_type="password" name="password"  autocomplete={true} onkeydown={handle_key_down}/>
                     <div class="tp__login-view__form-action">
                         <TextButton style="primary" name="login" title={ translation.t("LABEL.LOGIN")} onclick={handle_login}></TextButton>

@@ -1,15 +1,15 @@
-use shared::utils::get_credentials_from_url_str;
-use log::debug;
-use shared::info_err;
-use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{macros, EpgConfig};
+use crate::utils;
+use log::debug;
+use shared::{apply_batch_aliases, check_input_credentials};
+use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::info_err;
+use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType};
+use shared::utils::get_credentials_from_url_str;
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use url::Url;
-use shared::check_input_credentials;
-use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType};
-use crate::utils;
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
@@ -113,7 +113,6 @@ pub struct ConfigInput {
 }
 
 impl ConfigInput {
-
     pub fn prepare(&mut self) -> Result<Option<PathBuf>, TuliproxError> {
         let batch_file_path = self.prepare_batch()?;
         check_input_credentials!(self, self.input_type, false);
@@ -146,37 +145,13 @@ impl ConfigInput {
             } else {
                 InputType::Xtream
             };
-
-            match utils::csv_read_inputs(self) {
-                Ok((file_path, mut batch_aliases)) => {
-                    if !batch_aliases.is_empty() {
-                        batch_aliases.reverse();
-                        if let Some(mut first) = batch_aliases.pop() {
-                            self.username = first.username.take();
-                            self.password = first.password.take();
-                            self.url = first.url.trim().to_string();
-                            self.max_connections = first.max_connections;
-                            self.priority = first.priority;
-                            if self.name.is_empty() {
-                                self.name = first.name.to_string();
-                            }
-                        }
-                        if !batch_aliases.is_empty() {
-                            batch_aliases.reverse();
-                            if let Some(aliases) = self.aliases.as_mut() {
-                                aliases.extend(batch_aliases);
-                            } else {
-                                self.aliases = Some(batch_aliases);
-                            }
-                        }
-                    }
-                    self.input_type = input_type;
-                    return Ok(Some(file_path));
-                }
-                Err(err) => {
-                    return Err(TuliproxError::new(TuliproxErrorKind::Info, err.to_string()));
-                }
-            }
+            let (file_path, batch_aliases) = get_batch_aliases(input_type, self.url.as_str())?;
+            let mut aliases: Vec<ConfigInputAlias> = batch_aliases.into_iter()
+                .map(|item| ConfigInputAlias::from(item))
+                .collect();
+            apply_batch_aliases!(self, aliases);
+            self.input_type = input_type;
+            return Ok(Some(file_path));
         }
         Ok(None)
     }
@@ -201,6 +176,20 @@ impl From<&ConfigInputDto> for ConfigInput {
             priority: dto.priority,
             max_connections: dto.max_connections,
             method: dto.method,
+        }
+    }
+}
+
+pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<(PathBuf, Vec<ConfigInputAliasDto>), TuliproxError> {
+    match utils::csv_read_inputs(input_type, url) {
+        Ok((file_path, mut batch_aliases)) => {
+            if !batch_aliases.is_empty() {
+                batch_aliases.reverse();
+            }
+            Ok((file_path, batch_aliases))
+        }
+        Err(err) => {
+            Err(TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))
         }
     }
 }

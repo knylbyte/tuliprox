@@ -845,7 +845,7 @@ async fn xtream_player_api(
                 skip_flag_optional!(skip_vod, xtream_repository::xtream_load_rewrite_playlist(XtreamCluster::Video, &app_state.app_config, &target, category_id, &user).await),
             crate::model::XC_ACTION_GET_SERIES =>
                 skip_flag_optional!(skip_series, xtream_repository::xtream_load_rewrite_playlist(XtreamCluster::Series, &app_state.app_config, &target, category_id, &user).await),
-            _ => Some(Err(info_err!(format!("Cant find action: {action} for target: {}", &target.name))
+            _ => Some(Err(info_err!(format!("Cant find content: {action} for target: {}", &target.name))
             )),
         };
 

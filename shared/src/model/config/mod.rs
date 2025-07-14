@@ -56,3 +56,4 @@ pub use rename::*;
 pub use pattern_template::*;
 pub use paths::*;
 pub use app_config::*;
+pub use crate::apply_batch_aliases;

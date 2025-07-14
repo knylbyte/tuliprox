@@ -9,6 +9,33 @@ use std::fmt::Display;
 use std::str::FromStr;
 
 
+#[macro_export]
+macro_rules! apply_batch_aliases {
+    ($target:expr, $batch_aliases:expr) => {{
+        if !$batch_aliases.is_empty() {
+            if let Some(mut first) = $batch_aliases.pop() {
+                $target.username = first.username.take();
+                $target.password = first.password.take();
+                $target.url = first.url.trim().to_string();
+                $target.max_connections = first.max_connections;
+                $target.priority = first.priority;
+                if $target.name.is_empty() {
+                    $target.name = first.name.to_string();
+                }
+            }
+
+            if !$batch_aliases.is_empty() {
+                $batch_aliases.reverse();
+                if let Some(aliases) = $target.aliases.as_mut() {
+                    aliases.extend($batch_aliases);
+                } else {
+                    $target.aliases = Some($batch_aliases);
+                }
+            }
+        }
+    }};
+}
+
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence,
     PartialEq, Eq, Default)]
 pub enum InputType {
@@ -261,5 +288,9 @@ impl ConfigInputDto {
             return Err(info_err!("url for input is mandatory".to_string()));
         }
         Ok(())
+    }
+
+    pub fn prepare_batch(&mut self, mut batch_aliases: Vec<ConfigInputAliasDto>) {
+        apply_batch_aliases!(self, batch_aliases);
     }
 }

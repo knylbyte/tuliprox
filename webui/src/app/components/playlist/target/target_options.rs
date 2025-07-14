@@ -1,19 +1,8 @@
-use crate::app::components::{convert_bool_to_chip_style, CollapsePanel, Tag, TagList};
+use crate::app::components::{make_tags, CollapsePanel, Tag, TagList};
 use shared::model::{ClusterFlags, ConfigTargetDto};
 use std::rc::Rc;
 use yew::prelude::*;
-use yew_i18n::{use_translation, YewI18n};
-
-fn make_tags(data: &[(bool, &str)], translate: &YewI18n) -> Vec<Rc<Tag>> {
-    data.iter()
-        .map(|(o, t)| {
-            Rc::new(Tag {
-                class: convert_bool_to_chip_style(*o),
-                label: translate.t(t),
-            })
-        })
-        .collect()
-}
+use yew_i18n::{use_translation};
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct TargetOptionsProps {

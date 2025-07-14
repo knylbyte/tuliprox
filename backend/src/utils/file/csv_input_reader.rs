@@ -1,4 +1,3 @@
-use crate::model::{ConfigInput, ConfigInputAlias};
 use shared::error::{str_to_io_error, to_io_error};
 use crate::utils::request::{get_local_file_content};
 use crate::utils::EnvResolvingReader;
@@ -8,7 +7,7 @@ use std::io;
 use std::io::{BufRead, Cursor, Error};
 use std::path::PathBuf;
 use url::Url;
-use shared::model::InputType;
+use shared::model::{ConfigInputAliasDto, InputType};
 use shared::utils::{get_credentials_from_url, trim_last_slash};
 
 const CSV_SEPARATOR: char = ';';
@@ -22,7 +21,7 @@ const FIELD_PASSWORD: &str = "password";
 const FIELD_UNKNOWN: &str = "?";
 const DEFAULT_COLUMNS: &[&str] = &[FIELD_URL, FIELD_MAX_CON, FIELD_PRIO, FIELD_NAME, FIELD_USERNAME, FIELD_PASSWORD];
 
-fn csv_assign_mandatory_fields(alias: &mut ConfigInputAlias, input_type: InputType) {
+fn csv_assign_mandatory_fields(alias: &mut ConfigInputAliasDto, input_type: InputType) {
     if !alias.url.is_empty() {
         match Url::parse(alias.url.as_str()) {
             Ok(url) => {
@@ -62,7 +61,7 @@ fn csv_assign_mandatory_fields(alias: &mut ConfigInputAlias, input_type: InputTy
     }
 }
 
-fn csv_assign_config_input_column(config_input: &mut ConfigInputAlias, header: &str, raw_value: &str) -> Result<(), io::Error> {
+fn csv_assign_config_input_column(config_input: &mut ConfigInputAliasDto, header: &str, raw_value: &str) -> Result<(), io::Error> {
     let value = raw_value.trim();
     if !value.is_empty() {
         match header {
@@ -93,7 +92,7 @@ fn csv_assign_config_input_column(config_input: &mut ConfigInputAlias, header: &
     Ok(())
 }
 
-pub fn csv_read_inputs_from_reader(batch_input_type: InputType, reader: impl BufRead) -> Result<Vec<ConfigInputAlias>, io::Error> {
+pub fn csv_read_inputs_from_reader(batch_input_type: InputType, reader: impl BufRead) -> Result<Vec<ConfigInputAliasDto>, Error> {
     let input_type = match batch_input_type {
         InputType::M3uBatch | InputType::M3u => InputType::M3uBatch,
         InputType::XtreamBatch | InputType::Xtream => InputType::XtreamBatch
@@ -128,7 +127,7 @@ pub fn csv_read_inputs_from_reader(batch_input_type: InputType, reader: impl Buf
             continue;
         }
 
-        let mut config_input = ConfigInputAlias {
+        let mut config_input = ConfigInputAliasDto {
             id: 0,
             name: String::new(),
             url: String::new(),
@@ -151,12 +150,11 @@ pub fn csv_read_inputs_from_reader(batch_input_type: InputType, reader: impl Buf
 }
 
 
-pub fn csv_read_inputs(input: &ConfigInput) -> Result<(PathBuf, Vec<ConfigInputAlias>), io::Error> {
-    let file_uri = input.url.to_string();
-    let file_path = get_csv_file_path(&file_uri)?;
+pub fn csv_read_inputs(input_type: InputType, file_uri: &str) -> Result<(PathBuf, Vec<ConfigInputAliasDto>), Error> {
+    let file_path = get_csv_file_path(file_uri)?;
     match get_local_file_content(&file_path) {
         Ok(content) => {
-            Ok((file_path, csv_read_inputs_from_reader(input.input_type, EnvResolvingReader::new(file_reader(Cursor::new(content))))?))
+            Ok((file_path, csv_read_inputs_from_reader(input_type, EnvResolvingReader::new(file_reader(Cursor::new(content))))?))
         }
         Err(err) => {
             Err(err)
@@ -165,7 +163,7 @@ pub fn csv_read_inputs(input: &ConfigInput) -> Result<(PathBuf, Vec<ConfigInputA
 }
 
 fn get_csv_file_path(file_uri: &str) -> Result<PathBuf, Error> {
-    if let Ok(url) = file_uri.parse::<url::Url>() {
+    if let Ok(url) = file_uri.parse::<Url>() {
         if url.scheme() == "file" {
             match url.to_file_path() {
                 Ok(path) => Ok(path),
