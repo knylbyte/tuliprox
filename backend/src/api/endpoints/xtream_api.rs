@@ -683,7 +683,7 @@ async fn xtream_get_short_epg(app_state: &AppState, user: &ProxyUserCredentials,
 
                         // TODO serve epg from own db
                         return match request::download_text_content(Arc::clone(&app_state.http_client.load()), &input, info_url.as_str(), None).await {
-                            Ok(content) => (axum::http::StatusCode::OK, axum::Json(content)).into_response(),
+                            Ok((content, _)) => (axum::http::StatusCode::OK, [(axum::http::header::CONTENT_TYPE.to_string(), mime::APPLICATION_JSON.to_string())], content).into_response(),
                             Err(err) => {
                                 error!("Failed to download epg {}", sanitize_sensitive_info(err.to_string().as_str()));
                                 get_empty_epg_response().into_response()
