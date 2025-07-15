@@ -60,19 +60,19 @@ struct MapperParser;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct ExprId(pub usize);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum MatchCaseKey {
     Identifier(String),
     AnyMatch,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct MatchCase {
     pub keys: Vec<MatchCaseKey>,
     pub expression: ExprId,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum MapCaseKey {
     Text(String),
     RangeFrom(f64),
@@ -82,13 +82,13 @@ enum MapCaseKey {
     AnyMatch,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct MapCase {
     pub keys: Vec<MapCaseKey>,
     pub expression: ExprId,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum MapKey {
     Identifier(String),
     FieldAccess(String),
@@ -96,7 +96,7 @@ enum MapKey {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum BuiltInFunction {
     Concat,
     Uppercase,
@@ -128,7 +128,7 @@ impl FromStr for BuiltInFunction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum RegexSource {
     Identifier(String),
     Field(String),
@@ -150,19 +150,44 @@ enum Expression {
     Block(Vec<ExprId>),
 }
 
-#[derive(Debug, Clone)]
+impl PartialEq for Expression {
+    fn eq(&self, other: &Self) -> bool {
+        use Expression::*;
+        match (self, other) {
+            (Identifier(a), Identifier(b)) => a == b,
+            (StringLiteral(a), StringLiteral(b)) => a == b,
+            (NumberLiteral(a), NumberLiteral(b)) => a == b,
+            (FieldAccess(a), FieldAccess(b)) => a == b,
+            (VarAccess(a1, b1), VarAccess(a2, b2)) => a1 == a2 && b1 == b2,
+            (
+                RegexExpr { field: f1, pattern: p1, .. },
+                RegexExpr { field: f2, pattern: p2, .. },
+            ) => f1 == f2 && p1 == p2,
+            (FunctionCall { name: n1, args: a1 }, FunctionCall { name: n2, args: a2 }) => n1 == n2 && a1 == a2,
+            (Assignment { target: t1, expr: e1 }, Assignment { target: t2, expr: e2 }) => t1 == t2 && e1 == e2,
+            (MatchBlock(m1), MatchBlock(m2)) => m1 == m2,
+            (MapBlock { key: k1, cases: c1 }, MapBlock { key: k2, cases: c2 }) => k1 == k2 && c1 == c2,
+            (NullValue, NullValue) => true,
+            (Block(b1), Block(b2)) => b1 == b2,
+            _ => false,
+        }
+    }
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
 enum AssignmentTarget {
     Identifier(String),
     Field(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum Statement {
     Expression(ExprId),
     Comment, //(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MapperScript {
     expressions: Vec<Expression>,
     statements: Vec<Statement>,

@@ -3303,6 +3303,7 @@ dependencies = [
  "base64 0.22.1",
  "bitflags 2.9.1",
  "blake3",
+ "chrono",
  "enum-iterator",
  "fastrand 2.3.0",
  "indexmap",

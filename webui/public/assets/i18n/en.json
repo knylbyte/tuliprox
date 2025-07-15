@@ -176,7 +176,9 @@
     "LIVE_STREAM_USE_PREFIX": "Live use prefix",
     "LIVE_STREAM_WITHOUT_EXTENSION": "Live w/o ext.",
     "ALIAS": "Alias",
-    "INPUTS": "Inputs"
+    "INPUTS": "Inputs",
+    "NEW_USER": "New User",
+    "USERLIST": "Userlist"
   },
   "TABLE": {
     "EMPTY": "",
@@ -201,7 +203,17 @@
     "ALIASES": "Aliases",
     "PRIORITY": "Priority",
     "MAX_CONNECTIONS": "Max Connections",
-    "METHOD": "Method"
+    "METHOD": "Method",
+    "TOKEN":  "Token",
+    "PROXY":  "Proxy",
+    "SERVER":  "Server",
+    "EPG_TIMESHIFT":  "Epg Timeshift",
+    "CREATED_AT":  "Created_at",
+    "EXP_DATE":  "Exp_date",
+    "STATUS":  "Status",
+    "UI_ENABLED":  "Ui",
+    "COMMENT": "Comment",
+    "PLAYLIST": "Playlist"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

@@ -6,7 +6,7 @@ use crate::model::{ConfigInputDto, PatternTemplate};
 use crate::model::config::target::ConfigTargetDto;
 use crate::utils::default_as_default;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigSourceDto {
     pub inputs: Vec<ConfigInputDto>,
@@ -31,7 +31,7 @@ impl ConfigSourceDto {
     }
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SourcesConfigDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]

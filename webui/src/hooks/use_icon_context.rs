@@ -66,5 +66,5 @@ impl IconContext {
 
 #[hook]
 pub fn use_icon_context() -> Rc<Icons> {
-    use_context::<UseStateHandle<IconContext>>().unwrap().icons()
+    use_context::<UseStateHandle<IconContext>>().expect("Icon context not found").icons()
 }

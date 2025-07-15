@@ -1,12 +1,12 @@
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum TemplateValue {
     Single(String),
     Multi(Vec<String>),
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct PatternTemplate {
     pub name: String,
     pub value: TemplateValue,

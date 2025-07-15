@@ -1,7 +1,7 @@
 use regex::Regex;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct IpCheckConfigDto {
     /// URL that may return both IPv4 and IPv6 in one response

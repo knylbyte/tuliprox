@@ -1,10 +1,8 @@
 use std::fmt::Display;
 use crate::app::components::popup_menu::PopupMenu;
 use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, InputHeaders, InputOptions, InputTypeView, RevealContent, Table, TableDefinition};
-use crate::hooks::use_service_context;
 use std::rc::Rc;
 use std::str::FromStr;
-use log::info;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
@@ -46,7 +44,6 @@ pub struct InputTableProps {
 #[function_component]
 pub fn InputTable(props: &InputTableProps) -> Html {
     let translate = use_translation();
-    let services = use_service_context();
     let dialog = use_context::<DialogService>().expect("Dialog service not found");
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
@@ -110,10 +107,10 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                                   /> },
                             2 => html! { dto.name.as_str() },
                             3 => html! { <InputTypeView input_type={dto.input_type}/> },
-                            4 => html! { <RevealContent preview={html!{dto.url.to_string()}}>{ dto.url.as_str() }</RevealContent> },
-                            5 => html! { dto.username.as_ref().map_or_else(String::new, ToString::to_string) },
+                            4 => html! { <RevealContent preview={html!{dto.url.as_str()}}>{ dto.url.as_str() }</RevealContent> },
+                            5 => dto.username.as_ref().map_or_else(|| html!{}, |u| html!{u}),
                             6 => dto.password.as_ref().map_or_else(|| html!{}, |pwd| html! { <HideContent content={pwd.to_string()}></HideContent>}),
-                            7 => html! { dto.persist.as_ref().map_or_else(String::new, ToString::to_string) },
+                            7 => dto.persist.as_ref().map_or_else(|| html!{}, |p| html!{p}),
                             8 => html! { <InputOptions input={dto.clone()} /> },
                             9 => html! { dto.priority.to_string() },
                             10 => html! { dto.max_connections.to_string() },
@@ -126,13 +123,13 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                     InputRow::Alias(alias, dto) => {
                         match col {
                             0 => {
-                                // let popup_onclick = popup_onclick.clone();
+                                let popup_onclick = popup_onclick.clone();
                                 html! {
-                            // <button class="tp__icon-button"
-                            //     onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((input.clone(), event)))}
-                            //     data-row={row.to_string()}>
-                            //     <AppIcon name="Popup"></AppIcon>
-                            // </button>
+                                    <button class="tp__icon-button"
+                                        onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((input.clone(), event)))}
+                                        data-row={row.to_string()}>
+                                        <AppIcon name="Popup"></AppIcon>
+                                    </button>
                                 }
                             }
                             1 => html! {
@@ -142,7 +139,7 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                             2 => html! { alias.name.as_str() },
                             3 => html! { },
                             4 => html! { alias.url.as_str() },
-                            5 => html! { alias.username.as_ref().map_or_else(String::new, ToString::to_string) },
+                            5 => alias.username.as_ref().map_or_else(|| html!{}, |u| html!{u}),
                             6 => alias.password.as_ref().map_or_else(|| html!{}, |pwd| html! { <HideContent content={pwd.to_string()}></HideContent>}),
                             7 => html! { },
                             8 => html! { },
@@ -163,26 +160,12 @@ pub fn InputTable(props: &InputTableProps) -> Html {
         let popup_is_open_state = popup_is_open.clone();
         let confirm = dialog.clone();
         let translate = translate.clone();
-        let services_ctx = services.clone();
         let selected_dto = selected_dto.clone();
         Callback::from(move |name:String| {
             if let Ok(action) = TableAction::from_str(&name) {
                 match action {
                     TableAction::Edit => {}
-                    TableAction::Refresh => {
-                        let services_ctx = services_ctx.clone();
-                        let dto_name = selected_dto.as_ref().map_or_else(String::new, |d| match &**d {
-                            InputRow::Input(d) => d.name.clone(),
-                            InputRow::Alias(_a, d) => d.name.clone(),
-                        });
-                        spawn_local(async move {
-                            let targets = vec![dto_name.as_str()];
-                            match services_ctx.playlist.update_targets(&targets).await {
-                                true => { info!("Ok"); }
-                                false => { info!("not ok");  }
-                            }
-                        });
-                    }
+                    TableAction::Refresh => {}
                     TableAction::Delete => {
                         let confirm = confirm.clone();
                         let translator = translate.clone();

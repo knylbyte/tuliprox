@@ -4,7 +4,7 @@ use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::DEFAULT_USER_AGENT;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct VideoDownloadConfigDto {
     #[serde(default)]
@@ -17,7 +17,7 @@ pub struct VideoDownloadConfigDto {
     pub episode_pattern: Option<String>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct VideoConfigDto {
     #[serde(default)]

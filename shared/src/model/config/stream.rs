@@ -4,7 +4,7 @@ use crate::utils::{default_grace_period_millis, default_grace_period_timeout_sec
 
 const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with 8192byte chunks and 2Mbit/s approx 8MB
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StreamBufferConfigDto {
     #[serde(default)]
@@ -22,7 +22,7 @@ impl StreamBufferConfigDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StreamConfigDto {
     #[serde(default)]

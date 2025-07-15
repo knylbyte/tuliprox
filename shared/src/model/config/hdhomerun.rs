@@ -34,7 +34,7 @@ impl TryFrom<TargetType> for HdHomeRunUseTargetType {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HdHomeRunDeviceConfigDto {
     #[serde(default = "default_friendly_name")]
@@ -83,7 +83,7 @@ impl HdHomeRunDeviceConfigDto {
 }
 
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HdHomeRunConfigDto {
     #[serde(default)]

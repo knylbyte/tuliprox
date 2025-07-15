@@ -9,7 +9,7 @@ const RESERVED_PATHS: &[&str] = &[
 ];
 
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct WebUiConfigDto {
     #[serde(default = "default_as_true")]

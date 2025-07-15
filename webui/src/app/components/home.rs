@@ -1,5 +1,10 @@
+use std::future;
+use std::rc::Rc;
 use yew::prelude::*;
-use crate::app::components::{IconButton, Sidebar, DashboardView, PlaylistView, Panel};
+use yew::suspense::use_future;
+use shared::model::AppConfigDto;
+use crate::app::components::{IconButton, Sidebar, DashboardView, PlaylistView, Panel, UserlistView};
+use crate::app::context::ConfigContext;
 use crate::model::ViewType;
 use crate::hooks::use_service_context;
 
@@ -7,8 +12,9 @@ use crate::hooks::use_service_context;
 pub fn Home() -> Html {
     let services = use_service_context();
     let app_title = services.config.ui_config.app_title.as_ref().map_or("tuliprox", |v| v.as_str());
+    let config = use_state(|| None::<Rc<AppConfigDto>>);
 
-    let view_visible = use_state(|| ViewType::Playlists);
+    let view_visible = use_state(|| ViewType::Users);
 
     let handle_logout = {
         let services_ctx = services.clone();
@@ -20,45 +26,72 @@ pub fn Home() -> Html {
         Callback::from(move |view| view_vis.set(view))
     };
 
+    {
+        // first register for config update
+        let services_ctx = services.clone();
+        let config_state = config.clone();
+        let _ = use_future(|| async move {
+            services_ctx.config.config_subscribe(
+                &mut |cfg| {
+                    config_state.set(cfg.clone());
+                    future::ready(())
+                }
+            ).await
+        });
+    }
+
+    {
+        let services_ctx = services.clone();
+        let _ = use_future(|| async move {
+            let _cfg = services_ctx.config.get_server_config().await;
+        });
+    }
+
+    let context = ConfigContext {
+            config: (*config).clone(),
+    };
+
     //<div class={"app-header__toolbar"}><select onchange={handle_language} defaultValue={i18next.language}>{services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
     // <div class={"app-header__toolbar"}><button data-tooltip={preferencesVisible ? "LABEL.PLAYLIST_BROWSER" : "LABEL.CONFIGURATION"} onClick={handlePreferences}>{getIconByName(preferencesVisible ? "Live" : "Config")}</button></div>
 
     html! {
-        <div class="tp__app">
-           <Sidebar onview={handle_view_change}/>
+        <ContextProvider<ConfigContext> context={context}>
+            <div class="tp__app">
+               <Sidebar onview={handle_view_change}/>
 
-          <div class="tp__app-main">
-                <div class="tp__app-main__header tp__app-header">
-                    {app_title}
-                    <div class={"tp__app-header-toolbar"}>
-                        // <select onchange={handle_language} defaultValue={i18next.language}>{
-                        //     services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)
-                        // }</select>
-                       // <button data-tooltip={ if *preferences_visible { "LABEL.PLAYLIST_BROWSER" } else { "LABEL.CONFIGURATION" }}
-                       //     onclick={handle_view_change}>
-                       //          { if *preferences_visible {
-                       //                  html! { <AppIcon name="Live" /> }
-                       //              } else {
-                       //                  html! { <AppIcon name="Config" /> }
-                       //              }
-                       //          }
-                       //   </button>
-                       //
-                        <IconButton name="Logout" icon="Logout" onclick={handle_logout} />
+              <div class="tp__app-main">
+                    <div class="tp__app-main__header tp__app-header">
+                        {app_title}
+                        <div class={"tp__app-header-toolbar"}>
+                            // <select onchange={handle_language} defaultValue={i18next.language}>{
+                            //     services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)
+                            // }</select>
+                           // <button data-tooltip={ if *preferences_visible { "LABEL.PLAYLIST_BROWSER" } else { "LABEL.CONFIGURATION" }}
+                           //     onclick={handle_view_change}>
+                           //          { if *preferences_visible {
+                           //                  html! { <AppIcon name="Live" /> }
+                           //              } else {
+                           //                  html! { <AppIcon name="Config" /> }
+                           //              }
+                           //          }
+                           //   </button>
+                           //
+                            <IconButton name="Logout" icon="Logout" onclick={handle_logout} />
+                        </div>
                     </div>
-                </div>
-                <div class="tp__app-main__body">
-                   <Panel value={ViewType::Dashboard.to_string()} active={view_visible.to_string()}>
-                    <DashboardView/>
-                   </Panel>
-                   <Panel class="tp__full-width" value={ViewType::Playlists.to_string()} active={view_visible.to_string()}>
-                    <PlaylistView/>
-                   </Panel>
-                   <Panel class="tp__full-width" value={ViewType::Users.to_string()} active={view_visible.to_string()}>
-                      {"Users"}
-                   </Panel>
-                </div>
-          </div>
-        </div>
+                    <div class="tp__app-main__body">
+                       <Panel value={ViewType::Dashboard.to_string()} active={view_visible.to_string()}>
+                        <DashboardView/>
+                       </Panel>
+                       <Panel class="tp__full-width" value={ViewType::Playlists.to_string()} active={view_visible.to_string()}>
+                        <PlaylistView/>
+                       </Panel>
+                       <Panel class="tp__full-width" value={ViewType::Users.to_string()} active={view_visible.to_string()}>
+                          <UserlistView/>
+                       </Panel>
+                    </div>
+              </div>
+            </div>
+        </ContextProvider<ConfigContext>>
     }
 }

@@ -1,6 +1,6 @@
 use crate::utils::{default_as_true};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct WebAuthConfigDto {
     #[serde(default = "default_as_true")]

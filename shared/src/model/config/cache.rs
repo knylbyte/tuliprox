@@ -5,7 +5,7 @@ use crate::utils::parse_size_base_2;
 use path_clean::PathClean;
 
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CacheConfigDto {
     #[serde(default)]

@@ -2,13 +2,13 @@ use std::collections::HashSet;
 use crate::error::{info_err, TuliproxError, TuliproxErrorKind};
 use crate::model::{ProxyUserCredentialsDto};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct TargetUserDto {
     pub target: String,
     pub credentials: Vec<ProxyUserCredentialsDto>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ApiProxyServerInfoDto {
     pub name: String,
@@ -22,7 +22,7 @@ pub struct ApiProxyServerInfoDto {
     pub path: Option<String>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ApiProxyConfigDto {
     pub server: Vec<ApiProxyServerInfoDto>,

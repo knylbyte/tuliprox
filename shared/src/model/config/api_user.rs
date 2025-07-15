@@ -176,7 +176,7 @@ impl FromStr for ProxyUserStatus {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyUserCredentialsDto {
     pub username: String,
@@ -228,6 +228,24 @@ impl ProxyUserCredentialsDto {
             return Err(TuliproxError::new(TuliproxErrorKind::Info, "Password required".to_string()));
         }
         Ok(())
+    }
+
+    pub fn is_active(&self) -> bool {
+        if let Some(status) = &self.status {
+            if matches!(status, ProxyUserStatus::Expired
+            | ProxyUserStatus::Banned
+            | ProxyUserStatus::Disabled
+            | ProxyUserStatus::Pending) {
+                return false;
+            }
+        }
+        if let Some(exp_date) = self.exp_date {
+            let now =  chrono::Local::now();
+            if (exp_date - now.timestamp()) < 0 {
+                return false;
+            }
+        }
+        true
     }
 
 }

@@ -2,7 +2,7 @@ use log::warn;
 use crate::error::TuliproxError;
 use crate::model::{CacheConfigDto, RateLimitConfigDto, StreamConfigDto};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ReverseProxyConfigDto {
     #[serde(default)]

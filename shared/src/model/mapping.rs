@@ -75,7 +75,7 @@ impl FromStr for CounterModifier {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 pub struct MappingCounterDefinition {
     pub filter: String,
     pub field: String,
@@ -97,6 +97,17 @@ pub struct MappingCounter {
     pub modifier: CounterModifier,
     pub value: Arc<AtomicU32>,
     pub padding: u8,
+}
+
+impl PartialEq for MappingCounter {
+    fn eq(&self, other: &Self) -> bool {
+        self.filter == other.filter
+            && self.field == other.field
+            && self.concat == other.concat
+            && self.modifier == other.modifier
+            && self.padding == other.padding
+        // value is not compared!
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -148,7 +159,7 @@ impl MapperOperation {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 pub struct MapperDto {
     pub filter: String,
     pub script: String,
@@ -179,7 +190,7 @@ impl MapperDto {
 }
 
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 pub struct MappingDto {
     pub id: String,
     #[serde(default)]
@@ -228,7 +239,7 @@ impl MappingDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct MappingDefinitionDto {
     pub templates: Option<Vec<PatternTemplate>>,
     pub mapping: Vec<MappingDto>,
@@ -252,7 +263,7 @@ impl MappingDefinitionDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct MappingsDto {
     pub mappings: MappingDefinitionDto,
 }

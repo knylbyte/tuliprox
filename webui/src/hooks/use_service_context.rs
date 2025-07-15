@@ -52,5 +52,5 @@ impl ServiceContext {
 
 #[hook]
 pub fn use_service_context() -> Rc<Services> {
-    use_context::<UseStateHandle<ServiceContext>>().unwrap().services()
+    use_context::<UseStateHandle<ServiceContext>>().expect("Services context not found").services()
 }

@@ -5,7 +5,7 @@ use crate::utils::{default_connect_timeout_secs};
 pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigDto {
     #[serde(default)]

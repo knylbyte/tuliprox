@@ -1,6 +1,6 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RateLimitConfigDto {
     pub enabled: bool,
