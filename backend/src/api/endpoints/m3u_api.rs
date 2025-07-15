@@ -8,7 +8,6 @@ use shared::model::{FieldGetAccessor, PlaylistEntry, PlaylistItemType, TargetTyp
 use crate::repository::m3u_repository::{m3u_get_item_for_stream_id, m3u_load_rewrite_playlist};
 use crate::repository::storage_const;
 use shared::utils::{extract_extension_from_url, sanitize_sensitive_info, HLS_EXT};
-use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::stream;
@@ -19,7 +18,7 @@ use crate::auth::Fingerprint;
 async fn m3u_api(
     api_req: &UserApiRequest,
     app_state: &AppState,
-) -> impl axum::response::IntoResponse + Send {
+) -> impl IntoResponse + Send {
     match get_user_target(api_req, app_state) {
         Some((user, target)) => {
             match m3u_load_rewrite_playlist(&app_state.app_config, &target, &user).await {
@@ -48,25 +47,26 @@ async fn m3u_api(
 
 async fn m3u_api_get(axum::extract::Query(api_req): axum::extract::Query<UserApiRequest>,
                      axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
-) -> impl axum::response::IntoResponse + Send {
+) -> impl IntoResponse + Send {
     m3u_api(&api_req, &app_state).await
 }
 
 async fn m3u_api_post(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::extract::Form(api_req): axum::extract::Form<UserApiRequest>,
-) -> impl axum::response::IntoResponse + Send {
+) -> impl IntoResponse + Send {
     m3u_api(&api_req, &app_state).await.into_response()
 }
 
 async fn m3u_api_stream(
     fingerprint: &str,
-    req_headers: &HeaderMap,
+    addr: &str,
+    req_headers: &axum::http::HeaderMap,
     app_state: &Arc<AppState>,
     api_req: &UserApiRequest,
     stream_req: ApiStreamRequest<'_>,
     // _addr: &std::net::SocketAddr,
-) -> impl axum::response::IntoResponse + Send {
+) -> impl IntoResponse + Send {
     let (user, target) = try_option_bad_request!(get_user_target_by_credentials(stream_req.username, stream_req.password, api_req, app_state), false, format!("Could not find any user for m3u stream {}", stream_req.username));
     if user.permission_denied(app_state) {
         return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserAccountExpired).into_response();
@@ -75,7 +75,7 @@ async fn m3u_api_stream(
     let target_name = &target.name;
     if !target.has_output(&TargetType::M3u) {
         debug!("Target has no m3u playlist {target_name}");
-        return StatusCode::BAD_REQUEST.into_response();
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
@@ -98,7 +98,7 @@ async fn m3u_api_stream(
         }
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
-            return force_provider_stream_response(app_state, session, pli.item_type, req_headers, &input, &user).await.into_response();
+            return force_provider_stream_response(app_state, session, pli.item_type, req_headers, &input, &user, addr).await.into_response();
         }
         session.stream_url.as_str()
     } else {
@@ -138,7 +138,7 @@ async fn m3u_api_stream(
         return handle_hls_stream_request(fingerprint, app_state, &user, user_session.as_ref(), &pli.url, pli.virtual_id, &input, connection_permission).await.into_response();
     }
 
-    stream_response(app_state, &session_key, pli.virtual_id, pli.item_type, session_url, req_headers, &input, &target, &user, connection_permission).await.into_response()
+    stream_response(app_state, &session_key, pli.virtual_id, pli.item_type, session_url, req_headers, &input, &target, &user, connection_permission, addr).await.into_response()
 }
 
 async fn m3u_api_resource(
@@ -146,18 +146,18 @@ async fn m3u_api_resource(
     axum::extract::Query(api_req): axum::extract::Query<UserApiRequest>,
     axum::extract::Path((username, password, stream_id, resource)): axum::extract::Path<(String, String, String, String)>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
-) -> impl axum::response::IntoResponse + Send {
+) -> impl IntoResponse + Send {
     let Ok(m3u_stream_id) = stream_id.parse::<u32>() else { return axum::http::StatusCode::BAD_REQUEST.into_response() };
     let Some((user, target)) = get_user_target_by_credentials(&username, &password, &api_req, &app_state)
-    else { return StatusCode::BAD_REQUEST.into_response() };
+    else { return axum::http::StatusCode::BAD_REQUEST.into_response() };
     if user.permission_denied(&app_state) {
-        return StatusCode::FORBIDDEN.into_response();
+        return axum::http::StatusCode::FORBIDDEN.into_response();
     }
 
     let target_name = &target.name;
     if !target.has_output(&TargetType::M3u) {
         debug!("Target has no m3u playlist {target_name}");
-        return StatusCode::BAD_REQUEST.into_response();
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
     let m3u_item = match m3u_get_item_for_stream_id(m3u_stream_id, &app_state.app_config, &target).await {
         Ok(item) => item,
@@ -184,7 +184,7 @@ async fn m3u_api_resource(
 macro_rules! create_m3u_api_stream {
     ($fn_name:ident, $context:expr) => {
         async fn $fn_name(
-            Fingerprint(fingerprint): Fingerprint,
+            Fingerprint(fingerprint, addr): Fingerprint,
             req_headers: axum::http::HeaderMap,
             axum::extract::Query(api_req): axum::extract::Query<UserApiRequest>,
             axum::extract::Path((username, password, stream_id)): axum::extract::Path<(String, String, String)>,
@@ -193,6 +193,7 @@ macro_rules! create_m3u_api_stream {
         ) ->  impl IntoResponse + Send {
             m3u_api_stream(
                 &fingerprint,
+                &addr,
                 &req_headers,
                 &app_state,
                 &api_req,

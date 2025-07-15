@@ -26,13 +26,37 @@ macro_rules! active_user_manager_shared_impl {
                 });
             }
         }
+
+        pub async fn remove_connection(&self, addr: &str) {
+            let mut addr_lock = self.user_by_addr.write().await;
+            let username_opt = addr_lock.get(addr).cloned();
+            if let Some(username) = username_opt {
+                addr_lock.remove(addr);
+                drop(addr_lock);
+                let mut lock = self.user.write().await;
+                if let Some(connection_data) = lock.get_mut(&username) {
+                    if connection_data.connections > 0 {
+                        connection_data.connections -= 1;
+                    }
+                    if connection_data.connections == 0 {
+                        lock.remove(&username);
+                    } else if connection_data.connections < connection_data.max_connections {
+                        // Grace timeout expired, reset grace counters
+                        connection_data.granted_grace = false;
+                        connection_data.grace_ts = 0;
+                    }
+
+                }
+
+                drop(lock);
+            }
+            self.log_active_user();
+        }
     };
 }
 
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
 const USER_SESSION_LIMIT: usize = 50;
-
-
 
 fn get_grace_options(config: &Config) -> (u64, u64) {
     let (grace_period_millis, grace_period_timeout_secs) = config.reverse_proxy.as_ref()
@@ -44,6 +68,7 @@ fn get_grace_options(config: &Config) -> (u64, u64) {
 struct ConnectionGuardUserManager {
     log_active_user: bool,
     user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
+    user_by_addr: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl ConnectionGuardUserManager {
@@ -51,37 +76,20 @@ impl ConnectionGuardUserManager {
     fn is_log_user_enabled(&self)-> bool {
         self.log_active_user
     }
-    async fn remove_connection(&self, username: &str) {
-        let mut lock = self.user.write().await;
-        if let Some(connection_data) = lock.get_mut(username) {
-            if connection_data.connections > 0 {
-                connection_data.connections -= 1;
-            }
 
-            if connection_data.connections == 0 {
-                lock.remove(username);
-            } else if connection_data.connections < connection_data.max_connections {
-                // Grace timeout expired, reset grace counters
-                connection_data.granted_grace = false;
-                connection_data.grace_ts = 0;
-            }
-        }
-        drop(lock);
-
-        self.log_active_user();
-    }
 }
 
 pub struct UserConnectionGuard {
     manager: Arc<ConnectionGuardUserManager>,
-    username: String,
+    // username: String,
+    addr: String,
 }
 impl Drop for UserConnectionGuard {
     fn drop(&mut self) {
         let manager = self.manager.clone();
-        let username = self.username.clone();
+        let addr = self.addr.clone();
         tokio::spawn(async move {
-            manager.remove_connection(&username).await;
+            manager.remove_connection(&addr).await;
         });
     }
 }
@@ -132,6 +140,7 @@ pub struct ActiveUserManager {
     grace_period_timeout_secs: AtomicU64,
     log_active_user: AtomicBool,
     user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
+    user_by_addr: Arc<RwLock<HashMap<String, String>>>,
     gc_ts: Option<AtomicU64>,
 }
 
@@ -145,6 +154,7 @@ impl ActiveUserManager {
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
             log_active_user: AtomicBool::new(log_active_user),
             user: Arc::new(RwLock::new(HashMap::new())),
+            user_by_addr: Arc::new(RwLock::new(HashMap::new())),
             gc_ts: Some(AtomicU64::new(current_time_secs())),
         }
     }
@@ -161,6 +171,7 @@ impl ActiveUserManager {
         ConnectionGuardUserManager {
             log_active_user: self.log_active_user.load(Ordering::Relaxed),
             user: Arc::clone(&self.user),
+            user_by_addr: Arc::clone(&self.user_by_addr),
         }
     }
 
@@ -175,17 +186,17 @@ impl ActiveUserManager {
         let current_connections = connection_data.connections;
 
         if current_connections < connection_data.max_connections {
-            // Reset grace period because user is back under max_connections
+            // Reset grace period because the user is back under max_connections
             connection_data.granted_grace = false;
             connection_data.grace_ts = 0;
             return UserConnectionPermission::Allowed;
         }
 
         let now = get_current_timestamp();
-        // Check if user already used grace period
+        // Check if user already used a grace period
         if connection_data.granted_grace {
             if current_connections > connection_data.max_connections && now - connection_data.grace_ts <= self.grace_period_timeout_secs.load(Ordering::Relaxed) {
-                // Grace timeout still active, deny connection
+                // Grace timeout, still active, deny connection
                 debug!("User access denied, grace exhausted, too many connections: {username}");
                 return UserConnectionPermission::Exhausted;
             }
@@ -195,10 +206,10 @@ impl ActiveUserManager {
         }
 
         if self.grace_period_millis.load(Ordering::Relaxed) > 0 && current_connections == connection_data.max_connections {
-            // Allow grace period once
+            // Allow a grace period once
             connection_data.granted_grace = true;
             connection_data.grace_ts = now;
-            debug!("Granted grace period for user access: {username}");
+            debug!("Granted a grace period for user access: {username}");
             return UserConnectionPermission::GracePeriod;
         }
 
@@ -229,7 +240,7 @@ impl ActiveUserManager {
         Self::get_active_connections(&self.user).await
     }
 
-    pub async fn add_connection(&self, username: &str, max_connections: u32) -> UserConnectionGuard {
+    pub async fn add_connection(&self, username: &str, max_connections: u32, addr: &str) -> UserConnectionGuard {
         let mut lock = self.user.write().await;
         if let Some(connection_data) = lock.get_mut(username) {
             connection_data.connections += 1;
@@ -238,12 +249,16 @@ impl ActiveUserManager {
             lock.insert(username.to_string(), UserConnectionData::new(1, max_connections));
         }
         drop(lock);
+        let mut lock = self.user_by_addr.write().await;
+        lock.insert(addr.to_string(), username.to_string());
+        drop(lock);
 
         self.log_active_user();
 
         UserConnectionGuard {
             manager: Arc::new(self.clone_inner()),
-            username: username.to_string(),
+            // username: username.to_string(),
+            addr: addr.to_string(),
         }
     }
 
@@ -288,7 +303,7 @@ impl ActiveUserManager {
                 }
             }
 
-            // no session create new one
+            // no session creates new one
             debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
             let token = session.token.clone();

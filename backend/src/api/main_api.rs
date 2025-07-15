@@ -124,6 +124,7 @@ pub(in crate::api) fn start_hdhomerun(app_config: &Arc<AppConfig>, app_state: &A
                     let basic_auth = hdhomerun.auth;
                     infos.push(format!("HdHomeRun Server '{}' running: http://{host}:{port}", device.name));
                     let c_token = cancel_token.clone();
+                    let active_user_manager = Arc::clone(&app_data.active_users);
                     tokio::spawn(async move {
                         let router = axum::Router::<Arc<HdHomerunAppState>>::new()
                             .layer(create_cors_layer())
@@ -138,7 +139,7 @@ pub(in crate::api) fn start_hdhomerun(app_config: &Arc<AppConfig>, app_state: &A
 
                         match tokio::net::TcpListener::bind(format!("{}:{}", app_host.clone(), port)).await {
                             Ok(listener) => {
-                                serve(listener, router, Some(c_token)).await;
+                                serve(listener, router, Some(c_token), active_user_manager).await;
                                 // if let Err(err) = axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await {
                                 //     error!("{err}");
                                 // }
@@ -233,7 +234,8 @@ pub async fn start_server(app_config: Arc<AppConfig>, targets: Arc<ProcessTarget
 
     let router: axum::Router<()> = router.with_state(shared_data.clone());
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
-    serve(listener, router, None).await;
+    let active_user_manager = Arc::clone(&shared_data.active_users);
+    serve(listener, router, None, active_user_manager).await;
     Ok(())
     //axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await
 }

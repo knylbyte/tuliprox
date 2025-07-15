@@ -38,7 +38,8 @@ impl ActiveClientStream {
     pub(crate) async fn new(mut stream_details: StreamDetails,
                             app_state: &AppState,
                             user: &ProxyUserCredentials,
-                            connection_permission: UserConnectionPermission) -> Self {
+                            connection_permission: UserConnectionPermission,
+                            addr: &str) -> Self {
         let active_user = app_state.active_users.clone();
         let active_provider = app_state.active_provider.clone();
         if connection_permission == UserConnectionPermission::Exhausted {
@@ -46,7 +47,7 @@ impl ActiveClientStream {
         }
         let grant_user_grace_period = connection_permission == UserConnectionPermission::GracePeriod;
         let username = user.username.as_str();
-        let user_connection_guard = Some(active_user.add_connection(username, user.max_connections).await);
+        let user_connection_guard = Some(active_user.add_connection(username, user.max_connections, addr).await);
         let cfg = &app_state.app_config;
         let waker = Arc::new(Mutex::new(None));
         let waker_clone = Arc::clone(&waker);

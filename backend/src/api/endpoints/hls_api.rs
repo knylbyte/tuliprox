@@ -91,7 +91,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
 }
 
 async fn hls_api_stream(
-    Fingerprint(fingerprint): Fingerprint,
+    Fingerprint(fingerprint, addr): Fingerprint,
     req_headers: axum::http::HeaderMap,
     axum::extract::Path(params): axum::extract::Path<HlsApiPathParams>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
@@ -128,7 +128,7 @@ async fn hls_api_stream(
         if session.virtual_id == virtual_id {
             if is_seek_request(XtreamCluster::Live, &req_headers).await {
                 // partial request means we are in reverse proxy mode, seek happened
-                return force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, &input, &user).await.into_response()
+                return force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, &input, &user, &addr).await.into_response()
             }
         } else {
             return axum::http::StatusCode::BAD_REQUEST.into_response();
@@ -143,7 +143,7 @@ async fn hls_api_stream(
             return handle_hls_stream_request(&fingerprint, &app_state, &user, Some(session), &session.stream_url, virtual_id, &input, connection_permission).await.into_response();
         }
 
-        force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, &input, &user).await.into_response()
+        force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, &input, &user, &addr).await.into_response()
     } else {
         axum::http::StatusCode::BAD_REQUEST.into_response()
     }

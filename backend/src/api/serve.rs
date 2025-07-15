@@ -12,10 +12,12 @@ use std::convert::Infallible;
 use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::pin::pin;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tower::{Service, ServiceExt};
+use crate::api::model::active_user_manager::ActiveUserManager;
 
 #[derive(Debug)]
 struct IncomingStream
@@ -36,8 +38,10 @@ impl axum::extract::connect_info::Connected<IncomingStream> for SocketAddr {
     }
 }
 
-pub async fn serve(listener: tokio::net::TcpListener, router: axum::Router<()>,
-                   cancel_token: Option<CancellationToken>) {
+pub async fn serve(listener: tokio::net::TcpListener,
+                   router: axum::Router<()>,
+                   cancel_token: Option<CancellationToken>,
+                   user_manager: Arc<ActiveUserManager>) {
     let (signal_tx, _signal_rx) = watch::channel(());
     let (_close_tx, close_rx) = watch::channel(());
     let mut make_service = router.into_make_service_with_connect_info::<SocketAddr>();
@@ -51,7 +55,7 @@ pub async fn serve(listener: tokio::net::TcpListener, router: axum::Router<()>,
                     }
                     accept_result = listener.accept() => {
                         let Ok((socket, remote_addr)) = accept_result else { continue };
-                        handle_connection(&mut make_service, &signal_tx, &close_rx, socket, remote_addr).await;
+                        handle_connection(&mut make_service, &signal_tx, &close_rx, socket, remote_addr, Arc::clone(&user_manager)).await;
                     }
                 }
             }
@@ -59,7 +63,7 @@ pub async fn serve(listener: tokio::net::TcpListener, router: axum::Router<()>,
         None => {
             loop {
                 let Ok((socket, remote_addr)) = listener.accept().await else { continue };
-                handle_connection(&mut make_service, &signal_tx, &close_rx, socket, remote_addr).await;
+                handle_connection(&mut make_service, &signal_tx, &close_rx, socket, remote_addr, Arc::clone(&user_manager)).await;
             }
         }
     }
@@ -72,6 +76,7 @@ async fn handle_connection<M, S>(
     close_rx: &watch::Receiver<()>,
     socket: tokio::net::TcpStream,
     remote_addr: SocketAddr,
+    user_manager: Arc<ActiveUserManager>,
 )
 where
     M: for<'a> Service<IncomingStream, Error=Infallible, Response=S> + Send + 'static,
@@ -130,20 +135,24 @@ where
         let mut conn = pin!(builder.serve_connection_with_upgrades(io, hyper_service));
         let mut signal_closed = pin!(signal_tx.closed().fuse());
 
-        // TODO use this to remove user connections
-        let connection_closed = || info!("Connection closed: {remote_addr}");
+        let user_manager_clone = Arc::clone(&user_manager);
+        let connection_closed = async move || {
+            info!("Connection closed: {remote_addr}");
+            let addr = remote_addr.to_string();
+            user_manager_clone.remove_connection(&addr).await;
+        };
 
         loop {
             tokio::select! {
                 result = conn.as_mut() => {
                     if let Err(err) = result {
-                        connection_closed();
+                        connection_closed().await;
                         trace!("failed to serve connection: {err:#}");
                     }
                     break;
                 }
                 () = &mut signal_closed => {
-                    connection_closed();
+                    connection_closed().await;
                     trace!("signal received in task, starting graceful shutdown");
                     conn.as_mut().graceful_shutdown();
                 }

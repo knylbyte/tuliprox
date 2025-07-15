@@ -23,7 +23,7 @@ use crate::utils::xtream::create_vod_info_from_item;
 use shared::utils::{extract_extension_from_url, generate_playlist_uuid, get_u32_from_serde_value, hex_encode, sanitize_sensitive_info, trim_slash, HLS_EXT};
 use crate::utils::{request, xtream};
 use crate::auth::Fingerprint;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap};
 use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::stream::{self, StreamExt};
@@ -175,6 +175,7 @@ async fn get_user_info(user: &ProxyUserCredentials, app_state: &AppState) -> Xtr
 
 async fn xtream_player_api_stream(
     fingerprint: &str,
+    addr: &str,
     req_headers: &HeaderMap,
     app_state: &Arc<AppState>,
     api_req: &UserApiRequest,
@@ -188,7 +189,7 @@ async fn xtream_player_api_stream(
     let target_name = &target.name;
     if !target.has_output(&TargetType::Xtream) {
         debug!("Target has no xtream codes playlist {target_name}");
-        return StatusCode::BAD_REQUEST.into_response();
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
@@ -213,7 +214,7 @@ async fn xtream_player_api_stream(
 
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
-            return force_provider_stream_response(app_state, session, item_type, req_headers, &input, &user).await.into_response();
+            return force_provider_stream_response(app_state, session, item_type, req_headers, &input, &user, addr).await.into_response();
         }
 
         session.stream_url.as_str()
@@ -262,12 +263,13 @@ async fn xtream_player_api_stream(
         return handle_hls_stream_request(fingerprint, app_state, &user, user_session.as_ref(), &stream_url, pli.virtual_id, &input, connection_permission).await.into_response();
     }
 
-    stream_response(app_state, session_key.as_str(), pli.virtual_id, item_type, &stream_url, req_headers, &input, &target, &user, connection_permission).await.into_response()
+    stream_response(app_state, session_key.as_str(), pli.virtual_id, item_type, &stream_url, req_headers, &input, &target, &user, connection_permission, addr).await.into_response()
 }
 
 // Used by webui
 async fn xtream_player_api_stream_with_token(
     fingerprint: &str,
+    addr: &str,
     req_headers: &HeaderMap,
     app_state: &Arc<AppState>,
     target_id: u16,
@@ -328,7 +330,7 @@ async fn xtream_player_api_stream_with_token(
         stream_req.context));
 
         trace_if_enabled!("Streaming stream request from {}", sanitize_sensitive_info(&stream_url));
-        stream_response(app_state, session_key.as_str(), pli.virtual_id, pli.item_type, &stream_url, req_headers, &input, &target, &user, UserConnectionPermission::Allowed).await.into_response()
+        stream_response(app_state, session_key.as_str(), pli.virtual_id, pli.item_type, &stream_url, req_headers, &input, &target, &user, UserConnectionPermission::Allowed, addr).await.into_response()
     } else {
         axum::http::StatusCode::BAD_REQUEST.into_response()
     }
@@ -503,7 +505,7 @@ async fn xtream_player_api_resource(
 macro_rules! create_xtream_player_api_stream {
     ($fn_name:ident, $context:expr) => {
         async fn $fn_name(
-            Fingerprint(fingerprint): Fingerprint,
+            Fingerprint(fingerprint, addr): Fingerprint,
             req_headers: HeaderMap,
             axum::extract::Path((username, password, stream_id)): axum::extract::Path<(String, String, String)>,
             axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
@@ -511,6 +513,7 @@ macro_rules! create_xtream_player_api_stream {
         ) ->  impl IntoResponse + Send {
             xtream_player_api_stream(
                 &fingerprint,
+                &addr,
                 &req_headers,
                 &app_state,
                 &api_req,
@@ -562,7 +565,7 @@ struct XtreamApiTimeShiftRequest {
 }
 
 async fn xtream_player_api_timeshift_stream(
-    Fingerprint(fingerprint): Fingerprint,
+    Fingerprint(fingerprint, addr): Fingerprint,
     req_headers: HeaderMap,
     axum::extract::Query(mut api_req): axum::extract::Query<UserApiRequest>,
     axum::extract::Path(timeshift_request): axum::extract::Path<XtreamApiTimeShiftRequest>,
@@ -580,11 +583,11 @@ async fn xtream_player_api_timeshift_stream(
     api_req.password = password.to_string();
     api_req.stream_id = stream_id.to_string();
 
-    xtream_player_api_stream(&fingerprint, &req_headers, &app_state, &api_req,  ApiStreamRequest::from(ApiStreamContext::Timeshift, &username, &password, &stream_id, &action_path), /*&addr*/).await.into_response()
+    xtream_player_api_stream(&fingerprint, &addr, &req_headers, &app_state, &api_req,  ApiStreamRequest::from(ApiStreamContext::Timeshift, &username, &password, &stream_id, &action_path), /*&addr*/).await.into_response()
 }
 
 async fn xtream_player_api_timeshift_query_stream(
-    Fingerprint(fingerprint): Fingerprint,
+    Fingerprint(fingerprint, addr): Fingerprint,
     req_headers: HeaderMap,
     axum::extract::Query(api_query_req): axum::extract::Query<UserApiRequest>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
@@ -602,7 +605,7 @@ async fn xtream_player_api_timeshift_query_stream(
         // }
         // xtream_player_api_stream(&req_headers, &api_query_req, &app_state, ApiStreamRequest::from_access_token(ApiStreamContext::Timeshift, token, stream_id, &action_path)/*, &addr*/).await.into_response()
     }
-    xtream_player_api_stream(&fingerprint, &req_headers, &app_state, &api_query_req, ApiStreamRequest::from(ApiStreamContext::Timeshift, username, password, stream_id, &action_path)).await.into_response()
+    xtream_player_api_stream(&fingerprint, &addr, &req_headers, &app_state, &api_query_req, ApiStreamRequest::from(ApiStreamContext::Timeshift, username, password, stream_id, &action_path)).await.into_response()
 }
 
 
@@ -624,7 +627,7 @@ async fn xtream_get_stream_info_response(app_state: &AppState, user: &ProxyUserC
                         return redirect(&info_url).into_response();
                     } else if let Ok(content) = xtream::get_xtream_stream_info(Arc::clone(&app_state.http_client.load()), &app_state.app_config, user, &input, target, &pli, info_url.as_str(), cluster).await {
                         return axum::response::Response::builder()
-                            .status(StatusCode::OK)
+                            .status(axum::http::StatusCode::OK)
                             .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
                             .body(axum::body::Body::from(content))
                             .unwrap()
@@ -638,14 +641,14 @@ async fn xtream_get_stream_info_response(app_state: &AppState, user: &ProxyUserC
             XtreamCluster::Video => {
                 let content = create_vod_info_from_item(target, user, &pli, virtual_record.last_updated);
                 axum::response::Response::builder()
-                    .status(StatusCode::OK)
+                    .status(axum::http::StatusCode::OK)
                     .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
                     .body(axum::body::Body::from(content))
                     .unwrap()
                     .into_response()
             }
             XtreamCluster::Live | XtreamCluster::Series => axum::response::Response::builder()
-                .status(StatusCode::OK)
+                .status(axum::http::StatusCode::OK)
                 .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
                 .body(axum::body::Body::from("{}".as_bytes()))
                 .unwrap()
@@ -653,7 +656,7 @@ async fn xtream_get_stream_info_response(app_state: &AppState, user: &ProxyUserC
         };
     }
     axum::response::Response::builder()
-        .status(StatusCode::OK)
+        .status(axum::http::StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
         .body(axum::body::Body::from("{}".as_bytes()))
         .unwrap()
@@ -749,14 +752,14 @@ async fn xtream_get_catchup_response(app_state: &AppState, target: &ConfigTarget
     }
     if let Err(err) = target_id_mapping.persist() {
         error!("Failed to write catchup id mapping {err}");
-        return StatusCode::BAD_REQUEST.into_response();
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
     drop(file_lock);
     serde_json::to_string(&doc)
         .map_or_else(
-            |_| StatusCode::BAD_REQUEST.into_response(),
+            |_| axum::http::StatusCode::BAD_REQUEST.into_response(),
             |result| axum::response::Response::builder()
-                .status(StatusCode::OK)
+                .status(axum::http::StatusCode::OK)
                 .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
                 .body(result).unwrap().into_response())
 }
@@ -796,7 +799,7 @@ async fn xtream_player_api(
         }
 
         if user.permission_denied(app_state) {
-            return StatusCode::FORBIDDEN.into_response();
+            return axum::http::StatusCode::FORBIDDEN.into_response();
         }
 
         // Process specific playlist actions
@@ -951,13 +954,13 @@ macro_rules! register_xtream_api_timeshift {
 }
 
 async fn xtream_player_token_stream(
-    Fingerprint(fingerprint): Fingerprint,
+    Fingerprint(fingerprint, addr): Fingerprint,
     axum::extract::Path((token, target_id, cluster, stream_id)): axum::extract::Path<(String, u16, String, String)>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     req_headers: HeaderMap,
 ) -> impl IntoResponse + Send {
     let ctxt = try_result_bad_request!(ApiStreamContext::from_str(cluster.as_str()));
-    xtream_player_api_stream_with_token(&fingerprint, &req_headers, &app_state, target_id, ApiStreamRequest::from_access_token(ctxt, &token, &stream_id, "")).await.into_response()
+    xtream_player_api_stream_with_token(&fingerprint, &addr, &req_headers, &app_state, target_id, ApiStreamRequest::from_access_token(ctxt, &token, &stream_id, "")).await.into_response()
 }
 
 pub fn xtream_api_register() -> axum::Router<Arc<AppState>> {

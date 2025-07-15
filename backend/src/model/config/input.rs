@@ -145,9 +145,9 @@ impl ConfigInput {
             } else {
                 InputType::Xtream
             };
-            if let Some((file_path, batch_aliases)) = get_batch_aliases(input_type, self.url.as_str())? {
+            if let Some((file_path, batch_aliases)) = get_batch_aliases(self.input_type, self.url.as_str())? {
                 let mut aliases: Vec<ConfigInputAlias> = batch_aliases.into_iter()
-                    .map(|item| ConfigInputAlias::from(item))
+                    .map(ConfigInputAlias::from)
                     .collect();
                 if let Some(mut first) = aliases.pop() {
                     self.username = first.username.take();
@@ -162,9 +162,8 @@ impl ConfigInput {
                 apply_batch_aliases!(self, aliases);
                 self.input_type = input_type;
                 return Ok(Some(file_path));
-            } else {
-                self.input_type = input_type;
             }
+            self.input_type = input_type;
         }
         Ok(None)
     }

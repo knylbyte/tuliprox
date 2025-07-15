@@ -21,14 +21,12 @@ use crate::utils::request;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::BUILD_TIMESTAMP;
 use arc_swap::ArcSwapOption;
-use axum::body::Body;
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, log_enabled, trace};
-use reqwest::StatusCode;
 use shared::model::{InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission, XtreamCluster};
 use shared::utils::{default_grace_period_millis, human_readable_byte_size, trim_slash};
 use shared::utils::{extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT};
@@ -97,7 +95,7 @@ pub fn get_memory_usage() -> String {
 
 
 #[allow(clippy::missing_panics_doc)]
-pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl axum::response::IntoResponse + Send {
+pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoResponse + Send {
     if file_path.exists() {
         return match tokio::fs::File::open(file_path).await {
             Ok(file) => {
@@ -106,7 +104,7 @@ pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl axum::r
                 let body = axum::body::Body::from_stream(stream);
 
                 axum::response::Response::builder()
-                    .status(StatusCode::OK)
+                    .status(axum::http::StatusCode::OK)
                     .header(axum::http::header::CONTENT_TYPE, mime_type.to_string())
                     .header(axum::http::header::CACHE_CONTROL, axum::http::header::HeaderValue::from_static("no-cache"))
                     .body(body)
@@ -465,7 +463,7 @@ where
         }
     } else if params.target_type == TargetType::Xtream {
         let Some(provider_id) = params.provider_id else {
-            return Some(StatusCode::BAD_REQUEST.into_response());
+            return Some(axum::http::StatusCode::BAD_REQUEST.into_response());
         };
 
         if redirect_request {
@@ -487,7 +485,7 @@ where
             let stream_url = match get_xtream_player_api_stream_url(params.input, params.req_context, &params.get_query_path(provider_id, provider_url), provider_url) {
                 None => {
                     error!("Cant find stream url for target {target_name}, context {}, stream_id {virtual_id}", params.req_context);
-                    return Some(StatusCode::BAD_REQUEST.into_response());
+                    return Some(axum::http::StatusCode::BAD_REQUEST.into_response());
                 }
                 Some(url) => {
                     match app_state.active_provider.get_next_provider(&params.input.name).await {
@@ -516,7 +514,7 @@ fn is_throttled_stream(item_type: PlaylistItemType, throttle_kbps: usize) -> boo
     throttle_kbps > 0 && matches!(item_type, PlaylistItemType::Video | PlaylistItemType::Series  | PlaylistItemType::SeriesInfo | PlaylistItemType::Catchup)
 }
 
-fn prepare_body_stream(app_state: &AppState, item_type: PlaylistItemType, stream: ActiveClientStream) -> Body {
+fn prepare_body_stream(app_state: &AppState, item_type: PlaylistItemType, stream: ActiveClientStream) -> axum::body::Body {
     let throttle_kbps = usize::try_from(get_stream_throttle(app_state)).unwrap_or_default();
     let body_stream = if is_throttled_stream(item_type, throttle_kbps) {
         axum::body::Body::from_stream(ThrottledStream::new(stream.boxed(), throttle_kbps))
@@ -532,7 +530,8 @@ pub async fn force_provider_stream_response(app_state: &AppState,
                                             item_type: PlaylistItemType,
                                             req_headers: &HeaderMap,
                                             input: &ConfigInput,
-                                            user: &ProxyUserCredentials) -> impl axum::response::IntoResponse + Send {
+                                            user: &ProxyUserCredentials,
+                                            addr: &str) -> impl IntoResponse + Send {
     let stream_options = get_stream_options(app_state);
     let share_stream = false;
     let connection_permission = UserConnectionPermission::Allowed;
@@ -542,7 +541,7 @@ pub async fn force_provider_stream_response(app_state: &AppState,
 
     if stream_details.has_stream() {
         let provider_response = stream_details.stream_info.as_ref().map(|(h, sc, url)| (h.clone(), *sc, url.clone()));
-        let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission).await;
+        let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr).await;
 
         let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
         let mut response = axum::response::Response::builder().status(status_code);
@@ -556,12 +555,12 @@ pub async fn force_provider_stream_response(app_state: &AppState,
     }
     drop(stream_details.provider_connection_guard.take());
     if let (Some(stream), _stream_info) =
-        create_channel_unavailable_stream(&app_state.app_config, &[], StatusCode::BAD_GATEWAY)
+        create_channel_unavailable_stream(&app_state.app_config, &[], axum::http::StatusCode::BAD_GATEWAY)
     {
         debug!("Streaming custom stream");
-        axum::response::Response::builder().status(StatusCode::OK).body(Body::from_stream(stream)).unwrap().into_response()
+        axum::response::Response::builder().status(axum::http::StatusCode::OK).body(axum::body::Body::from_stream(stream)).unwrap().into_response()
     } else {
-        StatusCode::BAD_REQUEST.into_response()
+        axum::http::StatusCode::BAD_REQUEST.into_response()
     }
 }
 
@@ -576,7 +575,8 @@ pub async fn stream_response(app_state: &AppState,
                              input: &ConfigInput,
                              target: &ConfigTarget,
                              user: &ProxyUserCredentials,
-                             connection_permission: UserConnectionPermission) -> impl axum::response::IntoResponse + Send {
+                             connection_permission: UserConnectionPermission,
+                             addr: &str) -> impl IntoResponse + Send {
     if log_enabled!(log::Level::Trace) { trace!("Try to open stream {}", sanitize_sensitive_info(stream_url)); }
 
     if connection_permission == UserConnectionPermission::Exhausted {
@@ -585,7 +585,7 @@ pub async fn stream_response(app_state: &AppState,
 
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
-        if let Some(value) = shared_stream_response(app_state, stream_url, user, connection_permission).await {
+        if let Some(value) = shared_stream_response(app_state, stream_url, user, connection_permission, addr).await {
             return value.into_response();
         }
     }
@@ -598,7 +598,7 @@ pub async fn stream_response(app_state: &AppState,
         let provider_response = stream_details.stream_info.as_ref().map(|(h, sc, response_url)| (h.clone(), *sc, response_url.clone()));
         let provider_name = stream_details.provider_connection_guard.as_ref().and_then(ProviderConnectionGuard::get_provider_name);
 
-        let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission).await;
+        let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr).await;
         let stream_resp = if share_stream {
             debug_if_enabled!("Streaming shared stream request from {}", sanitize_sensitive_info(stream_url));
             // Shared Stream response
@@ -654,13 +654,13 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
         .map(|stream| stream.throttle_kbps).unwrap_or_default()
 }
 
-async fn shared_stream_response(app_state: &AppState, stream_url: &str, user: &ProxyUserCredentials, connect_permission: UserConnectionPermission) -> Option<impl IntoResponse> {
+async fn shared_stream_response(app_state: &AppState, stream_url: &str, user: &ProxyUserCredentials, connect_permission: UserConnectionPermission, addr: &str) -> Option<impl IntoResponse> {
     if let Some(stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url).await {
         debug_if_enabled!("Using shared stream {}", sanitize_sensitive_info(stream_url));
         if let Some(headers) = app_state.shared_stream_manager.get_shared_state_headers(stream_url).await {
-            let (status_code, header_map) = get_stream_response_with_headers(Some((headers.clone(), StatusCode::OK)));
+            let (status_code, header_map) = get_stream_response_with_headers(Some((headers.clone(), axum::http::StatusCode::OK)));
             let stream_details = StreamDetails::from_stream(stream);
-            let stream = ActiveClientStream::new(stream_details, app_state, user, connect_permission).await.boxed();
+            let stream = ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr).await.boxed();
             let mut response = axum::response::Response::builder()
                 .status(status_code);
             for (key, value) in &header_map {
@@ -704,7 +704,7 @@ fn get_add_cache_content(res_url: &str, cache: &Arc<ArcSwapOption<Mutex<LRUResou
 }
 
 /// # Panics
-pub async fn resource_response(app_state: &AppState, resource_url: &str, req_headers: &HeaderMap, input: Option<&ConfigInput>) -> impl axum::response::IntoResponse + Send {
+pub async fn resource_response(app_state: &AppState, resource_url: &str, req_headers: &HeaderMap, input: Option<&ConfigInput>) -> impl IntoResponse + Send {
     if resource_url.is_empty() {
         return axum::http::StatusCode::NO_CONTENT.into_response();
     }
@@ -725,7 +725,7 @@ pub async fn resource_response(app_state: &AppState, resource_url: &str, req_hea
                 let status = response.status();
                 if status.is_success() {
                     let mut response_builder = axum::response::Response::builder()
-                        .status(StatusCode::OK);
+                        .status(axum::http::StatusCode::OK);
                     for (key, value) in response.headers() {
                         response_builder = response_builder.header(key, value);
                     }
@@ -769,9 +769,9 @@ pub fn separate_number_and_remainder(input: &str) -> (String, Option<String>) {
 }
 
 /// # Panics
-pub fn empty_json_list_response() -> impl axum::response::IntoResponse + Send {
+pub fn empty_json_list_response() -> impl IntoResponse + Send {
     axum::response::Response::builder()
-        .status(StatusCode::OK)
+        .status(axum::http::StatusCode::OK)
         .header("Content-Type", mime::APPLICATION_JSON.to_string())
         .body("[]".to_string())
         .unwrap()
@@ -798,7 +798,7 @@ pub fn get_username_from_auth_header(
 /// # Panics
 pub fn redirect(url: &str) -> impl IntoResponse {
     axum::response::Response::builder()
-        .status(StatusCode::FOUND)
+        .status(axum::http::StatusCode::FOUND)
         .header("Location", url)
         .body(axum::body::Body::empty())
         .unwrap()
