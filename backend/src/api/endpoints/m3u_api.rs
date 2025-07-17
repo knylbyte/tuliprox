@@ -98,7 +98,7 @@ async fn m3u_api_stream(
         }
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
-            return force_provider_stream_response(app_state, session, pli.item_type, req_headers, &input, &user, addr).await.into_response();
+            return force_provider_stream_response(addr, app_state, session, pli.item_type, req_headers, &input, &user).await.into_response();
         }
         session.stream_url.as_str()
     } else {
@@ -135,10 +135,10 @@ async fn m3u_api_stream(
     let is_hls_request = pli.item_type == PlaylistItemType::LiveHls || pli.item_type == PlaylistItemType::LiveDash || extension == HLS_EXT;
     // Reverse proxy mode
     if is_hls_request {
-        return handle_hls_stream_request(fingerprint, app_state, &user, user_session.as_ref(), &pli.url, pli.virtual_id, &input, connection_permission).await.into_response();
+        return handle_hls_stream_request(fingerprint, addr, app_state, &user, user_session.as_ref(), &pli.url, pli.virtual_id, &input, connection_permission).await.into_response();
     }
 
-    stream_response(app_state, &session_key, pli.virtual_id, pli.item_type, session_url, req_headers, &input, &target, &user, connection_permission, addr).await.into_response()
+    stream_response(addr, app_state, &session_key, pli.virtual_id, pli.item_type, session_url, req_headers, &input, &target, &user, connection_permission).await.into_response()
 }
 
 async fn m3u_api_resource(

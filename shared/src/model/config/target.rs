@@ -1,7 +1,8 @@
+use log::warn;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use crate::foundation::filter::{get_filter, Filter};
-use crate::model::{ClusterFlags, ConfigRenameDto, ConfigSortDto, PatternTemplate, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
+use crate::model::{ClusterFlags, ConfigRenameDto, ConfigSortDto, HdHomeRunDeviceOverview, PatternTemplate, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
 use crate::utils::{default_as_true, default_resolve_delay_secs, default_as_default};
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -150,7 +151,7 @@ pub struct ConfigTargetDto {
 
 impl ConfigTargetDto {
     #[allow(clippy::too_many_lines)]
-    pub fn prepare(&mut self, id: u16, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
+    pub fn prepare(&mut self, id: u16, templates: Option<&Vec<PatternTemplate>>, hdhr_config: Option<&HdHomeRunDeviceOverview>) -> Result<(), TuliproxError> {
         self.id = id;
         if self.output.is_empty() {
             return Err(info_err!(format!("Missing output format for {}", self.name)));
@@ -226,6 +227,11 @@ impl ConfigTargetDto {
                             _ => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun output option `use_output` only accepts `m3u` or `xtream` for target: {}", self.name),
                         }
                     }
+                    if let Some(hdhr_devices) = hdhr_config {
+                        if !hdhr_devices.devices.contains(&hdhomerun_output.device) {
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun output device is not defined: {}", hdhomerun_output.device);
+                        }
+                    }
                 }
             }
         }
@@ -247,6 +253,12 @@ impl ConfigTargetDto {
             }
             if hdhomerun_needs_xtream && xtream_cnt == 0 {
                 return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun output has `use_output=xtream` but no `xtream` output defined: {}", self.name);
+            }
+
+            if let Some(hdhr_devices) = hdhr_config {
+                if !hdhr_devices.enabled {
+                    warn!("You have defined an HDHomeRun output, but HDHomeRun devices are disabled.");
+                }
             }
         }
 

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use log::{error, info};
 use path_clean::PathClean;
 use shared::error::{TuliproxError};
-use shared::model::ConfigDto;
+use shared::model::{ConfigDto, HdHomeRunDeviceOverview};
 use shared::utils::set_sanitize_sensitive_info;
 use crate::model::{macros, ConfigApi, ReverseProxyConfig, ScheduleConfig};
 use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
@@ -100,6 +100,14 @@ impl Config {
         let temp_path = PathBuf::from(&self.working_dir).join("tmp");
         create_directories(self, &temp_path);
         let _ = tempfile::env::override_temp_dir(&temp_path);
+    }
+
+    pub fn get_hdhr_device_overview(&self) -> Option<HdHomeRunDeviceOverview> {
+        self.hdhomerun.as_ref().map(|hdhr|
+            HdHomeRunDeviceOverview {
+                enabled: hdhr.enabled,
+                devices: hdhr.devices.iter().map(|d| d.name.to_string()).collect::<Vec<String>>(),
+            })
     }
 }
 

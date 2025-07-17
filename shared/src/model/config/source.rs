@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use crate::create_tuliprox_error_result;
 use crate::error::{handle_tuliprox_error_result_list, TuliproxError, TuliproxErrorKind};
 use crate::foundation::filter::prepare_templates;
-use crate::model::{ConfigInputDto, PatternTemplate};
+use crate::model::{ConfigInputDto, HdHomeRunDeviceOverview, PatternTemplate};
 use crate::model::config::target::ConfigTargetDto;
 use crate::utils::default_as_default;
 
@@ -40,14 +40,14 @@ pub struct SourcesConfigDto {
 }
 
 impl SourcesConfigDto {
-    pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
+    pub fn prepare(&mut self, include_computed: bool, hdhr_config: Option<&HdHomeRunDeviceOverview>) -> Result<(), TuliproxError> {
         self.prepare_templates()?;
-        self.prepare_sources(include_computed)?;
+        self.prepare_sources(include_computed, hdhr_config)?;
         self.check_unique_target_names()?;
         Ok(())
     }
 
-    fn prepare_sources(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
+    fn prepare_sources(&mut self, include_computed: bool, hdhr_config: Option<&HdHomeRunDeviceOverview>) -> Result<(), TuliproxError> {
         // prepare sources and set id's
         let mut source_index: u16 = 0;
         let mut target_index: u16 = 1;
@@ -56,8 +56,8 @@ impl SourcesConfigDto {
             for target in &mut source.targets {
                 // prepare target templates
                 let prepare_result = match &self.templates {
-                    Some(templ) => target.prepare(target_index, Some(templ)),
-                    _ => target.prepare(target_index, None)
+                    Some(templ) => target.prepare(target_index, Some(templ), hdhr_config),
+                    _ => target.prepare(target_index, None, hdhr_config)
                 };
                 prepare_result?;
                 target_index += 1;

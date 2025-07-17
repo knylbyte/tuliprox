@@ -9,7 +9,7 @@ use chrono::Local;
 use log::{error, info, warn};
 use serde::Serialize;
 use shared::error::{create_tuliprox_error, info_err, to_io_error, TuliproxError, TuliproxErrorKind};
-use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigPaths, SourcesConfigDto};
+use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigPaths, HdHomeRunDeviceOverview, SourcesConfigDto};
 use shared::utils::{CONSTANTS};
 use std::env;
 use std::fs::File;
@@ -61,14 +61,14 @@ pub fn read_api_proxy_config(config: &AppConfig, resolve_env: bool) -> Result<Op
     }
 }
 
-pub fn read_sources_file(sources_file: &str, resolve_env: bool, include_computed: bool) -> Result<SourcesConfigDto, TuliproxError> {
+pub fn read_sources_file(sources_file: &str, resolve_env: bool, include_computed: bool, hdhr_config: Option<&HdHomeRunDeviceOverview>) -> Result<SourcesConfigDto, TuliproxError> {
     match open_file(&std::path::PathBuf::from(sources_file)) {
         Ok(file) => {
             let maybe_sources: Result<SourcesConfigDto, _> = serde_yaml::from_reader(config_file_reader(file, resolve_env));
             match maybe_sources {
                 Ok(mut sources) => {
                     if resolve_env {
-                        if let Err(err) = sources.prepare(include_computed) {
+                        if let Err(err) = sources.prepare(include_computed, hdhr_config) {
                             return Err(info_err!(format!("Can't read the sources-config file: {sources_file}: {err}")));
                         }
                     }
@@ -106,8 +106,8 @@ pub fn read_app_config_dto(paths: &ConfigPaths,
     let sources_file = paths.sources_file_path.as_str();
     let api_proxy_file = paths.api_proxy_file_path.as_str();
 
-    let sources = read_sources_file(sources_file, resolve_env, include_computed)?;
     let config = read_config_file(config_file, resolve_env)?;
+    let sources = read_sources_file(sources_file, resolve_env, include_computed, config.get_hdhr_device_overview().as_ref())?;
     let mappings = if let Some(mappings_file) = paths.mapping_file_path.as_ref() {
         read_mappings_file(mappings_file, resolve_env).unwrap_or(None)
     } else {
@@ -133,9 +133,9 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
     let config_file = paths.config_file_path.as_str();
     let sources_file = paths.sources_file_path.as_str();
 
-    let sources_dto = read_sources_file(sources_file, resolve_env, include_computed)?;
-    let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
     let config_dto = read_config_file(config_file, resolve_env)?;
+    let sources_dto = read_sources_file(sources_file, resolve_env, include_computed, config_dto.get_hdhr_device_overview().as_ref())?;
+    let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
     let mut config: Config = Config::from(config_dto);
     config.prepare(config_path)?;
     config.update_runtime();

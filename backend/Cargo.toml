@@ -57,7 +57,7 @@ arc-swap = "1"
 dashmap = "6"
 hyper = "1"
 hyper-util = "0"
-socket2 = "0"
+socket2 = { version = "0", features = ["all"] }
 #[cfg(target_os = "macos")]
 libc = "0"
 #[cfg(target_os = "windows")]

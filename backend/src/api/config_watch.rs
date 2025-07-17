@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc};
 use tokio_util::sync::CancellationToken;
-use shared::model::ConfigPaths;
+use shared::model::{ConfigPaths};
 
 enum ConfigFile {
     Config,
@@ -73,7 +73,8 @@ impl ConfigFile {
     async fn load_sources(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
         let paths = app_state.app_config.paths.load();
         let sources_file = paths.sources_file_path.as_str();
-        let sources_dto = read_sources_file(sources_file, true, true)?;
+        let config = &app_state.app_config.config.load();
+        let sources_dto = read_sources_file(sources_file, true, true, config.get_hdhr_device_overview().as_ref())?;
         let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
         info!("Loaded sources file {sources_file}");
         update_app_state_sources(app_state, sources).await

@@ -214,7 +214,7 @@ async fn xtream_player_api_stream(
 
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
-            return force_provider_stream_response(app_state, session, item_type, req_headers, &input, &user, addr).await.into_response();
+            return force_provider_stream_response(addr, app_state, session, item_type, req_headers, &input, &user).await.into_response();
         }
 
         session.stream_url.as_str()
@@ -260,10 +260,10 @@ async fn xtream_player_api_stream(
     let is_hls_request = item_type == PlaylistItemType::LiveHls || item_type == PlaylistItemType::LiveDash || extension == HLS_EXT;
     // Reverse proxy mode
     if is_hls_request {
-        return handle_hls_stream_request(fingerprint, app_state, &user, user_session.as_ref(), &stream_url, pli.virtual_id, &input, connection_permission).await.into_response();
+        return handle_hls_stream_request(fingerprint, addr, app_state, &user, user_session.as_ref(), &stream_url, pli.virtual_id, &input, connection_permission).await.into_response();
     }
 
-    stream_response(app_state, session_key.as_str(), pli.virtual_id, item_type, &stream_url, req_headers, &input, &target, &user, connection_permission, addr).await.into_response()
+    stream_response(addr, app_state, session_key.as_str(), pli.virtual_id, item_type, &stream_url, req_headers, &input, &target, &user, connection_permission).await.into_response()
 }
 
 // Used by webui
@@ -312,7 +312,7 @@ async fn xtream_player_api_stream_with_token(
 
         // Reverse proxy mode
         if is_hls_request {
-            return handle_hls_stream_request(fingerprint, app_state, &user, None, &pli.url, pli.virtual_id, &input, UserConnectionPermission::Allowed).await.into_response();
+            return handle_hls_stream_request(fingerprint, addr, app_state, &user, None, &pli.url, pli.virtual_id, &input, UserConnectionPermission::Allowed).await.into_response();
         }
 
         let extension = stream_ext.unwrap_or_else(
@@ -330,7 +330,7 @@ async fn xtream_player_api_stream_with_token(
         stream_req.context));
 
         trace_if_enabled!("Streaming stream request from {}", sanitize_sensitive_info(&stream_url));
-        stream_response(app_state, session_key.as_str(), pli.virtual_id, pli.item_type, &stream_url, req_headers, &input, &target, &user, UserConnectionPermission::Allowed, addr).await.into_response()
+        stream_response(addr, app_state, session_key.as_str(), pli.virtual_id, pli.item_type, &stream_url, req_headers, &input, &target, &user, UserConnectionPermission::Allowed).await.into_response()
     } else {
         axum::http::StatusCode::BAD_REQUEST.into_response()
     }

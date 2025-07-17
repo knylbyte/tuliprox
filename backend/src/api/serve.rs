@@ -6,7 +6,7 @@ use hyper::body::Incoming;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
-use log::{error, info, trace};
+use log::{debug, error, trace};
 use socket2::{SockRef, TcpKeepalive};
 use std::convert::Infallible;
 use std::fmt::Debug;
@@ -43,7 +43,6 @@ pub async fn serve(listener: tokio::net::TcpListener,
                    cancel_token: Option<CancellationToken>,
                    user_manager: Arc<ActiveUserManager>) {
     let (signal_tx, _signal_rx) = watch::channel(());
-    let (_close_tx, close_rx) = watch::channel(());
     let mut make_service = router.into_make_service_with_connect_info::<SocketAddr>();
 
     match cancel_token {
@@ -55,7 +54,7 @@ pub async fn serve(listener: tokio::net::TcpListener,
                     }
                     accept_result = listener.accept() => {
                         let Ok((socket, remote_addr)) = accept_result else { continue };
-                        handle_connection(&mut make_service, &signal_tx, &close_rx, socket, remote_addr, Arc::clone(&user_manager)).await;
+                        handle_connection(&mut make_service, &signal_tx, socket, remote_addr, Arc::clone(&user_manager)).await;
                     }
                 }
             }
@@ -63,7 +62,7 @@ pub async fn serve(listener: tokio::net::TcpListener,
         None => {
             loop {
                 let Ok((socket, remote_addr)) = listener.accept().await else { continue };
-                handle_connection(&mut make_service, &signal_tx, &close_rx, socket, remote_addr, Arc::clone(&user_manager)).await;
+                handle_connection(&mut make_service, &signal_tx, socket, remote_addr, Arc::clone(&user_manager)).await;
             }
         }
     }
@@ -73,7 +72,6 @@ pub async fn serve(listener: tokio::net::TcpListener,
 async fn handle_connection<M, S>(
     make_service: &mut M,
     signal_tx: &watch::Sender<()>,
-    close_rx: &watch::Receiver<()>,
     socket: tokio::net::TcpStream,
     remote_addr: SocketAddr,
     user_manager: Arc<ActiveUserManager>,
@@ -127,7 +125,7 @@ where
 
     let hyper_service = TowerToHyperService::new(tower_service);
     let signal_tx = signal_tx.clone();
-    let close_rx = close_rx.clone();
+    let addr_str = remote_addr.to_string();
 
     tokio::spawn(async move {
         #[allow(unused_mut)]
@@ -136,8 +134,9 @@ where
         let mut signal_closed = pin!(signal_tx.closed().fuse());
 
         let user_manager_clone = Arc::clone(&user_manager);
+        let mut addr_close_rx = user_manager_clone.get_close_connection_channel();
         let connection_closed = async move || {
-            info!("Connection closed: {remote_addr}");
+            debug!("Connection closed: {remote_addr}");
             let addr = remote_addr.to_string();
             user_manager_clone.remove_connection(&addr).await;
         };
@@ -156,9 +155,14 @@ where
                     trace!("signal received in task, starting graceful shutdown");
                     conn.as_mut().graceful_shutdown();
                 }
+                Ok(msg) = addr_close_rx.recv() => {
+                    if msg == addr_str {
+                        debug!("Forced client disconnect {msg}");
+                        conn.as_mut().graceful_shutdown();
+                        break;
+                    }
+                }
             }
         }
-
-        drop(close_rx);
     });
 }

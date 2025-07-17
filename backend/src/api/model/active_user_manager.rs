@@ -76,7 +76,6 @@ impl ConnectionGuardUserManager {
     fn is_log_user_enabled(&self)-> bool {
         self.log_active_user
     }
-
 }
 
 pub struct UserConnectionGuard {
@@ -100,6 +99,7 @@ pub struct UserSession {
     pub virtual_id: u32,
     pub provider: String,
     pub stream_url: String,
+    pub addr: String,
     pub ts: u64,
     pub permission: UserConnectionPermission,
 }
@@ -142,13 +142,14 @@ pub struct ActiveUserManager {
     user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
     user_by_addr: Arc<RwLock<HashMap<String, String>>>,
     gc_ts: Option<AtomicU64>,
+    close_signal_tx: tokio::sync::broadcast::Sender<String>,
 }
 
 impl ActiveUserManager {
     pub fn new(config: &Config) -> Self {
         let log_active_user = config.log.as_ref().is_some_and(|l| l.log_active_user);
         let (grace_period_millis, grace_period_timeout_secs) = get_grace_options(config);
-
+        let (close_signal_tx, _) = tokio::sync::broadcast::channel(10);
         Self {
             grace_period_millis : AtomicU64::new(grace_period_millis),
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
@@ -156,6 +157,7 @@ impl ActiveUserManager {
             user: Arc::new(RwLock::new(HashMap::new())),
             user_by_addr: Arc::new(RwLock::new(HashMap::new())),
             gc_ts: Some(AtomicU64::new(current_time_secs())),
+            close_signal_tx
         }
     }
 
@@ -271,19 +273,23 @@ impl ActiveUserManager {
         sessions.iter().find(|&session| session.token.eq(token))
     }
 
-    fn new_user_session(session_token: &str, virtual_id: u32, provider: &str, stream_url: &str, connection_permission: UserConnectionPermission) -> UserSession {
+    fn new_user_session(session_token: &str, virtual_id: u32, provider: &str, stream_url: &str, addr: &str,
+                        connection_permission: UserConnectionPermission) -> UserSession {
         UserSession {
             token: session_token.to_string(),
             virtual_id,
             provider: provider.to_string(),
             stream_url: stream_url.to_string(),
+            addr: addr.to_string(),
             ts: current_time_secs(),
             permission: connection_permission,
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_user_session(&self, user: &ProxyUserCredentials, session_token: &str, virtual_id: u32,
-                                     provider: &str, stream_url: &str, connection_permission: UserConnectionPermission) -> Option<String> {
+                                     provider: &str, stream_url: &str, addr: &str,
+                                     connection_permission: UserConnectionPermission) -> Option<String> {
         self.gc().await;
         let mut lock = self.user.write().await;
         if let Some(connection_data) = lock.get_mut(&user.username) {
@@ -305,19 +311,39 @@ impl ActiveUserManager {
 
             // no session creates new one
             debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
-            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
+            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
             let token = session.token.clone();
             connection_data.add_session(session);
             Some(token)
         } else {
             debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
             let mut connection_data = UserConnectionData::new(0, user.max_connections);
-            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, connection_permission);
+            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
             let token = session.token.clone();
             connection_data.add_session(session);
             lock.insert(user.username.to_string(), connection_data);
             Some(token)
         }
+    }
+
+    pub async fn update_session_addr(&self, username: &str, token: &str, addr: &str) {
+        let mut lock = self.user.write().await;
+        if let Some(connection_data) = lock.get_mut(username) {
+            for session in &mut connection_data.sessions {
+                if session.token.eq(token) {
+                    self.drop_connection(&session.addr);
+                    session.addr = addr.to_string();
+                }
+            }
+        }
+    }
+
+    fn drop_connection(&self, addr: &str) {
+        let _ = self.close_signal_tx.send(addr.to_string());
+    }
+
+    pub fn get_close_connection_channel(&self) -> tokio::sync::broadcast::Receiver<String> {
+        self.close_signal_tx.subscribe()
     }
 
     pub async fn get_user_session(&self, username: &str, token: &str) -> Option<UserSession> {

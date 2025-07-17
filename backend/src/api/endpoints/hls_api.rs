@@ -35,7 +35,7 @@ fn hls_response(hls_content: String) -> impl IntoResponse + Send {
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::api) async fn handle_hls_stream_request(
-        fingerprint: &str,
+        fingerprint: &str, addr: &str,
         app_state: &Arc<AppState>,
         user: &ProxyUserCredentials,
         user_session: Option<&UserSession>,
@@ -61,7 +61,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
                     let user_session_token = format!("{fingerprint}{virtual_id}");
-                    let session_token= app_state.active_users.create_user_session(user, &user_session_token, virtual_id, &provider_cfg.name, &stream_url, connection_permission).await;
+                    let session_token= app_state.active_users.create_user_session(user, &user_session_token, virtual_id, &provider_cfg.name, &stream_url, addr, connection_permission).await;
                     (stream_url, session_token)
                 },
                 None => (url, None),
@@ -128,7 +128,7 @@ async fn hls_api_stream(
         if session.virtual_id == virtual_id {
             if is_seek_request(XtreamCluster::Live, &req_headers).await {
                 // partial request means we are in reverse proxy mode, seek happened
-                return force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, &input, &user, &addr).await.into_response()
+                return force_provider_stream_response(&addr, &app_state, session, PlaylistItemType::LiveHls, &req_headers, &input, &user).await.into_response()
             }
         } else {
             return axum::http::StatusCode::BAD_REQUEST.into_response();
@@ -140,10 +140,10 @@ async fn hls_api_stream(
         }
 
         if is_hls_url(&session.stream_url) {
-            return handle_hls_stream_request(&fingerprint, &app_state, &user, Some(session), &session.stream_url, virtual_id, &input, connection_permission).await.into_response();
+            return handle_hls_stream_request(&fingerprint, &addr, &app_state, &user, Some(session), &session.stream_url, virtual_id, &input, connection_permission).await.into_response();
         }
 
-        force_provider_stream_response(&app_state, session, PlaylistItemType::LiveHls, &req_headers, &input, &user, &addr).await.into_response()
+        force_provider_stream_response(&addr, &app_state, session, PlaylistItemType::LiveHls, &req_headers, &input, &user).await.into_response()
     } else {
         axum::http::StatusCode::BAD_REQUEST.into_response()
     }

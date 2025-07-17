@@ -1,6 +1,8 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::{WebUiConfigDto, MessagingConfigDto, IpCheckConfigDto, HdHomeRunConfigDto, VideoConfigDto, ScheduleConfigDto, LogConfigDto, ReverseProxyConfigDto, ProxyConfigDto, ConfigApiDto};
-use crate::utils::{default_connect_timeout_secs};
+use crate::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto,
+                   MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto,
+                   VideoConfigDto, WebUiConfigDto};
+use crate::utils::default_connect_timeout_secs;
 
 pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
 
@@ -50,8 +52,12 @@ pub struct ConfigDto {
     pub ipcheck: Option<IpCheckConfigDto>,
 }
 
-impl ConfigDto {
+pub struct HdHomeRunDeviceOverview {
+    pub enabled: bool,
+    pub devices: Vec<String>,
+}
 
+impl ConfigDto {
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
         if let Some(mins) = self.sleep_timer_mins {
             if mins == 0 {
@@ -85,8 +91,7 @@ impl ConfigDto {
     }
 
     fn prepare_hdhomerun(&mut self) -> Result<(), TuliproxError> {
-        if let Some(old_hdhomerun) = &self.hdhomerun {
-            let mut hdhomerun = (*old_hdhomerun).clone();
+        if let Some(hdhomerun) = &mut self.hdhomerun {
             if hdhomerun.enabled {
                 hdhomerun.prepare(self.api.port)?;
             }
@@ -131,5 +136,13 @@ impl ConfigDto {
             }
         }
         true
+    }
+
+    pub fn get_hdhr_device_overview(&self) -> Option<HdHomeRunDeviceOverview> {
+        self.hdhomerun.as_ref().map(|hdhr|
+            HdHomeRunDeviceOverview {
+                enabled: hdhr.enabled,
+                devices: hdhr.devices.iter().map(|d| d.name.to_string()).collect::<Vec<String>>(),
+            })
     }
 }

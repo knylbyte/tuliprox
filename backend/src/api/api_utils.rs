@@ -296,14 +296,14 @@ async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, inpu
     };
     let stream_response_params = match &*provider_connection_guard {
         ProviderAllocation::Exhausted => {
-            debug!("Input  {} is exhausted. No connections allowed.", input.name);
+            debug!("Input {} is exhausted. No connections allowed.", input.name);
             let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
             ProviderStreamState::Custom(stream)
         }
         ProviderAllocation::Available(ref provider)
         | ProviderAllocation::GracePeriod(ref provider) => {
             // force_stream_provider means we keep the url and the provider.
-            // If force_stream_provider or the input is the same as the config we dont need to get new url
+            // If force_stream_provider or the input is the same as the config we don't need to get new url
             let (provider, url) = if force_provider.is_some() || provider.id == input.id {
                 (input.name.to_string(), stream_url.to_string())
             } else {
@@ -348,7 +348,7 @@ async fn create_stream_response_details(app_state: &AppState,
         .and_then(|r| r.stream.as_ref()).map_or_else(default_grace_period_millis, |s| s.grace_period_millis);
     let grace_period_millis = get_grace_period_millis(connection_permission, &streaming_strategy.provider_stream_state, config_grace_period_millis);
     match streaming_strategy.provider_stream_state {
-        // custom stream means we display our own stream like connection exhausted, channel unavailable...
+        // custom stream means we display our own stream like connection exhausted, channel-unavailable...
         ProviderStreamState::Custom(provider_stream) => {
             let (stream, stream_info) = provider_stream;
             StreamDetails {
@@ -377,7 +377,7 @@ async fn create_stream_response_details(app_state: &AppState,
                 ((None, None), None)
             };
 
-            // if we have no stream we should release the provider
+            // if we have no stream, we should release the provider
             if stream.is_none() {
                 if let Some(guard) = streaming_strategy.provider_connection_guard.take() {
                     drop(guard);
@@ -433,7 +433,7 @@ where
             || extract_extension_from_url(url).map_or_else(String::new, std::string::ToString::to_string),
             std::string::ToString::to_string);
 
-        // if there is a action_path (like for timeshift duration/start) it will be added in front of the stream_id
+        // if there is an action_path (like for timeshift duration/start), it will be added in front of the stream_id
         if self.action_path.is_empty() {
             format!("{provider_id}{extension}")
         } else {
@@ -468,7 +468,7 @@ where
 
         if redirect_request {
 
-            // handle redirect for series but why ?
+            // handle redirect for series but why?
             if params.cluster == XtreamCluster::Series {
                 let ext = params.stream_ext.unwrap_or_default();
                 let url = params.input.url.as_str();
@@ -525,13 +525,13 @@ fn prepare_body_stream(app_state: &AppState, item_type: PlaylistItemType, stream
 }
 
 /// # Panics
-pub async fn force_provider_stream_response(app_state: &AppState,
+pub async fn force_provider_stream_response(addr: &str,
+                                            app_state: &AppState,
                                             user_session: &UserSession,
                                             item_type: PlaylistItemType,
                                             req_headers: &HeaderMap,
                                             input: &ConfigInput,
-                                            user: &ProxyUserCredentials,
-                                            addr: &str) -> impl IntoResponse + Send {
+                                            user: &ProxyUserCredentials) -> impl IntoResponse + Send {
     let stream_options = get_stream_options(app_state);
     let share_stream = false;
     let connection_permission = UserConnectionPermission::Allowed;
@@ -541,6 +541,7 @@ pub async fn force_provider_stream_response(app_state: &AppState,
 
     if stream_details.has_stream() {
         let provider_response = stream_details.stream_info.as_ref().map(|(h, sc, url)| (h.clone(), *sc, url.clone()));
+        app_state.active_users.update_session_addr(&user.username, &user_session.token, addr).await;
         let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr).await;
 
         let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
@@ -566,17 +567,11 @@ pub async fn force_provider_stream_response(app_state: &AppState,
 
 /// # Panics
 #[allow(clippy::too_many_arguments)]
-pub async fn stream_response(app_state: &AppState,
-                             session_token: &str,
-                             virtual_id: u32,
-                             item_type: PlaylistItemType,
-                             stream_url: &str,
-                             req_headers: &HeaderMap,
-                             input: &ConfigInput,
-                             target: &ConfigTarget,
-                             user: &ProxyUserCredentials,
-                             connection_permission: UserConnectionPermission,
-                             addr: &str) -> impl IntoResponse + Send {
+pub async fn stream_response(addr: &str,
+                             app_state: &AppState, session_token: &str, virtual_id: u32,
+                             item_type: PlaylistItemType, stream_url: &str, req_headers: &HeaderMap,
+                             input: &ConfigInput, target: &ConfigTarget, user: &ProxyUserCredentials,
+                             connection_permission: UserConnectionPermission) -> impl IntoResponse + Send {
     if log_enabled!(log::Level::Trace) { trace!("Try to open stream {}", sanitize_sensitive_info(stream_url)); }
 
     if connection_permission == UserConnectionPermission::Exhausted {
@@ -632,7 +627,7 @@ pub async fn stream_response(app_state: &AppState,
 
             if let Some(provider) = provider_name {
                 if matches!(item_type, PlaylistItemType::LiveHls  | PlaylistItemType::LiveDash | PlaylistItemType::Video | PlaylistItemType::Series | PlaylistItemType::Catchup) {
-                    let _ = app_state.active_users.create_user_session(user, session_token, virtual_id, &provider, &session_url, connection_permission).await;
+                    let _ = app_state.active_users.create_user_session(user, session_token, virtual_id, &provider, &session_url, addr, connection_permission).await;
                 }
             }
 
