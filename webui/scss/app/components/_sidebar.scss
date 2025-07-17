@@ -12,6 +12,10 @@ $sidebar-width: 270px;
     display: flex;
     flex-flow: column;
     padding: 2rem 1.5rem;
-    gap: var(--gap-larger);
+    gap: var(--gap-default);
+
+    .tp__collapse-panel {
+      margin-top: var(--gap-large);
+    }
   }
 }

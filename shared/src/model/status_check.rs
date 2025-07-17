@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StatusCheck {
     pub status: String,
     pub version: String,

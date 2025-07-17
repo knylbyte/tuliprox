@@ -86,7 +86,7 @@ impl DialogService {
         let (future, resolver) = DialogFuture::new();
         let request = ConfirmRequest {
             title: title.to_string(),
-            ok_caption: "LABEL.OK".into(),
+            ok_caption: "LABEL.YES".into(),
             cancel_caption: "LABEL.CANCEL".into(),
             resolve: Rc::new(RefCell::new(Some(Box::new(resolver)))),
         };

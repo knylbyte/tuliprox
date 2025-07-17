@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use yew::UseStateHandle;
-use shared::model::{AppConfigDto, ConfigTargetDto, ProxyUserCredentialsDto};
+use shared::model::{AppConfigDto, ConfigTargetDto, ProxyUserCredentialsDto, StatusCheck};
 use crate::app::components::{InputRow, PlaylistPage, UserlistPage};
 
 #[derive(Clone, PartialEq)]
@@ -17,6 +17,7 @@ pub struct TargetUser {
 
 #[derive(Clone, PartialEq)]
 pub struct UserlistContext {
+    pub selected_user: UseStateHandle<Option<Rc<TargetUser>>>,
     pub users: Rc<Option<Rc<Vec<Rc<TargetUser>>>>>,
     pub active_page: UseStateHandle<UserlistPage>,
 }
@@ -24,4 +25,9 @@ pub struct UserlistContext {
 #[derive(Clone, PartialEq)]
 pub struct ConfigContext {
     pub config: Option<Rc<AppConfigDto>>,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct StatusContext {
+    pub status: Option<Rc<StatusCheck>>,
 }

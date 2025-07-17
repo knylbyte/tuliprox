@@ -6,7 +6,7 @@ use shared::info_err;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UserlistPage {
     List,
-    Create,
+    Edit,
 }
 
 impl FromStr for UserlistPage {
@@ -15,7 +15,7 @@ impl FromStr for UserlistPage {
     fn from_str(s: &str) -> Result<Self, TuliproxError> {
         match s.to_lowercase().as_str() {
             "list" => Ok(UserlistPage::List),
-            "create" => Ok(UserlistPage::Create),
+            "edit" => Ok(UserlistPage::Edit),
             _ => Err(info_err!(format!("Unknown page type: {s}"))),
         }
     }
@@ -25,7 +25,7 @@ impl Display for UserlistPage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", match *self {
             Self::List => "list",
-            Self::Create => "create",
+            Self::Edit => "edit",
         })
     }
 }

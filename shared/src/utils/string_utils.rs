@@ -83,6 +83,17 @@ pub fn trim_last_slash(s: &str) -> Cow<str> {
     Cow::Borrowed(s)
 }
 
+pub trait Substring {
+    fn substring(&self, from: usize, to: usize) -> String;
+}
+
+impl Substring for String {
+    fn substring(&self, from: usize, to: usize) -> String {
+        self.chars().skip(from).take(to - from).collect()
+    }
+}
+
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;

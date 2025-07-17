@@ -38,7 +38,6 @@ pub use self::login::*;
 pub use self::home::*;
 pub use self::sidebar::*;
 pub use self::preferences::*;
-pub use dashboard::dashboard_view::*;
 pub use self::dashboard::*;
 pub use self::breadcrumbs::*;
 pub use self::playlist::*;

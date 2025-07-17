@@ -40,7 +40,7 @@ pub fn Chip(props: &ChipProps) -> Html {
 
     html! {
          <span class={classes!("tp__chip", props.class.clone())}>
-            { &props.label }
+            <span class="tp__chip__label">{ &props.label }</span>
             if props.removable {
                 <span class="tp__remove" onclick={handle_remove}>{"×"}</span>
             }

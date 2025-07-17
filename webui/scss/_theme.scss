@@ -68,6 +68,7 @@
 
   --discord-color: #5764f0;
   --documentation-color: #2b944b;
+  --github-color: #ffffff;
 
   --app-header-background-color: #18181b;
   --app-header-color: #73d6fe;
@@ -81,17 +82,37 @@
   --tag-color:  #e0e0e0;
   --tag-background-color:  #2c2f36;
 
-  --tag-active-border-color: #2b6140;
   --tag-active-color: #49dc7f;
   --tag-active-background-color: #1e2d25;
+  --tag-active-border-color: #2b6140;
 
-  --tag-inactive-border-color: #555;
   --tag-inactive-color:  #6f6f6f;
   --tag-inactive-background-color:  #3a3a3a;
+  --tag-inactive-border-color: #555;
 
-  --tag-alt-active-border-color: #2b4c61;
   --tag-alt-active-color: #49dcdc;
   --tag-alt-active-background-color: #1e252d;
+  --tag-alt-active-border-color: #2b4c61;
+
+  //--tag-status-expired-color: #b7af91;
+  //--tag-status-expired-background-color: #4b421f;
+  //--tag-status-expired-border-color: #645828;
+
+  --tag-status-expired-color: #f3e1ae;
+  --tag-status-expired-background-color: #6b5e33;
+  --tag-status-expired-border-color: #a99653;
+
+  --tag-status-banned-color: #dd7573;
+  --tag-status-banned-background-color: #4c3434;
+  --tag-status-banned-border-color: #755252;
+
+  --tag-status-trial-color: #49dcdc;
+  --tag-status-trial-background-color: #1e252d;
+  --tag-status-trial-border-color: #2b4c61;
+
+  --tag-status-pending-color: #49dcdc;
+  --tag-status-pending-background-color: #1e252d;
+  --tag-status-pending-border-color: #2b4c61;
 
   --popup-background-color: #313133; //#18181b;
   --popup-shadow: 0 3px 8px #06070a;

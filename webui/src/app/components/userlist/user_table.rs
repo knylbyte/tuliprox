@@ -1,7 +1,8 @@
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, ProxyTypeView, Table, TableDefinition};
-use crate::hooks::use_service_context;
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, MaxConnections,
+                             ProxyTypeView, RevealContent, Table, TableDefinition, UserStatus,
+                             UserlistContext, UserlistPage};
 use crate::model::DialogResult;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use std::fmt::Display;
@@ -10,24 +11,25 @@ use std::str::FromStr;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
+use shared::utils::{unix_ts_to_str, Substring};
 use crate::app::context::TargetUser;
 use crate::services::DialogService;
 
 const HEADERS: [&str; 15] = [
     "TABLE.EMPTY",
     "TABLE.ENABLED",
+    "TABLE.STATUS",
     "TABLE.PLAYLIST",
     "TABLE.USERNAME",
     "TABLE.PASSWORD",
     "TABLE.TOKEN",
     "TABLE.PROXY",
     "TABLE.SERVER",
+    "TABLE.MAX_CONNECTIONS",
+    "TABLE.UI_ENABLED",
     "TABLE.EPG_TIMESHIFT",
     "TABLE.CREATED_AT",
     "TABLE.EXP_DATE",
-    "TABLE.MAX_CONNECTIONS",
-    "TABLE.STATUS",
-    "TABLE.UI_ENABLED",
     "TABLE.COMMENT",
 ];
 
@@ -39,8 +41,8 @@ pub struct UserTableProps {
 #[function_component]
 pub fn UserTable(props: &UserTableProps) -> Html {
     let translate = use_translation();
-    let services = use_service_context();
     let dialog = use_context::<DialogService>().expect("Dialog service not found");
+    let userlist_context = use_context::<UserlistContext>().expect("Userlist context not found");
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
     let selected_dto = use_state(|| None::<Rc<TargetUser>>);
@@ -98,19 +100,27 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                         }
                     }
                     1 => html! { <Chip class={ convert_bool_to_chip_style(user_active ) }
-                                  label={if user_active {translator.t("LABEL.ACTIVE")} else { translator.t("LABEL.DISABLED")} }
+                                  label={if user_active {translator.t("LABEL.ENABLED")} else { translator.t("LABEL.DISABLED")} }
                                    /> },
-                    2 => html! { dto.target.as_str() },
-                    3 => html! { dto.credentials.username.as_str() },
-                    4 => html! { <HideContent content={&dto.credentials.password.to_string()}></HideContent> },
-                    5 => html! { dto.credentials.token.as_ref().map_or_else(|| html!{}, |token| html! { <HideContent content={token.to_string()}></HideContent>}) },
-                    6 => html! {<ProxyTypeView value={dto.credentials.proxy} /> },
-                    7 => dto.credentials.server.as_ref().map_or_else(|| html! {}, |s| html! { s } ),
-                    // 6 => dto.t_filter.as_ref().map_or_else(|| html! {}, |f| html! { <RevealContent preview={Some(html!{<FilterView inline={true} filter={f.clone()} />})}><FilterView pretty={true} filter={f.clone()} /></RevealContent> }),
-                    // 7 => dto.rename.as_ref().map_or_else(|| html! {}, |_r| html! { <RevealContent><UserRename target={Rc::clone(&dto)} /></RevealContent> }),
-                    // 8 => html! { <PlaylistMappings mappings={dto.mapping.clone()} /> },
-                    // 9 => html! { <PlaylistProcessing order={dto.processing_order} /> },
-                    // 10 => html! { <UserWatch  target={Rc::clone(&dto)} /> },
+                    2 => html! { <UserStatus status={ dto.credentials.status } /> },
+                    3 => html! { dto.target.as_str() },
+                    4 => html! { dto.credentials.username.as_str() },
+                    5 => html! { <HideContent content={&dto.credentials.password.to_string()}></HideContent> },
+                    6 => html! { dto.credentials.token.as_ref().map_or_else(|| html!{}, |token| html! { <HideContent content={token.to_string()}></HideContent>}) },
+                    7 => html! {<ProxyTypeView value={dto.credentials.proxy} /> },
+                    8 => dto.credentials.server.as_ref().map_or_else(|| html! {}, |s| html! { s } ),
+                    9 => html! { <MaxConnections value={dto.credentials.max_connections} /> },
+                    10 => html! { <Chip class={ convert_bool_to_chip_style(dto.credentials.ui_enabled ) }
+                                   label={if dto.credentials.ui_enabled {translator.t("LABEL.ENABLED")} else { translator.t("LABEL.DISABLED")} }
+                                    />  },
+                    11 => dto.credentials.epg_timeshift.as_ref().map_or_else(|| html! {}, |s| html! { s } ),
+                    12 => dto.credentials.created_at.as_ref().and_then(|ts| unix_ts_to_str(*ts))
+                           .map(|s| html! { { s } }).unwrap_or_else(|| html! { <AppIcon name="Unlimited" /> }),
+                    13 => dto.credentials.exp_date.as_ref().and_then(|ts| unix_ts_to_str(*ts))
+                           .map(|s| html! { { s } }).unwrap_or_else(|| html! { <AppIcon name="Unlimited" /> }),
+                    14 => dto.credentials.comment.as_ref()
+                        .map_or_else(|| html!{},
+                        |comment|html! { <RevealContent preview={Some(html! {comment.substring(0, 50)})}>{comment}</RevealContent> }),
                     _ => html! {""},
                 }
             })
@@ -138,10 +148,16 @@ pub fn UserTable(props: &UserTableProps) -> Html {
         let confirm = dialog.clone();
         let translate = translate.clone();
         let selected_dto = selected_dto.clone();
+        let ul_context = userlist_context.clone();
         Callback::from(move |name: String| {
             if let Ok(action) = TableAction::from_str(&name) {
                 match action {
-                    TableAction::Edit => {}
+                    TableAction::Edit => {
+                        if let Some(dto) = &*selected_dto {
+                            ul_context.selected_user.set(Some(Rc::clone(dto)));
+                            ul_context.active_page.set(UserlistPage::Edit);
+                        }
+                    }
                     TableAction::Refresh => {
                     }
                     TableAction::Delete => {

@@ -2,12 +2,17 @@
   display: inline-flex;
   flex-flow: row;
   align-items: center;
+  justify-content: center;
   padding: var(--padding-micro) var(--padding-mini);
   cursor: default;
   color: var(--tag-color);
   background-color: var(--tag-background-color);
   border: 1px solid var(--tag-border-color);
   border-radius: var(--tag-border-radius);
+
+  &__label {
+
+  }
 
   &__remove {
     margin-left: 0.5rem;

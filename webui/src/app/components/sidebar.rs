@@ -40,14 +40,16 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
                 <AppIcon name={"ChevronLeft"}></AppIcon>
             </div>
             <div class="tp__app-sidebar__content">
-                <MenuItem icon="DashboardOutline" name="dashboard" label={translate.t("LABEL.DASHBOARD")}
+                <MenuItem icon="DashboardOutline" name={ViewType::Dashboard.to_string()} label={translate.t("LABEL.DASHBOARD")}
+                    onclick={&handle_menu_click}></MenuItem>
+                <MenuItem icon="Stats" name={ViewType::Stats.to_string()} label={translate.t("LABEL.STATS")}
                     onclick={&handle_menu_click}></MenuItem>
                 <CollapsePanel title={translate.t("LABEL.SETTINGS")}>
-                    <MenuItem icon="UserOutline" name="users" label={translate.t("LABEL.USER")}
+                    <MenuItem icon="UserOutline" name={ViewType::Users.to_string()} label={translate.t("LABEL.USER")}
                         onclick={&handle_menu_click}></MenuItem>
                 </CollapsePanel>
                 <CollapsePanel title={translate.t("LABEL.PLAYLIST")}>
-                    <MenuItem icon="PlayArrowOutline" name="playlists" label={translate.t("LABEL.PLAYLIST")}
+                    <MenuItem icon="PlayArrowOutline" name={ViewType::Playlists.to_string()} label={translate.t("LABEL.PLAYLIST")}
                         onclick={&handle_menu_click}></MenuItem>
                 </CollapsePanel>
             </div>

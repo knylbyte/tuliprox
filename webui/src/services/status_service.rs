@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use crate::services::request_get;
 use shared::model::StatusCheck;
 
@@ -17,7 +18,7 @@ impl StatusService {
         Self {}
     }
 
-    pub async fn get_server_status(&self) -> Result<StatusCheck, crate::error::Error> {
-        request_get::<StatusCheck>(STATUS_PATH).await
+    pub async fn get_server_status(&self) -> Result<Rc<StatusCheck>, crate::error::Error> {
+        request_get::<Rc<StatusCheck>>(STATUS_PATH).await
     }
 }

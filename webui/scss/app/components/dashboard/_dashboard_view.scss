@@ -45,9 +45,9 @@ $dashboard-mobile-size: 1280px;
 
   .tp__documentation {
     fill: var(--documentation-color);
+  }
 
-    svg {
-      transform: scale(1.4);
-    }
+  .tp__github {
+    fill: var(--github-color);
   }
 }

@@ -11,7 +11,7 @@ pub fn UserlistList() -> Html {
     let handle_create = {
         let userlist_ctx = userlist_ctx.clone();
         Callback::from(move |_| {
-            userlist_ctx.active_page.set(UserlistPage::Create);
+            userlist_ctx.active_page.set(UserlistPage::Edit);
         })
     };
 
@@ -30,11 +30,11 @@ pub fn UserlistList() -> Html {
         <div class="tp__userlist-list__header tp__list-list__header">
           <h1>{ translate.t("LABEL.USERS")}</h1>
           <TextButton style="primary" name="new_userlist"
-                icon="UserlistAdd"
+                icon="PersonAdd"
                 title={ translate.t("LABEL.NEW_USER")}
                 onclick={handle_create}></TextButton>
         </div>
-        <div class="tp__userlist-list__bodytp__list-list__body">
+        <div class="tp__userlist-list__body tp__list-list__body">
            { userlist_body }
         </div>
       </div>
