@@ -10,11 +10,11 @@ use shared::model::EpgNamePrefix;
 use shared::utils::CONSTANTS;
 use std::borrow::Cow;
 use std::cmp::min;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
+use dashmap::DashMap;
 
 /// Splits a string at the first delimiter if the prefix matches a known country code.
 ///
@@ -423,7 +423,7 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
         let epg_children = Mutex::new(Vec::new());
         let epg_attributes = tv_guides.first().and_then(|t| t.attributes.clone());
         let count = tv_guides.iter().map(|tvg| tvg.children.len()).sum();
-        let channel_mapping: RwLock<HashMap<String, i16>> = RwLock::new(HashMap::with_capacity(count));
+        let channel_mapping: DashMap<String, i16> = DashMap::with_capacity(count);
 
         let mut sorted_guides = tv_guides.to_vec();
         // sort by priority
@@ -435,24 +435,20 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
                 if c.name.as_str() == EPG_TAG_CHANNEL {
                     if let Some(chan_id) = c.get_attribute_value(EPG_ATTRIB_ID) {
                         let should_add = {
-                            let channel_map = channel_mapping.read().unwrap();
                             // if not stored
-                            !channel_map.contains_key(chan_id) ||
+                            !channel_mapping.contains_key(chan_id) ||
                                 // or if priority is higher (less means higher priority)
-                                channel_map.get(chan_id).is_none_or(|&priority| guide.priority < priority)
+                                channel_mapping.get(chan_id).as_deref().is_none_or(|&priority| guide.priority < priority)
                         };
                         if should_add {
-                            let mut channel_map = channel_mapping.write().unwrap();
-                            match channel_map.entry(chan_id.to_string()) {
-                                Entry::Vacant(e) => {
-                                    e.insert(guide.priority);
+                            if let Some(mut existing) = channel_mapping.get_mut(chan_id) {
+                                if guide.priority < *existing {
+                                    *existing = guide.priority;
                                     children.push(c.clone());
                                 }
-                                Entry::Occupied(mut e) if guide.priority < *e.get() => {
-                                    e.insert(guide.priority);
-                                    children.push(c.clone());
-                                }
-                                Entry::Occupied(_) => {}
+                            } else {
+                                channel_mapping.insert(chan_id.clone(), guide.priority);
+                                children.push(c.clone());
                             }
                         }
                     }
@@ -461,9 +457,8 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
             guide.children.iter().for_each(|c| {
                 if c.name.as_str() == EPG_TAG_PROGRAMME {
                     if let Some(chan_id) = c.get_attribute_value(EPG_ATTRIB_CHANNEL) {
-                        let channel_map = channel_mapping.read().unwrap();
-                        if let Some(&stored_priority) = channel_map.get(chan_id) {
-                            if stored_priority == guide.priority {
+                        if let Some(stored_priority) = channel_mapping.get(chan_id) {
+                            if *stored_priority == guide.priority {
                                 children.push(c.clone());
                             }
                         }
@@ -482,7 +477,6 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
         Some(epg)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

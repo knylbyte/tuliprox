@@ -1,6 +1,5 @@
 use shared::model::{ProxyUserStatus};
 use yew::prelude::*;
-use yew_i18n::use_translation;
 use crate::app::components::Chip;
 
 fn convert_status_to_chip_style(status: &ProxyUserStatus) -> String {

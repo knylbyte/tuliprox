@@ -1,55 +1,55 @@
+use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
 use crate::model::Config;
-use crate::model::{ProxyUserCredentials};
-use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info};
+use crate::model::ProxyUserCredentials;
+use dashmap::DashMap;
 use jsonwebtoken::get_current_timestamp;
 use log::{debug, info};
-use std::collections::HashMap;
+use shared::model::UserConnectionPermission;
+use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use shared::model::UserConnectionPermission;
+use crate::api::model::active_provider_manager::ActiveProviderManager;
 
 macro_rules! active_user_manager_shared_impl {
     () => {
           #[inline]
-        async fn get_active_connections(user: &Arc<RwLock<HashMap<String, UserConnectionData>>>) -> usize {
-            user.read().await.values().map(|c| c.connections as usize).sum()
+        fn get_active_connections(user: &Arc<DashMap<String, UserConnectionData>>) -> usize {
+            user.iter().map(|c| c.connections as usize).sum()
         }
 
         fn log_active_user(&self) {
             if self.is_log_user_enabled() {
                 let user = Arc::clone(&self.user);
-                tokio::spawn(async move {
-                    let user_count = user.read().await.len();
-                    let user_connection_count = Self::get_active_connections(&user).await;
-                    info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
-                });
+                let user_count = user.len();
+                let user_connection_count = Self::get_active_connections(&user);
+                info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
             }
         }
 
-        pub async fn remove_connection(&self, addr: &str) {
-            let mut addr_lock = self.user_by_addr.write().await;
-            let username_opt = addr_lock.get(addr).cloned();
+        pub fn remove_connection(&self, addr: &str) {
+            let username_opt = self.user_by_addr.get(addr).as_deref().cloned();
             if let Some(username) = username_opt {
-                addr_lock.remove(addr);
-                drop(addr_lock);
-                let mut lock = self.user.write().await;
-                if let Some(connection_data) = lock.get_mut(&username) {
+                self.user_by_addr.remove(addr);
+                let mut remove_user = false;
+                if let Some(mut entry) = self.user.get_mut(&username) {
+                    let connection_data = &mut *entry;
                     if connection_data.connections > 0 {
                         connection_data.connections -= 1;
                     }
+
                     if connection_data.connections == 0 {
-                        lock.remove(&username);
+                        remove_user = true;
                     } else if connection_data.connections < connection_data.max_connections {
-                        // Grace timeout expired, reset grace counters
                         connection_data.granted_grace = false;
                         connection_data.grace_ts = 0;
                     }
-
                 }
-
-                drop(lock);
+                if remove_user {
+                    self.user.remove(&username);
+                }
             }
+            self.shared_stream_manager.release_connection(addr);
+            self.provider_manager.release_connection(addr);
             self.log_active_user();
         }
     };
@@ -67,13 +67,15 @@ fn get_grace_options(config: &Config) -> (u64, u64) {
 
 struct ConnectionGuardUserManager {
     log_active_user: bool,
-    user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
-    user_by_addr: Arc<RwLock<HashMap<String, String>>>,
+    user: Arc<DashMap<String, UserConnectionData>>,
+    user_by_addr: Arc<DashMap<String, String>>,
+    shared_stream_manager: Arc<SharedStreamManager>,
+    provider_manager: Arc<ActiveProviderManager>,
 }
 
 impl ConnectionGuardUserManager {
     active_user_manager_shared_impl!();
-    fn is_log_user_enabled(&self)-> bool {
+    fn is_log_user_enabled(&self) -> bool {
         self.log_active_user
     }
 }
@@ -87,9 +89,7 @@ impl Drop for UserConnectionGuard {
     fn drop(&mut self) {
         let manager = self.manager.clone();
         let addr = self.addr.clone();
-        tokio::spawn(async move {
-            manager.remove_connection(&addr).await;
-        });
+        manager.remove_connection(&addr);
     }
 }
 
@@ -139,27 +139,33 @@ pub struct ActiveUserManager {
     grace_period_millis: AtomicU64,
     grace_period_timeout_secs: AtomicU64,
     log_active_user: AtomicBool,
-    user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
-    user_by_addr: Arc<RwLock<HashMap<String, String>>>,
+    user: Arc<DashMap<String, UserConnectionData>>,
+    user_by_addr: Arc<DashMap<String, String>>,
     gc_ts: Option<AtomicU64>,
     close_signal_tx: tokio::sync::broadcast::Sender<String>,
+    shared_stream_manager: Arc<SharedStreamManager>,
+    provider_manager: Arc<ActiveProviderManager>,
 }
 
 impl ActiveUserManager {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(config: &Config, shared_stream_manager: &Arc<SharedStreamManager>, provider_manager: &Arc<ActiveProviderManager>) -> Self {
         let log_active_user = config.log.as_ref().is_some_and(|l| l.log_active_user);
         let (grace_period_millis, grace_period_timeout_secs) = get_grace_options(config);
         let (close_signal_tx, _) = tokio::sync::broadcast::channel(10);
         Self {
-            grace_period_millis : AtomicU64::new(grace_period_millis),
+            grace_period_millis: AtomicU64::new(grace_period_millis),
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
             log_active_user: AtomicBool::new(log_active_user),
-            user: Arc::new(RwLock::new(HashMap::new())),
-            user_by_addr: Arc::new(RwLock::new(HashMap::new())),
+            user: Arc::new(DashMap::new()),
+            user_by_addr: Arc::new(DashMap::new()),
             gc_ts: Some(AtomicU64::new(current_time_secs())),
-            close_signal_tx
+            close_signal_tx,
+            shared_stream_manager: Arc::clone(shared_stream_manager),
+            provider_manager: Arc::clone(provider_manager),
         }
     }
+
+    active_user_manager_shared_impl!();
 
     pub fn update_config(&self, config: &Config) {
         let log_active_user = config.log.as_ref().is_some_and(|l| l.log_active_user);
@@ -174,11 +180,13 @@ impl ActiveUserManager {
             log_active_user: self.log_active_user.load(Ordering::Relaxed),
             user: Arc::clone(&self.user),
             user_by_addr: Arc::clone(&self.user_by_addr),
+            shared_stream_manager: Arc::clone(&self.shared_stream_manager),
+            provider_manager:  Arc::clone(&self.provider_manager),
         }
     }
 
-    pub async fn user_connections(&self, username: &str) -> u32 {
-        if let Some(connection_data) = self.user.read().await.get(username) {
+    pub fn user_connections(&self, username: &str) -> u32 {
+        if let Some(connection_data) = self.user.get(username) {
             return connection_data.connections;
         }
         0
@@ -220,40 +228,37 @@ impl ActiveUserManager {
         UserConnectionPermission::Exhausted
     }
 
-    pub async fn connection_permission(
+    pub fn connection_permission(
         &self,
         username: &str,
         max_connections: u32,
     ) -> UserConnectionPermission {
         if max_connections > 0 {
-            if let Some(connection_data) = self.user.write().await.get_mut(username) {
-                return self.check_connection_permission(username, connection_data);
+            if let Some(mut entry) = self.user.get_mut(username) {
+                return self.check_connection_permission(username, &mut entry);
             }
         }
         UserConnectionPermission::Allowed
     }
 
-
-    pub async fn active_users(&self) -> usize {
-        self.user.read().await.len()
+    pub fn active_users(&self) -> usize {
+        self.user.len()
     }
 
-    pub async fn active_connections(&self) -> usize {
-        Self::get_active_connections(&self.user).await
+    pub fn active_connections(&self) -> usize {
+        Self::get_active_connections(&self.user)
     }
 
-    pub async fn add_connection(&self, username: &str, max_connections: u32, addr: &str) -> UserConnectionGuard {
-        let mut lock = self.user.write().await;
-        if let Some(connection_data) = lock.get_mut(username) {
-            connection_data.connections += 1;
-            connection_data.max_connections = max_connections;
-        } else {
-            lock.insert(username.to_string(), UserConnectionData::new(1, max_connections));
-        }
-        drop(lock);
-        let mut lock = self.user_by_addr.write().await;
-        lock.insert(addr.to_string(), username.to_string());
-        drop(lock);
+    pub fn add_connection(&self, username: &str, max_connections: u32, addr: &str) -> UserConnectionGuard {
+        self.user
+            .entry(username.to_string())
+            .and_modify(|connection_data| {
+                connection_data.connections += 1;
+                connection_data.max_connections = max_connections;
+            })
+            .or_insert_with(|| UserConnectionData::new(1, max_connections));
+
+        self.user_by_addr.insert(addr.to_string(), username.to_string());
 
         self.log_active_user();
 
@@ -264,8 +269,7 @@ impl ActiveUserManager {
         }
     }
 
-    active_user_manager_shared_impl!();
-    fn is_log_user_enabled(&self)-> bool {
+    fn is_log_user_enabled(&self) -> bool {
         self.log_active_user.load(Ordering::Relaxed)
     }
 
@@ -287,54 +291,59 @@ impl ActiveUserManager {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn create_user_session(&self, user: &ProxyUserCredentials, session_token: &str, virtual_id: u32,
-                                     provider: &str, stream_url: &str, addr: &str,
-                                     connection_permission: UserConnectionPermission) -> Option<String> {
-        self.gc().await;
-        let mut lock = self.user.write().await;
-        if let Some(connection_data) = lock.get_mut(&user.username) {
-            // check existing session
-            for session in &mut connection_data.sessions {
-                if session.token.eq(&session_token) {
-                    session.ts = current_time_secs();
-                    if !session.stream_url.eq(&stream_url) {
-                        session.stream_url = stream_url.to_string();
-                    }
-                    if !provider.eq(&session.provider) {
-                        session.provider = provider.to_string();
-                    }
-                    session.permission = connection_permission;
-                    debug!("Using session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
-                    return Some(session.token.to_string());
-                }
-            }
+    pub fn create_user_session(&self, user: &ProxyUserCredentials, session_token: &str, virtual_id: u32,
+                               provider: &str, stream_url: &str, addr: &str,
+                               connection_permission: UserConnectionPermission) -> String {
+        self.gc();
+        let entry = self.user.entry(user.username.to_string());
+        let mut connection_data = entry.or_insert_with(|| {
+            debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
+            let mut data = UserConnectionData::new(0, user.max_connections);
+            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
+            data.add_session(session);
+            data
+        });
 
-            // no session creates new one
-            debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
-            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
-            let token = session.token.clone();
-            connection_data.add_session(session);
-            Some(token)
-        } else {
-            debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
-            let mut connection_data = UserConnectionData::new(0, user.max_connections);
-            let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
-            let token = session.token.clone();
-            connection_data.add_session(session);
-            lock.insert(user.username.to_string(), connection_data);
-            Some(token)
+        // If a session exists, update it
+        for session in &mut connection_data.sessions {
+            if session.token == session_token {
+                session.ts = current_time_secs();
+                if session.stream_url != stream_url {
+                    session.stream_url = stream_url.to_string();
+                }
+                if session.provider != provider {
+                    session.provider = provider.to_string();
+                }
+                session.permission = connection_permission;
+                debug!("Using session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
+                return session.token.clone();
+            }
         }
+
+        // If not session exists, create one
+        debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
+        let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
+        let token = session.token.clone();
+        connection_data.add_session(session);
+        token
     }
 
-    pub async fn update_session_addr(&self, username: &str, token: &str, addr: &str) {
-        let mut lock = self.user.write().await;
-        if let Some(connection_data) = lock.get_mut(username) {
-            for session in &mut connection_data.sessions {
-                if session.token.eq(token) {
-                    self.drop_connection(&session.addr);
+    pub fn update_session_addr(&self, username: &str, token: &str, addr: &str) {
+        let drop_addr = self.user.get_mut(username).and_then(|mut entry| {
+            let connection_data = &mut *entry;
+            connection_data.sessions.iter_mut().find_map(|session| {
+                if session.token == token {
+                    let old_addr = session.addr.clone();
                     session.addr = addr.to_string();
+                    Some(old_addr)
+                } else {
+                    None
                 }
-            }
+            })
+        });
+
+        if let Some(session_addr) = drop_addr {
+            self.drop_connection(&session_addr);
         }
     }
 
@@ -346,13 +355,14 @@ impl ActiveUserManager {
         self.close_signal_tx.subscribe()
     }
 
-    pub async fn get_user_session(&self, username: &str, token: &str) -> Option<UserSession> {
-        self.update_user_session(username, token).await
+    pub fn get_user_session(&self, username: &str, token: &str) -> Option<UserSession> {
+        self.update_user_session(username, token)
     }
 
-    async fn update_user_session(&self, username: &str, token: &str) -> Option<UserSession> {
-        let mut lock = self.user.write().await;
-        if let Some(connection_data) = lock.get_mut(username) {
+    fn update_user_session(&self, username: &str, token: &str) -> Option<UserSession> {
+        if let Some(mut entry) = self.user.get_mut(username) {
+            let connection_data = &mut *entry;
+
             if connection_data.max_connections == 0 {
                 return Self::find_user_session(token, &connection_data.sessions).cloned();
             }
@@ -378,13 +388,13 @@ impl ActiveUserManager {
         None
     }
 
-    async fn gc(&self) {
+    fn gc(&self) {
         if let Some(gc_ts) = &self.gc_ts {
             let ts = gc_ts.load(Ordering::Acquire);
             let now = current_time_secs();
             if now - ts > USER_CON_TTL {
-                let mut lock = self.user.write().await;
-                for (_, connection_data) in lock.iter_mut() {
+                for mut entry in self.user.iter_mut() {
+                    let connection_data = &mut *entry;
                     connection_data.sessions.retain(|s| now - s.ts < USER_CON_TTL);
                 }
                 gc_ts.store(now, Ordering::Release);

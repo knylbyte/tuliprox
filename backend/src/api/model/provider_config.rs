@@ -41,6 +41,20 @@ pub struct ProviderConfig {
     connection: RwLock<ProviderConfigConnection>,
 }
 
+impl PartialEq for ProviderConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.name == other.name
+            && self.url == other.url
+            && self.username == other.username
+            && self.password == other.password
+            && self.input_type == other.input_type
+            && self.max_connections == other.max_connections
+            && self.priority == other.priority
+           // Note: self.connection is skipped
+    }
+}
+
 impl ProviderConfig {
     pub fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>) -> Self
     where
@@ -216,7 +230,6 @@ pub(in crate::api::model) struct ProviderConfigWrapper {
     inner: Arc<ProviderConfig>,
 }
 
-
 impl ProviderConfigWrapper {
     pub fn new(cfg: ProviderConfig) -> Self {
         Self {
@@ -226,13 +239,13 @@ impl ProviderConfigWrapper {
 
     pub async fn force_allocate(&self) -> ProviderAllocation {
         self.inner.force_allocate().await;
-        ProviderAllocation::Available(Arc::clone(&self.inner))
+        ProviderAllocation::new_available(Arc::clone(&self.inner))
     }
 
     pub async fn try_allocate(&self, grace: bool, grace_period_timeout_secs: u64) -> ProviderAllocation {
         match self.inner.try_allocate(grace, grace_period_timeout_secs).await {
-            ProviderConfigAllocation::Available => ProviderAllocation::Available(Arc::clone(&self.inner)),
-            ProviderConfigAllocation::GracePeriod => ProviderAllocation::GracePeriod(Arc::clone(&self.inner)),
+            ProviderConfigAllocation::Available => ProviderAllocation::new_available(Arc::clone(&self.inner)),
+            ProviderConfigAllocation::GracePeriod => ProviderAllocation::new_grace_period(Arc::clone(&self.inner)),
             ProviderConfigAllocation::Exhausted => ProviderAllocation::Exhausted,
         }
     }

@@ -48,7 +48,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
 
     let (request_url, session_token) = match user_session {
         Some(session) => {
-            match app_state.active_provider.force_exact_acquire_connection(&session.provider).await.get_provider_config() {
+            match app_state.active_provider.force_exact_acquire_connection(&session.provider, addr).await.get_provider_config() {
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
                     (stream_url, Some(session.token.to_string()))
@@ -61,8 +61,8 @@ pub(in crate::api) async fn handle_hls_stream_request(
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
                     let user_session_token = format!("{fingerprint}{virtual_id}");
-                    let session_token= app_state.active_users.create_user_session(user, &user_session_token, virtual_id, &provider_cfg.name, &stream_url, addr, connection_permission).await;
-                    (stream_url, session_token)
+                    let session_token= app_state.active_users.create_user_session(user, &user_session_token, virtual_id, &provider_cfg.name, &stream_url, addr, connection_permission);
+                    (stream_url, Some(session_token))
                 },
                 None => (url, None),
             }
@@ -108,7 +108,7 @@ async fn hls_api_stream(
     let input = try_option_bad_request!(app_state.app_config.get_input_by_id(params.input_id), true, format!("Cant find input for target {target_name}, context {}, stream_id {virtual_id}", XtreamCluster::Live));
 
     let user_session_token = format!("{fingerprint}{virtual_id}");
-    let mut user_session = app_state.active_users.get_user_session(&user.username, &user_session_token).await;
+    let mut user_session = app_state.active_users.get_user_session(&user.username, &user_session_token);
 
     if let Some(session)  = &mut user_session {
         if session.permission == UserConnectionPermission::Exhausted {
@@ -134,7 +134,7 @@ async fn hls_api_stream(
             return axum::http::StatusCode::BAD_REQUEST.into_response();
         }
 
-        let connection_permission = user.connection_permission(&app_state).await;
+        let connection_permission = user.connection_permission(&app_state);
         if connection_permission == UserConnectionPermission::Exhausted {
             return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserConnectionsExhausted).into_response();
         }

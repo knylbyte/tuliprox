@@ -54,8 +54,9 @@ async fn healthcheck() -> impl axum::response::IntoResponse {
 fn create_shared_data(app_config: &Arc<AppConfig>, forced_targets: &Arc<ProcessTargets>) -> AppState {
     let config = app_config.config.load();
     let cache = create_cache(&config);
-    let active_users = Arc::new(ActiveUserManager::new(&config));
+    let shared_stream_manager = Arc::new(SharedStreamManager::new());
     let active_provider = Arc::new(ActiveProviderManager::new(app_config));
+    let active_users = Arc::new(ActiveUserManager::new(&config, &shared_stream_manager, &active_provider));
     let client = create_http_client(app_config);
 
     AppState {
@@ -64,7 +65,7 @@ fn create_shared_data(app_config: &Arc<AppConfig>, forced_targets: &Arc<ProcessT
         http_client: Arc::new(ArcSwap::from_pointee(client)),
         downloads: Arc::new(DownloadQueue::new()),
         cache: Arc::new(ArcSwapOption::from(cache)),
-        shared_stream_manager: Arc::new(SharedStreamManager::new()),
+        shared_stream_manager,
         active_users,
         active_provider,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),

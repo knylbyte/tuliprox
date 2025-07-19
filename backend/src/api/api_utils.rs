@@ -287,12 +287,12 @@ struct StreamingStrategy {
 /// - and optional HTTP headers to include in the request.
 ///
 /// This logic helps abstract the decision-making behind provider selection and stream URL resolution.
-async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, input: &ConfigInput, force_provider: Option<&str>)
+async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, addr: &str, input: &ConfigInput, force_provider: Option<&str>)
                                     -> StreamingStrategy {
     // allocate a provider connection
     let provider_connection_guard = match force_provider {
-        Some(provider) => app_state.active_provider.force_exact_acquire_connection(provider).await,
-        None => app_state.active_provider.acquire_connection(&input.name).await
+        Some(provider) => app_state.active_provider.force_exact_acquire_connection(provider, addr).await,
+        None => app_state.active_provider.acquire_connection(&input.name, addr).await
     };
     let stream_response_params = match &*provider_connection_guard {
         ProviderAllocation::Exhausted => {
@@ -300,8 +300,8 @@ async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, inpu
             let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
             ProviderStreamState::Custom(stream)
         }
-        ProviderAllocation::Available(ref provider)
-        | ProviderAllocation::GracePeriod(ref provider) => {
+        ProviderAllocation::Available(_, ref provider)
+        | ProviderAllocation::GracePeriod(_, ref provider) => {
             // force_stream_provider means we keep the url and the provider.
             // If force_stream_provider or the input is the same as the config we don't need to get new url
             let (provider, url) = if force_provider.is_some() || provider.id == input.id {
@@ -310,7 +310,7 @@ async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, inpu
                 (provider.name.to_string(), get_stream_alternative_url(stream_url, input, provider))
             };
 
-            if matches!(&*provider_connection_guard, ProviderAllocation::Available(_)) {
+            if matches!(&*provider_connection_guard, ProviderAllocation::Available(_, _)) {
                 ProviderStreamState::Available(Some(provider), url)
             } else {
                 ProviderStreamState::GracePeriod(Some(provider), url)
@@ -336,6 +336,7 @@ fn get_grace_period_millis(connection_permission: UserConnectionPermission, stre
 async fn create_stream_response_details(app_state: &AppState,
                                         stream_options: &StreamOptions,
                                         stream_url: &str,
+                                        addr: &str,
                                         req_headers: &HeaderMap,
                                         input: &ConfigInput,
                                         item_type: PlaylistItemType,
@@ -343,7 +344,7 @@ async fn create_stream_response_details(app_state: &AppState,
                                         connection_permission: UserConnectionPermission,
                                         force_provider: Option<&str>) -> StreamDetails {
     let mut streaming_strategy =
-        resolve_streaming_strategy(app_state, stream_url, input, force_provider).await;
+        resolve_streaming_strategy(app_state, stream_url, addr, input, force_provider).await;
     let config_grace_period_millis = app_state.app_config.config.load().reverse_proxy.as_ref()
         .and_then(|r| r.stream.as_ref()).map_or_else(default_grace_period_millis, |s| s.grace_period_millis);
     let grace_period_millis = get_grace_period_millis(connection_permission, &streaming_strategy.provider_stream_state, config_grace_period_millis);
@@ -537,12 +538,12 @@ pub async fn force_provider_stream_response(addr: &str,
     let connection_permission = UserConnectionPermission::Allowed;
 
     let mut stream_details =
-        create_stream_response_details(app_state, &stream_options, &user_session.stream_url, req_headers, input, item_type, share_stream, connection_permission, Some(&user_session.provider)).await;
+        create_stream_response_details(app_state, &stream_options, &user_session.stream_url, addr, req_headers, input, item_type, share_stream, connection_permission, Some(&user_session.provider)).await;
 
     if stream_details.has_stream() {
         let provider_response = stream_details.stream_info.as_ref().map(|(h, sc, url)| (h.clone(), *sc, url.clone()));
-        app_state.active_users.update_session_addr(&user.username, &user_session.token, addr).await;
-        let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr).await;
+        app_state.active_users.update_session_addr(&user.username, &user_session.token, addr);
+        let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr);
 
         let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
         let mut response = axum::response::Response::builder().status(status_code);
@@ -580,26 +581,27 @@ pub async fn stream_response(addr: &str,
 
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
-        if let Some(value) = shared_stream_response(app_state, stream_url, user, connection_permission, addr).await {
+        if let Some(value) = shared_stream_response(app_state, stream_url, addr, user, connection_permission) {
             return value.into_response();
         }
     }
 
     let stream_options = get_stream_options(app_state);
     let mut stream_details =
-        create_stream_response_details(app_state, &stream_options, stream_url, req_headers, input, item_type, share_stream, connection_permission, None).await;
+        create_stream_response_details(app_state, &stream_options, stream_url, addr, req_headers, input, item_type, share_stream, connection_permission, None).await;
     if stream_details.has_stream() {
         // let content_length = get_stream_content_length(provider_response.as_ref());
         let provider_response = stream_details.stream_info.as_ref().map(|(h, sc, response_url)| (h.clone(), *sc, response_url.clone()));
         let provider_name = stream_details.provider_connection_guard.as_ref().and_then(ProviderConnectionGuard::get_provider_name);
 
-        let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr).await;
+        let provider_guard = if share_stream { stream_details.provider_connection_guard.take() } else { None };
+        let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr);
         let stream_resp = if share_stream {
             debug_if_enabled!("Streaming shared stream request from {}", sanitize_sensitive_info(stream_url));
             // Shared Stream response
             let shared_headers = provider_response.as_ref().map_or_else(Vec::new, |(h, _, _)| h.clone());
-            SharedStreamManager::subscribe(app_state, stream_url, stream, shared_headers, stream_options.buffer_size).await;
-            if let Some(broadcast_stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url).await {
+            SharedStreamManager::subscribe(app_state, stream_url, addr, stream, shared_headers, stream_options.buffer_size, provider_guard);
+            if let Some(broadcast_stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url, addr) {
                 let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
                 let mut response = axum::response::Response::builder()
                     .status(status_code);
@@ -627,7 +629,7 @@ pub async fn stream_response(addr: &str,
 
             if let Some(provider) = provider_name {
                 if matches!(item_type, PlaylistItemType::LiveHls  | PlaylistItemType::LiveDash | PlaylistItemType::Video | PlaylistItemType::Series | PlaylistItemType::Catchup) {
-                    let _ = app_state.active_users.create_user_session(user, session_token, virtual_id, &provider, &session_url, addr, connection_permission).await;
+                    let _ = app_state.active_users.create_user_session(user, session_token, virtual_id, &provider, &session_url, addr, connection_permission);
                 }
             }
 
@@ -649,13 +651,13 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
         .map(|stream| stream.throttle_kbps).unwrap_or_default()
 }
 
-async fn shared_stream_response(app_state: &AppState, stream_url: &str, user: &ProxyUserCredentials, connect_permission: UserConnectionPermission, addr: &str) -> Option<impl IntoResponse> {
-    if let Some(stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url).await {
+fn shared_stream_response(app_state: &AppState, stream_url: &str, addr: &str, user: &ProxyUserCredentials, connect_permission: UserConnectionPermission) -> Option<impl IntoResponse> {
+    if let Some(stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url, addr) {
         debug_if_enabled!("Using shared stream {}", sanitize_sensitive_info(stream_url));
-        if let Some(headers) = app_state.shared_stream_manager.get_shared_state_headers(stream_url).await {
+        if let Some(headers) = app_state.shared_stream_manager.get_shared_state_headers(stream_url) {
             let (status_code, header_map) = get_stream_response_with_headers(Some((headers.clone(), axum::http::StatusCode::OK)));
             let stream_details = StreamDetails::from_stream(stream);
-            let stream = ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr).await.boxed();
+            let stream = ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr).boxed();
             let mut response = axum::response::Response::builder()
                 .status(status_code);
             for (key, value) in &header_map {

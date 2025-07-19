@@ -3,9 +3,11 @@ use yew::UseStateHandle;
 use shared::model::{AppConfigDto, ConfigTargetDto, ProxyUserCredentialsDto, StatusCheck};
 use crate::app::components::{InputRow, PlaylistPage, UserlistPage};
 
+type SingleSource = (Vec<Rc<InputRow>>, Vec<Rc<ConfigTargetDto>>);
+
 #[derive(Clone, PartialEq)]
 pub struct PlaylistContext {
-    pub sources: Rc<Option<Rc<Vec<(Vec<Rc<InputRow>>, Vec<Rc<ConfigTargetDto>>)>>>>,
+    pub sources: Rc<Option<Rc<Vec<SingleSource>>>>,
     pub active_page: UseStateHandle<PlaylistPage>,
 }
 

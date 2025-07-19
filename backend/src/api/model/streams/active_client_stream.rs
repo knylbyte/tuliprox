@@ -35,7 +35,7 @@ pub(in crate::api) struct ActiveClientStream {
 }
 
 impl ActiveClientStream {
-    pub(crate) async fn new(mut stream_details: StreamDetails,
+    pub(crate) fn new(mut stream_details: StreamDetails,
                             app_state: &AppState,
                             user: &ProxyUserCredentials,
                             connection_permission: UserConnectionPermission,
@@ -47,7 +47,7 @@ impl ActiveClientStream {
         }
         let grant_user_grace_period = connection_permission == UserConnectionPermission::GracePeriod;
         let username = user.username.as_str();
-        let user_connection_guard = Some(active_user.add_connection(username, user.max_connections, addr).await);
+        let user_connection_guard = Some(active_user.add_connection(username, user.max_connections, addr));
         let cfg = &app_state.app_config;
         let waker = Arc::new(Mutex::new(None));
         let waker_clone = Arc::clone(&waker);
@@ -119,12 +119,12 @@ impl ActiveClientStream {
                 let mut updated = false;
 
                 if let Some((username, user_manager, max_connections, reconnect_flag)) = user_grace_check {
-                    let active_connections = user_manager.user_connections(&username).await;
+                    let active_connections = user_manager.user_connections(&username);
                     if active_connections > max_connections {
                         info!("User connections exhausted for active clients: {username}");
                         stream_strategy_flag_copy.store(USER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
                         if let Some(flag) = reconnect_flag {
-                            info!("Stopped reconnecting, user connections exhausted");
+                            info!("Stopped reconnecting, user connections exhausted: {username}");
                             flag.notify();
                         }
                         updated = true;
@@ -137,7 +137,7 @@ impl ActiveClientStream {
                             info!("Provider connections exhausted for active clients: {provider_name}");
                             stream_strategy_flag_copy.store(PROVIDER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
                             if let Some(flag) = reconnect_flag {
-                                info!("Stopped reconnecting, provider connections exhausted");
+                                info!("Stopped reconnecting, provider connections exhausted {provider_name}");
                                 flag.notify();
                             }
                             updated = true;

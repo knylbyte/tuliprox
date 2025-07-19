@@ -102,11 +102,11 @@ impl ProxyUserCredentials {
         !self.has_permissions(app_state)
     }
 
-    pub async fn connection_permission(&self, app_state: &AppState) -> UserConnectionPermission {
+    pub fn connection_permission(&self, app_state: &AppState) -> UserConnectionPermission {
         let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.app_config.config);
         if self.max_connections > 0 && config.user_access_control {
             // we allow requests with max connection reached, but we should block streaming after grace period
-            return app_state.get_connection_permission(&self.username, self.max_connections).await;
+            return app_state.get_connection_permission(&self.username, self.max_connections);
         }
         UserConnectionPermission::Allowed
     }

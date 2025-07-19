@@ -298,7 +298,7 @@ async fn create_status_check(app_state: &Arc<AppState>) -> StatusCheck {
     };
     let (active_users, active_user_connections) = {
         let active_user = &app_state.active_users;
-        (active_user.active_users().await, active_user.active_connections().await)
+        (active_user.active_users(), active_user.active_connections())
     };
 
     let active_provider_connections = app_state.active_provider.active_connections().await.map(|c| c.into_iter().collect::<BTreeMap<_, _>>());

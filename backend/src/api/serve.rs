@@ -135,23 +135,23 @@ where
 
         let user_manager_clone = Arc::clone(&user_manager);
         let mut addr_close_rx = user_manager_clone.get_close_connection_channel();
-        let connection_closed = async move || {
+        let connection_closed = move || {
             debug!("Connection closed: {remote_addr}");
             let addr = remote_addr.to_string();
-            user_manager_clone.remove_connection(&addr).await;
+            user_manager_clone.remove_connection(&addr);
         };
 
         loop {
             tokio::select! {
                 result = conn.as_mut() => {
                     if let Err(err) = result {
-                        connection_closed().await;
+                        connection_closed();
                         trace!("failed to serve connection: {err:#}");
                     }
                     break;
                 }
                 () = &mut signal_closed => {
-                    connection_closed().await;
+                    connection_closed();
                     trace!("signal received in task, starting graceful shutdown");
                     conn.as_mut().graceful_shutdown();
                 }
