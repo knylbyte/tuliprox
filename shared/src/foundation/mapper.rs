@@ -37,7 +37,7 @@ block_expr = { "{" ~ statements ~ "}" }
 condition = { function_call | var_access | field_access }
 assignment = { (field_access | identifier) ~ "=" ~ expression }
 expression = { assignment | map_block | match_block | function_call | regex_expr | string_literal | number | var_access | field_access | null | block_expr }
-function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" | "template" }
+function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" | "template" | "replace" }
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
 match_case_key = { any_match | identifier }
@@ -107,6 +107,7 @@ enum BuiltInFunction {
     ToNumber,
     First,
     Template,
+    Replace,
 }
 
 impl FromStr for BuiltInFunction {
@@ -123,6 +124,7 @@ impl FromStr for BuiltInFunction {
             "number" => Ok(Self::ToNumber),
             "first" => Ok(Self::First),
             "template" => Ok(Self::Template),
+            "replace" => Ok(Self::Replace),
             _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown function {}", s),
         }
     }
@@ -659,8 +661,13 @@ impl<'a> MapperContext<'a> {
                         if args.len() > 1 {
                             return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Function accepts only one argument {:?}, {} given", name, args.len());
                         }
+                    },
+                    BuiltInFunction::Replace => {
+                        if args.len() != 3  {
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Function accepts three arguments {:?}, {} given", name, args.len());
+                        }
                     }
-                    _ => {}
+                        _ => {}
                 }
                 for expr_id in args {
                     self.validate_expr(*expr_id, identifiers)?;
@@ -887,6 +894,17 @@ fn concat_args(args: &Vec<EvalResult>) -> Vec<Cow<str>> {
     result
 }
 
+macro_rules! extract_evaluated_arg_value {
+    ($evaluated_args:expr, $index:expr) => {{
+        let evaluated_arg = &$evaluated_args[$index];
+        match evaluated_arg {
+            Value(value) => Some(value),
+            Named(values) => values.first().map(|(_key, val)| val),
+            _ => None,
+        }
+    }};
+}
+
 impl Expression {
     #[allow(clippy::too_many_lines)]
     pub fn eval(&self, ctx: &mut MapperContext, accessor: &mut ValueAccessor) -> EvalResult {
@@ -1048,14 +1066,7 @@ impl Expression {
                             }
                         }
                         BuiltInFunction::Template => {
-                            let evaluated_arg = &evaluated_args[0];
-                            let value = match evaluated_arg {
-                                Value(value) => {
-                                    Some(value)
-                                }
-                                Named(values) => values.first().map(|(_key, val)| val),
-                                _ => None
-                            };
+                            let value = extract_evaluated_arg_value!(evaluated_args, 0);
                             if let Some(val) = value {
                                 match ctx.get_template(val) {
                                     Some(v) => Value(v.to_string()),
@@ -1063,6 +1074,17 @@ impl Expression {
                                 }
                             } else {
                                 Undefined
+                            }
+                        }
+                        BuiltInFunction::Replace => {
+                            let value = extract_evaluated_arg_value!(evaluated_args, 0);
+                            let pattern = extract_evaluated_arg_value!(evaluated_args, 1);
+                            let substring = extract_evaluated_arg_value!(evaluated_args, 2);
+
+                            if let (Some(text), Some(pat), Some(subst)) = (value, pattern, substring) {
+                                Value(text.replace(pat, subst))
+                            } else {
+                                evaluated_args[0].clone()
                             }
                         }
                     }
