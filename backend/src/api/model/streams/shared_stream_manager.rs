@@ -10,7 +10,7 @@ use tokio::sync::mpsc::Sender;
 
 use crate::api::model::stream::BoxedProviderStream;
 use dashmap::DashMap;
-use log::trace;
+use log::{trace};
 use shared::utils::sanitize_sensitive_info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -53,13 +53,21 @@ type SubscriberId = String;
 struct SharedStreamState {
     headers: Vec<(String, String)>,
     buf_size: usize,
-    provider_guard: Option<ProviderConnectionGuard>,
+    provider_guard: Option<Arc<ProviderConnectionGuard>>,
     subscribers: Arc<DashMap<SubscriberId, Sender<Bytes>>>, //Arc<RwLock<Vec<Sender<Bytes>>>>,
+}
+
+impl Drop for SharedStreamState {
+    fn drop(&mut self) {
+        if let Some(guard) = self.provider_guard.as_ref() {
+            guard.force_release();
+        }
+    }
 }
 
 impl SharedStreamState {
     fn new(headers: Vec<(String, String)>, buf_size: usize,
-           provider_guard: Option<ProviderConnectionGuard>) -> Self {
+           provider_guard: Option<Arc<ProviderConnectionGuard>>) -> Self {
         if let Some(guard) = &provider_guard {
             guard.disable_release();
         }
@@ -211,8 +219,13 @@ impl SharedStreamManager {
     }
 
     fn subscribe_stream(&self, stream_url: &str, addr: &str) -> Option<BoxedProviderStream> {
-        let stream_data = self.shared_streams.get(stream_url)?.subscribe(addr);
-        Some(stream_data)
+        match self.shared_streams.get(stream_url) {
+            None => None,
+            Some(stream_state) => {
+                debug_if_enabled!("Responding to existing shared client stream {}", sanitize_sensitive_info(stream_url));
+                Some(stream_state.subscribe(addr))
+            }
+        }
     }
 
     fn register(&self, stream_url: &str, shared_state: SharedStreamState) {
@@ -226,7 +239,7 @@ impl SharedStreamManager {
         bytes_stream: S,
         headers: Vec<(String, String)>,
         buffer_size: usize,
-        provider_guard: Option<ProviderConnectionGuard>) -> Option<BoxedProviderStream>
+        provider_guard: Option<Arc<ProviderConnectionGuard>>) -> Option<BoxedProviderStream>
     where
         S: Stream<Item=Result<Bytes, E>> + Unpin + 'static + Send,
         E: std::fmt::Debug + Send,
@@ -245,7 +258,6 @@ impl SharedStreamManager {
         stream_url: &str,
         addr: &str,
     ) -> Option<BoxedProviderStream> {
-        debug_if_enabled!("Responding existing shared client stream {}", sanitize_sensitive_info(stream_url));
         app_state.shared_stream_manager.subscribe_stream(stream_url, addr)
     }
 }

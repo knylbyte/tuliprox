@@ -23,6 +23,9 @@ pub fn Authentication(props: &AuthenticationProps) -> Html {
             services_ctx.auth.auth_subscribe(
                 &mut |success| {
                     authenticated_state.set(success);
+                    if success {
+                        services_ctx.websocket.connect_ws();
+                    }
                     future::ready(())
                 }
             ).await

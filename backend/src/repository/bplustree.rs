@@ -9,8 +9,8 @@ use ruzstd::decoding::StreamingDecoder;
 use ruzstd::encoding::{compress_to_vec, CompressionLevel};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
+use shared::utils::{bincode_deserialize, bincode_serialize};
 use crate::utils;
-use crate::utils::{bincode_deserialize, bincode_serialize};
 
 const BLOCK_SIZE: usize = 4096;
 const BINCODE_OVERHEAD: usize = 8;

@@ -17,9 +17,9 @@ use std::io::{BufWriter, Write};
 use std::sync::Arc;
 use std::time::Instant;
 use log::{info, log_enabled, Level};
+use shared::utils::bincode_serialize;
 use crate::model::{XtreamSeriesEpisode, XtreamSeriesInfoEpisode};
 use crate::utils;
-use crate::utils::bincode_serialize;
 use crate::processing::processor::xtream::normalize_json_content;
 
 create_resolve_options_function_for_xtream_target!(series);

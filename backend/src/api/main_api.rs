@@ -24,6 +24,7 @@ use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use crate::api::api_utils::{get_build_time, get_server_time};
 use crate::api::config_watch::exec_config_watch;
+use crate::api::endpoints::websocket_api::ws_api_register;
 use crate::api::serve::serve;
 use crate::VERSION;
 
@@ -130,7 +131,7 @@ pub(in crate::api) fn start_hdhomerun(app_config: &Arc<AppConfig>, app_state: &A
                         let router = axum::Router::<Arc<HdHomerunAppState>>::new()
                             .layer(create_cors_layer())
                             .layer(create_compression_layer())
-                            // .layer(TraceLayer::new_for_http()) // `Logger::default()`
+                            //.layer(tower_http::trace::TraceLayer::new_for_http()) // `Logger::default()`
                             .merge(hdhr_api_register(basic_auth));
 
                         let router: axum::Router<()> = router.with_state(Arc::new(HdHomerunAppState {
@@ -199,7 +200,8 @@ pub async fn start_server(app_config: Arc<AppConfig>, targets: Arc<ProcessTarget
 
     // Web Server
     let mut router = axum::Router::new()
-        .route("/healthcheck", axum::routing::get(healthcheck));
+        .route("/healthcheck", axum::routing::get(healthcheck))
+        .merge(ws_api_register(web_auth_enabled, web_ui_path.as_str()));
     if web_ui_enabled {
         router = router
             .nest_service(&format!("{web_ui_path}/static"), tower_http::services::ServeDir::new(web_dir_path.join("static")))
@@ -230,7 +232,7 @@ pub async fn start_server(app_config: Arc<AppConfig>, targets: Arc<ProcessTarget
 
     router = router.layer(create_cors_layer())
         .layer(create_compression_layer());
-    //router = router.layer(tower_http::trace::TraceLayer::new_for_http()); // `Logger::default()`
+        //.layer(tower_http::trace::TraceLayer::new_for_http()); // `Logger::default()`
     // router = router.layer(axum::middleware::from_fn(log_routes));
 
     let router: axum::Router<()> = router.with_state(shared_data.clone());

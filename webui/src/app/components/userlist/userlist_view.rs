@@ -66,9 +66,9 @@ pub fn UserlistView() -> Html {
         });
     };
 
-    let handle_create = {
-        Callback::from(move |cmd: String| {})
-    };
+    // let handle_create = {
+    //     Callback::from(move |cmd: String| {})
+    // };
 
     html! {
         <ContextProvider<UserlistContext> context={userlist_context}>

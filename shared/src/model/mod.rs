@@ -11,6 +11,7 @@ pub mod xtream_const;
 mod auth;
 mod status_check;
 mod ip_check;
+mod web_socket;
 
 pub use self::cluster_flags::*;
 pub use self::playlist::*;
@@ -24,3 +25,4 @@ pub use self::mapping::*;
 pub use self::auth::*;
 pub use self::status_check::*;
 pub use self::ip_check::*;
+pub use self::web_socket::*;

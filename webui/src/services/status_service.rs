@@ -14,9 +14,7 @@ impl Default for StatusService {
 }
 
 impl StatusService {
-    pub fn new() -> Self {
-        Self {}
-    }
+    pub fn new() -> Self { Self {} }
 
     pub async fn get_server_status(&self) -> Result<Rc<StatusCheck>, crate::error::Error> {
         request_get::<Rc<StatusCheck>>(STATUS_PATH).await

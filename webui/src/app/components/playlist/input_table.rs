@@ -160,7 +160,7 @@ pub fn InputTable(props: &InputTableProps) -> Html {
         let popup_is_open_state = popup_is_open.clone();
         let confirm = dialog.clone();
         let translate = translate.clone();
-        let selected_dto = selected_dto.clone();
+        // let selected_dto = selected_dto.clone();
         Callback::from(move |name:String| {
             if let Ok(action) = TableAction::from_str(&name) {
                 match action {

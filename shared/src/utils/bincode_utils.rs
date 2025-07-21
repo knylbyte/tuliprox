@@ -1,5 +1,5 @@
 use std::io;
-use shared::error::to_io_error;
+use crate::error::to_io_error;
 
 #[inline]
 pub fn bincode_serialize<T>(value: &T) -> io::Result<Vec<u8>>

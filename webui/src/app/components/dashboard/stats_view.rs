@@ -8,9 +8,18 @@ pub fn StatsView() -> Html {
     let status_ctx = use_context::<StatusContext>().expect("Status context not found");
 
     let render_active_provider_connections = || -> Html {
-            match &status_ctx.status {
-                Some(stats) => {
-                    if let Some(map) = &stats.active_provider_connections {
+       let empty_card = || html! {
+                    <Card>
+                        <StatusCard
+                            title={translate.t("LABEL.ACTIVE_PROVIDER_CONNECTIONS")}
+                            data={"n/a"}
+                        />
+                    </Card>
+                };
+        match &status_ctx.status {
+            Some(stats) => {
+                if let Some(map) = &stats.active_provider_connections {
+                    if map.len() > 0 {
                         let cards = map.iter().map(|(provider, connections)| {
                             html! {
                                     <Card>
@@ -25,25 +34,14 @@ pub fn StatsView() -> Html {
 
                         cards
                     } else {
-                        html! {
-                                <Card>
-                                    <StatusCard
-                                        title={translate.t("LABEL.ACTIVE_PROVIDER_CONNECTIONS")}
-                                        data={"n/a"}
-                                    />
-                                </Card>
-                            }
+                        empty_card()
                     }
+                } else {
+                    empty_card()
                 }
-                None => html! {
-                        <Card>
-                            <StatusCard
-                                title={translate.t("LABEL.ACTIVE_PROVIDER_CONNECTIONS")}
-                                data={"n/a"}
-                            />
-                        </Card>
-                    }
             }
+            None => empty_card()
+        }
     };
 
     html! {

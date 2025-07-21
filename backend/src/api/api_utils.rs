@@ -240,7 +240,7 @@ pub struct StreamDetails {
     pub input_name: Option<String>,
     pub grace_period_millis: u64,
     pub reconnect_flag: Option<Arc<AtomicOnceFlag>>,
-    pub provider_connection_guard: Option<ProviderConnectionGuard>,
+    pub provider_connection_guard: Option<Arc<ProviderConnectionGuard>>,
 }
 
 impl StreamDetails {
@@ -266,7 +266,7 @@ impl StreamDetails {
 }
 
 struct StreamingStrategy {
-    provider_connection_guard: Option<ProviderConnectionGuard>,
+    provider_connection_guard: Option<Arc<ProviderConnectionGuard>>,
     provider_stream_state: ProviderStreamState,
     input_headers: Option<HashMap<String, String>>,
 }
@@ -294,7 +294,10 @@ async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, addr
         Some(provider) => app_state.active_provider.force_exact_acquire_connection(provider, addr).await,
         None => app_state.active_provider.acquire_connection(&input.name, addr).await
     };
-    let stream_response_params = match &*provider_connection_guard {
+
+    error!("{:?}", app_state.active_provider.active_connections().await);
+
+    let stream_response_params = match &**provider_connection_guard {
         ProviderAllocation::Exhausted => {
             debug!("Input {} is exhausted. No connections allowed.", input.name);
             let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
@@ -310,7 +313,7 @@ async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, addr
                 (provider.name.to_string(), get_stream_alternative_url(stream_url, input, provider))
             };
 
-            if matches!(&*provider_connection_guard, ProviderAllocation::Available(_, _)) {
+            if matches!(&**provider_connection_guard, ProviderAllocation::Available(_, _)) {
                 ProviderStreamState::Available(Some(provider), url)
             } else {
                 ProviderStreamState::GracePeriod(Some(provider), url)
@@ -358,7 +361,7 @@ async fn create_stream_response_details(app_state: &AppState,
                 input_name: None,
                 grace_period_millis,
                 reconnect_flag: None,
-                provider_connection_guard: streaming_strategy.provider_connection_guard.take(),
+                provider_connection_guard: streaming_strategy.provider_connection_guard.clone(),
             }
         }
         ProviderStreamState::Available(provider_name, request_url) |
@@ -592,7 +595,7 @@ pub async fn stream_response(addr: &str,
     if stream_details.has_stream() {
         // let content_length = get_stream_content_length(provider_response.as_ref());
         let provider_response = stream_details.stream_info.as_ref().map(|(h, sc, response_url)| (h.clone(), *sc, response_url.clone()));
-        let provider_name = stream_details.provider_connection_guard.as_ref().and_then(ProviderConnectionGuard::get_provider_name);
+        let provider_name = stream_details.provider_connection_guard.as_ref().and_then(|guard| guard.get_provider_name());
 
         let provider_guard = if share_stream { stream_details.provider_connection_guard.take() } else { None };
         let stream = ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr);
@@ -780,10 +783,10 @@ pub fn get_username_from_auth_header(
     app_state: &Arc<AppState>,
 ) -> Option<String> {
     if let Some(web_auth_config) = &app_state.app_config.config.load().web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
-        let secret_key: &str = web_auth_config.secret.as_ref();
+        let secret_key: &[u8] = web_auth_config.secret.as_ref();
         if let Ok(token_data) = decode::<Claims>(
             token,
-            &DecodingKey::from_secret(secret_key.as_bytes()),
+            &DecodingKey::from_secret(secret_key),
             &Validation::new(Algorithm::HS256),
         ) {
             return Some(token_data.claims.username);

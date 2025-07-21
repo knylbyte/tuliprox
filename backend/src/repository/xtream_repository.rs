@@ -10,7 +10,6 @@ use crate::repository::storage::{get_input_storage_path, get_target_id_mapping_f
 use crate::repository::storage_const;
 use crate::repository::target_id_mapping::VirtualIdRecord;
 use crate::repository::xtream_playlist_iterator::XtreamPlaylistJsonIterator;
-use crate::utils::bincode_deserialize;
 use crate::utils::FileReadGuard;
 use crate::utils::file_reader;
 use crate::utils::open_readonly_file;
@@ -26,7 +25,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use shared::model::{PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
-use shared::utils::{generate_playlist_uuid, get_u32_from_serde_value, hex_encode, json_iter_array};
+use shared::utils::{bincode_deserialize, generate_playlist_uuid, get_u32_from_serde_value, hex_encode, json_iter_array};
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {

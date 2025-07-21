@@ -1,7 +1,6 @@
 use crate::api::api_utils::StreamDetails;
 use crate::api::model::active_provider_manager::{ActiveProviderManager, ProviderConnectionGuard};
-use crate::api::model::active_user_manager::ActiveUserManager;
-use crate::api::model::active_user_manager::UserConnectionGuard;
+use crate::api::model::active_user_manager::{ActiveUserManager, UserConnectionGuard};
 use crate::api::model::app_state::AppState;
 use crate::api::model::stream::BoxedProviderStream;
 use crate::api::model::stream_error::StreamError;
@@ -29,7 +28,7 @@ pub(in crate::api) struct ActiveClientStream {
     #[allow(unused)]
     user_connection_guard: Option<UserConnectionGuard>,
     #[allow(dead_code)]
-    provider_connection_guard: Option<ProviderConnectionGuard>,
+    provider_connection_guard: Option<Arc<ProviderConnectionGuard>>,
     custom_video: (Option<TransportStreamBuffer>, Option<TransportStreamBuffer>),
     waker: Arc<Mutex<Option<Waker>>>,
 }
@@ -51,7 +50,7 @@ impl ActiveClientStream {
         let cfg = &app_state.app_config;
         let waker = Arc::new(Mutex::new(None));
         let waker_clone = Arc::clone(&waker);
-        let grace_stop_flag = Self::stream_grace_period(&stream_details, grant_user_grace_period, user, &active_user, &active_provider, &waker_clone);
+        let grace_stop_flag = Self::stream_grace_period(&stream_details, grant_user_grace_period, user, addr, &active_user, &active_provider, &waker_clone);
         let custom_response = cfg.custom_stream_response.load();
         let custom_video = custom_response.as_ref()
             .map_or((None, None), |c|
@@ -86,6 +85,7 @@ impl ActiveClientStream {
     fn stream_grace_period(stream_details: &StreamDetails,
                            user_grace_period: bool,
                            user: &ProxyUserCredentials,
+                           addr: &str,
                            active_user: &Arc<ActiveUserManager>,
                            active_provider: &Arc<ActiveProviderManager>,
                            waker: &Arc<Mutex<Option<Waker>>>) -> Option<Arc<AtomicU8>> {
@@ -113,6 +113,7 @@ impl ActiveClientStream {
             let waker_copy = Arc::clone(waker);
             let grace_period_millis = stream_details.grace_period_millis;
 
+            let address = addr.to_string();
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(grace_period_millis)).await;
 
@@ -135,6 +136,7 @@ impl ActiveClientStream {
                     if let Some((provider_name, provider_manager, reconnect_flag)) = provider_grace_check {
                         if provider_manager.is_over_limit(&provider_name).await {
                             info!("Provider connections exhausted for active clients: {provider_name}");
+                            provider_manager.release_connection(&address);
                             stream_strategy_flag_copy.store(PROVIDER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
                             if let Some(flag) = reconnect_flag {
                                 info!("Stopped reconnecting, provider connections exhausted {provider_name}");

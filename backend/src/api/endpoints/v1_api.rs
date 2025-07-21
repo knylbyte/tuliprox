@@ -289,7 +289,7 @@ async fn create_ipinfo_check(app_state: &Arc<AppState>) -> Option<(Option<String
     None
 }
 
-async fn create_status_check(app_state: &Arc<AppState>) -> StatusCheck {
+pub async fn create_status_check(app_state: &Arc<AppState>) -> StatusCheck {
     let cache = match app_state.cache.load().as_ref().as_ref() {
         None => None,
         Some(lock) => {
@@ -338,7 +338,6 @@ async fn ipinfo(axum::extract::State(app_state): axum::extract::State<Arc<AppSta
     }
     axum::http::StatusCode::BAD_REQUEST.into_response()
 }
-
 
 pub fn v1_api_register(web_auth_enabled: bool, app_state: Arc<AppState>, web_ui_path: &str) -> axum::Router<Arc<AppState>> {
     let mut router = axum::Router::new();

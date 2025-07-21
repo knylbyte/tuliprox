@@ -3,10 +3,10 @@ use std::path::{Path};
 use std::sync::Arc;
 use log::{error, info};
 use shared::model::{MsgKind, PlaylistGroup};
+use shared::utils::{bincode_deserialize, bincode_serialize};
 use crate::messaging::{send_message};
 use crate::model::Config;
 use crate::utils;
-use crate::utils::{bincode_deserialize, bincode_serialize};
 
 pub fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, target_name: &str, pl: &PlaylistGroup) {
     let mut new_tree = BTreeSet::new();

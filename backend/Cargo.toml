@@ -17,9 +17,9 @@ url = "2.5"
 reqwest = { version = "0", features = ["blocking", "json", "stream", "rustls-tls", "socks"] }
 chrono = "0.4"
 cron = "0.15"
-axum = { version = "0" , features = ["macros", "default"]}
+axum = { version = "0" , features = ["macros", "default", "ws"]}
 tower = "0"
-tower-http = { version = "0", features = ["cors", "auth", "fs", "compression-full"]}
+tower-http = { version = "0", features = ["cors", "auth", "fs", "compression-full", "trace"] }
 tower_governor = { version = "0.7", features = ["axum"] }
 jsonwebtoken = "9.3"
 rust-argon2 = "2.1"
@@ -34,12 +34,12 @@ mime = "0.3"
 log = "0.4"
 env_logger = "0.11"
 rustelebot = "0.3"
-bincode = { version = "2.0.1",  features = ["std", "serde"] }
+bincode = { version = "2",  features = ["std", "serde"] }
 rand = "0.9"
 rpassword = "7.4"
 flate2 = "1"
 blake3 = "1.8"
-bytes = "1.10"
+bytes = "1"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio = { version = "1.45", features = ["rt-multi-thread", "parking_lot", "fs"] }
 tokio-util = "0.7"
