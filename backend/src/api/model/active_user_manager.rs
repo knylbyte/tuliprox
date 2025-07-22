@@ -10,6 +10,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use crate::api::model::active_provider_manager::ActiveProviderManager;
 
+type ActiveUserConnectionChangeSender  = tokio::sync::mpsc::Sender<(usize, usize)>;
+pub type ActiveUserConnectionChangeReceiver  = tokio::sync::mpsc::Receiver<(usize, usize)>;
+
 macro_rules! active_user_manager_shared_impl {
     () => {
           #[inline]
@@ -21,7 +24,7 @@ macro_rules! active_user_manager_shared_impl {
             let user = Arc::clone(&self.user);
             let user_connection_count = Self::get_active_connections(&user);
             let user_count = user.len();
-            let _= self.active_user_change_tx.send((user_count, user_connection_count));
+            let _= self.connection_change_tx.try_send((user_count, user_connection_count));
             if self.is_log_user_enabled() {
 
                 info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
@@ -73,7 +76,7 @@ struct ConnectionGuardUserManager {
     user_by_addr: Arc<DashMap<String, String>>,
     shared_stream_manager: Arc<SharedStreamManager>,
     provider_manager: Arc<ActiveProviderManager>,
-    active_user_change_tx: tokio::sync::broadcast::Sender<(usize, usize)>,
+    connection_change_tx: ActiveUserConnectionChangeSender,
 }
 
 impl ConnectionGuardUserManager {
@@ -148,15 +151,14 @@ pub struct ActiveUserManager {
     close_signal_tx: tokio::sync::broadcast::Sender<String>,
     shared_stream_manager: Arc<SharedStreamManager>,
     provider_manager: Arc<ActiveProviderManager>,
-    active_user_change_tx: tokio::sync::broadcast::Sender<(usize, usize)>,
+    connection_change_tx: ActiveUserConnectionChangeSender,
 }
 
 impl ActiveUserManager {
-    pub fn new(config: &Config, shared_stream_manager: &Arc<SharedStreamManager>, provider_manager: &Arc<ActiveProviderManager>) -> Self {
+    pub fn new(config: &Config, shared_stream_manager: &Arc<SharedStreamManager>, provider_manager: &Arc<ActiveProviderManager>, connection_change_tx: ActiveUserConnectionChangeSender) -> Self {
         let log_active_user = config.log.as_ref().is_some_and(|l| l.log_active_user);
         let (grace_period_millis, grace_period_timeout_secs) = get_grace_options(config);
         let (close_signal_tx, _) = tokio::sync::broadcast::channel(10);
-        let (active_user_change_tx, _) = tokio::sync::broadcast::channel(10);
         Self {
             grace_period_millis: AtomicU64::new(grace_period_millis),
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
@@ -167,7 +169,7 @@ impl ActiveUserManager {
             close_signal_tx,
             shared_stream_manager: Arc::clone(shared_stream_manager),
             provider_manager: Arc::clone(provider_manager),
-            active_user_change_tx,
+            connection_change_tx,
         }
     }
 
@@ -188,7 +190,7 @@ impl ActiveUserManager {
             user_by_addr: Arc::clone(&self.user_by_addr),
             shared_stream_manager: Arc::clone(&self.shared_stream_manager),
             provider_manager:  Arc::clone(&self.provider_manager),
-            active_user_change_tx: self.active_user_change_tx.clone(),
+            connection_change_tx: self.connection_change_tx.clone(),
         }
     }
 
@@ -360,10 +362,6 @@ impl ActiveUserManager {
 
     pub fn get_close_connection_channel(&self) -> tokio::sync::broadcast::Receiver<String> {
         self.close_signal_tx.subscribe()
-    }
-
-    pub fn get_active_user_change_channel(&self) -> tokio::sync::broadcast::Receiver<(usize, usize)> {
-        self.active_user_change_tx.subscribe()
     }
 
     pub fn get_user_session(&self, username: &str, token: &str) -> Option<UserSession> {

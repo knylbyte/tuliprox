@@ -286,7 +286,7 @@ async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, sourc
         if source_downloaded {
             if source_playlists.is_empty() {
                 debug!("Source at index {source_idx} is empty");
-                errors.push(notify_err!(format!("Source at {source_idx} is empty")));
+                errors.push(notify_err!(format!("Source at index {source_idx} is empty: {}", source.inputs.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join(", "))));
             } else {
                 debug_if_enabled!("Source has {} groups", source_playlists.iter().map(|fpl| fpl.playlistgroups.len()).sum::<usize>());
                 for target in &source.targets {

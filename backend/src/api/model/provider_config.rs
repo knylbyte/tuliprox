@@ -3,11 +3,12 @@ use crate::model::{ConfigInput, ConfigInputAlias, InputUserInfo};
 use jsonwebtoken::get_current_timestamp;
 use log::{debug};
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc};
 use tokio::sync::RwLock;
 use shared::model::InputType;
 
-pub type ConnectionChangeSender = tokio::sync::broadcast::Sender<(String, usize)>;
+pub type ProviderConnectionChangeSender = tokio::sync::mpsc::Sender<(String, usize)>;
+pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::Receiver<(String, usize)>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProviderConfigAllocation {
@@ -41,7 +42,7 @@ pub struct ProviderConfig {
     max_connections: usize,
     priority: i16,
     connection: RwLock<ProviderConfigConnection>,
-    connection_change_tx: tokio::sync::broadcast::Sender<(String, usize)>,
+    connection_change_tx: ProviderConnectionChangeSender,
 }
 
 impl PartialEq for ProviderConfig {
@@ -61,16 +62,16 @@ impl PartialEq for ProviderConfig {
 macro_rules! modify_connections {
     ($self:ident, $guard:ident, +1) => {{
         $guard.current_connections += 1;
-        $self.notify_connection_change($guard.current_connections);
+        $self.notify_connection_change($guard.current_connections).await;
     }};
     ($self:ident, $guard:ident, -1) => {{
         $guard.current_connections -= 1;
-        $self.notify_connection_change($guard.current_connections);
+        $self.notify_connection_change($guard.current_connections).await;
     }};
 }
 
 impl ProviderConfig {
-    pub fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>,  connection_change_tx: tokio::sync::broadcast::Sender<(String, usize)>) -> Self
+    pub fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>, connection_change_tx: ProviderConnectionChangeSender) -> Self
     where
         F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
     {
@@ -88,7 +89,7 @@ impl ProviderConfig {
         }
     }
 
-    pub fn new_alias<'a, F>(cfg: &ConfigInput, alias: &ConfigInputAlias, get_connection: Option<F>, connection_change_tx: ConnectionChangeSender) -> Self
+    pub fn new_alias<'a, F>(cfg: &ConfigInput, alias: &ConfigInputAlias, get_connection: Option<F>, connection_change_tx: ProviderConnectionChangeSender) -> Self
     where
         F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
     {
@@ -110,8 +111,8 @@ impl ProviderConfig {
         InputUserInfo::new(self.input_type, self.username.as_deref(), self.password.as_deref(), &self.url)
     }
 
-    fn notify_connection_change(&self, new_connections: usize) {
-        let _ = self.connection_change_tx.send((self.name.clone(), new_connections));
+    async fn notify_connection_change(&self, new_connections: usize) {
+        let _ = self.connection_change_tx.send((self.name.clone(), new_connections)).await;
     }
 
     #[inline]

@@ -307,4 +307,18 @@ mod test {
         assert_eq!(pli.chno, "7");
         assert_eq!(pli.group, "Sydney");
     }
+
+    #[test]
+    fn test_process_header_xui_id() {
+        let input: &str = "hello";
+        let video_suffixes = Vec::new();
+        let url = "http://hello.de/hello.ts";
+        let line = r#"#EXTINF:-1 tvg-id="abc-seven" xui-id="provider-123" group-title="Sydney", Seven"#;
+
+        let pli = process_header(input, &video_suffixes, line, url);
+        assert_eq!(pli.title, "Seven");
+        assert_eq!(pli.id, "provider-123"); // Should use xui-id
+        assert_eq!(pli.epg_channel_id, Some("abc-seven".to_string())); // Should preserve original tvg-id
+        assert_eq!(pli.group, "Sydney");
+    }
 }

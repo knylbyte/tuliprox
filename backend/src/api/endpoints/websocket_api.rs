@@ -9,6 +9,7 @@ use axum::{
 use log::{error, info};
 use shared::model::{ProtocolHandler, ProtocolMessage, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
+use crate::api::model::event_manager::EventMessage;
 
 // WebSocket upgrade handler
 async fn websocket_handler(
@@ -42,108 +43,130 @@ fn verify_auth_admin_token(auth_token: &str, secret_key: Option<&Vec<u8>>) -> bo
     }
 }
 
+fn get_secret_key(app_state: &AppState, auth: bool) -> Option<Vec<u8>> {
+    if !auth {
+        return None;
+    }
+
+    app_state.app_config.config.load()
+        .web_ui.as_ref()
+        .and_then(|c| c.auth.as_ref())
+        .map(|c| {
+            let secret_key: &[u8] = c.secret.as_ref();
+            secret_key.to_vec()
+        })
+}
+
+async fn handle_handshake(
+    msg: Message,
+    socket: &mut WebSocket,
+    version: u8,
+) -> Result<(), String> {
+    if let Message::Binary(bytes) = msg {
+        if bytes.len() == 1 {
+            let client_version = bytes[0];
+            if client_version == version {
+                socket.send(Message::binary(bytes)).await.map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            error!("Protokol Version mismatch: server={version}, client={client_version}");
+        }
+    }
+
+    let _ = socket.send(Message::Close(Some(CloseFrame {
+        code: WsCloseCode::Protocol.code(),
+        reason: "Unsupported protocol".into(),
+    }))).await;
+
+    Err("Protocol version mismatch".into())
+}
+
+async fn handle_protocol_message(
+    msg: Message,
+    socket: &mut WebSocket,
+    app_state: &Arc<AppState>,
+    auth: bool,
+    secret_key: Option<&Vec<u8>>,
+) -> Result<(), String> {
+    if let Message::Binary(bytes) = msg {
+        match ProtocolMessage::from_bytes(bytes) {
+            Ok(ProtocolMessage::StatusRequest(auth_token)) => {
+                if !auth || verify_auth_admin_token(&auth_token, secret_key) {
+                    let status = create_status_check(app_state).await;
+                    let response = ProtocolMessage::StatusResponse(status).to_bytes().map_err(|e| e.to_string())?;
+                    socket.send(Message::Binary(response)).await.map_err(|e| e.to_string())?;
+                }
+            }
+            Ok(_) => {
+                error!("Unexpected protocol message after handshake");
+            }
+            Err(e) => {
+                error!("Invalid websocket message: {e}");
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn handle_incoming_message(
+    result: Result<Message, axum::Error>,
+    socket: &mut WebSocket,
+    handler: &mut ProtocolHandler,
+    app_state: &Arc<AppState>,
+    auth: bool,
+    secret_key: Option<&Vec<u8>>,
+) -> Result<(), String> {
+    let msg = result.map_err(|e| e.to_string())?;
+
+    match handler {
+        ProtocolHandler::Version(version) => {
+            handle_handshake(msg, socket, *version).await?;
+            *handler = ProtocolHandler::Default;
+            Ok(())
+        },
+        ProtocolHandler::Default => handle_protocol_message(msg, socket, app_state, auth, secret_key).await,
+    }
+}
+
+async fn handle_event_message(socket: &mut WebSocket, event: EventMessage) -> Result<(), String> {
+    match event {
+        EventMessage::ActiveUserChange(users, connections) => {
+            let msg = ProtocolMessage::ActiveUserResponse(users, connections).to_bytes().map_err(|e| e.to_string())?;
+            socket.send(Message::Binary(msg)).await.map_err(|e| e.to_string())
+        }
+        EventMessage::ActiveProviderChange(provider, connections) => {
+            let msg = ProtocolMessage::ActiveProviderResponse(provider, connections).to_bytes().map_err(|e| e.to_string())?;
+            socket.send(Message::Binary(msg)).await.map_err(|e| e.to_string())
+
+        }
+    }
+}
 
 // WebSocket communication logic
-#[allow(clippy::too_many_lines)]
 async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth: bool) {
-    let secret_key = if auth {
-        if let Some(web_auth_config) = &app_state.app_config.config.load().web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
-            let secret_key: &[u8] = web_auth_config.secret.as_ref();
-            Some(secret_key.to_vec())
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let secret_key = get_secret_key(&app_state, auth);
 
-    let mut active_user_change_rx = app_state.active_users.get_active_user_change_channel();
-    let mut active_provider_change_rx = app_state.active_provider.get_active_provider_change_channel();
+    let mut event_rx = app_state.event_manager.get_event_channel();
 
     let mut handler = ProtocolHandler::Version(PROTOCOL_VERSION);
 
     loop {
         tokio::select! {
             maybe_msg = socket.recv() => {
-                match maybe_msg {
-                    Some(Ok(msg)) => {
-                        match handler {
-                            ProtocolHandler::Version(version) => {
-                                let mut version_error = true;
-                                if let Message::Binary(bytes) = msg {
-                                    if bytes.len() == 1 {
-                                        let client_version = bytes[0];
-                                        if version == client_version {
-                                            if socket.send(Message::binary(bytes)).await.is_err() {
-                                                error!("Error sending websocket message");
-                                            } else {
-                                                version_error = false;
-                                                handler = ProtocolHandler::Default;
-                                            }
-                                        } else {
-                                            error!("Version mismatch: server={version}, client={client_version}");
-                                        }
-                                    }
-                                }
-                                if version_error {
-                                    let _ = socket.send(Message::Close(Some(CloseFrame {
-                                        code: WsCloseCode::Protocol.code(),
-                                        reason: "Unsupported protocol".into(),
-                                    }))).await;
-                                    break;
-                                }
-                            }
-
-                            ProtocolHandler::Default => {
-                                if let Message::Binary(bytes) = msg {
-                                    match ProtocolMessage::from_bytes(bytes) {
-                                        Ok(ProtocolMessage::StatusRequest(auth_token)) => {
-                                            if !auth || verify_auth_admin_token(&auth_token, secret_key.as_ref()) {
-                                                let status = create_status_check(&app_state).await;
-                                                if let Ok(response) = ProtocolMessage::StatusResponse(status).to_bytes() {
-                                                    if socket.send(Message::Binary(response)).await.is_err() {
-                                                        error!("Failed to send websocket status response");
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Ok(_) => {
-                                            error!("Unexpected protocol message after handshake");
-                                        }
-                                        Err(err) => {
-                                            error!("Invalid websocket message: {err}");
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Some(Err(err)) => {
-                        error!("WebSocket error: {err}");
+                if let Some(msg) = maybe_msg {
+                    if let Err(e) = handle_incoming_message(msg, &mut socket, &mut handler, &app_state, auth, secret_key.as_ref()).await {
+                        error!("WebSocket message handling error: {e}");
                         break;
                     }
-                    None => {
-                        // WebSocket closed
-                        break;
-                    }
+                } else {
+                    break;
                 }
             }
 
-            Ok((user_count, connection_count)) = active_user_change_rx.recv() => {
-                if let Ok(payload) = ProtocolMessage::ActiveUserResponse(user_count, connection_count).to_bytes() {
-                    if let Err(e) = socket.send(Message::Binary(payload)).await {
-                        error!("Failed to send active user change: {e}");
-                        break;
-                    }
-                }
-            }
-
-            Ok((provider, connection_count)) = active_provider_change_rx.recv() => {
-                if let Ok(payload) = ProtocolMessage::ActiveProviderResponse(provider, connection_count).to_bytes() {
-                    if let Err(e) = socket.send(Message::Binary(payload)).await {
-                        error!("Failed to send active user change: {e}");
-                        break;
-                    }
+            Ok(event) = event_rx.recv() => {
+                if let Err(e) = handle_event_message(&mut socket, event).await {
+                    error!("Failed to send active user change: {e}");
+                    break;
                 }
             }
         }

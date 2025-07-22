@@ -12,7 +12,7 @@ pub fn StatsView() -> Html {
                     <Card>
                         <StatusCard
                             title={translate.t("LABEL.ACTIVE_PROVIDER_CONNECTIONS")}
-                            data={"n/a"}
+                            data={"-"}
                         />
                     </Card>
                 };

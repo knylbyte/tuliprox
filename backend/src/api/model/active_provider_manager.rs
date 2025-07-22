@@ -1,4 +1,4 @@
-use crate::api::model::provider_config::{ConnectionChangeSender, ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper};
+use crate::api::model::provider_config::{ProviderConnectionChangeSender, ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper};
 use crate::model::{AppConfig, ConfigInput};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
@@ -8,7 +8,6 @@ use std::collections::{HashMap};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::broadcast::Receiver;
 
 const CONNECTION_STATE_ACTIVE: u8 = 0;
 const CONNECTION_STATE_SHARED: u8 = 1;
@@ -175,7 +174,7 @@ struct SingleProviderLineup {
 }
 
 impl SingleProviderLineup {
-    fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>, connection_change_sender: ConnectionChangeSender) -> Self
+    fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>, connection_change_sender: ProviderConnectionChangeSender) -> Self
     where
         F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
     {
@@ -236,7 +235,7 @@ struct MultiProviderLineup {
 }
 
 impl MultiProviderLineup {
-    pub fn new<'a, F>(input: &ConfigInput, get_connection: Option<F>, connection_change_sender: &ConnectionChangeSender) -> Self
+    pub fn new<'a, F>(input: &ConfigInput, get_connection: Option<F>, connection_change_sender: &ProviderConnectionChangeSender) -> Self
     where
         F: Fn(&str) -> Option<&'a ProviderConfigConnection> + Copy,
     {
@@ -458,11 +457,11 @@ struct ProviderLineupManager {
     grace_period_timeout_secs: AtomicU64,
     inputs: Arc<ArcSwap<Vec<Arc<ConfigInput>>>>,
     providers: Arc<ArcSwap<Vec<ProviderLineup>>>,
-    connection_change_tx: ConnectionChangeSender,
+    connection_change_tx: ProviderConnectionChangeSender,
 }
 
 impl ProviderLineupManager {
-    pub fn new(inputs: Vec<Arc<ConfigInput>>, grace_period_millis: u64, grace_period_timeout_secs: u64, connection_change_tx: ConnectionChangeSender) -> Self {
+    pub fn new(inputs: Vec<Arc<ConfigInput>>, grace_period_millis: u64, grace_period_timeout_secs: u64, connection_change_tx: ProviderConnectionChangeSender) -> Self {
         let lineups = inputs.iter().map(|i| Self::create_lineup(i, None, connection_change_tx.clone())).collect();
         Self {
             grace_period_millis: AtomicU64::new(grace_period_millis),
@@ -473,11 +472,7 @@ impl ProviderLineupManager {
         }
     }
 
-    pub fn get_active_provider_change_channel(&self) -> Receiver<(String, usize)> {
-        self.connection_change_tx.subscribe()
-    }
-
-    fn create_lineup(input: &ConfigInput, provider_connections: Option<&HashMap<&str, ProviderConfigConnection>>, connection_change_sender: ConnectionChangeSender) -> ProviderLineup {
+    fn create_lineup(input: &ConfigInput, provider_connections: Option<&HashMap<&str, ProviderConfigConnection>>, connection_change_sender: ProviderConnectionChangeSender) -> ProviderLineup {
         let get_connections = provider_connections.map(|c| |name: &str| c.get(name));
 
         if input.aliases.as_ref().is_some_and(|a| !a.is_empty()) {
@@ -732,13 +727,12 @@ pub struct ActiveProviderManager {
 }
 
 impl ActiveProviderManager {
-    pub fn new(cfg: &AppConfig) -> Self {
+    pub fn new(cfg: &AppConfig, connection_change_sender: ProviderConnectionChangeSender) -> Self {
         let (grace_period_millis, grace_period_timeout_secs) = Self::get_grace_options(cfg);
         let inputs = Self::get_config_inputs(cfg);
-        let (connection_change_tx, _) = tokio::sync::broadcast::channel(10);
 
         Self {
-            providers: ProviderLineupManager::new(inputs, grace_period_millis, grace_period_timeout_secs, connection_change_tx),
+            providers: ProviderLineupManager::new(inputs, grace_period_millis, grace_period_timeout_secs, connection_change_sender),
             connections: DashMap::new(),
         }
     }
@@ -803,10 +797,6 @@ impl ActiveProviderManager {
         if let Some((_, guard)) = self.connections.remove(addr) {
             guard.release();
         }
-    }
-
-    pub fn get_active_provider_change_channel(&self) -> tokio::sync::broadcast::Receiver<(String, usize)> {
-        self.providers.get_active_provider_change_channel()
     }
 }
 

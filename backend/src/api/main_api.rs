@@ -24,9 +24,10 @@ use axum::Router;
 use log::{error, info};
 use std::io::ErrorKind;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc};
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
+use crate::api::model::event_manager::EventManager;
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -56,8 +57,11 @@ fn create_shared_data(app_config: &Arc<AppConfig>, forced_targets: &Arc<ProcessT
     let config = app_config.config.load();
     let cache = create_cache(&config);
     let shared_stream_manager = Arc::new(SharedStreamManager::new());
-    let active_provider = Arc::new(ActiveProviderManager::new(app_config));
-    let active_users = Arc::new(ActiveUserManager::new(&config, &shared_stream_manager, &active_provider));
+    let (provider_change_tx, provider_change_rx) = tokio::sync::mpsc::channel(10);
+    let active_provider = Arc::new(ActiveProviderManager::new(app_config, provider_change_tx));
+    let (active_user_change_tx, active_user_change_rx) = tokio::sync::mpsc::channel(10);
+    let active_users = Arc::new(ActiveUserManager::new(&config, &shared_stream_manager, &active_provider, active_user_change_tx));
+    let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx));
     let client = create_http_client(app_config);
 
     AppState {
@@ -69,6 +73,7 @@ fn create_shared_data(app_config: &Arc<AppConfig>, forced_targets: &Arc<ProcessT
         shared_stream_manager,
         active_users,
         active_provider,
+        event_manager,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
     }
 }

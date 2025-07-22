@@ -17,6 +17,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use crate::api::config_watch::exec_config_watch;
+use crate::api::model::event_manager::EventManager;
 
 macro_rules! cancel_service {
     ($field: ident, $changes:expr, $cancel_tokens:expr) => {
@@ -168,6 +169,7 @@ pub struct AppState {
     pub shared_stream_manager: Arc<SharedStreamManager>,
     pub active_users: Arc<ActiveUserManager>,
     pub active_provider: Arc<ActiveProviderManager>,
+    pub event_manager: Arc<EventManager>,
     pub cancel_tokens: Arc<ArcSwap<CancelTokens>>,
 }
 
