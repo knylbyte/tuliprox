@@ -531,21 +531,24 @@ impl MapperScript {
         let first = pairs.next().unwrap();
         let key = match first.as_rule() {
             Rule::map_key => {
-                let map_key = first.into_inner().next().unwrap();
-                match map_key.as_rule() {
-                    Rule::field => {
-                        MapKey::FieldAccess(map_key.as_str().trim().to_string())
-                    }
-                    Rule::var_access => {
-                        let text = map_key.as_str();
-                        if text.contains('.') {
-                            let splitted: Vec<&str> = text.splitn(2, '.').collect();
-                            MapKey::VarAccess(splitted[0].trim().to_string(), splitted[1].trim().to_string())
-                        } else {
-                            MapKey::Identifier(text.trim().to_string())
+                if let Some(map_key) = first.into_inner().next() {
+                    match map_key.as_rule() {
+                        Rule::field => {
+                            MapKey::FieldAccess(map_key.as_str().trim().to_string())
                         }
+                        Rule::var_access => {
+                            let text = map_key.as_str();
+                            if text.contains('.') {
+                                let splitted: Vec<&str> = text.splitn(2, '.').collect();
+                                MapKey::VarAccess(splitted[0].trim().to_string(), splitted[1].trim().to_string())
+                            } else {
+                                MapKey::Identifier(text.trim().to_string())
+                            }
+                        }
+                        _ => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unexpected map case key: {:?}", map_key.as_rule()),
                     }
-                    _ => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unexpected map case key: {:?}", map_key.as_rule()),
+                } else {
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Missing map case key");
                 }
             }
             _ => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unexpected map case key: {:?}", first.as_rule()),

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use log::{error, info};
 use path_clean::PathClean;
@@ -8,6 +9,7 @@ use crate::model::{macros, ConfigApi, ReverseProxyConfig, ScheduleConfig};
 use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
 use crate::{utils};
 
+const DEFAULT_BACKUP_DIR: &str = "backup";
 
 fn create_directories(cfg: &Config, temp_path: &Path) {
     // Collect the paths into a vector.
@@ -15,7 +17,7 @@ fn create_directories(cfg: &Config, temp_path: &Path) {
         Some(cfg.working_dir.clone()),
         cfg.backup_dir.clone(),
         cfg.user_config_dir.clone(),
-        cfg.video.as_ref().and_then(|v| v.download.as_ref()).and_then(|d| d.directory.clone()),
+        cfg.video.as_ref().and_then(|v| v.download.as_ref()).map(|d| d.directory.to_string()),
         cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref().and_then(|c| if c.enabled { Some(c.dir.to_string()) } else { None }))
     ];
 
@@ -85,8 +87,12 @@ impl Config {
             });
         }
 
-        set_directory(&mut self.backup_dir, "backup", &self.working_dir);
+        set_directory(&mut self.backup_dir, DEFAULT_BACKUP_DIR, &self.working_dir);
         set_directory(&mut self.user_config_dir, "user_config", &self.working_dir);
+    }
+
+    pub fn get_backup_dir(&self) -> Cow<str> {
+        self.backup_dir.as_ref().map_or_else(|| Cow::Borrowed(DEFAULT_BACKUP_DIR), |v| Cow::Borrowed(v))
     }
 
     fn prepare_api_web_root(&mut self) {

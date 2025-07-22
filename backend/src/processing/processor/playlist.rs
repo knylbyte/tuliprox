@@ -234,70 +234,71 @@ fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bo
 
 async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, source_idx: usize, user_targets: Arc<ProcessTargets>) -> (Vec<InputStats>, Vec<TargetStats>, Vec<TuliproxError>) {
     let sources = cfg.sources.load();
-    let source = sources.get_source_at(source_idx).unwrap();
     let mut errors = vec![];
     let mut input_stats = HashMap::<String, InputStats>::new();
     let mut target_stats = Vec::<TargetStats>::new();
-    let mut source_playlists = Vec::with_capacity(128);
-    // Download the sources
-    let mut source_downloaded = false;
-    for input in &source.inputs {
-        if is_input_enabled(input, &user_targets) {
-            let config = cfg.config.load();
-            let working_dir = &config.working_dir;
+    if let Some(source) = sources.get_source_at(source_idx) {
+        let mut source_playlists = Vec::with_capacity(128);
+        // Download the sources
+        let mut source_downloaded = false;
+        for input in &source.inputs {
+            if is_input_enabled(input, &user_targets) {
+                let config = cfg.config.load();
+                let working_dir = &config.working_dir;
 
-            source_downloaded = true;
-            let start_time = Instant::now();
-            let (mut playlistgroups, mut error_list) = match input.input_type {
-                InputType::M3u => m3u::get_m3u_playlist(Arc::clone(&client), &config, input, working_dir).await,
-                InputType::Xtream => xtream::get_xtream_playlist(&config, Arc::clone(&client), input, working_dir).await,
-                InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![])
-            };
-            let (tvguide, mut tvguide_errors) = if error_list.is_empty() {
-                epg::get_xmltv(Arc::clone(&client), input, working_dir).await
-            } else {
-                (None, vec![])
-            };
-            errors.append(&mut error_list);
-            errors.append(&mut tvguide_errors);
-            let group_count = playlistgroups.len();
-            let channel_count = playlistgroups.iter()
-                .map(|group| group.channels.len())
-                .sum();
-            let input_name = &input.name;
-            if playlistgroups.is_empty() {
-                info!("Source is empty {input_name}");
-                errors.push(notify_err!(format!("Source is empty {input_name}")));
-            } else {
-                playlistgroups.iter_mut().for_each(PlaylistGroup::on_load);
-                source_playlists.push(
-                    FetchedPlaylist {
-                        input,
-                        playlistgroups,
-                        epg: tvguide,
-                    }
-                );
-            }
-            let elapsed = start_time.elapsed().as_secs();
-            input_stats.insert(input_name.to_string(), create_input_stat(group_count, channel_count, error_list.len(),
-                                                                         input.input_type, input_name, elapsed));
-        }
-    }
-    if source_downloaded {
-        if source_playlists.is_empty() {
-            debug!("Source at index {source_idx} is empty");
-            errors.push(notify_err!(format!("Source at {source_idx} is empty")));
-        } else {
-            debug_if_enabled!("Source has {} groups", source_playlists.iter().map(|fpl| fpl.playlistgroups.len()).sum::<usize>());
-            for target in &source.targets {
-                if is_target_enabled(target, &user_targets) {
-                    match process_playlist_for_target(&cfg, Arc::clone(&client), &mut source_playlists, target, &mut input_stats, &mut errors).await {
-                        Ok(()) => {
-                            target_stats.push(TargetStats::success(&target.name));
+                source_downloaded = true;
+                let start_time = Instant::now();
+                let (mut playlistgroups, mut error_list) = match input.input_type {
+                    InputType::M3u => m3u::get_m3u_playlist(Arc::clone(&client), &config, input, working_dir).await,
+                    InputType::Xtream => xtream::get_xtream_playlist(&config, Arc::clone(&client), input, working_dir).await,
+                    InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![])
+                };
+                let (tvguide, mut tvguide_errors) = if error_list.is_empty() {
+                    epg::get_xmltv(Arc::clone(&client), input, working_dir).await
+                } else {
+                    (None, vec![])
+                };
+                errors.append(&mut error_list);
+                errors.append(&mut tvguide_errors);
+                let group_count = playlistgroups.len();
+                let channel_count = playlistgroups.iter()
+                    .map(|group| group.channels.len())
+                    .sum();
+                let input_name = &input.name;
+                if playlistgroups.is_empty() {
+                    info!("Source is empty {input_name}");
+                    errors.push(notify_err!(format!("Source is empty {input_name}")));
+                } else {
+                    playlistgroups.iter_mut().for_each(PlaylistGroup::on_load);
+                    source_playlists.push(
+                        FetchedPlaylist {
+                            input,
+                            playlistgroups,
+                            epg: tvguide,
                         }
-                        Err(mut err) => {
-                            target_stats.push(TargetStats::failure(&target.name));
-                            errors.append(&mut err);
+                    );
+                }
+                let elapsed = start_time.elapsed().as_secs();
+                input_stats.insert(input_name.to_string(), create_input_stat(group_count, channel_count, error_list.len(),
+                                                                             input.input_type, input_name, elapsed));
+            }
+        }
+        if source_downloaded {
+            if source_playlists.is_empty() {
+                debug!("Source at index {source_idx} is empty");
+                errors.push(notify_err!(format!("Source at {source_idx} is empty")));
+            } else {
+                debug_if_enabled!("Source has {} groups", source_playlists.iter().map(|fpl| fpl.playlistgroups.len()).sum::<usize>());
+                for target in &source.targets {
+                    if is_target_enabled(target, &user_targets) {
+                        match process_playlist_for_target(&cfg, Arc::clone(&client), &mut source_playlists, target, &mut input_stats, &mut errors).await {
+                            Ok(()) => {
+                                target_stats.push(TargetStats::success(&target.name));
+                            }
+                            Err(mut err) => {
+                                target_stats.push(TargetStats::failure(&target.name));
+                                errors.append(&mut err);
+                            }
                         }
                     }
                 }
@@ -351,13 +352,17 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
             let handles = &mut handle_list;
             let process = move || {
                 // TODO better way ?
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                rt.block_on(async {
-                    let (input_stats, target_stats, mut res_errors) = process_source(Arc::clone(&http_client), cfg, index, usr_trgts).await;
-                    shared_errors.lock().await.append(&mut res_errors);
-                    let process_stats = SourceStats::new(input_stats, target_stats);
-                    shared_stats.lock().await.push(process_stats);
-                });
+                match tokio::runtime::Runtime::new() {
+                    Ok(rt) => {
+                        rt.block_on(async {
+                            let (input_stats, target_stats, mut res_errors) = process_source(Arc::clone(&http_client), cfg, index, usr_trgts).await;
+                            shared_errors.lock().await.append(&mut res_errors);
+                            let process_stats = SourceStats::new(input_stats, target_stats);
+                            shared_stats.lock().await.push(process_stats);
+                        });
+                    },
+                    Err(err) => error!("Could not create runtime !!! {err}"),
+                }
             };
             handles.push(thread::spawn(process));
             if handles.len() >= thread_num as usize {
@@ -374,7 +379,11 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
     for handle in handle_list {
         let _ = handle.join();
     }
-    (Arc::try_unwrap(stats).unwrap().into_inner(), Arc::try_unwrap(errors).unwrap().into_inner())
+    if let (Ok(s), Ok(e)) = (Arc::try_unwrap(stats), Arc::try_unwrap(errors)) {
+        (s.into_inner(), e.into_inner())
+    } else {
+        (vec![], vec![])
+    }
 }
 
 pub type ProcessingPipe = Vec<fn(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>>>;
@@ -430,7 +439,9 @@ fn flatten_groups(playlistgroups: Vec<PlaylistGroup>) -> Vec<PlaylistGroup> {
                 sort_order.push(group);
             }
             std::collections::hash_map::Entry::Occupied(o) => {
-                sort_order.get_mut(*o.get()).unwrap().channels.extend(group.channels);
+                if let Some(pl_group) = sort_order.get_mut(*o.get()) {
+                    pl_group.channels.extend(group.channels);
+                }
             }
         }
     }

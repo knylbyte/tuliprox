@@ -93,12 +93,10 @@ pub fn Home() -> Html {
                             } else {
                                 treemap.insert(provider, connections);
                             }
-                        } else {
-                            if connections > 0 {
-                                let mut treemap = BTreeMap::new();
-                                treemap.insert(provider, connections);
-                                server_status.active_provider_connections = Some(treemap);
-                            }
+                        } else if connections > 0 {
+                            let mut treemap = BTreeMap::new();
+                            treemap.insert(provider, connections);
+                            server_status.active_provider_connections = Some(treemap);
                         }
                         let new_status = Rc::new(server_status);
                         *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));

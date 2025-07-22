@@ -1,8 +1,11 @@
+use crate::api::api_utils::{get_build_time, get_server_time};
+use crate::api::config_watch::exec_config_watch;
 use crate::api::endpoints::hdhomerun_api::hdhr_api_register;
 use crate::api::endpoints::hls_api::hls_api_register;
 use crate::api::endpoints::m3u_api::m3u_api_register;
 use crate::api::endpoints::v1_api::v1_api_register;
 use crate::api::endpoints::web_index::{index_register_with_path, index_register_without_path};
+use crate::api::endpoints::websocket_api::ws_api_register;
 use crate::api::endpoints::xmltv_api::xmltv_api_register;
 use crate::api::endpoints::xtream_api::xtream_api_register;
 use crate::api::model::active_provider_manager::ActiveProviderManager;
@@ -10,23 +13,20 @@ use crate::api::model::active_user_manager::ActiveUserManager;
 use crate::api::model::app_state::{create_cache, create_http_client, AppState, CancelTokens, HdHomerunAppState};
 use crate::api::model::download::DownloadQueue;
 use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
-use crate::api::scheduler::{exec_scheduler};
+use crate::api::scheduler::exec_scheduler;
+use crate::api::serve::serve;
 use crate::model::{AppConfig, Config, ProcessTargets, RateLimitConfig};
-use crate::model::{Healthcheck};
+use crate::model::Healthcheck;
 use crate::processing::processor::playlist;
+use crate::VERSION;
+use arc_swap::{ArcSwap, ArcSwapOption};
+use axum::Router;
 use log::{error, info};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::Arc;
-use arc_swap::{ArcSwap, ArcSwapOption};
-use axum::Router;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
-use crate::api::api_utils::{get_build_time, get_server_time};
-use crate::api::config_watch::exec_config_watch;
-use crate::api::endpoints::websocket_api::ws_api_register;
-use crate::api::serve::serve;
-use crate::VERSION;
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -232,7 +232,7 @@ pub async fn start_server(app_config: Arc<AppConfig>, targets: Arc<ProcessTarget
 
     router = router.layer(create_cors_layer())
         .layer(create_compression_layer());
-        //.layer(tower_http::trace::TraceLayer::new_for_http()); // `Logger::default()`
+    //.layer(tower_http::trace::TraceLayer::new_for_http()); // `Logger::default()`
     // router = router.layer(axum::middleware::from_fn(log_routes));
 
     let router: axum::Router<()> = router.with_state(shared_data.clone());
@@ -246,15 +246,15 @@ pub async fn start_server(app_config: Arc<AppConfig>, targets: Arc<ProcessTarget
 
 fn add_rate_limiter(router: Router<Arc<AppState>>, rate_limit_cfg: &RateLimitConfig) -> Router<Arc<AppState>> {
     if rate_limit_cfg.enabled {
-        let governor_conf = Arc::new(tower_governor::governor::GovernorConfigBuilder::default()
+        let governor_conf = tower_governor::governor::GovernorConfigBuilder::default()
             .key_extractor(SmartIpKeyExtractor)
             .per_millisecond(rate_limit_cfg.period_millis)
             .burst_size(rate_limit_cfg.burst_size)
-            .finish()
-            .unwrap());
-        router.layer(tower_governor::GovernorLayer {
-            config: governor_conf,
-        })
+            .finish();
+        if let Some(config) = governor_conf { router.layer(tower_governor::GovernorLayer { config: Arc::new(config) }) } else {
+            error!("Failed to initialize rate limiter");
+            router
+        }
     } else {
         router
     }

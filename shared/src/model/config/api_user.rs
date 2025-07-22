@@ -77,8 +77,7 @@ impl FromStr for ProxyType {
             return Ok(Self::Reverse(None));
         }
 
-        if s.starts_with(Self::REVERSE) {
-            let suffix = s.strip_prefix(Self::REVERSE).unwrap();
+        if let Some(suffix) = s.strip_prefix(Self::REVERSE) {
             if let Ok(force_redirect) = ClusterFlags::try_from(suffix) {
                 if force_redirect.has_full_flags() {
                     return Ok(ProxyType::Reverse(None));

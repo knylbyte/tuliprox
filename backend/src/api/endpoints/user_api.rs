@@ -15,6 +15,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use axum::response::IntoResponse;
 use crate::auth::AuthBearer;
+use crate::api::api_utils::try_unwrap_body;
 
 fn get_categories_from_xtream(categories: Option<Vec<PlaylistXtreamCategory>>) -> Vec<String> {
     let mut groups: Vec<String> = Vec::new();
@@ -86,13 +87,10 @@ async fn playlist_categories(
                 .chain(m3u_stream)
                 .chain(stream::once(async { Ok::<Bytes, String>(Bytes::from("}")) }));
 
-
-            return axum::response::Response::builder()
+            return try_unwrap_body!(axum::response::Response::builder()
                 .status(axum::http::StatusCode::OK)
                 .header("Content-Type", mime::APPLICATION_JSON.to_string())
-                .body(axum::body::Body::from_stream(json_stream))
-                .unwrap()
-                .into_response();
+                .body(axum::body::Body::from_stream(json_stream)));
         }
     }
     axum::http::StatusCode::BAD_REQUEST.into_response()
@@ -134,20 +132,18 @@ async fn playlist_bouquet(
             let config = &app_state.app_config.config.load();
             let xtream = load_user_bouquet_as_json(config, &username, TargetType::Xtream).await;
             let m3u = load_user_bouquet_as_json(config, &username, TargetType::M3u).await;
-            return axum::response::Response::builder()
+            return try_unwrap_body!(axum::response::Response::builder()
                 .status(axum::http::StatusCode::OK)
                 .header("Content-Type", mime::APPLICATION_JSON.to_string())
-                .body(axum::body::Body::from(format!(r#"{{"xtream": {}, "m3u": {} }}"#, xtream.unwrap_or("null".to_string()), m3u.unwrap_or("null".to_string()))))
-                .unwrap()
-                .into_response();
+                .body(axum::body::Body::from(format!(r#"{{"xtream": {}, "m3u": {} }}"#,
+                    xtream.unwrap_or("null".to_string()),
+                    m3u.unwrap_or("null".to_string())))));
         }
     }
-    axum::response::Response::builder()
+    try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header("Content-Type", mime::APPLICATION_JSON.to_string())
-        .body(axum::body::Body::from("{}"))
-        .unwrap()
-        .into_response()
+        .body(axum::body::Body::from("{}")))
 }
 
 pub fn user_api_register(app_state: Arc<AppState>) -> axum::Router<Arc<AppState>> {

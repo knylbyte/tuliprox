@@ -32,7 +32,7 @@ macro_rules! cant_write_result {
         create_tuliprox_error!(
             TuliproxErrorKind::Notify,
             "failed to write xtream playlist: {} - {}",
-            $path.to_str().unwrap(),
+            $path.display(),
             $err
         )
     };
@@ -64,7 +64,7 @@ fn ensure_xtream_storage_path(cfg: &Config, target_name: &str) -> Result<PathBuf
         if std::fs::create_dir_all(&path).is_err() {
             let msg = format!(
                 "Failed to save xtream data, can't create directory {}",
-                &path.to_str().unwrap()
+                &path.display()
             );
             return Err(notify_err!(msg));
         }

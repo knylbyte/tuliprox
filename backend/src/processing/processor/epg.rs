@@ -146,8 +146,9 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
             for epg_source in epg_sources {
                 // icon tags
                 let icon_tags: HashMap<&String, &XmlTag> = epg_source.children.iter()
-                    .filter(|tag| tag.icon != XmlTagIcon::Undefined && tag.get_attribute_value(EPG_ATTRIB_ID).is_some())
-                    .map(|t| (t.get_attribute_value(EPG_ATTRIB_ID).unwrap(), t)).collect();
+                    .filter(|tag| tag.icon != XmlTagIcon::Undefined)
+                    .filter_map(|tag| tag.get_attribute_value(EPG_ATTRIB_ID).map(|id| (id, tag)))
+                    .collect();
 
                 let assign_values = |chan: &mut PlaylistItem| {
                     if id_cache.smart_match_enabled && chan.header.epg_channel_id.is_none() {
@@ -169,7 +170,7 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
                     if let Some(epg_channel_id) = chan.header.epg_channel_id.as_ref() {
                         if !icon_assigned.contains(epg_channel_id) &&
                             (epg_source.logo_override || chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
-                            if let Some(icon_tag) = icon_tags.get(chan.header.epg_channel_id.as_ref().unwrap()) {
+                            if let Some(icon_tag) = icon_tags.get(epg_channel_id) {
                                 if let XmlTagIcon::Src(icon) = &icon_tag.icon {
                                     icon_assigned.insert(epg_channel_id.to_string());
                                     if epg_source.logo_override || chan.header.logo.is_empty() {

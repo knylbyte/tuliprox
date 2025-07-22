@@ -111,7 +111,7 @@ impl ProviderConfig {
     }
 
     fn notify_connection_change(&self, new_connections: usize) {
-        self.connection_change_tx.send((self.name.clone(), new_connections)).unwrap();
+        let _ = self.connection_change_tx.send((self.name.clone(), new_connections));
     }
 
     #[inline]

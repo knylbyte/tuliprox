@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 use shared::utils::get_string_from_serde_value;
+use crate::api::api_utils::try_unwrap_body;
 // https://info.hdhomerun.com/info/http_api
 
 // const DISCOVERY_BYTES: &[u8] =  &[0, 2, 0, 12, 1, 4, 255, 255, 255, 255, 2, 4, 255, 255, 255, 255, 115, 204, 125, 143];
@@ -184,12 +185,10 @@ fn create_device(app_state: &Arc<HdHomerunAppState>) -> Option<Device> {
 
 async fn device_xml(axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
     if let Some(device) = create_device(&app_state) {
-        axum::response::Response::builder()
+        try_unwrap_body!(axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(axum::http::header::CONTENT_TYPE, "application/xml")
-            .body(axum::body::Body::from(device.as_xml()))
-            .unwrap()
-            .into_response()
+            .body(axum::body::Body::from(device.as_xml())))
     } else {
         axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
@@ -231,11 +230,10 @@ async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<AppConfig>, creden
         let body_stream = stream::once(async { Ok(Bytes::from("[")) })
             .chain(stream)
             .chain(stream::once(async { Ok(Bytes::from("]")) }));
-        return axum::response::Response::builder()
+        return try_unwrap_body!(axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
-            .body(axum::body::Body::from_stream(body_stream))
-            .unwrap().into_response();
+            .body(axum::body::Body::from_stream(body_stream)));
     } else if (use_all || use_xtream) && target.has_output(&TargetType::Xtream) {
         let server_info = app_state.app_state.app_config.get_user_server_info(credentials);
         let base_url = server_info.get_base_url();
@@ -262,12 +260,10 @@ async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<AppConfig>, creden
             .chain(comma_stream)
             .chain(vod_stream_peek)
             .chain(stream::once(async { Ok(Bytes::from("]")) }));
-        return axum::response::Response::builder()
+        return try_unwrap_body!(axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
-            .body(axum::body::Body::from_stream(body_stream))
-            .unwrap()
-            .into_response();
+            .body(axum::body::Body::from_stream(body_stream)));
     }
     axum::http::StatusCode::NOT_FOUND.into_response()
 }

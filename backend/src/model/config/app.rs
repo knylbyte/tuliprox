@@ -369,7 +369,8 @@ impl AppConfig {
             TuliproxError::new(TuliproxErrorKind::Info, "API proxy config not loaded".to_string())
         }) {
             let server_info_list = api_proxy.server.clone();
-            server_info_list.iter().find(|c| c.name.eq(server_info_name)).map_or_else(|| server_info_list.first().unwrap().clone(), Clone::clone)
+            server_info_list.iter().find(|c| c.name.eq(server_info_name))
+                .map_or_else(|| server_info_list.first().unwrap().clone(), Clone::clone)
         } else {
             panic!("ApiProxyServer info not found");
         }

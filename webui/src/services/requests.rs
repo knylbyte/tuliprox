@@ -48,7 +48,8 @@ where
             match response.status() {
                 200 => {
                     if std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
-                        Ok(serde_json::from_str("null").unwrap()) // `T = ()` valid
+                         // `T = ()` valid
+                        serde_json::from_str("null").map_err(|_| Error::DeserializeError)
                     } else {
                         let data: Result<T, _> = response.json::<T>().await;
                         if let Ok(data) = data {

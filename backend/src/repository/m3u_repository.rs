@@ -16,7 +16,7 @@ use crate::utils;
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
-        create_tuliprox_error!(TuliproxErrorKind::Notify, "failed to write m3u playlist: {} - {}", $path.to_str().unwrap() ,$err)
+        create_tuliprox_error!(TuliproxErrorKind::Notify, "failed to write m3u playlist: {} - {}", $path.display() ,$err)
     }
 }
 
@@ -44,7 +44,7 @@ fn persist_m3u_playlist_as_text(cfg: &Config, target: &ConfigTarget, target_outp
                     }
                 }
                 Err(_) => {
-                    error!("Can't write m3u plain playlist {}", &m3u_filename.to_str().unwrap());
+                    error!("Can't write m3u plain playlist {}", &m3u_filename.display());
                 }
             }
         }

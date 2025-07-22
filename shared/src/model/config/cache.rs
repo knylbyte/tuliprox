@@ -20,14 +20,14 @@ impl CacheConfigDto {
     pub(crate) fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {
         if self.enabled {
             let work_path = PathBuf::from(working_dir);
-            if self.dir.is_none() {
-                self.dir = Some(work_path.join("cache").to_string_lossy().to_string());
-            } else {
-                let mut cache_dir = self.dir.as_ref().unwrap().to_string();
-                if PathBuf::from(&cache_dir).is_relative() {
-                    cache_dir = work_path.join(&cache_dir).clean().to_string_lossy().to_string();
-                }
-                self.dir = Some(cache_dir.to_string());
+            match self.dir.as_ref() {
+                None => self.dir = Some(work_path.join("cache").to_string_lossy().to_string()),
+                Some(work_dir) => {
+                    let mut cache_dir = work_dir.to_string();
+                    if PathBuf::from(&cache_dir).is_relative() {
+                        cache_dir = work_path.join(&cache_dir).clean().to_string_lossy().to_string();
+                    }
+                    self.dir = Some(cache_dir.to_string());                }
             }
 
             if let Some(val) = self.size.as_ref() {

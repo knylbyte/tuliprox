@@ -19,12 +19,14 @@ pub enum WsMessage {
 
 const WS_PATH: &str = "/ws";
 
+type Subscriber = RefCell<HashMap<usize, Box<dyn Fn(WsMessage)>>>;
+
 pub struct WebSocketService {
     connected: Rc<AtomicBool>,
     ws: Rc<RefCell<Option<WebSocket>>>,
     status_service: Rc<StatusService>,
     subscriber_id: Rc<AtomicUsize>,
-    subscribers: Rc<RefCell<HashMap<usize, Box<dyn Fn(WsMessage)>>>>,
+    subscribers: Rc<Subscriber>,
 }
 
 impl WebSocketService {
@@ -73,7 +75,7 @@ impl WebSocketService {
 
                 // onmessage
                 let onmessage_callback = Closure::<dyn FnMut(_)>::wrap(Box::new(move |event: MessageEvent| {
-                    trace!("WebSocket received message: {:?}", event);
+                    trace!("WebSocket received message: {event:?}");
                     if let Ok(buf) = event.data().dyn_into::<ArrayBuffer>() {
                          let array = Uint8Array::new(&buf);
                          let bytes = bytes::Bytes::from(array.to_vec());

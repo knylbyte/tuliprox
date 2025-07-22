@@ -38,6 +38,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use shared::model::{PlaylistItemType, XtreamCluster, FieldGetAccessor, PlaylistEntry, TargetType, UserConnectionPermission, ProxyType, get_backdrop_path_value, XtreamPlaylistItem};
+use crate::api::api_utils::try_unwrap_body;
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ApiStreamContext {
@@ -626,12 +627,10 @@ async fn xtream_get_stream_info_response(app_state: &AppState, user: &ProxyUserC
                     if user.proxy == ProxyType::Redirect && cluster == XtreamCluster::Live {
                         return redirect(&info_url).into_response();
                     } else if let Ok(content) = xtream::get_xtream_stream_info(Arc::clone(&app_state.http_client.load()), &app_state.app_config, user, &input, target, &pli, info_url.as_str(), cluster).await {
-                        return axum::response::Response::builder()
+                        return try_unwrap_body!(axum::response::Response::builder()
                             .status(axum::http::StatusCode::OK)
                             .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
-                            .body(axum::body::Body::from(content))
-                            .unwrap()
-                            .into_response()
+                            .body(axum::body::Body::from(content)))
                     }
                 }
             }
@@ -640,27 +639,21 @@ async fn xtream_get_stream_info_response(app_state: &AppState, user: &ProxyUserC
         return match cluster {
             XtreamCluster::Video => {
                 let content = create_vod_info_from_item(target, user, &pli, virtual_record.last_updated);
-                axum::response::Response::builder()
+                try_unwrap_body!(axum::response::Response::builder()
                     .status(axum::http::StatusCode::OK)
                     .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
-                    .body(axum::body::Body::from(content))
-                    .unwrap()
-                    .into_response()
+                    .body(axum::body::Body::from(content)))
             }
-            XtreamCluster::Live | XtreamCluster::Series => axum::response::Response::builder()
+            XtreamCluster::Live | XtreamCluster::Series => try_unwrap_body!(axum::response::Response::builder()
                 .status(axum::http::StatusCode::OK)
                 .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
-                .body(axum::body::Body::from("{}".as_bytes()))
-                .unwrap()
-                .into_response(),
+                .body(axum::body::Body::from("{}".as_bytes()))),
         };
     }
-    axum::response::Response::builder()
+    try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
-        .body(axum::body::Body::from("{}".as_bytes()))
-        .unwrap()
-        .into_response()
+        .body(axum::body::Body::from("{}".as_bytes())))
 }
 
 async fn xtream_get_short_epg(app_state: &AppState, user: &ProxyUserCredentials, target: &ConfigTarget, stream_id: &str, limit: &str) -> impl IntoResponse + Send {
@@ -721,9 +714,9 @@ async fn xtream_player_api_handle_content_action(config: &Config, target_name: &
             }
             return Some(serve_file(&file_path, mime::APPLICATION_JSON).await.into_response());
         } else if let Some(payload) = content {
-            return Some(axum::response::Response::builder()
+            return Some(try_unwrap_body!(axum::response::Response::builder()
                 .status(axum::http::StatusCode::OK)
-                .body(payload).unwrap().into_response());
+                .body(payload)));
         }
         return Some(api_utils::empty_json_list_response().into_response());
     }
@@ -758,10 +751,10 @@ async fn xtream_get_catchup_response(app_state: &AppState, target: &ConfigTarget
     serde_json::to_string(&doc)
         .map_or_else(
             |_| axum::http::StatusCode::BAD_REQUEST.into_response(),
-            |result| axum::response::Response::builder()
+            |result| try_unwrap_body!(axum::response::Response::builder()
                 .status(axum::http::StatusCode::OK)
                 .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
-                .body(result).unwrap().into_response())
+                .body(result)))
 }
 
 macro_rules! skip_json_response_if_flag_set {
@@ -848,8 +841,7 @@ async fn xtream_player_api(
                 skip_flag_optional!(skip_vod, xtream_repository::xtream_load_rewrite_playlist(XtreamCluster::Video, &app_state.app_config, &target, category_id, &user).await),
             crate::model::XC_ACTION_GET_SERIES =>
                 skip_flag_optional!(skip_series, xtream_repository::xtream_load_rewrite_playlist(XtreamCluster::Series, &app_state.app_config, &target, category_id, &user).await),
-            _ => Some(Err(info_err!(format!("Cant find content: {action} for target: {}", &target.name))
-            )),
+            _ => Some(Err(info_err!(format!("Cant find content: {action} for target: {}", &target.name)))),
         };
 
         match result {
@@ -858,10 +850,10 @@ async fn xtream_player_api(
                     Ok(xtream_iter) => {
                         // Convert the iterator into a stream of `Bytes`
                         let content_stream = xtream_create_content_stream(xtream_iter);
-                        axum::response::Response::builder()
+                        try_unwrap_body!(axum::response::Response::builder()
                             .status(axum::http::StatusCode::OK)
                             .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
-                            .body(axum::body::Body::from_stream(content_stream)).unwrap().into_response()
+                            .body(axum::body::Body::from_stream(content_stream)))
                     }
                     Err(err) => {
                         error!("Failed response for xtream target: {} action: {} error: {}", &target.name, action, err);

@@ -4,18 +4,18 @@ use crate::api::model::active_user_manager::{ActiveUserManager, UserConnectionGu
 use crate::api::model::app_state::AppState;
 use crate::api::model::stream::BoxedProviderStream;
 use crate::api::model::stream_error::StreamError;
+use crate::api::model::streams::timed_client_stream::TimedClientStream;
 use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
-use crate::model::{ProxyUserCredentials};
+use crate::model::ProxyUserCredentials;
 use bytes::Bytes;
 use futures::Stream;
+use futures::StreamExt;
 use log::{error, info};
+use shared::model::UserConnectionPermission;
 use std::pin::Pin;
 use std::sync::atomic::AtomicU8;
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
-use crate::api::model::streams::timed_client_stream::TimedClientStream;
-use futures::{StreamExt};
-use shared::model::UserConnectionPermission;
 
 const INNER_STREAM: u8 = 0_u8;
 const GRACE_BLOCK_STREAM: u8 = 1_u8;
@@ -35,10 +35,10 @@ pub(in crate::api) struct ActiveClientStream {
 
 impl ActiveClientStream {
     pub(crate) fn new(mut stream_details: StreamDetails,
-                            app_state: &AppState,
-                            user: &ProxyUserCredentials,
-                            connection_permission: UserConnectionPermission,
-                            addr: &str) -> Self {
+                      app_state: &AppState,
+                      user: &ProxyUserCredentials,
+                      connection_permission: UserConnectionPermission,
+                      addr: &str) -> Self {
         let active_user = app_state.active_users.clone();
         let active_provider = app_state.active_provider.clone();
         if connection_permission == UserConnectionPermission::Exhausted {
@@ -59,15 +59,24 @@ impl ActiveClientStream {
                     c.provider_connections_exhausted.clone()
                 ));
 
-        let stream = stream_details.stream.take().unwrap();
-        let stream = match app_state.app_config.config.load().sleep_timer_mins {
-            None => stream,
-            Some(mins) => {
-                let secs = u32::try_from((u64::from(mins) * 60).min(u64::from(u32::MAX))).unwrap_or(0);
-                if secs > 0 {
-                    TimedClientStream::new(stream,  secs).boxed()
-                } else {
-                    stream
+        let stream = match stream_details.stream.take() {
+            None => {
+                if let Some(guard) = stream_details.provider_connection_guard.as_ref() {
+                    guard.release();
+                }
+                futures::stream::empty::<Result<Bytes, StreamError>>().boxed()
+            }
+            Some(stream) => {
+                match app_state.app_config.config.load().sleep_timer_mins {
+                    None => stream,
+                    Some(mins) => {
+                        let secs = u32::try_from((u64::from(mins) * 60).min(u64::from(u32::MAX))).unwrap_or(0);
+                        if secs > 0 {
+                            TimedClientStream::new(stream, secs).boxed()
+                        } else {
+                            stream
+                        }
+                    }
                 }
             }
         };
@@ -193,7 +202,7 @@ impl Stream for ActiveClientStream {
         };
 
         if let Some(buffer) = buffer_opt {
-           return Poll::Ready(Some(Ok(buffer.next_chunk())));
+            return Poll::Ready(Some(Ok(buffer.next_chunk())));
         }
 
         Poll::Ready(None)

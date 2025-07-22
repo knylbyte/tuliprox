@@ -1,7 +1,5 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto,
-                   MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto,
-                   VideoConfigDto, WebUiConfigDto};
+use crate::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto, DEFAULT_VIDEO_EXTENSIONS};
 use crate::utils::default_connect_timeout_secs;
 
 pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
@@ -103,7 +101,7 @@ impl ConfigDto {
         match &mut self.video {
             None => {
                 self.video = Some(VideoConfigDto {
-                    extensions: vec!["mkv".to_string(), "avi".to_string(), "mp4".to_string()],
+                    extensions: DEFAULT_VIDEO_EXTENSIONS.iter().map(ToString::to_string).collect(),
                     download: None,
                     web_search: None,
                 });

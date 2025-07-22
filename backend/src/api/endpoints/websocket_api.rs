@@ -1,14 +1,14 @@
-use std::sync::Arc;
-use axum::{
-    extract::ws::{WebSocketUpgrade, WebSocket, Message},
-    response::IntoResponse,
-};
-use axum::extract::ws::CloseFrame;
-use log::{error, info};
-use shared::model::{ProtocolHandler, ProtocolMessage, WsCloseCode, PROTOCOL_VERSION};
 use crate::api::endpoints::v1_api::create_status_check;
 use crate::api::model::app_state::AppState;
-use crate::auth::verify_token;
+use crate::auth::verify_token_admin;
+use axum::extract::ws::CloseFrame;
+use axum::{
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    response::IntoResponse,
+};
+use log::{error, info};
+use shared::model::{ProtocolHandler, ProtocolMessage, WsCloseCode, PROTOCOL_VERSION};
+use std::sync::Arc;
 
 // WebSocket upgrade handler
 async fn websocket_handler(
@@ -34,8 +34,17 @@ pub fn ws_api_register(web_auth_enabled: bool, web_ui_path: &str) -> axum::Route
     }
 }
 
+#[inline]
+fn verify_auth_admin_token(auth_token: &str, secret_key: Option<&Vec<u8>>) -> bool {
+    match secret_key.as_ref() {
+        None => false,
+        Some(key) => verify_token_admin(auth_token, key.as_slice())
+    }
+}
+
 
 // WebSocket communication logic
+#[allow(clippy::too_many_lines)]
 async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth: bool) {
     let secret_key = if auth {
         if let Some(web_auth_config) = &app_state.app_config.config.load().web_ui.as_ref().and_then(|c| c.auth.as_ref()) {
@@ -48,13 +57,8 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth: bo
         None
     };
 
-    let verify_auth_token = |auth_token: &str| {
-        secret_key.as_ref().map(|key| verify_token(auth_token, key.as_slice()))
-    };
-
-    let mut active_user_change_rx =  app_state.active_users.get_active_user_change_channel();
-    let mut active_provider_change_rx =  app_state.active_provider.get_active_provider_change_channel();
-
+    let mut active_user_change_rx = app_state.active_users.get_active_user_change_channel();
+    let mut active_provider_change_rx = app_state.active_provider.get_active_provider_change_channel();
 
     let mut handler = ProtocolHandler::Version(PROTOCOL_VERSION);
 
@@ -94,7 +98,7 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth: bo
                                 if let Message::Binary(bytes) = msg {
                                     match ProtocolMessage::from_bytes(bytes) {
                                         Ok(ProtocolMessage::StatusRequest(auth_token)) => {
-                                            if !auth || verify_auth_token(&auth_token).is_some() {
+                                            if !auth || verify_auth_admin_token(&auth_token, secret_key.as_ref()) {
                                                 let status = create_status_check(&app_state).await;
                                                 if let Ok(response) = ProtocolMessage::StatusResponse(status).to_bytes() {
                                                     if socket.send(Message::Binary(response)).await.is_err() {

@@ -1,5 +1,5 @@
 use crate::model::{Config, ConfigInput};
-use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, XtreamCluster};
+use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, XtreamCluster, DEFAULT_VIDEO_EXTENSIONS};
 use shared::utils::extract_id_from_url;
 use std::borrow::BorrowMut;
 
@@ -116,26 +116,25 @@ fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url:
         let mut provider_id = None::<String>;
         let mut c = skip_digit(&mut it);
         loop {
-            if c.is_none() {
-                break;
-            }
-            let chr = c.unwrap();
-            if chr.is_whitespace() {
-                // skip
-            } else if chr == ',' {
-                plih.title = get_value(&mut stack, &mut it);
-            } else {
-                stack.push(chr);
-                let token = token_till(&mut stack, &mut it, '=', true);
-                if let Some(t) = token {
-                    let value = token_value(&mut stack, &mut it);
-                    let token = t.to_lowercase();
-                    if token.as_str() == "xui-id" {
-                        if !value.is_empty() {
-                            provider_id = Some(value);
-                        }
+            match c {
+                None=> break,
+                Some(chr) => {
+                    if chr.is_whitespace() {
+                        // skip
+                    } else if chr == ',' {
+                        plih.title = get_value(&mut stack, &mut it);
                     } else {
-                        process_header_fields!(plih, token.as_str(),
+                        stack.push(chr);
+                        let token = token_till(&mut stack, &mut it, '=', true);
+                        if let Some(t) = token {
+                            let value = token_value(&mut stack, &mut it);
+                            let token = t.to_lowercase();
+                            if token.as_str() == "xui-id" {
+                                if !value.is_empty() {
+                                    provider_id = Some(value);
+                                }
+                            } else {
+                                process_header_fields!(plih, token.as_str(),
                             (id, "tvg-id"),
                             (group, "group-title"),
                             (name, "tvg-name"),
@@ -146,6 +145,8 @@ fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url:
                             (logo_small, "tvg-logo-small"),
                             (time_shift, "timeshift"),
                             (rec, "tvg-rec"); value);
+                            }
+                        }
                     }
                 }
             }
@@ -188,7 +189,6 @@ fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url:
     plih
 }
 
-
 pub fn consume_m3u<'a, I, F: FnMut(PlaylistItem)>(cfg: &Config, input: &ConfigInput, lines: I, mut visit: F)
 where
     I: Iterator<Item=&'a str>,
@@ -197,7 +197,12 @@ where
     let mut group: Option<String> = None;
     let input_name = input.name.as_str();
 
-    let video_suffixes = cfg.video.as_ref().unwrap().extensions.iter().map(String::as_str).collect::<Vec<&str>>();
+    let video_suffixes = match cfg.video.as_ref() {
+      Some(config) => {
+          config.extensions.iter().map(String::as_str).collect::<Vec<&str>>()
+      },
+      None => DEFAULT_VIDEO_EXTENSIONS.to_vec()
+    };
     for line in lines {
         if line.starts_with("#EXTINF") {
             header = Some(String::from(line));
@@ -248,18 +253,23 @@ where
                 sort_order_idx += 1;
             }
             std::collections::hash_map::Entry::Occupied(o) => {
-                sort_order.get_mut(*o.get()).unwrap().push(item);
+                if let Some(order) = sort_order.get_mut(*o.get()) {
+                    order.push(item);
+                }
             }
         }
     });
     let mut grp_id = 0;
-    let result: Vec<PlaylistGroup> = sort_order.into_iter().map(|channels| {
+    let result: Vec<PlaylistGroup> = sort_order.into_iter().filter_map(|channels| {
         // create a group based on the first playlist item
         let channel = channels.first();
-        let (cluster, group_title) = channel.map(|pli|
-            (pli.header.xtream_cluster, &pli.header.group)).unwrap();
-        grp_id += 1;
-        PlaylistGroup { id: grp_id, xtream_cluster: cluster, title: group_title.to_string(), channels }
+        if let Some((cluster, group_title)) = channel.map(|pli|
+            (pli.header.xtream_cluster, &pli.header.group)) {
+            grp_id += 1;
+            Some(PlaylistGroup { id: grp_id, xtream_cluster: cluster, title: group_title.to_string(), channels })
+        } else {
+            None
+        }
     }).collect();
     result
 }

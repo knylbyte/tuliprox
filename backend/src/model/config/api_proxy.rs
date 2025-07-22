@@ -108,9 +108,9 @@ impl ApiProxyConfig {
                     errors.push(err.to_string());
                 } else {
                     let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&cfg.config);
-                    let backup_dir = config.backup_dir.as_ref().unwrap().as_str();
+                    let backup_dir = config.get_backup_dir();
                     self.user = vec![];
-                    if let Err(err) = utils::save_api_proxy(api_proxy_file, backup_dir, &ApiProxyConfigDto::from(&*self)) {
+                    if let Err(err) = utils::save_api_proxy(api_proxy_file, backup_dir.as_ref(), &ApiProxyConfigDto::from(&*self)) {
                         errors.push(format!("Error saving api proxy file: {err}"));
                     }
                 }
@@ -144,8 +144,8 @@ impl ApiProxyConfig {
                 }
 
                 let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&cfg.config);
-                let backup_dir = config.backup_dir.as_ref().unwrap().as_str();
-                if let Err(err) = save_api_proxy(api_proxy_file, backup_dir, &ApiProxyConfigDto::from(&*self)) {
+                let backup_dir = config.get_backup_dir();
+                if let Err(err) = save_api_proxy(api_proxy_file, backup_dir.as_ref(), &ApiProxyConfigDto::from(&*self)) {
                     errors.push(format!("Error saving api proxy file: {err}"));
                 } else {
                     backup_api_user_db_file(cfg, &user_db_path);

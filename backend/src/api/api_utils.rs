@@ -37,6 +37,8 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use url::Url;
+use crate::api::model::active_user_manager::UserSession;
+use crate::api::model::provider_config::ProviderConfig;
 
 #[macro_export]
 macro_rules! try_option_bad_request {
@@ -76,10 +78,19 @@ macro_rules! try_result_bad_request {
     };
 }
 
+#[macro_export]
+macro_rules! try_unwrap_body {
+    ($body:expr) => {
+        $body.map_or_else(
+                |_| axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                |resp| resp.into_response(),
+            )
+    };
+}
+
 pub use try_option_bad_request;
 pub use try_result_bad_request;
-use crate::api::model::active_user_manager::UserSession;
-use crate::api::model::provider_config::ProviderConfig;
+pub use try_unwrap_body;
 
 pub fn get_server_time() -> String {
     chrono::offset::Local::now().with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S %Z").to_string()
@@ -103,13 +114,11 @@ pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoRes
                 let stream = tokio_util::io::ReaderStream::new(reader);
                 let body = axum::body::Body::from_stream(stream);
 
-                axum::response::Response::builder()
+                try_unwrap_body!(axum::response::Response::builder()
                     .status(axum::http::StatusCode::OK)
                     .header(axum::http::header::CONTENT_TYPE, mime_type.to_string())
                     .header(axum::http::header::CACHE_CONTROL, axum::http::header::HeaderValue::from_static("no-cache"))
-                    .body(body)
-                    .unwrap()
-                    .into_response()
+                    .body(body))
             }
             Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         };
@@ -294,8 +303,6 @@ async fn resolve_streaming_strategy(app_state: &AppState, stream_url: &str, addr
         Some(provider) => app_state.active_provider.force_exact_acquire_connection(provider, addr).await,
         None => app_state.active_provider.acquire_connection(&input.name, addr).await
     };
-
-    error!("{:?}", app_state.active_provider.active_connections().await);
 
     let stream_response_params = match &**provider_connection_guard {
         ProviderAllocation::Exhausted => {
@@ -556,14 +563,14 @@ pub async fn force_provider_stream_response(addr: &str,
 
         let body_stream = prepare_body_stream(app_state, item_type, stream);
         debug_if_enabled!("Streaming provider forced stream request from {}", sanitize_sensitive_info(&user_session.stream_url));
-        return response.body(body_stream).unwrap().into_response();
+        return try_unwrap_body!(response.body(body_stream));
     }
     drop(stream_details.provider_connection_guard.take());
     if let (Some(stream), _stream_info) =
         create_channel_unavailable_stream(&app_state.app_config, &[], axum::http::StatusCode::BAD_GATEWAY)
     {
         debug!("Streaming custom stream");
-        axum::response::Response::builder().status(axum::http::StatusCode::OK).body(axum::body::Body::from_stream(stream)).unwrap().into_response()
+        try_unwrap_body!(axum::response::Response::builder().status(axum::http::StatusCode::OK).body(axum::body::Body::from_stream(stream)))
     } else {
         axum::http::StatusCode::BAD_REQUEST.into_response()
     }
@@ -611,7 +618,7 @@ pub async fn stream_response(addr: &str,
                 for (key, value) in &header_map {
                     response = response.header(key, value);
                 }
-                response.body(axum::body::Body::from_stream(broadcast_stream)).unwrap().into_response()
+                try_unwrap_body!(response.body(axum::body::Body::from_stream(broadcast_stream)))
             } else {
                 axum::http::StatusCode::BAD_REQUEST.into_response()
             }
@@ -637,7 +644,7 @@ pub async fn stream_response(addr: &str,
             }
 
             let body_stream = prepare_body_stream(app_state, item_type, stream);
-            response.body(body_stream).unwrap().into_response()
+            try_unwrap_body!(response.body(body_stream))
         };
 
         return stream_resp.into_response();
@@ -666,7 +673,7 @@ fn shared_stream_response(app_state: &AppState, stream_url: &str, addr: &str, us
             for (key, value) in &header_map {
                 response = response.header(key, value);
             }
-            return Some(response.body(axum::body::Body::from_stream(stream)).unwrap());
+            return response.body(axum::body::Body::from_stream(stream)).ok();
         }
     }
     None
@@ -743,10 +750,10 @@ pub async fn resource_response(app_state: &AppState, resource_url: &str, req_hea
                             let writer = BufWriter::new(file);
                             let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
                             let stream = PersistPipeStream::new(byte_stream, writer, add_cache_content);
-                            return response_builder.body(axum::body::Body::from_stream(stream)).unwrap().into_response();
+                            return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(stream)));
                         }
                     }
-                    return response_builder.body(axum::body::Body::from_stream(byte_stream)).unwrap().into_response();
+                    return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(byte_stream)));
                 }
                 debug_if_enabled!("Failed to open resource got status {} for {}", status, sanitize_sensitive_info(resource_url));
             }
@@ -770,12 +777,10 @@ pub fn separate_number_and_remainder(input: &str) -> (String, Option<String>) {
 
 /// # Panics
 pub fn empty_json_list_response() -> impl IntoResponse + Send {
-    axum::response::Response::builder()
+    try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header("Content-Type", mime::APPLICATION_JSON.to_string())
-        .body("[]".to_string())
-        .unwrap()
-        .into_response()
+        .body("[]".to_string()))
 }
 
 pub fn get_username_from_auth_header(
@@ -797,11 +802,10 @@ pub fn get_username_from_auth_header(
 
 /// # Panics
 pub fn redirect(url: &str) -> impl IntoResponse {
-    axum::response::Response::builder()
+    try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::FOUND)
         .header("Location", url)
-        .body(axum::body::Body::empty())
-        .unwrap()
+        .body(axum::body::Body::empty()))
 }
 
 pub async fn is_seek_request(

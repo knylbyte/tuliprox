@@ -335,11 +335,12 @@ impl MultiProviderLineup {
                 let mut idx = index.load(Ordering::Relaxed) % provider_count;
                 let start = idx;
                 for _ in start..provider_count {
-                    let p = pg.get(idx).unwrap();
-                    let result = p.get_next(grace, grace_period_timeout_secs).await;
-                    if result.is_some() {
-                        index.store((idx + 1) % provider_count, Ordering::Relaxed);
-                        return result;
+                    if let Some(p) = pg.get(idx) {
+                        let result = p.get_next(grace, grace_period_timeout_secs).await;
+                        if result.is_some() {
+                            index.store((idx + 1) % provider_count, Ordering::Relaxed);
+                            return result;
+                        }
                     }
                     idx = (idx + 1) % provider_count;
                 }

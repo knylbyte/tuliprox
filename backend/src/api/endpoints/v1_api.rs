@@ -11,6 +11,7 @@ use crate::processing::processor::playlist;
 use crate::repository::user_repository::store_api_user;
 use crate::utils::ip_checker::get_ips;
 use crate::{utils, VERSION};
+use crate::api::api_utils::try_unwrap_body;
 use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
@@ -79,9 +80,9 @@ async fn save_config_api_proxy_user(
             }
         } else {
             let config = app_state.app_config.config.load();
-            let backup_dir = config.backup_dir.as_ref().unwrap().as_str();
+            let backup_dir = config.get_backup_dir();
             let paths = app_state.app_config.paths.load();
-            if let Some(err) = intern_save_config_api_proxy(backup_dir, &ApiProxyConfigDto::from(&*new_api_proxy), paths.api_proxy_file_path.as_str()) {
+            if let Some(err) = intern_save_config_api_proxy(backup_dir.as_ref(), &ApiProxyConfigDto::from(&*new_api_proxy), paths.api_proxy_file_path.as_str()) {
                 return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
             }
         }
@@ -97,8 +98,8 @@ async fn save_config_main(
         let paths = app_state.app_config.paths.load();
         let file_path = paths.config_file_path.as_str();
         let config = app_state.app_config.config.load();
-        let backup_dir = config.backup_dir.as_ref().unwrap().as_str();
-        if let Some(err) = intern_save_config_main(file_path, backup_dir, &cfg) {
+        let backup_dir = config.get_backup_dir();
+        if let Some(err) = intern_save_config_main(file_path, backup_dir.as_ref(), &cfg) {
             return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
         }
         axum::http::StatusCode::OK.into_response()
@@ -117,16 +118,16 @@ async fn save_config_api_proxy_config(
         }
     }
 
-    // TODO wenn hot reload an ist wird doppelt geladen
+    // TODO if hot reload is on, loaded twice
     if let Some(old_api_proxy) = app_state.app_config.api_proxy.load().clone() {
         let mut api_proxy = (*old_api_proxy).clone();
         api_proxy.server = req_api_proxy.iter().map(Into::into).collect();
         let new_api_proxy = Arc::new(api_proxy);
         app_state.app_config.api_proxy.store(Some(Arc::clone(&new_api_proxy)));
         let config = app_state.app_config.config.load();
-        let backup_dir = config.backup_dir.as_ref().unwrap().as_str();
+        let backup_dir = config.get_backup_dir();
         let paths = app_state.app_config.paths.load();
-        if let Some(err) = intern_save_config_api_proxy(backup_dir, &ApiProxyConfigDto::from(new_api_proxy.as_ref()), paths.api_proxy_file_path.as_str()) {
+        if let Some(err) = intern_save_config_api_proxy(backup_dir.as_ref(), &ApiProxyConfigDto::from(new_api_proxy.as_ref()), paths.api_proxy_file_path.as_str()) {
             return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
         }
     }
@@ -318,8 +319,8 @@ pub async fn create_status_check(app_state: &Arc<AppState>) -> StatusCheck {
 async fn status(axum::extract::State(app_state): axum::extract::State<Arc<AppState>>) -> axum::response::Response {
     let status = create_status_check(&app_state).await;
     match serde_json::to_string_pretty(&status) {
-        Ok(pretty_json) => axum::response::Response::builder().status(axum::http::StatusCode::OK)
-            .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string()).body(pretty_json).unwrap().into_response(),
+        Ok(pretty_json) => try_unwrap_body!(axum::response::Response::builder().status(axum::http::StatusCode::OK)
+            .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string()).body(pretty_json)),
         Err(_) => axum::Json(status).into_response(),
     }
 }
@@ -331,8 +332,8 @@ async fn ipinfo(axum::extract::State(app_state): axum::extract::State<Arc<AppSta
             ipv6,
         };
         return match serde_json::to_string(&ipcheck) {
-            Ok(json) => axum::response::Response::builder().status(axum::http::StatusCode::OK)
-                .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string()).body(json).unwrap().into_response(),
+            Ok(json) => try_unwrap_body!(axum::response::Response::builder().status(axum::http::StatusCode::OK)
+                .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string()).body(json)),
             Err(_) => axum::Json(ipcheck).into_response(),
         };
     }

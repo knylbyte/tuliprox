@@ -14,6 +14,7 @@ use futures::stream;
 use log::{debug, error};
 use std::sync::Arc;
 use crate::auth::Fingerprint;
+use crate::api::api_utils::try_unwrap_body;
 
 async fn m3u_api(
     api_req: &UserApiRequest,
@@ -32,7 +33,7 @@ async fn m3u_api(
                     if api_req.content_type == "m3u_plus" {
                         builder = builder.header("Content-Disposition", "attachment; filename=\"playlist.m3u\"");
                     }
-                    builder.body(axum::body::Body::from_stream(content_stream)).unwrap().into_response()
+                    try_unwrap_body!(builder.body(axum::body::Body::from_stream(content_stream)))
                 }
                 Err(err) => {
                     error!("{}", sanitize_sensitive_info(err.to_string().as_str()));

@@ -112,13 +112,13 @@ macro_rules! add_opt_i64_property_if_exists {
 
 macro_rules! add_opt_f64_property_if_exists {
     ($vec:expr, $prop:expr, $prop_name:expr) => {
-       $prop.as_ref().map(|v| $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from_f64(f64::from(*v)).unwrap())));
+       $prop.as_ref().map(|v| $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from_f64(f64::from(*v)).unwrap_or_else(|| serde_json::Number::from(0)))));
     }
 }
 
 macro_rules! add_f64_property_if_exists {
     ($vec:expr, $prop:expr, $prop_name:expr) => {
-       $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from_f64(f64::from($prop)).unwrap()));
+       $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from_f64(f64::from($prop)).unwrap_or_else(|| serde_json::Number::from(0))));
     }
 }
 
@@ -427,7 +427,7 @@ fn append_prepared_series_properties(add_props: Option<&Map<String, Value>>, doc
         match props.get("rating") {
             Some(value) => {
                 document.insert("rating".to_string(), match value {
-                    Value::Number(val) => Value::String(format!("{:.0}", val.as_f64().unwrap())),
+                    Value::Number(val) => Value::String(format!("{:.0}", val.as_f64().unwrap_or(0f64))),
                     Value::String(val) => Value::String(val.to_string()),
                     _ => Value::String("0".to_string()),
                 });

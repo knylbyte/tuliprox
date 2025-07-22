@@ -52,10 +52,10 @@ fn get_download_directory(download_cfg: &VideoDownloadConfig, filestem: &str) ->
             }
         }
         let dir_name = CONSTANTS.re_remove_filename_ending.replace(stem, "");
-        let file_dir: PathBuf = [download_cfg.directory.as_ref().unwrap(), dir_name.as_ref()].iter().collect();
+        let file_dir: PathBuf = [download_cfg.directory.as_str(), dir_name.as_ref()].iter().collect();
         file_dir
     } else {
-        PathBuf::from(download_cfg.directory.as_ref().unwrap())
+        PathBuf::from(download_cfg.directory.as_str())
     }
 }
 

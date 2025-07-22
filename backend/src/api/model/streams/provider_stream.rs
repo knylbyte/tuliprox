@@ -7,6 +7,7 @@ use reqwest::StatusCode;
 use axum::response::IntoResponse;
 use crate::api::model::stream::ProviderStreamResponse;
 use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
+use crate::api::api_utils::try_unwrap_body;
 
 #[derive(Debug, Copy, Clone)]
 pub enum CustomVideoStreamType {
@@ -65,7 +66,7 @@ pub fn create_custom_video_stream_response(config: &AppConfig, video_response: C
         for (key, value) in headers {
             builder = builder.header(key, value);
         }
-        return builder.body(axum::body::Body::from_stream(stream)).unwrap().into_response();
+        return try_unwrap_body!(builder.body(axum::body::Body::from_stream(stream)));
     }
     axum::http::StatusCode::FORBIDDEN.into_response()
 }

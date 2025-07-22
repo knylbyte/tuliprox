@@ -19,7 +19,7 @@ pub fn StatsView() -> Html {
         match &status_ctx.status {
             Some(stats) => {
                 if let Some(map) = &stats.active_provider_connections {
-                    if map.len() > 0 {
+                    if !map.is_empty() {
                         let cards = map.iter().map(|(provider, connections)| {
                             html! {
                                     <Card>

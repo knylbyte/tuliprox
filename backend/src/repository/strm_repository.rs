@@ -128,10 +128,12 @@ fn style_rename_year<'a>(
             if let Ok(year) = year_match.as_str().parse::<u32>() {
                 if (1900..=cur_year).contains(&year) {
                     years.push(year);
-                    let match_start = caps.get(0).unwrap().start();
-                    let match_end = caps.get(0).unwrap().end();
-                    new_name.push_str(&name[last_index..match_start]);
-                    last_index = match_end;
+                    if let Some(matched) = caps.get(0) {
+                        let match_start = matched.start();
+                        let match_end = matched.end();
+                        new_name.push_str(&name[last_index..match_start]);
+                        last_index = match_end;
+                    }
                 }
             }
         }

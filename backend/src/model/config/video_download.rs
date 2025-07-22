@@ -6,20 +6,19 @@ use crate::model::macros;
 #[derive(Debug, Clone)]
 pub struct VideoDownloadConfig {
     pub headers: HashMap<String, String>,
-    pub directory: Option<String>,
+    pub directory: String,
     pub organize_into_directories: bool,
     pub episode_pattern: Option<Regex>,
 }
-
 
 macros::from_impl!(VideoDownloadConfig);
 impl From<&VideoDownloadConfigDto> for VideoDownloadConfig {
     fn from(dto: &VideoDownloadConfigDto) -> Self {
         Self {
             headers: dto.headers.clone(),
-            directory: dto.directory.clone(),
+            directory: dto.directory.as_ref().map_or_else(|| "downloads".to_string(), ToString::to_string),
             organize_into_directories: dto.organize_into_directories,
-            episode_pattern: dto.episode_pattern.as_ref().map(|s| Regex::new(s).unwrap()),
+            episode_pattern: dto.episode_pattern.as_ref().and_then(|s| Regex::new(s).ok()),
         }
     }
 }
@@ -28,7 +27,7 @@ impl From<&VideoDownloadConfig> for VideoDownloadConfigDto {
     fn from(instance: &VideoDownloadConfig) -> Self {
         Self {
             headers: instance.headers.clone(),
-            directory: instance.directory.clone(),
+            directory: Some(instance.directory.clone()),
             organize_into_directories: instance.organize_into_directories,
             episode_pattern: instance.episode_pattern.as_ref().map(std::string::ToString::to_string),
         }

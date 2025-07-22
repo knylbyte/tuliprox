@@ -71,9 +71,10 @@ where
                     self.dfs_find_cycles(neighbor, visited, recursion_stack, cycles);
                 } else if recursion_stack.contains(neighbor) {
                     // Cycle detected; collect the cycle path
-                    let cycle_start_index = recursion_stack.iter().position(|n| n == neighbor).unwrap();
-                    let cycle = recursion_stack[cycle_start_index..].to_vec();
-                    cycles.push(cycle);
+                    if let Some(cycle_start_index) = recursion_stack.iter().position(|n| n == neighbor) {
+                        let cycle = recursion_stack[cycle_start_index..].to_vec();
+                        cycles.push(cycle);
+                    }
                 }
             }
         }

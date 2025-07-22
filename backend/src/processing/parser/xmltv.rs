@@ -2,6 +2,7 @@ use crate::model::{Epg, TVGuide, XmlTag, XmlTagIcon, EPG_ATTRIB_CHANNEL, EPG_ATT
 use crate::model::{EpgSmartMatchConfig, PersistedEpgSource};
 use crate::processing::processor::epg::EpgIdCache;
 use crate::utils::compressed_file_reader::CompressedFileReader;
+use dashmap::DashMap;
 use deunicode::deunicode;
 use quick_xml::events::{BytesStart, BytesText, Event};
 use quick_xml::Reader;
@@ -14,7 +15,6 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use dashmap::DashMap;
 
 /// Splits a string at the first delimiter if the prefix matches a known country code.
 ///
@@ -143,13 +143,14 @@ impl TVGuide {
         if !matched && fuzzy_matching {
             let (fuzzy_matched, matched_normalized_name) = Self::find_best_fuzzy_match(id_cache, tag);
             if fuzzy_matched {
-                let key = matched_normalized_name.unwrap();
-                let id = epg_id.to_string();
-                id_cache.normalized.entry(key).and_modify(|entry| {
-                    entry.replace(id.clone());
-                    id_cache.channel_epg_id.insert(Cow::Owned(id));
-                    matched = true;
-                });
+                if let Some(key) = matched_normalized_name {
+                    let id = epg_id.to_string();
+                    id_cache.normalized.entry(key).and_modify(|entry| {
+                        entry.replace(id.clone());
+                        id_cache.channel_epg_id.insert(Cow::Owned(id));
+                        matched = true;
+                    });
+                }
             }
         }
         matched
@@ -190,9 +191,10 @@ impl TVGuide {
                         #[allow(clippy::cast_sign_loss)]
                         let mjw = min(100, (match_jw * 100.0).round() as u16);
                         if mjw >= match_threshold {
-                            let mut lock = data.lock().unwrap();
-                            if lock.0 < mjw {
-                                *lock = (mjw, Some(Cow::Borrowed(norm_key)));
+                            if let Ok(mut lock) = data.lock() {
+                                if lock.0 < mjw {
+                                    *lock = (mjw, Some(Cow::Borrowed(norm_key)));
+                                }
                             }
                             if mjw > best_match_threshold {
                                 return true; // (true, matched_normalized_epg_id.map(|s| s.to_string()));
@@ -206,8 +208,9 @@ impl TVGuide {
         // is there an early exit strategy ???
 
         if early_exit_flag.load(Ordering::SeqCst) {
-            let result = data.lock().unwrap().1.take();
-            return (true, result.as_ref().map(std::string::ToString::to_string));
+            if let Ok(mut result) = data.lock() {
+                return (true, result.1.take().as_ref().map(ToString::to_string));
+            }
         }
         (false, None)
     }
@@ -354,13 +357,14 @@ where
     }
 }
 
-
 fn handle_text_tag(stack: &mut [XmlTag], e: &BytesText) {
     if !stack.is_empty() {
         if let Ok(text) = e.unescape() {
             let t = text.trim();
             if !t.is_empty() {
-                stack.last_mut().unwrap().value = Some(t.to_string());
+                if let Some(tag) = stack.last_mut() {
+                    tag.value = Some(t.to_string());
+                }
             }
         }
     }
@@ -403,14 +407,16 @@ fn collect_tag_attributes(e: &BytesStart, is_channel: bool, is_program: bool) ->
     let attributes = e.attributes().filter_map(Result::ok)
         .filter_map(|a| {
             let key = String::from_utf8_lossy(a.key.as_ref()).to_string();
-            let mut value = String::from(a.unescape_value().unwrap().as_ref());
-            if (is_channel && key == EPG_ATTRIB_ID) || (is_program && key == EPG_ATTRIB_CHANNEL) {
-                value = value.to_lowercase().to_string();
-            }
-            if value.is_empty() {
-                None
+            if let Ok(value) = a.unescape_value().as_ref() {
+                if value.is_empty() {
+                    None
+                } else if (is_channel && key == EPG_ATTRIB_ID) || (is_program && key == EPG_ATTRIB_CHANNEL) {
+                    Some((key, value.to_lowercase().to_string()))
+                } else {
+                    Some((key, value.to_string()))
+                }
             } else {
-                Some((key, value))
+                None
             }
         }).collect::<HashMap<String, String>>();
     attributes
@@ -466,13 +472,20 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
                 }
             });
 
-            epg_children.lock().unwrap().extend(children);
+            if let Ok(mut guard) = epg_children.lock() {
+                guard.extend(children);
+            }
         });
+        let children = if let Ok(mut children) = epg_children.lock() {
+            mem::take(&mut *children)
+        } else {
+            vec![]
+        };
         let epg = Epg {
             logo_override: false,
             priority: 0,
             attributes: epg_attributes,
-            children: mem::take(&mut *epg_children.lock().unwrap()),
+            children,
         };
         Some(epg)
     }
@@ -492,7 +505,7 @@ mod tests {
     /// parse_normalize().unwrap();
     /// ```
     fn parse_normalize() {
-        let epg_normalize_dto = EpgSmartMatchConfigDto {..Default::default()};
+        let epg_normalize_dto = EpgSmartMatchConfigDto { ..Default::default() };
         let epg_normalize = EpgSmartMatchConfig::from(epg_normalize_dto);
         let normalized = normalize_channel_name("Love Nature", &epg_normalize);
         assert_eq!(normalized, "lovenature".to_string());

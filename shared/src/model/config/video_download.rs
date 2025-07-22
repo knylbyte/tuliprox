@@ -4,6 +4,8 @@ use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::DEFAULT_USER_AGENT;
 
+pub const DEFAULT_VIDEO_EXTENSIONS: [&str; 6] = ["mkv", "avi", "mp4", "mpeg", "divx", "mov"];
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct VideoDownloadConfigDto {
@@ -35,7 +37,7 @@ impl VideoConfigDto {
     /// Will panic if default `RegEx` gets invalid
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
         if self.extensions.is_empty() {
-            self.extensions = ["mkv", "avi", "mp4", "mpeg", "divx", "mov"]
+            self.extensions = DEFAULT_VIDEO_EXTENSIONS
                 .iter()
                 .map(|&arg| arg.to_string())
                 .collect();

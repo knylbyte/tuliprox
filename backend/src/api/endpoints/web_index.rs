@@ -1,14 +1,15 @@
 use crate::api::api_utils::serve_file;
+use crate::api::api_utils::try_unwrap_body;
 use crate::api::model::app_state::AppState;
-use crate::auth::{AuthBearer, verify_password, create_jwt_admin, create_jwt_user, is_admin, verify_token};
+use crate::auth::{create_jwt_admin, create_jwt_user, is_admin, verify_password, verify_token, AuthBearer};
 use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc};
-use tower::Service;
 use shared::model::{TokenResponse, UserCredential};
 use shared::utils::CONSTANTS;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tower::Service;
 
 fn no_web_auth_token() -> impl axum::response::IntoResponse + Send {
     axum::Json(TokenResponse {
@@ -114,10 +115,9 @@ async fn index(
                     new_content.replace_range(pos..pos + 6, &base_href);
                 }
 
-                return axum::response::Response::builder()
+                return try_unwrap_body!(axum::response::Response::builder()
                     .header("Content-Type", mime::TEXT_HTML_UTF_8.as_ref())
-                    .body(new_content.into())
-                    .unwrap();
+                    .body(new_content));
             }
             Err(err) => {
                 error!("Failed to read web ui index.hml: {err}");
@@ -151,10 +151,9 @@ async fn index_config(
                         }
                     }
                     if let Ok(json_content) = serde_json::to_string(&json_data) {
-                        return axum::response::Response::builder()
+                        return try_unwrap_body!(axum::response::Response::builder()
                             .header("Content-Type", mime::APPLICATION_JSON.as_ref())
-                            .body(axum::body::Body::from(json_content))
-                            .unwrap();
+                            .body(axum::body::Body::from(json_content)));
                     }
                 }
             }
@@ -208,8 +207,7 @@ pub fn index_register_with_path(web_dir_path: &Path, web_ui_path: &str) -> axum:
                     let new_req = axum::http::Request::builder()
                         .method(req.method())
                         .uri(new_uri)
-                        .body(req.into_body())
-                        .unwrap();
+                        .body(req.into_body()).unwrap();
 
                     serve_dir.call(new_req)
                 }

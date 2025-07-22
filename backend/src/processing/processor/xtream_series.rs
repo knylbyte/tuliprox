@@ -16,7 +16,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::sync::Arc;
 use std::time::Instant;
-use log::{info, log_enabled, Level};
+use log::{error, info, log_enabled, Level};
 use shared::utils::bincode_serialize;
 use crate::model::{XtreamSeriesEpisode, XtreamSeriesInfoEpisode};
 use crate::utils;
@@ -36,9 +36,12 @@ fn write_series_episode_record_to_wal_file(
     let series_episode = XtreamSeriesEpisode::from(episode);
     if let Ok(content_bytes) = bincode_serialize(&series_episode) {
         writer.write_all(&provider_id.to_le_bytes())?;
-        let len = u32::try_from(content_bytes.len()).unwrap();
-        writer.write_all(&len.to_le_bytes())?;
-        writer.write_all(&content_bytes)?;
+        if let Ok(len)  = u32::try_from(content_bytes.len()) {
+            writer.write_all(&len.to_le_bytes())?;
+            writer.write_all(&content_bytes)?;
+        } else {
+            error!("Cant write to WAL file, content length exceeds u32");
+        }
     }
     Ok(())
 }
