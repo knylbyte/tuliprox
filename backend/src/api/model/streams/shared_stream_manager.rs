@@ -205,18 +205,15 @@ impl SharedStreamManager {
         let stream_url = self.shared_streams_by_addr.remove(addr).map(|(_key, value)| value);
         if let Some(stream_url) = stream_url {
             debug!("Release shared stream {addr}");
-            let mut drop_state = false;
-            if let Some(entry) = self.shared_streams.get_mut(&stream_url) {
-                let shared_state = &*entry;
+            if let Some(mut entry) = self.shared_streams.get_mut(&stream_url) {
+                let shared_state = &mut *entry;
                 if let Some((_, tx)) = shared_state.subscribers.remove(addr) {
                     let _ = tx.send(true);
                 }
                 if shared_state.subscribers.is_empty() {
-                    drop_state = true;
+                    drop(entry); // Release the lock before unregistering
+                    self.unregister(&stream_url);
                 }
-            }
-            if drop_state {
-                self.unregister(&stream_url);
             }
         }
     }
