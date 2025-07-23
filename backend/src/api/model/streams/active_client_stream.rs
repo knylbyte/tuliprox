@@ -121,6 +121,7 @@ impl ActiveClientStream {
             let stream_strategy_flag_copy = Arc::clone(&stream_strategy_flag);
             let waker_copy = Arc::clone(waker);
             let grace_period_millis = stream_details.grace_period_millis;
+            let provider_guard = stream_details.provider_connection_guard.clone();
 
             let address = addr.to_string();
             tokio::spawn(async move {
@@ -133,6 +134,9 @@ impl ActiveClientStream {
                     if active_connections > max_connections {
                         info!("User connections exhausted for active clients: {username}");
                         stream_strategy_flag_copy.store(USER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
+                        if let Some(guard) = provider_guard.as_ref() {
+                            guard.release();
+                        }
                         if let Some(flag) = reconnect_flag {
                             info!("Stopped reconnecting, user connections exhausted: {username}");
                             flag.notify();
@@ -147,6 +151,9 @@ impl ActiveClientStream {
                             info!("Provider connections exhausted for active clients: {provider_name}");
                             provider_manager.release_connection(&address);
                             stream_strategy_flag_copy.store(PROVIDER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
+                            if let Some(guard) = provider_guard.as_ref() {
+                                guard.release();
+                            }
                             if let Some(flag) = reconnect_flag {
                                 info!("Stopped reconnecting, provider connections exhausted {provider_name}");
                                 flag.notify();
@@ -196,8 +203,12 @@ impl Stream for ActiveClientStream {
         }
 
         let buffer_opt = match flag {
-            USER_EXHAUSTED_STREAM => self.custom_video.0.as_mut(),
-            PROVIDER_EXHAUSTED_STREAM => self.custom_video.1.as_mut(),
+            USER_EXHAUSTED_STREAM => {
+                self.custom_video.0.as_mut()
+            },
+            PROVIDER_EXHAUSTED_STREAM => {
+                self.custom_video.1.as_mut()
+            },
             _ => None,
         };
 
