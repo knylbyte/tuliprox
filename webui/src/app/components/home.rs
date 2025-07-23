@@ -7,6 +7,7 @@ use crate::app::components::{IconButton, Sidebar, DashboardView, PlaylistView, P
 use crate::app::context::{ConfigContext, StatusContext};
 use crate::model::ViewType;
 use crate::hooks::{use_server_status, use_service_context};
+use crate::services::WsMessage;
 
 #[function_component]
 pub fn Home() -> Html {
@@ -21,6 +22,20 @@ pub fn Home() -> Html {
         let services_ctx = services.clone();
         Callback::from(move |_| services_ctx.auth.logout())
     };
+
+    {
+        let services_ctx = services.clone();
+        use_effect_with((), move |_| {
+            let services_ctx = services_ctx.clone();
+            let services_ctx_clone = services_ctx.clone();
+            let subid = services_ctx.websocket.subscribe(move |msg| {
+                if matches!(msg, WsMessage::Unauthorized) {
+                    services_ctx_clone.auth.logout()
+                }
+            });
+            move || services_ctx.websocket.unsubscribe(subid)
+        });
+    }
 
     let handle_view_change = {
         let view_vis = view_visible.clone();

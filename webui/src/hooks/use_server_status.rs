@@ -63,7 +63,8 @@ pub fn use_server_status(
                         let new_status = Rc::new(server_status);
                         *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));
                         status_signal.set(Some(new_status));
-                    }
+                    },
+                    _ => {}
                 }
             });
 

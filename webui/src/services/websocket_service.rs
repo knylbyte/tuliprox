@@ -12,6 +12,7 @@ use crate::services::{get_token, StatusService};
 
 #[derive(Clone)]
 pub enum WsMessage {
+    Unauthorized,
     ServerStatus(Rc<StatusCheck>),
     ActiveUser(usize, usize),
     ActiveProvider(String, usize),
@@ -83,7 +84,7 @@ impl WebSocketService {
                             Ok(message) => {
                                 match message {
                                     ProtocolMessage::Unauthorized => {
-                                        error!("Unauthorized");
+                                        broadcast(WsMessage::Unauthorized);
                                     },
                                     ProtocolMessage::Error(err) => {
                                         error!("{}", err);
