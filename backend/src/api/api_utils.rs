@@ -610,8 +610,8 @@ pub async fn stream_response(addr: &str,
             debug_if_enabled!("Streaming shared stream request from {}", sanitize_sensitive_info(stream_url));
             // Shared Stream response
             let shared_headers = provider_response.as_ref().map_or_else(Vec::new, |(h, _, _)| h.clone());
-            SharedStreamManager::subscribe(app_state, stream_url, addr, stream, shared_headers, stream_options.buffer_size, provider_guard);
-            if let Some(broadcast_stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url, addr) {
+            SharedStreamManager::subscribe(app_state, stream_url, stream, shared_headers, stream_options.buffer_size, provider_guard);
+            if let Some(broadcast_stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)) {
                 let (status_code, header_map) = get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
                 let mut response = axum::response::Response::builder()
                     .status(status_code);
@@ -662,7 +662,7 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
 }
 
 fn shared_stream_response(app_state: &AppState, stream_url: &str, addr: &str, user: &ProxyUserCredentials, connect_permission: UserConnectionPermission) -> Option<impl IntoResponse> {
-    if let Some(stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url, addr) {
+    if let Some(stream) = SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)) {
         debug_if_enabled!("Using shared stream {}", sanitize_sensitive_info(stream_url));
         if let Some(headers) = app_state.shared_stream_manager.get_shared_state_headers(stream_url) {
             let (status_code, header_map) = get_stream_response_with_headers(Some((headers.clone(), axum::http::StatusCode::OK)));

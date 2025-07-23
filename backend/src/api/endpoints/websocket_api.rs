@@ -147,11 +147,11 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage) -> Re
     match event {
         EventMessage::ActiveUserChange(users, connections) => {
             let msg = ProtocolMessage::ActiveUserResponse(users, connections).to_bytes().map_err(|e| e.to_string())?;
-            socket.send(Message::Binary(msg)).await.map_err(|e| format!("Active user connection change event: {} ", e.to_string()))
+            socket.send(Message::Binary(msg)).await.map_err(|e| format!("Active user connection change event: {e} "))
         }
         EventMessage::ActiveProviderChange(provider, connections) => {
             let msg = ProtocolMessage::ActiveProviderResponse(provider, connections).to_bytes().map_err(|e| e.to_string())?;
-            socket.send(Message::Binary(msg)).await.map_err(|e| format!("Provider connection change event: {} ", e.to_string()))
+            socket.send(Message::Binary(msg)).await.map_err(|e| format!("Provider connection change event: {e} "))
 
         }
     }

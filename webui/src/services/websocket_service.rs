@@ -87,7 +87,7 @@ impl WebSocketService {
                                         broadcast(WsMessage::Unauthorized);
                                     },
                                     ProtocolMessage::Error(err) => {
-                                        error!("{}", err);
+                                        error!("{err}");
                                     },
                                     ProtocolMessage::ActiveUserResponse(user_count, connections) => {
                                         broadcast(WsMessage::ActiveUser(user_count, connections));
