@@ -908,7 +908,6 @@ name = "frontend"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.1",
  "bytes",
  "futures",
  "futures-signals",
@@ -3333,7 +3332,6 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "bincode 2.0.1",
  "bitflags 2.9.1",
  "blake3",
  "bytes",

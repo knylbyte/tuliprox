@@ -1,7 +1,6 @@
 use std::io;
 use bytes::Bytes;
 use crate::model::StatusCheck;
-use crate::utils::{bincode_deserialize, bincode_serialize};
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -49,6 +48,8 @@ impl WsCloseCode {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ProtocolMessage {
+    Unauthorized,
+    Error(String),
     Version(u8),
     StatusRequest(String),
     StatusResponse(StatusCheck),
@@ -63,8 +64,10 @@ impl ProtocolMessage {
                 Ok(Bytes::from(vec![*version]))
             }
             _ => {
-                let encoded = bincode_serialize(self)?;
-                Ok(Bytes::from(encoded))
+                //let encoded = bincode_serialize(self)?;
+                let json = serde_json::to_string(self)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                Ok(Bytes::from(json.into_bytes()))
             }
         }
     }
@@ -73,7 +76,11 @@ impl ProtocolMessage {
         if bytes.len() == 1 {
             Ok(ProtocolMessage::Version(bytes[0]))
         } else {
-            bincode_deserialize::<ProtocolMessage>(bytes.as_ref())
+            //bincode_deserialize::<ProtocolMessage>(bytes.as_ref())
+            let s = std::str::from_utf8(&bytes)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            serde_json::from_str(s)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
         }
     }
 }

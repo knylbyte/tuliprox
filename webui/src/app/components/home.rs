@@ -1,16 +1,12 @@
-use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::future;
 use std::rc::Rc;
-use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew::suspense::use_future;
 use shared::model::{AppConfigDto, StatusCheck};
 use crate::app::components::{IconButton, Sidebar, DashboardView, PlaylistView, Panel, UserlistView, StatsView};
 use crate::app::context::{ConfigContext, StatusContext};
 use crate::model::ViewType;
-use crate::hooks::use_service_context;
-use crate::services::WsMessage;
+use crate::hooks::{use_server_status, use_service_context};
 
 #[function_component]
 pub fn Home() -> Html {
@@ -18,7 +14,6 @@ pub fn Home() -> Html {
     let app_title = services.config.ui_config.app_title.as_ref().map_or("tuliprox", |v| v.as_str());
     let config = use_state(|| None::<Rc<AppConfigDto>>);
     let status = use_state(|| None::<Rc<StatusCheck>>);
-    let status_holder = use_state(|| Rc::new(RefCell::new(None::<Rc<StatusCheck>>)));
 
     let view_visible = use_state(|| ViewType::Users);
 
@@ -31,6 +26,8 @@ pub fn Home() -> Html {
         let view_vis = view_visible.clone();
         Callback::from(move |view| view_vis.set(view))
     };
+
+    let _ = use_server_status(status.clone());
 
     {
         // first register for config update
@@ -53,65 +50,65 @@ pub fn Home() -> Html {
         });
     }
 
-    {
-        let services_ctx = services.clone();
-        let status_signal = status.clone();
-        let status_holder_signal = status_holder.clone();
-
-        use_effect_with((), move |_| {
-            let subid = services_ctx.websocket.subscribe(move |msg| {
-                match msg {
-                    WsMessage::ServerStatus(server_status) => {
-                        *status_holder_signal.borrow_mut() = Some(Rc::clone(&server_status));
-                        status_signal.set(Some(server_status));
-                    }
-                    WsMessage::ActiveUser(user_count, connections) => {
-                        let mut server_status = {
-                            if let Some(old_status) = status_holder_signal.borrow().as_ref() {
-                                (**old_status).clone()
-                            } else {
-                                StatusCheck::default()
-                            }
-                        };
-                        server_status.active_users = user_count;
-                        server_status.active_user_connections = connections;
-                        let new_status = Rc::new(server_status);
-                        *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));
-                        status_signal.set(Some(new_status));
-                    }
-                    WsMessage::ActiveProvider(provider, connections) => {
-                        let mut server_status = {
-                            if let Some(old_status) = status_holder_signal.borrow().as_ref() {
-                                (**old_status).clone()
-                            } else {
-                                StatusCheck::default()
-                            }
-                        };
-                        if let Some(treemap) = server_status.active_provider_connections.as_mut() {
-                            if connections == 0 {
-                                treemap.remove(&provider);
-                            } else {
-                                treemap.insert(provider, connections);
-                            }
-                        } else if connections > 0 {
-                            let mut treemap = BTreeMap::new();
-                            treemap.insert(provider, connections);
-                            server_status.active_provider_connections = Some(treemap);
-                        }
-                        let new_status = Rc::new(server_status);
-                        *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));
-                        status_signal.set(Some(new_status));
-                    }
-                }
-            });
-            let services_clone = services_ctx.clone();
-            spawn_local(async move {
-                services_clone.websocket.get_server_status().await;
-            });
-            let services_clone = services_ctx.clone();
-            move || services_clone.websocket.unsubscribe(subid)
-        });
-    }
+    // {
+    //     let services_ctx = services.clone();
+    //     let status_signal = status.clone();
+    //     let status_holder_signal = status_holder.clone();
+    //
+    //     use_effect_with((), move |_| {
+    //         let subid = services_ctx.websocket.subscribe(move |msg| {
+    //             match msg {
+    //                 WsMessage::ServerStatus(server_status) => {
+    //                     *status_holder_signal.borrow_mut() = Some(Rc::clone(&server_status));
+    //                     status_signal.set(Some(server_status));
+    //                 }
+    //                 WsMessage::ActiveUser(user_count, connections) => {
+    //                     let mut server_status = {
+    //                         if let Some(old_status) = status_holder_signal.borrow().as_ref() {
+    //                             (**old_status).clone()
+    //                         } else {
+    //                             StatusCheck::default()
+    //                         }
+    //                     };
+    //                     server_status.active_users = user_count;
+    //                     server_status.active_user_connections = connections;
+    //                     let new_status = Rc::new(server_status);
+    //                     *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));
+    //                     status_signal.set(Some(new_status));
+    //                 }
+    //                 WsMessage::ActiveProvider(provider, connections) => {
+    //                     let mut server_status = {
+    //                         if let Some(old_status) = status_holder_signal.borrow().as_ref() {
+    //                             (**old_status).clone()
+    //                         } else {
+    //                             StatusCheck::default()
+    //                         }
+    //                     };
+    //                     if let Some(treemap) = server_status.active_provider_connections.as_mut() {
+    //                         if connections == 0 {
+    //                             treemap.remove(&provider);
+    //                         } else {
+    //                             treemap.insert(provider, connections);
+    //                         }
+    //                     } else if connections > 0 {
+    //                         let mut treemap = BTreeMap::new();
+    //                         treemap.insert(provider, connections);
+    //                         server_status.active_provider_connections = Some(treemap);
+    //                     }
+    //                     let new_status = Rc::new(server_status);
+    //                     *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));
+    //                     status_signal.set(Some(new_status));
+    //                 }
+    //             }
+    //         });
+    //         let services_clone = services_ctx.clone();
+    //         spawn_local(async move {
+    //             services_clone.websocket.get_server_status().await;
+    //         });
+    //         let services_clone = services_ctx.clone();
+    //         move || services_clone.websocket.unsubscribe(subid)
+    //     });
+    // }
 
     let config_context = ConfigContext {
             config: (*config).clone(),

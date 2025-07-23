@@ -8,7 +8,6 @@ mod directed_graph;
 mod hash_utils;
 mod json_utils;
 mod serde_utils;
-mod bincode_utils;
 
 pub use self::default_utils::*;
 pub use self::time_utils::*;
@@ -20,4 +19,3 @@ pub use self::directed_graph::*;
 pub use self::hash_utils::*;
 pub use self::json_utils::*;
 pub use self::serde_utils::*;
-pub use self::bincode_utils::*;

@@ -9,8 +9,8 @@ use log::error;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use shared::error::{str_to_io_error, to_io_error};
-use shared::utils::{bincode_deserialize, bincode_serialize};
 use crate::utils;
+use crate::utils::{bincode_deserialize, bincode_serialize};
 
 const BLOCK_SIZE: usize = 4096;
 const LEN_SIZE: usize = 4;

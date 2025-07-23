@@ -4,13 +4,13 @@ use ruzstd::decoding::StreamingDecoder;
 use ruzstd::encoding::{compress_to_vec, CompressionLevel};
 use serde::{Deserialize, Serialize};
 use shared::error::{str_to_io_error, to_io_error};
-use shared::utils::{bincode_deserialize, bincode_serialize};
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::Path;
 use tempfile::NamedTempFile;
+use crate::utils::{bincode_deserialize, bincode_serialize};
 
 const BLOCK_SIZE: usize = 4096;
 const BINCODE_OVERHEAD: usize = 8;

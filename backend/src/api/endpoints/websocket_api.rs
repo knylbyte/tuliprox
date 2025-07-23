@@ -83,29 +83,32 @@ async fn handle_handshake(
 
 async fn handle_protocol_message(
     msg: Message,
-    socket: &mut WebSocket,
     app_state: &Arc<AppState>,
     auth: bool,
     secret_key: Option<&Vec<u8>>,
-) -> Result<(), String> {
+) -> Option<ProtocolMessage> {
     if let Message::Binary(bytes) = msg {
         match ProtocolMessage::from_bytes(bytes) {
             Ok(ProtocolMessage::StatusRequest(auth_token)) => {
                 if !auth || verify_auth_admin_token(&auth_token, secret_key) {
-                    let status = create_status_check(app_state).await;
-                    let response = ProtocolMessage::StatusResponse(status).to_bytes().map_err(|e| e.to_string())?;
-                    socket.send(Message::Binary(response)).await.map_err(|e| e.to_string())?;
+                   let status = create_status_check(app_state).await;
+                   Some(ProtocolMessage::StatusResponse(status))
+                } else {
+                    Some(ProtocolMessage::Unauthorized)
                 }
             }
             Ok(_) => {
                 error!("Unexpected protocol message after handshake");
+                None
             }
             Err(e) => {
                 error!("Invalid websocket message: {e}");
+                Some(ProtocolMessage::Error(format!("Invalid websocket message: {e}")))
             }
         }
+    } else {
+        None
     }
-    Ok(())
 }
 
 async fn handle_incoming_message(
@@ -124,7 +127,19 @@ async fn handle_incoming_message(
             *handler = ProtocolHandler::Default;
             Ok(())
         },
-        ProtocolHandler::Default => handle_protocol_message(msg, socket, app_state, auth, secret_key).await,
+        ProtocolHandler::Default => {
+            let msg = handle_protocol_message(msg, app_state, auth, secret_key).await;
+            match msg {
+                None => {Ok(())},
+                Some(protocol_msg) => {
+                    let bytes = match protocol_msg.to_bytes() {
+                        Ok(bytes) => bytes,
+                        Err(err) => ProtocolMessage::Error(err.to_string()).to_bytes().map_err(|e| e.to_string())?,
+                    };
+                    Ok(socket.send(Message::Binary(bytes)).await.map_err(|e| e.to_string())?)
+                }
+            }
+        },
     }
 }
 
@@ -132,11 +147,11 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage) -> Re
     match event {
         EventMessage::ActiveUserChange(users, connections) => {
             let msg = ProtocolMessage::ActiveUserResponse(users, connections).to_bytes().map_err(|e| e.to_string())?;
-            socket.send(Message::Binary(msg)).await.map_err(|e| e.to_string())
+            socket.send(Message::Binary(msg)).await.map_err(|e| format!("Active user connection change event: {} ", e.to_string()))
         }
         EventMessage::ActiveProviderChange(provider, connections) => {
             let msg = ProtocolMessage::ActiveProviderResponse(provider, connections).to_bytes().map_err(|e| e.to_string())?;
-            socket.send(Message::Binary(msg)).await.map_err(|e| e.to_string())
+            socket.send(Message::Binary(msg)).await.map_err(|e| format!("Provider connection change event: {} ", e.to_string()))
 
         }
     }
@@ -165,7 +180,7 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth: bo
 
             Ok(event) = event_rx.recv() => {
                 if let Err(e) = handle_event_message(&mut socket, event).await {
-                    error!("Failed to send active user change: {e}");
+                    error!("Failed to send event: {e}");
                     break;
                 }
             }

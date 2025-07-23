@@ -82,6 +82,12 @@ impl WebSocketService {
                         match ProtocolMessage::from_bytes(bytes) {
                             Ok(message) => {
                                 match message {
+                                    ProtocolMessage::Unauthorized => {
+                                        error!("Unauthorized");
+                                    },
+                                    ProtocolMessage::Error(err) => {
+                                        error!("{}", err);
+                                    },
                                     ProtocolMessage::ActiveUserResponse(user_count, connections) => {
                                         broadcast(WsMessage::ActiveUser(user_count, connections));
                                     },

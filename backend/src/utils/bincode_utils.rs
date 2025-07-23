@@ -1,5 +1,6 @@
 use std::io;
-use crate::error::to_io_error;
+use log::error;
+use shared::error::to_io_error;
 
 #[inline]
 pub fn bincode_serialize<T>(value: &T) -> io::Result<Vec<u8>>
@@ -16,6 +17,9 @@ where
 {
   match bincode::serde::decode_from_slice(value, bincode::config::legacy()) {
      Ok((instance, _size)) => Ok(instance),
-      Err(e) => Err(to_io_error(e)),
+      Err(e) => {
+          error!("Failed to decode {e}");
+          Err(to_io_error(e))
+      },
   }
 }
