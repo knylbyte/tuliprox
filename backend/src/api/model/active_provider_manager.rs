@@ -1,4 +1,4 @@
-use crate::api::model::provider_config::{ProviderConnectionChangeSender, ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper};
+use crate::api::model::{ProviderConnectionChangeSender, ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper};
 use crate::model::{AppConfig, ConfigInput};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
@@ -814,8 +814,8 @@ mod tests {
             thread::sleep(std::time::Duration::from_millis(200));
             match $lineup.acquire(true, $grace_period_timeout_secs).await {
                 ProviderAllocation::Exhausted => assert!(false, "Should available and not exhausted"),
-                ProviderAllocation::Available(provider) => assert_eq!(provider.id, $provider_id),
-                ProviderAllocation::GracePeriod(provider) => assert!(false, "Should available and not grace period: {}", provider.id),
+                ProviderAllocation::Available(_, provider) => assert_eq!(provider.id, $provider_id),
+                ProviderAllocation::GracePeriod(_, provider) => assert!(false, "Should available and not grace period: {}", provider.id),
             }
         };
     }
@@ -824,8 +824,8 @@ mod tests {
             thread::sleep(std::time::Duration::from_millis(200));
             match $lineup.acquire(true, $grace_period_timeout_secs).await {
                 ProviderAllocation::Exhausted => assert!(false, "Should grace period and not exhausted"),
-                ProviderAllocation::Available(provider) => assert!(false, "Should grace period and not available: {}", provider.id),
-                ProviderAllocation::GracePeriod(provider) => assert_eq!(provider.id, $provider_id),
+                ProviderAllocation::Available(_, provider) => assert!(false, "Should grace period and not available: {}", provider.id),
+                ProviderAllocation::GracePeriod(_, provider) => assert_eq!(provider.id, $provider_id),
             }
         };
     }
@@ -835,8 +835,8 @@ mod tests {
             thread::sleep(std::time::Duration::from_millis(200));
             match $lineup.acquire(true, $grace_period_timeout_secs).await {
                 ProviderAllocation::Exhausted => {},
-                ProviderAllocation::Available(provider) => assert!(false, "Should exhausted and not available: {}", provider.id),
-                ProviderAllocation::GracePeriod(provider) => assert!(false, "Should exhausted and not grace period: {}", provider.id),
+                ProviderAllocation::Available(_, provider) => assert!(false, "Should exhausted and not available: {}", provider.id),
+                ProviderAllocation::GracePeriod(_, provider) => assert!(false, "Should exhausted and not grace period: {}", provider.id),
             }
         };
     }
@@ -884,8 +884,9 @@ mod tests {
         // Adding alias to the provider
         input.aliases = Some(vec![alias]);
 
+        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
         // Create MultiProviderLineup with the provider and alias
-        let lineup = MultiProviderLineup::new(&input, None);
+        let lineup = MultiProviderLineup::new(&input, None, /* &tokio::sync::mpsc::Sender<(std::string::String, usize)> */ &change_tx);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Test that the alias provider is available
@@ -907,7 +908,8 @@ mod tests {
         let alias = create_config_input_alias(2, "http://alias.com", 0, 2);
         // Adding alias with different priority
         input.aliases = Some(vec![alias]);
-        let lineup = MultiProviderLineup::new(&input, None);
+        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let lineup = MultiProviderLineup::new(&input, None, &change_tx);
         // The alias has a higher priority, so the alias should be acquired first
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
@@ -927,8 +929,8 @@ mod tests {
 
         // Adding multiple aliases
         input.aliases = Some(vec![alias1, alias2]);
-
-        let lineup = MultiProviderLineup::new(&input, None);
+        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let lineup = MultiProviderLineup::new(&input, None, &change_tx);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // The alias with priority 0 should be acquired first (higher priority)
@@ -957,8 +959,8 @@ mod tests {
 
         // Adding alias
         input.aliases = Some(vec![alias1, alias2]);
-
-        let lineup = MultiProviderLineup::new(&input, None);
+        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let lineup = MultiProviderLineup::new(&input, None, &change_tx);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Acquire connection from alias2
@@ -984,7 +986,8 @@ mod tests {
     #[test]
     fn test_acquire_when_capacity_available() {
         let cfg = create_config_input(1, "provider5_1", 1, 2);
-        let lineup = SingleProviderLineup::new(&cfg, None);
+        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let lineup = SingleProviderLineup::new(&cfg, None, change_tx);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // First acquire attempt should succeed
@@ -1062,7 +1065,8 @@ mod tests {
     #[test]
     fn test_concurrent_acquire() {
         let cfg = create_config_input(1, "provider9_1", 1, 2);
-        let lineup = Arc::new(SingleProviderLineup::new(&cfg, None));
+        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let lineup = Arc::new(SingleProviderLineup::new(&cfg, None, change_tx));
 
         let available_count = Arc::new(AtomicU16::new(2));
         let grace_period_count = Arc::new(AtomicU16::new(1));

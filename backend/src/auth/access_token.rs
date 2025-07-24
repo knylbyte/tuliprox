@@ -1,17 +1,16 @@
 use shared::utils::{hex_decode, hex_encode};
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct AccessToken {
-    ts: i64,
-    ttl: i64,
-    sig: String,
-}
+// #[derive(Serialize, Deserialize, Debug)]
+// struct AccessToken {
+//     ts: i64,
+//     ttl: i64,
+//     sig: String,
+// }
 
 pub fn create_access_token(secret: &[u8; 32], ttl_secs: u16) -> String {
     let timestamp = Utc::now().timestamp();

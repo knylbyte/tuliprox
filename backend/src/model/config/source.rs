@@ -137,7 +137,7 @@ impl SourcesConfig {
         })
     }
 
-    pub fn get_unique_target_names(&self) -> HashSet<Cow<str>> {
+    pub fn get_unique_target_names(&self) -> HashSet<Cow<'_, str>> {
         let mut seen_names = HashSet::new();
         for source in &self.sources {
             for target in &source.targets {

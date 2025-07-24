@@ -1,9 +1,7 @@
 use std::collections::HashSet;
-use enum_iterator::Sequence;
 use log::warn;
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::TargetType;
 
 fn default_friendly_name() -> String { String::from("TuliproxTV") }
 fn default_manufacturer() -> String { String::from("Silicondust") }
@@ -14,25 +12,25 @@ fn default_device_type() -> String { String::from("urn:schemas-upnp-org:device:M
 fn default_device_udn() -> String { String::from("uuid:12345678-90ab-cdef-1234-567890abcdef::urn:dial-multicast:com.silicondust.hdhomerun") }
 
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash)]
-enum HdHomeRunUseTargetType {
-    #[serde(rename = "m3u")]
-    M3u,
-    #[serde(rename = "xtream")]
-    Xtream,
-}
-
-impl TryFrom<TargetType> for HdHomeRunUseTargetType {
-    type Error = &'static str;
-
-    fn try_from(value: TargetType) -> Result<Self, Self::Error> {
-        match value {
-            TargetType::Xtream => Ok(Self::Xtream),
-            TargetType::M3u => Ok(Self::M3u),
-            _ => Err("Not allowed!"),
-        }
-    }
-}
+// #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash)]
+// enum HdHomeRunUseTargetType {
+//     #[serde(rename = "m3u")]
+//     M3u,
+//     #[serde(rename = "xtream")]
+//     Xtream,
+// }
+//
+// impl TryFrom<TargetType> for HdHomeRunUseTargetType {
+//     type Error = &'static str;
+//
+//     fn try_from(value: TargetType) -> Result<Self, Self::Error> {
+//         match value {
+//             TargetType::Xtream => Ok(Self::Xtream),
+//             TargetType::M3u => Ok(Self::M3u),
+//             _ => Err("Not allowed!"),
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]

@@ -1,12 +1,12 @@
 use crate::api::api_utils::{HeaderFilter};
-use crate::api::model::streams::custom_video_stream::CustomVideoStream;
+use crate::api::model::CustomVideoStream;
 use crate::model::{AppConfig};
 use shared::model::PlaylistItemType;
 use log::{trace};
 use reqwest::StatusCode;
 use axum::response::IntoResponse;
 use crate::api::model::stream::ProviderStreamResponse;
-use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
+use crate::api::model::TransportStreamBuffer;
 use crate::api::api_utils::try_unwrap_body;
 
 #[derive(Debug, Copy, Clone)]

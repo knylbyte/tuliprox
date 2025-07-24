@@ -1,7 +1,6 @@
-use crate::api::model::active_provider_manager::ActiveProviderManager;
-use crate::api::model::active_user_manager::ActiveUserManager;
-use crate::api::model::download::DownloadQueue;
-use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
+use crate::api::model::ActiveProviderManager;
+use crate::api::model::ActiveUserManager;
+use crate::api::model::DownloadQueue;
 use crate::api::scheduler::exec_scheduler;
 use crate::model::{AppConfig, Config, HdHomeRunConfig, HdHomeRunDeviceConfig, ProcessTargets, ScheduleConfig, SourcesConfig};
 use crate::tools::lru_cache::LRUResourceCache;
@@ -17,7 +16,8 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use crate::api::config_watch::exec_config_watch;
-use crate::api::model::event_manager::EventManager;
+use crate::api::model::EventManager;
+use crate::api::model::SharedStreamManager;
 
 macro_rules! cancel_service {
     ($field: ident, $changes:expr, $cancel_tokens:expr) => {

@@ -4,7 +4,7 @@ use arc_swap::ArcSwap;
 use chrono::Local;
 use log::debug;
 use shared::model::{ProxyType, ProxyUserCredentialsDto, ProxyUserStatus, TargetUserDto, UserConnectionPermission};
-use crate::api::model::app_state::AppState;
+use crate::api::model::AppState;
 use crate::model::{macros, Config};
 
 #[derive(Debug, Clone)]

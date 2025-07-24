@@ -1,4 +1,3 @@
-use crate::api::model::streams::shared_stream_manager::SharedStreamManager;
 use crate::model::Config;
 use crate::model::ProxyUserCredentials;
 use dashmap::DashMap;
@@ -8,7 +7,8 @@ use shared::model::UserConnectionPermission;
 use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use crate::api::model::active_provider_manager::ActiveProviderManager;
+use crate::api::model::ActiveProviderManager;
+use crate::api::model::SharedStreamManager;
 
 type ActiveUserConnectionChangeSender  = tokio::sync::mpsc::Sender<(usize, usize)>;
 pub type ActiveUserConnectionChangeReceiver  = tokio::sync::mpsc::Receiver<(usize, usize)>;

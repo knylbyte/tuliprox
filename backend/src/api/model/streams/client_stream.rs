@@ -6,8 +6,8 @@ use std::task::{Poll};
 use futures::{Stream};
 use log::trace;
 use shared::utils::sanitize_sensitive_info;
-use crate::api::model::stream::BoxedProviderStream;
-use crate::api::model::stream_error::StreamError;
+use crate::api::model::BoxedProviderStream;
+use crate::api::model::StreamError;
 use crate::utils::trace_if_enabled;
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 

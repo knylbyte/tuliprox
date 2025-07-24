@@ -1,5 +1,5 @@
-use crate::api::model::stream_error::StreamError;
-use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
+use crate::api::model::StreamError;
+use crate::api::model::TransportStreamBuffer;
 use bytes::Bytes;
 use futures::Stream;
 use std::pin::Pin;

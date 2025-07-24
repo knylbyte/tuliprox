@@ -1,5 +1,5 @@
-use crate::api::model::app_state::AppState;
-use crate::api::model::download::{DownloadQueue, FileDownload, FileDownloadRequest};
+use crate::api::model::AppState;
+use crate::api::model::{DownloadQueue, FileDownload, FileDownloadRequest};
 use crate::model::{AppConfig, Config, VideoDownloadConfig};
 use crate::utils::request;
 use tokio::sync::RwLock;

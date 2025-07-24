@@ -1,14 +1,14 @@
-use crate::api::model::app_state::AppState;
-use crate::api::model::stream_error::StreamError;
-use crate::api::model::streams::provider_stream_factory::STREAM_QUEUE_SIZE;
+use crate::api::model::AppState;
+use crate::api::model::StreamError;
+use crate::api::model::STREAM_QUEUE_SIZE;
 use crate::utils::debug_if_enabled;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 use std::sync::Arc;
 
-use crate::api::model::active_provider_manager::ProviderConnectionGuard;
-use crate::api::model::stream::BoxedProviderStream;
+use crate::api::model::ProviderConnectionGuard;
+use crate::api::model::BoxedProviderStream;
 use dashmap::DashMap;
 use log::{debug, trace};
 use shared::utils::sanitize_sensitive_info;

@@ -1,6 +1,6 @@
 use shared::model::{StreamBufferConfigDto, StreamConfigDto};
 use shared::utils::parse_to_kbps;
-use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
+use crate::api::model::TransportStreamBuffer;
 use crate::model::macros;
 
 #[derive(Debug, Clone)]

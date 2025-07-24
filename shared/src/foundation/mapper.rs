@@ -873,7 +873,7 @@ impl EvalResult {
     }
 }
 
-fn concat_args(args: &Vec<EvalResult>) -> Vec<Cow<str>> {
+fn concat_args(args: &Vec<EvalResult>) -> Vec<Cow<'_, str>> {
     let mut result = vec![];
 
     for arg in args {

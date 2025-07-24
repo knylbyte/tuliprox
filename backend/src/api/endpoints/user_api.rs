@@ -1,5 +1,5 @@
 use crate::api::api_utils::{get_user_target_by_username, get_username_from_auth_header};
-use crate::api::model::app_state::AppState;
+use crate::api::model::AppState;
 use crate::auth::validator_user;
 use crate::model::{AppConfig, ConfigTarget};
 use shared::model::{TargetType, XtreamCluster};

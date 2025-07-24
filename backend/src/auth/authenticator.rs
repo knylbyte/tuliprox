@@ -3,7 +3,7 @@ use chrono::{Local, Duration};
 use jsonwebtoken::{Algorithm, DecodingKey, encode, decode, EncodingKey, Header, Validation, TokenData};
 use crate::api::api_utils::get_username_from_auth_header;
 use crate::model::WebAuthConfig;
-use crate::api::model::app_state::AppState;
+use crate::api::model::AppState;
 use crate::auth::AuthBearer;
 use shared::error::to_io_error;
 

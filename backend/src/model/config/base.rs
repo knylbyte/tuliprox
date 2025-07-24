@@ -91,7 +91,7 @@ impl Config {
         set_directory(&mut self.user_config_dir, "user_config", &self.working_dir);
     }
 
-    pub fn get_backup_dir(&self) -> Cow<str> {
+    pub fn get_backup_dir(&self) -> Cow<'_, str> {
         self.backup_dir.as_ref().map_or_else(|| Cow::Borrowed(DEFAULT_BACKUP_DIR), |v| Cow::Borrowed(v))
     }
 

@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 use bytes::Bytes;
 use log::error;
 use tokio_stream::Stream;
-use crate::api::model::stream_error::StreamError;
+use crate::api::model::StreamError;
 
 /// `PersistPipeStream`
 ///

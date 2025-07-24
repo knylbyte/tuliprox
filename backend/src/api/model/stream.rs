@@ -1,4 +1,4 @@
-use crate::api::model::stream_error::StreamError;
+use crate::api::model::StreamError;
 use axum::http::StatusCode;
 use bytes::Bytes;
 use futures::stream::BoxStream;

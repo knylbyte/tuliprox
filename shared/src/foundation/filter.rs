@@ -50,7 +50,7 @@ pub struct ValueProvider<'a> {
 }
 
 impl ValueProvider<'_> {
-    pub fn get(&self, field: &str) -> Option<Cow<str>> {
+    pub fn get(&self, field: &str) -> Option<Cow<'_, str>> {
         self.pli.header.get_field(field)
     }
 }
@@ -60,7 +60,7 @@ pub struct ValueAccessor<'a> {
 }
 
 impl ValueAccessor<'_> {
-    pub fn get(&self, field: &str) -> Option<Cow<str>> {
+    pub fn get(&self, field: &str) -> Option<Cow<'_, str>> {
         self.pli.header.get_field(field)
     }
 

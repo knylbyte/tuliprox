@@ -11,10 +11,9 @@ use rand::Rng;
 use shared::create_tuliprox_error_result;
 use shared::error::{TuliproxError, TuliproxErrorKind};
 use shared::model::ConfigPaths;
-use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
+use crate::api::model::TransportStreamBuffer;
 use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Config, ConfigInput, ConfigInputOptions, ConfigTarget, CustomStreamResponse, HdHomeRunConfig, Mappings, ProxyUserCredentials, SourcesConfig, TargetOutput};
 use crate::utils;
-
 
 const CHANNEL_UNAVAILABLE: &str = "channel_unavailable.ts";
 const USER_CONNECTIONS_EXHAUSTED: &str = "user_connections_exhausted.ts";

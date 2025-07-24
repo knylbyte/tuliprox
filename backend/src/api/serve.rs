@@ -17,7 +17,7 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tower::{Service, ServiceExt};
-use crate::api::model::active_user_manager::ActiveUserManager;
+use crate::api::model::ActiveUserManager;
 
 #[derive(Debug)]
 struct IncomingStream

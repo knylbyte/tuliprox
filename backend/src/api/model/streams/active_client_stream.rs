@@ -1,11 +1,11 @@
 use crate::api::api_utils::StreamDetails;
-use crate::api::model::active_provider_manager::{ActiveProviderManager, ProviderConnectionGuard};
-use crate::api::model::active_user_manager::{ActiveUserManager, UserConnectionGuard};
-use crate::api::model::app_state::AppState;
-use crate::api::model::stream::BoxedProviderStream;
-use crate::api::model::stream_error::StreamError;
-use crate::api::model::streams::timed_client_stream::TimedClientStream;
-use crate::api::model::streams::transport_stream_buffer::TransportStreamBuffer;
+use crate::api::model::{ActiveProviderManager, ProviderConnectionGuard};
+use crate::api::model::{ActiveUserManager, UserConnectionGuard};
+use crate::api::model::AppState;
+use crate::api::model::BoxedProviderStream;
+use crate::api::model::StreamError;
+use crate::api::model::TimedClientStream;
+use crate::api::model::TransportStreamBuffer;
 use crate::model::ProxyUserCredentials;
 use bytes::Bytes;
 use futures::Stream;

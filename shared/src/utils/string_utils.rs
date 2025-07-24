@@ -65,7 +65,7 @@ pub fn get_non_empty_str<'a>(first: &'a str, second: &'a str, third: &'a str) ->
     }
 }
 
-pub fn trim_slash(s: &str) -> Cow<str> {
+pub fn trim_slash(s: &str) -> Cow<'_, str> {
     let trimmed = s.trim_matches('/');
     if trimmed.len() == s.len() {
         Cow::Borrowed(s) // Keine Änderung → kein Clone
@@ -74,7 +74,7 @@ pub fn trim_slash(s: &str) -> Cow<str> {
     }
 }
 
-pub fn trim_last_slash(s: &str) -> Cow<str> {
+pub fn trim_last_slash(s: &str) -> Cow<'_, str> {
     if s.ends_with('/') {
         if let Some(stripped) = s.strip_suffix('/') {
           return  Cow::Owned(stripped.to_string())

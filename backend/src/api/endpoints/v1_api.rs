@@ -1,8 +1,8 @@
 use crate::api::endpoints::api_playlist_utils::{get_playlist, get_playlist_for_target};
 use crate::api::endpoints::download_api;
 use crate::api::endpoints::user_api::user_api_register;
-use crate::api::model::app_state::AppState;
-use crate::api::model::request::{PlaylistRequest, PlaylistRequestType};
+use crate::api::model::AppState;
+use crate::api::model::{PlaylistRequest, PlaylistRequestType};
 use crate::auth::create_access_token;
 use crate::auth::validator_admin;
 use crate::model::{get_batch_aliases, TargetUser};

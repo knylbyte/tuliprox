@@ -19,7 +19,7 @@ const FLAG_SIZE: usize = 1;
 
 fn is_multiple_of_block_size(file: &File) -> io::Result<bool> {
     let file_size = file.metadata()?.len(); // Get the file size in bytes
-    Ok(file_size % (BLOCK_SIZE as u64) == 0) // Check if file size is a multiple of BLOCK_SIZE
+    Ok(file_size.is_multiple_of(BLOCK_SIZE as u64)) // Check if file size is a multiple of BLOCK_SIZE
 }
 
 fn is_file_valid(file: File) -> io::Result<File> {
@@ -258,7 +258,7 @@ where
         if let Some(mut left_over) = remaining {
             // we calculate the needed blocks
             let left_over_len = left_over.len();
-            if left_over_len % BLOCK_SIZE != 0 {
+            if !left_over_len.is_multiple_of(BLOCK_SIZE) {
                 let padding = BLOCK_SIZE - (left_over_len % BLOCK_SIZE);
                 left_over.extend(vec![0u8; padding]);
             }

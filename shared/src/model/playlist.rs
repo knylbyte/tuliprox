@@ -118,7 +118,7 @@ impl Display for PlaylistItemType {
 }
 
 pub trait FieldGetAccessor {
-    fn get_field(&self, field: &str) -> Option<Cow<str>>;
+    fn get_field(&self, field: &str) -> Option<Cow<'_, str>>;
 }
 pub trait FieldSetAccessor {
     fn set_field(&mut self, field: &str, value: &str) -> bool;
@@ -229,7 +229,7 @@ macro_rules! to_m3u_resource_non_empty_fields {
 macro_rules! generate_field_accessor_impl_for_playlist_item_header {
     ($($prop:ident),*;) => {
         impl crate::model::FieldGetAccessor for crate::model::PlaylistItemHeader {
-            fn get_field(&self, field: &str) -> Option<Cow<str>> {
+            fn get_field(&self, field: &str) -> Option<Cow<'_, str>> {
                 let field = field.to_lowercase();
                 match field.as_str() {
                     $(
@@ -356,7 +356,7 @@ impl PlaylistEntry for M3uPlaylistItem {
 macro_rules! generate_field_accessor_impl_for_m3u_playlist_item {
     ($($prop:ident),*;) => {
         impl crate::model::FieldGetAccessor for M3uPlaylistItem {
-            fn get_field(&self, field: &str) -> Option<Cow<str>> {
+            fn get_field(&self, field: &str) -> Option<Cow<'_, str>> {
                 let field = field.to_lowercase();
                 match field.as_str() {
                     $(
@@ -464,7 +464,7 @@ pub fn get_backdrop_path_value<'a>(field: &'a str, value: Option<&'a Value>) -> 
 macro_rules! generate_field_accessor_impl_for_xtream_playlist_item {
     ($($prop:ident),*;) => {
         impl crate::model::FieldGetAccessor for crate::model::XtreamPlaylistItem {
-            fn get_field(&self, field: &str) -> Option<Cow<str>> {
+            fn get_field(&self, field: &str) -> Option<Cow<'_, str>> {
                 let field = field.to_lowercase();
                 match field.as_str() {
                     $(

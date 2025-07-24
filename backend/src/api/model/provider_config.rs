@@ -1,4 +1,4 @@
-use crate::api::model::active_provider_manager::ProviderAllocation;
+use crate::api::model::ProviderAllocation;
 use crate::model::{ConfigInput, ConfigInputAlias, InputUserInfo};
 use jsonwebtoken::get_current_timestamp;
 use log::{debug};

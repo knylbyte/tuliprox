@@ -1,7 +1,7 @@
 use log::error;
 use tokio::task;
-use crate::api::model::active_user_manager::{ActiveUserConnectionChangeReceiver};
-use crate::api::model::provider_config::{ProviderConnectionChangeReceiver};
+use crate::api::model::{ActiveUserConnectionChangeReceiver};
+use crate::api::model::{ProviderConnectionChangeReceiver};
 
 #[derive(Clone, PartialEq)]
 pub enum EventMessage {
