@@ -498,6 +498,7 @@ pub async fn create_provider_stream(
                                 Ok(Some((stream, _info))) => Some((stream, ())),
                                 Ok(None) => None,
                                 Err(status) => {
+                                    continue_streaming.notify();
                                     if let (Some(boxed_provider_stream), _response_info) =
                                         create_channel_unavailable_stream(
                                             &config_clone,

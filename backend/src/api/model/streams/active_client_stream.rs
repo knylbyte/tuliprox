@@ -1,11 +1,10 @@
 use crate::api::api_utils::StreamDetails;
-use crate::api::model::{ActiveProviderManager, ProviderConnectionGuard};
-use crate::api::model::{ActiveUserManager, UserConnectionGuard};
 use crate::api::model::AppState;
 use crate::api::model::BoxedProviderStream;
 use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
 use crate::api::model::TransportStreamBuffer;
+use crate::api::model::{ProviderConnectionGuard, UserConnectionGuard};
 use crate::model::ProxyUserCredentials;
 use bytes::Bytes;
 use futures::Stream;
@@ -40,7 +39,6 @@ impl ActiveClientStream {
                       connection_permission: UserConnectionPermission,
                       addr: &str) -> Self {
         let active_user = app_state.active_users.clone();
-        let active_provider = app_state.active_provider.clone();
         if connection_permission == UserConnectionPermission::Exhausted {
             error!("Something is wrong this should not happen");
         }
@@ -50,7 +48,7 @@ impl ActiveClientStream {
         let cfg = &app_state.app_config;
         let waker = Arc::new(Mutex::new(None));
         let waker_clone = Arc::clone(&waker);
-        let grace_stop_flag = Self::stream_grace_period(&stream_details, grant_user_grace_period, user, addr, &active_user, &active_provider, &waker_clone);
+        let grace_stop_flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, addr, &waker_clone);
         let custom_response = cfg.custom_stream_response.load();
         let custom_video = custom_response.as_ref()
             .map_or((None, None), |c|
@@ -91,27 +89,27 @@ impl ActiveClientStream {
         }
     }
 
-    fn stream_grace_period(stream_details: &StreamDetails,
+    fn stream_grace_period(app_state: &AppState,
+                           stream_details: &StreamDetails,
                            user_grace_period: bool,
                            user: &ProxyUserCredentials,
                            addr: &str,
-                           active_user: &Arc<ActiveUserManager>,
-                           active_provider: &Arc<ActiveProviderManager>,
                            waker: &Arc<Mutex<Option<Waker>>>) -> Option<Arc<AtomicU8>> {
+        let active_users = Arc::clone(&app_state.active_users);
+        let active_provider = Arc::clone(&app_state.active_provider);
+        let shared_stream_manager = Arc::clone(&app_state.shared_stream_manager);
+
         let provider_grace_check = if stream_details.has_grace_period() && stream_details.input_name.is_some() {
             let provider_name = stream_details.input_name.as_deref().unwrap_or_default().to_string();
-            let provider_manager = Arc::clone(active_provider);
-            let reconnect_flag = stream_details.reconnect_flag.clone();
-            Some((provider_name, provider_manager, reconnect_flag))
+            Some(provider_name)
         } else {
             None
         };
+
         let user_max_connections = user.max_connections;
         let user_grace_check = if user_grace_period && user_max_connections > 0 {
             let user_name = user.username.clone();
-            let user_manager = Arc::clone(active_user);
-            let reconnect_flag = stream_details.reconnect_flag.clone();
-            Some((user_name, user_manager, user_max_connections, reconnect_flag))
+            Some((user_name, user_max_connections))
         } else {
             None
         };
@@ -121,49 +119,42 @@ impl ActiveClientStream {
             let stream_strategy_flag_copy = Arc::clone(&stream_strategy_flag);
             let waker_copy = Arc::clone(waker);
             let grace_period_millis = stream_details.grace_period_millis;
-            let provider_guard = stream_details.provider_connection_guard.clone();
 
             let address = addr.to_string();
+            let user_manager = Arc::clone(&active_users);
+            let provider_manager = Arc::clone(&active_provider);
+            let share_manager = Arc::clone(&shared_stream_manager);
+            let reconnect_flag = stream_details.reconnect_flag.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(grace_period_millis)).await;
 
                 let mut updated = false;
-
-                if let Some((username, user_manager, max_connections, reconnect_flag)) = user_grace_check {
+                if let Some((username, max_connections)) = user_grace_check {
                     let active_connections = user_manager.user_connections(&username);
                     if active_connections > max_connections {
-                        info!("User connections exhausted for active clients: {username}");
                         stream_strategy_flag_copy.store(USER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
-                        if let Some(guard) = provider_guard.as_ref() {
-                            guard.release();
-                        }
-                        if let Some(flag) = reconnect_flag {
-                            info!("Stopped reconnecting, user connections exhausted: {username}");
-                            flag.notify();
-                        }
+                        info!("User connections exhausted for active clients: {username}");
                         updated = true;
                     }
                 }
 
                 if !updated {
-                    if let Some((provider_name, provider_manager, reconnect_flag)) = provider_grace_check {
+                    if let Some(provider_name) = provider_grace_check {
                         if provider_manager.is_over_limit(&provider_name).await {
-                            info!("Provider connections exhausted for active clients: {provider_name}");
-                            provider_manager.release_connection(&address);
                             stream_strategy_flag_copy.store(PROVIDER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
-                            if let Some(guard) = provider_guard.as_ref() {
-                                guard.release();
-                            }
-                            if let Some(flag) = reconnect_flag {
-                                info!("Stopped reconnecting, provider connections exhausted {provider_name}");
-                                flag.notify();
-                            }
+                            info!("Provider connections exhausted for active clients: {provider_name}");
                             updated = true;
                         }
                     }
                 }
 
-                if !updated {
+                if updated {
+                    share_manager.release_connection(&address);
+                    provider_manager.release_connection(&address);
+                    if let Some(flag) = reconnect_flag {
+                        flag.notify();
+                    }
+                } else {
                     stream_strategy_flag_copy.store(INNER_STREAM, std::sync::atomic::Ordering::SeqCst);
                 }
                 if let Ok(mut waker_guard) = waker_copy.lock() {
@@ -205,10 +196,10 @@ impl Stream for ActiveClientStream {
         let buffer_opt = match flag {
             USER_EXHAUSTED_STREAM => {
                 self.custom_video.0.as_mut()
-            },
+            }
             PROVIDER_EXHAUSTED_STREAM => {
                 self.custom_video.1.as_mut()
-            },
+            }
             _ => None,
         };
 
