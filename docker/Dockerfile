@@ -33,28 +33,35 @@ RUN cargo build -p tuliprox --target $RUST_TARGET --release || true
 
 # Now copy the actual source code and build the project
 COPY . .
+
 RUN cargo build -p tuliprox --target $RUST_TARGET --release
 
 # -----------------------------------------------------------------
-# Stage 2: Build the Node.js frontend
+# Stage 2: Build the rust frontend
 # -----------------------------------------------------------------
-FROM node:lts AS node-build
+FROM rust:bookworm AS trunk-build
 
-ENV NODE_OPTIONS=--openssl-legacy-provider
+ARG RUST_TARGET=wasm32-unknown-unknown
 
-WORKDIR /app
+# Set working directory
+WORKDIR /src
 
-# Copy package.json files first for better caching
-COPY ./frontend/package.json ./
+# Install dependencies for Trunk and WebAssembly
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  pkg-config libssl-dev curl libclang-dev binaryen
 
-# Install dependencies
-RUN yarn install --prefer-offline --non-interactive --production=false
+# Add wasm target & install trunk
+RUN rustup target add wasm32-unknown-unknown
+RUN cargo install --locked trunk wasm-bindgen-cli
 
-# Copy the rest of the frontend code
-COPY ./frontend /app
 
-# Build the frontend
-RUN yarn build && rm -rf node_modules
+# Now copy the actual source code and build the project
+COPY . .
+
+WORKDIR /src/webui
+
+# Run Trunk build
+RUN trunk build --release
 
 # -----------------------------------------------------------------
 # Stage 3: Build video resources with ffmpeg
@@ -128,7 +135,7 @@ RUN rustup update && rustup target add $RUST_TARGET
 
 # Create the final application layout to mimic production
 WORKDIR /app
-COPY --from=node-build /app/build ./web
+COPY --from=trunk-build /src/webui/dist ./web
 COPY --from=resource-build /src/resources ./resources
 
 # Create a separate directory for the source code
@@ -163,7 +170,7 @@ COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # App
 WORKDIR /app
 COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
-COPY --from=node-build /app/build ./web
+COPY --from=trunk-build /src/webui/dist ./web
 COPY --from=resource-build /src/resources ./resources
 
 ENTRYPOINT ["/app/tuliprox"]
@@ -188,7 +195,7 @@ RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 WORKDIR /app
 COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
-COPY --from=node-build /app/build ./web
+COPY --from=trunk-build /src/webui/dist ./web
 COPY --from=resource-build /src/resources ./resources
 
 ENTRYPOINT ["/sbin/tini", "--", "/app/tuliprox"]
