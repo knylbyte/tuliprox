@@ -35,3 +35,6 @@ features = ["Document", "Element", "Node", "Window", "HtmlCollection", "HtmlInpu
 js-sys = "0.3"
 wasm-bindgen-test = "0.3"
 gloo-utils = "0.2"
+
+[build]
+target = "wasm32-unknown-unknown"

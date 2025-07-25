@@ -7,7 +7,8 @@ BIN_DIR="${WORKING_DIR}/bin"
 RESOURCES_DIR="${WORKING_DIR}/resources"
 DOCKER_DIR="${WORKING_DIR}/docker"
 BACKEND_DIR="${WORKING_DIR}/backend"
-FRONTEND_DIR="${WORKING_DIR}/frontend"
+FRONTEND_DIR="${WORKING_DIR}/webui"
+FRONTEND_BUILD_DIR="${FRONTEND_DIR}/dist"
 TARGET=x86_64-unknown-linux-musl
 VERSION=$(grep -Po '^version\s*=\s*"\K[0-9\.]+' "${BACKEND_DIR}/Cargo.toml" || true)
 if [ -z "${VERSION}" ]; then
@@ -26,11 +27,12 @@ if [ ! -f "${BIN_DIR}/build_resources.sh" ]; then
   "${BIN_DIR}/build_resources.sh"
 fi
 
-cd "$FRONTEND_DIR" && rm -rf build && yarn  && yarn build
+rm -rf "${FRONTEND_BUILD_DIR}"
+cd "${FRONTEND_DIR}" && env RUSTFLAGS="--remap-path-prefix $HOME=~" trunk build --release
 
 # Check if the frontend build directory exists
-if [ ! -d "${FRONTEND_DIR}/build" ]; then
-    echo "Error: Web directory '$FRONTEND_DIR/build' does not exist."
+if [ ! -d "${FRONTEND_BUILD_DIR}" ]; then
+    echo "Error: Web directory '${FRONTEND_BUILD_DIR}' does not exist."
     exit 1
 fi
 
@@ -48,7 +50,7 @@ fi
 # Prepare Docker build context
 cp "${WORKING_DIR}/target/${TARGET}/release/tuliprox" "${DOCKER_DIR}/"
 rm -rf "${DOCKER_DIR}/web"
-cp -r "${FRONTEND_DIR}/build" "${DOCKER_DIR}/web"
+cp -r "${FRONTEND_BUILD_DIR}" "${DOCKER_DIR}/web"
 cp -r "${RESOURCES_DIR}" "${DOCKER_DIR}/"
 
 cd "${DOCKER_DIR}"

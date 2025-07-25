@@ -7,7 +7,8 @@ BIN_DIR="${WORKING_DIR}/bin"
 RESOURCES_DIR="${WORKING_DIR}/resources"
 DOCKER_DIR="${WORKING_DIR}/docker"
 BACKEND_DIR="${WORKING_DIR}/backend"
-FRONTEND_DIR="${WORKING_DIR}/frontend"
+FRONTEND_DIR="${WORKING_DIR}/webui"
+FRONTEND_BUILD_DIR="${FRONTEND_DIR}/dist"
 declare -A ARCHITECTURES=(
     [LINUX]=x86_64-unknown-linux-musl
     [AARCH64]=aarch64-unknown-linux-musl
@@ -18,16 +19,17 @@ declare -A BUILDS=(
     [AARCH64]="tuliprox-aarch64:scratch-final"
 )
 
-cd "$FRONTEND_DIR" && rm -rf build && yarn  && yarn build
-cd "$WORKING_DIR"
 
 if [ ! -f "${BIN_DIR}/build_resources.sh" ]; then
   "${BIN_DIR}/build_resources.sh"
 fi
 
+rm -rf "${FRONTEND_BUILD_DIR}"
+cd "${FRONTEND_DIR}" && env RUSTFLAGS="--remap-path-prefix $HOME=~" trunk build --release
+
 # Check if the frontend build directory exists
-if [ ! -d "$FRONTEND_DIR/build" ]; then
-    echo "🧨 Error: Web directory '$FRONTEND_DIR/build' does not exist."
+if [ ! -d "${FRONTEND_BUILD_DIR}" ]; then
+    echo "Error: Web directory '${FRONTEND_BUILD_DIR}' does not exist."
     exit 1
 fi
 
@@ -60,7 +62,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
   # Prepare Docker context
   cp "$BINARY_PATH" "${DOCKER_DIR}/"
   rm -rf "${DOCKER_DIR}/web"
-  cp -r "${FRONTEND_DIR}/build" "${DOCKER_DIR}/web"
+  cp -r "${FRONTEND_BUILD_DIR}" "${DOCKER_DIR}/web"
   cp -r "${RESOURCES_DIR}" "${DOCKER_DIR}/resources"
 
   cd "${DOCKER_DIR}"
@@ -73,10 +75,10 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
       echo "🎯 Building ${IMAGE_NAME} with target ${BUILD_TARGET}"
 
       docker build -f Dockerfile-manual \
-        -t ghcr.io/euzu/${IMAGE_NAME}:${VERSION} \
+        -t "ghcr.io/euzu/${IMAGE_NAME}:${VERSION}" \
         --target "$BUILD_TARGET" .
 
-      docker tag ghcr.io/euzu/${IMAGE_NAME}:${VERSION} ghcr.io/euzu/${IMAGE_NAME}:latest
+      docker tag "ghcr.io/euzu/${IMAGE_NAME}:${VERSION} ghcr.io/euzu/${IMAGE_NAME}:latest"
 
       BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${VERSION}")
       BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:latest")
