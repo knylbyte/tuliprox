@@ -1,13 +1,13 @@
-use crate::api::model::{ProviderConnectionChangeSender, ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper};
+use crate::api::model::{ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper, ProviderConnectionChangeSender};
 use crate::model::{AppConfig, ConfigInput};
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
 use log::{debug, log_enabled, trace};
 use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 const CONNECTION_STATE_ACTIVE: u8 = 0;
 const CONNECTION_STATE_SHARED: u8 = 1;
@@ -35,7 +35,7 @@ impl ProviderConnectionGuard {
             ProviderAllocation::Available(state, config) |
             ProviderAllocation::GracePeriod(state, config) => {
                 // we can't release shared state
-                if state.compare_exchange(CONNECTION_STATE_ACTIVE, CONNECTION_STATE_RELEASED, Ordering::SeqCst, Ordering::SeqCst) .is_ok() {
+                if state.compare_exchange(CONNECTION_STATE_ACTIVE, CONNECTION_STATE_RELEASED, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
                     let provider_config = Arc::clone(config);
                     trace!("Releasing provider connection {:?}", provider_config.name);
                     tokio::spawn(async move {
@@ -468,7 +468,7 @@ impl ProviderLineupManager {
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
             inputs: Arc::new(ArcSwap::from_pointee(inputs)),
             providers: Arc::new(ArcSwap::from_pointee(lineups)),
-            connection_change_tx
+            connection_change_tx,
         }
     }
 
@@ -723,7 +723,7 @@ impl ProviderLineupManager {
 
 pub struct ActiveProviderManager {
     providers: ProviderLineupManager,
-    connections: DashMap<String, Arc<ProviderConnectionGuard>>,
+    connections: RwLock<HashMap<String, Arc<ProviderConnectionGuard>>>,
 }
 
 impl ActiveProviderManager {
@@ -733,7 +733,7 @@ impl ActiveProviderManager {
 
         Self {
             providers: ProviderLineupManager::new(inputs, grace_period_millis, grace_period_timeout_secs, connection_change_sender),
-            connections: DashMap::new(),
+            connections: RwLock::new(HashMap::new()),
         }
     }
 
@@ -757,14 +757,14 @@ impl ActiveProviderManager {
 
     pub async fn force_exact_acquire_connection(&self, provider_name: &str, addr: &str) -> Arc<ProviderConnectionGuard> {
         let guard = self.providers.force_exact_acquire_connection(provider_name).await;
-        self.register_connection(addr, &guard);
+        self.register_connection(addr, &guard).await;
         guard
     }
 
     // Returns the next available provider connection
     pub async fn acquire_connection(&self, input_name: &str, addr: &str) -> Arc<ProviderConnectionGuard> {
         let guard = self.providers.acquire_connection(input_name).await;
-        self.register_connection(addr, &guard);
+        self.register_connection(addr, &guard).await;
         guard
     }
 
@@ -786,15 +786,16 @@ impl ActiveProviderManager {
         self.providers.is_over_limit(provider_name).await
     }
 
-    fn register_connection(&self, addr: &str, guard: &Arc<ProviderConnectionGuard>) {
+    async fn register_connection(&self, addr: &str, guard: &Arc<ProviderConnectionGuard>) {
         if !matches!(guard.allocation, ProviderAllocation::Exhausted) {
             trace!("Added provider connection {:?}", guard.get_provider_name().unwrap_or_default());
-            self.connections.insert(addr.to_string(), Arc::clone(guard));
+            self.connections.write().await.insert(addr.to_string(), Arc::clone(guard));
         }
     }
 
-    pub fn release_connection(&self, addr: &str) {
-        if let Some((_, guard)) = self.connections.remove(addr) {
+    pub async fn release_connection(&self, addr: &str) {
+        let guard = self.connections.write().await.remove(addr);
+        if let Some(guard) = guard {
             guard.release();
         }
     }

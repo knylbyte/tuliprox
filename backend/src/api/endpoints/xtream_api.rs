@@ -197,9 +197,9 @@ pub(in crate::api) fn get_xtream_player_api_stream_url(
     }
 }
 
-fn get_user_info(user: &ProxyUserCredentials, app_state: &AppState) -> XtreamAuthorizationResponse {
+async fn get_user_info(user: &ProxyUserCredentials, app_state: &AppState) -> XtreamAuthorizationResponse {
     let server_info = app_state.app_config.get_user_server_info(user);
-    let active_connections = app_state.get_active_connections_for_user(&user.username);
+    let active_connections = app_state.get_active_connections_for_user(&user.username).await;
     XtreamAuthorizationResponse::new(
         &server_info,
         user,
@@ -277,7 +277,7 @@ async fn xtream_player_api_stream(
     let session_key = format!("{fingerprint}{virtual_id}");
     let user_session = app_state
         .active_users
-        .get_user_session(&user.username, &session_key);
+        .get_user_session(&user.username, &session_key).await;
 
     let session_url = if let Some(session) = &user_session {
         if session.permission == UserConnectionPermission::Exhausted {
@@ -320,7 +320,7 @@ async fn xtream_player_api_stream(
         pli.url.as_str()
     };
 
-    let connection_permission = user.connection_permission(app_state);
+    let connection_permission = user.connection_permission(app_state).await;
     if connection_permission == UserConnectionPermission::Exhausted {
         return create_custom_video_stream_response(
             &app_state.app_config,
@@ -1316,12 +1316,12 @@ async fn xtream_player_api(
     let user_target = get_user_target(&api_req, app_state);
     if let Some((user, target)) = user_target {
         if !target.has_output(&TargetType::Xtream) {
-            return axum::response::Json(get_user_info(&user, app_state)).into_response();
+            return axum::response::Json(get_user_info(&user, app_state).await).into_response();
         }
 
         let action = api_req.action.trim();
         if action.is_empty() {
-            return axum::response::Json(get_user_info(&user, app_state)).into_response();
+            return axum::response::Json(get_user_info(&user, app_state).await).into_response();
         }
 
         if user.permission_denied(app_state) {
@@ -1347,7 +1347,7 @@ async fn xtream_player_api(
 
         match action {
             crate::model::XC_ACTION_GET_ACCOUNT_INFO => {
-                return axum::response::Json(get_user_info(&user, app_state)).into_response();
+                return axum::response::Json(get_user_info(&user, app_state).await).into_response();
             }
             crate::model::XC_ACTION_GET_SERIES_INFO => {
                 skip_json_response_if_flag_set!(

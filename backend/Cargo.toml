@@ -42,6 +42,10 @@ blake3 = "1.8"
 bytes = "1.10"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio = { version = "1.46", features = ["rt-multi-thread", "parking_lot", "fs"] }
+#tokio = { version = "1.46", features = ["rt-multi-thread", "parking_lot", "fs", "tracing"] }
+#console-subscriber = "0"
+#tracing = "0.1"
+#tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tokio-util = "0.7"
 tempfile = "3.20"
 ruzstd = "0.8"

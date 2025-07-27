@@ -217,12 +217,12 @@ impl AppState {
         Ok(changes)
     }
 
-    pub fn get_active_connections_for_user(&self, username: &str) -> u32 {
-        self.active_users.user_connections(username)
+    pub async fn get_active_connections_for_user(&self, username: &str) -> u32 {
+        self.active_users.user_connections(username).await
     }
 
-    pub fn get_connection_permission(&self, username: &str, max_connections: u32) -> UserConnectionPermission {
-        self.active_users.connection_permission(username, max_connections)
+    pub async fn get_connection_permission(&self, username: &str, max_connections: u32) -> UserConnectionPermission {
+        self.active_users.connection_permission(username, max_connections).await
     }
 
     fn detect_changes_for_config(&self, config: &Config) -> UpdateChanges {

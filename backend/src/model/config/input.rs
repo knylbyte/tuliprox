@@ -1,12 +1,12 @@
 use crate::model::{macros, EpgConfig};
 use crate::utils;
 use log::debug;
-use shared::{apply_batch_aliases, check_input_credentials};
 use shared::error::{TuliproxError, TuliproxErrorKind};
 use shared::info_err;
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType};
 use shared::utils::get_credentials_from_url_str;
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};
+use shared::{apply_batch_aliases, check_input_credentials};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use url::Url;
@@ -204,7 +204,7 @@ pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(Pat
             Err(err) => {
                 Err(TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))
             }
-        }
+        };
     }
     Ok(None)
 }

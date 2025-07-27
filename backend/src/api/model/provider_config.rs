@@ -140,7 +140,7 @@ impl ProviderConfig {
             let now = get_current_timestamp();
             if now - guard.grace_ts <= grace_period_timeout_secs {
                 // Grace timeout still active, deny connection
-                debug!("Provider access denied, grace exhausted, too many connections: {}", self.name);
+                debug!("Provider access denied, grace exhausted, too many connections, over limit: {}", self.name);
                 return true;
             }
         }
@@ -212,7 +212,7 @@ impl ProviderConfig {
             if guard.granted_grace {
                 if connections > self.max_connections && now - guard.grace_ts <= grace_period_timeout_secs {
                     // Grace timeout still active, deny connection
-                    debug!("Provider access denied, grace exhausted, too many connections: {}", self.name);
+                    debug!("Provider access denied, grace exhausted, too many connections, no connection available: {}", self.name);
                     return false;
                 }
                 // Grace timeout expired, reset grace counters

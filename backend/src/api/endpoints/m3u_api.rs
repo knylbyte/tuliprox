@@ -129,7 +129,7 @@ async fn m3u_api_stream(
     let session_key = format!("{fingerprint}{virtual_id}");
     let user_session = app_state
         .active_users
-        .get_user_session(&user.username, &session_key);
+        .get_user_session(&user.username, &session_key).await;
 
     let session_url = if let Some(session) = &user_session {
         if session.permission == UserConnectionPermission::Exhausted {
@@ -170,7 +170,7 @@ async fn m3u_api_stream(
         pli.url.as_str()
     };
 
-    let connection_permission = user.connection_permission(app_state);
+    let connection_permission = user.connection_permission(app_state).await;
     if connection_permission == UserConnectionPermission::Exhausted {
         return create_custom_video_stream_response(
             &app_state.app_config,

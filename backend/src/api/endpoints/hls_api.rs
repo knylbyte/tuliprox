@@ -83,7 +83,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
                         &stream_url,
                         addr,
                         connection_permission,
-                    );
+                    ).await;
                     (stream_url, Some(session_token))
                 }
                 None => (url, None),
@@ -162,7 +162,7 @@ async fn hls_api_stream(
     let user_session_token = format!("{fingerprint}{virtual_id}");
     let mut user_session = app_state
         .active_users
-        .get_user_session(&user.username, &user_session_token);
+        .get_user_session(&user.username, &user_session_token).await;
 
     if let Some(session) = &mut user_session {
         if session.permission == UserConnectionPermission::Exhausted {
@@ -213,7 +213,7 @@ async fn hls_api_stream(
             return axum::http::StatusCode::BAD_REQUEST.into_response();
         }
 
-        let connection_permission = user.connection_permission(&app_state);
+        let connection_permission = user.connection_permission(&app_state).await;
         if connection_permission == UserConnectionPermission::Exhausted {
             return create_custom_video_stream_response(
                 &app_state.app_config,

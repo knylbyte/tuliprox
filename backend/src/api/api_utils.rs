@@ -742,9 +742,9 @@ pub async fn force_provider_stream_response(
             .map(|(h, sc, url)| (h.clone(), *sc, url.clone()));
         app_state
             .active_users
-            .update_session_addr(&user.username, &user_session.token, addr);
+            .update_session_addr(&user.username, &user_session.token, addr).await;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr);
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr).await;
 
         let (status_code, header_map) =
             get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
@@ -805,7 +805,7 @@ pub async fn stream_response(
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
         if let Some(value) =
-            shared_stream_response(app_state, stream_url, addr, user, connection_permission)
+            shared_stream_response(app_state, stream_url, addr, user, connection_permission).await
         {
             return value.into_response();
         }
@@ -842,7 +842,7 @@ pub async fn stream_response(
             None
         };
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr);
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr).await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
                 "Streaming shared stream request from {}",
@@ -852,17 +852,16 @@ pub async fn stream_response(
             let shared_headers = provider_response
                 .as_ref()
                 .map_or_else(Vec::new, |(h, _, _)| h.clone());
-            SharedStreamManager::subscribe(
+
+            if let Some(broadcast_stream) = SharedStreamManager::register_shared_stream(
                 app_state,
                 stream_url,
                 stream,
+                Some(addr),
                 shared_headers,
                 stream_options.buffer_size,
                 provider_guard,
-            );
-            if let Some(broadcast_stream) =
-                SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr))
-            {
+            ).await {
                 let (status_code, header_map) =
                     get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
                 let mut response = axum::response::Response::builder().status(status_code);
@@ -919,7 +918,7 @@ pub async fn stream_response(
                         &session_url,
                         addr,
                         connection_permission,
-                    );
+                    ).await;
                 }
             }
 
@@ -945,7 +944,7 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
         .unwrap_or_default()
 }
 
-fn shared_stream_response(
+async fn shared_stream_response(
     app_state: &AppState,
     stream_url: &str,
     addr: &str,
@@ -953,7 +952,7 @@ fn shared_stream_response(
     connect_permission: UserConnectionPermission,
 ) -> Option<impl IntoResponse> {
     if let Some(stream) =
-        SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr))
+        SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)).await
     {
         debug_if_enabled!(
             "Using shared stream {}",
@@ -961,7 +960,7 @@ fn shared_stream_response(
         );
         if let Some(headers) = app_state
             .shared_stream_manager
-            .get_shared_state_headers(stream_url)
+            .get_shared_state_headers(stream_url).await
         {
             let (status_code, header_map) = get_stream_response_with_headers(Some((
                 headers.clone(),
@@ -969,8 +968,7 @@ fn shared_stream_response(
             )));
             let stream_details = StreamDetails::from_stream(stream);
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr)
-                    .boxed();
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr).await.boxed();
             let mut response = axum::response::Response::builder().status(status_code);
             for (key, value) in &header_map {
                 response = response.header(key, value);
