@@ -145,6 +145,7 @@
     "CREATE": "Create",
     "PLAYLIST": "Playlist",
     "PLAYLISTS": "Playlists",
+    "PLAYLIST_VIEWER": "Viewer",
     "LIST": "List",
     "NEW_PLAYLIST": "New Playlist",
     "SKIP_DIRECT_SOURCE": "Skip direct source",

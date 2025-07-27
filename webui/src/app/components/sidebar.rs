@@ -49,7 +49,9 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
                         onclick={&handle_menu_click}></MenuItem>
                 </CollapsePanel>
                 <CollapsePanel title={translate.t("LABEL.PLAYLIST")}>
-                    <MenuItem icon="PlayArrowOutline" name={ViewType::Playlists.to_string()} label={translate.t("LABEL.PLAYLIST")}
+                    <MenuItem icon="PlayArrowOutline" name={ViewType::PlaylistEditor.to_string()} label={translate.t("LABEL.PLAYLIST")}
+                        onclick={&handle_menu_click}></MenuItem>
+                    <MenuItem icon="Live" name={ViewType::PlaylistViewer.to_string()} label={translate.t("LABEL.PLAYLIST_VIEWER")}
                         onclick={&handle_menu_click}></MenuItem>
                 </CollapsePanel>
             </div>

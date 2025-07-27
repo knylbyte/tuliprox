@@ -8,6 +8,12 @@ $sidebar-width: 270px;
   max-width: $sidebar-width;
   width: $sidebar-width;
 
+  .tp__menu-item {
+    .icon-Live {
+      transform: translateY(-2px);
+    }
+  }
+
   &__content {
     display: flex;
     flex-flow: column;

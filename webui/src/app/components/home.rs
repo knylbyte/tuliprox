@@ -169,7 +169,7 @@ pub fn Home() -> Html {
                        <Panel class="tp__full-width" value={ViewType::Stats.to_string()} active={view_visible.to_string()}>
                         <StatsView/>
                        </Panel>
-                       <Panel class="tp__full-width" value={ViewType::Playlists.to_string()} active={view_visible.to_string()}>
+                       <Panel class="tp__full-width" value={ViewType::PlaylistEditor.to_string()} active={view_visible.to_string()}>
                         <PlaylistView/>
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::Users.to_string()} active={view_visible.to_string()}>
