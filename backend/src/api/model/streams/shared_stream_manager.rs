@@ -263,7 +263,6 @@ impl SharedStreamManager {
             self.unregister(stream_url.as_ref().unwrap(), true).await;
         }
 
-
     }
 
     async fn subscribe_stream(&self, stream_url: &str, addr: Option<&str>, manager: Arc<SharedStreamManager>) -> Option<BoxedProviderStream> {

@@ -954,9 +954,7 @@ async fn shared_stream_response(
     if let Some(stream) =
         SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)).await
     {
-        debug_if_enabled!(
-            "Using shared stream {}",
-            sanitize_sensitive_info(stream_url)
+        debug_if_enabled!("Using shared stream {}", sanitize_sensitive_info(stream_url)
         );
         if let Some(headers) = app_state
             .shared_stream_manager
