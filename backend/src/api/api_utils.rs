@@ -1130,7 +1130,7 @@ pub fn empty_json_list_response() -> impl IntoResponse + Send {
     try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header("Content-Type", mime::APPLICATION_JSON.to_string())
-        .body("[]".to_string()))
+        .body("[]".to_owned()))
 }
 
 pub fn get_username_from_auth_header(token: &str, app_state: &Arc<AppState>) -> Option<String> {

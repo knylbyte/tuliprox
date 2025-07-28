@@ -2,12 +2,14 @@ use crate::api::model::{ProviderConfig, ProviderConfigConnection, ProviderConfig
 use crate::model::{AppConfig, ConfigInput};
 use arc_swap::ArcSwap;
 use log::{debug, log_enabled, trace};
-use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs};
+use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs, display_vec, sanitize_sensitive_info};
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use crate::utils::debug_if_enabled;
 
 const CONNECTION_STATE_ACTIVE: u8 = 0;
 const CONNECTION_STATE_SHARED: u8 = 1;
@@ -144,6 +146,24 @@ enum ProviderLineup {
     Multi(MultiProviderLineup),
 }
 
+impl fmt::Display for ProviderLineup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProviderLineup::Single(lineup) => {
+                write!(f, "SingleProviderLineup: {{ {} }}", lineup.provider)
+            }
+            ProviderLineup::Multi(lineup) => {
+                write!(f, "MultiProviderLineup: {{")?;
+                for (i, group) in lineup.providers.iter().enumerate() {
+                    write!(f, "  Group {}: {}", i + 1, group)?;
+                }
+                write!(f, " }}")?;
+                Ok(())
+            }
+        }
+    }
+}
+
 impl ProviderLineup {
     async fn get_next(&self, grace_period_timeout_secs: u64) -> Option<Arc<ProviderConfig>> {
         match self {
@@ -207,6 +227,19 @@ impl SingleProviderLineup {
 enum ProviderPriorityGroup {
     SingleProviderGroup(ProviderConfigWrapper),
     MultiProviderGroup(AtomicUsize, Vec<ProviderConfigWrapper>),
+}
+
+impl fmt::Display for ProviderPriorityGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProviderPriorityGroup::SingleProviderGroup(p) => {
+                write!(f, "Single({p})")
+            }
+            ProviderPriorityGroup::MultiProviderGroup(_, providers) => {
+                write!(f, "Multi({})", display_vec(providers))
+            }
+        }
+    }
 }
 
 impl ProviderPriorityGroup {
@@ -578,8 +611,8 @@ impl ProviderLineupManager {
             new_lineups.push(Self::create_lineup(input, connections.as_ref(), self.connection_change_tx.clone()));
         }
 
-        debug!("inputs {new_inputs:?}");
-        debug!("lineup {new_lineups:?}");
+        debug_if_enabled!("inputs {}", sanitize_sensitive_info(&*display_vec(&new_inputs)));
+        debug_if_enabled!("lineup {}", sanitize_sensitive_info(&*display_vec(&new_lineups)));
 
         self.inputs.store(Arc::new(new_inputs));
         self.providers.store(Arc::new(new_lineups));

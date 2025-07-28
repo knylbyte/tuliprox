@@ -1,3 +1,4 @@
+use std::fmt;
 use crate::api::model::ProviderAllocation;
 use crate::model::{ConfigInput, ConfigInputAlias, InputUserInfo};
 use jsonwebtoken::get_current_timestamp;
@@ -6,6 +7,7 @@ use std::ops::Deref;
 use std::sync::{Arc};
 use tokio::sync::RwLock;
 use shared::model::InputType;
+use shared::write_if_some;
 
 pub type ProviderConnectionChangeSender = tokio::sync::mpsc::Sender<(String, usize)>;
 pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::Receiver<(String, usize)>;
@@ -43,6 +45,24 @@ pub struct ProviderConfig {
     priority: i16,
     connection: RwLock<ProviderConfigConnection>,
     connection_change_tx: ProviderConnectionChangeSender,
+}
+
+impl fmt::Display for ProviderConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ProviderConfig {{")?;
+        write!(f, "  id: {}", self.id)?;
+        write!(f, ", name: {}", self.name)?;
+        write!(f, ", url: {}", self.url)?;
+        write!(f, ", input_type: {:?}", self.input_type)?;
+        write!(f, ", max_connections: {}", self.max_connections)?;
+        write!(f, ", priority: {}", self.priority)?;
+        write_if_some!(f, self,
+            ", username: " => username,
+            ", password: " => password
+        );
+        write!(f, "}}")?;
+        Ok(())
+    }
 }
 
 impl PartialEq for ProviderConfig {
@@ -250,6 +270,12 @@ impl ProviderConfig {
 #[derive(Clone, Debug)]
 pub(in crate::api::model) struct ProviderConfigWrapper {
     inner: Arc<ProviderConfig>,
+}
+
+impl fmt::Display for ProviderConfigWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.inner)
+    }
 }
 
 impl ProviderConfigWrapper {

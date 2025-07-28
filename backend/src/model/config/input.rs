@@ -2,12 +2,13 @@ use crate::model::{macros, EpgConfig};
 use crate::utils;
 use log::debug;
 use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::info_err;
+use shared::{info_err, write_if_some};
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType};
 use shared::utils::get_credentials_from_url_str;
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};
 use shared::{apply_batch_aliases, check_input_credentials};
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 use url::Url;
 
@@ -189,6 +190,31 @@ impl From<&ConfigInputDto> for ConfigInput {
             max_connections: dto.max_connections,
             method: dto.method,
         }
+    }
+}
+
+impl fmt::Display for ConfigInput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ConfigInput: {{")?;
+        write!(f, "  id: {}", self.id)?;
+        write!(f, ", name: {}", self.name)?;
+        write!(f, ", input_type: {:?}", self.input_type)?;
+        write!(f, ", url: {}", self.url)?;
+        write!(f, ", enabled: {}", self.enabled)?;
+        write!(f, ", priority: {}", self.priority)?;
+        write!(f, ", max_connections: {}", self.max_connections)?;
+        write!(f, ", method: {:?}", self.method)?;
+
+        // headers, epg etc. wie gehabt…
+
+        write_if_some!(f, self,
+            ", username: " => username,
+            ", password: " => password,
+            ", persist: " => persist
+        );
+        write!(f, " }}")?;
+
+        Ok(())
     }
 }
 

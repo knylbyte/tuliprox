@@ -30,7 +30,7 @@ pub(in crate::api) struct ActiveClientStream {
     #[allow(dead_code)]
     provider_connection_guard: Option<Arc<ProviderConnectionGuard>>,
     custom_video: (Option<TransportStreamBuffer>, Option<TransportStreamBuffer>),
-    waker: Arc<Option<AtomicWaker>>,
+    waker: Option<Arc<AtomicWaker>>,
 }
 
 impl ActiveClientStream {
@@ -39,17 +39,16 @@ impl ActiveClientStream {
                       user: &ProxyUserCredentials,
                       connection_permission: UserConnectionPermission,
                       addr: &str) -> Self {
-        let active_user = app_state.active_users.clone();
         if connection_permission == UserConnectionPermission::Exhausted {
             error!("Something is wrong this should not happen");
         }
         let grant_user_grace_period = connection_permission == UserConnectionPermission::GracePeriod;
         let username = user.username.as_str();
-        let user_connection_guard = Some(active_user.add_connection(username, user.max_connections, addr).await);
+        let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, addr).await);
         let cfg = &app_state.app_config;
-        let waker = Arc::new(Some(AtomicWaker::new()));
-        let waker_clone = Arc::clone(&waker);
-        let grace_stop_flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, addr, &waker_clone);
+        let waker = Some(Arc::new(AtomicWaker::new()));
+        let waker_clone = waker.clone();
+        let grace_stop_flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, addr, waker_clone.clone());
         let custom_response = cfg.custom_stream_response.load();
         let custom_video = custom_response.as_ref()
             .map_or((None, None), |c|
@@ -95,7 +94,7 @@ impl ActiveClientStream {
                            user_grace_period: bool,
                            user: &ProxyUserCredentials,
                            addr: &str,
-                           waker: &Arc<Option<AtomicWaker>>) -> Option<Arc<AtomicU8>> {
+                           waker: Option<Arc<AtomicWaker>>) -> Option<Arc<AtomicU8>> {
         let active_users = Arc::clone(&app_state.active_users);
         let active_provider = Arc::clone(&app_state.active_provider);
         let shared_stream_manager = Arc::clone(&app_state.shared_stream_manager);
@@ -118,7 +117,6 @@ impl ActiveClientStream {
         if provider_grace_check.is_some() || user_grace_check.is_some() {
             let stream_strategy_flag = Arc::new(AtomicU8::new(GRACE_BLOCK_STREAM));
             let stream_strategy_flag_copy = Arc::clone(&stream_strategy_flag);
-            let waker_copy = Arc::clone(waker);
             let grace_period_millis = stream_details.grace_period_millis;
 
             let address = addr.to_string();
@@ -133,7 +131,7 @@ impl ActiveClientStream {
                 if let Some((username, max_connections)) = user_grace_check {
                     let active_connections = user_manager.user_connections(&username).await;
                     if active_connections > max_connections {
-                        stream_strategy_flag_copy.store(USER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
+                        stream_strategy_flag_copy.store(USER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::Release);
                         info!("User connections exhausted for active clients: {username}");
                         updated = true;
                     }
@@ -142,7 +140,7 @@ impl ActiveClientStream {
                 if !updated {
                     if let Some(provider_name) = provider_grace_check {
                         if provider_manager.is_over_limit(&provider_name).await {
-                            stream_strategy_flag_copy.store(PROVIDER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::SeqCst);
+                            stream_strategy_flag_copy.store(PROVIDER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::Release);
                             info!("Provider connections exhausted for active clients: {provider_name}");
                             updated = true;
                         }
@@ -152,14 +150,14 @@ impl ActiveClientStream {
                 if updated {
                     share_manager.release_connection(&address, true).await;
                     provider_manager.release_connection(&address).await;
-                    if let Some(flag) = reconnect_flag {
-                        flag.notify();
+                     if let Some(flag) = reconnect_flag {
+                         flag.notify();
                     }
                 } else {
-                    stream_strategy_flag_copy.store(INNER_STREAM, std::sync::atomic::Ordering::SeqCst);
+                    stream_strategy_flag_copy.store(INNER_STREAM, std::sync::atomic::Ordering::Release);
                 }
 
-                if let Some(w) = waker_copy.as_ref() {
+                if let Some(w) = waker.as_ref() {
                     w.wake();
                 }
             });
@@ -172,20 +170,22 @@ impl Stream for ActiveClientStream {
     type Item = Result<Bytes, StreamError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
-        let flag = match &self.send_custom_stream_flag {
-            Some(flag) => flag.load(std::sync::atomic::Ordering::SeqCst),
-            None => INNER_STREAM,
+        let flag = {
+            match &self.send_custom_stream_flag {
+                Some(flag) => flag.load(std::sync::atomic::Ordering::Acquire),
+                None => INNER_STREAM,
+            }
         };
 
-        if flag == INNER_STREAM {
-            return Pin::new(&mut self.inner).poll_next(cx);
-        }
-
         if flag == GRACE_BLOCK_STREAM {
-            if let Some(waker) = self.waker.as_ref() {
+            if let Some(waker) = &self.waker {
                 waker.register(cx.waker());
             }
             return Poll::Pending;
+        }
+
+        if flag == INNER_STREAM {
+            return Pin::new(&mut self.inner).poll_next(cx);
         }
 
         let buffer_opt = match flag {

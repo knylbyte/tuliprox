@@ -20,6 +20,7 @@ pub fn sanitize_sensitive_info(query: &str) -> Cow<'_, str> {
         (&CONSTANTS.re_ipv6, "$1***"),
         (&CONSTANTS.re_stream_url, "$1***/$2/***"),
         (&CONSTANTS.re_url, "$1***/$2"),
+        (&CONSTANTS.re_password, "$1***"),
     ] {
         result = re.replace_all(&result, *replacement).into_owned();
     }
