@@ -611,8 +611,8 @@ impl ProviderLineupManager {
             new_lineups.push(Self::create_lineup(input, connections.as_ref(), self.connection_change_tx.clone()));
         }
 
-        debug_if_enabled!("inputs {}", sanitize_sensitive_info(&*display_vec(&new_inputs)));
-        debug_if_enabled!("lineup {}", sanitize_sensitive_info(&*display_vec(&new_lineups)));
+        debug_if_enabled!("inputs {}", sanitize_sensitive_info(&display_vec(&new_inputs)));
+        debug_if_enabled!("lineup {}", sanitize_sensitive_info(&display_vec(&new_lineups)));
 
         self.inputs.store(Arc::new(new_inputs));
         self.providers.store(Arc::new(new_lineups));

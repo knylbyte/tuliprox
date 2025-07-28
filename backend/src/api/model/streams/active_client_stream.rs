@@ -146,19 +146,21 @@ impl ActiveClientStream {
                         }
                     }
                 }
-
-                if updated {
-                    share_manager.release_connection(&address, true).await;
-                    provider_manager.release_connection(&address).await;
-                     if let Some(flag) = reconnect_flag {
-                         flag.notify();
-                    }
-                } else {
+                if !updated {
                     stream_strategy_flag_copy.store(INNER_STREAM, std::sync::atomic::Ordering::Release);
                 }
 
                 if let Some(w) = waker.as_ref() {
                     w.wake();
+                }
+
+                if updated {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                    share_manager.release_connection(&address, true).await;
+                    provider_manager.release_connection(&address).await;
+                     if let Some(flag) = reconnect_flag {
+                         flag.notify();
+                    }
                 }
             });
             return Some(stream_strategy_flag);

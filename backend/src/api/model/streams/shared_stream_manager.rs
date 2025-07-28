@@ -224,7 +224,7 @@ impl SharedStreamManager {
         }
         if let Some(stop_tx) = broadcast_stop_sender {
             trace_if_enabled!("Sending shared stream stop signal {}", sanitize_sensitive_info(stream_url));
-            let _ = stop_tx.cancel();
+            let () = stop_tx.cancel();
         }
     }
 
