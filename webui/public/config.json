@@ -1,6 +1,5 @@
 {
   "tabTitle": "tuliprox",
-  "appTitle": "tuliprox",
   "appLogo": "/assets/tuliprox-logo.svg",
   "api": {
     "apiUrl": "/api/v1/",

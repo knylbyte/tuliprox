@@ -8,7 +8,7 @@ use axum::{
     response::IntoResponse,
 };
 use log::{error, info};
-use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, WsCloseCode, PROTOCOL_VERSION};
+use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserRole, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
 
 // WebSocket upgrade handler
@@ -114,11 +114,11 @@ async fn handle_protocol_message(
             Ok(ProtocolMessage::Auth(auth_token)) => {
                  mem.token = None;
                  if verify_auth_admin_token(&auth_token, secret_key) {
-                     mem.admin = true;
+                     mem.role = UserRole::Admin;
                      mem.token = Some(auth_token);
                      Some(ProtocolMessage::Authorized)
                  } else if verify_auth_user_token(&auth_token, secret_key) {
-                     mem.admin = false;
+                     mem.role = UserRole::User;
                      mem.token = Some(auth_token);
                      Some(ProtocolMessage::Authorized)
                  } else {
@@ -127,7 +127,7 @@ async fn handle_protocol_message(
             },
             Ok(ProtocolMessage::StatusRequest(auth_token)) => {
                 if !auth || verify_auth_admin_token(&auth_token, secret_key) {
-                    mem.admin = true;
+                    mem.role = UserRole::Admin;
                     mem.token = Some(auth_token);
                     let status = create_status_check(app_state).await;
                     Some(ProtocolMessage::StatusResponse(status))
@@ -192,7 +192,7 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage, handl
     match handler {
         ProtocolHandler::Version(_) => {},
         ProtocolHandler::Default(mem) => {
-            if mem.admin {
+            if mem.role.is_admin() {
                 match event {
                     EventMessage::ActiveUserChange(users, connections) => {
                         let msg = ProtocolMessage::ActiveUserResponse(users, connections)

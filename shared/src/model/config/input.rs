@@ -14,7 +14,6 @@ macro_rules! apply_batch_aliases {
     ($target:expr, $batch_aliases:expr) => {{
         if !$batch_aliases.is_empty() {
             if !$batch_aliases.is_empty() {
-                $batch_aliases.reverse();
                 if let Some(aliases) = $target.aliases.as_mut() {
                     aliases.extend($batch_aliases);
                 } else {

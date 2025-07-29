@@ -5,18 +5,27 @@ use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 
-pub struct ProtocolHandlerMemory {
-    pub token: Option<String>,
-    pub admin: bool,
+#[derive(Default)]
+pub enum UserRole {
+    #[default]
+    Unauthorized,
+    Admin,
+    User,
 }
 
-impl Default for ProtocolHandlerMemory {
-    fn default() -> Self {
-        Self {
-            token: None,
-            admin: false,
-        }
+impl UserRole {
+    pub fn is_admin(&self) -> bool {
+        self.eq(&UserRole::Admin)
     }
+    pub fn is_user(&self) -> bool {
+        self.eq(&UserRole::User)
+    }
+}
+
+#[derive(Default)]
+pub struct ProtocolHandlerMemory {
+    pub token: Option<String>,
+    pub role: UserRole,
 }
 
 pub enum ProtocolHandler {

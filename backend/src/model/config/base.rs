@@ -122,7 +122,7 @@ macros::from_impl!(Config);
 impl From<&ConfigDto> for Config {
     fn from(dto: &ConfigDto) -> Self {
         Config {
-            threads: 0,
+            threads: dto.threads,
             api: ConfigApi::from(&dto.api),
             working_dir: dto.working_dir.to_string(),
             backup_dir: dto.backup_dir.clone(),

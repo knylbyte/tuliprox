@@ -1,18 +1,17 @@
+use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, Sidebar, StatsView, UserlistView};
+use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
+use crate::hooks::{use_server_status, use_service_context};
+use crate::model::ViewType;
+use crate::services::WsMessage;
+use shared::model::{AppConfigDto, StatusCheck};
 use std::future;
 use std::rc::Rc;
 use yew::prelude::*;
 use yew::suspense::use_future;
-use shared::model::{AppConfigDto, StatusCheck};
-use crate::app::components::{IconButton, Sidebar, DashboardView, PlaylistView, Panel, UserlistView, StatsView};
-use crate::app::context::{ConfigContext, StatusContext};
-use crate::model::ViewType;
-use crate::hooks::{use_server_status, use_service_context};
-use crate::services::WsMessage;
 
 #[function_component]
 pub fn Home() -> Html {
     let services = use_service_context();
-    let app_title = services.config.ui_config.app_title.as_ref().map_or("tuliprox", |v| v.as_str());
     let config = use_state(|| None::<Rc<AppConfigDto>>);
     let status = use_state(|| None::<Rc<StatusCheck>>);
 
@@ -64,6 +63,32 @@ pub fn Home() -> Html {
             let _cfg = services_ctx.config.get_server_config().await;
         });
     }
+
+    let sources = use_memo(config.clone(), |config_ctx| {
+        if let Some(cfg) = config_ctx.as_ref() {
+            let mut sources = vec![];
+            for source in &cfg.sources.sources {
+                let mut inputs = vec![];
+                for input_cfg in &source.inputs {
+                    let input = Rc::new(input_cfg.clone());
+                    inputs.push(Rc::new(InputRow::Input(Rc::clone(&input))));
+                    if let Some(aliases) = input_cfg.aliases.as_ref() {
+                        for alias in aliases {
+                            inputs.push(Rc::new(InputRow::Alias(Rc::new(alias.clone()), Rc::clone(&input))));
+                        }
+                    }
+                }
+                let mut targets = vec![];
+                for target in &source.targets {
+                    targets.push(Rc::new(target.clone()));
+                }
+                sources.push((inputs, targets));
+            }
+            Some(Rc::new(sources))
+        } else {
+            None
+        }
+    });
 
     // {
     //     let services_ctx = services.clone();
@@ -126,11 +151,14 @@ pub fn Home() -> Html {
     // }
 
     let config_context = ConfigContext {
-            config: (*config).clone(),
+        config: (*config).clone(),
     };
 
     let status_context = StatusContext {
         status: (*status).clone(),
+    };
+    let playlist_context = PlaylistContext {
+        sources: sources.clone(),
     };
 
     //<div class={"app-header__toolbar"}><select onchange={handle_language} defaultValue={i18next.language}>{services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
@@ -139,12 +167,19 @@ pub fn Home() -> Html {
     html! {
         <ContextProvider<ConfigContext> context={config_context}>
         <ContextProvider<StatusContext> context={status_context}>
+        <ContextProvider<PlaylistContext> context={playlist_context}>
             <div class="tp__app">
                <Sidebar onview={handle_view_change}/>
 
               <div class="tp__app-main">
                     <div class="tp__app-main__header tp__app-header">
-                        {app_title}
+                        {
+                            if let Some(ref title) = services.config.ui_config.app_title {
+                                html! { title.as_str() }
+                            } else {
+                                html! { <AppIcon name="AppTitle" /> }
+                            }
+                        }
                         <div class={"tp__app-header-toolbar"}>
                             // <select onchange={handle_language} defaultValue={i18next.language}>{
                             //     services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)
@@ -170,7 +205,10 @@ pub fn Home() -> Html {
                         <StatsView/>
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::PlaylistEditor.to_string()} active={view_visible.to_string()}>
-                        <PlaylistView/>
+                        <PlaylistEditorView/>
+                       </Panel>
+                       <Panel class="tp__full-width" value={ViewType::PlaylistExplorer.to_string()} active={view_visible.to_string()}>
+                        <PlaylistExplorerView/>
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::Users.to_string()} active={view_visible.to_string()}>
                           <UserlistView/>
@@ -178,6 +216,7 @@ pub fn Home() -> Html {
                     </div>
               </div>
             </div>
+        </ContextProvider<PlaylistContext>>
         </ContextProvider<StatusContext>>
         </ContextProvider<ConfigContext>>
     }

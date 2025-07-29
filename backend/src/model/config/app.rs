@@ -326,7 +326,7 @@ impl AppConfig {
                     }
 
                     match utils::read_file_as_bytes(&PathBuf::from(&file_path)) {
-                        Ok(data) => Some(TransportStreamBuffer::new(data, )),
+                        Ok(data) => Some(TransportStreamBuffer::new(data)),
                         Err(err) => {
                             error!("Failed to load a resource file: {} {err}", file_path.display());
                             None

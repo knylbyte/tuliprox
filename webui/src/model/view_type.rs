@@ -8,7 +8,7 @@ pub enum ViewType {
     Stats,
     Users,
     PlaylistEditor,
-    PlaylistViewer
+    PlaylistExplorer
 }
 
 impl FromStr for ViewType {
@@ -20,7 +20,7 @@ impl FromStr for ViewType {
             "stats" => Ok(ViewType::Stats),
             "users" => Ok(ViewType::Users),
             "playlist_editor" => Ok(ViewType::PlaylistEditor),
-            "playlist_viewer" => Ok(ViewType::PlaylistEditor),
+            "playlist_explorer" => Ok(ViewType::PlaylistExplorer),
             _ => Err(info_err!(format!("Unknown view type: {s}"))),
         }
     }
@@ -33,7 +33,7 @@ impl fmt::Display for ViewType {
             ViewType::Stats => "stats",
             ViewType::Users => "users",
             ViewType::PlaylistEditor => "playlist_editor",
-            ViewType::PlaylistViewer => "playlist_viewer",
+            ViewType::PlaylistExplorer => "playlist_explorer",
         };
         write!(f, "{s}")
     }

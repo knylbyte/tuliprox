@@ -150,7 +150,7 @@ impl ConfigInput {
                 let mut aliases: Vec<ConfigInputAlias> = batch_aliases.into_iter()
                     .map(ConfigInputAlias::from)
                     .collect();
-                if let Some(mut first) = aliases.pop() {
+                if let Some(mut first) = aliases.remove(0) {
                     self.username = first.username.take();
                     self.password = first.password.take();
                     self.url = first.url.trim().to_string();
@@ -222,9 +222,6 @@ pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(Pat
     if input_type == InputType::M3uBatch || input_type == InputType::XtreamBatch {
         return match utils::csv_read_inputs(input_type, url) {
             Ok((file_path, mut batch_aliases)) => {
-                if !batch_aliases.is_empty() {
-                    batch_aliases.reverse();
-                }
                 Ok(Some((file_path, batch_aliases)))
             }
             Err(err) => {

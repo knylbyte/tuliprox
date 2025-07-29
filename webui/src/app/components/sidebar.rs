@@ -51,7 +51,7 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
                 <CollapsePanel title={translate.t("LABEL.PLAYLIST")}>
                     <MenuItem icon="PlayArrowOutline" name={ViewType::PlaylistEditor.to_string()} label={translate.t("LABEL.PLAYLIST")}
                         onclick={&handle_menu_click}></MenuItem>
-                    <MenuItem icon="Live" name={ViewType::PlaylistViewer.to_string()} label={translate.t("LABEL.PLAYLIST_VIEWER")}
+                    <MenuItem icon="Live" name={ViewType::PlaylistExplorer.to_string()} label={translate.t("LABEL.PLAYLIST_VIEWER")}
                         onclick={&handle_menu_click}></MenuItem>
                 </CollapsePanel>
             </div>

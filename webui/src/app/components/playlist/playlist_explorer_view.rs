@@ -1,0 +1,54 @@
+use crate::app::components::{Breadcrumbs, Panel, PlaylistExplorerPage};
+use crate::app::context::PlaylistExplorerContext;
+use std::rc::Rc;
+use yew::prelude::*;
+use yew_i18n::use_translation;
+
+#[function_component]
+pub fn PlaylistExplorerView() -> Html {
+    let translate = use_translation();
+    let breadcrumbs = use_state(|| Rc::new(vec![translate.t("LABEL.PLAYLISTS"), translate.t("LABEL.LIST")]));
+    let active_page = use_state(|| PlaylistExplorerPage::List);
+
+    let handle_breadcrumb_select = {
+        let view_visible = active_page.clone();
+        Callback::from(move |(_name, index)| {
+            if index == 0 && *view_visible != PlaylistExplorerPage::List {
+                view_visible.set(PlaylistExplorerPage::List);
+            }
+        })
+    };
+
+    {
+        let breadcrumbs = breadcrumbs.clone();
+        let view_visible_dep = active_page.clone();
+        let view_visible = active_page.clone();
+        let translate = translate.clone();
+        use_effect_with(view_visible_dep, move |_| {
+            match *view_visible {
+                PlaylistExplorerPage::List => breadcrumbs.set(Rc::new(vec![translate.t("LABEL.PLAYLISTS"), translate.t("LABEL.LIST")])),
+                PlaylistExplorerPage::Create => breadcrumbs.set(Rc::new(vec![translate.t("LABEL.PLAYLISTS"), translate.t("LABEL.CREATE")])),
+            }
+        });
+    };
+
+    let context = PlaylistExplorerContext {
+        active_page: active_page.clone(),
+    };
+
+    html! {
+        <ContextProvider<PlaylistExplorerContext> context={context}>
+          <div class="tp__playlist-explorer-view tp__list-view">
+            <Breadcrumbs items={&*breadcrumbs} onclick={ handle_breadcrumb_select }/>
+            <div class="tp__playlist-explorer-view__body tp__list-view__body">
+                <Panel value={PlaylistExplorerPage::List.to_string()} active={active_page.to_string()}>
+                    {"List"}
+                </Panel>
+                <Panel value={PlaylistExplorerPage::Create.to_string()} active={active_page.to_string()}>
+                    {"Create"}
+                </Panel>
+            </div>
+        </div>
+       </ContextProvider<PlaylistExplorerContext>>
+    }
+}

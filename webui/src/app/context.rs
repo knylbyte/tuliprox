@@ -1,15 +1,25 @@
 use std::rc::Rc;
 use yew::UseStateHandle;
 use shared::model::{AppConfigDto, ConfigTargetDto, ProxyUserCredentialsDto, StatusCheck};
-use crate::app::components::{InputRow, PlaylistPage, UserlistPage};
+use crate::app::components::{InputRow, PlaylistEditorPage, PlaylistExplorerPage, UserlistPage};
 
 type SingleSource = (Vec<Rc<InputRow>>, Vec<Rc<ConfigTargetDto>>);
 
 #[derive(Clone, PartialEq)]
 pub struct PlaylistContext {
     pub sources: Rc<Option<Rc<Vec<SingleSource>>>>,
-    pub active_page: UseStateHandle<PlaylistPage>,
 }
+
+#[derive(Clone, PartialEq)]
+pub struct PlaylistEditorContext {
+    pub active_page: UseStateHandle<PlaylistEditorPage>,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct PlaylistExplorerContext {
+    pub active_page: UseStateHandle<PlaylistExplorerPage>,
+}
+
 
 #[derive(Clone, PartialEq)]
 pub struct TargetUser {
