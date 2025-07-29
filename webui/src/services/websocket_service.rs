@@ -74,6 +74,7 @@ impl WebSocketService {
                     }
                 };
 
+                let ws_onmessage_clone = Rc::clone(&ws_clone);
                 // onmessage
                 let onmessage_callback = Closure::<dyn FnMut(_)>::wrap(Box::new(move |event: MessageEvent| {
                     trace!("WebSocket received message: {event:?}");
@@ -99,7 +100,13 @@ impl WebSocketService {
                                         let data = Rc::new(status);
                                         broadcast(WsMessage::ServerStatus(data));
                                     }
-                                    ProtocolMessage::Version(_)
+                                    ProtocolMessage::Version(_) => {
+                                        if let Some(token) = get_token() {
+                                            Self::try_send_message(ws_onmessage_clone.borrow().as_ref(), ProtocolMessage::Auth(token));
+                                        }
+                                    }
+                                    ProtocolMessage::Auth(_)
+                                    | ProtocolMessage::Authorized
                                     | ProtocolMessage::StatusRequest(_) => {}
                                 }
                             }
@@ -116,10 +123,7 @@ impl WebSocketService {
                 let onopen_callback = Closure::<dyn FnMut(_)>::wrap(Box::new(move |_event: Event| {
                     trace!("WebSocket connection opened.");
                     connected_clone.store(true, Ordering::SeqCst);
-                    match ProtocolMessage::Version(PROTOCOL_VERSION).to_bytes() {
-                        Ok(bytes) => Self::try_send_message(ws_open_clone.borrow().as_ref(), bytes),
-                        Err(err) => error!("Failed to create WebSocket protocol version message: {err}"),
-                    }
+                    Self::try_send_message(ws_open_clone.borrow().as_ref(), ProtocolMessage::Version(PROTOCOL_VERSION));
                 }));
                 socket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
                 onopen_callback.forget();
@@ -147,21 +151,28 @@ impl WebSocketService {
         }
     }
 
-    fn try_send_message(ws_opt: Option<&WebSocket>, data: bytes::Bytes) {
+    fn try_send_message(ws_opt: Option<&WebSocket>, msg: ProtocolMessage) {
         if let Some(ws) = ws_opt {
-            if let Err(err) = ws.send_with_u8_array(data.as_ref()) {
-                error!("Failed to send a websocket message: {err:?}");
+            match msg.to_bytes() {
+                Ok(bytes) => {
+                    if let Err(err) = ws.send_with_u8_array(bytes.as_ref()) {
+                        error!("Failed to send a websocket message: {err:?}");
+                    }
+                },
+                Err(err) => error!("Failed to create WebSocket protocol version message: {err}"),
             }
         }
     }
 
-    pub fn send_message(&self, data: bytes::Bytes) {
-        Self::try_send_message(self.ws.borrow().as_ref(), data);
+    pub fn send_message(&self, msg: ProtocolMessage) {
+        Self::try_send_message(self.ws.borrow().as_ref(), msg);
     }
 
     pub async fn get_server_status(&self) {
         if self.connected.load(Ordering::SeqCst) {
-            self.send_message(ProtocolMessage::StatusRequest(get_token().unwrap_or_default()).to_bytes().unwrap());
+            if let Some(token) = get_token() {
+                self.send_message(ProtocolMessage::StatusRequest(token));
+            }
         } else {
             match self.status_service.get_server_status().await {
                 Ok(status) => {

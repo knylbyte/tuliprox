@@ -5,9 +5,23 @@ use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 
+pub struct ProtocolHandlerMemory {
+    pub token: Option<String>,
+    pub admin: bool,
+}
+
+impl Default for ProtocolHandlerMemory {
+    fn default() -> Self {
+        Self {
+            token: None,
+            admin: false,
+        }
+    }
+}
+
 pub enum ProtocolHandler {
     Version(u8),
-    Default,
+    Default(ProtocolHandlerMemory),
 }
 
 pub enum WsCloseCode {
@@ -51,6 +65,8 @@ pub enum ProtocolMessage {
     Unauthorized,
     Error(String),
     Version(u8),
+    Auth(String),
+    Authorized,
     StatusRequest(String),
     StatusResponse(StatusCheck),
     ActiveUserResponse(usize, usize), // user_count, connection count

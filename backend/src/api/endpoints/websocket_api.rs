@@ -1,14 +1,14 @@
 use crate::api::endpoints::v1_api::create_status_check;
 use crate::api::model::AppState;
 use crate::api::model::EventMessage;
-use crate::auth::verify_token_admin;
+use crate::auth::{verify_token_admin, verify_token_user};
 use axum::extract::ws::CloseFrame;
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
 };
 use log::{error, info};
-use shared::model::{ProtocolHandler, ProtocolMessage, WsCloseCode, PROTOCOL_VERSION};
+use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
 
 // WebSocket upgrade handler
@@ -48,6 +48,14 @@ fn verify_auth_admin_token(auth_token: &str, secret_key: Option<&Vec<u8>>) -> bo
     match secret_key.as_ref() {
         None => false,
         Some(key) => verify_token_admin(auth_token, key.as_slice()),
+    }
+}
+
+#[inline]
+fn verify_auth_user_token(auth_token: &str, secret_key: Option<&Vec<u8>>) -> bool {
+    match secret_key.as_ref() {
+        None => false,
+        Some(key) => verify_token_user(auth_token, key.as_slice()),
     }
 }
 
@@ -96,14 +104,31 @@ async fn handle_handshake(msg: Message, socket: &mut WebSocket, version: u8) -> 
 
 async fn handle_protocol_message(
     msg: Message,
+    mem: &mut ProtocolHandlerMemory,
     app_state: &Arc<AppState>,
     auth: bool,
     secret_key: Option<&Vec<u8>>,
 ) -> Option<ProtocolMessage> {
     if let Message::Binary(bytes) = msg {
         match ProtocolMessage::from_bytes(bytes) {
+            Ok(ProtocolMessage::Auth(auth_token)) => {
+                 mem.token = None;
+                 if verify_auth_admin_token(&auth_token, secret_key) {
+                     mem.admin = true;
+                     mem.token = Some(auth_token);
+                     Some(ProtocolMessage::Authorized)
+                 } else if verify_auth_user_token(&auth_token, secret_key) {
+                     mem.admin = false;
+                     mem.token = Some(auth_token);
+                     Some(ProtocolMessage::Authorized)
+                 } else {
+                     Some(ProtocolMessage::Unauthorized)
+                 }
+            },
             Ok(ProtocolMessage::StatusRequest(auth_token)) => {
                 if !auth || verify_auth_admin_token(&auth_token, secret_key) {
+                    mem.admin = true;
+                    mem.token = Some(auth_token);
                     let status = create_status_check(app_state).await;
                     Some(ProtocolMessage::StatusResponse(status))
                 } else {
@@ -139,11 +164,11 @@ async fn handle_incoming_message(
     match handler {
         ProtocolHandler::Version(version) => {
             handle_handshake(msg, socket, *version).await?;
-            *handler = ProtocolHandler::Default;
+            *handler = ProtocolHandler::Default(ProtocolHandlerMemory::default());
             Ok(())
         }
-        ProtocolHandler::Default => {
-            let msg = handle_protocol_message(msg, app_state, auth, secret_key).await;
+        ProtocolHandler::Default(mem) => {
+            let msg = handle_protocol_message(msg, mem, app_state, auth, secret_key).await;
             match msg {
                 None => Ok(()),
                 Some(protocol_msg) => {
@@ -163,27 +188,35 @@ async fn handle_incoming_message(
     }
 }
 
-async fn handle_event_message(socket: &mut WebSocket, event: EventMessage) -> Result<(), String> {
-    match event {
-        EventMessage::ActiveUserChange(users, connections) => {
-            let msg = ProtocolMessage::ActiveUserResponse(users, connections)
-                .to_bytes()
-                .map_err(|e| e.to_string())?;
-            socket
-                .send(Message::Binary(msg))
-                .await
-                .map_err(|e| format!("Active user connection change event: {e} "))
-        }
-        EventMessage::ActiveProviderChange(provider, connections) => {
-            let msg = ProtocolMessage::ActiveProviderResponse(provider, connections)
-                .to_bytes()
-                .map_err(|e| e.to_string())?;
-            socket
-                .send(Message::Binary(msg))
-                .await
-                .map_err(|e| format!("Provider connection change event: {e} "))
+async fn handle_event_message(socket: &mut WebSocket, event: EventMessage, handler: &ProtocolHandler) -> Result<(), String> {
+    match handler {
+        ProtocolHandler::Version(_) => {},
+        ProtocolHandler::Default(mem) => {
+            if mem.admin {
+                match event {
+                    EventMessage::ActiveUserChange(users, connections) => {
+                        let msg = ProtocolMessage::ActiveUserResponse(users, connections)
+                            .to_bytes()
+                            .map_err(|e| e.to_string())?;
+                        socket
+                            .send(Message::Binary(msg))
+                            .await
+                            .map_err(|e| format!("Active user connection change event: {e} "))?;
+                    }
+                    EventMessage::ActiveProviderChange(provider, connections) => {
+                        let msg = ProtocolMessage::ActiveProviderResponse(provider, connections)
+                            .to_bytes()
+                            .map_err(|e| e.to_string())?;
+                        socket
+                            .send(Message::Binary(msg))
+                            .await
+                            .map_err(|e| format!("Provider connection change event: {e} "))?;
+                    }
+                }
+            }
         }
     }
+    Ok(())
 }
 
 // WebSocket communication logic
@@ -208,7 +241,7 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth: bo
             }
 
             Ok(event) = event_rx.recv() => {
-                if let Err(e) = handle_event_message(&mut socket, event).await {
+                if let Err(e) = handle_event_message(&mut socket, event, &handler).await {
                     error!("Failed to send event: {e}");
                     break;
                 }
