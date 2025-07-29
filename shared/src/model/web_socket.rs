@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 
-#[derive(Default)]
+#[derive(Default, PartialOrd, PartialEq, Debug, Clone)]
 pub enum UserRole {
     #[default]
     Unauthorized,

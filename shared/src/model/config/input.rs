@@ -278,7 +278,7 @@ impl ConfigInputDto {
         Ok(())
     }
 
-    pub fn prepare_batch(&mut self, mut batch_aliases: Vec<ConfigInputAliasDto>) {
+    pub fn prepare_batch(&mut self, batch_aliases: Vec<ConfigInputAliasDto>) {
         apply_batch_aliases!(self, batch_aliases);
     }
 }

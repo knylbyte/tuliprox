@@ -150,7 +150,8 @@ impl ConfigInput {
                 let mut aliases: Vec<ConfigInputAlias> = batch_aliases.into_iter()
                     .map(ConfigInputAlias::from)
                     .collect();
-                if let Some(mut first) = aliases.remove(0) {
+                if !aliases.is_empty() {
+                    let mut first = aliases.remove(0);
                     self.username = first.username.take();
                     self.password = first.password.take();
                     self.url = first.url.trim().to_string();
@@ -221,7 +222,7 @@ impl fmt::Display for ConfigInput {
 pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(PathBuf, Vec<ConfigInputAliasDto>)>, TuliproxError> {
     if input_type == InputType::M3uBatch || input_type == InputType::XtreamBatch {
         return match utils::csv_read_inputs(input_type, url) {
-            Ok((file_path, mut batch_aliases)) => {
+            Ok((file_path, batch_aliases)) => {
                 Ok(Some((file_path, batch_aliases)))
             }
             Err(err) => {
