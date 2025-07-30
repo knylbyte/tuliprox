@@ -82,7 +82,7 @@ fn group_playlist_groups_by_cluster(playlist: Vec<PlaylistGroup>) -> (Vec<Playli
     let mut series = Vec::new();
     for group in playlist {
         let channels = group.channels.iter()
-            .map(|item| item.to_common())
+            .map(shared::model::PlaylistItem::to_common)
             .collect();
         let grp = PlaylistResponseGroup {
             id: group.id,
