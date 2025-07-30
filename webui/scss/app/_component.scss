@@ -21,6 +21,7 @@
 @forward "components/userlist/userlist_view";
 @forward "components/playlist/playlist_editor_view";
 @forward "components/playlist/playlist_explorer_view";
+@forward "components/playlist/playlist_explorer";
 @forward "components/playlist/assistant/playlist_assistant";
 @forward "components/reveal_content";
 @forward "components/hide_content";
@@ -39,6 +40,7 @@
 @forward "components/playlist/input/input_type";
 @forward "components/playlist/playlist_mappings";
 @forward "components/playlist/playlist_processing";
+@forward "components/playlist/source_selector";
 @forward "components/tag_list";
 @forward "components/chip";
 @forward "components/popup_menu";
@@ -47,3 +49,4 @@
 @forward "components/userlist/user_state";
 @forward "components/userlist/proxy_type";
 @forward "components/userlist/max_connections";
+@forward "components/radio_button_group";

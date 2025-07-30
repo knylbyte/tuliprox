@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use crate::model::{ConfigTargetOptions, xtream_const};
+use crate::model::{ConfigTargetOptions, xtream_const, CommonPlaylistItem};
 use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id, get_string_from_serde_value, get_u64_from_serde_value};
 
 // https://de.wikipedia.org/wiki/M3U
@@ -133,8 +133,9 @@ pub trait PlaylistEntry: Send + Sync {
     fn get_item_type(&self) -> PlaylistItemType;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PlaylistItemHeader {
+    #[serde(skip)]
     pub uuid: UUIDType, // calculated
     pub id: String, // provider id
     pub virtual_id: u32, // virtual id
@@ -152,7 +153,7 @@ pub struct PlaylistItemHeader {
     pub epg_channel_id: Option<String>,
     pub xtream_cluster: XtreamCluster,
     pub additional_properties: Option<Value>,
-    #[serde(default, skip_serializing, skip_deserializing)]
+    #[serde(default)]
     pub item_type: PlaylistItemType,
     #[serde(default)]
     pub category_id: u32,
@@ -323,6 +324,30 @@ impl M3uPlaylistItem {
         let url = if self.t_stream_url.is_empty() { &self.url } else { &self.t_stream_url };
         format!("{line},{}\n{url}", self.title, )
     }
+
+    pub fn to_common(&self) -> CommonPlaylistItem {
+        CommonPlaylistItem {
+            virtual_id: self.virtual_id,
+            provider_id: self.provider_id.to_string(),
+            name: self.name.clone(),
+            chno: self.chno.to_string(),
+            logo: self.logo.clone(),
+            logo_small: self.logo_small.clone(),
+            group: self.group.clone(),
+            title: self.title.clone(),
+            parent_code: self.parent_code.clone(),
+            audio_track: self.audio_track.to_string(),
+            time_shift: self.time_shift.to_string(),
+            rec: self.rec.clone(),
+            url: self.url.clone(),
+            input_name: self.input_name.clone(),
+            item_type: self.item_type.clone(),
+            epg_channel_id: self.epg_channel_id.clone(),
+            xtream_cluster: XtreamCluster::try_from(self.item_type).ok(),
+            additional_properties: None,
+            category_id: None,
+        }
+    }
 }
 
 impl PlaylistEntry for M3uPlaylistItem {
@@ -373,6 +398,12 @@ macro_rules! generate_field_accessor_impl_for_m3u_playlist_item {
 
 generate_field_accessor_impl_for_m3u_playlist_item!(provider_id, name, chno, logo, logo_small, group, title, parent_code, audio_track, time_shift, rec, url;);
 
+impl From<M3uPlaylistItem> for CommonPlaylistItem {
+    fn from(item: M3uPlaylistItem) -> Self {
+        item.to_common()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XtreamPlaylistItem {
     pub virtual_id: u32,
@@ -404,6 +435,31 @@ impl XtreamPlaylistItem {
         }
         None
     }
+
+    pub fn to_common(&self) -> CommonPlaylistItem {
+        CommonPlaylistItem {
+            virtual_id: self.virtual_id,
+            provider_id: self.provider_id.to_string(),
+            name: self.name.clone(),
+            chno: self.channel_no.to_string(),
+            logo: self.logo.clone(),
+            logo_small: self.logo_small.clone(),
+            group: self.group.clone(),
+            title: self.title.clone(),
+            parent_code: self.parent_code.clone(),
+            audio_track: "".to_string(),
+            time_shift: "".to_string(),
+            rec: self.rec.clone(),
+            url: self.url.clone(),
+            input_name: self.input_name.clone(),
+            item_type: self.item_type.clone(),
+            epg_channel_id: self.epg_channel_id.clone(),
+            xtream_cluster: Some(self.xtream_cluster),
+            additional_properties: self.additional_properties.clone(),
+            category_id: Some(self.category_id),
+        }
+    }
+
 }
 
 impl PlaylistEntry for XtreamPlaylistItem {
@@ -494,8 +550,16 @@ macro_rules! generate_field_accessor_impl_for_xtream_playlist_item {
     }
 }
 
+impl From<XtreamPlaylistItem> for CommonPlaylistItem {
+    fn from(item: XtreamPlaylistItem) -> Self {
+        item.to_common()
+    }
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaylistItem {
+    #[serde(flatten)]
     pub header: PlaylistItemHeader,
 }
 
@@ -582,6 +646,62 @@ impl PlaylistItem {
             channel_no: header.chno.parse::<u32>().unwrap_or(0),
         }
     }
+
+    pub fn to_common(&self) -> CommonPlaylistItem {
+        let header = &self.header;
+        let mut additional_properties = None;
+        if header.xtream_cluster != XtreamCluster::Live {
+            let add_ext = match header.get_additional_property("container_extension") {
+                None => true,
+                Some(ext) => ext.as_str().is_none_or(str::is_empty)
+            };
+            if add_ext {
+                if let Some(cont_ext) = extract_extension_from_url(&header.url) {
+                    let ext = if let Some(stripped) = cont_ext.strip_prefix('.') { stripped } else { cont_ext };
+                    let mut result = match header.additional_properties.as_ref() {
+                        None => Map::new(),
+                        Some(props) => {
+                            if let Value::Object(map) = props {
+                                map.clone()
+                            } else {
+                                Map::new()
+                            }
+                        }
+                    };
+                    result.insert("container_extension".to_string(), Value::String(ext.to_string()));
+                    additional_properties = serde_json::to_string(&Value::Object(result)).ok();
+                }
+            }
+        }
+        if additional_properties.is_none() {
+            additional_properties = header.additional_properties.as_ref().and_then(|props| {
+                serde_json::to_string(props).ok()
+            });
+        }
+
+        CommonPlaylistItem {
+            virtual_id: header.virtual_id,
+            provider_id: header.id.clone(),
+            name: if header.item_type == PlaylistItemType::Series { &header.title } else { &header.name }.clone(),
+            logo: header.logo.clone(),
+            logo_small: header.logo_small.clone(),
+            group: header.group.clone(),
+            title: header.title.clone(),
+            parent_code: header.parent_code.clone(),
+            audio_track: header.audio_track.clone(),
+            time_shift: header.time_shift.clone(),
+            rec: header.rec.clone(),
+            url: header.url.clone(),
+            epg_channel_id: header.epg_channel_id.clone(),
+            xtream_cluster: Some(header.xtream_cluster),
+            additional_properties,
+            item_type: header.item_type,
+            category_id: Some(header.category_id),
+            input_name: header.input_name.clone(),
+            chno: header.chno.clone(),
+        }
+    }
+    
 }
 
 impl PlaylistEntry for PlaylistItem {
@@ -621,7 +741,7 @@ pub struct PlaylistGroup {
     pub id: u32,
     pub title: String,
     pub channels: Vec<PlaylistItem>,
-    #[serde(skip_serializing, skip_deserializing)]
+    #[serde(skip)]
     pub xtream_cluster: XtreamCluster,
 }
 

@@ -2,7 +2,6 @@ use crate::api::endpoints::api_playlist_utils::{get_playlist, get_playlist_for_t
 use crate::api::endpoints::download_api;
 use crate::api::endpoints::user_api::user_api_register;
 use crate::api::model::AppState;
-use crate::api::model::{PlaylistRequest, PlaylistRequestType};
 use crate::auth::create_access_token;
 use crate::auth::validator_admin;
 use crate::model::{get_batch_aliases, TargetUser};
@@ -16,7 +15,7 @@ use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
 use shared::error::TuliproxError;
-use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, AppConfigDto, ConfigDto, InputType, IpCheckDto, StatusCheck, TargetUserDto, XtreamPlaylistItem};
+use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, AppConfigDto, ConfigDto, InputType, IpCheckDto, PlaylistRequest, PlaylistRequestType, StatusCheck, TargetUserDto, XtreamPlaylistItem};
 use shared::utils::sanitize_sensitive_info;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -189,7 +188,6 @@ fn create_config_input_for_xtream(username: &str, password: &str, host: &str) ->
         ..Default::default()
     }
 }
-
 
 async fn playlist_content(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,

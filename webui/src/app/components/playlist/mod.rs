@@ -13,6 +13,8 @@ mod filter_view;
 mod input_table;
 
 mod input;
+mod source_selector;
+mod playlist_explorer;
 
 use std::rc::Rc;
 use yew_i18n::YewI18n;
@@ -30,6 +32,7 @@ pub use self::mappings::*;
 pub use self::filter_view::*;
 pub use self::input_table::*;
 pub use self::input::*;
+pub use self::source_selector::*;
 pub use self::playlist_editor_view::*;
 pub use self::playlist_explorer_view::*;
 

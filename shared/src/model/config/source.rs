@@ -17,6 +17,9 @@ impl ConfigSourceDto {
     #[allow(clippy::cast_possible_truncation)]
     pub fn prepare(&mut self, index: u16, include_computed: bool) -> Result<u16, TuliproxError> {
         let mut current_index = index;
+        if self.inputs.is_empty() {
+            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "At least one input should be defined at source: {index}");
+        }
         handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, self.inputs.iter_mut()
             .map(|i|
                 match i.prepare(current_index, include_computed) {

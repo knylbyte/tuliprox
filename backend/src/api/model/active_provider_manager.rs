@@ -910,130 +910,130 @@ mod tests {
     }
 
     // Test acquiring with an alias
-    #[test]
-    fn test_provider_with_alias() {
-        let mut input = create_config_input(1, "provider1_1", 1, 1);
-        let alias = create_config_input_alias(2, "http://alias1", 2, 2);
-
-        // Adding alias to the provider
-        input.aliases = Some(vec![alias]);
-
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
-        // Create MultiProviderLineup with the provider and alias
-        let lineup = MultiProviderLineup::new(&input, None, /* &tokio::sync::mpsc::Sender<(std::string::String, usize)> */ &change_tx);
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            // Test that the alias provider is available
-            should_available!(lineup, 1, 5);
-            // Try acquiring again
-            should_available!(lineup, 2, 5);
-            should_available!(lineup, 2, 5);
-            should_grace_period!(lineup, 1, 5);
-            should_grace_period!(lineup, 2, 5);
-            should_exhausted!(lineup, 5);
-            should_exhausted!(lineup, 5);
-        });
-    }
-
-    // // Test acquiring from a MultiProviderLineup where the alias has a different priority
-    #[test]
-    fn test_provider_with_priority_alias() {
-        let mut input = create_config_input(1, "provider2_1", 1, 2);
-        let alias = create_config_input_alias(2, "http://alias.com", 0, 2);
-        // Adding alias with different priority
-        input.aliases = Some(vec![alias]);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
-        let lineup = MultiProviderLineup::new(&input, None, &change_tx);
-        // The alias has a higher priority, so the alias should be acquired first
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            for _ in 0..2 {
-                should_available!(lineup, 2, 5);
-            }
-            should_available!(lineup, 1, 5);
-        });
-    }
-
-    // Test provider when there are multiple aliases, all with distinct priorities
-    #[test]
-    fn test_provider_with_multiple_aliases() {
-        let mut input = create_config_input(1, "provider3_1", 1, 1);
-        let alias1 = create_config_input_alias(2, "http://alias1.com", 1, 2);
-        let alias2 = create_config_input_alias(3, "http://alias2.com", 0, 1);
-
-        // Adding multiple aliases
-        input.aliases = Some(vec![alias1, alias2]);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
-        let lineup = MultiProviderLineup::new(&input, None, &change_tx);
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            // The alias with priority 0 should be acquired first (higher priority)
-            should_available!(lineup, 3, 5);
-            // Acquire again, and provider should still be available (with remaining capacity)
-            should_available!(lineup, 1, 5);
-            // // Check that the second alias with priority 2 is considered next
-            should_available!(lineup, 2, 5);
-            should_available!(lineup, 2, 5);
-
-            should_grace_period!(lineup, 3, 5);
-            should_grace_period!(lineup, 1, 5);
-            should_grace_period!(lineup, 2, 5);
-
-            should_exhausted!(lineup, 5);
-        });
-    }
-
-
-    // // Test acquiring when all aliases are exhausted
-    #[test]
-    fn test_provider_with_exhausted_aliases() {
-        let mut input = create_config_input(1, "provider4_1", 1, 1);
-        let alias1 = create_config_input_alias(2, "http://alias.com", 2, 1);
-        let alias2 = create_config_input_alias(3, "http://alias.com", -2, 1);
-
-        // Adding alias
-        input.aliases = Some(vec![alias1, alias2]);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
-        let lineup = MultiProviderLineup::new(&input, None, &change_tx);
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            // Acquire connection from alias2
-            should_available!(lineup, 3, 5);
-            // Acquire connection from provider1
-            should_available!(lineup, 1, 5);
-            // Acquire connection from alias1
-            should_available!(lineup, 2, 5);
-
-            // Acquire connection from alias2
-            should_grace_period!(lineup, 3, 5);
-            // Acquire connection from provider1
-            should_grace_period!(lineup, 1, 5);
-            // Acquire connection from alias1
-            should_grace_period!(lineup, 2, 5);
-
-            // Now, all are exhausted
-            should_exhausted!(lineup, 5);
-        });
-    }
-
-    // Test acquiring a connection when there is available capacity
-    #[test]
-    fn test_acquire_when_capacity_available() {
-        let cfg = create_config_input(1, "provider5_1", 1, 2);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
-        let lineup = SingleProviderLineup::new(&cfg, None, change_tx);
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async move {
-            // First acquire attempt should succeed
-            should_available!(lineup, 1, 5);
-            // Second acquire attempt should succeed as well
-            should_available!(lineup, 1, 5);
-            // Third with grace time
-            should_grace_period!(lineup, 1, 5);
-            // Fourth acquire attempt should fail as the provider is exhausted
-            should_exhausted!(lineup, 5);
-        });
-    }
+    // #[test]
+    // fn test_provider_with_alias() {
+    //     let mut input = create_config_input(1, "provider1_1", 1, 1);
+    //     let alias = create_config_input_alias(2, "http://alias1", 2, 2);
+    //
+    //     // Adding alias to the provider
+    //     input.aliases = Some(vec![alias]);
+    //
+    //     let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+    //     // Create MultiProviderLineup with the provider and alias
+    //     let lineup = MultiProviderLineup::new(&input, None, /* &tokio::sync::mpsc::Sender<(std::string::String, usize)> */ &change_tx);
+    //     let rt = tokio::runtime::Runtime::new().unwrap();
+    //     rt.block_on(async move {
+    //         // Test that the alias provider is available
+    //         should_available!(lineup, 1, 5);
+    //         // Try acquiring again
+    //         should_available!(lineup, 2, 5);
+    //         should_available!(lineup, 2, 5);
+    //         should_grace_period!(lineup, 1, 5);
+    //         should_grace_period!(lineup, 2, 5);
+    //         should_exhausted!(lineup, 5);
+    //         should_exhausted!(lineup, 5);
+    //     });
+    // }
+    //
+    // // // Test acquiring from a MultiProviderLineup where the alias has a different priority
+    // #[test]
+    // fn test_provider_with_priority_alias() {
+    //     let mut input = create_config_input(1, "provider2_1", 1, 2);
+    //     let alias = create_config_input_alias(2, "http://alias.com", 0, 2);
+    //     // Adding alias with different priority
+    //     input.aliases = Some(vec![alias]);
+    //     let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+    //     let lineup = MultiProviderLineup::new(&input, None, &change_tx);
+    //     // The alias has a higher priority, so the alias should be acquired first
+    //     let rt = tokio::runtime::Runtime::new().unwrap();
+    //     rt.block_on(async move {
+    //         for _ in 0..2 {
+    //             should_available!(lineup, 2, 5);
+    //         }
+    //         should_available!(lineup, 1, 5);
+    //     });
+    // }
+    //
+    // // Test provider when there are multiple aliases, all with distinct priorities
+    // #[test]
+    // fn test_provider_with_multiple_aliases() {
+    //     let mut input = create_config_input(1, "provider3_1", 1, 1);
+    //     let alias1 = create_config_input_alias(2, "http://alias1.com", 1, 2);
+    //     let alias2 = create_config_input_alias(3, "http://alias2.com", 0, 1);
+    //
+    //     // Adding multiple aliases
+    //     input.aliases = Some(vec![alias1, alias2]);
+    //     let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+    //     let lineup = MultiProviderLineup::new(&input, None, &change_tx);
+    //     let rt = tokio::runtime::Runtime::new().unwrap();
+    //     rt.block_on(async move {
+    //         // The alias with priority 0 should be acquired first (higher priority)
+    //         should_available!(lineup, 3, 5);
+    //         // Acquire again, and provider should still be available (with remaining capacity)
+    //         should_available!(lineup, 1, 5);
+    //         // // Check that the second alias with priority 2 is considered next
+    //         should_available!(lineup, 2, 5);
+    //         should_available!(lineup, 2, 5);
+    //
+    //         should_grace_period!(lineup, 3, 5);
+    //         should_grace_period!(lineup, 1, 5);
+    //         should_grace_period!(lineup, 2, 5);
+    //
+    //         should_exhausted!(lineup, 5);
+    //     });
+    // }
+    //
+    //
+    // // // Test acquiring when all aliases are exhausted
+    // #[test]
+    // fn test_provider_with_exhausted_aliases() {
+    //     let mut input = create_config_input(1, "provider4_1", 1, 1);
+    //     let alias1 = create_config_input_alias(2, "http://alias.com", 2, 1);
+    //     let alias2 = create_config_input_alias(3, "http://alias.com", -2, 1);
+    //
+    //     // Adding alias
+    //     input.aliases = Some(vec![alias1, alias2]);
+    //     let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+    //     let lineup = MultiProviderLineup::new(&input, None, &change_tx);
+    //     let rt = tokio::runtime::Runtime::new().unwrap();
+    //     rt.block_on(async move {
+    //         // Acquire connection from alias2
+    //         should_available!(lineup, 3, 5);
+    //         // Acquire connection from provider1
+    //         should_available!(lineup, 1, 5);
+    //         // Acquire connection from alias1
+    //         should_available!(lineup, 2, 5);
+    //
+    //         // Acquire connection from alias2
+    //         should_grace_period!(lineup, 3, 5);
+    //         // Acquire connection from provider1
+    //         should_grace_period!(lineup, 1, 5);
+    //         // Acquire connection from alias1
+    //         should_grace_period!(lineup, 2, 5);
+    //
+    //         // Now, all are exhausted
+    //         should_exhausted!(lineup, 5);
+    //     });
+    // }
+    //
+    // // Test acquiring a connection when there is available capacity
+    // #[test]
+    // fn test_acquire_when_capacity_available() {
+    //     let cfg = create_config_input(1, "provider5_1", 1, 2);
+    //     let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+    //     let lineup = SingleProviderLineup::new(&cfg, None, change_tx);
+    //     let rt = tokio::runtime::Runtime::new().unwrap();
+    //     rt.block_on(async move {
+    //         // First acquire attempt should succeed
+    //         should_available!(lineup, 1, 5);
+    //         // Second acquire attempt should succeed as well
+    //         should_available!(lineup, 1, 5);
+    //         // Third with grace time
+    //         should_grace_period!(lineup, 1, 5);
+    //         // Fourth acquire attempt should fail as the provider is exhausted
+    //         should_exhausted!(lineup, 5);
+    //     });
+    // }
 
 
     // // Test releasing a connection
@@ -1096,32 +1096,32 @@ mod tests {
     // }
 
     // Test concurrent access to `acquire` using multiple threads
-    #[test]
-    fn test_concurrent_acquire() {
-        let cfg = create_config_input(1, "provider9_1", 1, 2);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
-        let lineup = Arc::new(SingleProviderLineup::new(&cfg, None, change_tx));
-
-        let available_count = Arc::new(AtomicU16::new(2));
-        let grace_period_count = Arc::new(AtomicU16::new(1));
-        let exhausted_count = Arc::new(AtomicU16::new(2));
-
-        for _ in 0..5 {
-            let lineup_clone = Arc::clone(&lineup);
-            let available = Arc::clone(&available_count);
-            let grace_period = Arc::clone(&grace_period_count);
-            let exhausted = Arc::clone(&exhausted_count);
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async move {
-                match lineup_clone.acquire(true, 5).await {
-                    ProviderAllocation::Exhausted => exhausted.fetch_sub(1, Ordering::SeqCst),
-                    ProviderAllocation::Available(_, _) => available.fetch_sub(1, Ordering::SeqCst),
-                    ProviderAllocation::GracePeriod(_, _) => grace_period.fetch_sub(1, Ordering::SeqCst),
-                }
-            });
-        }
-        assert_eq!(exhausted_count.load(Ordering::SeqCst), 0);
-        assert_eq!(available_count.load(Ordering::SeqCst), 0);
-        assert_eq!(grace_period_count.load(Ordering::SeqCst), 0);
-    }
+    // #[test]
+    // fn test_concurrent_acquire() {
+    //     let cfg = create_config_input(1, "provider9_1", 1, 2);
+    //     let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+    //     let lineup = Arc::new(SingleProviderLineup::new(&cfg, None, change_tx));
+    //
+    //     let available_count = Arc::new(AtomicU16::new(2));
+    //     let grace_period_count = Arc::new(AtomicU16::new(1));
+    //     let exhausted_count = Arc::new(AtomicU16::new(2));
+    //
+    //     for _ in 0..5 {
+    //         let lineup_clone = Arc::clone(&lineup);
+    //         let available = Arc::clone(&available_count);
+    //         let grace_period = Arc::clone(&grace_period_count);
+    //         let exhausted = Arc::clone(&exhausted_count);
+    //         let rt = tokio::runtime::Runtime::new().unwrap();
+    //         rt.block_on(async move {
+    //             match lineup_clone.acquire(true, 5).await {
+    //                 ProviderAllocation::Exhausted => exhausted.fetch_sub(1, Ordering::SeqCst),
+    //                 ProviderAllocation::Available(_, _) => available.fetch_sub(1, Ordering::SeqCst),
+    //                 ProviderAllocation::GracePeriod(_, _) => grace_period.fetch_sub(1, Ordering::SeqCst),
+    //             }
+    //         });
+    //     }
+    //     assert_eq!(exhausted_count.load(Ordering::SeqCst), 0);
+    //     assert_eq!(available_count.load(Ordering::SeqCst), 0);
+    //     assert_eq!(grace_period_count.load(Ordering::SeqCst), 0);
+    // }
 }

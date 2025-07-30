@@ -251,6 +251,8 @@ pub fn xmltv_api_register() -> axum::Router<Arc<AppState>> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::BufReader;
+    use shared::model::{PlaylistCategoriesResponse};
     use super::*;
 
     #[test]
@@ -270,5 +272,11 @@ mod tests {
         assert_eq!(parse_timeshift(Some(&String::from("+abc"))), None);
         assert_eq!(parse_timeshift(Some(&String::new())), None);
         assert_eq!(parse_timeshift(None), None);
+    }
+
+    #[test]
+    fn test_deserialize_() {
+        let reader = BufReader::new(File::open(Path::new("/home/euzuner/Schreibtisch/pl.json")).unwrap());
+        let cat: PlaylistCategoriesResponse = serde_json::from_reader(reader).unwrap();
     }
 }

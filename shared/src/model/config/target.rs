@@ -124,7 +124,7 @@ impl TargetOutputDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigTargetDto {
-    #[serde(skip)]
+    #[serde(default)]
     pub id: u16,
     #[serde(default = "default_as_true")]
     pub enabled: bool,

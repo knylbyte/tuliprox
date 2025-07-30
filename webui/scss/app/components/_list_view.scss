@@ -27,6 +27,7 @@
   overflow: hidden;
   flex: 1 1 auto;
   width: 100%;
+  height: 100%;
   //max-width: var(--max-view-width);
   gap: var(--gap-default);
 
@@ -46,7 +47,7 @@
     box-sizing: border-box;
     flex: 1 1 auto;
     width: 100%;
-    overflow: hidden;
+    overflow: auto;
     gap: var(--gap-default);
   }
 }

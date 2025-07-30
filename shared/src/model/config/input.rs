@@ -140,7 +140,7 @@ pub struct ConfigInputOptionsDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputAliasDto {
-    #[serde(skip)]
+    #[serde(default)]
     pub id: u16,
     pub name: String,
     pub url: String,
@@ -175,7 +175,7 @@ impl ConfigInputAliasDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputDto {
-    #[serde(skip)]
+    #[serde(default)]
     pub id: u16,
     pub name: String,
     #[serde(default, rename = "type")]

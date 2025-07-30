@@ -5,7 +5,7 @@ use shared::info_err;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PlaylistExplorerPage {
-    List,
+    SourceSelector,
     Create,
 }
 
@@ -14,7 +14,7 @@ impl FromStr for PlaylistExplorerPage {
 
     fn from_str(s: &str) -> Result<Self, TuliproxError> {
         match s.to_lowercase().as_str() {
-            "list" => Ok(PlaylistExplorerPage::List),
+            "source-selector" => Ok(PlaylistExplorerPage::SourceSelector),
             "create" => Ok(PlaylistExplorerPage::Create),
             _ => Err(info_err!(format!("Unknown page type: {s}"))),
         }
@@ -24,7 +24,7 @@ impl FromStr for PlaylistExplorerPage {
 impl Display for PlaylistExplorerPage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", match *self {
-            Self::List => "list",
+            Self::SourceSelector => "source-selector",
             Self::Create => "create",
         })
     }
