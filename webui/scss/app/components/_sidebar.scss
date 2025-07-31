@@ -1,12 +1,54 @@
-$sidebar-width: 270px;
+.tp__app-sidebar.expanded {
+  min-width: var(--sidebar-width-expaned);
+  max-width: var(--sidebar-width-expaned);
+  width: var(--sidebar-width-expaned);
+
+  .tp__app-sidebar__content {
+    padding: var(--padding-larger) var(--padding-large);
+  }
+
+  .tp__app-header__logo {
+     .svg-icon,
+     img {
+       width: 36px;
+       height: 36px;
+     }
+  }
+}
+
+.tp__app-sidebar.collapsed {
+  min-width: var(--sidebar-width-collapsed);
+  max-width: var(--sidebar-width-collapsed);
+  width: var(--sidebar-width-collapsed);
+
+  .tp__app-sidebar__content {
+    padding: var(--padding-mini) var(--padding-micro);
+  }
+
+  .tp__app-sidebar__header {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .tp__app-header__logo {
+    .svg-icon,
+    img {
+      width: 1.5rem;
+      height: 1.5rem;
+    }
+  }
+
+  .svg-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
+}
 
 .tp__app-sidebar {
   display: flex;
   flex-flow: column;
   gap: var(--gap-default);
-  min-width: $sidebar-width;
-  max-width: $sidebar-width;
-  width: $sidebar-width;
 
   .tp__menu-item {
     .icon-Live {
@@ -17,8 +59,11 @@ $sidebar-width: 270px;
   &__content {
     display: flex;
     flex-flow: column;
-    padding: 2rem 1.5rem;
     gap: var(--gap-default);
+
+    &-space {
+       height: var(--gap-default);
+    }
 
     .tp__collapse-panel {
       margin-top: var(--gap-large);

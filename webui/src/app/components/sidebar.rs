@@ -1,11 +1,25 @@
 use std::str::FromStr;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
+use web_sys::window;
+use yew::prelude::*;
+use yew_hooks::use_mount;
+use yew_i18n::use_translation;
+
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::svg_icon::AppIcon;
-use crate::app::components::{CollapsePanel};
+use crate::app::components::{CollapsePanel, IconButton};
 use crate::hooks::use_service_context;
-use yew::prelude::*;
-use yew_i18n::use_translation;
 use crate::model::ViewType;
+use crate::utils::html_if;
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum CollapseState {
+    AutoCollapsed,
+    AutoExpanded,
+    ManualCollapsed,
+    ManualExpanded,
+}
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct SidebarProps {
@@ -17,44 +31,164 @@ pub struct SidebarProps {
 pub fn Sidebar(props: &SidebarProps) -> Html {
     let services = use_service_context();
     let translate = use_translation();
-
-    let app_logo = if let Some(logo) = services.config.ui_config.app_logo.as_ref() {
-        html! { <img src={logo.to_string()} alt="logo"/> }
-    } else {
-        html! { <AppIcon name="Logo"  width={"48"} height={"48"}/> }
-    };
+    let collapsed = use_state(|| CollapseState::AutoExpanded);
+    let block_sidebar_toggle = use_state(|| false);
 
     let handle_menu_click = {
         let viewchange = props.onview.clone();
-        Callback::from(move |name:String| {
+        Callback::from(move |name: String| {
             if let Ok(view_type) = ViewType::from_str(&name) {
                 viewchange.emit(view_type);
             }
         })
     };
 
+    let toggle_sidebar = {
+        let collapsed = collapsed.clone();
+        let block_sidebar_toggle = block_sidebar_toggle.clone();
+        Callback::from(move |_| {
+            if !*block_sidebar_toggle {
+                let current = *collapsed;
+                let next = match current {
+                    CollapseState::AutoCollapsed
+                    | CollapseState::ManualCollapsed => CollapseState::ManualExpanded,
+                    CollapseState::AutoExpanded
+                    | CollapseState::ManualExpanded => CollapseState::ManualCollapsed,
+                };
+                if current != next {
+                    collapsed.set(next);
+                }
+            }
+        })
+    };
+
+    let check_sidebar_state = {
+        let collapsed = collapsed.clone();
+        let block_sidebar_toggle = block_sidebar_toggle.clone();
+
+        Callback::from(move |_| {
+            let window = window().expect("no global window");
+
+            if let Ok(inner_width) = window.inner_width() {
+                let is_mobile = inner_width.as_f64().unwrap_or(0.0) < 720.0;
+
+                match *collapsed {
+                    CollapseState::AutoExpanded
+                    | CollapseState::ManualExpanded => {
+                        if is_mobile {
+                            collapsed.set(CollapseState::AutoCollapsed);
+                        }
+                    }
+                    CollapseState::ManualCollapsed => {
+                        // do nothing
+                    }
+                    CollapseState::AutoCollapsed => {
+                        if !is_mobile {
+                            collapsed.set(CollapseState::AutoExpanded);
+                        }
+                    }
+                }
+                block_sidebar_toggle.set(is_mobile);
+            }
+        })
+    };
+
+    {
+        let check_sidebar_state = check_sidebar_state.clone();
+        use_mount(move || check_sidebar_state.emit(()));
+    }
+
+    let callback_handle = use_mut_ref(|| None::<Closure<dyn FnMut(Event)>>);
+
+    {
+        let callback_handle = callback_handle.clone();
+        let check_sidebar_state = check_sidebar_state.clone();
+
+        use_effect_with(check_sidebar_state, move |check_sidebar| {
+            let check_sidebar = check_sidebar.clone();
+            let closure = Closure::<dyn FnMut(Event)>::wrap(Box::new(move |_event: Event| {
+                check_sidebar.emit(())
+            }));
+
+            let window = window().expect("no global window");
+            window
+                .add_event_listener_with_callback("resize", closure.as_ref().unchecked_ref())
+                .expect("could not add event listener");
+
+            // Save Closure so it can be cleaned up later
+            *callback_handle.borrow_mut() = Some(closure);
+
+            // Cleanup
+            move || {
+                if let Some(closure) = callback_handle.borrow_mut().take() {
+                    let _ = window.remove_event_listener_with_callback("resize", closure.as_ref().unchecked_ref());
+                }
+            }
+        });
+    }
+
+    let render_expanded = || {
+        html! {
+          <div class="tp__app-sidebar__content">
+            <MenuItem icon="DashboardOutline" name={ViewType::Dashboard.to_string()} label={translate.t("LABEL.DASHBOARD")} onclick={&handle_menu_click}></MenuItem>
+            <MenuItem icon="Stats" name={ViewType::Stats.to_string()} label={translate.t("LABEL.STATS")} onclick={&handle_menu_click}></MenuItem>
+            <CollapsePanel title={translate.t("LABEL.SETTINGS")}>
+              <MenuItem icon="UserOutline" name={ViewType::Users.to_string()} label={translate.t("LABEL.USER")} onclick={&handle_menu_click}></MenuItem>
+            </CollapsePanel>
+            <CollapsePanel title={translate.t("LABEL.PLAYLIST")}>
+              <MenuItem icon="PlayArrowOutline" name={ViewType::PlaylistEditor.to_string()} label={translate.t("LABEL.PLAYLIST")} onclick={&handle_menu_click}></MenuItem>
+              <MenuItem icon="Live" name={ViewType::PlaylistExplorer.to_string()} label={translate.t("LABEL.PLAYLIST_VIEWER")} onclick={&handle_menu_click}></MenuItem>
+            </CollapsePanel>
+          </div>
+        }
+    };
+
+    let render_collapsed = || {
+        html! {
+          <div class="tp__app-sidebar__content">
+            <IconButton icon="DashboardOutline" name={ViewType::Dashboard.to_string()} onclick={&handle_menu_click}></IconButton>
+            <IconButton icon="Stats" name={ViewType::Stats.to_string()} onclick={&handle_menu_click}></IconButton>
+            <span class="tp__app-sidebar__content-space"></span>
+            <IconButton icon="UserOutline" name={ViewType::Users.to_string()} onclick={&handle_menu_click}></IconButton>
+            <span class="tp__app-sidebar__content-space"></span>
+            <IconButton icon="PlayArrowOutline" name={ViewType::PlaylistEditor.to_string()} onclick={&handle_menu_click}></IconButton>
+            <IconButton icon="Live" name={ViewType::PlaylistExplorer.to_string()} onclick={&handle_menu_click}></IconButton>
+          </div>
+        }
+    };
+
     html! {
-        <div class="tp__app-sidebar">
+        <div class={classes!("tp__app-sidebar", if matches!(*collapsed, CollapseState::AutoCollapsed | CollapseState::ManualCollapsed) { "collapsed" } else { "expanded" })}>
             <div class="tp__app-sidebar__header tp__app-header">
-                <span class="tp__app-header__logo">{app_logo}</span>
-                <AppIcon name={"ChevronLeft"}></AppIcon>
+              {
+                if *block_sidebar_toggle || matches!(*collapsed, CollapseState::AutoExpanded | CollapseState::ManualExpanded) {
+                  html! {
+                   <span class="tp__app-header__logo">
+                   {
+                      if let Some(logo) = services.config.ui_config.app_logo.as_ref() {
+                        html! { <img src={logo.to_string()} alt="logo"/> }
+                      } else {
+                        html! { <AppIcon name="Logo"/> }
+                      }
+                   }
+                   </span>
+                  }
+                } else {
+                  html! {}
+                }
+              }
+              { html_if!(
+                  !*block_sidebar_toggle,
+                  { <IconButton name="ToggleSidebar" icon={"Sidebar"} onclick={toggle_sidebar} /> }
+                )}
             </div>
-            <div class="tp__app-sidebar__content">
-                <MenuItem icon="DashboardOutline" name={ViewType::Dashboard.to_string()} label={translate.t("LABEL.DASHBOARD")}
-                    onclick={&handle_menu_click}></MenuItem>
-                <MenuItem icon="Stats" name={ViewType::Stats.to_string()} label={translate.t("LABEL.STATS")}
-                    onclick={&handle_menu_click}></MenuItem>
-                <CollapsePanel title={translate.t("LABEL.SETTINGS")}>
-                    <MenuItem icon="UserOutline" name={ViewType::Users.to_string()} label={translate.t("LABEL.USER")}
-                        onclick={&handle_menu_click}></MenuItem>
-                </CollapsePanel>
-                <CollapsePanel title={translate.t("LABEL.PLAYLIST")}>
-                    <MenuItem icon="PlayArrowOutline" name={ViewType::PlaylistEditor.to_string()} label={translate.t("LABEL.PLAYLIST")}
-                        onclick={&handle_menu_click}></MenuItem>
-                    <MenuItem icon="Live" name={ViewType::PlaylistExplorer.to_string()} label={translate.t("LABEL.PLAYLIST_VIEWER")}
-                        onclick={&handle_menu_click}></MenuItem>
-                </CollapsePanel>
-            </div>
+                {
+                    if matches!(*collapsed, CollapseState::AutoCollapsed | CollapseState::ManualCollapsed) {
+                        render_collapsed()
+                    } else {
+                        render_expanded()
+                    }
+                }
         </div>
     }
 }

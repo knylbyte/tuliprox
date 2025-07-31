@@ -3,7 +3,7 @@ use crate::app::context::PlaylistExplorerContext;
 use std::rc::Rc;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::{PlaylistCategoriesResponse, UiPlaylistCategories};
+use shared::model::{UiPlaylistCategories};
 use crate::app::components::playlist::playlist_explorer::PlaylistExplorer;
 
 #[function_component]

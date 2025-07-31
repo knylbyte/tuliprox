@@ -4,3 +4,5 @@ pub mod hooks;
 pub mod services;
 pub mod provider;
 pub mod model;
+
+pub mod utils;
