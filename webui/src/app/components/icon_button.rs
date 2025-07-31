@@ -1,5 +1,5 @@
 use web_sys::MouseEvent;
-use yew::{function_component, html, Callback, Html, Properties};
+use yew::{classes, function_component, html, Callback, Html, Properties};
 use crate::app::components::AppIcon;
 
 #[derive(Properties, Clone, PartialEq, Debug)]
@@ -7,6 +7,8 @@ pub struct IconButtonProps {
     pub name: String,
     pub icon: String,
     pub onclick: Callback<String>,
+    #[prop_or_default]
+    pub style: String,
 }
 
 #[function_component]
@@ -22,7 +24,7 @@ pub fn IconButton(props: &IconButtonProps) -> Html {
     };
 
     html! {
-        <button class="tp__icon-button" onclick={handle_click}>
+        <button class={classes!("tp__icon-button", props.style.clone())} onclick={handle_click}>
             <AppIcon name={props.icon.clone()}></AppIcon>
         </button>
     }

@@ -23,6 +23,10 @@ body {
     font-family: inherit;
   }
 
+  h1 {
+    margin: var(--margin-mini) 0;
+  }
+
 }
 
 #root {

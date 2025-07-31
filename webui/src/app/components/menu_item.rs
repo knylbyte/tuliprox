@@ -26,7 +26,7 @@ pub fn MenuItem(props: &MenuItemProps) -> Html {
     };
 
     html! {
-        <div class={classes!("tp__menu-item", props.style.to_string())} onclick={ handle_click }>
+        <div class={classes!("tp__menu-item", props.style.clone())} onclick={ handle_click }>
             <AppIcon name={props.icon.clone()}></AppIcon>
             <label>{props.label.clone()}</label>
         </div>

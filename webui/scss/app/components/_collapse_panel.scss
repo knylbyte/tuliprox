@@ -2,13 +2,14 @@
   display: flex;
   flex-flow: column;
   overflow: hidden;
+  flex-shrink: 0;
 
   &__header {
     display: flex;
     flex-flow: row nowrap;
     color: var(--modest-text-color);
     fill: var(--modest-text-color);
-    max-height: 1.2rem;
+    //max-height: 1.2rem;
     cursor: pointer;
     box-sizing: border-box;
     width: 100%;
@@ -34,6 +35,7 @@
   &__body {
     display: flex;
     flex-flow: column;
+    flex-shrink: 0;
     width: 100%;
     box-sizing: border-box;
     height: fit-content;

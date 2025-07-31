@@ -26,7 +26,8 @@
 
   &:focus,
   &:hover {
-    background-color: var(--text-button-hover-color);
+    background-color: var(--text-button-hover-background-color);
+    color: var(--text-button-hover-color);
     outline: none;
   }
 }

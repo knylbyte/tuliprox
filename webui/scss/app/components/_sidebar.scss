@@ -56,6 +56,12 @@
     }
   }
 
+  .tp__menu-item.active,
+  .tp__icon-button.active {
+    background-color: var(--menu-item-hover-background-color);
+    color: var(--menu-item-hover-color)
+  }
+
   &__content {
     display: flex;
     flex-flow: column;

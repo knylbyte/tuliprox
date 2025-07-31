@@ -105,9 +105,6 @@ pub fn PlaylistSourceSelector() -> Html {
                 </div>
               </Card>
             </CollapsePanel>
-            <div class="tp__playlist-source-selector__body tp__list-list__selector">
-
-            </div>
         </div>
       </div>
     }

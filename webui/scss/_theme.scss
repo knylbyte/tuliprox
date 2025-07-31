@@ -1,4 +1,6 @@
 :root {
+  --mobile-size: 720px;
+  --dashboard-mobile-size: 1280px;
   --sidebar-width-expaned: 270px;
   --sidebar-width-collapsed: 42px;
   --max-view-width: 1280px;
@@ -8,6 +10,7 @@
   --app-header-height: 56px;
   --scrollbar-width: 8px;
   --scrollbar-border-radius: 4px;
+  
   --gap-small: 0.3rem;
   --gap-default: 0.5rem;
   --gap-large: 1rem;
@@ -20,6 +23,9 @@
   --padding-large: 1.5rem;
   --padding-larger: 2rem;
 
+  --margin-micro: 0.2rem;
+  --margin-mini: 0.5rem;
+  --margin-small: 0.875rem;
   --margin-default: 1rem;
 
   --primary-color: #124a9b;
@@ -50,7 +56,8 @@
   --text-button-background-color: var(--action-item-background-color);
   --text-button-color: #ffffff;
   --text-button-border-color: #2F2F31;
-  --text-button-hover-color: #303032;
+  --text-button-hover-color: #ffffff;
+  --text-button-hover-background-color: #303032;
   --text-button-primary-background-color: var(--primary-color);
   --text-button-primary-color: #ffffff;
   --text-button-primary-hover-background-color: #2f68be;
@@ -132,6 +139,12 @@
   --output-hdhomerun-color: #6366f1;
   --output-strm-color: #f43f5e;
 
+  --tag-live-background-color: #075b41;
+  --tag-live-border-color: #10b981;
+  --tag-video-background-color: #035b6e;
+  --tag-video-border-color: #06b6d4;
+  --tag-series-background-color: #3c3f9f;
+  --tag-series-border-color: #6366f1;
 
   --hint-color: #888888;
   --label-color: #73d6fe;
@@ -179,9 +192,6 @@
 
   --menu-button-warn-hover-color: #dd7573;
   --menu-button-warn-hover-background-color: #4c3434;
-
-  --text-button-border-radius: var(--border-radius);
-  --text-button-hover-background-color: #0d6efd;
 
   --scrollbar-track-color: #838383;
   --scrollbar-handle-color: #505050;
