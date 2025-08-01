@@ -9,7 +9,7 @@ use chrono::Local;
 use log::{error, info, warn};
 use serde::Serialize;
 use shared::error::{create_tuliprox_error, info_err, to_io_error, TuliproxError, TuliproxErrorKind};
-use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigPaths, HdHomeRunDeviceOverview, SourcesConfigDto};
+use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto};
 use shared::utils::{CONSTANTS};
 use std::env;
 use std::fs::File;
@@ -124,6 +124,60 @@ pub fn read_app_config_dto(paths: &ConfigPaths,
     })
 }
 
+pub fn prepare_sources_batch(sources: &mut SourcesConfigDto) -> Result<(), TuliproxError> {
+
+    let mut current_index = 0;
+
+    for source in &mut sources.sources {
+        let max_id_in_source = source.inputs.iter()
+            .flat_map(|item| {
+                std::iter::once(item.id).chain(
+                    item.aliases
+                        .as_ref()
+                        .into_iter()
+                        .flatten()
+                        .map(|alias| alias.id),
+                )
+            })
+            .max()
+            .unwrap_or(0);
+
+        current_index = std::cmp::max(current_index, max_id_in_source);
+    }
+
+    for source in &mut sources.sources {
+        for input in &mut source.inputs {
+            match get_batch_aliases(input.input_type, input.url.as_str()) {
+                Ok(Some((_, aliases))) => {
+                    if let Some(idx) = input.prepare_batch(aliases, current_index) {
+                        current_index = idx;
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    error!("Failed to read config files aliases: {err}");
+                    return Err(err);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(PathBuf, Vec<ConfigInputAliasDto>)>, TuliproxError> {
+    if input_type == InputType::M3uBatch || input_type == InputType::XtreamBatch {
+        return match utils::csv_read_inputs(input_type, url) {
+            Ok((file_path, batch_aliases)) => {
+                Ok(Some((file_path, batch_aliases)))
+            }
+            Err(err) => {
+                Err(TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))
+            }
+        };
+    }
+    Ok(None)
+}
+
 
 pub fn read_initial_app_config(paths: &mut ConfigPaths,
                        resolve_env: bool,
@@ -134,7 +188,8 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
     let sources_file = paths.sources_file_path.as_str();
 
     let config_dto = read_config_file(config_file, resolve_env)?;
-    let sources_dto = read_sources_file(sources_file, resolve_env, include_computed, config_dto.get_hdhr_device_overview().as_ref())?;
+    let mut sources_dto = read_sources_file(sources_file, resolve_env, include_computed, config_dto.get_hdhr_device_overview().as_ref())?;
+    prepare_sources_batch(&mut  sources_dto)?;
     let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
     let mut config: Config = Config::from(config_dto);
     config.prepare(config_path)?;

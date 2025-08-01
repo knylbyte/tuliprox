@@ -221,6 +221,13 @@ impl AppConfig {
                 if input.id == input_id {
                     return Some(Arc::clone(input));
                 }
+                if let Some(aliases) = input.aliases.as_ref() {
+                    for alias in aliases {
+                        if alias.id == input_id {
+                            return Some(Arc::new(input.as_input(alias)));
+                        }
+                    }
+                }
             }
         }
         None
@@ -251,7 +258,7 @@ impl AppConfig {
                             return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input name required");
                         }
                         if seen_names.contains(input_name.as_str()) {
-                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input names should be unique: {}", input_name);
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input and alias names should be unique: {}", input_name);
                         }
                         seen_names.insert(input_name);
                     }

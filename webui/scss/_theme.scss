@@ -18,14 +18,14 @@
 
   --padding-micro: 0.2rem;
   --padding-mini: 0.5rem;
-  --padding-small: 0.875rem;
+  --padding-small: 0.75rem;
   --padding-default: 1rem;
   --padding-large: 1.5rem;
   --padding-larger: 2rem;
 
   --margin-micro: 0.2rem;
   --margin-mini: 0.5rem;
-  --margin-small: 0.875rem;
+  --margin-small: 0.75rem;
   --margin-default: 1rem;
 
   --primary-color: #124a9b;
@@ -146,6 +146,15 @@
   --tag-series-background-color: #3c3f9f;
   --tag-series-border-color: #6366f1;
 
+  --toastr-success-color: #ffffff;
+  --toastr-success-background-color: #71b570;
+  --toastr-error-color:  #ffffff;
+  --toastr-error-background-color: #c85a52;
+  --toastr-info-color: #ffffff;
+  --toastr-info-background-color: #51a8c0;
+  --toastr-warning-color: #ffffff;
+  --toastr-warning-background-color: #f7a820;
+
   --hint-color: #888888;
   --label-color: #73d6fe;
 
@@ -155,6 +164,8 @@
   --hover-border-color: #aaaab0;
   --spinner-color: #ffffff66;
   --spinner-highlight-color: #5599f0;
+
+
   --tree-count-color: #7b7b7e;
   --tree-hover-background-color: #004db4;
   --tree-hover-color: white;

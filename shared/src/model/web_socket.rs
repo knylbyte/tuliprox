@@ -1,6 +1,6 @@
 use std::io;
 use bytes::Bytes;
-use crate::model::StatusCheck;
+use crate::model::{ConfigType, StatusCheck};
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -79,7 +79,8 @@ pub enum ProtocolMessage {
     StatusRequest(String),
     StatusResponse(StatusCheck),
     ActiveUserResponse(usize, usize), // user_count, connection count
-    ActiveProviderResponse(String, usize)
+    ActiveProviderResponse(String, usize),
+    ConfigChangeResponse(ConfigType)
 }
 
 impl ProtocolMessage {

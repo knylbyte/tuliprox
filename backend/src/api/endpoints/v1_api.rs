@@ -4,7 +4,7 @@ use crate::api::endpoints::user_api::user_api_register;
 use crate::api::model::AppState;
 use crate::auth::create_access_token;
 use crate::auth::validator_admin;
-use crate::model::{get_batch_aliases, TargetUser};
+use crate::model::{TargetUser};
 use crate::model::{ConfigInput, ConfigInputOptions};
 use crate::processing::processor::playlist;
 use crate::repository::user_repository::store_api_user;
@@ -15,10 +15,11 @@ use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
 use shared::error::TuliproxError;
-use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, AppConfigDto, ConfigDto, InputType, IpCheckDto, PlaylistRequest, PlaylistRequestType, StatusCheck, TargetUserDto, XtreamPlaylistItem};
+use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputType, IpCheckDto, PlaylistRequest, PlaylistRequestType, StatusCheck, TargetUserDto, XtreamPlaylistItem};
 use shared::utils::sanitize_sensitive_info;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
+use crate::utils::prepare_sources_batch;
 
 fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfigDto, file_path: &str) -> Option<TuliproxError> {
     match utils::save_api_proxy(file_path, backup_dir, api_proxy) {
@@ -247,7 +248,7 @@ async fn config(
     let paths = app_state.app_config.paths.load();
     match utils::read_app_config_dto(&paths, true, false) {
         Ok(mut app_config) => {
-            if let Err(_err) = prepare_app_config(&mut app_config) {
+            if let Err(_err) = prepare_sources_batch(&mut app_config.sources) {
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
             } else {
                 axum::response::Json(app_config).into_response()
@@ -258,24 +259,6 @@ async fn config(
             axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
-}
-
-fn prepare_app_config(app_config: &mut AppConfigDto) -> Result<(), TuliproxError> {
-    for source in &mut app_config.sources.sources {
-        for input in &mut source.inputs {
-            match get_batch_aliases(input.input_type, input.url.as_str()) {
-                Ok(Some((_, aliases))) => {
-                    input.prepare_batch(aliases);
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    error!("Failed to read config files aliases: {err}");
-                    return Err(err);
-                }
-            }
-        }
-    }
-    Ok(())
 }
 
 async fn create_ipinfo_check(app_state: &Arc<AppState>) -> Option<(Option<String>, Option<String>)> {

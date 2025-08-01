@@ -1,7 +1,7 @@
-use crate::api::model::{update_app_state_config, update_app_state_sources, AppState};
+use crate::api::model::{update_app_state_config, update_app_state_sources, AppState, EventMessage};
 use crate::model::{Config, SourcesConfig};
 use crate::utils;
-use crate::utils::{is_directory, read_config_file, read_sources_file};
+use crate::utils::{is_directory, prepare_sources_batch, read_config_file, read_sources_file};
 use log::{debug, error, info};
 use notify::event::{AccessKind, AccessMode};
 use notify::{recommended_watcher, EventKind, RecursiveMode, Watcher};
@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc};
 use tokio_util::sync::CancellationToken;
-use shared::model::{ConfigPaths};
+use shared::model::{ConfigPaths, ConfigType};
 
 enum ConfigFile {
     Config,
@@ -74,7 +74,8 @@ impl ConfigFile {
         let paths = app_state.app_config.paths.load();
         let sources_file = paths.sources_file_path.as_str();
         let config = &app_state.app_config.config.load();
-        let sources_dto = read_sources_file(sources_file, true, true, config.get_hdhr_device_overview().as_ref())?;
+        let mut sources_dto = read_sources_file(sources_file, true, true, config.get_hdhr_device_overview().as_ref())?;
+        prepare_sources_batch(&mut sources_dto)?;
         let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
         info!("Loaded sources file {sources_file}");
         update_app_state_sources(app_state, sources).await
@@ -89,11 +90,26 @@ impl ConfigFile {
     pub(crate) async fn reload(&self, file_path: &Path, app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
         debug!("File change detected {}", file_path.display());
         match self {
-            ConfigFile::ApiProxy => ConfigFile::load_api_proxy(app_state),
-            ConfigFile::Mapping => ConfigFile::load_mappping(app_state),
-            ConfigFile::Config => ConfigFile::load_config(app_state).await,
-            ConfigFile::Sources => ConfigFile::load_sources(app_state).await,
-            ConfigFile::SourceFile => ConfigFile::load_source_file(app_state, file_path).await,
+            ConfigFile::ApiProxy => {
+                app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::ApiProxy));
+                ConfigFile::load_api_proxy(app_state)
+            },
+            ConfigFile::Mapping => {
+                app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Mapping));
+                ConfigFile::load_mappping(app_state)
+            },
+            ConfigFile::Config => {
+                app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Config));
+                ConfigFile::load_config(app_state).await
+            },
+            ConfigFile::Sources => {
+                app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Sources));
+                ConfigFile::load_sources(app_state).await
+            },
+            ConfigFile::SourceFile => {
+                app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Sources));
+                ConfigFile::load_source_file(app_state, file_path).await
+            },
         }
     }
 }

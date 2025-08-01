@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use web_sys::js_sys::{Uint8Array, ArrayBuffer};
 use log::{debug, error, trace};
-use shared::model::{ProtocolMessage, StatusCheck, PROTOCOL_VERSION};
+use shared::model::{ConfigType, ProtocolMessage, StatusCheck, PROTOCOL_VERSION};
 use crate::services::{get_token, StatusService};
 
 #[derive(Clone)]
@@ -16,6 +16,7 @@ pub enum WsMessage {
     ServerStatus(Rc<StatusCheck>),
     ActiveUser(usize, usize),
     ActiveProvider(String, usize),
+    ConfigChange(ConfigType),
 }
 
 const WS_PATH: &str = "/ws";
@@ -99,6 +100,9 @@ impl WebSocketService {
                                     ProtocolMessage::StatusResponse(status) => {
                                         let data = Rc::new(status);
                                         broadcast(WsMessage::ServerStatus(data));
+                                    }
+                                    ProtocolMessage::ConfigChangeResponse(config_type) => {
+                                        broadcast(WsMessage::ConfigChange(config_type));
                                     }
                                     ProtocolMessage::Version(_) => {
                                         if let Some(token) = get_token() {

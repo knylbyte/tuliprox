@@ -27,6 +27,7 @@ mod pattern_template;
 pub mod macros;
 mod paths;
 mod app_config;
+mod config_type;
 
 pub use base::*;
 pub use api::*;
@@ -56,4 +57,5 @@ pub use rename::*;
 pub use pattern_template::*;
 pub use paths::*;
 pub use app_config::*;
+pub use config_type::*;
 pub use crate::apply_batch_aliases;

@@ -1,16 +1,15 @@
 use crate::model::{macros, EpgConfig};
-use crate::utils;
-use log::debug;
 use shared::error::{TuliproxError, TuliproxErrorKind};
 use shared::{info_err, write_if_some};
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType};
 use shared::utils::get_credentials_from_url_str;
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};
-use shared::{apply_batch_aliases, check_input_credentials};
+use shared::{check_input_credentials};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use url::Url;
+use crate::utils::{get_csv_file_path};
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
@@ -115,7 +114,7 @@ pub struct ConfigInput {
 
 impl ConfigInput {
     pub fn prepare(&mut self) -> Result<Option<PathBuf>, TuliproxError> {
-        let batch_file_path = self.prepare_batch()?;
+        let batch_file_path = self.prepare_batch();
         check_input_credentials!(self, self.input_type, false);
         Ok(batch_file_path)
     }
@@ -139,19 +138,20 @@ impl ConfigInput {
         None
     }
 
-    fn prepare_batch(&mut self) -> Result<Option<PathBuf>, TuliproxError> {
+    fn prepare_batch(&mut self) -> Option<PathBuf> {
         if self.input_type == InputType::M3uBatch || self.input_type == InputType::XtreamBatch {
             let input_type = if self.input_type == InputType::M3uBatch {
                 InputType::M3u
             } else {
                 InputType::Xtream
             };
-            if let Some((file_path, batch_aliases)) = get_batch_aliases(self.input_type, self.url.as_str())? {
-                let mut aliases: Vec<ConfigInputAlias> = batch_aliases.into_iter()
-                    .map(ConfigInputAlias::from)
-                    .collect();
+
+            let file_path = get_csv_file_path(self.url.as_str()).ok();
+
+            if let Some(aliases) = self.aliases.as_mut() {
                 if !aliases.is_empty() {
                     let mut first = aliases.remove(0);
+                    self.id = first.id;
                     self.username = first.username.take();
                     self.password = first.password.take();
                     self.url = first.url.trim().to_string();
@@ -161,13 +161,33 @@ impl ConfigInput {
                         self.name = first.name.to_string();
                     }
                 }
-                apply_batch_aliases!(self, aliases);
-                self.input_type = input_type;
-                return Ok(Some(file_path));
             }
+
             self.input_type = input_type;
+            file_path
+        } else {
+            None
         }
-        Ok(None)
+    }
+
+    pub fn as_input(&self, alias: &ConfigInputAlias) -> ConfigInput {
+        ConfigInput {
+            id: alias.id,
+            name: alias.name.clone(),
+            input_type: self.input_type,
+            headers: self.headers.clone(),
+            url: alias.url.to_string(),
+            epg: self.epg.clone(),
+            username: alias.username.clone(),
+            password: alias.password.clone(),
+            persist: self.persist.clone(),
+            enabled: self.enabled,
+            options: self.options.clone(),
+            aliases: None,
+            priority: alias.priority,
+            max_connections: alias.max_connections,
+            method: self.method,
+        }
     }
 }
 
@@ -217,18 +237,4 @@ impl fmt::Display for ConfigInput {
 
         Ok(())
     }
-}
-
-pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(PathBuf, Vec<ConfigInputAliasDto>)>, TuliproxError> {
-    if input_type == InputType::M3uBatch || input_type == InputType::XtreamBatch {
-        return match utils::csv_read_inputs(input_type, url) {
-            Ok((file_path, batch_aliases)) => {
-                Ok(Some((file_path, batch_aliases)))
-            }
-            Err(err) => {
-                Err(TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))
-            }
-        };
-    }
-    Ok(None)
 }

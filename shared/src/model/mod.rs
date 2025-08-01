@@ -14,6 +14,7 @@ mod ip_check;
 mod web_socket;
 mod playlist_request;
 mod playlist_categories;
+mod search_request;
 
 pub use self::cluster_flags::*;
 pub use self::playlist::*;
@@ -30,3 +31,4 @@ pub use self::ip_check::*;
 pub use self::web_socket::*;
 pub use self::playlist_request::*;
 pub use self::playlist_categories::*;
+pub use self::search_request::*;

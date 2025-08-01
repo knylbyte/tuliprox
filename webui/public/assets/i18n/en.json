@@ -234,6 +234,7 @@
     "INVALID_FILETYPE": "Invalid filetype",
     "TARGET_NOT_EXISTS": "Target does not exist",
     "CONFIRM_DELETE": "You really want to delete?",
+    "CONFIG_CHANGED":  "Configuration on server changed.",
     "DOWNLOAD": {
       "SUCCESS": "Successfully downloaded",
       "FAIL": "Failed to download!",

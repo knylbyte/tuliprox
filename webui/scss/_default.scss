@@ -91,3 +91,8 @@ li {
   width: 100%;
   align-items: center;
 }
+
+.disabled {
+  pointer-events: none;
+  color: var(--hint-color);
+}

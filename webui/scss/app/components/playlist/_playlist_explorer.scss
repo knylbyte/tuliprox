@@ -6,6 +6,43 @@ $mobile-size: 720px;
   gap: var(--gap-default);
   box-sizing: border-box;
   overflow: hidden;
+  background-color: var(--card-background-color);
+  color: var(--card-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: var(--padding-small);
+
+  &__loading {
+    transform: translateY(-10px);
+  }
+
+  &__header {
+    display: flex;
+    flex-flow: column;
+    &-toolbar {
+      display: flex;
+      flex-flow: row;
+      box-sizing: border-box;
+      width: 100%;
+      justify-content: space-between;
+
+      .tp__icon-button {
+        width: 2.5rem;
+        height: 2.5rem;
+        .svg-icon {
+          height: 100%;
+          width: 100%;
+        }
+      }
+
+      &-search {
+        display: flex;
+        flex-flow: row nowrap;
+        justify-content: center;
+        align-items: flex-end;
+      }
+    }
+  }
 
   &__body {
     display: flex;
@@ -14,6 +51,7 @@ $mobile-size: 720px;
     box-sizing: border-box;
     overflow: hidden;
   }
+  &__group,
   &__categories {
     display: flex;
     flex-flow: row;
@@ -30,8 +68,7 @@ $mobile-size: 720px;
       width: 100%;
     }
   }
-
-  &__category {
+  &__item {
     display: flex;
     justify-content: flex-start;
     align-items: center;
@@ -46,10 +83,15 @@ $mobile-size: 720px;
     min-height: 2.5rem;
     gap: var(--gap-default);
     padding: 0 var(--padding-default);
-    font-weight: bold;
-    font-size: 1rem;
     overflow: hidden;
     text-overflow: ellipsis;
+
+    img,
+    .svg-icon {
+      box-sizing: border-box;
+      height: 100%;
+      aspect-ratio: 1 / 1;
+    }
 
     &:hover {
       background-color: var(--text-button-hover-background-color);

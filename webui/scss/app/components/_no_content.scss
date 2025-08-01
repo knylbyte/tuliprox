@@ -1,0 +1,26 @@
+.tp__no_content {
+  display: flex;
+  flex-flow: column;
+  justify-content: center;
+  align-items: center;
+  padding: var(--padding-default);
+
+  &__indicator {
+    display: flex;
+    flex-flow: column;
+    justify-content: center;
+    align-items: center;
+    padding: var(--padding-default);
+    background-color: var(--tag-background-color);
+    color: var(--tag-color);
+    fill: var(--tag-color);
+    border-radius: 50%;
+    width: 2rem;
+    height: 2rem;
+
+    .svg-icon {
+      width: 1.2rem;
+      height: 1.2rem;
+    }
+  }
+}

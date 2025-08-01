@@ -3,7 +3,6 @@ use crate::model::EpgConfigDto;
 use crate::utils::{default_as_true, get_base_url_from_str, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info, trim_last_slash};
 use crate::{check_input_credentials, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use enum_iterator::Sequence;
-use log::debug;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::str::FromStr;
@@ -11,14 +10,34 @@ use std::str::FromStr;
 
 #[macro_export]
 macro_rules! apply_batch_aliases {
-    ($target:expr, $batch_aliases:expr) => {{
-        if !$batch_aliases.is_empty() {
-            if !$batch_aliases.is_empty() {
-                if let Some(aliases) = $target.aliases.as_mut() {
-                    aliases.extend($batch_aliases);
-                } else {
-                    $target.aliases = Some($batch_aliases);
+    ($source:expr, $batch_aliases:expr, $index:expr) => {{
+        if $batch_aliases.is_empty() {
+            $source.aliases = None;
+            None
+        } else {
+            if let Some(aliases) = $source.aliases.as_mut() {
+                let mut names = aliases.iter().map(|a| a.name.clone()).collect::<std::collections::HashSet<String>>();
+                names.insert($source.name.clone());
+
+                for alias in $batch_aliases.into_iter() {
+                    if !names.contains(&alias.name) {
+                        aliases.push(alias)
+                    }
                 }
+            } else {
+                $source.aliases = Some($batch_aliases);
+            }
+            if let Some(index) = $index {
+                let mut idx = index;
+                if let Some(aliases) = $source.aliases.as_mut() {
+                    for alias in aliases {
+                        idx += 1;
+                        alias.id = idx;
+                    }
+                }
+                Some(idx)
+            } else {
+                None
             }
         }
     }};
@@ -177,6 +196,7 @@ impl ConfigInputAliasDto {
 pub struct ConfigInputDto {
     #[serde(default)]
     pub id: u16,
+    #[serde(default)]
     pub name: String,
     #[serde(default, rename = "type")]
     pub input_type: InputType,
@@ -208,17 +228,22 @@ pub struct ConfigInputDto {
 impl ConfigInputDto {
     #[allow(clippy::cast_possible_truncation)]
     pub fn prepare(&mut self, index: u16, include_computed: bool) -> Result<u16, TuliproxError> {
-        let mut current_index = index + 1;
-        self.id = current_index;
         self.check_url()?;
 
-        self.name = self.name.trim().to_string();
+        let is_batch = matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch);
+
+        self.name = self.name.trim().to_owned();
         if self.name.is_empty() {
-            return Err(info_err!("name for input is mandatory".to_string()));
+            if !is_batch {
+                return Err(info_err!("name for input is mandatory".to_owned()));
+            }
+        } else if is_batch {
+            return Err(info_err!("inputs of type batch should not use the name attribute".to_owned()));
         }
 
         self.username = get_trimmed_string(&self.username);
         self.password = get_trimmed_string(&self.password);
+
         check_input_credentials!(self, self.input_type, true);
         self.persist = get_trimmed_string(&self.persist);
 
@@ -256,6 +281,7 @@ impl ConfigInputDto {
             };
         }
 
+        let mut current_index = index;
         if let Some(aliases) = self.aliases.as_mut() {
             let input_type = &self.input_type;
             handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, aliases.iter_mut()
@@ -266,6 +292,9 @@ impl ConfigInputDto {
                     },
                     Err(err) => Err(err)
                 }));
+        } else if !matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch) {
+            current_index += 1;
+            self.id = current_index;
         }
         Ok(current_index)
     }
@@ -278,7 +307,7 @@ impl ConfigInputDto {
         Ok(())
     }
 
-    pub fn prepare_batch(&mut self, batch_aliases: Vec<ConfigInputAliasDto>) {
-        apply_batch_aliases!(self, batch_aliases);
+    pub fn prepare_batch(&mut self, batch_aliases: Vec<ConfigInputAliasDto>, index: u16) -> Option<u16> {
+        apply_batch_aliases!(self, batch_aliases, Some(index))
     }
 }

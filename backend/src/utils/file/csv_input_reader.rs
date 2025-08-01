@@ -162,7 +162,7 @@ pub fn csv_read_inputs(input_type: InputType, file_uri: &str) -> Result<(PathBuf
     }
 }
 
-fn get_csv_file_path(file_uri: &str) -> Result<PathBuf, Error> {
+pub fn get_csv_file_path(file_uri: &str) -> Result<PathBuf, Error> {
     if let Ok(url) = file_uri.parse::<Url>() {
         if url.scheme() == "file" {
             match url.to_file_path() {

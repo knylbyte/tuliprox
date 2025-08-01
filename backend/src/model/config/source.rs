@@ -69,6 +69,7 @@ impl TryFrom<&SourcesConfigDto> for SourcesConfig {
 }
 
 impl SourcesConfig {
+
     pub(crate) fn get_source_at(&self, idx: usize) -> Option<&ConfigSource> {
         self.sources.get(idx)
     }

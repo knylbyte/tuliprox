@@ -1,12 +1,14 @@
 use log::error;
 use tokio::task;
+use shared::model::ConfigType;
 use crate::api::model::{ActiveUserConnectionChangeReceiver};
 use crate::api::model::{ProviderConnectionChangeReceiver};
 
 #[derive(Clone, PartialEq)]
 pub enum EventMessage {
-    ActiveUserChange(usize, usize), // user_count, connection count
-    ActiveProviderChange(String, usize) // provider name, connections
+    ActiveUser(usize, usize), // user_count, connection count
+    ActiveProvider(String, usize), // provider name, connections
+    ConfigChange(ConfigType)
 }
 
 pub struct EventManager {
@@ -26,14 +28,14 @@ impl EventManager {
             loop {
                tokio::select! {
                     Some((user_count, connection_count)) = active_user_change_rx.recv() => {
-                        if let Err(e) = channel_tx_clone.send(EventMessage::ActiveUserChange(user_count, connection_count)) {
+                        if let Err(e) = channel_tx_clone.send(EventMessage::ActiveUser(user_count, connection_count)) {
                             error!("Failed to send active user change event: {e}");
                             break;
                         }
                     }
 
                     Some((provider, connection_count)) = provider_change_rx.recv() => {
-                        if let Err(e) = channel_tx_clone.send(EventMessage::ActiveProviderChange(provider, connection_count)) {
+                        if let Err(e) = channel_tx_clone.send(EventMessage::ActiveProvider(provider, connection_count)) {
                             error!("Failed to send active provider change event: {e}");
                             break;
                         }

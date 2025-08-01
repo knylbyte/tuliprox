@@ -1,4 +1,4 @@
-use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, Sidebar, StatsView, UserlistView};
+use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, Sidebar, StatsView, ToastrView, UserlistView};
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::ViewType;
@@ -8,10 +8,12 @@ use std::future;
 use std::rc::Rc;
 use yew::prelude::*;
 use yew::suspense::use_future;
+use yew_i18n::use_translation;
 
 #[function_component]
 pub fn Home() -> Html {
     let services = use_service_context();
+    let translate = use_translation();
     let config = use_state(|| None::<Rc<AppConfigDto>>);
     let status = use_state(|| None::<Rc<StatusCheck>>);
 
@@ -24,12 +26,20 @@ pub fn Home() -> Html {
 
     {
         let services_ctx = services.clone();
+        let translate_clone = translate.clone();
         use_effect_with((), move |_| {
             let services_ctx = services_ctx.clone();
             let services_ctx_clone = services_ctx.clone();
+            let translate_clone = translate_clone.clone();
             let subid = services_ctx.websocket.subscribe(move |msg| {
-                if matches!(msg, WsMessage::Unauthorized) {
-                    services_ctx_clone.auth.logout()
+                match msg {
+                    WsMessage::Unauthorized => {
+                        services_ctx_clone.auth.logout()
+                    },
+                    WsMessage::ConfigChange(config_type) => {
+                        services_ctx_clone.toastr.warning(format!("{}: {config_type}", translate_clone.t("MESSAGES.CONFIG_CHANGED")));
+                    },
+                    _=> {}
                 }
             });
             move || services_ctx.websocket.unsubscribe(subid)
@@ -108,6 +118,7 @@ pub fn Home() -> Html {
         <ContextProvider<ConfigContext> context={config_context}>
         <ContextProvider<StatusContext> context={status_context}>
         <ContextProvider<PlaylistContext> context={playlist_context}>
+            <ToastrView />
             <div class="tp__app">
                <Sidebar onview={handle_view_change}/>
 

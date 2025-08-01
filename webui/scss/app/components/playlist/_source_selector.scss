@@ -1,5 +1,9 @@
 .tp__playlist-source-selector {
 
+  &__loading {
+    transform: translateY(-10px);
+  }
+
   &__source-picker .tp__collapse-panel__body {
     display: flex;
     flex-flow: column;
@@ -15,7 +19,7 @@
 
   &__source-picker__header {
     padding-bottom: var(--padding-small);
-    margin-bottom: var(--padding-small);
+    margin-bottom: var(--padding-micro);
     border-bottom: 1px solid var(--card-border-color);
   }
 
