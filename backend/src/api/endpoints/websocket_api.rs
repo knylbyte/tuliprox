@@ -88,7 +88,7 @@ async fn handle_handshake(msg: Message, socket: &mut WebSocket, version: u8) -> 
                     .map_err(|e| e.to_string())?;
                 return Ok(());
             }
-            error!("Protokol Version mismatch: server={version}, client={client_version}");
+            error!("Protocol Version mismatch: server={version}, client={client_version}");
         }
     }
 

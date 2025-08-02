@@ -1,4 +1,4 @@
-use log::error;
+use log::{error, info};
 use tokio::task;
 use shared::model::ConfigType;
 use crate::api::model::{ActiveUserConnectionChangeReceiver};
@@ -30,15 +30,18 @@ impl EventManager {
                     Some((user_count, connection_count)) = active_user_change_rx.recv() => {
                         if let Err(e) = channel_tx_clone.send(EventMessage::ActiveUser(user_count, connection_count)) {
                             error!("Failed to send active user change event: {e}");
-                            break;
                         }
                     }
 
                     Some((provider, connection_count)) = provider_change_rx.recv() => {
                         if let Err(e) = channel_tx_clone.send(EventMessage::ActiveProvider(provider, connection_count)) {
                             error!("Failed to send active provider change event: {e}");
-                            break;
                         }
+                    }
+                    else => {
+                        // Both channels are closed, exit gracefully
+                        info!("All input channels closed, terminating event manager task");
+                        break;
                     }
                }
            }
