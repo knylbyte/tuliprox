@@ -69,7 +69,7 @@ pub fn PlaylistUpdateView() -> Html {
         <Card>
          <div class="tp__playlist-update-view__body">
             <TextButton style={if selected_targets.current().is_empty() { "active" } else {""}}
-                name={translate.t("LABEL.ALL")} title={translate.t("LABEL.ALL")} icon={"Download"}
+                name={translate.t("LABEL.ALL")} title={translate.t("LABEL.ALL")} icon={"SelectAll"}
                 onclick={handle_all_select}/>
 
          {
@@ -81,7 +81,7 @@ pub fn PlaylistUpdateView() -> Html {
                         let target_name = target.name.clone();
                         html! {
                           <TextButton style={if selected_targets.current().iter().any(|t| t.id == target.id) { "active" } else {""}}
-                            name={target_name.clone()} title={target_name} icon={"Download"}
+                            name={target_name.clone()} title={target_name} icon={"UpdateChecked"}
                              onclick={move |_| handle_click.emit(target.clone())}/>
                         }
               }).collect::<Html>()
