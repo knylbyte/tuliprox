@@ -95,12 +95,12 @@ fn main() {
 
     let mut config_paths = get_file_paths(&args);
 
+    init_logger(args.log_level.as_ref(), config_paths.config_file_path.as_str());
+
     if args.healthcheck {
         healthcheck(config_paths.config_file_path.as_str());
         return;
     }
-
-    init_logger(args.log_level.as_ref(), config_paths.config_file_path.as_str());
 
     info!("Version: {VERSION}");
     if let Some(bts) = BUILD_TIMESTAMP.to_string().parse::<DateTime<Utc>>().ok().map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string()) {

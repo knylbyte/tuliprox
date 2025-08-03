@@ -250,7 +250,8 @@ async fn config(
     let paths = app_state.app_config.paths.load();
     match utils::read_app_config_dto(&paths, true, false) {
         Ok(mut app_config) => {
-            if let Err(_err) = prepare_sources_batch(&mut app_config.sources) {
+            if let Err(err) = prepare_sources_batch(&mut app_config.sources) {
+                error!("Failed to prepare sources batch: {err}");
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
             } else {
                 axum::response::Json(app_config).into_response()
