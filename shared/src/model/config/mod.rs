@@ -28,6 +28,7 @@ pub mod macros;
 mod paths;
 mod app_config;
 mod config_type;
+mod playlist_update_state;
 
 pub use base::*;
 pub use api::*;
@@ -58,4 +59,5 @@ pub use pattern_template::*;
 pub use paths::*;
 pub use app_config::*;
 pub use config_type::*;
+pub use playlist_update_state::*;
 pub use crate::apply_batch_aliases;

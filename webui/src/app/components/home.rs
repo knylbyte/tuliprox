@@ -1,14 +1,14 @@
-use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, Sidebar, StatsView, ToastrView, UserlistView};
+use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView};
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
-use crate::model::ViewType;
-use crate::services::WsMessage;
-use shared::model::{AppConfigDto, StatusCheck};
+use crate::model::{EventMessage, ViewType};
+use shared::model::{AppConfigDto, PlaylistUpdateState, StatusCheck};
 use std::future;
 use std::rc::Rc;
 use yew::prelude::*;
 use yew::suspense::use_future;
 use yew_i18n::use_translation;
+use crate::app::components::loading_indicator::{BusyIndicator};
 
 #[function_component]
 pub fn Home() -> Html {
@@ -17,7 +17,7 @@ pub fn Home() -> Html {
     let config = use_state(|| None::<Rc<AppConfigDto>>);
     let status = use_state(|| None::<Rc<StatusCheck>>);
 
-    let view_visible = use_state(|| ViewType::PlaylistExplorer);
+    let view_visible = use_state(|| ViewType::Dashboard);
 
     let handle_logout = {
         let services_ctx = services.clone();
@@ -31,18 +31,24 @@ pub fn Home() -> Html {
             let services_ctx = services_ctx.clone();
             let services_ctx_clone = services_ctx.clone();
             let translate_clone = translate_clone.clone();
-            let subid = services_ctx.websocket.subscribe(move |msg| {
+            let subid = services_ctx.event.subscribe(move |msg| {
                 match msg {
-                    WsMessage::Unauthorized => {
+                    EventMessage::Unauthorized => {
                         services_ctx_clone.auth.logout()
                     },
-                    WsMessage::ConfigChange(config_type) => {
+                    EventMessage::ConfigChange(config_type) => {
                         services_ctx_clone.toastr.warning(format!("{}: {config_type}", translate_clone.t("MESSAGES.CONFIG_CHANGED")));
+                    },
+                    EventMessage::PlaylistUpdate(update_state) => {
+                        match update_state {
+                          PlaylistUpdateState::Success => services_ctx_clone.toastr.success(translate_clone.t("MESSAGES.PLAYLIST_UPDATE.SUCCESS_FINISH")),
+                          PlaylistUpdateState::Failure => services_ctx_clone.toastr.error(translate_clone.t("MESSAGES.PLAYLIST_UPDATE.FAIL_FINISH")),
+                        }
                     },
                     _=> {}
                 }
             });
-            move || services_ctx.websocket.unsubscribe(subid)
+            move || services_ctx.event.unsubscribe(subid)
         });
     }
 
@@ -120,6 +126,7 @@ pub fn Home() -> Html {
         <ContextProvider<PlaylistContext> context={playlist_context}>
             <ToastrView />
             <div class="tp__app">
+               <BusyIndicator />
                <Sidebar onview={handle_view_change}/>
 
               <div class="tp__app-main">
@@ -132,19 +139,6 @@ pub fn Home() -> Html {
                             }
                         }
                         <div class={"tp__app-header-toolbar"}>
-                            // <select onchange={handle_language} defaultValue={i18next.language}>{
-                            //     services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)
-                            // }</select>
-                           // <button data-tooltip={ if *preferences_visible { "LABEL.PLAYLIST_BROWSER" } else { "LABEL.CONFIGURATION" }}
-                           //     onclick={handle_view_change}>
-                           //          { if *preferences_visible {
-                           //                  html! { <AppIcon name="Live" /> }
-                           //              } else {
-                           //                  html! { <AppIcon name="Config" /> }
-                           //              }
-                           //          }
-                           //   </button>
-                           //
                             <IconButton name="Logout" icon="Logout" onclick={handle_logout} />
                         </div>
                     </div>
@@ -154,6 +148,9 @@ pub fn Home() -> Html {
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::Stats.to_string()} active={view_visible.to_string()}>
                         <StatsView/>
+                       </Panel>
+                       <Panel class="tp__full-width" value={ViewType::PlaylistUpdate.to_string()} active={view_visible.to_string()}>
+                        <PlaylistUpdateView/>
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::PlaylistEditor.to_string()} active={view_visible.to_string()}>
                         <PlaylistEditorView/>

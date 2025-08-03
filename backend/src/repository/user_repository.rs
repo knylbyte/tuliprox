@@ -400,7 +400,7 @@ mod tests {
     use shared::model::{ConfigPaths, ProxyType, ProxyUserStatus};
     use std::env::temp_dir;
     use std::sync::Arc;
-    use arc_swap::{ArcSwap, ArcSwapAny, ArcSwapOption};
+    use arc_swap::{ArcSwap, ArcSwapAny};
     use crate::utils::FileLockManager;
 
     #[test]

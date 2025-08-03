@@ -1,9 +1,5 @@
 .tp__playlist-source-selector {
 
-  &__loading {
-    transform: translateY(-10px);
-  }
-
   &__source-picker .tp__collapse-panel__body {
     display: flex;
     flex-flow: column;

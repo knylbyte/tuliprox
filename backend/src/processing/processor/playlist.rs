@@ -30,9 +30,10 @@ use log::{debug, error, info, log_enabled, trace, warn, Level};
 use reqwest::Client;
 use shared::error::{get_errors_notify_message, notify_err, TuliproxError, TuliproxErrorKind};
 use shared::foundation::filter::{get_field_value, set_field_value, ValueAccessor, ValueProvider};
-use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, ProcessingOrder, UUIDType, XtreamCluster};
+use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
 use shared::utils::default_as_default;
 use std::time::Instant;
+use crate::api::model::{EventManager, EventMessage};
 
 fn is_valid(pli: &PlaylistItem, target: &ConfigTarget) -> bool {
     let provider = ValueProvider { pli };
@@ -552,14 +553,14 @@ fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &ConfigTar
     }
 }
 
-pub async fn exec_processing(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, targets: Arc<ProcessTargets>) {
+pub async fn exec_processing(client: Arc<reqwest::Client>, app_config: Arc<AppConfig>, targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>) {
     let start_time = Instant::now();
-    let (stats, errors) = process_sources(Arc::clone(&client), &cfg, targets.clone()).await;
+    let (stats, errors) = process_sources(Arc::clone(&client), &app_config, targets.clone()).await;
     // log errors
     for err in &errors {
         error!("{}", err.message);
     }
-    let config = cfg.config.load();
+    let config = app_config.config.load();
     let messaging = config.messaging.as_ref();
     if let Ok(stats_msg) = serde_json::to_string(&serde_json::Value::Object(serde_json::map::Map::from_iter([("stats".to_string(), serde_json::to_value(stats).unwrap())]))) {
         // print stats
@@ -569,9 +570,14 @@ pub async fn exec_processing(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, 
     }
     // send errors
     if let Some(message) = get_errors_notify_message!(errors, 255) {
+        if let Some(events) = event_manager {
+            events.send_event(EventMessage::PlaylistUpdate(PlaylistUpdateState::Failure));
+        }
         if let Ok(error_msg) = serde_json::to_string(&serde_json::Value::Object(serde_json::map::Map::from_iter([("errors".to_string(), serde_json::Value::String(message))]))) {
             send_message(&client, &MsgKind::Error, messaging, error_msg.as_str());
         }
+    } else if let Some(events) = event_manager {
+        events.send_event(EventMessage::PlaylistUpdate(PlaylistUpdateState::Success));
     }
     let elapsed = start_time.elapsed().as_secs();
     info!("🌷 Update process finished! Took {elapsed} secs.");

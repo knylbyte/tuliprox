@@ -5,7 +5,8 @@ use crate::app::context::PlaylistExplorerContext;
 use yew::prelude::*;
 use shared::model::{CommonPlaylistItem, SearchRequest, UiPlaylistGroup, XtreamCluster};
 use crate::app::components::{IconButton, NoContent, Search};
-use crate::app::components::loading_indicator::LoadingIndicator;
+use crate::hooks::use_service_context;
+use crate::model::{BusyStatus, EventMessage};
 
 enum ExplorerLevel {
     Categories,
@@ -15,7 +16,7 @@ enum ExplorerLevel {
 #[function_component]
 pub fn PlaylistExplorer() -> Html {
     let context = use_context::<PlaylistExplorerContext>().expect("PlaylistExplorer context not found");
-    let loading = use_state(|| false);
+    let service_ctx = use_service_context();
     let current_item = use_state(|| ExplorerLevel::Categories);
     let playlist = use_state(|| (*context.playlist).clone());
 
@@ -40,7 +41,7 @@ pub fn PlaylistExplorer() -> Html {
     };
 
     let handle_search = {
-        let set_loading = loading.clone();
+        let services = service_ctx.clone();
         let set_playlist = playlist.clone();
         let set_current_item = current_item.clone();
         let context = context.clone();
@@ -49,11 +50,11 @@ pub fn PlaylistExplorer() -> Html {
                 SearchRequest::Clear => set_playlist.set((*context.playlist).clone()),
                 SearchRequest::Text(_)
                 | SearchRequest::Regexp(_) => {
-                    set_loading.set(true);
-                    let set_loading = set_loading.clone();
+                    services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
                     let set_playlist = set_playlist.clone();
                     let set_current_item = set_current_item.clone();
                     let context = context.clone();
+                    let services = services.clone();
                     spawn_local(async move {
                         let filtered = context
                             .playlist
@@ -62,7 +63,7 @@ pub fn PlaylistExplorer() -> Html {
                             .map(Rc::new);
                         set_playlist.set(filtered);
                         set_current_item.set(ExplorerLevel::Categories);
-                        set_loading.set(false);
+                        services.event.broadcast(EventMessage::Busy(BusyStatus::Hide));
                     });
                 }
             }
@@ -166,7 +167,6 @@ pub fn PlaylistExplorer() -> Html {
     html! {
       <div class="tp__playlist-explorer">
         <div class="tp__playlist-explorer__header">
-            <LoadingIndicator class="tp__playlist-explorer__loading" loading={*loading} />
             <div class="tp__playlist-explorer__header-toolbar">
                 <IconButton style={if matches!(*current_item, ExplorerLevel::Categories) { "disabled" } else {""}} name="back" icon="Back" onclick={handle_back_click} />
                 <div class="tp__playlist-explorer__header-toolbar-search">

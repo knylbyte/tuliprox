@@ -34,10 +34,10 @@ pub fn ProxyTypeView(props: &ProxyTypeViewProps) -> Html {
                 html! { <Chip label={translate.t("LABEL.REVERSE")} class={"tp__proxy-type__reverse"} /> }
             } else {
                 html! {
-                <div class="tp__proxy-type">
-                   { render_chip(live_flag, "live", "LABEL.LIVE") }
-                   { render_chip(vod_flag, "vod", "LABEL.VOD") }
-                   { render_chip(series_flag, "series", "LABEL.SERIES" ) }
+                <div class="tp__proxy-type__mixed">
+                   { render_chip(live_flag, "live", "LABEL.LIVE_SHORT") }
+                   { render_chip(vod_flag, "vod", "LABEL.VOD_SHORT") }
+                   { render_chip(series_flag, "series", "LABEL.SERIES_SHORT" ) }
                  </div>
                 }
             }

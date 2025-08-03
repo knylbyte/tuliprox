@@ -22,4 +22,4 @@ pub(in crate::api) use self::active_user_manager::*;
 pub(in crate::api) use self::active_provider_manager::*;
 pub(in crate::api) use self::stream::*;
 pub(in crate::api) use self::provider_config::*;
-pub(in crate::api) use self::event_manager::*;
+pub use self::event_manager::*;

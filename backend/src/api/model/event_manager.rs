@@ -1,6 +1,6 @@
 use log::{error, info};
 use tokio::task;
-use shared::model::ConfigType;
+use shared::model::{ConfigType, PlaylistUpdateState};
 use crate::api::model::{ActiveUserConnectionChangeReceiver};
 use crate::api::model::{ProviderConnectionChangeReceiver};
 
@@ -8,7 +8,8 @@ use crate::api::model::{ProviderConnectionChangeReceiver};
 pub enum EventMessage {
     ActiveUser(usize, usize), // user_count, connection count
     ActiveProvider(String, usize), // provider name, connections
-    ConfigChange(ConfigType)
+    ConfigChange(ConfigType),
+    PlaylistUpdate(PlaylistUpdateState)
 }
 
 pub struct EventManager {

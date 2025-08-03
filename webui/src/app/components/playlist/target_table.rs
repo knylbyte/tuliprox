@@ -4,7 +4,6 @@ use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, FilterVi
 use crate::hooks::use_service_context;
 use crate::model::DialogResult;
 use crate::services::DialogService;
-use log::info;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use shared::model::ConfigTargetDto;
 use std::fmt::Display;
@@ -138,13 +137,14 @@ pub fn TargetTable(props: &TargetTableProps) -> Html {
                 match action {
                     TableAction::Edit => {}
                     TableAction::Refresh => {
+                        let translate = translate.clone();
                         let services_ctx = services_ctx.clone();
                         let dto_name = selected_dto.as_ref().map_or_else(String::new, |d| d.name.to_string());
                         spawn_local(async move {
                             let targets = vec![dto_name.as_str()];
                             match services_ctx.playlist.update_targets(&targets).await {
-                                true => { info!("Ok"); }
-                                false => { info!("not ok"); }
+                                true => { services_ctx.toastr.success(translate.t("MESSAGES.PLAYLIST_UPDATE.SUCCESS")); }
+                                false => { services_ctx.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.FAIL")); }
                             }
                         });
                     }

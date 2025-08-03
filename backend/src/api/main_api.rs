@@ -94,15 +94,19 @@ fn create_shared_data(
 
 fn exec_update_on_boot(
     client: Arc<reqwest::Client>,
-    cfg: &Arc<AppConfig>,
+    app_state: &Arc<AppState>,
     targets: &Arc<ProcessTargets>,
 ) {
-    let config = cfg.config.load();
-    if config.update_on_boot {
-        let cfg_clone = Arc::clone(cfg);
+    let cfg = &app_state.app_config;
+    let update_on_boot = {
+        let config = cfg.config.load();
+        config.update_on_boot
+    };
+    if update_on_boot {
+        let app_state_clone = Arc::clone(&app_state.app_config);
         let targets_clone = Arc::clone(targets);
         tokio::spawn(
-            async move { playlist::exec_processing(client, cfg_clone, targets_clone).await },
+            async move { playlist::exec_processing(client, app_state_clone, targets_clone, None).await },
         );
     }
 }
@@ -233,13 +237,13 @@ pub async fn start_server(
 
     exec_scheduler(
         &Arc::clone(&shared_data.http_client.load()),
-        &app_config,
+        &app_state,
         &targets,
         &cancel_token_scheduler,
     );
     exec_update_on_boot(
         Arc::clone(&shared_data.http_client.load()),
-        &app_config,
+        &app_state,
         &targets,
     );
     exec_config_watch(&app_state, &cancel_token_file_watch);

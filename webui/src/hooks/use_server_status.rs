@@ -5,8 +5,8 @@ use gloo_timers::callback::Interval;
 use yew::prelude::*;
 use shared::model::StatusCheck;
 use crate::hooks::use_service_context;
-use crate::services::{ WsMessage};
 use yew::platform::spawn_local;
+use crate::model::EventMessage;
 
 #[hook]
 pub fn use_server_status(
@@ -21,13 +21,13 @@ pub fn use_server_status(
         let status_holder_signal = status_holder.clone();
 
         use_effect_with((), move |_| {
-            let subid = services_ctx.websocket.subscribe(move |msg| {
+            let subid = services_ctx.event.subscribe(move |msg| {
                 match msg {
-                    WsMessage::ServerStatus(server_status) => {
+                    EventMessage::ServerStatus(server_status) => {
                         *status_holder_signal.borrow_mut() = Some(Rc::clone(&server_status));
                         status_signal.set(Some(server_status));
                     }
-                    WsMessage::ActiveUser(user_count, connections) => {
+                    EventMessage::ActiveUser(user_count, connections) => {
                         let mut server_status = {
                             if let Some(old_status) = status_holder_signal.borrow().as_ref() {
                                 (**old_status).clone()
@@ -41,7 +41,7 @@ pub fn use_server_status(
                         *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));
                         status_signal.set(Some(new_status));
                     }
-                    WsMessage::ActiveProvider(provider, connections) => {
+                    EventMessage::ActiveProvider(provider, connections) => {
                         let mut server_status = {
                             if let Some(old_status) = status_holder_signal.borrow().as_ref() {
                                 (**old_status).clone()
@@ -82,7 +82,7 @@ pub fn use_server_status(
             let services_clone = services_ctx.clone();
             move || {
                 drop(interval);
-                services_clone.websocket.unsubscribe(subid);
+                services_clone.event.unsubscribe(subid);
             }
         });
     }

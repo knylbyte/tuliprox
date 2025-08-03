@@ -1,13 +1,14 @@
-use std::sync::Arc;
-use std::str::FromStr;
-use std::time::{Duration, Instant, SystemTime};
-use chrono::{DateTime, FixedOffset, Local};
-use cron::Schedule;
-use crate::utils::{exit};
-use log::{error};
-use tokio_util::sync::CancellationToken;
+use crate::api::model::AppState;
 use crate::model::{AppConfig, ProcessTargets, ScheduleConfig};
 use crate::processing::processor::playlist::exec_processing;
+use crate::utils::exit;
+use chrono::{DateTime, FixedOffset, Local};
+use cron::Schedule;
+use log::error;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
+use tokio_util::sync::CancellationToken;
 
 pub fn datetime_to_instant(datetime: DateTime<FixedOffset>) -> Instant {
     // Convert DateTime<FixedOffset> to SystemTime
@@ -25,8 +26,9 @@ pub fn datetime_to_instant(datetime: DateTime<FixedOffset>) -> Instant {
     Instant::now() + duration_until
 }
 
-pub fn exec_scheduler(client: &Arc<reqwest::Client>, cfg: &Arc<AppConfig>, targets: &Arc<ProcessTargets>,
-                  cancel: &CancellationToken) {
+pub fn exec_scheduler(client: &Arc<reqwest::Client>, app_state: &Arc<AppState>, targets: &Arc<ProcessTargets>,
+                      cancel: &CancellationToken) {
+    let cfg = &app_state.app_config;
     let config = cfg.config.load();
     let schedules: Vec<ScheduleConfig> = if let Some(schedules) = &config.schedules {
         schedules.clone()
@@ -36,17 +38,17 @@ pub fn exec_scheduler(client: &Arc<reqwest::Client>, cfg: &Arc<AppConfig>, targe
     for schedule in schedules {
         let expression = schedule.schedule.to_string();
         let exec_targets = get_process_targets(cfg, targets, schedule.targets.as_ref());
-        let cfg_clone = Arc::clone(cfg);
+        let app_state_clone = Arc::clone(app_state);
         let http_client = Arc::clone(client);
         let cancel_token = cancel.clone();
         tokio::spawn(async move {
-            start_scheduler(http_client, expression.as_str(), cfg_clone, exec_targets, cancel_token).await;
+            start_scheduler(http_client, expression.as_str(), app_state_clone, exec_targets, cancel_token).await;
         });
     }
 }
 
-async fn start_scheduler(client: Arc<reqwest::Client>, expression: &str, config: Arc<AppConfig>,
-                             targets: Arc<ProcessTargets>, cancel: CancellationToken) {
+async fn start_scheduler(client: Arc<reqwest::Client>, expression: &str, app_state: Arc<AppState>,
+                         targets: Arc<ProcessTargets>, cancel: CancellationToken) {
     match Schedule::from_str(expression) {
         Ok(schedule) => {
             let offset = *Local::now().offset();
@@ -55,7 +57,9 @@ async fn start_scheduler(client: Arc<reqwest::Client>, expression: &str, config:
                 if let Some(datetime) = upcoming.next() {
                     tokio::select! {
                         () = tokio::time::sleep_until(tokio::time::Instant::from(datetime_to_instant(datetime))) => {
-                        exec_processing(Arc::clone(&client), Arc::clone(&config), Arc::clone(&targets)).await;
+                           let app_config = Arc::clone(&app_state.app_config);
+                           let event_manager = Arc::clone(&app_state.event_manager);
+                           exec_processing(Arc::clone(&client), app_config, Arc::clone(&targets), Some(event_manager)).await;
                         }
                         () = cancel.cancelled() => {
                             break;
@@ -93,7 +97,7 @@ fn get_process_targets(cfg: &Arc<AppConfig>, process_targets: &Arc<ProcessTarget
                 enabled: user_targets.enabled,
                 inputs,
                 targets,
-                target_names
+                target_names,
             });
         }
     }
@@ -102,11 +106,11 @@ fn get_process_targets(cfg: &Arc<AppConfig>, process_targets: &Arc<ProcessTarget
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-    use std::sync::atomic::{AtomicU8, Ordering};
+    use crate::api::scheduler::datetime_to_instant;
     use chrono::Local;
     use cron::Schedule;
-    use crate::api::scheduler::datetime_to_instant;
+    use std::str::FromStr;
+    use std::sync::atomic::{AtomicU8, Ordering};
 
     #[tokio::test]
     async fn test_run_scheduler() {

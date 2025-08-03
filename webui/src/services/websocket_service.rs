@@ -2,59 +2,31 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{WebSocket, MessageEvent, Event, ErrorEvent, CloseEvent};
 use std::cell::RefCell;
-use std::collections::{HashMap};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use web_sys::js_sys::{Uint8Array, ArrayBuffer};
 use log::{debug, error, trace};
-use shared::model::{ConfigType, ProtocolMessage, StatusCheck, PROTOCOL_VERSION};
-use crate::services::{get_token, StatusService};
-
-#[derive(Clone)]
-pub enum WsMessage {
-    Unauthorized,
-    ServerStatus(Rc<StatusCheck>),
-    ActiveUser(usize, usize),
-    ActiveProvider(String, usize),
-    ConfigChange(ConfigType),
-}
+use shared::model::{ProtocolMessage, PROTOCOL_VERSION};
+use crate::model::EventMessage;
+use crate::services::{get_token, EventService, StatusService};
 
 const WS_PATH: &str = "/ws";
 
-type Subscriber = RefCell<HashMap<usize, Box<dyn Fn(WsMessage)>>>;
 
 pub struct WebSocketService {
     connected: Rc<AtomicBool>,
     ws: Rc<RefCell<Option<WebSocket>>>,
     status_service: Rc<StatusService>,
-    subscriber_id: Rc<AtomicUsize>,
-    subscribers: Rc<Subscriber>,
+    event_service: Rc<EventService>
 }
 
 impl WebSocketService {
-    pub fn new(status_service: Rc<StatusService>) -> Self {
+    pub fn new(status_service: Rc<StatusService>, event_service: Rc<EventService>) -> Self {
         Self {
             connected: Rc::new(AtomicBool::new(false)),
             ws: Rc::new(RefCell::new(None)),
             status_service,
-            subscriber_id: Rc::new(AtomicUsize::new(0)),
-            subscribers: Rc::new(RefCell::new(HashMap::new())),
-        }
-    }
-
-    pub fn subscribe<F: Fn(WsMessage) + 'static>(&self, callback: F) -> usize {
-        let sub_id = self.subscriber_id.fetch_add(1, Ordering::SeqCst);
-        self.subscribers.borrow_mut().insert(sub_id, Box::new(callback));
-        sub_id
-    }
-
-    pub fn unsubscribe(&self, sub_id: usize) {
-        self.subscribers.borrow_mut().remove(&sub_id);
-    }
-
-    pub fn broadcast(&self, msg: WsMessage) {
-        for (_, cb) in self.subscribers.borrow().iter() {
-            cb(msg.clone());
+            event_service,
         }
     }
 
@@ -68,12 +40,7 @@ impl WebSocketService {
                 socket.set_binary_type(web_sys::BinaryType::Arraybuffer);
                 let ws_clone = self.ws.clone();
                 *ws_clone.borrow_mut() = Some(socket.clone());
-                let subscribers_clone = self.subscribers.clone();
-                let broadcast = move |msg: WsMessage| {
-                    for (_, cb) in subscribers_clone.borrow().iter() {
-                        cb(msg.clone());
-                    }
-                };
+                let event_service = self.event_service.clone();
 
                 let ws_onmessage_clone = Rc::clone(&ws_clone);
                 // onmessage
@@ -86,23 +53,26 @@ impl WebSocketService {
                             Ok(message) => {
                                 match message {
                                     ProtocolMessage::Unauthorized => {
-                                        broadcast(WsMessage::Unauthorized);
+                                        event_service.broadcast(EventMessage::Unauthorized);
                                     },
                                     ProtocolMessage::Error(err) => {
                                         error!("{err}");
                                     },
                                     ProtocolMessage::ActiveUserResponse(user_count, connections) => {
-                                        broadcast(WsMessage::ActiveUser(user_count, connections));
+                                        event_service.broadcast(EventMessage::ActiveUser(user_count, connections));
                                     },
                                     ProtocolMessage::ActiveProviderResponse(user_count, connections) => {
-                                        broadcast(WsMessage::ActiveProvider(user_count, connections));
+                                        event_service.broadcast(EventMessage::ActiveProvider(user_count, connections));
                                     },
                                     ProtocolMessage::StatusResponse(status) => {
                                         let data = Rc::new(status);
-                                        broadcast(WsMessage::ServerStatus(data));
+                                        event_service.broadcast(EventMessage::ServerStatus(data));
                                     }
                                     ProtocolMessage::ConfigChangeResponse(config_type) => {
-                                        broadcast(WsMessage::ConfigChange(config_type));
+                                        event_service.broadcast(EventMessage::ConfigChange(config_type));
+                                    }
+                                    ProtocolMessage::PlaylistUpdateResponse(update_state) => {
+                                        event_service.broadcast(EventMessage::PlaylistUpdate(update_state));
                                     }
                                     ProtocolMessage::Version(_) => {
                                         if let Some(token) = get_token() {
@@ -180,7 +150,7 @@ impl WebSocketService {
         } else {
             match self.status_service.get_server_status().await {
                 Ok(status) => {
-                    self.broadcast(WsMessage::ServerStatus(status));
+                    self.event_service.broadcast(EventMessage::ServerStatus(status));
                 }
                 Err(err) => {error!("Failed to get server status: {err:?}");}
             }

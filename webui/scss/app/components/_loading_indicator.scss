@@ -1,10 +1,30 @@
+$indicator-height: 5px;
+
+.tp__busy-indicator {
+  position: fixed;
+  z-index: 1000;
+  top: var(--app-header-height);
+  left: 0;
+  display: inline-block;
+  width: 100%; // Full width of the container
+  height: $indicator-height; // Thin height for the container
+  min-height: $indicator-height;
+  max-height: $indicator-height;
+  .tp__loading-bar-placeholder, .tp__loading-bar-container {
+    position: fixed;
+  }
+}
+
 .tp__loading-bar-placeholder, .tp__loading-bar-container {
   display: inline-block;
   width: 100%; // Full width of the container
-  height: 5px; // Thin height for the container
-  min-height: 5px;
-  max-height: 5px;
+  height: $indicator-height; // Thin height for the container
+  min-height: $indicator-height;
+  max-height: $indicator-height;
+  margin: 0;
+  padding: 0;
 }
+
 
 // Container for the loading bar
 .tp__loading-bar-container {

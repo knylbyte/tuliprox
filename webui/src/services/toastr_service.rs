@@ -1,7 +1,7 @@
 use gloo_timers::callback::Timeout;
 use std::cell::{RefCell};
 use std::rc::Rc;
-use nanoid::nanoid;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 #[derive(Clone, PartialEq, Default)]
 pub enum ToastType {
@@ -14,7 +14,7 @@ pub enum ToastType {
 
 #[derive(Default, Clone, PartialEq)]
 pub struct Toast {
-    pub id: String,
+    pub id: u32,
     pub message: String,
     pub toast_type: ToastType,
 }
@@ -33,13 +33,14 @@ impl ToastrState {
         self.toasts.push(toast);
     }
 
-    pub fn remove_toast(&mut self, id: &str) {
+    pub fn remove_toast(&mut self, id: u32) {
         self.toasts.retain(|t| t.id != id);
     }
 }
 
 type ToastrSubscriber = Rc<RefCell<Option<Box<dyn Fn(Vec<Toast>)>>>>;
 pub struct ToastrService {
+    pub counter: AtomicU32,
     pub state: Rc<RefCell<ToastrState>>,
     subscriber: ToastrSubscriber,
 }
@@ -53,6 +54,7 @@ impl Default for ToastrService {
 impl ToastrService {
     pub fn new() -> Self {
         Self {
+            counter: AtomicU32::new(0),
             state: Rc::new(RefCell::new(ToastrState::default())),
             subscriber: Rc::new(RefCell::new(None)),
         }
@@ -65,11 +67,11 @@ impl ToastrService {
     fn show(&self, msg: impl Into<String>, toast_type: ToastType, duration_ms: u32) {
         let mut state = self.state.borrow_mut();
         let toast = Toast {
-            id: nanoid!(8),
+            id: self.counter.fetch_add(1, Ordering::Acquire),
             message: msg.into(),
             toast_type: toast_type.clone(),
         };
-        let toast_id = toast.id.clone();
+        let toast_id = toast.id;
         state.add_toast(toast);
         if let Some(subscriber) = self.subscriber.borrow().as_ref() {
             subscriber(state.toasts.clone());
@@ -78,7 +80,7 @@ impl ToastrService {
         let subscriber_ref = self.subscriber.clone();
         Timeout::new(duration_ms, move || {
             let mut state = state_ref.borrow_mut();
-            state.remove_toast(&toast_id);
+            state.remove_toast(toast_id);
             if let Some(subscriber) = subscriber_ref.borrow().as_ref() {
                 subscriber(state.toasts.clone());
             }

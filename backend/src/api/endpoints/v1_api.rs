@@ -142,7 +142,9 @@ async fn playlist_update(
     let process_targets = app_state.app_config.sources.load().validate_targets(user_targets.as_ref());
     match process_targets {
         Ok(valid_targets) => {
-            tokio::spawn(playlist::exec_processing(Arc::clone(&app_state.http_client.load()), Arc::clone(&app_state.app_config), Arc::new(valid_targets)));
+            let app_config = Arc::clone(&app_state.app_config);
+            let event_manager = Arc::clone(&app_state.event_manager);
+            tokio::spawn(playlist::exec_processing(Arc::clone(&app_state.http_client.load()), app_config, Arc::new(valid_targets), Some(event_manager)));
             axum::http::StatusCode::OK.into_response()
         }
         Err(err) => {

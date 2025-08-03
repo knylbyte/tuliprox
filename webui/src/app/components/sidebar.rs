@@ -139,6 +139,7 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
               <MenuItem style={if *active_menu == ViewType::Users { "active" } else {""}} icon="UserOutline" name={ViewType::Users.to_string()} label={translate.t("LABEL.USER")} onclick={&handle_menu_click}></MenuItem>
             </CollapsePanel>
             <CollapsePanel title={translate.t("LABEL.PLAYLIST")}>
+              <MenuItem style={if *active_menu == ViewType::PlaylistUpdate { "active" } else {""}} icon="Refresh" name={ViewType::PlaylistUpdate.to_string()} label={translate.t("LABEL.UPDATE")} onclick={&handle_menu_click}></MenuItem>
               <MenuItem style={if *active_menu == ViewType::PlaylistEditor { "active" } else {""}} icon="PlayArrowOutline" name={ViewType::PlaylistEditor.to_string()} label={translate.t("LABEL.PLAYLIST")} onclick={&handle_menu_click}></MenuItem>
               <MenuItem style={if *active_menu == ViewType::PlaylistExplorer { "active" } else {""}} icon="Live" name={ViewType::PlaylistExplorer.to_string()} label={translate.t("LABEL.PLAYLIST_VIEWER")} onclick={&handle_menu_click}></MenuItem>
             </CollapsePanel>
@@ -154,6 +155,7 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
             <span class="tp__app-sidebar__content-space"></span>
             <IconButton style={if *active_menu == ViewType::Users { "active" } else {""}} icon="UserOutline" name={ViewType::Users.to_string()} onclick={&handle_menu_click}></IconButton>
             <span class="tp__app-sidebar__content-space"></span>
+            <IconButton style={if *active_menu == ViewType::PlaylistUpdate { "active" } else {""}} icon="Refresh" name={ViewType::PlaylistUpdate.to_string()} onclick={&handle_menu_click}></IconButton>
             <IconButton style={if *active_menu == ViewType::PlaylistEditor { "active" } else {""}} icon="PlayArrowOutline" name={ViewType::PlaylistEditor.to_string()} onclick={&handle_menu_click}></IconButton>
             <IconButton style={if *active_menu == ViewType::PlaylistExplorer { "active" } else {""}} icon="Live" name={ViewType::PlaylistExplorer.to_string()} onclick={&handle_menu_click}></IconButton>
           </div>

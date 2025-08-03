@@ -14,4 +14,17 @@
       background-color: var(--tag-alt-active-background-color);
       border-color: var(--tag-alt-active-border-color);
    }
+
+   &__mixed {
+      display: flex;
+      flex-flow: row nowrap;
+      span:not(:first-child) {
+         border-top-left-radius: 0;
+         border-bottom-left-radius: 0;
+      }
+      span:not(:last-child) {
+         border-top-right-radius: 0;
+         border-bottom-right-radius: 0;
+      }
+   }
 }

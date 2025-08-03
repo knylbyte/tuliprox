@@ -1,8 +1,12 @@
 {
   "LABEL": {
+    "ALL": "All",
     "LIVE": "Live",
     "VOD": "VOD",
     "SERIES": "Series",
+    "LIVE_SHORT": "L",
+    "VOD_SHORT": "V",
+    "SERIES_SHORT": "S",
     "SAVE": "Save",
     "SUBMIT": "Submit",
     "OK": "Ok",
@@ -218,8 +222,8 @@
     "PROXY":  "Proxy",
     "SERVER":  "Server",
     "EPG_TIMESHIFT":  "Epg Timeshift",
-    "CREATED_AT":  "Created_at",
-    "EXP_DATE":  "Exp_date",
+    "CREATED_AT":  "Created at",
+    "EXP_DATE":  "Exp. date",
     "STATUS":  "Status",
     "UI_ENABLED":  "Ui",
     "COMMENT": "Comment",
@@ -267,7 +271,9 @@
     },
     "PLAYLIST_UPDATE": {
       "SUCCESS": "Successfully started playlist update!",
-      "FAIL": "Playlist update failed!"
+      "FAIL": "Playlist update failed!",
+      "SUCCESS_FINISH": "Successfully updated playlist!",
+      "FAIL_FINISH": "Playlist update failed!"
     },
     "SOURCE_SELECTOR": {
       "MISSING_SELECTION": "No entry selected"

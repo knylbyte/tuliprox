@@ -1,8 +1,7 @@
-use crate::app::components::loading_indicator::LoadingIndicator;
 use crate::app::components::{Card, CollapsePanel, InputRow, Panel, PlaylistContext, RadioButtonGroup, TextButton};
 use crate::app::context::PlaylistExplorerContext;
 use crate::hooks::use_service_context;
-use crate::model::ExplorerSourceType;
+use crate::model::{BusyStatus, EventMessage, ExplorerSourceType};
 use shared::model::{InputType, PlaylistRequest, PlaylistRequestType};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -33,23 +32,27 @@ pub fn PlaylistSourceSelector() -> Html {
         let playlist_explorer_ctx_clone = playlist_explorer_ctx.clone();
         let set_loading = loading.clone();
         Callback::from(move |(rtype, source_id, source_name): (PlaylistRequestType, u16, String)| {
-            let request = PlaylistRequest {
-                rtype,
-                username: None,
-                password: None,
-                url: None,
-                source_id: Some(source_id),
-                source_name: Some(source_name),
-            };
-            let services = services.clone();
-            let playlist_explorer_ctx_clone = playlist_explorer_ctx_clone.clone();
-            set_loading.set(true);
-            let set_loading = set_loading.clone();
-            spawn_local(async move {
-                let playlist = services.playlist.get_playlist_categories(&request).await;
-                playlist_explorer_ctx_clone.playlist.set(playlist);
-                set_loading.set(false);
-            });
+            if !*set_loading {
+                let request = PlaylistRequest {
+                    rtype,
+                    username: None,
+                    password: None,
+                    url: None,
+                    source_id: Some(source_id),
+                    source_name: Some(source_name),
+                };
+                let services = services.clone();
+                let playlist_explorer_ctx_clone = playlist_explorer_ctx_clone.clone();
+                set_loading.set(true);
+                services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
+                let set_loading = set_loading.clone();
+                spawn_local(async move {
+                    let playlist = services.playlist.get_playlist_categories(&request).await;
+                    playlist_explorer_ctx_clone.playlist.set(playlist);
+                    set_loading.set(false);
+                    services.event.broadcast(EventMessage::Busy(BusyStatus::Hide));
+                });
+            }
         })
     };
 
@@ -133,6 +136,7 @@ pub fn PlaylistSourceSelector() -> Html {
       <div class="tp__playlist-source-selector tp__list-list">
         <div class="tp__playlist-source-selector__header tp__list-list__header">
           <h1>{ translate.t("LABEL.SOURCES")}</h1>
+          
         </div>
         <div class="tp__playlist-source-selector__body tp__list-list__body">
             <CollapsePanel class="tp__playlist-source-selector__source-picker" expanded={true}
@@ -146,7 +150,6 @@ pub fn PlaylistSourceSelector() -> Html {
                                   selected={(*active_source).to_string()}
                                   on_change={handle_source_select} />
                 </div>
-                <LoadingIndicator loading={*loading} class="tp__playlist-source-selector__loading" />
                 <div class="tp__playlist-source-selector__source-picker__body">
                     <Panel value={ExplorerSourceType::Hosted.to_string()} active={active_source.to_string()}>
                         { render_hosted() }

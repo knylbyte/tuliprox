@@ -3,4 +3,16 @@
   flex-flow: row;
   justify-content: center;
   align-items: center;
+
+  .tp__tag_list {
+    gap: 0;
+    span:not(:first-child) {
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+    }
+    span:not(:last-child) {
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+  }
 }

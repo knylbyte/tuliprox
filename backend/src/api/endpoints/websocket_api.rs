@@ -221,6 +221,15 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage, handl
                             .await
                             .map_err(|e| format!("Configuration files change event: {e} "))?;
                     }
+                    EventMessage::PlaylistUpdate(state) => {
+                        let msg = ProtocolMessage::PlaylistUpdateResponse(state)
+                            .to_bytes()
+                            .map_err(|e| e.to_string())?;
+                        socket
+                            .send(Message::Binary(msg))
+                            .await
+                            .map_err(|e| format!("Playlist update event: {e} "))?;
+                    }
                 }
             }
         }

@@ -36,7 +36,7 @@ fn render_toast(toast: &Toast) -> Html {
         ToastType::Warning => "tp__toast warning",
     };
     html! {
-        <div key={toast.id.clone()} class={classes!(class)}>
+        <div key={toast.id} class={classes!(class)}>
             { &toast.message }
         </div>
     }

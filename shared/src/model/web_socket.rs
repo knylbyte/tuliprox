@@ -1,6 +1,6 @@
 use std::io;
 use bytes::Bytes;
-use crate::model::{ConfigType, StatusCheck};
+use crate::model::{ConfigType, PlaylistUpdateState, StatusCheck};
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -80,7 +80,8 @@ pub enum ProtocolMessage {
     StatusResponse(StatusCheck),
     ActiveUserResponse(usize, usize), // user_count, connection count
     ActiveProviderResponse(String, usize),
-    ConfigChangeResponse(ConfigType)
+    ConfigChangeResponse(ConfigType),
+    PlaylistUpdateResponse(PlaylistUpdateState)
 }
 
 impl ProtocolMessage {

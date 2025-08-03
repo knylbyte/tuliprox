@@ -6,6 +6,7 @@ mod dialog_service;
 mod playlist_service;
 mod websocket_service;
 mod toastr_service;
+mod event_service;
 
 pub use self::auth_service::*;
 pub use self::config_service::*;
@@ -15,3 +16,4 @@ pub use self::dialog_service::*;
 pub use self::playlist_service::*;
 pub use self::websocket_service::*;
 pub use self::toastr_service::*;
+pub use self::event_service::*;

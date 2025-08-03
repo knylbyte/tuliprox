@@ -66,6 +66,10 @@
   --text-button-secondary-color: #ffffff;
   --text-button-secondary-hover-background-color: var(--secondary-color);
   --text-button-secondary-hover-color: #ffffff;
+  --text-button-active-background-color: #1e2d25;
+  --text-button-active-color: #49dc7f;
+  --text-button-active-hover-background-color: #1e2d25;
+  --text-button-active-hover-color: #ffffff;
 
   --toggle-switch-on-background-color: #36c55a;
   --toggle-switch-off-background-color: #3f3f45;
@@ -147,13 +151,13 @@
   --tag-series-border-color: #6366f1;
 
   --toastr-success-color: #ffffff;
-  --toastr-success-background-color: #71b570;
+  --toastr-success-background-color: #53a453;
   --toastr-error-color:  #ffffff;
-  --toastr-error-background-color: #c85a52;
+  --toastr-error-background-color: #bc362f;
   --toastr-info-color: #ffffff;
-  --toastr-info-background-color: #51a8c0;
+  --toastr-info-background-color: #2f95b3;
   --toastr-warning-color: #ffffff;
-  --toastr-warning-background-color: #f7a820;
+  --toastr-warning-background-color: #f69306;
 
   --hint-color: #888888;
   --label-color: #73d6fe;

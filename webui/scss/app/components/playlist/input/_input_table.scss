@@ -14,4 +14,10 @@
     background-color: var(--tag-alt-active-background-color);
     border-color:  var(--tag-alt-active-border-color);
   }
+
+  .tp__table {
+    .tp__table__container {
+        max-height: 400px;
+    }
+  }
 }
