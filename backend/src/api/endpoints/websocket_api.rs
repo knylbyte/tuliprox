@@ -230,6 +230,15 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage, handl
                             .await
                             .map_err(|e| format!("Playlist update event: {e} "))?;
                     }
+                    EventMessage::PlaylistUpdateProgress(target, msg) => {
+                        let msg = ProtocolMessage::PlaylistUpdateProgressResponse(target, msg)
+                            .to_bytes()
+                            .map_err(|e| e.to_string())?;
+                        socket
+                            .send(Message::Binary(msg))
+                            .await
+                            .map_err(|e| format!("Playlist update progress event: {e} "))?;
+                    }
                 }
             }
         }

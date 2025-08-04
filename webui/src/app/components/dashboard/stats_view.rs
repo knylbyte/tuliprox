@@ -1,6 +1,6 @@
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::app::components::{Card, StatusCard, StatusContext};
+use crate::app::components::{Card, PlaylistProgressStatusCard, StatusCard, StatusContext};
 
 #[function_component]
 pub fn StatsView() -> Html {
@@ -53,6 +53,9 @@ pub fn StatsView() -> Html {
             <div class="tp__stats__body-group">
                 <Card><StatusCard title={translate.t("LABEL.MEMORY")} data={status_ctx.status.as_ref().map_or_else(|| "n/a".to_string(), |status| status.memory.clone())} /></Card>
                 <Card><StatusCard title={translate.t("LABEL.CACHE")} data={status_ctx.status.as_ref().map_or_else(|| "n/a".to_string(), |status| status.cache.as_ref().map_or_else(|| "n/a".to_string(), |c| c.clone()))} /></Card>
+            </div>
+            <div class="tp__stats__body-group">
+                <Card><PlaylistProgressStatusCard /></Card>
             </div>
             <div class="tp__stats__body-group">
                 <Card><StatusCard title={translate.t("LABEL.ACTIVE_USERS")} data={status_ctx.status.as_ref().map_or_else(|| "n/a".to_string(), |status| status.active_users.to_string())} /></Card>

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 shared = { version = "0.1.0", path = "../shared" }
+chrono = "0"
 yew = "0.21"
 yew-router = "0.18"
 yew-hooks = "0.3"

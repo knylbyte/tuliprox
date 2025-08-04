@@ -1,3 +1,5 @@
+@use "./../../../size";
+
 .tp__action-card {
   display: flex;
   flex-flow: row nowrap;
@@ -45,5 +47,10 @@
       white-space: nowrap;
     }
   }
+}
 
+@media (max-width: size.$mobile-breakpoint) {
+  .tp__action-card {
+    flex-flow: column;
+  }
 }

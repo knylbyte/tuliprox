@@ -8,6 +8,7 @@ mod status_card;
 mod ipinfo_action_card;
 mod dashboard_view;
 mod stats_view;
+mod playlist_progress_status_card;
 
 pub use self::action_card::*;
 pub use self::status_card::*;
@@ -19,3 +20,4 @@ pub use self::ipinfo_action_card::*;
 pub use self::github_action_card::*;
 pub use self::dashboard_view::*;
 pub use self::stats_view::*;
+pub use self::playlist_progress_status_card::*;

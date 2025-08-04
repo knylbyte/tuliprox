@@ -15,7 +15,7 @@ dialog:not([open]) {
     @include common.textButton();
   }
   min-height: 200px;
-  min-width: 400px;
+  min-width: 280px;
 }
 
 .label {

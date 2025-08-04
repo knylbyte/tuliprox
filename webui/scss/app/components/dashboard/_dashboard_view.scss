@@ -1,4 +1,4 @@
-$dashboard-mobile-size: 1280px;
+@use "../../../size";
 
 .tp__dashboard {
   display: flex;
@@ -23,7 +23,7 @@ $dashboard-mobile-size: 1280px;
       grid-template-columns: 1fr 1fr;
       gap: var(--gap-larger);
 
-      @media (max-width: $dashboard-mobile-size) {
+      @media (max-width: size.$dashboard-mobile-breakpoint) {
         grid-template-columns: 1fr;
       }
 
@@ -34,7 +34,7 @@ $dashboard-mobile-size: 1280px;
 
     &-stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: var(--gap-larger);
     }
   }

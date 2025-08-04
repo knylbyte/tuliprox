@@ -8,5 +8,9 @@
   }
   .tp__filter {
     max-width: var(--max-table-cell-width);
+    overflow: hidden !important;
+    .tp__filter__code {
+      overflow: hidden !important;
+    }
   }
 }

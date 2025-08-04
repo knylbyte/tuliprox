@@ -9,7 +9,8 @@ pub enum EventMessage {
     ActiveUser(usize, usize), // user_count, connection count
     ActiveProvider(String, usize), // provider name, connections
     ConfigChange(ConfigType),
-    PlaylistUpdate(PlaylistUpdateState)
+    PlaylistUpdate(PlaylistUpdateState),
+    PlaylistUpdateProgress(String, String),
 }
 
 pub struct EventManager {

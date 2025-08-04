@@ -81,7 +81,8 @@ pub enum ProtocolMessage {
     ActiveUserResponse(usize, usize), // user_count, connection count
     ActiveProviderResponse(String, usize),
     ConfigChangeResponse(ConfigType),
-    PlaylistUpdateResponse(PlaylistUpdateState)
+    PlaylistUpdateResponse(PlaylistUpdateState),
+    PlaylistUpdateProgressResponse(String, String),
 }
 
 impl ProtocolMessage {

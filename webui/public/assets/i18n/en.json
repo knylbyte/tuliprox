@@ -13,6 +13,7 @@
     "CANCEL": "Cancel",
     "YES": "Yes",
     "CLOSE": "Close",
+    "DOWNLOAD": "Download",
     "SHOW_SELECTED": "Show selected",
     "SELECT_ALL": "Select All",
     "DESELECT_ALL": "Deselect all",
@@ -151,6 +152,7 @@
     "PLAYLISTS": "Playlists",
     "PLAYLIST_VIEWER": "Explore",
     "PLAYLIST_EXPLORER": "Playlist Browser",
+    "PLAYLIST_UPDATE": "Playlist Update",
     "SOURCES": "Sources",
     "SOURCE_PICKER": "Source Picker",
     "LIST": "List",
@@ -273,7 +275,9 @@
       "SUCCESS": "Successfully started playlist update!",
       "FAIL": "Playlist update failed!",
       "SUCCESS_FINISH": "Successfully updated playlist!",
-      "FAIL_FINISH": "Playlist update failed!"
+      "FAIL_FINISH": "Playlist update failed!",
+      "URL_MANDATORY": "Url is mandatory!",
+      "USERNAME_PASSWORD_MANDATORY": "Username and Password are mandatory!"
     },
     "SOURCE_SELECTOR": {
       "MISSING_SELECTION": "No entry selected"

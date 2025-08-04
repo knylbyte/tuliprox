@@ -10,5 +10,6 @@ pub enum EventMessage {
     ActiveProvider(String, usize),
     ConfigChange(ConfigType),
     Busy(BusyStatus),
-    PlaylistUpdate(PlaylistUpdateState)
+    PlaylistUpdate(PlaylistUpdateState),
+    PlaylistUpdateProgress(String, String),
 }

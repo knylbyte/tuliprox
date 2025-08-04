@@ -1,16 +1,18 @@
+@use './size';
+
 :root {
-  --mobile-size: 720px;
-  --dashboard-mobile-size: 1280px;
+  --mobile-size: size.$mobile-breakpoint;
+  --dashboard-mobile-size: size.$dashboard-mobile-breakpoint;
   --sidebar-width-expaned: 270px;
   --sidebar-width-collapsed: 42px;
-  --max-view-width: 1280px;
+  --max-view-width: size.$dashboard-mobile-breakpoint;
   --max-table-cell-width: 240px;
   --max-dialog-card-height: 300px;
   --media-size-mobile: 600px;
   --app-header-height: 56px;
   --scrollbar-width: 8px;
   --scrollbar-border-radius: 4px;
-  
+
   --gap-small: 0.3rem;
   --gap-default: 0.5rem;
   --gap-large: 1rem;
@@ -27,7 +29,31 @@
   --margin-mini: 0.5rem;
   --margin-small: 0.75rem;
   --margin-default: 1rem;
+}
 
+@media (max-width: size.$mobile-breakpoint) {
+  :root {
+    --gap-small: 0.2rem;
+    --gap-default: 0.3rem;
+    --gap-large: 0.5rem;
+    --gap-larger: 0.75rem;
+
+    --padding-micro: 0.2rem;
+    --padding-mini: 0.3rem;
+    --padding-small: 0.5rem;
+    --padding-default: 0.75rem;
+    --padding-large: 1rem;
+    --padding-larger: 1.25rem;
+
+    --margin-micro: 0.2rem;
+    --margin-mini: 0.3rem;
+    --margin-small: 0.5rem;
+    --margin-default: 0.75rem;
+
+  }
+}
+
+:root {
   --primary-color: #124a9b;
   --secondary-color: #f67070;
 
@@ -69,7 +95,7 @@
   --text-button-active-background-color: #1e2d25;
   --text-button-active-color: #49dc7f;
   --text-button-active-hover-background-color: #1e2d25;
-  --text-button-active-hover-color: #ffffff;
+  --text-button-active-hover-color: #49dc7f;
 
   --toggle-switch-on-background-color: #36c55a;
   --toggle-switch-off-background-color: #3f3f45;
@@ -246,7 +272,6 @@
   --menu-icon-color-status: #F9E400;
 
   --toolbar-bg-color: #161b25;
-
 }
 
 body[data-theme="bright"] {

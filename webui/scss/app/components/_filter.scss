@@ -1,5 +1,6 @@
 .tp__filter {
   overflow: hidden;
+
   .tp__filter__code {
     font-family: monospace;
     background: #1e1e1e;
@@ -7,6 +8,7 @@
     padding: 1rem;
     border-radius: 8px;
     white-space: pre;
+    overflow: auto;
 
     .binary_op-wrapper{
       white-space: pre;

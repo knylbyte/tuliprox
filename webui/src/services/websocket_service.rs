@@ -74,6 +74,9 @@ impl WebSocketService {
                                     ProtocolMessage::PlaylistUpdateResponse(update_state) => {
                                         event_service.broadcast(EventMessage::PlaylistUpdate(update_state));
                                     }
+                                    ProtocolMessage::PlaylistUpdateProgressResponse(target, msg) => {
+                                        event_service.broadcast(EventMessage::PlaylistUpdateProgress(target, msg));
+                                    }
                                     ProtocolMessage::Version(_) => {
                                         if let Some(token) = get_token() {
                                             Self::try_send_message(ws_onmessage_clone.borrow().as_ref(), ProtocolMessage::Auth(token));
