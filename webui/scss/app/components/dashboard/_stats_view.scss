@@ -5,6 +5,7 @@
   box-sizing: border-box;
   width: 100%;
   max-width: var(--max-view-width);
+  overflow: hidden;
 
   &__header {
     display: flex;
@@ -15,6 +16,7 @@
     display: flex;
     flex-flow: column;
     gap: var(--gap-larger);
+    overflow: auto;
 
     &-group {
       display: grid;

@@ -24,7 +24,6 @@
   box-sizing: border-box;
   overflow: hidden;
   width: 100%;
-  flex-shrink: 0;
   //max-width: var(--max-view-width);
   gap: var(--gap-default);
 
@@ -42,7 +41,7 @@
     flex-flow: column;
     box-sizing: border-box;
     width: 100%;
-    overflow: auto;
+    overflow: hidden;
     gap: var(--gap-default);
   }
 }

@@ -15,15 +15,15 @@ pub enum EventMessage {
 
 pub struct EventManager {
     channel_tx: tokio::sync::broadcast::Sender<EventMessage>,
-    #[allow(dead_code)]
-    channel_rx: tokio::sync::broadcast::Receiver<EventMessage>,
+    // #[allow(dead_code)]
+    //channel_rx: tokio::sync::broadcast::Receiver<EventMessage>,
 }
 
 impl EventManager {
     pub fn new(mut active_user_change_rx: ActiveUserConnectionChangeReceiver,
                mut provider_change_rx: ProviderConnectionChangeReceiver,
     ) -> Self {
-        let (channel_tx, channel_rx) = tokio::sync::broadcast::channel(10);
+        let (channel_tx, _channel_rx) = tokio::sync::broadcast::channel(10);
 
         let channel_tx_clone = channel_tx.clone();
         task::spawn(async move {
@@ -51,7 +51,7 @@ impl EventManager {
 
         Self {
             channel_tx,
-            channel_rx,
+            //channel_rx,
         }
     }
 

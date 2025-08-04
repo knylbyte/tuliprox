@@ -40,20 +40,20 @@ pub fn Table<T: PartialEq + Clone>(props: &TableProps<T>) -> Html {
             </thead>
             <tbody>
                 {
-                    for items.iter().enumerate().map(|(row_index, item)| {
-                        html! {
-                            <tr>
-                                {
-                                    for (0..*num_cols).map(|col_index| {
-                                        html!{
-                                           <td>{render_data_cell.emit((row_index, col_index, Rc::clone(item)))}</td>
-                                        }
-                                    })
-                                }
-                            </tr>
-                        }
-                    })
-                }
+                for items.iter().enumerate().map(|(row_index, item)| {
+                    html! {
+                        <tr>
+                            {
+                                for (0..*num_cols).map(|col_index| {
+                                    html!{
+                                       <td>{render_data_cell.emit((row_index, col_index, Rc::clone(item)))}</td>
+                                    }
+                                })
+                            }
+                        </tr>
+                    }
+                })
+              }
             </tbody>
         </table>
         </div>

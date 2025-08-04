@@ -1,6 +1,7 @@
-use crate::app::components::{TextButton, UserlistContext, UserlistPage};
+use crate::app::components::{Search, TextButton, UserlistContext, UserlistPage};
 use yew::prelude::*;
 use yew_i18n::use_translation;
+use shared::model::SearchRequest;
 use crate::app::components::userlist::user_table::UserTable;
 
 #[function_component]
@@ -15,12 +16,27 @@ pub fn UserlistList() -> Html {
         })
     };
 
+    let handle_search = {
+        Callback::from(move |search_req| {
+            match search_req {
+                SearchRequest::Clear => {},
+                SearchRequest::Text(_)
+                | SearchRequest::Regexp(_) => {}
+            }
+        })
+    };
+
     let userlist_body = if let Some(data) = userlist_ctx.users.as_ref() {
         html! {
             <div class="tp__userlist-list__user">
-                <UserTable targets={Some(data.clone())} />
+              { if data.is_empty() {
+                    html! {}
+                }  else {
+                 html! { <UserTable targets={Some(data.clone())} /> }
+                }
+              }
             </div>
-    }
+        }
     } else {
         html! {  }
     };
@@ -29,10 +45,13 @@ pub fn UserlistList() -> Html {
       <div class="tp__userlist-list tp__list-list">
         <div class="tp__userlist-list__header tp__list-list__header">
           <h1>{ translate.t("LABEL.USERS")}</h1>
-          <TextButton style="primary" name="new_userlist"
+          <div class="tp__userlist-list__header-toolbar">
+              <Search onsearch={handle_search}/>
+              <TextButton style="primary" name="new_userlist"
                 icon="PersonAdd"
                 title={ translate.t("LABEL.NEW_USER")}
                 onclick={handle_create}></TextButton>
+          </div>
         </div>
         <div class="tp__userlist-list__body tp__list-list__body">
            { userlist_body }

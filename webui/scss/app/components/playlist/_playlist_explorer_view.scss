@@ -2,6 +2,7 @@
 .tp__playlist-list {
 
   &__body {
+    overflow: auto;
 
     > :nth-child(even) {
       border-left: 2px solid  var(--output-xtream-color);

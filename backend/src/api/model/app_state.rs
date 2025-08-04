@@ -77,7 +77,7 @@ fn cancel_services(app_state: &Arc<AppState>, changes: &UpdateChanges) {
     let tokens = CancelTokens {
         scheduler,
         hdhomerun,
-        file_watch,
+        file_watch
     };
 
     app_state.cancel_tokens.store(Arc::new(tokens));
