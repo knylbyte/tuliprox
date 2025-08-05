@@ -9,22 +9,22 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::api::api_utils::try_unwrap_body;
 use crate::api::api_utils::{get_user_target, serve_file};
-use crate::api::model::app_state::AppState;
-use crate::api::model::request::UserApiRequest;
+use crate::api::model::AppState;
+use crate::api::model::UserApiRequest;
+use crate::model::Config;
 use crate::model::{ConfigTarget, ProxyUserCredentials, TargetOutput};
-use crate::model::{Config};
 use crate::repository::m3u_repository::m3u_get_epg_file_path;
 use crate::repository::storage::get_target_storage_path;
 use crate::repository::xtream_repository::{xtream_get_epg_file_path, xtream_get_storage_path};
 use crate::utils;
 
 pub fn get_empty_epg_response() -> impl axum::response::IntoResponse + Send {
-    axum::response::Response::builder()
+    try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK) // Entspricht `HttpResponse::Ok()`
         .header(axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("text/xml"))
-        .body(axum::body::Body::from(r#"<?xml version="1.0" encoding="utf-8" ?><!DOCTYPE tv SYSTEM "xmltv.dtd"><tv generator-info-name="Xtream Codes" generator-info-url=""></tv>"#)) // Setzt den Body der Antwort
-        .unwrap()
+        .body(axum::body::Body::from(r#"<?xml version="1.0" encoding="utf-8" ?><!DOCTYPE tv SYSTEM "xmltv.dtd"><tv generator-info-name="Xtream Codes" generator-info-url=""></tv>"#)))
 }
 
 fn time_correct(date_time: &str, correction: &TimeDelta) -> String {
@@ -35,20 +35,26 @@ fn time_correct(date_time: &str, correction: &TimeDelta) -> String {
     }
 
     // Parse the datetime string
-    NaiveDateTime::parse_from_str(date_time_split[0], "%Y%m%d%H%M%S").map_or_else(|_| date_time.to_string(), |native_dt| {
-        let corrected_dt = native_dt + *correction;
-        // Format the corrected datetime back to string
-        let formatted_dt = corrected_dt.format("%Y%m%d%H%M%S").to_string();
-        let result = format!("{} {}", formatted_dt, date_time_split[1]);
-        result
-    })
+    NaiveDateTime::parse_from_str(date_time_split[0], "%Y%m%d%H%M%S").map_or_else(
+        |_| date_time.to_string(),
+        |native_dt| {
+            let corrected_dt = native_dt + *correction;
+            // Format the corrected datetime back to string
+            let formatted_dt = corrected_dt.format("%Y%m%d%H%M%S").to_string();
+            let result = format!("{} {}", formatted_dt, date_time_split[1]);
+            result
+        },
+    )
 }
 
 fn get_epg_path_for_target_of_type(target_name: &str, epg_path: PathBuf) -> Option<PathBuf> {
     if utils::path_exists(&epg_path) {
         return Some(epg_path);
     }
-    trace!("Cant find epg file for {target_name} target: {}", epg_path.to_str().unwrap_or("?"));
+    trace!(
+        "Cant find epg file for {target_name} target: {}",
+        epg_path.to_str().unwrap_or("?")
+    );
     None
 }
 
@@ -61,12 +67,18 @@ fn get_epg_path_for_target(config: &Config, target: &ConfigTarget) -> Option<Pat
         match output {
             TargetOutput::Xtream(_) => {
                 if let Some(storage_path) = xtream_get_storage_path(config, &target.name) {
-                    return get_epg_path_for_target_of_type(&target.name, xtream_get_epg_file_path(&storage_path));
+                    return get_epg_path_for_target_of_type(
+                        &target.name,
+                        xtream_get_epg_file_path(&storage_path),
+                    );
                 }
             }
             TargetOutput::M3u(_) => {
                 if let Some(target_path) = get_target_storage_path(config, &target.name) {
-                    return get_epg_path_for_target_of_type(&target.name, m3u_get_epg_file_path(&target_path));
+                    return get_epg_path_for_target_of_type(
+                        &target.name,
+                        m3u_get_epg_file_path(&target_path),
+                    );
                 }
             }
             TargetOutput::Strm(_) | TargetOutput::HdHomeRun(_) => {}
@@ -90,23 +102,23 @@ fn parse_timeshift(time_shift: Option<&String>) -> Option<i32> {
     })
 }
 
-async fn serve_epg(epg_path: &Path, user: &ProxyUserCredentials) -> impl axum::response::IntoResponse + Send {
+async fn serve_epg(
+    epg_path: &Path,
+    user: &ProxyUserCredentials,
+) -> impl axum::response::IntoResponse + Send {
     match File::open(epg_path) {
-        Ok(epg_file) => {
-            match parse_timeshift(user.epg_timeshift.as_ref()) {
-                None => serve_file(epg_path, mime::TEXT_XML).await.into_response(),
-                Some(duration) => {
-                    serve_epg_with_timeshift(epg_file, duration).into_response()
-                }
-            }
-        }
-        Err(_) => {
-            get_empty_epg_response().into_response()
-        }
+        Ok(epg_file) => match parse_timeshift(user.epg_timeshift.as_ref()) {
+            None => serve_file(epg_path, mime::TEXT_XML).await.into_response(),
+            Some(duration) => serve_epg_with_timeshift(epg_file, duration).into_response(),
+        },
+        Err(_) => get_empty_epg_response().into_response(),
     }
 }
 
-fn serve_epg_with_timeshift(epg_file: File, offset_minutes: i32) -> impl axum::response::IntoResponse + Send {
+fn serve_epg_with_timeshift(
+    epg_file: File,
+    offset_minutes: i32,
+) -> impl axum::response::IntoResponse + Send {
     let reader = utils::file_reader(epg_file);
     let encoder = GzEncoder::new(Vec::with_capacity(4096), Compression::default());
     let mut xml_reader = Reader::from_reader(reader);
@@ -122,16 +134,24 @@ fn serve_epg_with_timeshift(epg_file: File, offset_minutes: i32) -> impl axum::r
                 for attr in e.attributes() {
                     match attr {
                         Ok(attr) if attr.key.as_ref() == b"start" => {
-                            let start_value = attr.decode_and_unescape_value(xml_reader.decoder())
+                            let start_value = attr
+                                .decode_and_unescape_value(xml_reader.decoder())
                                 .expect("Failed to decode start attribute");
                             // Modify the start attribute value as needed
-                            elem.push_attribute(("start", time_correct(&start_value, &duration).as_str()));
+                            elem.push_attribute((
+                                "start",
+                                time_correct(&start_value, &duration).as_str(),
+                            ));
                         }
                         Ok(attr) if attr.key.as_ref() == b"stop" => {
-                            let stop_value = attr.decode_and_unescape_value(xml_reader.decoder())
+                            let stop_value = attr
+                                .decode_and_unescape_value(xml_reader.decoder())
                                 .expect("Failed to decode stop attribute");
                             // Modify the stop attribute value as needed
-                            elem.push_attribute(("stop", time_correct(&stop_value, &duration).as_str()));
+                            elem.push_attribute((
+                                "stop",
+                                time_correct(&stop_value, &duration).as_str(),
+                            ));
                         }
                         Ok(attr) => {
                             // Copy any other attributes as they are
@@ -144,12 +164,16 @@ fn serve_epg_with_timeshift(epg_file: File, offset_minutes: i32) -> impl axum::r
                 }
 
                 // Write the modified start event
-                xml_writer.write_event(Event::Start(elem)).expect("Failed to write event");
+                xml_writer
+                    .write_event(Event::Start(elem))
+                    .expect("Failed to write event");
             }
             Ok(Event::Eof) => break, // End of file
             Ok(event) => {
                 // Write any other event as is
-                xml_writer.write_event(event).expect("Failed to write event");
+                xml_writer
+                    .write_event(event)
+                    .expect("Failed to write event");
             }
             Err(e) => {
                 error!("Error: {e}");
@@ -159,14 +183,20 @@ fn serve_epg_with_timeshift(epg_file: File, offset_minutes: i32) -> impl axum::r
 
         buf.clear();
     }
-
-    let compressed_data = xml_writer.into_inner().finish().unwrap();
-    axum::response::Response::builder()
-        .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_OCTET_STREAM.to_string())
-        .header(axum::http::header::CONTENT_ENCODING, "gzip") // Set Content-Encoding header
-        .body(axum::body::Body::from(compressed_data))
-        .unwrap()
-        .into_response()
+    match xml_writer.into_inner().finish() {
+        Ok(compressed_data) => try_unwrap_body!(axum::response::Response::builder()
+            .header(
+                axum::http::header::CONTENT_TYPE,
+                mime::APPLICATION_OCTET_STREAM.to_string()
+            )
+            .header(axum::http::header::CONTENT_ENCODING, "gzip") // Set Content-Encoding header
+            .body(axum::body::Body::from(compressed_data))),
+        Err(err) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            err.to_string(),
+        )
+            .into_response(),
+    }
 }
 
 /// Handles XMLTV EPG API requests, serving the appropriate EPG file with optional time-shifting based on user configuration.
@@ -192,7 +222,8 @@ async fn xmltv_api(
         return axum::http::StatusCode::FORBIDDEN.into_response();
     }
 
-    let Some(epg_path) = get_epg_path_for_target(&app_state.config, target) else {
+    let config = &app_state.app_config.config.load();
+    let Some(epg_path) = get_epg_path_for_target(config, &target) else {
         // No epg configured,  No processing or timeshift, epg can't be mapped to the channels.
         // we do not deliver epg
         return get_empty_epg_response().into_response();
@@ -220,6 +251,8 @@ pub fn xmltv_api_register() -> axum::Router<Arc<AppState>> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::BufReader;
+    use shared::model::{PlaylistCategoriesResponse};
     use super::*;
 
     #[test]
@@ -239,5 +272,11 @@ mod tests {
         assert_eq!(parse_timeshift(Some(&String::from("+abc"))), None);
         assert_eq!(parse_timeshift(Some(&String::new())), None);
         assert_eq!(parse_timeshift(None), None);
+    }
+
+    #[test]
+    fn test_deserialize_() {
+        let reader = BufReader::new(File::open(Path::new("/home/euzuner/Schreibtisch/pl.json")).unwrap());
+        let cat: PlaylistCategoriesResponse = serde_json::from_reader(reader).unwrap();
     }
 }

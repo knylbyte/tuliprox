@@ -15,8 +15,7 @@ pub const EPG_TAG_ICON: &str = "icon";
 // https://github.com/XMLTV/xmltv/blob/master/xmltv.dtd
 
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Eq, PartialEq,Default)]
 pub enum XmlTagIcon {
     #[default]
     Undefined,
@@ -59,7 +58,7 @@ impl XmlTag {
         }
 
         if let Some(attribs) = self.attributes.as_ref() {
-            attribs.iter().for_each(|(k, v)| elem.push_attribute((k.as_str(), v.as_str())));
+            for (k, v) in attribs { elem.push_attribute((k.as_str(), v.as_str())); }
         }
         writer.write_event(Event::Start(elem))?;
         self.value.as_ref().map(|text| writer.write_event(Event::Text(BytesText::new(text.as_str()))));
@@ -85,7 +84,7 @@ impl Epg {
     pub fn write_to<W: std::io::Write>(&self, writer: &mut Writer<W>) -> Result<(), quick_xml::Error> {
         let mut elem = BytesStart::new("tv");
         if let Some(attribs) = self.attributes.as_ref() {
-            attribs.iter().for_each(|(k, v)| elem.push_attribute((k.as_str(), v.as_str())));
+            for (k, v) in attribs { elem.push_attribute((k.as_str(), v.as_str())); }
         }
         writer.write_event(Event::Start(elem))?;
         for child in &self.children {

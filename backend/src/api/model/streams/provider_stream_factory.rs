@@ -1,27 +1,27 @@
 use crate::api::api_utils::{get_headers_from_request, StreamOptions};
-use crate::api::model::model_utils::get_response_headers;
-use crate::api::model::stream::{BoxedProviderStream, ProviderStreamFactoryResponse};
-use crate::api::model::stream_error::StreamError;
-use crate::api::model::streams::buffered_stream::BufferedStream;
-use crate::api::model::streams::client_stream::ClientStream;
-use crate::api::model::streams::provider_stream::{create_channel_unavailable_stream, get_header_filter_for_item_type};
-use crate::api::model::streams::timed_client_stream::TimedClientStream;
-use shared::model::PlaylistItemType;
-use crate::model::{Config};
+use crate::api::model::get_response_headers;
+use crate::api::model::StreamError;
+use crate::api::model::TimedClientStream;
+use crate::api::model::{create_channel_unavailable_stream, get_header_filter_for_item_type};
+use crate::api::model::{BoxedProviderStream, ProviderStreamFactoryResponse};
+use crate::model::AppConfig;
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
-use crate::utils::request::{classify_content_type, get_request_headers, sanitize_sensitive_info, MimeCategory, DEFAULT_USER_AGENT};
-use crate::utils::{debug_if_enabled};
-use shared::utils::{filter_request_header};
+use crate::utils::debug_if_enabled;
+use crate::utils::request::{classify_content_type, get_request_headers, MimeCategory};
 use futures::stream::{self};
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, log_enabled, warn};
 use reqwest::header::{HeaderMap, RANGE};
 use reqwest::StatusCode;
+use shared::model::{PlaylistItemType, DEFAULT_USER_AGENT};
+use shared::utils::{filter_request_header, sanitize_sensitive_info};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use url::Url;
+use crate::api::model::streams::buffered_stream::BufferedStream;
+use crate::api::model::streams::client_stream::ClientStream;
 
 // TODO make this configurable
 pub const STREAM_QUEUE_SIZE: usize = 4096; // mpsc channel holding messages. with possible 8192byte chunks
@@ -53,7 +53,11 @@ impl ProviderStreamFactoryOptions {
         req_headers: &HeaderMap,
         input_headers: Option<&HashMap<String, String>>,
     ) -> Self {
-        let buffer_size = if stream_options.buffer_enabled { stream_options.buffer_size } else { STREAM_QUEUE_SIZE };
+        let buffer_size = if stream_options.buffer_enabled {
+            stream_options.buffer_size
+        } else {
+            STREAM_QUEUE_SIZE
+        };
         let filter_header = get_header_filter_for_item_type(item_type);
         let mut req_headers = get_headers_from_request(req_headers, &filter_header);
         // we need the range bytes from client request for seek ing to the right position
@@ -133,7 +137,10 @@ impl ProviderStreamFactoryOptions {
 
     #[inline]
     pub fn get_total_bytes_send(&self) -> Option<usize> {
-        self.range_bytes.as_ref().as_ref().map(|atomic| atomic.load(Ordering::SeqCst))
+        self.range_bytes
+            .as_ref()
+            .as_ref()
+            .map(|atomic| atomic.load(Ordering::SeqCst))
     }
 
     // pub fn get_range_bytes(&self) -> &Arc<Option<AtomicUsize>> {
@@ -181,8 +188,10 @@ fn get_request_range_start_bytes(req_headers: &HashMap<String, Vec<u8>>) -> Opti
 //     }
 // }
 
-
-fn prepare_client(request_client: &Arc<reqwest::Client>, stream_options: &ProviderStreamFactoryOptions) -> (reqwest::RequestBuilder, bool) {
+fn prepare_client(
+    request_client: &Arc<reqwest::Client>,
+    stream_options: &ProviderStreamFactoryOptions,
+) -> (reqwest::RequestBuilder, bool) {
     let url = stream_options.get_url();
     let range_start = stream_options.get_total_bytes_send();
     let original_headers = stream_options.get_headers();
@@ -209,11 +218,17 @@ fn prepare_client(request_client: &Arc<reqwest::Client>, stream_options: &Provid
     // }
 
     if !headers.contains_key(axum::http::header::CONNECTION) {
-        headers.insert(axum::http::header::CONNECTION, axum::http::header::HeaderValue::from_static("keep-alive"));
+        headers.insert(
+            axum::http::header::CONNECTION,
+            axum::http::header::HeaderValue::from_static("keep-alive"),
+        );
     }
 
     if !headers.contains_key(axum::http::header::USER_AGENT) {
-        headers.insert(axum::http::header::USER_AGENT, axum::http::header::HeaderValue::from_static(DEFAULT_USER_AGENT));
+        headers.insert(
+            axum::http::header::USER_AGENT,
+            axum::http::header::HeaderValue::from_static(DEFAULT_USER_AGENT),
+        );
     }
 
     let partial = if let Some(range) = range_start {
@@ -227,7 +242,13 @@ fn prepare_client(request_client: &Arc<reqwest::Client>, stream_options: &Provid
     };
 
     if log_enabled!(log::Level::Debug) {
-        let message = format!("Stream requested with headers: {:?}", headers.iter().map(|header| (header.0, String::from_utf8_lossy(header.1.as_ref()))).collect::<Vec<_>>());
+        let message = format!(
+            "Stream requested with headers: {:?}",
+            headers
+                .iter()
+                .map(|header| (header.0, String::from_utf8_lossy(header.1.as_ref())))
+                .collect::<Vec<_>>()
+        );
         debug!("{}", sanitize_sensitive_info(&message));
     }
 
@@ -236,7 +257,11 @@ fn prepare_client(request_client: &Arc<reqwest::Client>, stream_options: &Provid
     (request_builder, partial)
 }
 
-async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Client>, stream_options: &ProviderStreamFactoryOptions) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
+async fn provider_stream_request(
+    cfg: &AppConfig,
+    request_client: Arc<reqwest::Client>,
+    stream_options: &ProviderStreamFactoryOptions,
+) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
     let (client, _partial_content) = prepare_client(&request_client, stream_options);
     match client.send().await {
         Ok(mut response) => {
@@ -246,22 +271,38 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
                     // Unfortunately, the HEAD request does not work, so we need this workaround.
                     // We need some header information from the provider, we extract the necessary headers and forward them to the client
                     if log_enabled!(log::Level::Debug) {
-                        let message = format!("Provider response  status: '{}' headers: {:?}", response.status(), response.headers_mut());
+                        let message = format!(
+                            "Provider response  status: '{}' headers: {:?}",
+                            response.status(),
+                            response.headers_mut()
+                        );
                         debug!("{}", sanitize_sensitive_info(&message));
                     }
 
-                    let response_headers: Vec<(String, String)> = get_response_headers(response.headers());
+                    let response_headers: Vec<(String, String)> =
+                        get_response_headers(response.headers());
                     //let url = stream_options.get_url();
                     // debug!("First  headers {headers:?} {} {}", sanitize_sensitive_info(url.as_str()));
-                    Some((response_headers, response.status(), Some(response.url().clone())))
+                    Some((
+                        response_headers,
+                        response.status(),
+                        Some(response.url().clone()),
+                    ))
                 };
 
-                let provider_stream = response.bytes_stream().map_err(|err| {
-                    // error!("Stream error {err}");
-                    StreamError::reqwest(&err)
-                }).boxed();
+                let provider_stream = response
+                    .bytes_stream()
+                    .map_err(|err| {
+                        // error!("Stream error {err}");
+                        StreamError::reqwest(&err)
+                    })
+                    .boxed();
                 let boxed_provider_stream = if stream_options.get_reconnect_force_secs() > 0 {
-                    TimedClientStream::new(provider_stream, stream_options.get_reconnect_force_secs()).boxed()
+                    TimedClientStream::new(
+                        provider_stream,
+                        stream_options.get_reconnect_force_secs(),
+                    )
+                    .boxed()
                 } else {
                     provider_stream
                 };
@@ -277,40 +318,50 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
                     | StatusCode::METHOD_NOT_ALLOWED
                     | StatusCode::BAD_REQUEST => {
                         if let (Some(boxed_provider_stream), response_info) =
-                            create_channel_unavailable_stream(cfg, &get_response_headers(stream_options.get_headers()), StatusCode::BAD_GATEWAY)
+                            create_channel_unavailable_stream(
+                                cfg,
+                                &get_response_headers(stream_options.get_headers()),
+                                StatusCode::BAD_GATEWAY,
+                            )
                         {
                             Ok(Some((boxed_provider_stream, response_info)))
                         } else {
                             Err(StatusCode::SERVICE_UNAVAILABLE)
                         }
                     }
-                    _ => Err(status)
+                    _ => Err(status),
                 };
             }
             if status.is_server_error() {
                 debug!("Server error status response : {status}");
                 return match status {
-                    StatusCode::INTERNAL_SERVER_ERROR |
-                    StatusCode::BAD_GATEWAY |
-                    StatusCode::SERVICE_UNAVAILABLE |
-                    StatusCode::GATEWAY_TIMEOUT => {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                    | StatusCode::BAD_GATEWAY
+                    | StatusCode::SERVICE_UNAVAILABLE
+                    | StatusCode::GATEWAY_TIMEOUT => {
                         if let (Some(boxed_provider_stream), response_info) =
-                            create_channel_unavailable_stream(cfg, &get_response_headers(stream_options.get_headers()), StatusCode::BAD_GATEWAY)
+                            create_channel_unavailable_stream(
+                                cfg,
+                                &get_response_headers(stream_options.get_headers()),
+                                StatusCode::BAD_GATEWAY,
+                            )
                         {
                             Ok(Some((boxed_provider_stream, response_info)))
                         } else {
                             Err(StatusCode::SERVICE_UNAVAILABLE)
                         }
                     }
-                    _ => Err(status)
-                }
+                    _ => Err(status),
+                };
             }
             Err(status)
         }
         Err(_err) => {
-            if let (Some(boxed_provider_stream), response_info) =
-                create_channel_unavailable_stream(cfg, &get_response_headers(stream_options.get_headers()), StatusCode::BAD_GATEWAY)
-            {
+            if let (Some(boxed_provider_stream), response_info) = create_channel_unavailable_stream(
+                cfg,
+                &get_response_headers(stream_options.get_headers()),
+                StatusCode::BAD_GATEWAY,
+            ) {
                 Ok(Some((boxed_provider_stream, response_info)))
             } else {
                 Err(StatusCode::SERVICE_UNAVAILABLE)
@@ -319,7 +370,11 @@ async fn provider_stream_request(cfg: &Config, request_client: Arc<reqwest::Clie
     }
 }
 
-async fn get_provider_stream(cfg: &Config, client: Arc<reqwest::Client>, stream_options: &ProviderStreamFactoryOptions) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
+async fn get_provider_stream(
+    cfg: &AppConfig,
+    client: Arc<reqwest::Client>,
+    stream_options: &ProviderStreamFactoryOptions,
+) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
     let url = stream_options.get_url();
     debug_if_enabled!("stream provider {}", sanitize_sensitive_info(url.as_str()));
     let start = Instant::now();
@@ -332,18 +387,30 @@ async fn get_provider_stream(cfg: &Config, client: Arc<reqwest::Client>, stream_
             }
             Ok(None) => {
                 if connect_err > ERR_MAX_RETRY_COUNT {
-                    warn!("The stream could be unavailable. {}", sanitize_sensitive_info(stream_options.get_url().as_str()));
+                    warn!(
+                        "The stream could be unavailable. {}",
+                        sanitize_sensitive_info(stream_options.get_url().as_str())
+                    );
                 }
             }
             Err(status) => {
                 debug!("Provider stream response error status response : {status}");
-                if status == StatusCode::FORBIDDEN || status == StatusCode::SERVICE_UNAVAILABLE || status == StatusCode::UNAUTHORIZED {
-                    warn!("The stream could be unavailable. ({status}) {}", sanitize_sensitive_info(stream_options.get_url().as_str()));
+                if status == StatusCode::FORBIDDEN
+                    || status == StatusCode::SERVICE_UNAVAILABLE
+                    || status == StatusCode::UNAUTHORIZED
+                {
+                    warn!(
+                        "The stream could be unavailable. ({status}) {}",
+                        sanitize_sensitive_info(stream_options.get_url().as_str())
+                    );
                     stream_options.cancel_reconnect();
                     return Err(status);
                 }
                 if connect_err > ERR_MAX_RETRY_COUNT {
-                    warn!("The stream could be unavailable. ({status}) {}", sanitize_sensitive_info(stream_options.get_url().as_str()));
+                    warn!(
+                        "The stream could be unavailable. ({status}) {}",
+                        sanitize_sensitive_info(stream_options.get_url().as_str())
+                    );
                 }
             }
         }
@@ -354,29 +421,55 @@ async fn get_provider_stream(cfg: &Config, client: Arc<reqwest::Client>, stream_
             break;
         }
         if start.elapsed().as_secs() > RETRY_SECONDS {
-            warn!("The stream could be unavailable. Giving up after {RETRY_SECONDS} seconds. {}", sanitize_sensitive_info(stream_options.get_url().as_str()));
+            warn!(
+                "The stream could be unavailable. Giving up after {RETRY_SECONDS} seconds. {}",
+                sanitize_sensitive_info(stream_options.get_url().as_str())
+            );
             break;
         }
         connect_err += 1;
         tokio::time::sleep(Duration::from_millis(50)).await;
-        debug_if_enabled!("Reconnecting stream {}", sanitize_sensitive_info(url.as_str()));
+        debug_if_enabled!(
+            "Reconnecting stream {}",
+            sanitize_sensitive_info(url.as_str())
+        );
     }
-    debug_if_enabled!("Stopped reconnecting stream {}", sanitize_sensitive_info(url.as_str()));
+    debug_if_enabled!(
+        "Stopped reconnecting stream {}",
+        sanitize_sensitive_info(url.as_str())
+    );
     stream_options.cancel_reconnect();
     Err(StatusCode::SERVICE_UNAVAILABLE)
 }
 
-
-pub async fn create_provider_stream(cfg: Arc<Config>,
-                                    client: Arc<reqwest::Client>,
-                                    stream_options: ProviderStreamFactoryOptions) -> Option<ProviderStreamFactoryResponse> {
+#[allow(clippy::too_many_lines)]
+pub async fn create_provider_stream(
+    cfg: Arc<AppConfig>,
+    client: Arc<reqwest::Client>,
+    stream_options: ProviderStreamFactoryOptions,
+) -> Option<ProviderStreamFactoryResponse> {
     let client_stream_factory = |stream, reconnect_flag, range_cnt| {
-        let stream = if !stream_options.is_piped() && stream_options.is_buffer_enabled() && !stream_options.is_shared_stream() {
-            BufferedStream::new(stream, stream_options.get_buffer_size(), stream_options.get_reconnect_flag_clone(), stream_options.get_url_as_str()).boxed()
+        let stream = if !stream_options.is_piped()
+            && stream_options.is_buffer_enabled()
+            && !stream_options.is_shared_stream()
+        {
+            BufferedStream::new(
+                stream,
+                stream_options.get_buffer_size(),
+                stream_options.get_reconnect_flag_clone(),
+                stream_options.get_url_as_str(),
+            )
+            .boxed()
         } else {
             stream
         };
-        ClientStream::new(stream, reconnect_flag, range_cnt, stream_options.get_url_as_str()).boxed()
+        ClientStream::new(
+            stream,
+            reconnect_flag,
+            range_cnt,
+            stream_options.get_url_as_str(),
+        )
+        .boxed()
     };
 
     match get_provider_stream(&cfg, Arc::clone(&client), &stream_options).await {
@@ -405,8 +498,13 @@ pub async fn create_provider_stream(cfg: Arc<Config>,
                                 Ok(Some((stream, _info))) => Some((stream, ())),
                                 Ok(None) => None,
                                 Err(status) => {
+                                    continue_streaming.notify();
                                     if let (Some(boxed_provider_stream), _response_info) =
-                                        create_channel_unavailable_stream(&config_clone, &get_response_headers(stream_opts.get_headers()), status)
+                                        create_channel_unavailable_stream(
+                                            &config_clone,
+                                            &get_response_headers(stream_opts.get_headers()),
+                                            status,
+                                        )
                                     {
                                         return Some((boxed_provider_stream, ()));
                                     }
@@ -417,19 +515,37 @@ pub async fn create_provider_stream(cfg: Arc<Config>,
                             None
                         }
                     }
-                }).flatten().boxed();
-                Some((client_stream_factory(init_stream.chain(unfold).boxed(), Arc::clone(&continue_client_signal), stream_options.get_range_bytes_clone()).boxed(), info))
+                })
+                .flatten()
+                .boxed();
+                Some((
+                    client_stream_factory(
+                        init_stream.chain(unfold).boxed(),
+                        Arc::clone(&continue_client_signal),
+                        stream_options.get_range_bytes_clone(),
+                    )
+                    .boxed(),
+                    info,
+                ))
             } else {
-                Some((client_stream_factory(init_stream.boxed(), Arc::clone(&continue_signal), stream_options.get_range_bytes_clone()).boxed(), info))
+                Some((
+                    client_stream_factory(
+                        init_stream.boxed(),
+                        Arc::clone(&continue_signal),
+                        stream_options.get_range_bytes_clone(),
+                    )
+                    .boxed(),
+                    info,
+                ))
             }
         }
-        Ok(None) => {
-            None
-        }
+        Ok(None) => None,
         Err(status) => {
-            if let (Some(boxed_provider_stream), response_info) =
-                create_channel_unavailable_stream(&cfg, &get_response_headers(stream_options.get_headers()), status)
-            {
+            if let (Some(boxed_provider_stream), response_info) = create_channel_unavailable_stream(
+                &cfg,
+                &get_response_headers(stream_options.get_headers()),
+                status,
+            ) {
                 return Some((boxed_provider_stream, response_info));
             }
             None

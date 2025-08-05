@@ -104,11 +104,6 @@ $item-height: 48px;
     box-sizing: border-box;
     gap: 4px;
 
-    .disabled {
-      pointer-events: none;
-      color: var(--hint-color);
-    }
-
     &-category {
       border-radius: var(--border-radius);
       padding: 2px 4px;

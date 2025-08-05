@@ -1,10 +1,16 @@
-use crate::api::model::active_provider_manager::ProviderAllocation;
-use crate::model::{ConfigInput, ConfigInputAlias, InputType, InputUserInfo};
+use std::fmt;
+use crate::api::model::ProviderAllocation;
+use crate::model::{ConfigInput, ConfigInputAlias, InputUserInfo};
 use jsonwebtoken::get_current_timestamp;
-use log::debug;
+use log::{debug};
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc};
 use tokio::sync::RwLock;
+use shared::model::InputType;
+use shared::write_if_some;
+
+pub type ProviderConnectionChangeSender = tokio::sync::mpsc::Sender<(String, usize)>;
+pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::Receiver<(String, usize)>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProviderConfigAllocation {
@@ -13,8 +19,8 @@ pub enum ProviderConfigAllocation {
     GracePeriod,
 }
 
-#[derive(Debug, Default)]
-struct ProviderConfigConnection {
+#[derive(Debug, Default, Copy, Clone)]
+pub struct ProviderConfigConnection {
     current_connections: usize,
     granted_grace: bool,
     grace_ts: u64,
@@ -38,10 +44,57 @@ pub struct ProviderConfig {
     max_connections: usize,
     priority: i16,
     connection: RwLock<ProviderConfigConnection>,
+    connection_change_tx: ProviderConnectionChangeSender,
+}
+
+impl fmt::Display for ProviderConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ProviderConfig {{")?;
+        write!(f, "  id: {}", self.id)?;
+        write!(f, ", name: {}", self.name)?;
+        write!(f, ", url: {}", self.url)?;
+        write!(f, ", input_type: {:?}", self.input_type)?;
+        write!(f, ", max_connections: {}", self.max_connections)?;
+        write!(f, ", priority: {}", self.priority)?;
+        write_if_some!(f, self,
+            ", username: " => username,
+            ", password: " => password
+        );
+        write!(f, "}}")?;
+        Ok(())
+    }
+}
+
+impl PartialEq for ProviderConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.name == other.name
+            && self.url == other.url
+            && self.username == other.username
+            && self.password == other.password
+            && self.input_type == other.input_type
+            && self.max_connections == other.max_connections
+            && self.priority == other.priority
+           // Note: self.connection is skipped
+    }
+}
+
+macro_rules! modify_connections {
+    ($self:ident, $guard:ident, +1) => {{
+        $guard.current_connections += 1;
+        $self.notify_connection_change($guard.current_connections).await;
+    }};
+    ($self:ident, $guard:ident, -1) => {{
+        $guard.current_connections -= 1;
+        $self.notify_connection_change($guard.current_connections).await;
+    }};
 }
 
 impl ProviderConfig {
-    pub fn new(cfg: &ConfigInput) -> Self {
+    pub fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>, connection_change_tx: ProviderConnectionChangeSender) -> Self
+    where
+        F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
+    {
         Self {
             id: cfg.id,
             name: cfg.name.clone(),
@@ -51,11 +104,15 @@ impl ProviderConfig {
             input_type: cfg.input_type,
             max_connections: cfg.max_connections as usize,
             priority: cfg.priority,
-            connection: RwLock::new(ProviderConfigConnection::default()),
+            connection: RwLock::new(get_connection.and_then(|f| f(cfg.name.as_str())).map_or_else(Default::default, Clone::clone)),
+            connection_change_tx
         }
     }
 
-    pub fn new_alias(cfg: &ConfigInput, alias: &ConfigInputAlias) -> Self {
+    pub fn new_alias<'a, F>(cfg: &ConfigInput, alias: &ConfigInputAlias, get_connection: Option<F>, connection_change_tx: ProviderConnectionChangeSender) -> Self
+    where
+        F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
+    {
         Self {
             id: alias.id,
             name: alias.name.clone(),
@@ -65,12 +122,17 @@ impl ProviderConfig {
             input_type: cfg.input_type,
             max_connections: alias.max_connections as usize,
             priority: alias.priority,
-            connection: RwLock::new(ProviderConfigConnection::default()),
+            connection: RwLock::new(get_connection.and_then(|f| f(alias.name.as_str())).map_or_else(Default::default, Clone::clone)),
+            connection_change_tx,
         }
     }
 
     pub fn get_user_info(&self) -> Option<InputUserInfo> {
         InputUserInfo::new(self.input_type, self.username.as_deref(), self.password.as_deref(), &self.url)
+    }
+
+    async fn notify_connection_change(&self, new_connections: usize) {
+        let _ = self.connection_change_tx.send((self.name.clone(), new_connections)).await;
     }
 
     #[inline]
@@ -98,7 +160,7 @@ impl ProviderConfig {
             let now = get_current_timestamp();
             if now - guard.grace_ts <= grace_period_timeout_secs {
                 // Grace timeout still active, deny connection
-                debug!("Provider access denied, grace exhausted, too many connections: {}", self.name);
+                debug!("Provider access denied, grace exhausted, too many connections, over limit: {}", self.name);
                 return true;
             }
         }
@@ -112,15 +174,16 @@ impl ProviderConfig {
     // }
 
 
+
     async fn force_allocate(&self) {
         let mut guard = self.connection.write().await;
-        guard.current_connections += 1;
+        modify_connections!(self, guard, +1);
     }
 
     async fn try_allocate(&self, grace: bool, grace_period_timeout_secs: u64) -> ProviderConfigAllocation {
         let mut guard = self.connection.write().await;
         if self.max_connections == 0 {
-            guard.current_connections += 1;
+            modify_connections!(self, guard, +1);
             return ProviderConfigAllocation::Available;
         }
         let connections = guard.current_connections;
@@ -128,7 +191,7 @@ impl ProviderConfig {
             if connections < self.max_connections {
                 guard.granted_grace = false;
                 guard.grace_ts = 0;
-                guard.current_connections += 1;
+                modify_connections!(self, guard, +1);
                 return ProviderConfigAllocation::Available;
             }
 
@@ -145,7 +208,7 @@ impl ProviderConfig {
             }
             guard.granted_grace = true;
             guard.grace_ts = now;
-            guard.current_connections += 1;
+            modify_connections!(self, guard, +1);
             return ProviderConfigAllocation::GracePeriod;
         }
         ProviderConfigAllocation::Exhausted
@@ -169,7 +232,7 @@ impl ProviderConfig {
             if guard.granted_grace {
                 if connections > self.max_connections && now - guard.grace_ts <= grace_period_timeout_secs {
                     // Grace timeout still active, deny connection
-                    debug!("Provider access denied, grace exhausted, too many connections: {}", self.name);
+                    debug!("Provider access denied, grace exhausted, too many connections, no connection available: {}", self.name);
                     return false;
                 }
                 // Grace timeout expired, reset grace counters
@@ -184,7 +247,7 @@ impl ProviderConfig {
     pub async fn release(&self) {
         let mut guard = self.connection.write().await;
         if guard.current_connections > 0 {
-            guard.current_connections -= 1;
+            modify_connections!(self, guard, -1);
         }
 
         if guard.current_connections == 0  || guard.current_connections < self.max_connections {
@@ -209,6 +272,11 @@ pub(in crate::api::model) struct ProviderConfigWrapper {
     inner: Arc<ProviderConfig>,
 }
 
+impl fmt::Display for ProviderConfigWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.inner)
+    }
+}
 
 impl ProviderConfigWrapper {
     pub fn new(cfg: ProviderConfig) -> Self {
@@ -219,13 +287,13 @@ impl ProviderConfigWrapper {
 
     pub async fn force_allocate(&self) -> ProviderAllocation {
         self.inner.force_allocate().await;
-        ProviderAllocation::Available(Arc::clone(&self.inner))
+        ProviderAllocation::new_available(Arc::clone(&self.inner))
     }
 
     pub async fn try_allocate(&self, grace: bool, grace_period_timeout_secs: u64) -> ProviderAllocation {
         match self.inner.try_allocate(grace, grace_period_timeout_secs).await {
-            ProviderConfigAllocation::Available => ProviderAllocation::Available(Arc::clone(&self.inner)),
-            ProviderConfigAllocation::GracePeriod => ProviderAllocation::GracePeriod(Arc::clone(&self.inner)),
+            ProviderConfigAllocation::Available => ProviderAllocation::new_available(Arc::clone(&self.inner)),
+            ProviderConfigAllocation::GracePeriod => ProviderAllocation::new_grace_period(Arc::clone(&self.inner)),
             ProviderConfigAllocation::Exhausted => ProviderAllocation::Exhausted,
         }
     }
@@ -235,6 +303,15 @@ impl ProviderConfigWrapper {
             return Some(Arc::clone(&self.inner));
         }
         None
+    }
+
+    pub async fn get_connection_info(&self) -> ProviderConfigConnection {
+        let guard = self.inner.connection.read().await;
+        ProviderConfigConnection {
+            current_connections: guard.current_connections,
+            granted_grace: guard.granted_grace,
+            grace_ts: guard.grace_ts,
+        }
     }
 }
 impl Deref for ProviderConfigWrapper {

@@ -1,29 +1,15 @@
-use crate::model::{Config, ConfigInput, ConfigTarget, InputType};
-use crate::model::{M3uPlaylistItem, PlaylistGroup};
-use shared::model::{PlaylistItemType, TargetType, XtreamCluster};
+use crate::model::{AppConfig, Config, ConfigInput, ConfigTarget};
 use crate::repository::{m3u_repository, xtream_repository};
 use crate::utils::{m3u, xtream};
-use axum::response::IntoResponse;
-use serde::Serialize;
-use serde_json::{json, Value};
-use std::sync::Arc;
-use indexmap::IndexMap;
 use crate::utils;
+use axum::response::IntoResponse;
+use indexmap::IndexMap;
+use serde::Serialize;
+use serde_json::{json};
+use shared::model::{CommonPlaylistItem, InputType, M3uPlaylistItem, PlaylistCategoriesResponse,
+                    PlaylistGroup, PlaylistItemType, PlaylistResponseGroup, TargetType, XtreamCluster};
+use std::sync::Arc;
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct PlaylistResponseGroup {
-    id: u32,
-    title: String,
-    channels: serde_json::Value,
-    xtream_cluster: XtreamCluster,
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-struct PlaylistResponse {
-    live: Option<Vec<PlaylistResponseGroup>>,
-    vod: Option<Vec<PlaylistResponseGroup>>,
-    series: Option<Vec<PlaylistResponseGroup>>,
-}
 
 fn group_playlist_items<T>(
     cluster: XtreamCluster,
@@ -31,7 +17,7 @@ fn group_playlist_items<T>(
     get_group: fn(&T) -> String,
 ) -> Vec<PlaylistResponseGroup>
 where
-    T: Serialize,
+    T: Serialize + Into<CommonPlaylistItem>,
 {
     let mut groups: IndexMap<String, Vec<T>> = IndexMap::new();
 
@@ -49,7 +35,7 @@ where
             #[allow(clippy::cast_possible_truncation)]
             id: index as u32,
             title: key.to_string(),
-            channels: serde_json::to_value(value).unwrap_or(Value::Null),
+            channels: value.into_iter().map(Into::into).collect(),
             xtream_cluster: cluster,
         })
         .collect()
@@ -58,43 +44,46 @@ where
 fn group_playlist_items_by_cluster(params: Option<(utils::FileReadGuard,
                                                    impl Iterator<Item=(M3uPlaylistItem, bool)>)>) ->
                                    (Vec<M3uPlaylistItem>, Vec<M3uPlaylistItem>, Vec<M3uPlaylistItem>) {
-    if params.is_none() {
-        return (vec![], vec![], vec![]);
-    }
-    let mut live = Vec::new();
-    let mut video = Vec::new();
-    let mut series = Vec::new();
-    let (guard, iter) = params.unwrap();
-    for (item, _) in iter {
-        match item.item_type {
-            PlaylistItemType::Live
-            | PlaylistItemType::LiveUnknown
-            | PlaylistItemType::LiveHls
-            | PlaylistItemType::LiveDash => {
-                live.push(item);
+    match params {
+        None => (vec![], vec![], vec![]),
+        Some((guard, iter)) => {
+            let mut live = Vec::new();
+            let mut video = Vec::new();
+            let mut series = Vec::new();
+            for (item, _) in iter {
+                match item.item_type {
+                    PlaylistItemType::Live
+                    | PlaylistItemType::LiveUnknown
+                    | PlaylistItemType::LiveHls
+                    | PlaylistItemType::LiveDash => {
+                        live.push(item);
+                    }
+                    PlaylistItemType::Catchup
+                    | PlaylistItemType::Video => {
+                        video.push(item);
+                    }
+                    PlaylistItemType::Series
+                    | PlaylistItemType::SeriesInfo => {
+                        series.push(item);
+                    }
+                }
             }
-            PlaylistItemType::Catchup
-            | PlaylistItemType::Video => {
-                video.push(item);
-            }
-            PlaylistItemType::Series
-            | PlaylistItemType::SeriesInfo => {
-                series.push(item);
-            }
+
+            drop(guard);
+
+            (live, video, series)
         }
     }
-
-    drop(guard);
-
-    (live, video, series)
 }
 
-fn group_playlist_groups_by_cluster(playlist: Vec<PlaylistGroup>, input_type: InputType) -> (Vec<PlaylistResponseGroup>, Vec<PlaylistResponseGroup>, Vec<PlaylistResponseGroup>) {
+fn group_playlist_groups_by_cluster(playlist: Vec<PlaylistGroup>) -> (Vec<PlaylistResponseGroup>, Vec<PlaylistResponseGroup>, Vec<PlaylistResponseGroup>) {
     let mut live = Vec::new();
     let mut video = Vec::new();
     let mut series = Vec::new();
     for group in playlist {
-        let channels = group.channels.iter().map(|item| if input_type == InputType::M3u { serde_json::to_value(item.to_m3u()).unwrap() } else { serde_json::to_value(item.to_xtream()).unwrap() }).collect();
+        let channels = group.channels.iter()
+            .map(shared::model::PlaylistItem::to_common)
+            .collect();
         let grp = PlaylistResponseGroup {
             id: group.id,
             title: group.title,
@@ -125,26 +114,26 @@ fn group_playlist_groups_by_cluster(playlist: Vec<PlaylistGroup>, input_type: In
 
 
 async fn grouped_channels(
-    cfg: &Arc<Config>,
+    cfg: &AppConfig,
     target: &ConfigTarget,
     cluster: XtreamCluster,
 ) -> Option<Vec<PlaylistResponseGroup>> {
     xtream_repository::iter_raw_xtream_playlist(cfg, target, cluster).await
-        .map(|(_guard, iter)| group_playlist_items(
+        .map(|(_guard, iter)| group_playlist_items::<CommonPlaylistItem>(
             cluster,
-            iter.map(|(v, _)| v),
+            iter.map(|(v, _)| v.to_common()),
             |item| item.group.clone(),
         ))
 }
 
-pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Option<&ConfigTarget>, cfg: &Arc<Config>) -> impl axum::response::IntoResponse + Send {
+pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Option<&ConfigTarget>, cfg: &AppConfig) -> impl axum::response::IntoResponse + Send {
     if let Some(target) = cfg_target {
         if target.has_output(&TargetType::Xtream) {
             let live_channels = grouped_channels(cfg, target, XtreamCluster::Live).await;
             let vod_channels = grouped_channels(cfg, target, XtreamCluster::Video).await;
             let series_channels = grouped_channels(cfg, target, XtreamCluster::Series).await;
 
-            let response = PlaylistResponse {
+            let response = PlaylistCategoriesResponse {
                 live: live_channels,
                 vod: vod_channels,
                 series: series_channels,
@@ -154,10 +143,10 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
         } else if target.has_output(&TargetType::M3u) {
             let all_channels = m3u_repository::iter_raw_m3u_playlist(cfg, target).await;
             let (live_channels, vod_channels, series_channels) = group_playlist_items_by_cluster(all_channels);
-            let response = PlaylistResponse {
-                live: Some(group_playlist_items(XtreamCluster::Live, live_channels.into_iter(), |item| item.group.clone())),
-                vod: Some(group_playlist_items(XtreamCluster::Video, vod_channels.into_iter(), |item| item.group.clone())),
-                series: Some(group_playlist_items(XtreamCluster::Series, series_channels.into_iter(), |item| item.group.clone())),
+            let response = PlaylistCategoriesResponse {
+                live: Some(group_playlist_items::<M3uPlaylistItem>(XtreamCluster::Live, live_channels.into_iter(), |item| item.group.clone())),
+                vod: Some(group_playlist_items::<M3uPlaylistItem>(XtreamCluster::Video, vod_channels.into_iter(), |item| item.group.clone())),
+                series: Some(group_playlist_items::<M3uPlaylistItem>(XtreamCluster::Series, series_channels.into_iter(), |item| item.group.clone())),
             };
 
             return (axum::http::StatusCode::OK, axum::Json(response)).into_response();
@@ -178,8 +167,8 @@ pub(in crate::api::endpoints) async fn get_playlist(client: Arc<reqwest::Client>
                 let error_strings: Vec<String> = errors.iter().map(std::string::ToString::to_string).collect();
                 (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": error_strings.join(", ")}))).into_response()
             } else {
-                let (live, vod, series) = group_playlist_groups_by_cluster(result, input.input_type);
-                let response = PlaylistResponse {
+                let (live, vod, series) = group_playlist_groups_by_cluster(result);
+                let response = PlaylistCategoriesResponse {
                     live: Some(live),
                     vod: Some(vod),
                     series: Some(series),

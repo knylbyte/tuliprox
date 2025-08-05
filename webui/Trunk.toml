@@ -1,0 +1,16 @@
+[build]
+dist = "dist"
+
+[serve]
+addresses = ["0.0.0.0"]
+port = 9899
+
+[[proxy]]
+backend = "http://localhost:8901/api/v1/"
+
+[[proxy]]
+backend = "http://localhost:8901/auth/"
+
+[[proxy]]
+backend = "ws://localhost:8901/ws"
+ws = true

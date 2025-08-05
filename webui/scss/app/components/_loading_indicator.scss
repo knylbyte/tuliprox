@@ -1,0 +1,58 @@
+$indicator-height: 5px;
+
+.tp__busy-indicator {
+  position: fixed;
+  z-index: 1000;
+  top: var(--app-header-height);
+  left: 0;
+  display: inline-block;
+  width: 100%; // Full width of the container
+  height: $indicator-height; // Thin height for the container
+  min-height: $indicator-height;
+  max-height: $indicator-height;
+  .tp__loading-bar-placeholder, .tp__loading-bar-container {
+    position: fixed;
+  }
+}
+
+.tp__loading-bar-placeholder, .tp__loading-bar-container {
+  display: inline-block;
+  width: 100%; // Full width of the container
+  height: $indicator-height; // Thin height for the container
+  min-height: $indicator-height;
+  max-height: $indicator-height;
+  margin: 0;
+  padding: 0;
+}
+
+
+// Container for the loading bar
+.tp__loading-bar-container {
+  background-color: var(--spinner-color); // Light gray background for the container
+  border-radius: 10px; // Optional: rounded corners for the container
+  overflow: hidden; // Prevents overflow content from showing outside the container
+}
+
+// The actual loading bar
+.tp__loading-bar {
+  height: 100%; // Full height of the loading bar (matches the container's height)
+  width: 100%; // Start the width of the loading bar at 100%
+  background-color: var(--spinner-highlight-color);
+  position: relative;
+  animation: loading 2s infinite ease-in-out; // Animation runs infinitely with easing
+  transform-origin: center center; // The animation will scale from the center of the element
+}
+
+// The keyframes for the loading animation
+@keyframes loading {
+  0% {
+    transform: scaleX(0); // At the start, the bar is not visible (scale from the center)
+  }
+  50% {
+    transform: scaleX(1); // The bar reaches full width, expanding to the edges
+  }
+  100% {
+    transform: scaleX(0); // The bar contracts back to the center
+  }
+}
+

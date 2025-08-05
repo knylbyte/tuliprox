@@ -4,7 +4,7 @@ use futures::Stream;
 use std::pin::Pin;
 use std::task::Poll;
 use std::time::{Duration, Instant};
-use crate::api::model::stream::BoxedProviderStream;
+use crate::api::model::BoxedProviderStream;
 
 pub struct TimedClientStream {
     inner: BoxedProviderStream,

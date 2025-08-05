@@ -6,8 +6,8 @@ use std::{
 use std::cmp::min;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio_stream::wrappers::ReceiverStream;
-use crate::api::model::stream::BoxedProviderStream;
-use crate::api::model::stream_error::StreamError;
+use crate::api::model::BoxedProviderStream;
+use crate::api::model::StreamError;
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 
 pub(in crate::api::model) struct BufferedStream {

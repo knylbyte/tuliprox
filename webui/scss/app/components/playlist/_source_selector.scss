@@ -1,0 +1,72 @@
+@use "../../../size";
+
+.tp__playlist-source-selector {
+
+  &__source-picker .tp__collapse-panel__body {
+    display: flex;
+    flex-flow: column;
+    gap: var(--gap-large);
+  }
+
+  &__source-picker__body,
+  &__source-picker__header {
+    display: flex;
+    flex-flow: row;
+    gap: var(--gap-large);
+    @media (max-width: size.$mobile-breakpoint) {
+      flex-flow: row wrap;
+    }
+  }
+
+  &__source-picker__header {
+    padding-bottom: var(--padding-small);
+    margin-bottom: var(--margin-micro);
+    border-bottom: 1px solid var(--card-border-color);
+  }
+  &__source-picker__body {
+    margin-top: var(--margin-micro);
+    .tp__panel {
+      width: 100%;
+    }
+  }
+
+  &__source-list {
+     display: flex;
+     flex-flow: row wrap;
+     gap: var(--gap-default);
+  }
+
+  &__source-custom-options {
+    display: flex;
+    flex-flow: row nowrap;
+    gap: 0;
+    box-sizing: border-box;
+
+    button:not(:first-child) {
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+    }
+    button:not(:last-child) {
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+  }
+
+  &__source-custom {
+    display: flex;
+    flex-flow: column;
+    gap: var(--gap-default);
+    box-sizing: border-box;
+    width: 100%;
+
+    &-body {
+      display: flex;
+      flex-flow: row wrap;
+      gap: var(--gap-default);
+      align-items: flex-end;
+      box-sizing: border-box;
+      width: 100%;
+
+    }
+  }
+}

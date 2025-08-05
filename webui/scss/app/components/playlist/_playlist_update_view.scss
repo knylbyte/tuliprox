@@ -1,0 +1,25 @@
+.tp__playlist-update-view {
+  display: flex;
+  flex-flow: column;
+  width: 100%;
+  gap: var(--gap-default);
+  padding: var(--padding-default) 0;
+  box-sizing: border-box;
+  &__header {
+    display: flex;
+    flex-flow: row nowrap;
+    box-sizing: border-box;
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  &__body {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--gap-default);
+    box-sizing: border-box;
+    overflow-y: auto;
+    width: 100%;
+  }
+}

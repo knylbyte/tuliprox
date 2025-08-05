@@ -1,0 +1,39 @@
+.tp__app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--app-header-height);
+  min-height: var(--app-header-height);
+  max-height: var(--app-header-height);
+  background-color: var(--app-header-background-color);
+  border-bottom: 1px solid var(--border-color);
+  fill: var(--menu-icon-color);
+  .icon-AppTitle {
+    width: 100px !important;
+  }
+
+  .icon-Sidebar {
+    width: 1.2rem;
+    height: 1.2rem;
+  }
+
+  &-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-small);
+    .tp__icon-button {
+      .svg-icon {
+          width: 1.5rem;
+          height: 1.5rem;
+      }
+    }
+  }
+}
+
+.tp__app-main__header {
+  padding-left: var(--padding-micro);
+}
+.tp__app-sidebar__header {
+  padding-left: var(--padding-micro);
+  min-width: var(--sidebar-width-collapsed);
+}

@@ -1,6 +1,6 @@
-use std::fs::File;
-use env_logger::{Builder, Target};
 use log::{error, info, LevelFilter};
+use env_logger::{Builder, Target};
+use std::fs::File;
 use crate::model::LogLevelConfig;
 use crate::utils::config_file_reader;
 
@@ -23,6 +23,15 @@ fn get_log_level(log_level: &str) -> LevelFilter {
 }
 
 pub fn init_logger(user_log_level: Option<&String>, config_file: &str) {
+
+
+    // tracing_subscriber::registry()
+    //     .with(console_subscriber::spawn()) // Console layer
+    //     .with(EnvFilter::from_default_env())
+    //     .with(fmt::layer()) // stdout logging
+    //     .init();
+
+
     let env_log_level = std::env::var("TULIPROX_LOG").ok();
 
     let mut log_builder = Builder::from_default_env();

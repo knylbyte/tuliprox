@@ -5,7 +5,8 @@ set -o pipefail
 WORKING_DIR=$(pwd)
 RESOURCES_DIR="$WORKING_DIR/resources"
 RELEASE_DIR="$WORKING_DIR/release"
-FRONTEND_DIR="${WORKING_DIR}/frontend"
+FRONTEND_DIR="${WORKING_DIR}/webui"
+FRONTEND_BUILD_DIR="${FRONTEND_DIR}/dist"
 
 if ! command -v cargo-set-version &> /dev/null
 then
@@ -16,11 +17,11 @@ fi
 cd "$FRONTEND_DIR" || (echo "🧨 Can't find frontend directory" && exit 1)
 
 if [ "$1" = "m" ]; then
-  NEW_VERSION=$(yarn version --no-git-tag-version --major | grep "New version" | grep -Po "(\d+\.)+\d+")
+  NEW_VERSION=$(yarn version --no-git-tag-version --major | grep "New version" | grep -Po "(\d+\.)+\d+" || true)
 elif [ "$1" = "p" ]; then
-  NEW_VERSION=$(yarn version --no-git-tag-version --minor | grep "New version" | grep -Po "(\d+\.)+\d+")
+  NEW_VERSION=$(yarn version --no-git-tag-version --minor | grep "New version" | grep -Po "(\d+\.)+\d+" || true)
 else
-  NEW_VERSION=$(yarn version --no-git-tag-version --patch | grep "New version" | grep -Po "(\d+\.)+\d+")
+  NEW_VERSION=$(yarn version --no-git-tag-version --patch | grep "New version" | grep -Po "(\d+\.)+\d+" || true)
 fi
 
 cd "$WORKING_DIR"
@@ -57,10 +58,11 @@ mkdir -p "$RELEASE_DIR"
 # Clean previous builds
 cargo clean || true
 
-cd "$FRONTEND_DIR" && rm -rf build && yarn  && yarn build
+rm -rf "${FRONTEND_BUILD_DIR}"
+cd "${FRONTEND_DIR}" && env RUSTFLAGS="--remap-path-prefix $HOME=~" trunk build --release
 # Check if the frontend build directory exists
-if [ ! -d "$FRONTEND_DIR/build" ]; then
-    echo "🧨 Error: Web directory '$FRONTEND_DIR/build' does not exist."
+if [ ! -d "${FRONTEND_BUILD_DIR}" ]; then
+    echo "🧨 Error: Web directory '${FRONTEND_BUILD_DIR}' does not exist."
     exit 1
 fi
 
@@ -90,7 +92,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     mkdir -p "$DIR"
     cp "$BIN" "$DIR"
     cp ../config/*.yml "$DIR"
-    cp -rf "${FRONTEND_DIR}/build" "$DIR"/web
+    cp -rf "${FRONTEND_BUILD_DIR}" "$DIR"/web
     cp -rf "${RESOURCES_DIR}"/*.ts "$DIR"
 
     # Create archive for the platform

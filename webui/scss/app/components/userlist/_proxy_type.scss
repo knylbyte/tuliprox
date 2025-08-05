@@ -1,0 +1,30 @@
+.tp__proxy-type {
+   display: flex;
+   flex-flow: row nowrap;
+   gap: var(--gap-small);
+
+   &__reverse {
+      color: var(--tag-active-color);
+      background-color: var(--tag-active-background-color);
+      border-color: var(--tag-active-border-color);
+   }
+
+   &__redirect {
+      color: var(--tag-alt-active-color);
+      background-color: var(--tag-alt-active-background-color);
+      border-color: var(--tag-alt-active-border-color);
+   }
+
+   &__mixed {
+      display: flex;
+      flex-flow: row nowrap;
+      span:not(:first-child) {
+         border-top-left-radius: 0;
+         border-bottom-left-radius: 0;
+      }
+      span:not(:last-child) {
+         border-top-right-radius: 0;
+         border-bottom-right-radius: 0;
+      }
+   }
+}

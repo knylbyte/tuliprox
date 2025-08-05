@@ -17,32 +17,51 @@ fn format_duration(duration: Duration) -> String {
     }
 }
 
+type StepMeasureCallback = Box<dyn Fn(&str, &str) + 'static + Send>;
+
 pub struct StepMeasure {
     enabled: bool,
-    msg: String,
+    name: String,
     start: Instant,
+    step_start: Instant,
+    callback: StepMeasureCallback,
 }
 
 impl StepMeasure {
-    pub fn new(msg: &str) -> Self {
+    pub fn new<F>(name: &str, cb: F) -> Self
+    where
+        F: Fn(&str, &str) + 'static + Send,
+    {
         Self {
             enabled: log_enabled!(Level::Debug),
-            msg: msg.to_string(),
+            name: name.to_owned(),
             start: Instant::now(),
+            step_start: Instant::now(),
+            callback: Box::new(cb),
         }
     }
 
-    pub fn tick(&mut self, msg: &str) {
+    pub fn tick(&mut self, step: &str) {
         if self.enabled {
-            debug!("{} in {}", self.msg, format_duration(self.start.elapsed()));
-            self.msg = msg.to_string();
-            self.start = Instant::now();
+            let msg = format!("{}: processed {step} in {}", self.name, format_duration(self.step_start.elapsed()));
+            debug!("{msg}");
+            (self.callback)(&self.name, &msg);
+            self.step_start = Instant::now();
         }
     }
 
-    pub fn stop(&mut self) {
-        if self.enabled && !self.msg.is_empty() {
-            debug!("{} in {}", self.msg, format_duration( self.start.elapsed()));
+    pub fn stop(&mut self, step: &str) {
+        if self.enabled {
+            if step.is_empty() {
+                debug!("{}: finished in {}", self.name, format_duration( self.start.elapsed()));
+            } else {
+                let msg = format!("{}: processed {step} in {}", self.name, format_duration(self.step_start.elapsed()));
+                let fmsg = format!("{}: finished in {}", self.name, format_duration( self.start.elapsed()));
+                debug!("{msg}");
+                debug!("{fmsg}");
+                (self.callback)(&self.name, &msg);
+                (self.callback)(&self.name, &fmsg);
+            }
             self.enabled = false;
         }
     }
@@ -50,6 +69,6 @@ impl StepMeasure {
 
 impl Drop for StepMeasure {
     fn drop(&mut self) {
-        self.stop();
+        self.stop("");
     }
 }
