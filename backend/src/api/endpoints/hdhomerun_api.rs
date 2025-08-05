@@ -12,7 +12,7 @@ use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
-use shared::utils::get_string_from_serde_value;
+use shared::utils::{concat_path, get_string_from_serde_value};
 use crate::api::api_utils::try_unwrap_body;
 // https://info.hdhomerun.com/info/http_api
 
@@ -173,8 +173,8 @@ fn create_device(app_state: &Arc<HdHomerunAppState>) -> Option<Device> {
             firmware_version: device.firmware_version.to_string(),
             auth: String::new(),
             id: device.device_udn.to_string(),
-            lineup_url: format!("{device_url}/lineup.json"),
-            discover_url: format!("{device_url}/discover.json"),
+            lineup_url: concat_path(&device_url, "lineup.json"),
+            discover_url: concat_path(&device_url, "discover.json"),
             base_url: device_url,
         })
     } else {

@@ -12,7 +12,7 @@ use yew_i18n::I18nProvider;
 use yew::prelude::*;
 use yew_hooks::{use_async_with_options, UseAsyncOptions};
 use yew_router::prelude::*;
-use crate::app::components::{Authentication, Home, Login, Preferences};
+use crate::app::components::{Authentication, Home, Login};
 use crate::error::Error;
 use crate::hooks::IconDefinition;
 use crate::model::WebConfig;
@@ -50,8 +50,6 @@ fn flatten_json(value: &Value, prefix: String, map: &mut HashMap<String, serde_j
 pub enum AppRoute {
     #[at("/login")]
     Login,
-    #[at("/preferecnes")]
-    Preferences,
     #[at("/")]
     Home,
     #[not_found]
@@ -63,7 +61,6 @@ pub fn switch(route: AppRoute) -> Html {
     match route {
         AppRoute::Login => html! {<Login />},
         AppRoute::Home => html! {<Home />},
-        AppRoute::Preferences => html! {<Preferences />},
         AppRoute::NotFound => html! { "Page not found" },
     }
 }

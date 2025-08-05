@@ -120,3 +120,10 @@ pub fn get_base_url_from_str(url: &str) -> Option<String> {
         None
     }
 }
+
+pub fn concat_path(first: &str, second: &str) -> String {
+    let first = first.trim_end_matches('/');
+    let second = second.trim_start_matches('/');
+
+    format!("{first}/{second}")
+}

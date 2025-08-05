@@ -1,11 +1,10 @@
 use std::rc::Rc;
-use crate::services::request_get;
+use crate::services::{get_base_href, request_get};
 use shared::model::StatusCheck;
 
-const STATUS_PATH: &str = "/api/v1/status";
-
-
-pub struct StatusService {}
+pub struct StatusService {
+    status_path: String,
+}
 
 impl Default for StatusService {
     fn default() -> Self {
@@ -14,9 +13,14 @@ impl Default for StatusService {
 }
 
 impl StatusService {
-    pub fn new() -> Self { Self {} }
+    pub fn new() -> Self {
+        let base_href = get_base_href();
+        Self {
+            status_path: format!("{base_href}api/v1/status"),
+        }
+    }
 
     pub async fn get_server_status(&self) -> Result<Rc<StatusCheck>, crate::error::Error> {
-        request_get::<Rc<StatusCheck>>(STATUS_PATH).await
+        request_get::<Rc<StatusCheck>>(&self.status_path).await
     }
 }

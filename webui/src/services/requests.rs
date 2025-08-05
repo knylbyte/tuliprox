@@ -1,18 +1,19 @@
-use gloo_storage::{LocalStorage, Storage};
 use crate::error::{Error, ErrorInfo};
-use log::{error};
-use serde::{de::DeserializeOwned, Serialize};
+use gloo_storage::{LocalStorage, Storage};
+use log::error;
 use reqwasm::http::Request;
+use serde::{de::DeserializeOwned, Serialize};
+use web_sys::window;
 
 enum RequestMethod {
     Get,
     Post,
     Put,
     // PATCH,
-    Delete
+    Delete,
 }
 
-const API_ROOT: &str = "/api/v1";
+//const API_ROOT: &str = "/api/v1";
 
 const TOKEN_KEY: &str = "tuliprox.token";
 pub fn get_token() -> Option<String> {
@@ -36,9 +37,9 @@ where
     let mut request = match method {
         RequestMethod::Get => Request::get(url),
         RequestMethod::Post => Request::post(url).body(serde_json::to_string(&body).unwrap()),
-        RequestMethod::Put =>  Request::put(url).body(serde_json::to_string(&body).unwrap()),
+        RequestMethod::Put => Request::put(url).body(serde_json::to_string(&body).unwrap()),
         // RequestMethod::PATCH =>  Request::patch(&url).body(serde_json::to_string(&body).unwrap()),
-        RequestMethod::Delete =>  Request::delete(url),
+        RequestMethod::Delete => Request::delete(url),
     }.header("Content-Type", "application/json");
     if let Some(token) = get_token() {
         request = request.header("Authorization", format!("Bearer {token}").as_str());
@@ -48,7 +49,7 @@ where
             match response.status() {
                 200 => {
                     if std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
-                         // `T = ()` valid
+                        // `T = ()` valid
                         serde_json::from_str("null").map_err(|_| Error::DeserializeError)
                     } else {
                         let data: Result<T, _> = response.json::<T>().await;
@@ -58,7 +59,7 @@ where
                             Err(Error::DeserializeError)
                         }
                     }
-                },
+                }
                 401 => Err(Error::Unauthorized),
                 403 => Err(Error::Forbidden),
                 404 => Err(Error::NotFound),
@@ -97,12 +98,12 @@ where
     request(RequestMethod::Get, url, ()).await
 }
 
-pub async fn request_get_api<T>(url: &str) -> Result<T, Error>
-where
-    T: DeserializeOwned + 'static + std::fmt::Debug,
-{
-    request(RequestMethod::Get, format!("{API_ROOT}{url}").as_str(), ()).await
-}
+// pub async fn request_get_api<T>(url: &str) -> Result<T, Error>
+// where
+//     T: DeserializeOwned + 'static + std::fmt::Debug,
+// {
+//     request(RequestMethod::Get, format!("{API_ROOT}{url}").as_str(), ()).await
+// }
 
 /// Post request with a body
 pub async fn request_post<B, T>(url: &str, body: B) -> Result<T, Error>
@@ -126,4 +127,18 @@ where
 pub fn limit(count: u32, p: u32) -> String {
     let offset = if p > 0 { p * count } else { 0 };
     format!("limit={count}&offset={offset}")
+}
+
+pub fn get_base_href() -> String {
+    let mut href = window()
+        .and_then(|w| w.document())
+        .and_then(|doc| doc.query_selector("base").ok().flatten())
+        .and_then(|base| base.get_attribute("href"))
+        .map_or_else(|| "/".to_owned(), |s| s.trim().to_owned());
+
+    if !href.ends_with('/') {
+        href.push('/');
+    }
+
+    href
 }

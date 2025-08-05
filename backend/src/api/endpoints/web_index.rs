@@ -6,7 +6,7 @@ use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
 use shared::model::{TokenResponse, UserCredential};
-use shared::utils::CONSTANTS;
+use shared::utils::{concat_path, CONSTANTS};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tower::Service;
@@ -107,10 +107,10 @@ async fn index(
         match tokio::fs::read_to_string(&path).await {
             Ok(content) => {
                 let mut new_content = CONSTANTS.re_base_href.replace_all(&content, |caps: &regex::Captures| {
-                    format!(r#"{}="/{web_ui_path}/{}""#, &caps[1], &caps[2])
+                    format!(r#"{}="/{}""#, &caps[1], concat_path(&web_ui_path, &caps[2]).trim_start_matches('/'))
                 }).to_string();
 
-                let base_href = format!(r#"<head><base href="/{web_ui_path}/">"#);
+                let base_href = format!(r#"<head><base href="/{}/">"#, web_ui_path.trim_matches('/'));
                 if let Some(pos) = new_content.find("<head>") {
                     new_content.replace_range(pos..pos + 6, &base_href);
                 }
@@ -139,13 +139,13 @@ async fn index_config(
                     if let Some(api) = json_data.get_mut("api") {
                         if let Some(api_url) = api.get_mut("apiUrl") {
                             if let Some(url) = api_url.as_str() {
-                                let new_url = format!("/{web_ui_path}{url}");
+                                let new_url = concat_path(web_ui_path, url);
                                 *api_url = json!(new_url);
                             }
                         }
                         if let Some(auth_url) = api.get_mut("authUrl") {
                             if let Some(url) = auth_url.as_str() {
-                                let new_url = format!("/{web_ui_path}{url}");
+                                let new_url = concat_path(web_ui_path, url);
                                 *auth_url = json!(new_url);
                             }
                         }
@@ -177,12 +177,12 @@ pub fn index_register_without_path(web_dir_path: &Path) -> axum::Router<Arc<AppS
 
 pub fn index_register_with_path(web_dir_path: &Path, web_ui_path: &str) -> axum::Router<Arc<AppState>> {
     axum::Router::new()
-        .nest(&format!("{web_ui_path}/auth"), axum::Router::new()
+        .nest(&concat_path(web_ui_path, "auth"), axum::Router::new()
             .route("/token", axum::routing::post(token))
             .route("/refresh", axum::routing::post(token_refresh)))
         .merge(axum::Router::new()
-            .route(&format!("{web_ui_path}/"), axum::routing::get(index))
-            .route(&format!("{web_ui_path}/config.json"), axum::routing::get(index_config))
+            .route(&format!("/{}/", web_ui_path.trim_matches('/')), axum::routing::get(index))
+            .route(&concat_path(web_ui_path, "config.json"), axum::routing::get(index_config))
             .fallback({
                 let mut serve_dir = tower_http::services::ServeDir::new(web_dir_path);
                 let path_prefix = web_ui_path.to_string();

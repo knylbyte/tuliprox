@@ -7,26 +7,27 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use web_sys::js_sys::{Uint8Array, ArrayBuffer};
 use log::{debug, error, trace};
 use shared::model::{ProtocolMessage, PROTOCOL_VERSION};
+use shared::utils::concat_path;
 use crate::model::EventMessage;
-use crate::services::{get_token, EventService, StatusService};
-
-const WS_PATH: &str = "/ws";
-
+use crate::services::{get_base_href, get_token, EventService, StatusService};
 
 pub struct WebSocketService {
     connected: Rc<AtomicBool>,
     ws: Rc<RefCell<Option<WebSocket>>>,
     status_service: Rc<StatusService>,
-    event_service: Rc<EventService>
+    event_service: Rc<EventService>,
+    ws_path: String,
 }
 
 impl WebSocketService {
     pub fn new(status_service: Rc<StatusService>, event_service: Rc<EventService>) -> Self {
+        let base_href = get_base_href();
         Self {
             connected: Rc::new(AtomicBool::new(false)),
             ws: Rc::new(RefCell::new(None)),
             status_service,
             event_service,
+            ws_path: concat_path(&base_href, "ws"),
         }
     }
 
@@ -34,7 +35,7 @@ impl WebSocketService {
         if self.connected.load(Ordering::SeqCst) {
             return;
         }
-        match WebSocket::new(WS_PATH) {
+        match WebSocket::new(&self.ws_path) {
             Err(err) => error!("Failed to open websocket connection: {err:?}"),
             Ok(socket) => {
                 socket.set_binary_type(web_sys::BinaryType::Arraybuffer);
