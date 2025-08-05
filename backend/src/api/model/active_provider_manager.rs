@@ -711,28 +711,44 @@ impl ProviderLineupManager {
 
     pub async fn active_connections(&self) -> Option<HashMap<String, usize>> {
         let mut result = HashMap::<String, usize>::new();
-        let mut add_provider = async |provider: &ProviderConfig| {
-            let count = provider.get_current_connections().await;
-            if count > 0 {
-                result.insert(provider.name.to_string(), count);
+        let mut add_provider = async |provider: Option<&ProviderConfig>, name: Option<String>, count: usize| {
+            if let Some(provider_cfg) = provider {
+                let count = provider_cfg.get_current_connections().await;
+                if count > 0 {
+                    result.insert(provider_cfg.name.to_string(), count);
+                }
+            } else if count > 0 {
+                result.insert(name.unwrap_or_default(), count);
             }
         };
         let providers = self.providers.load();
         for lineup in providers.iter() {
             match lineup {
                 ProviderLineup::Single(provider_lineup) => {
-                    add_provider(&provider_lineup.provider).await;
+                    add_provider(Some(&provider_lineup.provider), None, 0).await;
                 }
                 ProviderLineup::Multi(provider_lineup) => {
                     for provider_group in &provider_lineup.providers {
                         match provider_group {
                             ProviderPriorityGroup::SingleProviderGroup(provider) => {
-                                add_provider(provider).await;
+                                add_provider(Some(provider), None, 0).await;
                             }
                             ProviderPriorityGroup::MultiProviderGroup(_, providers) => {
+                                let mut connections = 0;
+                                let mut name = None;
                                 for provider in providers {
-                                    add_provider(provider).await;
+                                    if name.is_none() {
+                                        name = Some(format!("[{}]", provider.name.clone()));
+                                    }
+                                    connections += provider.get_current_connections().await;
                                 }
+                                if connections > 0 {
+                                    add_provider(None, name, connections).await;
+                                }
+
+                                // for provider in providers {
+                                //     add_provider(provider).await;
+                                // }
                             }
                         }
                     }

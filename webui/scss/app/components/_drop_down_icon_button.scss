@@ -1,0 +1,15 @@
+.tp__dropdown-icon-button {
+  &__option.checked {
+    fill: var(--active-color);
+    .svg-icon {
+      width: 1rem;
+      height: 1rem;
+    }
+  }
+  &__option.unchecked {
+    span.placeholder {
+      width: 1rem;
+      height: 1rem;
+    }
+  }
+}

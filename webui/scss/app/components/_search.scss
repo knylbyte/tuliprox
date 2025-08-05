@@ -1,9 +1,16 @@
+.tp__search.invalid {
+  input {
+    color: var(--attention-color);
+  }
+}
+
 .tp__search {
   display: flex;
   flex-flow: column;
   overflow: hidden;
   box-sizing: border-box;
   gap: 6px;
+
   .tp__search-wrapper {
     fill: var(--menu-icon-color);
     display: flex;
@@ -18,9 +25,17 @@
     &:focus-within {
       border-color: var(--input-focus-border-color);
     }
+
     .svg-icon {
       height: 2rem;
       width: 2rem;
+    }
+
+    .tp__icon-button {
+      .svg-icon {
+        height: 1.5rem;
+        width: 1.5rem;
+      }
     }
 
     .option-active {

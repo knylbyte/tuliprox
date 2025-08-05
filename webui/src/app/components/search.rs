@@ -1,10 +1,11 @@
+use std::rc::Rc;
 use gloo_timers::callback::Timeout;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use shared::model::SearchRequest;
-use crate::app::components::{AppIcon, IconButton};
+use crate::app::components::{AppIcon, DropDownIconButton, DropDownOption, IconButton};
+use crate::html_if;
 
-const MIN_LENGTH: usize = 3;
 const DEBOUNCE_TIMEOUT_MS:  u32 = 500;
 
 enum RegexState {
@@ -17,19 +18,25 @@ enum RegexState {
 pub struct SearchProps {
     #[prop_or_default]
     pub class: String,
+    #[prop_or_default]
+    pub options: Option<Rc<Vec<DropDownOption>>>,
     pub onsearch: Option<Callback<SearchRequest>>,
+    #[prop_or(3)]
+    pub min_length: usize,
 }
 
 #[function_component]
 pub fn Search(props: &SearchProps) -> Html {
 
+    let search_fields = use_state(|| None::<Rc<Vec<String>>>);
     let input_ref = use_node_ref();
+    let invalid_search = use_state(|| false);
     let regex_active = use_state(|| RegexState::Inactive);
 
     let handle_regex_click = {
         let regex_active = regex_active.clone();
         let input = input_ref.clone();
-        Callback::from(move |_: String| {
+        Callback::from(move |_: (String, MouseEvent)| {
             match *regex_active {
                 RegexState::Active
                 | RegexState::Invalid => {
@@ -49,12 +56,16 @@ pub fn Search(props: &SearchProps) -> Html {
         })
     };
 
+
     let debounce_timeout = use_mut_ref(|| None::<Timeout>);
 
     let handle_key_down = {
         let regex = regex_active.clone();
         let input = input_ref.clone();
         let on_search = props.onsearch.clone();
+        let search_fields = search_fields.clone();
+        let min_length = props.min_length;
+        let invalid_search = invalid_search.clone();
         Callback::from(move |e: KeyboardEvent| {
             let regex = regex.clone();
             let input = input.clone();
@@ -63,23 +74,28 @@ pub fn Search(props: &SearchProps) -> Html {
                 timeout.cancel();
             }
 
+            let search_fields = search_fields.clone();
+            let invalid_search = invalid_search.clone();
+            invalid_search.set(false);
             let do_search = move || {
                 if let Some(cb_search) = on_search.as_ref() {
                     if let Some(input) = input.cast::<HtmlInputElement>() {
                         let text = input.value();
-                        if text.len() >= MIN_LENGTH {
+                        if text.len() >= min_length {
                             if !matches!(*regex, RegexState::Inactive) {
                                 if regex::Regex::new(&text).is_ok() {
                                     regex.set(RegexState::Active);
-                                    cb_search.emit(SearchRequest::Regexp(text));
+                                    cb_search.emit(SearchRequest::Regexp(text, (*search_fields).clone()));
                                 } else {
                                     regex.set(RegexState::Invalid);
                                 }
                             } else {
-                                cb_search.emit(SearchRequest::Text(text));
+                                cb_search.emit(SearchRequest::Text(text, (*search_fields).clone()));
                             }
                         } else if text.is_empty() {
                             cb_search.emit(SearchRequest::Clear);
+                        } else {
+                            invalid_search.set(true);
                         }
                     }
                 }
@@ -96,8 +112,14 @@ pub fn Search(props: &SearchProps) -> Html {
         })
     };
 
+    let handle_options_click = {
+        Callback::from(move |(_name, selections)| {
+            search_fields.set(Some(Rc::new(selections)));
+        })
+    };
+
     html! {
-        <div class="tp__search">
+        <div class={classes!("tp__search", if *invalid_search { "invalid" } else { "" })}>
             <div class="tp__search-wrapper">
                <AppIcon name="Search" />
                 <input ref={input_ref.clone()} type="text"
@@ -110,6 +132,14 @@ pub fn Search(props: &SearchProps) -> Html {
                     RegexState::Invalid => "option-invalid",
                     RegexState::Inactive => ""}}
                  name="regex" icon="Regexp" onclick={handle_regex_click} />
+                {
+                  html_if!(
+                    props.options.is_some(),
+                     {
+                      <DropDownIconButton multi_select={true} options={props.options.as_ref().unwrap().clone()} name="fields" icon="Popup" onselect={handle_options_click} />
+                     }
+                  )
+                }
             </div>
         </div>
     }

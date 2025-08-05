@@ -13,6 +13,7 @@ pub fn UserlistView() -> Html {
     let breadcrumbs = use_state(|| Rc::new(vec![translate.t("LABEL.USERLIST"), translate.t("LABEL.LIST")]));
     let active_page = use_state(|| UserlistPage::List);
     let selected_user= use_state(|| None::<Rc<TargetUser>>);
+    let filtered_user= use_state(|| None::<Rc<Vec<Rc<TargetUser>>>>);
 
     let config_ctx = use_context::<ConfigContext>().expect("Config context not found");
 
@@ -36,7 +37,8 @@ pub fn UserlistView() -> Html {
     
     let userlist_context = UserlistContext {
         selected_user: selected_user.clone(),
-        users,
+        filtered_users: filtered_user.clone(),
+        users: (*users).clone(),
         active_page: active_page.clone(),
     };
     
@@ -66,9 +68,6 @@ pub fn UserlistView() -> Html {
         });
     };
 
-    // let handle_create = {
-    //     Callback::from(move |cmd: String| {})
-    // };
 
     html! {
         <ContextProvider<UserlistContext> context={userlist_context}>

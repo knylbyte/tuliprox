@@ -132,13 +132,13 @@ pub fn UserTable(props: &UserTableProps) -> Html {
         let render_data_cell_cb = render_data_cell.clone();
         let num_cols = HEADERS.len();
         use_memo(props.targets.clone(), move |targets| {
-            targets.as_ref().map(|list|
-                Rc::new(TableDefinition::<TargetUser> {
-                    items: list.clone(),
-                    num_cols,
-                    render_header_cell: render_header_cell_cb,
-                    render_data_cell: render_data_cell_cb,
-                }))
+            let items = targets.clone();
+           TableDefinition::<TargetUser> {
+                items,
+                num_cols,
+                render_header_cell: render_header_cell_cb,
+                render_data_cell: render_data_cell_cb,
+            }
         })
     };
 
@@ -149,7 +149,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
         let translate = translate.clone();
         let selected_dto = selected_dto.clone();
         let ul_context = userlist_context.clone();
-        Callback::from(move |name: String| {
+        Callback::from(move |(name, _): (String, _)| {
             if let Ok(action) = TableAction::from_str(&name) {
                 match action {
                     TableAction::Edit => {
@@ -179,20 +179,16 @@ pub fn UserTable(props: &UserTableProps) -> Html {
     html! {
         <div class="tp__target-table">
           {
-            if let Some(definition) = table_definition.as_ref() {
-                html! {
-                  <>
-                   <Table::<TargetUser> definition={definition.clone()} />
-                    <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
-                        <MenuItem icon="Edit" name={TableAction::Edit.to_string()} label={translate.t("LABEL.EDIT")} onclick={&handle_menu_click}></MenuItem>
-                        <hr/>
-                        <MenuItem icon="Delete" name={TableAction::Delete.to_string()} label={translate.t("LABEL.DELETE")} onclick={&handle_menu_click} style="tp__delete_action"></MenuItem>
-                    </PopupMenu>
-                </>
-                  }
-            } else {
-              html! {}
-            }
+            html! {
+              <>
+               <Table::<TargetUser> definition={table_definition.clone()} />
+                <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
+                    <MenuItem icon="Edit" name={TableAction::Edit.to_string()} label={translate.t("LABEL.EDIT")} onclick={&handle_menu_click}></MenuItem>
+                    <hr/>
+                    <MenuItem icon="Delete" name={TableAction::Delete.to_string()} label={translate.t("LABEL.DELETE")} onclick={&handle_menu_click} style="tp__delete_action"></MenuItem>
+                </PopupMenu>
+            </>
+             }
           }
         </div>
     }

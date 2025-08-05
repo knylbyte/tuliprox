@@ -38,7 +38,7 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
     let handle_menu_click = {
         let viewchange = props.onview.clone();
         let active_menu = active_menu.clone();
-        Callback::from(move |name: String| {
+        Callback::from(move |(name, _): (String, _)| {
             if let Ok(view_type) = ViewType::from_str(&name) {
                 active_menu.set(view_type);
                 viewchange.emit(view_type);

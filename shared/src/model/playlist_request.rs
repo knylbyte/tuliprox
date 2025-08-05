@@ -162,14 +162,14 @@ impl UiPlaylistCategories {
     pub fn filter(&self, search_req: &SearchRequest) -> Option<Self> {
         match search_req {
             SearchRequest::Clear => None,
-            SearchRequest::Text(text) => {
+            SearchRequest::Text(text, _search_fields) => {
                 let text_lc = text.to_lowercase();
                 let live = filter_channels(&self.live, &text_lc);
                 let video = filter_channels(&self.vod, &text_lc);
                 let series = filter_channels(&self.series, &text_lc);
                 build_result(live, video, series)
             }
-            SearchRequest::Regexp(text) => {
+            SearchRequest::Regexp(text, _search_fields) => {
                 if let Ok(regex) = Regex::new(text) {
                     let live = filter_channels_re(&self.live, &regex);
                     let video = filter_channels_re(&self.vod, &regex);

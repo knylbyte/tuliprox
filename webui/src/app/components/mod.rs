@@ -29,6 +29,8 @@ mod no_content;
 mod search;
 mod loading_indicator;
 mod toastr;
+mod drop_down_icon_button;
+
 // pub use self::input::*;
 // pub use self::menu_item::*;
 // pub use self::toggle_switch::*;
@@ -60,3 +62,4 @@ pub use self::radio_button_group::*;
 pub use self::no_content::*;
 pub use self::search::*;
 pub use self::toastr::*;
+pub use self::drop_down_icon_button::*;

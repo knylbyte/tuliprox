@@ -161,7 +161,7 @@ pub fn InputTable(props: &InputTableProps) -> Html {
         let confirm = dialog.clone();
         let translate = translate.clone();
         // let selected_dto = selected_dto.clone();
-        Callback::from(move |name:String| {
+        Callback::from(move |(name, _): (String, _)| {
             if let Ok(action) = TableAction::from_str(&name) {
                 match action {
                     TableAction::Edit => {}
@@ -189,7 +189,7 @@ pub fn InputTable(props: &InputTableProps) -> Html {
         use_memo(props.inputs.clone(), |inputs|
             inputs.as_ref().map(|list|
                 Rc::new(TableDefinition::<InputRow> {
-                    items: Rc::new(list.clone()),
+                    items: if list.is_empty() {None} else {Some(Rc::new(list.clone()))},
                     num_cols,
                     render_header_cell: render_header_cell_cb,
                     render_data_cell: render_data_cell_cb,

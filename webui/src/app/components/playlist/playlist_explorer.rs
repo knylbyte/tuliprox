@@ -48,8 +48,8 @@ pub fn PlaylistExplorer() -> Html {
         Callback::from(move |search_req| {
             match search_req {
                 SearchRequest::Clear => set_playlist.set((*context.playlist).clone()),
-                SearchRequest::Text(_)
-                | SearchRequest::Regexp(_) => {
+                SearchRequest::Text(ref _text, ref _search_fields)
+                | SearchRequest::Regexp(ref _text, ref _search_fields) => {
                     services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
                     let set_playlist = set_playlist.clone();
                     let set_current_item = set_current_item.clone();
