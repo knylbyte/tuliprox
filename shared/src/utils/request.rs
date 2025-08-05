@@ -124,6 +124,19 @@ pub fn get_base_url_from_str(url: &str) -> Option<String> {
 pub fn concat_path(first: &str, second: &str) -> String {
     let first = first.trim_end_matches('/');
     let second = second.trim_start_matches('/');
+    match (first.is_empty(), second.is_empty()) {
+        (true, true)   => String::new(),
+        (true, false)  => second.to_string(),
+        (false, true)  => first.to_string(),
+        (false, false) => format!("{first}/{second}"),
+    }
+}
 
-    format!("{first}/{second}")
+pub fn concat_path_leading_slash(first: &str, second: &str) -> String {
+    let path = concat_path(first, second);
+    if path.is_empty() {
+        return path;
+    }
+    let path = path.trim_start_matches('/');
+    format!("/{path}")
 }

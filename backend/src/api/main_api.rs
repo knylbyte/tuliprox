@@ -30,7 +30,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
-use shared::utils::concat_path;
+use shared::utils::{concat_path_leading_slash};
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -276,11 +276,11 @@ pub async fn start_server(
     if web_ui_enabled {
         router = router
             .nest_service(
-                &concat_path(&web_ui_path, "static"),
+                &concat_path_leading_slash(&web_ui_path, "static"),
                 tower_http::services::ServeDir::new(web_dir_path.join("static")),
             )
             .nest_service(
-                &concat_path(&web_ui_path, "assets"),
+                &concat_path_leading_slash(&web_ui_path, "assets"),
                 tower_http::services::ServeDir::new(web_dir_path.join("assets")),
             )
             .merge(v1_api_register(

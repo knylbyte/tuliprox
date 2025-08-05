@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use crate::services::{get_base_href, request_get};
 use shared::model::StatusCheck;
+use shared::utils::concat_path_leading_slash;
 
 pub struct StatusService {
     status_path: String,
@@ -16,7 +17,7 @@ impl StatusService {
     pub fn new() -> Self {
         let base_href = get_base_href();
         Self {
-            status_path: format!("{base_href}api/v1/status"),
+            status_path: concat_path_leading_slash(&base_href, "api/v1/status"),
         }
     }
 

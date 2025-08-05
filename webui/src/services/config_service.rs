@@ -9,6 +9,7 @@ use log::error;
 use futures_signals::signal::Mutable;
 use futures_signals::signal::SignalExt;
 use shared::foundation::filter::{get_filter, prepare_templates};
+use shared::utils::concat_path_leading_slash;
 
 pub struct ConfigService {
     pub ui_config: Rc<WebConfig>,
@@ -27,8 +28,8 @@ impl ConfigService {
             server_config: RefCell::new(None),
             config_channel: Mutable::new(None),
             is_fetching: AtomicBool::new(false),
-            config_path: format!("{base_href}api/v1/config"),
-            ip_check_path: format!("{base_href}api/v1/ipinfo"),
+            config_path: concat_path_leading_slash(&base_href, "api/v1/config"),
+            ip_check_path: concat_path_leading_slash(&base_href, "api/v1/ipinfo"),
         }
     }
 

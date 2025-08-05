@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use web_sys::js_sys::{Uint8Array, ArrayBuffer};
 use log::{debug, error, trace};
 use shared::model::{ProtocolMessage, PROTOCOL_VERSION};
-use shared::utils::concat_path;
+use shared::utils::{concat_path_leading_slash};
 use crate::model::EventMessage;
 use crate::services::{get_base_href, get_token, EventService, StatusService};
 
@@ -27,7 +27,7 @@ impl WebSocketService {
             ws: Rc::new(RefCell::new(None)),
             status_service,
             event_service,
-            ws_path: concat_path(&base_href, "ws"),
+            ws_path: concat_path_leading_slash(&base_href, "ws"),
         }
     }
 

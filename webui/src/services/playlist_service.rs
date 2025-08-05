@@ -2,6 +2,7 @@ use crate::services::{get_base_href, request_post};
 use log::error;
 use shared::model::{PlaylistCategoriesResponse, PlaylistRequest, UiPlaylistCategories};
 use std::rc::Rc;
+use shared::utils::concat_path_leading_slash;
 
 pub struct PlaylistService {
     target_update_api_path: String,
@@ -17,8 +18,8 @@ impl PlaylistService {
     pub fn new() -> Self {
         let base_href = get_base_href();
         Self {
-            target_update_api_path: format!("{base_href}api/v1/playlist/update"),
-            playlist_api_path: format!("{base_href}api/v1/playlist"),
+            target_update_api_path: concat_path_leading_slash(&base_href, "api/v1/playlist/update"),
+            playlist_api_path: concat_path_leading_slash(&base_href, "api/v1/playlist"),
         }
     }
     pub async fn update_targets(&self, targets: &[&str]) -> bool {

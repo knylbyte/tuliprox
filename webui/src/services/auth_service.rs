@@ -6,7 +6,7 @@ use futures_signals::signal::Mutable;
 use futures_signals::signal::SignalExt;
 use shared::model::{TokenResponse, UserCredential};
 use std::future::Future;
-use shared::utils::concat_path;
+use shared::utils::{concat_path, concat_path_leading_slash};
 
 #[derive(Debug)]
 pub struct AuthService {
@@ -19,7 +19,7 @@ impl AuthService {
     pub fn new() -> Self {
         let base_href = get_base_href();
         Self {
-            auth_path: format!("{base_href}auth"),
+            auth_path: concat_path_leading_slash(&base_href, "auth"),
             username: RefCell::new(String::new()),
             auth_channel: Mutable::new(false),
         }

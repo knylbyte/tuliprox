@@ -10,7 +10,7 @@ use axum::{
 use log::{error, info};
 use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserRole, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
-use shared::utils::concat_path;
+use shared::utils::{concat_path_leading_slash};
 
 // WebSocket upgrade handler
 async fn websocket_handler(
@@ -33,12 +33,12 @@ async fn websocket_handler_auth(
 pub fn ws_api_register(web_auth_enabled: bool, web_ui_path: &str) -> axum::Router<Arc<AppState>> {
     if web_auth_enabled {
         axum::Router::new().route(
-            &format!("/{}", concat_path(web_ui_path.trim_start_matches('/'), "ws")),
+            &concat_path_leading_slash(web_ui_path, "ws"),
             axum::routing::get(websocket_handler_auth),
         )
     } else {
         axum::Router::new().route(
-            &format!("/{}", concat_path(web_ui_path.trim_start_matches('/'), "ws")),
+            &concat_path_leading_slash(web_ui_path, "ws"),
             axum::routing::get(websocket_handler),
         )
     }
