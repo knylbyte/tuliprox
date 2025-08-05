@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::{error, info, trace};
 use tokio::task;
 use shared::model::{ConfigType, PlaylistUpdateState};
 use crate::api::model::{ActiveUserConnectionChangeReceiver};
@@ -31,13 +31,13 @@ impl EventManager {
                tokio::select! {
                     Some((user_count, connection_count)) = active_user_change_rx.recv() => {
                         if let Err(e) = channel_tx_clone.send(EventMessage::ActiveUser(user_count, connection_count)) {
-                            error!("Failed to send active user change event: {e}");
+                            trace!("Failed to send active user change event: {e}");
                         }
                     }
 
                     Some((provider, connection_count)) = provider_change_rx.recv() => {
                         if let Err(e) = channel_tx_clone.send(EventMessage::ActiveProvider(provider, connection_count)) {
-                            error!("Failed to send active provider change event: {e}");
+                            trace!("Failed to send active provider change event: {e}");
                         }
                     }
                     else => {

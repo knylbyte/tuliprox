@@ -20,7 +20,7 @@ use shared::model::{
     FieldGetAccessor, PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission,
     XtreamCluster,
 };
-use shared::utils::{extract_extension_from_url, sanitize_sensitive_info, HLS_EXT};
+use shared::utils::{concat_path, extract_extension_from_url, sanitize_sensitive_info, HLS_EXT};
 use std::sync::Arc;
 
 async fn m3u_api(api_req: &UserApiRequest, app_state: &AppState) -> impl IntoResponse + Send {
@@ -363,15 +363,15 @@ pub fn m3u_api_register() -> axum::Router<Arc<AppState>> {
         [
             (storage_const::M3U_STREAM_PATH, m3u_api_live_stream_alt),
             (
-                format!("{}/live", storage_const::M3U_STREAM_PATH),
+                concat_path(storage_const::M3U_STREAM_PATH, "live"),
                 m3u_api_live_stream
             ),
             (
-                format!("{}/movie", storage_const::M3U_STREAM_PATH),
+                concat_path(storage_const::M3U_STREAM_PATH, "movie"),
                 m3u_api_movie_stream
             ),
             (
-                format!("{}/series", storage_const::M3U_STREAM_PATH),
+                concat_path(storage_const::M3U_STREAM_PATH, "series"),
                 m3u_api_series_stream
             )
         ]

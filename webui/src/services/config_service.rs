@@ -1,5 +1,5 @@
 use crate::model::WebConfig;
-use crate::services::request_get;
+use crate::services::{get_base_href, request_get};
 use shared::model::{AppConfigDto, IpCheckDto};
 use std::cell::RefCell;
 use std::future::Future;
@@ -9,24 +9,27 @@ use log::error;
 use futures_signals::signal::Mutable;
 use futures_signals::signal::SignalExt;
 use shared::foundation::filter::{get_filter, prepare_templates};
-
-const CONFIG_PATH: &str = "/api/v1/config";
-const IP_CHECK_PATH: &str = "/api/v1/ipinfo";
+use shared::utils::concat_path_leading_slash;
 
 pub struct ConfigService {
     pub ui_config: Rc<WebConfig>,
     pub server_config: RefCell<Option<Rc<AppConfigDto>>>,
     config_channel: Mutable<Option<Rc<AppConfigDto>>>,
     is_fetching: AtomicBool,
+    config_path: String,
+    ip_check_path: String,
 }
 
 impl ConfigService {
     pub fn new(config: &WebConfig) -> Self {
+        let base_href = get_base_href();
         Self {
             ui_config: Rc::new(config.clone()),
             server_config: RefCell::new(None),
             config_channel: Mutable::new(None),
             is_fetching: AtomicBool::new(false),
+            config_path: concat_path_leading_slash(&base_href, "api/v1/config"),
+            ip_check_path: concat_path_leading_slash(&base_href, "api/v1/ipinfo"),
         }
     }
 
@@ -48,7 +51,7 @@ impl ConfigService {
         if self.is_fetching.swap(true, Ordering::SeqCst) {
             return;
         }
-        let result = match request_get::<AppConfigDto>(CONFIG_PATH).await {
+        let result = match request_get::<AppConfigDto>(&self.config_path).await {
             Ok(mut app_config) => {
                 let templates = {
                     if let Some(templ) = app_config.sources.templates.as_mut() {
@@ -76,7 +79,7 @@ impl ConfigService {
     }
 
     pub async fn get_ip_info(&self) -> Option<IpCheckDto> {
-        match request_get::<IpCheckDto>(IP_CHECK_PATH).await {
+        match request_get::<IpCheckDto>(&self.ip_check_path).await {
             Ok(cfg) => Some(cfg),
             Err(err) => {
                 error!("{err}");

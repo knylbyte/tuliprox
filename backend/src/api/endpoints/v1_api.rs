@@ -16,7 +16,7 @@ use log::error;
 use serde_json::json;
 use shared::error::TuliproxError;
 use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputType, IpCheckDto, PlaylistRequest, PlaylistRequestType, StatusCheck, TargetUserDto, XtreamPlaylistItem};
-use shared::utils::sanitize_sensitive_info;
+use shared::utils::{concat_path_leading_slash, sanitize_sensitive_info};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use crate::utils::prepare_sources_batch;
@@ -349,5 +349,5 @@ pub fn v1_api_register(web_auth_enabled: bool, app_state: Arc<AppState>, web_ui_
     if config.web_ui.as_ref().is_none_or(|c| c.user_ui_enabled) {
         base_router = base_router.merge(user_api_register(app_state));
     }
-    base_router.nest(&format!("{web_ui_path}/api/v1"), router)
+    base_router.nest(&concat_path_leading_slash(web_ui_path, "api/v1"), router)
 }

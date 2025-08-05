@@ -1,12 +1,13 @@
-use crate::services::request_post;
+use crate::services::{get_base_href, request_post};
 use log::error;
 use shared::model::{PlaylistCategoriesResponse, PlaylistRequest, UiPlaylistCategories};
 use std::rc::Rc;
+use shared::utils::concat_path_leading_slash;
 
-const TARGET_UPDATE_API_PATH: &str = "/api/v1/playlist/update";
-const PLAYLIST_API_PATH: &str = "/api/v1/playlist";
-
-pub struct PlaylistService {}
+pub struct PlaylistService {
+    target_update_api_path: String,
+    playlist_api_path: String,
+}
 impl Default for PlaylistService {
     fn default() -> Self {
         Self::new()
@@ -15,18 +16,21 @@ impl Default for PlaylistService {
 
 impl PlaylistService {
     pub fn new() -> Self {
-        Self {}
+        let base_href = get_base_href();
+        Self {
+            target_update_api_path: concat_path_leading_slash(&base_href, "api/v1/playlist/update"),
+            playlist_api_path: concat_path_leading_slash(&base_href, "api/v1/playlist"),
+        }
     }
-
     pub async fn update_targets(&self, targets: &[&str]) -> bool {
-        request_post::<&[&str], ()>(TARGET_UPDATE_API_PATH, targets).await.map_or_else(|err| {
+        request_post::<&[&str], ()>(&self.target_update_api_path, targets).await.map_or_else(|err| {
             error!("{err}");
             false
         }, |_| true)
     }
 
     pub async fn get_playlist_categories(&self, playlist_request: &PlaylistRequest) -> Option<Rc<UiPlaylistCategories>> {
-        request_post::<&PlaylistRequest, PlaylistCategoriesResponse>(PLAYLIST_API_PATH, playlist_request).await.map_or_else(|err| {
+        request_post::<&PlaylistRequest, PlaylistCategoriesResponse>(&self.playlist_api_path, playlist_request).await.map_or_else(|err| {
             error!("{err}");
             None
         }, |response| Some(Rc::new(response.into())))

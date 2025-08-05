@@ -1,23 +1,25 @@
 use std::cell::RefCell;
-use super::request_post;
+use super::{get_base_href, request_post};
 use crate::error::Error;
 use crate::services::requests::set_token;
 use futures_signals::signal::Mutable;
 use futures_signals::signal::SignalExt;
 use shared::model::{TokenResponse, UserCredential};
 use std::future::Future;
+use shared::utils::{concat_path, concat_path_leading_slash};
 
 #[derive(Debug)]
 pub struct AuthService {
+    auth_path: String,
     username: RefCell<String>,
     auth_channel: Mutable<bool>,
 }
 
-const AUTH_PATH: &str = "/auth";
-
 impl AuthService {
     pub fn new() -> Self {
+        let base_href = get_base_href();
         Self {
+            auth_path: concat_path_leading_slash(&base_href, "auth"),
             username: RefCell::new(String::new()),
             auth_channel: Mutable::new(false),
         }
@@ -47,7 +49,7 @@ impl AuthService {
             username,
             password,
         };
-        match request_post::<UserCredential, TokenResponse>(&format!("{AUTH_PATH}/token"), credentials).await {
+        match request_post::<UserCredential, TokenResponse>(&concat_path(&self.auth_path, "token"), credentials).await {
             Ok(token) => {
                 self.username.replace(token.username.to_string());
                 self.auth_channel.set(true);
@@ -64,7 +66,7 @@ impl AuthService {
     }
 
     pub async fn refresh(&self) -> Result<TokenResponse, Error> {
-        match request_post::<(), TokenResponse>(&format!("{AUTH_PATH}/refresh"), ()).await {
+        match request_post::<(), TokenResponse>(&concat_path(&self.auth_path, "refresh"), ()).await {
             Ok(token) => {
                 self.username.replace(token.username.to_string());
                 self.auth_channel.set(true);
