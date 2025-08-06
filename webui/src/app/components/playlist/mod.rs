@@ -15,6 +15,7 @@ mod input;
 mod source_selector;
 mod playlist_explorer;
 mod playlist_update_view;
+mod mapper_script_view;
 
 use std::rc::Rc;
 use yew_i18n::YewI18n;
@@ -36,6 +37,7 @@ pub use self::source_selector::*;
 pub use self::playlist_editor_view::*;
 pub use self::playlist_explorer_view::*;
 pub use self::playlist_update_view::*;
+pub use self::mapper_script_view::*;
 
 pub fn make_tags(data: &[(bool, &str)], translate: &YewI18n) -> Vec<Rc<Tag>> {
     data.iter()

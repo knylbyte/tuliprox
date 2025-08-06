@@ -8,6 +8,8 @@ use regex::Regex;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
+use std::ops::Deref;
 use std::str::FromStr;
 use pest::Parser;
 use crate::error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result, info_err};
@@ -58,22 +60,30 @@ main = { SOI ~ statements? ~ EOI }
 struct MapperParser;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct ExprId(pub usize);
+pub struct ExprId(pub usize);
+
+impl Deref for ExprId {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
-enum MatchCaseKey {
+pub enum MatchCaseKey {
     Identifier(String),
     AnyMatch,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct MatchCase {
+pub struct MatchCase {
     pub keys: Vec<MatchCaseKey>,
     pub expression: ExprId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum MapCaseKey {
+pub enum MapCaseKey {
     Text(String),
     RangeFrom(f64),
     RangeTo(f64),
@@ -83,13 +93,13 @@ enum MapCaseKey {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct MapCase {
+pub struct MapCase {
     pub keys: Vec<MapCaseKey>,
     pub expression: ExprId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum MapKey {
+pub enum MapKey {
     Identifier(String),
     FieldAccess(String),
     VarAccess(String, String),
@@ -97,7 +107,7 @@ enum MapKey {
 
 
 #[derive(Debug, Clone, PartialEq)]
-enum BuiltInFunction {
+pub enum BuiltInFunction {
     Concat,
     Uppercase,
     Lowercase,
@@ -130,14 +140,32 @@ impl FromStr for BuiltInFunction {
     }
 }
 
+impl Display for BuiltInFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match &self {
+            Self::Concat => "concat",
+            Self::Capitalize => "capitalize",
+            Self::Lowercase => "lowercase",
+            Self::Uppercase => "uppercase",
+            Self::Trim => "trim",
+            Self::Print => "print",
+            Self::ToNumber => "number",
+            Self::First => "first",
+            Self::Template => "template",
+            Self::Replace => "replace",
+        }.to_owned();
+        write!(f, "{}", str)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-enum RegexSource {
+pub enum RegexSource {
     Identifier(String),
     Field(String),
 }
 
 #[derive(Debug, Clone)]
-enum Expression {
+pub enum Expression {
     Identifier(String),
     StringLiteral(String),
     NumberLiteral(f64),
@@ -178,21 +206,21 @@ impl PartialEq for Expression {
 
 
 #[derive(Debug, Clone, PartialEq)]
-enum AssignmentTarget {
+pub enum AssignmentTarget {
     Identifier(String),
     Field(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Statement {
+pub enum Statement {
     Expression(ExprId),
-    Comment, //(String),
+    Comment(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapperScript {
-    expressions: Vec<Expression>,
-    statements: Vec<Statement>,
+    pub expressions: Vec<Expression>,
+    pub statements: Vec<Statement>,
 }
 
 impl MapperScript {
@@ -205,6 +233,10 @@ impl MapperScript {
         for stmt in &self.statements {
             stmt.eval(ctx, setter);
         }
+    }
+
+    pub fn get_expr_by_id(&self, id: usize) -> Option<&Expression> {
+        self.expressions.get(id)
     }
 }
 
@@ -226,7 +258,7 @@ impl Statement {
                     //     trace!("Ignoring result {result:?}");
                 }
             }
-            Statement::Comment => {}
+            Statement::Comment(_) => {}
         }
     }
 }
@@ -241,7 +273,7 @@ impl MapperScript {
                 Statement::Expression(expr) => {
                     ctx.validate_expr(*expr, &mut identifiers)?;
                 }
-                Statement::Comment => {}
+                Statement::Comment(_) => {}
             }
         }
         Ok(())
@@ -272,7 +304,7 @@ impl MapperScript {
                     Ok(None)
                 }
             }
-            Rule::comment => Ok(Some(Statement::Comment /*(pair.as_str().trim().to_string())*/)),
+            Rule::comment => Ok(Some(Statement::Comment(pair.as_str().trim().to_string()))),
 
             _ => {
                 // error!("Unknown statement rule: {:?}", pair.as_rule());
@@ -767,7 +799,7 @@ impl<'a> MapperContext<'a> {
 }
 
 #[derive(Debug, Clone)]
-enum EvalResult {
+pub enum EvalResult {
     Undefined,
     Value(String),
     Number(f64),

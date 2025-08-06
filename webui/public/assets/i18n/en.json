@@ -195,7 +195,8 @@
     "ALIAS": "Alias",
     "INPUTS": "Inputs",
     "NEW_USER": "New User",
-    "USERLIST": "Userlist"
+    "USERLIST": "Userlist",
+    "MAPPER": "Mapper"
   },
   "TABLE": {
     "EMPTY": "",

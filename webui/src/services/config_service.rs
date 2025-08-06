@@ -9,6 +9,7 @@ use log::error;
 use futures_signals::signal::Mutable;
 use futures_signals::signal::SignalExt;
 use shared::foundation::filter::{get_filter, prepare_templates};
+use shared::foundation::mapper::MapperScript;
 use shared::utils::concat_path_leading_slash;
 
 pub struct ConfigService {
@@ -66,6 +67,20 @@ impl ConfigService {
                         target.t_filter = get_filter(target.filter.as_str(), templates.as_ref()).ok();
                     }
                 }
+
+                if let Some(mappings) = app_config.mappings.as_mut() {
+                    for mapping in mappings.mappings.mapping.iter_mut() {
+                        let templates = mapping.templates.as_ref();
+                        if let Some(mappers) = mapping.mapper.as_mut() {
+                            for mapper in mappers.iter_mut() {
+                                mapper.t_filter = get_filter(mapper.filter.as_str(), templates).ok();
+                                mapper.t_script =  MapperScript::parse(&mapper.script, templates).ok();
+                            }
+                        }
+                    }
+
+                }
+
                 Some(Rc::new(app_config))
             },
             Err(err) => {

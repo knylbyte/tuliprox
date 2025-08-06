@@ -1,7 +1,8 @@
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::MappingDto;
-use crate::app::components::{ConfigContext, NoContent};
+use shared::model::{MapperDto, MappingCounterDefinition, MappingDto};
+use crate::app::components::{ConfigContext, FilterView, MapperScriptView, NoContent};
+use crate::app::components::toggle_switch::ToggleSwitch;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct PlaylistMappingsProps {
@@ -28,6 +29,25 @@ pub fn PlaylistMappings(props: &PlaylistMappingsProps) -> Html {
         }
     });
 
+    let render_mapper = |mapper: &MapperDto| {
+        html! {
+            <div class="tp__playlist-mappings__mapper-mapping">
+                <label>{translate.t("LABEL.MAPPER")}</label>
+                <FilterView filter={mapper.t_filter.clone()} />
+                <MapperScriptView script={mapper.t_script.clone()} pretty={true}/>
+            </div>
+        }
+    };
+
+    let render_counter = |mapper: &MappingCounterDefinition| {
+        html! {
+            <div class="tp__playlist-mappings__mapper-counter">
+                <label>{translate.t("LABEL.MAPPER")}</label>
+
+            </div>
+        }
+    };
+
     let render_mapping = |mapping: &MappingDto| {
         html! {
             <div class="tp__playlist-mappings__mapping">
@@ -35,12 +55,26 @@ pub fn PlaylistMappings(props: &PlaylistMappingsProps) -> Html {
                     <label>{translate.t("LABEL.ID")}</label>
                     {mapping.id.clone()}
                 </div>
+                <div class="tp__playlist-mappings__mapping-section">
+                    <label>{translate.t("LABEL.MATCH_AS_ASCII")}</label>
+                    <ToggleSwitch value={mapping.match_as_ascii} readonly={true} />
+                </div>
+                <div class="tp__playlist-mappings__mapping-section">
+                    {
+                        for mapping.mapper.iter().flatten().map(|mapper| {
+                            html! { render_mapper(mapper) }
+                        })
+                    }
+                </div>
+                 <div class="tp__playlist-mappings__mapping-section">
+                    {
+                        for mapping.counter.iter().flatten().map(|counter| {
+                           html! { render_counter(counter) }
+                        })
+                    }
+                </div>
             </div>
         }
-        //
-        // pub id: String,
-        // #[serde(default)]
-        // pub match_as_ascii: bool,
         // pub mapper: Option<Vec<MapperDto>>,
         // pub counter: Option<Vec<MappingCounterDefinition>>,
         // #[serde(skip_serializing, skip_deserializing)]
