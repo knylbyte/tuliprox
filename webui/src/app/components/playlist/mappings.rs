@@ -1,4 +1,3 @@
-use log::error;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::MappingDto;
@@ -49,8 +48,6 @@ pub fn PlaylistMappings(props: &PlaylistMappingsProps) -> Html {
         // #[serde(skip_serializing, skip_deserializing)]
         // pub templates: Option<Vec<PatternTemplate>>
     };
-
-    error!("{mappings:?}");
 
     html! {
       <div class="tp__playlist-mappings">

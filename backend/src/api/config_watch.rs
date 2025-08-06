@@ -52,7 +52,7 @@ impl ConfigFile {
             }
             Ok(None) => {
                 let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&app_state.app_config.paths);
-                info!("Coul dnot load Api Proxy File: {:?}", &paths.api_proxy_file_path);
+                info!("Could not load Api Proxy File: {:?}", &paths.api_proxy_file_path);
             }
             Err(err) => {
                 error!("Failed to load api-proxy file {err}");

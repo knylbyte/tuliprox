@@ -1,3 +1,4 @@
+use log::error;
 use yew::prelude::*;
 use web_sys::MouseEvent;
 
@@ -34,26 +35,13 @@ pub fn CustomDialog(props: &CustomDialogProps) -> Html {
         let close_on_backdrop = props.close_on_backdrop_click;
         
         Callback::from(move |e: MouseEvent| {
-            if close_on_backdrop && e.target() == e.current_target() {
-                is_open.set(false);
+            if close_on_backdrop {
                 if let Some(on_close) = &on_close {
                     on_close.emit(());
                 }
             }
         })
     };
-    
-    // let close = {
-    //     let is_open = is_open.clone();
-    //     let on_close = props.on_close.clone();
-    //
-    //     Callback::from(move |()| {
-    //         is_open.set(false);
-    //         if let Some(on_close) = &on_close {
-    //             on_close.emit(());
-    //         }
-    //     })
-    // };
     
     // Only render if open
     if !*is_open {
@@ -68,13 +56,3 @@ pub fn CustomDialog(props: &CustomDialogProps) -> Html {
         </div>
     }
 }
-
-// // Add a helper function to show the dialog
-// pub fn show_dialog(_dialog_ref: &NodeRef) {
-//     // This is a no-op for our custom dialog as it's controlled by the open prop
-// }
-//
-// // Add a helper function to close the dialog
-// pub fn close_dialog(_dialog_ref: &NodeRef) {
-//     // This is a no-op for our custom dialog as it's controlled by the open prop
-// }
