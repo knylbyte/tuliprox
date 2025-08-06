@@ -16,7 +16,7 @@
     overflow: hidden;
 
     .tp__tag_list {
-      flex-flow: row nowrap;
+      flex-flow: row wrap;
     }
 
     li {

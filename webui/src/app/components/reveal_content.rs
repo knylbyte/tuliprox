@@ -1,8 +1,8 @@
+use crate::app::components::AppIcon;
+use crate::model::DialogActions;
+use crate::services::DialogService;
 use yew::platform::spawn_local;
 use yew::prelude::*;
-use crate::app::components::AppIcon;
-use crate::model::{DialogActions};
-use crate::services::DialogService;
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct RevealContentProps {
@@ -12,7 +12,7 @@ pub struct RevealContentProps {
     pub preview: Option<Html>,
     pub children: Html,
     #[prop_or_default]
-    pub actions: Option<DialogActions>
+    pub actions: Option<DialogActions>,
 }
 
 #[function_component]
@@ -45,7 +45,17 @@ pub fn RevealContent(props: &RevealContentProps) -> Html {
             }
         }
 
-         <AppIcon name={if props.icon.is_empty() { if props.preview.is_some() { "Expand".to_string() } else { "Ellipsis".to_string() } } else {props.icon.to_string()} } />
+         <AppIcon name={
+            if props.icon.is_empty() {
+               if props.preview.is_some() {
+                    "Expand".to_owned()
+                } else {
+                    "Ellipsis".to_owned()
+                }
+            } else {
+                props.icon.clone()
+            }
+        } />
         </div>
     }
 }

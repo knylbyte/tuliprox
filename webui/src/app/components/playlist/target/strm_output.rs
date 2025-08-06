@@ -19,8 +19,8 @@ pub fn StrmOutput(props: &StrmOutputProps) -> Html {
         use_memo(output, move |output| {
             vec![
                 Rc::new(Tag { class: convert_bool_to_chip_style(output.flat), label: translate.t("LABEL.FLAT") }),
-                Rc::new(Tag { class: convert_bool_to_chip_style(output.underscore_whitespace), label: translate.t("LABEL.UNDERSCORE_WHITESPACE") }),
                 Rc::new(Tag { class: convert_bool_to_chip_style(output.cleanup), label: translate.t("LABEL.CLEANUP") }),
+                Rc::new(Tag { class: convert_bool_to_chip_style(output.underscore_whitespace), label: translate.t("LABEL.UNDERSCORE_WHITESPACE") }),
             ]
         })
     };

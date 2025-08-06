@@ -28,10 +28,12 @@
     flex-flow: column;
     gap: var(--gap-small);
     justify-content: center;
-    padding: var(--padding-micro) var(--padding-mini);
+    padding: var(--padding-mini);
+    background-color: var(--table-card-background-color);
+    border-radius: var(--border-radius);
 
     .tp__tag_list {
-      flex-flow: row nowrap;
+      flex-flow: row wrap;
     }
   }
 

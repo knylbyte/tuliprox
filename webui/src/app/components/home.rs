@@ -9,6 +9,7 @@ use yew::prelude::*;
 use yew::suspense::use_future;
 use yew_i18n::use_translation;
 use crate::app::components::loading_indicator::{BusyIndicator};
+use crate::provider::DialogProvider;
 
 #[function_component]
 pub fn Home() -> Html {
@@ -118,12 +119,12 @@ pub fn Home() -> Html {
     };
 
     //<div class={"app-header__toolbar"}><select onchange={handle_language} defaultValue={i18next.language}>{services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
-    // <div class={"app-header__toolbar"}><button data-tooltip={preferencesVisible ? "LABEL.PLAYLIST_BROWSER" : "LABEL.CONFIGURATION"} onClick={handlePreferences}>{getIconByName(preferencesVisible ? "Live" : "Config")}</button></div>
 
     html! {
         <ContextProvider<ConfigContext> context={config_context}>
         <ContextProvider<StatusContext> context={status_context}>
         <ContextProvider<PlaylistContext> context={playlist_context}>
+        <DialogProvider>
             <ToastrView />
             <div class="tp__app">
                <BusyIndicator />
@@ -164,6 +165,7 @@ pub fn Home() -> Html {
                     </div>
               </div>
             </div>
+        </DialogProvider>
         </ContextProvider<PlaylistContext>>
         </ContextProvider<StatusContext>>
         </ContextProvider<ConfigContext>>

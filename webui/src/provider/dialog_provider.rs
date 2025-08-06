@@ -10,6 +10,7 @@ pub struct ConfirmProviderProps {
 
 #[function_component]
 pub fn DialogProvider(props: &ConfirmProviderProps) -> Html {
+
     let service = use_state(DialogService::new);
     let dialog_request = use_state(|| None::<DialogRequest>);
 
