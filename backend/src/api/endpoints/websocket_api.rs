@@ -195,6 +195,15 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage, handl
         ProtocolHandler::Default(mem) => {
             if mem.role.is_admin() {
                 match event {
+                    EventMessage::ServerError(error) => {
+                        let msg = ProtocolMessage::ServerError(error)
+                            .to_bytes()
+                            .map_err(|e| e.to_string())?;
+                        socket
+                            .send(Message::Binary(msg))
+                            .await
+                            .map_err(|e| format!("Server Error event: {e} "))?;
+                    }
                     EventMessage::ActiveUser(users, connections) => {
                         let msg = ProtocolMessage::ActiveUserResponse(users, connections)
                             .to_bytes()

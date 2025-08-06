@@ -37,6 +37,9 @@ pub fn Home() -> Html {
                     EventMessage::Unauthorized => {
                         services_ctx_clone.auth.logout()
                     },
+                    EventMessage::ServerError(msg) => {
+                        services_ctx_clone.toastr.error(msg);
+                    },
                     EventMessage::ConfigChange(config_type) => {
                         services_ctx_clone.toastr.warning(format!("{}: {config_type}", translate_clone.t("MESSAGES.CONFIG_CHANGED")));
                     },

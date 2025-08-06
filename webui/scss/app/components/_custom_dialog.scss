@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.3);
   z-index: 1000;
   animation: fadeIn 0.2s ease-out;
 }
@@ -21,10 +21,12 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--background-color);
+
+  color: var(--text-color);
+  background-color: var(--card-background-color);
+  filter: drop-shadow(6px 6px 6px var(--popup-shadow-color));
+
   border-radius: var(--border-radius);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
   max-width: 90%;
   max-height: 90%;
   width: auto;
@@ -70,20 +72,19 @@
 .tp__dialog__toolbar {
   display: flex;
   justify-content: flex-end;
-  padding: 16px;
   border-top: 1px solid var(--border-color);
-  gap: 8px;
-  
+  gap: var(--gap-default);
+
   &-left {
     display: flex;
     justify-content: flex-start;
-    gap: 8px;
+    gap: var(--gap-default);
     flex: 1;
   }
   
   &-right {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--gap-default);
   }
 }

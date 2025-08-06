@@ -2,7 +2,7 @@ use log::error;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::MappingDto;
-use crate::app::components::{ConfigContext};
+use crate::app::components::{ConfigContext, NoContent};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct PlaylistMappingsProps {
@@ -59,7 +59,7 @@ pub fn PlaylistMappings(props: &PlaylistMappingsProps) -> Html {
                 Some(vec) => {
                     html! { for vec.iter().map(render_mapping) }
                 },
-                None => html! {},
+                None => html! { <NoContent/>},
             }
         }
       </div>

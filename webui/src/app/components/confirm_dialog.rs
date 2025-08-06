@@ -40,12 +40,11 @@ pub fn ConfirmDialog(props: &ConfirmDialogProps) -> Html {
         let on_result = on_result.clone();
         Callback::from(move |()| on_result(DialogResult::Cancel))
     };
-
     html! {
-        <CustomDialog 
-            open={*is_open} 
-            class="tp__confirm-dialog" 
-            modal=true 
+        <CustomDialog
+            open={*is_open}
+            class="tp__confirm-dialog"
+            modal=true
             close_on_backdrop_click=true
             on_close={Some(on_close)}
         >
