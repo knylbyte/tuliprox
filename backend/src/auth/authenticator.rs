@@ -32,7 +32,12 @@ fn create_jwt(web_auth_config: &WebAuthConfig, username: &str, roles: Vec<String
     header.typ = Some("JWT".to_string());
     let now = Local::now();
     let iat = now.timestamp();
-    let exp = (now + Duration::minutes(30)).timestamp();
+    let duration = web_auth_config.token_ttl_mins;
+    let exp = if duration > 0 {
+       (now + Duration::minutes(duration as i64)).timestamp()
+    } else {
+        (now + Duration::days(365 * 100)).timestamp() // 100 years
+    };
     let claims = Claims {
         username: username.to_string(),
         iss: web_auth_config.issuer.clone(),

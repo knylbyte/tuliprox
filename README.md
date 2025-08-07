@@ -320,6 +320,7 @@ log:
   - `enabled` can be deactivated if `enabled` is set to `false`. If not set default is `true`.
   - `issuer`
   - `secret` is used for jwt token generation.
+  - `token_ttl_mins`  default 30 minutes, if set to 0 unlimited.
   - `userfile` is the file where the ui users are stored. If the filename is not absolute, `tuliprox` will look into the `config_dir`. If `userfile` is not given, the default value is `user.txt`.
 ```yaml
 web_ui:
