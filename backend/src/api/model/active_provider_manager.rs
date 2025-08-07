@@ -1,4 +1,4 @@
-use crate::api::model::{ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper, ProviderConnectionChangeSender};
+use crate::api::model::{ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper, ProviderConnectionChangeCallback, ProviderConnectionChangeSender};
 use crate::model::{AppConfig, ConfigInput};
 use arc_swap::ArcSwap;
 use log::{debug, log_enabled, trace};
@@ -194,12 +194,12 @@ struct SingleProviderLineup {
 }
 
 impl SingleProviderLineup {
-    fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>, connection_change_sender: ProviderConnectionChangeSender) -> Self
+    fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>, connection_change: &ProviderConnectionChangeCallback) -> Self
     where
         F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
     {
         Self {
-            provider: ProviderConfigWrapper::new(ProviderConfig::new(cfg, get_connection, connection_change_sender)),
+            provider: ProviderConfigWrapper::new(ProviderConfig::new(cfg, get_connection, Arc::clone(connection_change))),
         }
     }
 
@@ -264,19 +264,20 @@ impl ProviderPriorityGroup {
 #[repr(align(64))]
 #[derive(Debug)]
 struct MultiProviderLineup {
+    name: String,
     providers: Vec<ProviderPriorityGroup>,
     index: AtomicUsize,
 }
 
 impl MultiProviderLineup {
-    pub fn new<'a, F>(input: &ConfigInput, get_connection: Option<F>, connection_change_sender: &ProviderConnectionChangeSender) -> Self
+    pub fn new<'a, F>(cfg_input: &ConfigInput, get_connection: Option<F>, connection_change: &ProviderConnectionChangeCallback) -> Self
     where
         F: Fn(&str) -> Option<&'a ProviderConfigConnection> + Copy,
     {
-        let mut inputs = vec![ProviderConfigWrapper::new(ProviderConfig::new(input, get_connection, connection_change_sender.clone()))];
-        if let Some(aliases) = &input.aliases {
+        let mut inputs = vec![ProviderConfigWrapper::new(ProviderConfig::new(cfg_input, get_connection, Arc::clone(connection_change)))];
+        if let Some(aliases) = &cfg_input.aliases {
             for alias in aliases {
-                inputs.push(ProviderConfigWrapper::new(ProviderConfig::new_alias(input, alias, get_connection, connection_change_sender.clone())));
+                inputs.push(ProviderConfigWrapper::new(ProviderConfig::new_alias(cfg_input, alias, get_connection, Arc::clone(connection_change))));
             }
         }
         let mut providers = HashMap::new();
@@ -297,6 +298,7 @@ impl MultiProviderLineup {
         }).collect();
 
         Self {
+            name: cfg_input.name.clone(),
             providers,
             index: AtomicUsize::new(0),
         }
@@ -484,6 +486,24 @@ impl MultiProviderLineup {
             }
         }
     }
+
+    pub async fn get_total_connections(&self) -> usize {
+        let mut total_connections = 0;
+
+        for group in &self.providers {
+            match group {
+                ProviderPriorityGroup::SingleProviderGroup(provider) => {
+                    total_connections += provider.get_current_connections().await;
+                },
+                ProviderPriorityGroup::MultiProviderGroup(_, providers) => {
+                    for provider in providers {
+                        total_connections += provider.get_current_connections().await;
+                    }
+                }
+            }
+        }
+        total_connections
+    }
 }
 
 
@@ -507,13 +527,24 @@ impl ProviderLineupManager {
         }
     }
 
-    fn create_lineup(input: &ConfigInput, provider_connections: Option<&HashMap<&str, ProviderConfigConnection>>, connection_change_sender: ProviderConnectionChangeSender) -> ProviderLineup {
+    fn create_lineup(cfg_input: &ConfigInput, provider_connections: Option<&HashMap<&str, ProviderConfigConnection>>, connection_change_sender: ProviderConnectionChangeSender) -> ProviderLineup {
         let get_connections = provider_connections.map(|c| |name: &str| c.get(name));
 
-        if input.aliases.as_ref().is_some_and(|a| !a.is_empty()) {
-            ProviderLineup::Multi(MultiProviderLineup::new(input, get_connections, &connection_change_sender))
+        let cfg_name = cfg_input.name.clone();
+        let on_connection_change: ProviderConnectionChangeCallback = Arc::new(move |_name: &str, connections: usize| {
+            let connection_change_sender = connection_change_sender.clone();
+            let cfg_name = cfg_name.clone();
+            tokio::spawn(async move {
+                let _ = connection_change_sender.send((cfg_name, connections)).await;
+            });
+        });
+
+        let on_connection_change = Arc::new(on_connection_change);
+
+        if cfg_input.aliases.as_ref().is_some_and(|a| !a.is_empty()) {
+            ProviderLineup::Multi(MultiProviderLineup::new(cfg_input, get_connections, &on_connection_change))
         } else {
-            ProviderLineup::Single(SingleProviderLineup::new(input, get_connections, connection_change_sender))
+            ProviderLineup::Single(SingleProviderLineup::new(cfg_input, get_connections, &on_connection_change))
         }
     }
 
@@ -711,47 +742,21 @@ impl ProviderLineupManager {
 
     pub async fn active_connections(&self) -> Option<HashMap<String, usize>> {
         let mut result = HashMap::<String, usize>::new();
-        let mut add_provider = async |provider: Option<&ProviderConfig>, name: Option<String>, count: usize| {
-            if let Some(provider_cfg) = provider {
-                let count = provider_cfg.get_current_connections().await;
-                if count > 0 {
-                    result.insert(provider_cfg.name.to_string(), count);
-                }
-            } else if count > 0 {
-                result.insert(name.unwrap_or_default(), count);
+        let mut add_provider = |name: String, count: usize| {
+            if count > 0 {
+                result.insert(name, count);
             }
         };
         let providers = self.providers.load();
         for lineup in providers.iter() {
             match lineup {
                 ProviderLineup::Single(provider_lineup) => {
-                    add_provider(Some(&provider_lineup.provider), None, 0).await;
+                    let connections = provider_lineup.provider.get_current_connections().await;
+                    add_provider(provider_lineup.provider.name.clone(), connections);
                 }
                 ProviderLineup::Multi(provider_lineup) => {
-                    for provider_group in &provider_lineup.providers {
-                        match provider_group {
-                            ProviderPriorityGroup::SingleProviderGroup(provider) => {
-                                add_provider(Some(provider), None, 0).await;
-                            }
-                            ProviderPriorityGroup::MultiProviderGroup(_, providers) => {
-                                let mut connections = 0;
-                                let mut name = None;
-                                for provider in providers {
-                                    if name.is_none() {
-                                        name = Some(format!("[{}]", provider.name.clone()));
-                                    }
-                                    connections += provider.get_current_connections().await;
-                                }
-                                if connections > 0 {
-                                    add_provider(None, name, connections).await;
-                                }
-
-                                // for provider in providers {
-                                //     add_provider(provider).await;
-                                // }
-                            }
-                        }
-                    }
+                    let connections = provider_lineup.get_total_connections().await;
+                    add_provider(provider_lineup.name.clone(), connections);
                 }
             }
         }
@@ -1042,9 +1047,10 @@ mod tests {
     #[test]
     fn test_acquire_when_capacity_available() {
         let cfg = create_config_input(1, "provider5_1", 1, 2);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let on_connection_change = move |_name, _connections| {};
+        let change_tx = Arc::new(on_connection_change);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = SingleProviderLineup::new(&cfg, Some(dummy_get_connection), change_tx);
+        let lineup = SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_tx);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // First acquire attempt should succeed
@@ -1063,10 +1069,11 @@ mod tests {
     #[test]
     fn test_release_connection() {
         let cfg = create_config_input(1, "provider7_1", 1, 2);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let on_connection_change = move |_name, _connections| {};
+        let change_tx = Arc::new(on_connection_change);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
 
-        let lineup = SingleProviderLineup::new(&cfg, Some(dummy_get_connection), change_tx);
+        let lineup = SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_tx);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Acquire two connections
@@ -1127,9 +1134,10 @@ mod tests {
     #[test]
     fn test_concurrent_acquire() {
         let cfg = create_config_input(1, "provider9_1", 1, 2);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let on_connection_change = move |_name, _connections| {};
+        let change_tx = Arc::new(on_connection_change);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = Arc::new(SingleProviderLineup::new(&cfg, Some(dummy_get_connection), change_tx));
+        let lineup = Arc::new(SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_tx));
 
         let available_count = Arc::new(AtomicU16::new(2));
         let grace_period_count = Arc::new(AtomicU16::new(1));

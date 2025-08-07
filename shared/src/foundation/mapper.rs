@@ -135,7 +135,7 @@ impl FromStr for BuiltInFunction {
             "first" => Ok(Self::First),
             "template" => Ok(Self::Template),
             "replace" => Ok(Self::Replace),
-            _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown function {}", s),
+            _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown function {s}"),
         }
     }
 }
@@ -154,7 +154,7 @@ impl Display for BuiltInFunction {
             Self::Template => "template",
             Self::Replace => "replace",
         }.to_owned();
-        write!(f, "{}", str)
+        write!(f, "{str}")
     }
 }
 

@@ -12,6 +12,8 @@ use shared::write_if_some;
 pub type ProviderConnectionChangeSender = tokio::sync::mpsc::Sender<(String, usize)>;
 pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::Receiver<(String, usize)>;
 
+pub type ProviderConnectionChangeCallback = Arc<dyn Fn(&str, usize) + Send + Sync>;
+
 #[derive(Debug, Clone, Copy)]
 pub enum ProviderConfigAllocation {
     Exhausted,
@@ -33,7 +35,6 @@ pub struct ProviderConfigConnection {
 /// `max_connections`: Maximum allowed concurrent connections.
 /// `priority`: Priority level for selecting providers.
 /// `current_connections`: A `RwLock` to safely track the number of active connections.
-#[derive(Debug)]
 pub struct ProviderConfig {
     pub id: u16,
     pub name: String,
@@ -44,7 +45,8 @@ pub struct ProviderConfig {
     max_connections: usize,
     priority: i16,
     connection: RwLock<ProviderConfigConnection>,
-    connection_change_tx: ProviderConnectionChangeSender,
+    //connection_change_tx: ProviderConnectionChangeSender,
+    on_connection_change: ProviderConnectionChangeCallback,
 }
 
 impl fmt::Display for ProviderConfig {
@@ -65,6 +67,12 @@ impl fmt::Display for ProviderConfig {
     }
 }
 
+impl fmt::Debug for ProviderConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
 impl PartialEq for ProviderConfig {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
@@ -82,16 +90,16 @@ impl PartialEq for ProviderConfig {
 macro_rules! modify_connections {
     ($self:ident, $guard:ident, +1) => {{
         $guard.current_connections += 1;
-        $self.notify_connection_change($guard.current_connections).await;
+        $self.notify_connection_change($guard.current_connections);
     }};
     ($self:ident, $guard:ident, -1) => {{
         $guard.current_connections -= 1;
-        $self.notify_connection_change($guard.current_connections).await;
+        $self.notify_connection_change($guard.current_connections);
     }};
 }
 
 impl ProviderConfig {
-    pub fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>, connection_change_tx: ProviderConnectionChangeSender) -> Self
+    pub fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>, on_connection_change: ProviderConnectionChangeCallback) -> Self
     where
         F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
     {
@@ -105,11 +113,11 @@ impl ProviderConfig {
             max_connections: cfg.max_connections as usize,
             priority: cfg.priority,
             connection: RwLock::new(get_connection.and_then(|f| f(cfg.name.as_str())).map_or_else(Default::default, Clone::clone)),
-            connection_change_tx
+            on_connection_change
         }
     }
 
-    pub fn new_alias<'a, F>(cfg: &ConfigInput, alias: &ConfigInputAlias, get_connection: Option<F>, connection_change_tx: ProviderConnectionChangeSender) -> Self
+    pub fn new_alias<'a, F>(cfg: &ConfigInput, alias: &ConfigInputAlias, get_connection: Option<F>, on_connection_change: ProviderConnectionChangeCallback) -> Self
     where
         F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
     {
@@ -123,7 +131,7 @@ impl ProviderConfig {
             max_connections: alias.max_connections as usize,
             priority: alias.priority,
             connection: RwLock::new(get_connection.and_then(|f| f(alias.name.as_str())).map_or_else(Default::default, Clone::clone)),
-            connection_change_tx,
+            on_connection_change,
         }
     }
 
@@ -131,8 +139,8 @@ impl ProviderConfig {
         InputUserInfo::new(self.input_type, self.username.as_deref(), self.password.as_deref(), &self.url)
     }
 
-    async fn notify_connection_change(&self, new_connections: usize) {
-        let _ = self.connection_change_tx.send((self.name.clone(), new_connections)).await;
+    fn notify_connection_change(&self, new_connections: usize) {
+        (self.on_connection_change)(&self.name, new_connections);
     }
 
     #[inline]

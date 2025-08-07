@@ -34,7 +34,7 @@ fn create_jwt(web_auth_config: &WebAuthConfig, username: &str, roles: Vec<String
     let iat = now.timestamp();
     let duration = web_auth_config.token_ttl_mins;
     let exp = if duration > 0 {
-       (now + Duration::minutes(duration as i64)).timestamp()
+       (now + Duration::minutes(i64::from(duration))).timestamp()
     } else {
         (now + Duration::days(365 * 100)).timestamp() // 100 years
     };
