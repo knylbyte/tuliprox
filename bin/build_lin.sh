@@ -5,4 +5,4 @@ if [ "$(uname)" != "Linux" ]; then
 else
   cargo build -p tuliprox --release
 fi
-cd "./webui" && trunk build --release
+cd "./frontend" && trunk build --release

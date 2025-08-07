@@ -11,4 +11,4 @@ docker/
 frontend/node_modules/
 frontend/build/
 
-webui/dist
+frontend/dist

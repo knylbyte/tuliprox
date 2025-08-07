@@ -1,9 +1,12 @@
 {
-  "tab_title": "tuliprox",
-  "app_title": "tuliprox",
-  "app_logo": "assets/tuliprox-logo.svg",
+  "tabTitle": "tuliprox",
+  "appLogo": "/assets/tuliprox-logo.svg",
   "api": {
     "apiUrl": "/api/v1/",
     "authUrl": "/auth/"
-  }
+  },
+  "discord": "https://discord.gg/gkzCmWw9Tf",
+  "documentation": "https://github.com/euzu/tuliprox/blob/master/README.md",
+  "wsUrl" : "/ws",
+  "protocolVersion": 1
 }

@@ -5,7 +5,7 @@ set -o pipefail
 WORKING_DIR=$(pwd)
 RESOURCES_DIR="$WORKING_DIR/resources"
 RELEASE_DIR="$WORKING_DIR/release"
-FRONTEND_DIR="${WORKING_DIR}/webui"
+FRONTEND_DIR="${WORKING_DIR}/frontend"
 FRONTEND_BUILD_DIR="${FRONTEND_DIR}/dist"
 
 if ! command -v cargo-set-version &> /dev/null

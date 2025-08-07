@@ -1,0 +1,59 @@
+@use '../../../../scss/size';
+
+.tp__playlist-mappings {
+  display: flex;
+  flex-flow: column;
+  justify-content: center;
+  align-items: flex-start;
+  box-sizing: border-box;
+  overflow: hidden;
+
+  &__mapping {
+    display: flex;
+    flex-flow: column;
+    gap: var(--gap-default);
+    justify-content: center;
+    box-sizing: border-box;
+    overflow: hidden;
+
+    &-section {
+      display: flex;
+      flex-flow: row ;
+      align-items: center;
+      box-sizing: border-box;
+      gap: var(--gap-small);
+      overflow: hidden;
+    }
+
+    &-mapper {
+      display: flex;
+      grid-template-columns: 1fr 1fr;
+
+      @media (max-width: size.$dashboard-mobile-breakpoint) {
+        grid-template-columns: 1fr;
+      }
+
+      gap: var(--gap-default);
+      box-sizing: border-box;
+      overflow: auto;
+
+      &-content {
+        display: flex;
+        flex-flow: column;
+        gap: var(--gap-default);
+        justify-content: center;
+        align-items: flex-start;
+        box-sizing: border-box;
+      }
+    }
+  }
+
+  label {
+    font-weight: bold;
+    color: var(--modest-text-color);
+
+    &:after {
+      content: ':'
+    }
+  }
+}

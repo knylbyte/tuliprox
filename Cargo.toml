@@ -1,5 +1,5 @@
 [workspace]
-members = ["backend", "webui", "shared"]
+members = ["backend", "frontend", "shared"]
 resolver = "2"
 
 [profile.release]
