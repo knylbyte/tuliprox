@@ -101,7 +101,7 @@ pub fn TargetTable(props: &TargetTableProps) -> Html {
                     5 => dto.sort.as_ref().map_or_else(|| html! {}, |_s| html! { <RevealContent><TargetSort target={Rc::clone(&dto)} /></RevealContent> }),
                     6 => dto.t_filter.as_ref().map_or_else(|| html! {}, |f| html! { <RevealContent preview={Some(html!{<FilterView inline={true} filter={f.clone()} />})}><FilterView pretty={true} filter={f.clone()} /></RevealContent> }),
                     7 => dto.rename.as_ref().map_or_else(|| html! {}, |_r| html! { <RevealContent><TargetRename target={Rc::clone(&dto)} /></RevealContent> }),
-                    8 => html! { <RevealContent preview={html! { dto.mapping.as_ref().map(|v| v.join(", ")).unwrap_or_default() }}><PlaylistMappings mappings={dto.mapping.clone()} /></RevealContent> },
+                    8 => html! { <RevealContent preview={Some(html! { dto.mapping.as_ref().map(|v| v.join(", ")).unwrap_or_default() })}><PlaylistMappings mappings={dto.mapping.clone()} /></RevealContent> },
                     9 => html! { <PlaylistProcessing order={dto.processing_order} /> },
                     10 => html! { <TargetWatch  target={Rc::clone(&dto)} /> },
                     _ => html! {""},

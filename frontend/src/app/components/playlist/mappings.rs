@@ -13,21 +13,24 @@ pub struct PlaylistMappingsProps {
 pub fn PlaylistMappings(props: &PlaylistMappingsProps) -> Html {
     let translate = use_translation();
     let config_ctx = use_context::<ConfigContext>().expect("Config context not found");
-    let mappings = use_memo(config_ctx.clone(), |context| {
-        match &props.mappings {
-            Some(mapping_ids) => {
-                context.config.as_ref()
-                    .and_then(|c| c.mappings.as_ref())
-                    .map(|mappings_dto| {
-                        mappings_dto.mappings.mapping.iter()
-                            .filter(|m| mapping_ids.contains(&m.id))
-                            .cloned()
-                            .collect::<Vec<MappingDto>>()
-                    })
+    let mappings = {
+        let ids = props.mappings.clone();
+        use_memo((config_ctx.clone(), ids), |(context, mapping_ids)| {
+            match mapping_ids {
+                Some(ids) => {
+                    context.config.as_ref()
+                        .and_then(|c| c.mappings.as_ref())
+                        .map(|mappings_dto| {
+                            mappings_dto.mappings.mapping.iter()
+                                .filter(|m| ids.contains(&m.id))
+                                .cloned()
+                                .collect::<Vec<MappingDto>>()
+                        })
+                }
+                None => None,
             }
-            None => None,
-        }
-    });
+        })
+    };
 
     let render_mapper = |mapper: &MapperDto| {
         html! {
@@ -58,7 +61,7 @@ pub fn PlaylistMappings(props: &PlaylistMappingsProps) -> Html {
                     <label>{translate.t("LABEL.MATCH_AS_ASCII")}</label>
                     <ToggleSwitch value={mapping.match_as_ascii} readonly={true} />
                 </div>
-                <Accordion default_panel={"".to_string()}>
+                <Accordion default_panel={None::<String>}>
                 <div class="tp__playlist-mappings__list">
                     {
                         for mapping.mapper.iter().flatten().enumerate().map(|(idx, mapper)| {
@@ -89,11 +92,9 @@ pub fn PlaylistMappings(props: &PlaylistMappingsProps) -> Html {
     html! {
       <div class="tp__playlist-mappings">
         {
-            match (*mappings).as_ref() {
-                Some(vec) => {
-                    html! { for vec.iter().map(render_mapping) }
-                },
-                None => html! { <NoContent/>},
+             match (*mappings).as_ref() {
+                Some(vec) if !vec.is_empty() => html! { for vec.iter().map(render_mapping) },
+                _ => html! { <NoContent/> },
             }
         }
       </div>
