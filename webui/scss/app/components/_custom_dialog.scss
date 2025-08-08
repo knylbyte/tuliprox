@@ -1,0 +1,90 @@
+@use '../../size';
+.tp__custom-dialog-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.tp__custom-dialog-modal {
+  /* Additional styles for modal dialogs */
+}
+
+.tp__custom-dialog {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  color: var(--text-color);
+  background-color: var(--card-background-color);
+  filter: drop-shadow(6px 6px 6px var(--popup-shadow-color));
+
+  border-radius: var(--border-radius);
+  max-width: 90%;
+  max-height: 90%;
+  width: auto;
+  animation: slideIn 0.2s ease-out;
+  
+  &.tp__confirm-dialog {
+    min-width: size.$confirm-dialog-min-width;
+    max-width: size.$confirm-dialog-max-width;
+    padding: var(--padding-default);
+    border-radius: var(--border-radius);
+  }
+  
+  &.tp__content-dialog {
+    min-width: size.$content-dialog-min-width;
+    max-width: size.$content-dialog-max-width;
+    padding: var(--padding-default);
+    border-radius: var(--border-radius);
+  }
+}
+
+/* Animation for dialog appearance */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Ensure the dialog toolbar styles work with our custom dialog */
+.tp__dialog__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-color);
+  gap: var(--gap-default);
+
+  &-left {
+    display: flex;
+    justify-content: flex-start;
+    gap: var(--gap-default);
+    flex: 1;
+  }
+  
+  &-right {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-default);
+  }
+}

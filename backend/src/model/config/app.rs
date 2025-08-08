@@ -44,7 +44,7 @@ impl AppConfig {
 
     pub fn set_config(&self, config: Config) -> Result<(), TuliproxError> {
         self.config.store(Arc::new(config));
-        self.prepare_custom_stream_response();
+        self.prepare_paths();
         Ok(())
     }
 
@@ -293,7 +293,7 @@ impl AppConfig {
         if include_computed {
             self.access_token_secret = generate_secret();
             self.encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;
-            self.prepare_custom_stream_response();
+            self.prepare_paths();
         }
 
         self.prepare_sources()?;
@@ -307,6 +307,22 @@ impl AppConfig {
         self.check_scheduled_targets(&target_names)?;
         self.check_unique_input_names()?;
         Ok(())
+    }
+
+    fn prepare_paths(&self) {
+        {
+            let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
+            let paths = self.paths.load_full();
+            let mut new_paths = paths.as_ref().clone();
+            let config_mapping_file_path = config.mapping_path.as_ref();
+            let old_mapping_file_path = new_paths.mapping_file_path.as_ref();
+            if old_mapping_file_path != config_mapping_file_path {
+                new_paths.mapping_file_path.clone_from(&config.mapping_path);
+                self.paths.store(Arc::new(new_paths));
+            }
+        }
+
+        self.prepare_custom_stream_response();
     }
 
     fn prepare_custom_stream_response(&self) {

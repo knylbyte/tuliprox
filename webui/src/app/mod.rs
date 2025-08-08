@@ -6,8 +6,8 @@ use std::rc::Rc;
 use futures::future::join_all;
 use log::error;
 use serde_json::Value;
-use crate::provider::icon_context_provider::IconContextProvider;
-use crate::provider::service_context_provider::ServiceContextProvider;
+use crate::provider::IconContextProvider;
+use crate::provider::ServiceContextProvider;
 use yew_i18n::I18nProvider;
 use yew::prelude::*;
 use yew_hooks::{use_async_with_options, UseAsyncOptions};
@@ -16,9 +16,9 @@ use crate::app::components::{Authentication, Home, Login};
 use crate::error::Error;
 use crate::hooks::IconDefinition;
 use crate::model::WebConfig;
-use crate::provider::dialog_provider::DialogProvider;
 use crate::services::request_get;
 pub use crate::app::components::{ConfirmDialog, ContentDialog};
+pub use context::*;
 
 
 fn flatten_json(value: &Value, prefix: String, map: &mut HashMap<String, serde_json::Value>) {
@@ -134,9 +134,7 @@ pub fn App() -> Html {
                 <IconContextProvider icons={icons.clone()}>
                     <I18nProvider supported_languages={supported_languages} translations={transl.clone()}>
                         <Authentication>
-                            <DialogProvider>
-                                <Switch<AppRoute> render={switch} />
-                            </DialogProvider>
+                           <Switch<AppRoute> render={switch} />
                         </Authentication>
                     </I18nProvider>
                 </IconContextProvider>

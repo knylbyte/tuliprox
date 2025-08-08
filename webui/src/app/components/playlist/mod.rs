@@ -11,7 +11,6 @@ mod processing;
 mod mappings;
 mod filter_view;
 mod input_table;
-
 mod input;
 mod source_selector;
 mod playlist_explorer;

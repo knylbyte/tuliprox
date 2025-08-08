@@ -233,12 +233,8 @@ impl ConfigInputDto {
         let is_batch = matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch);
 
         self.name = self.name.trim().to_owned();
-        if self.name.is_empty() {
-            if !is_batch {
-                return Err(info_err!("name for input is mandatory".to_owned()));
-            }
-        } else if is_batch {
-            return Err(info_err!("inputs of type batch should not use the name attribute".to_owned()));
+        if self.name.is_empty()  && !is_batch {
+            return Err(info_err!("name for input is mandatory".to_owned()));
         }
 
         self.username = get_trimmed_string(&self.username);

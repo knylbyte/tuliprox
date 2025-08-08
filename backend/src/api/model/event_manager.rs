@@ -6,6 +6,7 @@ use crate::api::model::{ProviderConnectionChangeReceiver};
 
 #[derive(Clone, PartialEq)]
 pub enum EventMessage {
+    ServerError(String),
     ActiveUser(usize, usize), // user_count, connection count
     ActiveProvider(String, usize), // provider name, connections
     ConfigChange(ConfigType),

@@ -72,6 +72,9 @@ impl WebSocketService {
                                     ProtocolMessage::ConfigChangeResponse(config_type) => {
                                         event_service.broadcast(EventMessage::ConfigChange(config_type));
                                     }
+                                    ProtocolMessage::ServerError(error) => {
+                                        event_service.broadcast(EventMessage::ServerError(error));
+                                    }
                                     ProtocolMessage::PlaylistUpdateResponse(update_state) => {
                                         event_service.broadcast(EventMessage::PlaylistUpdate(update_state));
                                     }

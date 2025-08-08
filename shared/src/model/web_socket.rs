@@ -76,6 +76,7 @@ pub enum ProtocolMessage {
     Version(u8),
     Auth(String),
     Authorized,
+    ServerError(String),
     StatusRequest(String),
     StatusResponse(StatusCheck),
     ActiveUserResponse(usize, usize), // user_count, connection count

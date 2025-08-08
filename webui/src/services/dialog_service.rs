@@ -1,10 +1,10 @@
+use crate::model::{DialogAction, DialogActions, DialogResult};
 use std::cell::RefCell;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll, Waker};
 use yew::{Callback, Html};
-use crate::model::{DialogAction, DialogActions, DialogResult};
 
 #[derive(Clone)]
 pub struct DialogFuture {
@@ -102,9 +102,9 @@ impl DialogService {
         let (future, resolver) = DialogFuture::new();
         let request = ContentRequest {
             content,
-            actions: actions.unwrap_or_else(||  DialogActions {
+            actions: actions.unwrap_or_else(|| DialogActions {
                 left: None,
-                right: vec![ DialogAction::new_focused("close", "LABEL.CLOSE",  DialogResult::Cancel, Some("Close".to_string()), None) ],
+                right: vec![DialogAction::new_focused("close", "LABEL.CLOSE", DialogResult::Cancel, Some("Close".to_owned()), None)],
             }),
             resolve: Rc::new(RefCell::new(Some(Box::new(resolver)))),
         };

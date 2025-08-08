@@ -1,7 +1,7 @@
 use yew::prelude::*;
-use web_sys::HtmlDialogElement;
 use yew_i18n::use_translation;
 use crate::app::components::TextButton;
+use crate::app::components::custom_dialog::CustomDialog;
 use crate::model::{DialogAction, DialogActions, DialogResult};
 
 #[derive(Properties, PartialEq)]
@@ -13,26 +13,14 @@ pub struct ContentDialogProps {
 
 #[function_component]
 pub fn ContentDialog(props: &ContentDialogProps) -> Html {
-    let dialog_ref = use_node_ref();
     let translate = use_translation();
-
-    {
-        let dialog_ref = dialog_ref.clone();
-        use_effect(move || {
-            if let Some(dialog) = dialog_ref.cast::<HtmlDialogElement>() {
-                let _ = dialog.show_modal();
-            }
-            || ()
-        });
-    }
+    let is_open = use_state(|| true);
 
     let on_result = {
-        let dialog_ref = dialog_ref.clone();
         let on_confirm = props.on_confirm.clone();
+        let is_open = is_open.clone();
         move |result: DialogResult| {
-            if let Some(dialog) = dialog_ref.cast::<HtmlDialogElement>() {
-                dialog.close();
-            }
+            is_open.set(false);
             on_confirm.emit(result);
         }
     };
@@ -58,8 +46,31 @@ pub fn ContentDialog(props: &ContentDialogProps) -> Html {
     })
     };
 
+    // Find a cancel action to use for backdrop clicks
+    let on_close = {
+        let on_result = on_result.clone();
+        let cancel_action = props.actions.right.iter()
+            .find(|action| matches!(action.result, DialogResult::Cancel))
+            .or_else(|| props.actions.right.first());
+            
+        if let Some(action) = cancel_action {
+            let result = action.result.clone();
+            Some(Callback::from(move |_| {
+                on_result(result.clone());
+            }))
+        } else {
+            None
+        }
+    };
+
     html! {
-        <dialog ref={dialog_ref} class="tp__dialog tp__content-dialog">
+        <CustomDialog 
+            open={*is_open} 
+            class="tp__content-dialog" 
+            modal=true 
+            close_on_backdrop_click=true
+            on_close={on_close}
+        >
             { props.content.clone() }
             <div class="tp__dialog__toolbar">
                 <div class="tp__dialog__toolbar-left">
@@ -69,6 +80,6 @@ pub fn ContentDialog(props: &ContentDialogProps) -> Html {
                     {render_actions(Some(&props.actions.right))}
                 </div>
             </div>
-        </dialog>
+        </CustomDialog>
     }
 }

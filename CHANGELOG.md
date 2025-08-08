@@ -3,6 +3,7 @@
 - Fixed shared stream provider connection count
 - Added hanging client connection release
 - Added `replace` built-in function for mapper scripts 
+- New WebUI features
 
 # 3.1.4 (2025-06-17)
 - share live stream refactored
