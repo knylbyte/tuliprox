@@ -5,8 +5,8 @@
 
   .tp__filter__code {
     font-family: monospace;
-    background: #1e1e1e;
-    color: #d4d4d4;
+    background: var(--code-editor-background-color);
+    color: var(--code-editor-color);
     padding: 1rem;
     border-radius: 8px;
     white-space: pre;
@@ -14,38 +14,40 @@
     .binary_op-wrapper{
       white-space: pre;
     }
+    
     .comparison {
       white-space: nowrap;
       overflow: hidden;
-      background-color: #202429;
+      color: var(--code-comparison-color);
+      background-color: var(--code-comparison-background-color);
       padding: var(--padding-micro);
       border-radius: var(--border-radius);
     }
 
     .unary_op {
       font-weight: bold;
-      color: #569cd6;
+      color: var(--code-op-color);
       text-transform: uppercase;
     }
 
     .binary_op {
       font-weight: bold;
-      color: #9cdcfe;
+      color: var(--code-op-color);
       text-transform: uppercase;
     }
 
     .field {
       font-weight: bold;
-      color: #fdb76c;
+      color: var(--code-field-color);
     }
 
     .regex {
-      color: #bb8953;
+      color: var(--code-regex-color);
       white-space: nowrap;
     }
 
     .enum {
-      color: #78ce89;
+      color: var(--code-enum-color);
     }
   }
 
@@ -54,12 +56,9 @@
       font-size: 1.1rem;
   }
 
-  //.bracket-1 { color: #c551ac; }
-  //.bracket-2 { color: #70db39; }
-  //.bracket-3 { color: #dbdb02; }
-  .bracket-1 { color: #569CD6; }
-  .bracket-2 { color: #C586C0; }
-  .bracket-3 { color: #B5CEA8; }
+  .bracket-1 { color: var(--code-bracket-1-color); }
+  .bracket-2 { color: var(--code-bracket-2-color); }
+  .bracket-3 { color: var(--code-bracket-3-color); }
 }
 .tp__filter__inline {
   .tp__filter__code {

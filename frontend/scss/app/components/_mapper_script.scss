@@ -6,88 +6,58 @@
   .tp__mapper-script__code {
     font-family: monospace;
     background: #1e1e1e;
-    color: #d4d4d4;
-    padding: 1rem;
-    border-radius: 8px;
+    color: var(--modest-text-color);
+    padding: var(--padding-default);
+    border-radius: var(--border-radius);
     white-space: pre;
 
     .identifier {
-      color: #569cd6;
+      color: var(--code-identifier-color);
     }
 
     .var-access {
-      color: #9cdcfe;
+      color: var(--code-var-access-color);
     }
 
     .field {
-      color: #fdb76c;
+      color: var(--code-field-color);
     }
 
     .property {
-      color: #9a652f;
+      color: var(--code-property-color);
     }
 
     .literal {
-      color: #5fcc5c;
+      color: var(--code-literal-color);
     }
 
     .num-literal {
-      color: #429140;
+      color: var(--code-num-literal-color);
     }
 
-    .null-literal {
-      border: 1px solid var(--border-color);
-      padding: var(--padding-micro);
-      border-radius: var(--border-radius);
-      color: var(--modest-text-color);
-      background-color: var(--card-background-color);
-    }
 
     .built-in-function {
-
+      color: var(--code-built-in-function-color);
     }
 
     .reserved {
-      color: #da2ee0;
+      color: var(--code-reserved-color);
     }
 
-    //.binary_op-wrapper{
-    //  white-space: pre;
-    //}
-    //
-    //.comparison {
-    //  white-space: nowrap;
-    //  overflow: hidden;
-    //  background-color: #202429;
-    //  padding: var(--padding-micro);
-    //  border-radius: var(--border-radius);
-    //}
-    //
-    //.unary_op {
-    //  font-weight: bold;
-    //  color: #569cd6;
-    //  text-transform: uppercase;
-    //}
-    //
-    //.binary_op {
-    //  font-weight: bold;
-    //  color: #9cdcfe;
-    //  text-transform: uppercase;
-    //}
-    //
-    //.field {
-    //  font-weight: bold;
-    //  color: #fdb76c;
-    //}
-    //
-    //.regex {
-    //  color: #bb8953;
-    //  white-space: nowrap;
-    //}
-    //
-    //.enum {
-    //  color: #78ce89;
-    //}
+    .any-match {
+      color: var(--code-any-match-color);
+      font-weight: bold;
+    }
+
+    .range {
+      color: var(--code-range-color);
+      font-weight: bold;
+    }
+
+    .null-literal {
+      color: var(--code-null-literal-color);
+      font-weight: bold;
+    }
   }
 
   .bracket {

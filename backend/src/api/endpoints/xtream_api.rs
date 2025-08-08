@@ -103,7 +103,7 @@ impl FromStr for ApiStreamContext {
             Self::TIMESHIFT => Ok(Self::Timeshift),
             _ => create_tuliprox_error_result!(
                 TuliproxErrorKind::Info,
-                "Unknown CounterModifier: {}",
+                "Unknown ApiStreamContext: {}",
                 s
             ),
         }

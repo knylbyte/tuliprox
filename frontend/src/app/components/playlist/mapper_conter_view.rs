@@ -1,19 +1,19 @@
 use std::ops::Deref;
 use regex::Regex;
-use shared::foundation::mapper::{MapperScript, Statement, Expression, ExprId, MapKey, BuiltInFunction, MapCase, AssignmentTarget, MatchCase, RegexSource, MapCaseKey, MatchCaseKey};
+use shared::foundation::mapper::{MapperScript, Statement, Expression, ExprId, MapKey, BuiltInFunction, MapCase, AssignmentTarget, MatchCase, RegexSource, MapCaseKey};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq, Clone)]
-pub struct MapperScriptViewProps {
+pub struct MapperCounterViewProps {
     #[prop_or_default]
     pub pretty: bool,
     #[prop_or(false)]
     pub inline: bool,
-    pub script: Option<MapperScript>,
+    pub script: Option<MapperCounter>,
 }
 
 #[function_component]
-pub fn MapperScriptView(props: &MapperScriptViewProps) -> Html {
+pub fn MapperCounterView(props: &MapperScriptViewProps) -> Html {
     html! {
         <div class={classes!("tp__mapper-script", if props.inline {"tp__mapper-script__inline"} else {""} )}>
             {
@@ -123,11 +123,11 @@ fn render_map_case(case: &MapCase, script: &MapperScript, format_params: &mut Fo
                 for case.keys.iter().enumerate().map(|(i, key)| {
                     let item = match key {
                         MapCaseKey::Text(text) => render_literal(text),
-                        MapCaseKey::RangeFrom(from) => html! { <span class="range">{format!("{from}..")}</span> },
-                        MapCaseKey::RangeTo(to) => html! { <span class="range">{format!("..{to}")}</span> },
-                        MapCaseKey::RangeFull(from, to) => html! { <span class="range">{format!("{from}..{to}")}</span> },
-                        MapCaseKey::RangeEq(val) => html! { <span class="range">{val.to_string()}</span> },
-                        MapCaseKey::AnyMatch => html! { <span class="any-match">{"_"}</span> },
+                        MapCaseKey::RangeFrom(from) => html! { format!("{from}..") },
+                        MapCaseKey::RangeTo(to) => html! { format!("..{to}") },
+                        MapCaseKey::RangeFull(from, to) => html! { format!("{from}..{to}") },
+                        MapCaseKey::RangeEq(val) => html! { val.to_string() },
+                        MapCaseKey::AnyMatch => html! { "_" },
                     };
 
                     if i < case.keys.len() - 1 {
@@ -217,60 +217,11 @@ fn render_assignment(target: &AssignmentTarget, expr_id: &ExprId, script: &Mappe
     }
 }
 
-fn render_match_case(case: &MatchCase, script: &MapperScript, format_params: &mut FormatParams) -> Html {
-    let keys_html = html! {
-        <>
-            {
-                for case.keys.iter().enumerate().map(|(i, key)| {
-                    let item = match key {
-                        MatchCaseKey::Identifier(text) => render_identifier(text),
-                        MatchCaseKey::AnyMatch => html! { <span class="any-match">{"_"}</span> },
-                    };
-
-                    if i < case.keys.len() - 1 {
-                        html! { <> { item } { ", " } </> }
-                    } else {
-                        html! { { item } }
-                    }
-                })
-            }
-        </>
-    };
-    let has_bracket = case.keys.len() > 1;
-    html! {
-        <>
-            {indent(format_params.level, true)}
-            {if has_bracket {"("} else {""}}
-            {keys_html}
-            {if has_bracket {")"} else {""}}
-            {" => "} {render_expression(&case.expression, script, format_params)}{","}
-            {newline(format_params)}
-        </>
-    }
-}
-
-
-fn render_match_cases(cases: &[MatchCase], script: &MapperScript, format_params: &mut FormatParams) -> Html {
-    html!{
-        <>
-            {
-                for cases.iter().map(|case| render_match_case(case, script, format_params))
-            }
-        </>
-    }
-}
-
 fn render_match_block(match_cases: &[MatchCase], script: &MapperScript, format_params: &mut FormatParams) -> Html {
     html! {
         <>
-            {indent(format_params.level, true)}
-            <span class="reserved">{"match "}</span>
-            <span class="bracket">{" {"}</span>
-            {newline(format_params)}
-            {render_match_cases(match_cases, script, format_params.inc_level(1))}
-            {newline(format_params.dec_level(1))}
-            {indent(format_params.level, true)}
-            <span class="bracket">{"}"}</span>
+        {"!! TODO MATCH BLOCK !!!"}
+        {newline(format_params)}
         </>
     }
 }
@@ -283,7 +234,7 @@ fn render_regex_source(source: &RegexSource) -> Html {
     }
 }
 
-fn render_regexp(field: &RegexSource, pattern: &String, _regex: &Regex) -> Html {
+fn render_regexp(field: &RegexSource, pattern: &String, regex: &Regex) -> Html {
     html! { <> {render_regex_source(field)} {" ~ "} <span class="regex">{"'"}{ pattern }{"'"}</span></> }
 }
 

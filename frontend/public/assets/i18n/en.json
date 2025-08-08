@@ -196,7 +196,9 @@
     "INPUTS": "Inputs",
     "NEW_USER": "New User",
     "USERLIST": "Userlist",
-    "MAPPER": "Mapper"
+    "MAPPER": "Mapper",
+    "SCRIPT": "Script",
+    "COUNTER": "Counter"
   },
   "TABLE": {
     "EMPTY": "",

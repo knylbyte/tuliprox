@@ -1,7 +1,7 @@
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::{MapperDto, MappingCounterDefinition, MappingDto};
-use crate::app::components::{ConfigContext, FilterView, MapperScriptView, NoContent};
+use shared::model::{MapperDto, MappingCounter, MappingDto};
+use crate::app::components::{Accordion, AccordionPanel, ConfigContext, FilterView, MapperCounterView, MapperScriptView, NoContent};
 use crate::app::components::toggle_switch::ToggleSwitch;
 
 #[derive(Properties, PartialEq, Clone)]
@@ -38,11 +38,11 @@ pub fn PlaylistMappings(props: &PlaylistMappingsProps) -> Html {
         }
     };
 
-    let render_counter = |mapper: &MappingCounterDefinition| {
+    let render_counter = |counter: &MappingCounter| {
         html! {
             <div class="tp__playlist-mappings__mapper-counter">
-                <label>{translate.t("LABEL.MAPPER")}</label>
-
+                <FilterView filter={counter.filter.clone()} />
+                <MapperCounterView counter={counter.clone()} pretty={true}/>
             </div>
         }
     };
@@ -58,28 +58,32 @@ pub fn PlaylistMappings(props: &PlaylistMappingsProps) -> Html {
                     <label>{translate.t("LABEL.MATCH_AS_ASCII")}</label>
                     <ToggleSwitch value={mapping.match_as_ascii} readonly={true} />
                 </div>
-                <div class="tp__playlist-mappings__mapping-mapper">
+                <Accordion default_panel={"".to_string()}>
+                <div class="tp__playlist-mappings__list">
                     {
-                        for mapping.mapper.iter().flatten().map(|mapper| {
-                            html! { render_mapper(mapper) }
+                        for mapping.mapper.iter().flatten().enumerate().map(|(idx, mapper)| {
+                           html! {
+                              <AccordionPanel id={format!("script-{}", idx+1)} title={format!("{}-{}", translate.t("LABEL.SCRIPT"), idx+1)} >
+                                  { render_mapper(mapper) }
+                              </AccordionPanel>
+                            }
                         })
                     }
                 </div>
-                 <div class="tp__playlist-mappings__mapping-counter">
+                 <div class="tp__playlist-mappings__list">
                     {
-                        for mapping.counter.iter().flatten().map(|counter| {
-                           html! { render_counter(counter) }
+                        for mapping.t_counter.iter().flatten().enumerate().map(|(idx, counter)| {
+                        html! {
+                            <AccordionPanel id={format!("counter-{}", idx+1)} title={format!("{}-{}", translate.t("LABEL.COUNTER"), idx+1)} >
+                              { render_counter(counter) }
+                            </AccordionPanel>
+                           }
                         })
                     }
                 </div>
+                </Accordion>
             </div>
         }
-        // pub mapper: Option<Vec<MapperDto>>,
-        // pub counter: Option<Vec<MappingCounterDefinition>>,
-        // #[serde(skip_serializing, skip_deserializing)]
-        // pub t_counter: Option<Vec<MappingCounter>>,
-        // #[serde(skip_serializing, skip_deserializing)]
-        // pub templates: Option<Vec<PatternTemplate>>
     };
 
     html! {

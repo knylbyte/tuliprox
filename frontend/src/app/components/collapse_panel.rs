@@ -24,18 +24,6 @@ pub fn CollapsePanel(props: &CollapsePanelProps) -> Html {
         Callback::from(move |_| expanded.set(!*expanded))
     };
 
-    // use_effect_with((expanded.clone(), panel_ref.clone()),move |(expanded, panel_ref)| {
-    //     if let Some(element) = panel_ref.cast::<HtmlElement>() {
-    //         if **expanded {
-    //             let scroll_height = element.scroll_height();
-    //             element.style().set_property("height", &format!("{scroll_height}px")).unwrap();
-    //         } else {
-    //             element.style().set_property("height", "0px").unwrap();
-    //         }
-    //     }
-    //     || ()
-    // });
-
     html! {
         <div class={classes!("tp__collapse-panel", if *expanded {""} else {"tp__collapsed"}, props.class.to_string())}>
             <div class="tp__collapse-panel__header" onclick={toggle}>

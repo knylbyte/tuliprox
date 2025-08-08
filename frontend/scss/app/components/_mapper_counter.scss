@@ -1,0 +1,20 @@
+.tp__mapper-counter {
+  display: flex;
+  flex-flow: column;
+  overflow: auto;
+  box-sizing: border-box;
+
+  &__row {
+    display: flex;
+    flex-flow: row;
+    box-sizing: border-box;
+    label {
+      color: var(--modest-text-color);
+    }
+  }
+}
+
+.tp__mapper-counter__inline {
+  flex-flow: row;
+  overflow: hidden;
+}

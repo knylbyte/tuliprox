@@ -1,6 +1,12 @@
 @use "../../../size";
 
 .tp__playlist-source-selector {
+   display: flex;
+   flex-flow: column;
+   gap: var(--gap-default);
+   box-sizing: border-box;
+   width: 100%;
+   flex-shrink: 0;
 
   &__source-picker .tp__collapse-panel__body {
     display: flex;
