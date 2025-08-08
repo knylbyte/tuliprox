@@ -11,6 +11,7 @@ pub struct WebAuthConfig {
     pub enabled: bool,
     pub issuer: String,
     pub secret: String,
+    pub token_ttl_mins: u32,
     pub userfile: Option<String>,
     pub t_users: Option<Vec<UserCredential>>,
 }
@@ -20,8 +21,9 @@ impl From<&WebAuthConfigDto> for WebAuthConfig {
     fn from(dto: &WebAuthConfigDto) -> Self {
         Self {
             enabled: dto.enabled,
-            issuer: dto.issuer.to_string(),
-            secret: dto.secret.to_string(),
+            issuer: dto.issuer.clone(),
+            secret: dto.secret.clone(),
+            token_ttl_mins: dto.token_ttl_mins,
             userfile: dto.userfile.clone(),
             t_users: None,
         }
@@ -32,8 +34,9 @@ impl From<&WebAuthConfig> for WebAuthConfigDto {
     fn from(instance: &WebAuthConfig) -> Self {
         Self {
             enabled: instance.enabled,
-            issuer: instance.issuer.to_string(),
-            secret: instance.secret.to_string(),
+            issuer: instance.issuer.clone(),
+            secret: instance.secret.clone(),
+            token_ttl_mins: instance.token_ttl_mins,
             userfile: instance.userfile.clone(),
         }
     }

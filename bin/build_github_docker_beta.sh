@@ -7,7 +7,7 @@ BIN_DIR="${WORKING_DIR}/bin"
 RESOURCES_DIR="${WORKING_DIR}/resources"
 DOCKER_DIR="${WORKING_DIR}/docker"
 BACKEND_DIR="${WORKING_DIR}/backend"
-FRONTEND_DIR="${WORKING_DIR}/webui"
+FRONTEND_DIR="${WORKING_DIR}/frontend"
 FRONTEND_BUILD_DIR="${FRONTEND_DIR}/dist"
 TARGET=x86_64-unknown-linux-musl
 VERSION=$(grep -Po '^version\s*=\s*"\K[0-9\.]+' "${BACKEND_DIR}/Cargo.toml" || true)

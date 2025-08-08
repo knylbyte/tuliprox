@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 echo "building binary for aarch64"
 env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target aarch64-unknown-linux-musl
-cd ./webui || exit 1
+cd ./frontend || exit 1
 env RUSTFLAGS="--remap-path-prefix $HOME=~" trunk build --release

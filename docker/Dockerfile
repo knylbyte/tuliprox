@@ -58,7 +58,7 @@ RUN cargo install --locked trunk wasm-bindgen-cli
 # Now copy the actual source code and build the project
 COPY . .
 
-WORKDIR /src/webui
+WORKDIR /src/frontend
 
 # Run Trunk build
 RUN trunk build --release
@@ -135,7 +135,7 @@ RUN rustup update && rustup target add $RUST_TARGET
 
 # Create the final application layout to mimic production
 WORKDIR /app
-COPY --from=trunk-build /src/webui/dist ./web
+COPY --from=trunk-build /src/frontend/dist ./web
 COPY --from=resource-build /src/resources ./resources
 
 # Create a separate directory for the source code
@@ -170,7 +170,7 @@ COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # App
 WORKDIR /app
 COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
-COPY --from=trunk-build /src/webui/dist ./web
+COPY --from=trunk-build /src/frontend/dist ./web
 COPY --from=resource-build /src/resources ./resources
 
 ENTRYPOINT ["/app/tuliprox"]
@@ -195,7 +195,7 @@ RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 WORKDIR /app
 COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
-COPY --from=trunk-build /src/webui/dist ./web
+COPY --from=trunk-build /src/frontend/dist ./web
 COPY --from=resource-build /src/resources ./resources
 
 ENTRYPOINT ["/sbin/tini", "--", "/app/tuliprox"]

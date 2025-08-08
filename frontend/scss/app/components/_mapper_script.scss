@@ -1,0 +1,77 @@
+.tp__mapper-script {
+  display: flex;
+  flex-flow: column;
+  overflow: auto;
+
+  .tp__mapper-script__code {
+    font-family: monospace;
+    background: #1e1e1e;
+    color: var(--modest-text-color);
+    padding: var(--padding-default);
+    border-radius: var(--border-radius);
+    white-space: pre;
+
+    .identifier {
+      color: var(--code-identifier-color);
+    }
+
+    .var-access {
+      color: var(--code-var-access-color);
+    }
+
+    .field {
+      color: var(--code-field-color);
+    }
+
+    .property {
+      color: var(--code-property-color);
+    }
+
+    .literal {
+      color: var(--code-literal-color);
+    }
+
+    .num-literal {
+      color: var(--code-num-literal-color);
+    }
+
+
+    .built-in-function {
+      color: var(--code-built-in-function-color);
+    }
+
+    .reserved {
+      color: var(--code-reserved-color);
+    }
+
+    .any-match {
+      color: var(--code-any-match-color);
+      font-weight: bold;
+    }
+
+    .range {
+      color: var(--code-range-color);
+      font-weight: bold;
+    }
+
+    .null-literal {
+      color: var(--code-null-literal-color);
+      font-weight: bold;
+    }
+  }
+
+  .bracket {
+      font-weight: bold;
+      font-size: 1.1rem;
+  }
+
+  .bracket-1 { color: #569CD6; }
+  .bracket-2 { color: #C586C0; }
+  .bracket-3 { color: #B5CEA8; }
+}
+.tp__mapper-script__inline {
+  .tp__mapper-script__code {
+     padding: 0;
+     margin-block: 0;
+  }
+}
