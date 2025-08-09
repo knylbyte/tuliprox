@@ -57,6 +57,13 @@ pub fn filter_request_header(key: &str) -> bool {
     if key == "host" || key == "connection" {
         return false;
     }
+
+    // filter all X- header for max privacy
+    // traefik adds a lot of X- header by default
+    if key.starts_with('X') {
+        return false;
+    }
+
     true
 }
 
