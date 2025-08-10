@@ -405,39 +405,43 @@ pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
 
     if let Some(proxy_cfg) = config.proxy.as_ref() {
         match Url::parse(&proxy_cfg.url) {
-            Ok(mut u) => {
-                let scheme = u.scheme().to_ascii_lowercase();
+            Ok(mut url) => {
+                let scheme = url.scheme().to_ascii_lowercase();
 
-                if scheme == "socks5" || scheme == "socks5h" {
-                    if let Some(user) = &proxy_cfg.username {
-                        let _ = u.set_username(user);
-                    }
-                    if let Some(pass) = &proxy_cfg.password {
-                        let _ = u.set_password(Some(pass));
-                    }
-                    match reqwest::Proxy::all(u.as_str()) {
-                        Ok(p) => { client = client.proxy(p); }
-                        Err(err) => error!("Failed to create SOCKS proxy {}: {err}", u),
-                    }
-                } else if scheme == "http" || scheme == "https" {
-                    match reqwest::Proxy::all(u.as_str()) {
-                        Ok(p) => {
-                            if let (Some(username), Some(password)) =
-                                (&proxy_cfg.username, &proxy_cfg.password)
-                            {
-                                client = client.proxy(p.basic_auth(username, password));
-                            } else {
-                                client = client.proxy(p);
-                            }
+                match scheme.as_str() {
+                    "socks5" | "socks5h" => {
+                        if let Some(user) = &proxy_cfg.username {
+                            let _ = url.set_username(user);
                         }
-                        Err(err) => error!("Failed to create HTTP proxy {}: {err}", u),
+                        if let Some(pass) = &proxy_cfg.password {
+                            let _ = url.set_password(Some(pass));
+                        }
+                        match reqwest::Proxy::all(url.as_str()) {
+                            Ok(p) => { client = client.proxy(p); }
+                            Err(err) => error!("Failed to create SOCKS proxy {url}: {err}"),
+                        }
+                    },
+                    "http" | "https" => {
+                        match reqwest::Proxy::all(url.as_str()) {
+                            Ok(p) => {
+                                if let (Some(username), Some(password)) =
+                                    (&proxy_cfg.username, &proxy_cfg.password)
+                                {
+                                    client = client.proxy(p.basic_auth(username, password));
+                                } else {
+                                    client = client.proxy(p);
+                                }
+                            }
+                            Err(err) => error!("Failed to create HTTP proxy {url}: {err}"),
+                        }
                     }
-                } else {
-                    error!("Unsupported proxy scheme '{}' in URL: {}", scheme, u);
+                    _ => {
+                        error!("Unsupported proxy scheme '{scheme}' in URL: {url}");
+                    }
                 }
             }
             Err(e) => {
-                error!("Invalid proxy URL '{}': {}", &proxy_cfg.url, e);
+                error!("Invalid proxy URL '{}': {e}", &proxy_cfg.url);
             }
         }
     }
