@@ -1,14 +1,16 @@
-use log::info;
 use crate::hooks::use_service_context;
-use crate::services::{Toast, ToastType};
+use crate::services::{Toast, ToastCloseMode, ToastType};
 use yew::prelude::*;
 use yew_hooks::use_mount;
+use crate::app::components::IconButton;
 
 #[function_component]
 pub fn ToastrView() -> Html {
     let service_ctx = use_service_context();
     let toasts = use_state(Vec::<Toast>::new);
+
     {
+        // Subscribe to toast updates when component mounts
         let service_ctx = service_ctx.clone();
         let toasts = toasts.clone();
         use_mount(move || service_ctx.toastr.subscribe(move |new_toasts| {
@@ -19,25 +21,53 @@ pub fn ToastrView() -> Html {
     if toasts.is_empty() {
         html! {}
     } else {
-        info!("view toassts {}", toasts.len());
         html! {
-            <div class="tp__toastr-container">
-               { for toasts.iter().map(render_toast) }
+            <div class="tp__toastr__container">
+                {
+                    // Render each toast and show an "X" icon button when close mode is Manual
+                    for toasts.iter().cloned().map({
+                        let service_ctx = service_ctx.clone();
+                        move |toast| {
+                            // Decide visual style per toast type
+                            let type_class = match toast.toast_type {
+                                ToastType::Success => "success",
+                                ToastType::Info => "info",
+                                ToastType::Warning => "warning",
+                                ToastType::Error => "error",
+                            };
+
+                            // Create close button only for Manual close mode
+                            let close_btn = if matches!(toast.close_mode, ToastCloseMode::Manual) {
+                                let on_close = {
+                                    let service_ctx = service_ctx.clone();
+                                    let id = toast.id;
+                                    // IconButton emits (name, MouseEvent); we only need to know it was clicked
+                                    Callback::from(move |(_name, _e)| {
+                                        service_ctx.toastr.dismiss(id);
+                                    })
+                                };
+
+                                html! {
+                                    <IconButton
+                                        name={"toastr-close"}
+                                        icon={"Close"}
+                                        onclick={on_close}
+                                    />
+                                }
+                            } else {
+                                html! {}
+                            };
+
+                            html! {
+                                <div key={toast.id} class={classes!("tp__toast", type_class)}>
+                                    <span class="tp__toast__message">{ toast.message.clone() }</span>
+                                    { close_btn }
+                                </div>
+                            }
+                        }
+                    })
+                }
             </div>
         }
-    }
-}
-
-fn render_toast(toast: &Toast) -> Html {
-    let class = match toast.toast_type {
-        ToastType::Success => "tp__toast success",
-        ToastType::Error => "tp__toast error",
-        ToastType::Info => "tp__toast info",
-        ToastType::Warning => "tp__toast warning",
-    };
-    html! {
-        <div key={toast.id} class={classes!(class)}>
-            { &toast.message }
-        </div>
     }
 }
