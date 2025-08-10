@@ -50,12 +50,8 @@ pub fn use_server_status(
                             }
                         };
                         if let Some(treemap) = server_status.active_provider_connections.as_mut() {
-                            if connections == 0 {
-                                treemap.remove(&provider);
-                            } else {
-                                treemap.insert(provider, connections);
-                            }
-                        } else if connections > 0 {
+                            treemap.insert(provider, connections);
+                        } else {
                             let mut treemap = BTreeMap::new();
                             treemap.insert(provider, connections);
                             server_status.active_provider_connections = Some(treemap);
