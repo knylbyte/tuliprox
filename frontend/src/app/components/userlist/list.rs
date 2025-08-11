@@ -31,7 +31,7 @@ pub fn UserlistList() -> Html {
     let userlist_body = if let Some(data) = userlist_ctx.get_users().as_ref() {
         html! {
             <div class="tp__userlist-list__user">
-                 <UserTable targets={if data.is_empty() {None} else {Some(data.clone())}} />
+                 <UserTable users={if data.is_empty() {None} else {Some(data.clone())}} />
             </div>
         }
     } else {
