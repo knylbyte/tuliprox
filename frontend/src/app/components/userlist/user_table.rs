@@ -1,19 +1,21 @@
+use std::borrow::Cow;
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
 use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, MaxConnections,
                              ProxyTypeView, RevealContent, Table, TableDefinition, UserStatus,
                              UserlistContext, UserlistPage};
+use crate::app::context::TargetUser;
 use crate::model::DialogResult;
+use crate::services::DialogService;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use shared::model::SortOrder;
+use shared::utils::{unix_ts_to_str, Substring};
 use std::fmt::Display;
 use std::rc::Rc;
 use std::str::FromStr;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::utils::{unix_ts_to_str, Substring};
-use crate::app::context::TargetUser;
-use crate::services::DialogService;
 
 const HEADERS: [&str; 15] = [
     "TABLE.EMPTY",
@@ -33,9 +35,26 @@ const HEADERS: [&str; 15] = [
     "TABLE.COMMENT",
 ];
 
+fn get_cell_value(user: &TargetUser, col: usize) -> Cow<'_, str> {
+    match col {
+        1 => Cow::Owned(user.credentials.is_active().to_string()),
+        2 => Cow::Owned(user.credentials.status.as_ref().map_or_else(String::new, ToString::to_string)),
+        3 => Cow::Borrowed(user.target.as_str()),
+        4 => Cow::Borrowed(user.credentials.username.as_str()),
+        7 => Cow::Owned(user.credentials.proxy.to_string()),
+        8 => Cow::Owned(user.credentials.server.as_ref().map_or_else(String::new, Clone::clone)),
+        _ => Cow::Owned(String::new())
+    }
+}
+
+fn is_col_sortable(col: usize) -> bool {
+    matches!(col, 1 | 2 | 3 | 4 | 7 | 8)
+}
+
+
 #[derive(Properties, PartialEq, Clone)]
 pub struct UserTableProps {
-    pub targets: Option<Rc<Vec<Rc<TargetUser>>>>,
+    pub users: Option<Rc<Vec<Rc<TargetUser>>>>,
 }
 
 #[function_component]
@@ -46,6 +65,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
     let selected_dto = use_state(|| None::<Rc<TargetUser>>);
+    let user_list = use_state(|| props.users.clone());
 
     let handle_popup_close = {
         let set_is_open = popup_is_open.clone();
@@ -108,34 +128,64 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                     5 => html! { <HideContent content={&dto.credentials.password.to_string()}></HideContent> },
                     6 => html! { dto.credentials.token.as_ref().map_or_else(|| html!{}, |token| html! { <HideContent content={token.to_string()}></HideContent>}) },
                     7 => html! {<ProxyTypeView value={dto.credentials.proxy} /> },
-                    8 => dto.credentials.server.as_ref().map_or_else(|| html! {}, |s| html! { s } ),
+                    8 => dto.credentials.server.as_ref().map_or_else(|| html! {}, |s| html! { s }),
                     9 => html! { <MaxConnections value={dto.credentials.max_connections} /> },
                     10 => html! { <Chip class={ convert_bool_to_chip_style(dto.credentials.ui_enabled ) }
                                    label={if dto.credentials.ui_enabled {translator.t("LABEL.ENABLED")} else { translator.t("LABEL.DISABLED")} }
                                     />  },
-                    11 => dto.credentials.epg_timeshift.as_ref().map_or_else(|| html! {}, |s| html! { s } ),
+                    11 => dto.credentials.epg_timeshift.as_ref().map_or_else(|| html! {}, |s| html! { s }),
                     12 => dto.credentials.created_at.as_ref().and_then(|ts| unix_ts_to_str(*ts))
-                           .map(|s| html! { { s } }).unwrap_or_else(|| html! { <AppIcon name="Unlimited" /> }),
+                        .map(|s| html! { { s } }).unwrap_or_else(|| html! { <AppIcon name="Unlimited" /> }),
                     13 => dto.credentials.exp_date.as_ref().and_then(|ts| unix_ts_to_str(*ts))
-                           .map(|s| html! { { s } }).unwrap_or_else(|| html! { <AppIcon name="Unlimited" /> }),
+                        .map(|s| html! { { s } }).unwrap_or_else(|| html! { <AppIcon name="Unlimited" /> }),
                     14 => dto.credentials.comment.as_ref()
-                        .map_or_else(|| html!{},
-                        |comment|html! { <RevealContent preview={Some(html! {comment.substring(0, 50)})}>{comment}</RevealContent> }),
+                        .map_or_else(|| html! {},
+                                     |comment| html! { <RevealContent preview={Some(html! {comment.substring(0, 50)})}>{comment}</RevealContent> }),
                     _ => html! {""},
                 }
             })
+    };
+    let is_sortable = Callback::<usize, bool>::from(move |col| {
+            is_col_sortable(col)
+    });
+
+    let on_sort = {
+        let users = props.users.clone();
+        let user_list = user_list.clone();
+        Callback::<Option<(usize, SortOrder)>, ()>::from(move |args| {
+            if let Some((col, order)) = args {
+                if let Some(new_user_list)= users.as_ref() {
+                    let mut new_user_list = new_user_list.as_ref().clone();
+                    new_user_list.sort_by(|a, b| {
+                        let a_value = get_cell_value(a, col);
+                        let b_value = get_cell_value(b, col);
+                        match order {
+                            SortOrder::Asc => a_value.cmp(&b_value),
+                            SortOrder::Desc => b_value.cmp(&a_value),
+                        }
+                    });
+                    user_list.set(Some(Rc::new(new_user_list)));
+                }
+            } else {
+                user_list.set(users.clone());
+            }
+        })
     };
 
     let table_definition = {
         // first register for config update
         let render_header_cell_cb = render_header_cell.clone();
         let render_data_cell_cb = render_data_cell.clone();
+        let on_sort = on_sort.clone();
         let num_cols = HEADERS.len();
-        use_memo(props.targets.clone(), move |targets| {
-            let items = targets.clone();
-           TableDefinition::<TargetUser> {
+        let user_list_clone = user_list.clone();
+        use_memo(user_list_clone.clone(), move |targets| {
+            let items = (**targets).clone();
+            TableDefinition::<TargetUser> {
                 items,
                 num_cols,
+                is_sortable,
+                on_sort,
                 render_header_cell: render_header_cell_cb,
                 render_data_cell: render_data_cell_cb,
             }
@@ -158,8 +208,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                             ul_context.active_page.set(UserlistPage::Edit);
                         }
                     }
-                    TableAction::Refresh => {
-                    }
+                    TableAction::Refresh => {}
                     TableAction::Delete => {
                         let confirm = confirm.clone();
                         let translator = translate.clone();
