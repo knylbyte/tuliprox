@@ -7,7 +7,7 @@ use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
-use shared::model::{ConfigInputAliasDto, ConfigInputDto};
+use shared::model::{ConfigInputAliasDto, ConfigInputDto, SortOrder};
 use crate::app::components::menu_item::MenuItem;
 use crate::model::DialogResult;
 use crate::services::{DialogService};
@@ -182,15 +182,26 @@ pub fn InputTable(props: &InputTableProps) -> Html {
         })
     };
 
+    let is_sortable = Callback::<usize, bool>::from(move |_col| {
+        false
+    });
+
+    let on_sort = Callback::<Option<(usize, SortOrder)>, ()>::from(move |_args| {
+    });
+
     let table_definition = {
         let render_header_cell_cb = render_header_cell.clone();
         let render_data_cell_cb = render_data_cell.clone();
+        let is_sortable = is_sortable.clone();
+        let on_sort = on_sort.clone();
         let num_cols = HEADERS.len();
         use_memo(props.inputs.clone(), |inputs|
             inputs.as_ref().map(|list|
                 Rc::new(TableDefinition::<InputRow> {
                     items: if list.is_empty() {None} else {Some(Rc::new(list.clone()))},
                     num_cols,
+                    is_sortable,
+                    on_sort,
                     render_header_cell: render_header_cell_cb,
                     render_data_cell: render_data_cell_cb,
                 }))

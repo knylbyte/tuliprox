@@ -10,6 +10,7 @@ use yew::suspense::use_future;
 use yew_i18n::use_translation;
 use crate::app::components::loading_indicator::{BusyIndicator};
 use crate::provider::DialogProvider;
+use crate::services::{ToastCloseMode, ToastOptions};
 
 #[function_component]
 pub fn Home() -> Html {
@@ -41,7 +42,8 @@ pub fn Home() -> Html {
                         services_ctx_clone.toastr.error(msg);
                     },
                     EventMessage::ConfigChange(config_type) => {
-                        services_ctx_clone.toastr.warning(format!("{}: {config_type}", translate_clone.t("MESSAGES.CONFIG_CHANGED")));
+                        services_ctx_clone.toastr.warning_with_options(format!("{}: {config_type}", translate_clone.t("MESSAGES.CONFIG_CHANGED")),
+                                                                       ToastOptions { close_mode: ToastCloseMode::Manual });
                     },
                     EventMessage::PlaylistUpdate(update_state) => {
                         match update_state {

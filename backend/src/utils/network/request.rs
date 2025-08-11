@@ -402,25 +402,48 @@ pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
         .pool_max_idle_per_host(10);
 
     let config = cfg.config.load();
+
     if let Some(proxy_cfg) = config.proxy.as_ref() {
-        let proxy = match reqwest::Proxy::all(&proxy_cfg.url) {
-            Ok(proxy) => {
-                if let (Some(username), Some(password)) = (&proxy_cfg.username, &proxy_cfg.password) {
-                    Some(proxy.basic_auth(username, password))
-                } else {
-                    Some(proxy)
+        match Url::parse(&proxy_cfg.url) {
+            Ok(mut url) => {
+                let scheme = url.scheme().to_ascii_lowercase();
+
+                match scheme.as_str() {
+                    "socks5" | "socks5h" => {
+                        if let Some(user) = &proxy_cfg.username {
+                            let _ = url.set_username(user);
+                        }
+                        if let Some(pass) = &proxy_cfg.password {
+                            let _ = url.set_password(Some(pass));
+                        }
+                        match reqwest::Proxy::all(url.as_str()) {
+                            Ok(p) => { client = client.proxy(p); }
+                            Err(err) => error!("Failed to create SOCKS proxy {url}: {err}"),
+                        }
+                    },
+                    "http" | "https" => {
+                        match reqwest::Proxy::all(url.as_str()) {
+                            Ok(p) => {
+                                if let (Some(username), Some(password)) =
+                                    (&proxy_cfg.username, &proxy_cfg.password)
+                                {
+                                    client = client.proxy(p.basic_auth(username, password));
+                                } else {
+                                    client = client.proxy(p);
+                                }
+                            }
+                            Err(err) => error!("Failed to create HTTP proxy {url}: {err}"),
+                        }
+                    }
+                    _ => {
+                        error!("Unsupported proxy scheme '{scheme}' in URL: {url}");
+                    }
                 }
             }
-            Err(err) => {
-                error!("Failed to create proxy {}, {err}", &proxy_cfg.url);
-                None
+            Err(e) => {
+                error!("Invalid proxy URL '{}': {e}", &proxy_cfg.url);
             }
-        };
-        client = if let Some(prxy) = proxy {
-            client.proxy(prxy)
-        } else {
-            client
-        };
+        }
     }
 
     if let Some(rp_config) = config.reverse_proxy.as_ref() {
