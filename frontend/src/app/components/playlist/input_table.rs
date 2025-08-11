@@ -184,11 +184,6 @@ pub fn InputTable(props: &InputTableProps) -> Html {
 
     let is_sortable = Callback::<usize, bool>::from(move |_col| {
         false
-        // match col {
-        //     1 => true,
-        //     2 => true,
-        //     _ => false,
-        // }
     });
 
     let on_sort = Callback::<Option<(usize, SortOrder)>, ()>::from(move |_args| {
@@ -197,6 +192,8 @@ pub fn InputTable(props: &InputTableProps) -> Html {
     let table_definition = {
         let render_header_cell_cb = render_header_cell.clone();
         let render_data_cell_cb = render_data_cell.clone();
+        let is_sortable = is_sortable.clone();
+        let on_sort = on_sort.clone();
         let num_cols = HEADERS.len();
         use_memo(props.inputs.clone(), |inputs|
             inputs.as_ref().map(|list|

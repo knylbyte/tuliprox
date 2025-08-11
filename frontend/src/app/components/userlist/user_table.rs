@@ -67,6 +67,15 @@ pub fn UserTable(props: &UserTableProps) -> Html {
     let selected_dto = use_state(|| None::<Rc<TargetUser>>);
     let user_list = use_state(|| props.users.clone());
 
+    {
+        let user_list = user_list.clone();
+        let users = props.users.clone();
+        use_effect_with(users, move |users| {
+            user_list.set(users.clone());
+            || ()
+        });
+    }
+
     let handle_popup_close = {
         let set_is_open = popup_is_open.clone();
         Callback::from(move |()| {
@@ -125,7 +134,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                     2 => html! { <UserStatus status={ dto.credentials.status } /> },
                     3 => html! { dto.target.as_str() },
                     4 => html! { dto.credentials.username.as_str() },
-                    5 => html! { <HideContent content={&dto.credentials.password.to_string()}></HideContent> },
+                    5 => html! { <HideContent content={dto.credentials.password.to_string()}></HideContent> },
                     6 => html! { dto.credentials.token.as_ref().map_or_else(|| html!{}, |token| html! { <HideContent content={token.to_string()}></HideContent>}) },
                     7 => html! {<ProxyTypeView value={dto.credentials.proxy} /> },
                     8 => dto.credentials.server.as_ref().map_or_else(|| html! {}, |s| html! { s }),
@@ -145,6 +154,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                 }
             })
     };
+
     let is_sortable = Callback::<usize, bool>::from(move |col| {
             is_col_sortable(col)
     });
@@ -177,10 +187,11 @@ pub fn UserTable(props: &UserTableProps) -> Html {
         let render_header_cell_cb = render_header_cell.clone();
         let render_data_cell_cb = render_data_cell.clone();
         let on_sort = on_sort.clone();
+        let is_sortable = is_sortable.clone();
         let num_cols = HEADERS.len();
         let user_list_clone = user_list.clone();
         use_memo(user_list_clone.clone(), move |targets| {
-            let items = (**targets).clone();
+            let items = if (*targets).as_ref().is_none_or(|l| l.is_empty()) {None} else {(**targets).clone()};
             TableDefinition::<TargetUser> {
                 items,
                 num_cols,
