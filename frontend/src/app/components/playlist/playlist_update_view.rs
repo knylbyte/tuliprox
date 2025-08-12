@@ -61,14 +61,14 @@ pub fn PlaylistUpdateView() -> Html {
          <Breadcrumbs items={&*breadcrumbs}/>
          <div class="tp__playlist-update-view__header">
           <h1>{ translate.t("LABEL.UPDATE")}</h1>
-          <TextButton style="primary" name="playlist_update"
+          <TextButton class="primary" name="playlist_update"
                icon="Refresh"
                title={ translate.t("LABEL.UPDATE")}
                onclick={handle_update}></TextButton>
         </div>
         <Card>
          <div class="tp__playlist-update-view__body">
-            <TextButton style={if selected_targets.current().is_empty() { "active" } else {""}}
+            <TextButton class={if selected_targets.current().is_empty() { "active" } else {""}}
                 name={translate.t("LABEL.ALL")} title={translate.t("LABEL.ALL")} icon={"SelectAll"}
                 onclick={handle_all_select}/>
 
@@ -80,7 +80,7 @@ pub fn PlaylistUpdateView() -> Html {
                         let handle_click = handle_target_select.clone();
                         let target_name = target.name.clone();
                         html! {
-                          <TextButton style={if selected_targets.current().iter().any(|t| t.id == target.id) { "active" } else {""}}
+                          <TextButton class={if selected_targets.current().iter().any(|t| t.id == target.id) { "active" } else {""}}
                             name={target_name.clone()} title={target_name} icon={"UpdateChecked"}
                              onclick={move |_| handle_click.emit(target.clone())}/>
                         }

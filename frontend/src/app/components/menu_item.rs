@@ -10,7 +10,7 @@ pub struct MenuItemProps {
     #[prop_or_default]
     pub icon: String,
     #[prop_or_default]
-    pub style: String,
+    pub class: String,
     #[prop_or_default]
     pub onclick: Callback<(String, MouseEvent)>,
 }
@@ -28,7 +28,7 @@ pub fn MenuItem(props: &MenuItemProps) -> Html {
     };
 
     html! {
-        <div class={classes!("tp__menu-item", props.style.clone())} onclick={ handle_click }>
+        <div class={classes!("tp__menu-item", props.class.clone())} onclick={ handle_click }>
             {html_if!(!props.icon.is_empty(),
                 {<AppIcon name={props.icon.clone()}></AppIcon> }
             )}

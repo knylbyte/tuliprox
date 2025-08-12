@@ -14,12 +14,11 @@ use yew_hooks::{use_async_with_options, UseAsyncOptions};
 use yew_router::prelude::*;
 use crate::app::components::{Authentication, Home, Login};
 use crate::error::Error;
-use crate::hooks::IconDefinition;
+use crate::hooks::{IconDefinition};
 use crate::model::WebConfig;
 use crate::services::request_get;
 pub use crate::app::components::{ConfirmDialog, ContentDialog};
 pub use context::*;
-
 
 fn flatten_json(value: &Value, prefix: String, map: &mut HashMap<String, serde_json::Value>) {
     match value {
@@ -44,6 +43,7 @@ fn flatten_json(value: &Value, prefix: String, map: &mut HashMap<String, serde_j
         }
     }
 }
+
 
 /// App routes
 #[derive(Routable, Debug, Clone, PartialEq, Eq)]

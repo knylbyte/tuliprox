@@ -17,7 +17,7 @@ pub fn PlaylistCreate() -> Html {
       <div class="tp__playlist-create tp__list-create">
         <div class="tp__playlist-create__header tp__list-create__header">
            <h1>{ translate.t("LABEL.CREATE")}</h1>
-           <TextButton style="primary" name="playlist"
+           <TextButton class="primary" name="playlist"
                icon="Playlist"
                title={ translate.t("LABEL.LIST")}
                onclick={handle_back}></TextButton>

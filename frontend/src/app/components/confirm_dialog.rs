@@ -50,8 +50,8 @@ pub fn ConfirmDialog(props: &ConfirmDialogProps) -> Html {
         >
             <h2>{ &props.title }</h2>
             <div class="tp__dialog__toolbar">
-                <TextButton autofocus=true style="secondary" name="cancel" icon="Cancel" onclick={on_cancel} title={translate.t(&props.cancel_caption)} />
-                <TextButton style="primary" name="ok" icon="Ok" onclick={on_ok} title={translate.t(&props.ok_caption)} />
+                <TextButton autofocus=true class="secondary" name="cancel" icon="Cancel" onclick={on_cancel} title={translate.t(&props.cancel_caption)} />
+                <TextButton class="primary" name="ok" icon="Ok" onclick={on_ok} title={translate.t(&props.ok_caption)} />
             </div>
         </CustomDialog>
     }
