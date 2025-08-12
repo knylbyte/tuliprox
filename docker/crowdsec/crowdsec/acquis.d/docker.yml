@@ -1,0 +1,5 @@
+# Docker-JSON
+filenames:
+  - /var/lib/docker/containers/**/*.log
+labels:
+  type: docker

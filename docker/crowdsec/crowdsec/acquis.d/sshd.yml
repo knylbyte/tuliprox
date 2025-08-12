@@ -1,0 +1,4 @@
+filenames:
+  - /var/log/ssh.log
+labels:
+  type: syslog

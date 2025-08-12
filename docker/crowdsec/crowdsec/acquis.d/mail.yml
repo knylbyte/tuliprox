@@ -1,0 +1,5 @@
+# Mail
+filenames:
+  - /var/log/mail.log
+labels:
+  type: postfix
