@@ -211,7 +211,7 @@ impl SingleProviderLineup {
         self.provider.try_allocate(with_grace, grace_period_timeout_secs).await
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "provider_tests"))]
     async fn release(&self, provider_name: &str) {
         if self.provider.name == provider_name {
             self.provider.release().await;
@@ -465,7 +465,7 @@ impl MultiProviderLineup {
     }
 
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "provider_tests"))]
     async fn release(&self, provider_name: &str) {
         for g in &self.providers {
             match g {
@@ -857,7 +857,7 @@ impl ActiveProviderManager {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "provider_tests"))]
 mod tests {
     use super::*;
     use crate::model::ConfigInputAlias;

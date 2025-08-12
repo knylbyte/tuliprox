@@ -1,5 +1,5 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto, DEFAULT_VIDEO_EXTENSIONS};
+use crate::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MessagingConfigDto, ProxyPoolConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto, DEFAULT_VIDEO_EXTENSIONS};
 use crate::utils::default_connect_timeout_secs;
 
 pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
@@ -45,7 +45,7 @@ pub struct ConfigDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hdhomerun: Option<HdHomeRunConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proxy: Option<ProxyConfigDto>,
+    pub proxy_pool: Option<ProxyPoolConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ipcheck: Option<IpCheckConfigDto>,
 }
@@ -71,8 +71,8 @@ impl ConfigDto {
         if let Some(reverse_proxy) = self.reverse_proxy.as_mut() {
             reverse_proxy.prepare(&self.working_dir)?;
         }
-        if let Some(proxy) = &mut self.proxy {
-            proxy.prepare()?;
+        if let Some(proxy_pool) = &mut self.proxy_pool {
+            proxy_pool.prepare()?;
         }
         if let Some(ipcheck) = self.ipcheck.as_mut() {
             ipcheck.prepare()?;

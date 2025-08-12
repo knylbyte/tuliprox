@@ -79,7 +79,7 @@ async fn run_download_queue(cfg: &AppConfig, download_cfg: &VideoDownloadConfig,
         let headers = request::get_request_headers(Some(&download_cfg.headers), None);
         let dq = Arc::clone(download_queue);
 
-        match create_client(cfg).default_headers(headers).build() {
+        match create_client(cfg, None).default_headers(headers).build() {
             Ok(client) => {
                 tokio::spawn(async move {
                     loop {

@@ -6,7 +6,7 @@ use shared::error::{TuliproxError};
 use shared::model::{ConfigDto, HdHomeRunDeviceOverview};
 use shared::utils::set_sanitize_sensitive_info;
 use crate::model::{macros, ConfigApi, ReverseProxyConfig, ScheduleConfig};
-use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
+use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyPoolConfig, VideoConfig, WebUiConfig};
 use crate::{utils};
 
 const DEFAULT_BACKUP_DIR: &str = "backup";
@@ -61,7 +61,7 @@ pub struct Config {
     pub messaging: Option<MessagingConfig>,
     pub reverse_proxy: Option<ReverseProxyConfig>,
     pub hdhomerun: Option<HdHomeRunConfig>,
-    pub proxy: Option<ProxyConfig>,
+    pub proxy_pool: Option<ProxyPoolConfig>,
     pub ipcheck: Option<IpCheckConfig>,
 }
 
@@ -141,7 +141,7 @@ impl From<&ConfigDto> for Config {
             messaging: dto.messaging.as_ref().map(Into::into),
             reverse_proxy: dto.reverse_proxy.as_ref().map(Into::into),
             hdhomerun: dto.hdhomerun.as_ref().map(Into::into),
-            proxy: dto.proxy.as_ref().map(Into::into),
+            proxy_pool: dto.proxy_pool.as_ref().map(Into::into),
             ipcheck: dto.ipcheck.as_ref().map(Into::into),
         }
     }
