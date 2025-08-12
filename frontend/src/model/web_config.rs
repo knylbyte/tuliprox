@@ -11,6 +11,8 @@ pub struct ApiConfig {
 
 #[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Debug)]
 pub struct WebConfig {
+    #[serde(alias = "webPath")]
+    pub web_path: Option<String>,
     #[serde(alias = "tabTitle")]
     pub tab_title: Option<String>,
     #[serde(alias = "appTitle")]

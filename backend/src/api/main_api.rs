@@ -259,7 +259,7 @@ pub async fn start_server(
         .web_ui
         .as_ref()
         .and_then(|c| c.path.as_ref())
-        .map(|p| format!("/{p}"))
+        .cloned()
         .unwrap_or_default();
     infos.push(format!(
         "Server running: http://{}:{}",

@@ -8,7 +8,7 @@ pub struct IconButtonProps {
     pub icon: String,
     pub onclick: Callback<(String, MouseEvent)>,
     #[prop_or_default]
-    pub style: String,
+    pub class: String,
     #[prop_or_default]
     pub button_ref: Option<NodeRef>,
 }
@@ -26,7 +26,7 @@ pub fn IconButton(props: &IconButtonProps) -> Html {
     };
 
     html! {
-        <button ref={props.button_ref.clone().unwrap_or_default()} class={classes!("tp__icon-button", props.style.clone())} onclick={handle_click}>
+        <button ref={props.button_ref.clone().unwrap_or_default()} class={classes!("tp__icon-button", props.class.clone())} onclick={handle_click}>
             <AppIcon name={props.icon.clone()}></AppIcon>
         </button>
     }

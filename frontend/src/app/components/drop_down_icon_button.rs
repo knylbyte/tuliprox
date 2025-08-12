@@ -27,7 +27,7 @@ pub struct DropDownIconButtonProps {
     pub icon: String,
     pub onselect: Callback<(String, Vec<String>)>,
     #[prop_or_default]
-    pub style: String,
+    pub class: String,
     pub options: Rc<Vec<DropDownOption>>,
     #[prop_or_default]
     pub multi_select: bool,
@@ -87,7 +87,7 @@ pub fn DropDownIconButton(props: &DropDownIconButtonProps) -> Html {
 
     html! {
          <>
-         <IconButton button_ref={button_ref} style={props.style.clone()} name={props.name.clone()} icon={props.icon.clone()} onclick={handle_click} />
+         <IconButton button_ref={button_ref} class={props.class.clone()} name={props.name.clone()} icon={props.icon.clone()} onclick={handle_click} />
          <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
             {
                 for props.options.iter().map(|o| {
