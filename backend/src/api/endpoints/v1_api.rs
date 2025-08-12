@@ -20,6 +20,7 @@ use shared::utils::{concat_path_leading_slash, sanitize_sensitive_info};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use crate::utils::prepare_sources_batch;
+use crate::utils::request::download_text_content;
 
 fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfigDto, file_path: &str) -> Option<TuliproxError> {
     match utils::save_api_proxy(file_path, backup_dir, api_proxy) {
@@ -264,6 +265,28 @@ async fn config(
     }
 }
 
+async fn config_batch_content(
+    axum::extract::Path(input_id): axum::extract::Path<u16>,
+    axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse + Send {
+    if let Some(config_input) = app_state.app_config.get_input_by_id(input_id) {
+        // The url is changed at this point, we need the raw url for the batch file
+         if let Some(batch_url) = config_input.t_batch_url.as_ref() {
+            return match download_text_content(Arc::clone(&app_state.http_client.load()), &config_input, batch_url, None).await {
+                Ok((content, _path)) => {
+                    content.into_response()
+                }
+                Err(err) => {
+                    error!("Failed to read batch file: {err}");
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            };
+        }
+    }
+    (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid input"}))).into_response()
+}
+
+
 async fn create_ipinfo_check(app_state: &Arc<AppState>) -> Option<(Option<String>, Option<String>)> {
     let config = app_state.app_config.config.load();
     if let Some(ipcheck) = config.ipcheck.as_ref() {
@@ -329,6 +352,7 @@ pub fn v1_api_register(web_auth_enabled: bool, app_state: Arc<AppState>, web_ui_
     router = router
         .route("/status", axum::routing::get(status))
         .route("/config", axum::routing::get(config))
+        .route("/config/batchContent/{input_id}", axum::routing::get(config_batch_content))
         .route("/config/main", axum::routing::post(save_config_main))
         .route("/config/user", axum::routing::post(save_config_api_proxy_user))
         .route("/config/apiproxy", axum::routing::post(save_config_api_proxy_config))
