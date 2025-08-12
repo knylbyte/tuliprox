@@ -163,7 +163,7 @@ fn get_file_paths(args: &Args) -> ConfigPaths {
 }
 
 async fn start_in_cli_mode(cfg: Arc<AppConfig>, targets: Arc<ProcessTargets>) {
-    let client = create_client(&cfg).build().unwrap_or_else(|err| {
+    let client = create_client(&cfg, None).build().unwrap_or_else(|err| {
         error!("Failed to build client {err}");
         reqwest::Client::new()
     });

@@ -5,6 +5,7 @@ use crate::api::scheduler::exec_scheduler;
 use crate::model::{AppConfig, Config, HdHomeRunConfig, HdHomeRunDeviceConfig, ProcessTargets, ScheduleConfig, SourcesConfig};
 use crate::tools::lru_cache::LRUResourceCache;
 use crate::utils::request::create_client;
+use crate::proxy::ProxyManager;
 use arc_swap::{ArcSwap, ArcSwapAny};
 use log::error;
 use reqwest::Client;
@@ -104,7 +105,7 @@ fn start_services(app_state: &Arc<AppState>, changes: &UpdateChanges) {
 }
 
 pub fn create_http_client(app_config: &AppConfig) -> Client {
-    let mut builder = create_client(app_config).http1_only();
+    let mut builder = create_client(app_config, None).http1_only();
     let config = app_config.config.load(); // because of RAII connection dropping
     if config.connect_timeout_secs > 0 {
         builder = builder.connect_timeout(Duration::from_secs(u64::from(config.connect_timeout_secs)));
@@ -164,6 +165,7 @@ pub struct AppState {
     pub forced_targets: Arc<ArcSwap<ProcessTargets>>, // as program arguments
     pub app_config: Arc<AppConfig>,
     pub http_client: Arc<ArcSwap<Client>>,
+    pub proxy_manager: Arc<ArcSwap<ProxyManager>>,
     pub downloads: Arc<DownloadQueue>,
     pub cache: Arc<ArcSwapAny<Option<Arc<Mutex<LRUResourceCache>>>>>,
     pub shared_stream_manager: Arc<SharedStreamManager>,
@@ -188,6 +190,7 @@ impl AppState {
         // client
         let client = create_http_client(&self.app_config);
         self.http_client.store(Arc::new(client));
+        self.proxy_manager.store(Arc::new(ProxyManager::new(&self.app_config)));
 
         // cache
         let config = self.app_config.config.load();
@@ -219,6 +222,10 @@ impl AppState {
 
     pub async fn get_active_connections_for_user(&self, username: &str) -> u32 {
         self.active_users.user_connections(username).await
+    }
+
+    pub async fn get_client_for_user(&self, username: &str) -> Option<Arc<Client>> {
+        self.proxy_manager.load().get_client_for_user(username).await
     }
 
     pub async fn get_connection_permission(&self, username: &str, max_connections: u32) -> UserConnectionPermission {

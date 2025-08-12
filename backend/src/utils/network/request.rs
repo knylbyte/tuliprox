@@ -12,6 +12,7 @@ use log::{debug, error, log_enabled, trace, Level};
 use reqwest::header::CONTENT_ENCODING;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use url::Url;
+use crate::model::ProxyServerConfig;
 
 use shared::error::create_tuliprox_error_result;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
@@ -395,7 +396,7 @@ pub async fn get_input_json_content(client: Arc<reqwest::Client>, input: &Config
 }
 
 
-pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
+pub fn create_client(cfg: &AppConfig, proxy: Option<&ProxyServerConfig>) -> reqwest::ClientBuilder {
     let mut client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .pool_idle_timeout(Duration::from_secs(30))
@@ -403,7 +404,7 @@ pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
 
     let config = cfg.config.load();
 
-    if let Some(proxy_cfg) = config.proxy.as_ref() {
+    if let Some(proxy_cfg) = proxy {
         match Url::parse(&proxy_cfg.url) {
             Ok(mut url) => {
                 let scheme = url.scheme().to_ascii_lowercase();

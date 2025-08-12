@@ -980,25 +980,27 @@ async fn xtream_get_stream_info_response(
                     // Redirect is only possible for live streams, vod and series info needs to be modified
                     if user.proxy == ProxyType::Redirect && cluster == XtreamCluster::Live {
                         return redirect(&info_url).into_response();
-                    } else if let Ok(content) = xtream::get_xtream_stream_info(
-                        Arc::clone(&app_state.http_client.load()),
-                        &app_state.app_config,
-                        user,
-                        &input,
-                        target,
-                        &pli,
-                        info_url.as_str(),
-                        cluster,
-                    )
-                    .await
-                    {
-                        return try_unwrap_body!(axum::response::Response::builder()
-                            .status(axum::http::StatusCode::OK)
-                            .header(
-                                axum::http::header::CONTENT_TYPE,
-                                mime::APPLICATION_JSON.to_string()
-                            )
-                            .body(axum::body::Body::from(content)));
+                    } else if let Some(client) = app_state.get_client_for_user(&user.username).await {
+                        if let Ok(content) = xtream::get_xtream_stream_info(
+                            client,
+                            &app_state.app_config,
+                            user,
+                            &input,
+                            target,
+                            &pli,
+                            info_url.as_str(),
+                            cluster,
+                        )
+                        .await
+                        {
+                            return try_unwrap_body!(axum::response::Response::builder()
+                                .status(axum::http::StatusCode::OK)
+                                .header(
+                                    axum::http::header::CONTENT_TYPE,
+                                    mime::APPLICATION_JSON.to_string()
+                                )
+                                .body(axum::body::Body::from(content)));
+                        }
                     }
                 }
             }

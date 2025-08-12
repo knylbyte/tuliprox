@@ -16,6 +16,7 @@ use crate::api::model::SharedStreamManager;
 use crate::api::model::{
     create_cache, create_http_client, AppState, CancelTokens, HdHomerunAppState,
 };
+use crate::proxy::ProxyManager;
 use crate::api::scheduler::exec_scheduler;
 use crate::api::serve::serve;
 use crate::model::Healthcheck;
@@ -78,11 +79,13 @@ fn create_shared_data(
     ));
     let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx, ));
     let client = create_http_client(app_config);
+    let proxy_manager = Arc::new(ArcSwap::from_pointee(ProxyManager::new(app_config)));
 
     AppState {
         forced_targets: Arc::new(ArcSwap::new(Arc::clone(forced_targets))),
         app_config: Arc::clone(app_config),
         http_client: Arc::new(ArcSwap::from_pointee(client)),
+        proxy_manager,
         downloads: Arc::new(DownloadQueue::new()),
         cache: Arc::new(ArcSwapOption::from(cache)),
         shared_stream_manager,
