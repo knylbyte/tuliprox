@@ -1,5 +1,6 @@
 [build]
 dist = "dist"
+public_url = "./"
 
 [serve]
 addresses = ["0.0.0.0"]
