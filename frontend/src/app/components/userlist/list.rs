@@ -43,7 +43,7 @@ pub fn UserlistList() -> Html {
         <div class="tp__userlist-list__header tp__list-list__header">
           <h1>{ translate.t("LABEL.USERS")}</h1>
           <div class="tp__userlist-list__header-toolbar">
-              <Search min_length={2} onsearch={handle_search} options={(*search_fields).clone()}/>
+              <Search min_length={1} onsearch={handle_search} options={(*search_fields).clone()}/>
               <TextButton class="primary" name="new_userlist"
                 icon="PersonAdd"
                 title={ translate.t("LABEL.NEW_USER")}

@@ -169,7 +169,7 @@ async fn index(
                 ).body(new_content));
         }
         Err(err) => {
-            error!("Failed to read web ui index.hml: {err}");
+            error!("Failed to read web ui index.html: {err}");
         }
     }
     serve_file(&path, mime::TEXT_HTML_UTF_8).await.into_response()
