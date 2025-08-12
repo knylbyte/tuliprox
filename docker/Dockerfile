@@ -60,7 +60,8 @@ COPY . .
 
 WORKDIR /src/frontend
 
-# Run Trunk build
+# Run Trunk cleans up any build artifacts generated from earlier builds and build the frontent
+RUN trunk clean
 RUN trunk build --release
 
 # -----------------------------------------------------------------
