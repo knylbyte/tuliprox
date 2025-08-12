@@ -1,7 +1,7 @@
-# <img src="https://github.com/user-attachments/assets/8ef9ea79-62ff-4298-978f-22326c5c3d02" height="24" /> **tuliprox** - A Powerful Playlist Processing & Proxy Tool
+# <img src="https://github.com/user-attachments/assets/8ef9ea79-62ff-4298-978f-22326c5c3d02" height="24" /> **tuliprox** - A Powerful IPTV Proxy & Playlist Processor
 
-**tuliprox** is a flexible and efficient tool built in Rust 🦀,
-designed for processing, filtering, and serving media playlists with minimal resource usage.
+**tuliprox** is a lightweight, high-performance IPTV proxy and playlist processor written in Rust 🦀
+It supports M3U and M3U8 formats, Xtream Codes API, HDHomeRun and STRM, making it easy to filter, merge, and serve IPTV streams for Plex, Jellyfin, Emby, and other media servers.
 
 <p align="center">
 <img src="https://github.com/user-attachments/assets/8ef9ea79-62ff-4298-978f-22326c5c3d02" height="128" />
