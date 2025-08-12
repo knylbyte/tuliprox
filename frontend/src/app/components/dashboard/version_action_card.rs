@@ -3,9 +3,7 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::utils::concat_path_leading_slash;
 use crate::app::components::{ActionCard, TextButton};
-use crate::app::ConfigContext;
 use crate::hooks::use_service_context;
-use crate::provider::_ServiceContextProps::config;
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct VersionActionProps {
@@ -28,12 +26,11 @@ pub fn VersionActionCard(props: &VersionActionProps) -> Html {
     };
 
     let logo_url = {
+        let mut url = "/assets/tuliprox-logo.svg".to_owned();
         if let Some(web_path) = services.config.ui_config.web_path.as_ref() {
-            concat_path_leading_slash(web_path,  "/assets/tuliprox-logo.svg")
-
-        } else {
-            "/assets/tuliprox-logo.svg".to_owned()
+            url = concat_path_leading_slash(web_path,  &url);
         }
+        url
     };
 
     html! {
