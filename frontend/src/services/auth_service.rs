@@ -49,7 +49,7 @@ impl AuthService {
             username,
             password,
         };
-        match request_post::<UserCredential, TokenResponse>(&concat_path(&self.auth_path, "token"), credentials).await {
+        match request_post::<UserCredential, TokenResponse>(&concat_path(&self.auth_path, "token"), credentials, None).await {
             Ok(token) => {
                 self.username.replace(token.username.to_string());
                 self.auth_channel.set(true);
@@ -66,7 +66,7 @@ impl AuthService {
     }
 
     pub async fn refresh(&self) -> Result<TokenResponse, Error> {
-        match request_post::<(), TokenResponse>(&concat_path(&self.auth_path, "refresh"), ()).await {
+        match request_post::<(), TokenResponse>(&concat_path(&self.auth_path, "refresh"), (), None).await {
             Ok(token) => {
                 self.username.replace(token.username.to_string());
                 self.auth_channel.set(true);

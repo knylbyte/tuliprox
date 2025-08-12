@@ -110,6 +110,7 @@ pub struct ConfigInput {
     pub priority: i16,
     pub max_connections: u16,
     pub method: InputFetchMethod,
+    pub t_batch_url: Option<String>,
 }
 
 impl ConfigInput {
@@ -139,13 +140,14 @@ impl ConfigInput {
     }
 
     fn prepare_batch(&mut self) -> Option<PathBuf> {
-        if self.input_type == InputType::M3uBatch || self.input_type == InputType::XtreamBatch {
+        if matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch) {
             let input_type = if self.input_type == InputType::M3uBatch {
                 InputType::M3u
             } else {
                 InputType::Xtream
             };
 
+            self.t_batch_url= Some(self.url.clone());
             let file_path = get_csv_file_path(self.url.as_str()).ok();
 
             if let Some(aliases) = self.aliases.as_mut() {
@@ -187,6 +189,7 @@ impl ConfigInput {
             priority: alias.priority,
             max_connections: alias.max_connections,
             method: self.method,
+            t_batch_url: None,
         }
     }
 }
@@ -210,6 +213,7 @@ impl From<&ConfigInputDto> for ConfigInput {
             priority: dto.priority,
             max_connections: dto.max_connections,
             method: dto.method,
+            t_batch_url: None,
         }
     }
 }

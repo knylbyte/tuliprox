@@ -29,6 +29,8 @@ macro_rules! apply_batch_aliases {
             }
             if let Some(index) = $index {
                 let mut idx = index;
+                // set to the same id as the first alias, because the first alias is copied into this input
+                $source.id = index + 1;
                 if let Some(aliases) = $source.aliases.as_mut() {
                     for alias in aliases {
                         idx += 1;
@@ -280,6 +282,7 @@ impl ConfigInputDto {
         let mut current_index = index;
         if let Some(aliases) = self.aliases.as_mut() {
             let input_type = &self.input_type;
+            self.id = current_index + 1; // The same id as the first alias
             handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, aliases.iter_mut()
                 .map(|i| match i.prepare(current_index, input_type) {
                     Ok(new_idx) => {

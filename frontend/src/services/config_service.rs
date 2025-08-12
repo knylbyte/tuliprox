@@ -1,6 +1,6 @@
 use crate::model::WebConfig;
 use crate::services::{get_base_href, request_get};
-use shared::model::{AppConfigDto, IpCheckDto};
+use shared::model::{AppConfigDto, ConfigInputDto, IpCheckDto};
 use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
@@ -10,7 +10,7 @@ use futures_signals::signal::Mutable;
 use futures_signals::signal::SignalExt;
 use shared::foundation::filter::{get_filter, prepare_templates};
 use shared::foundation::mapper::MapperScript;
-use shared::utils::concat_path_leading_slash;
+use shared::utils::{concat_path, concat_path_leading_slash};
 
 pub struct ConfigService {
     pub ui_config: Rc<WebConfig>,
@@ -19,6 +19,7 @@ pub struct ConfigService {
     is_fetching: AtomicBool,
     config_path: String,
     ip_check_path: String,
+    batch_input_content_path: String,
 }
 
 impl ConfigService {
@@ -31,6 +32,7 @@ impl ConfigService {
             is_fetching: AtomicBool::new(false),
             config_path: concat_path_leading_slash(&base_href, "api/v1/config"),
             ip_check_path: concat_path_leading_slash(&base_href, "api/v1/ipinfo"),
+            batch_input_content_path: concat_path_leading_slash(&base_href, "api/v1/config/batchContent"),
         }
     }
 
@@ -52,7 +54,7 @@ impl ConfigService {
         if self.is_fetching.swap(true, Ordering::SeqCst) {
             return;
         }
-        let result = match request_get::<AppConfigDto>(&self.config_path).await {
+        let result = match request_get::<AppConfigDto>(&self.config_path, None).await {
             Ok(mut app_config) => {
                 let templates = {
                     if let Some(templ) = app_config.sources.templates.as_mut() {
@@ -94,7 +96,19 @@ impl ConfigService {
     }
 
     pub async fn get_ip_info(&self) -> Option<IpCheckDto> {
-        match request_get::<IpCheckDto>(&self.ip_check_path).await {
+        match request_get::<IpCheckDto>(&self.ip_check_path, None).await {
+            Ok(cfg) => Some(cfg),
+            Err(err) => {
+                error!("{err}");
+                None
+            }
+        }
+    }
+
+    pub async fn get_batch_input_content(&self, input: &ConfigInputDto) -> Option<String> {
+        let id = input.id.to_string();
+        let path = concat_path(&self.batch_input_content_path, &id);
+        match request_get::<String>(&path, Some("text/plain".to_owned())).await {
             Ok(cfg) => Some(cfg),
             Err(err) => {
                 error!("{err}");
