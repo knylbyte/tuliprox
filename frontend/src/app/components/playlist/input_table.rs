@@ -1,6 +1,6 @@
 use std::fmt::Display;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, InputHeaders, InputOptions, InputTypeView, RevealContent, Table, TableDefinition};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, BatchInputContentView, Chip, HideContent, InputHeaders, InputOptions, InputTypeView, RevealContent, Table, TableDefinition};
 use std::rc::Rc;
 use std::str::FromStr;
 use yew::platform::spawn_local;
@@ -107,7 +107,7 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                                   /> },
                             2 => html! { dto.name.as_str() },
                             3 => html! { <InputTypeView input_type={dto.input_type}/> },
-                            4 => html! { <RevealContent preview={html!{dto.url.as_str()}}>{ dto.url.as_str() }</RevealContent> },
+                            4 => html! { <RevealContent preview={html!{dto.url.as_str()}}><BatchInputContentView input={ dto.clone() } /></RevealContent> },
                             5 => dto.username.as_ref().map_or_else(|| html!{}, |u| html!{u}),
                             6 => dto.password.as_ref().map_or_else(|| html!{}, |pwd| html! { <HideContent content={pwd.to_string()}></HideContent>}),
                             7 => dto.persist.as_ref().map_or_else(|| html!{}, |p| html!{p}),

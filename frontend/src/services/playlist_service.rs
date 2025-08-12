@@ -23,14 +23,14 @@ impl PlaylistService {
         }
     }
     pub async fn update_targets(&self, targets: &[&str]) -> bool {
-        request_post::<&[&str], ()>(&self.target_update_api_path, targets).await.map_or_else(|err| {
+        request_post::<&[&str], ()>(&self.target_update_api_path, targets, None).await.map_or_else(|err| {
             error!("{err}");
             false
         }, |_| true)
     }
 
     pub async fn get_playlist_categories(&self, playlist_request: &PlaylistRequest) -> Option<Rc<UiPlaylistCategories>> {
-        request_post::<&PlaylistRequest, PlaylistCategoriesResponse>(&self.playlist_api_path, playlist_request).await.map_or_else(|err| {
+        request_post::<&PlaylistRequest, PlaylistCategoriesResponse>(&self.playlist_api_path, playlist_request, None).await.map_or_else(|err| {
             error!("{err}");
             None
         }, |response| Some(Rc::new(response.into())))
