@@ -4,14 +4,19 @@
     <base href="./">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
     <link rel="shortcut icon" href="assets/favicon.ico"/>
     <link rel="stylesheet" href="assets/fonts.css"/>
+
     <link data-trunk rel="scss" href="scss/main.scss"/>
     <link data-trunk rel="copy-file" href="public/config.json"/>
     <link data-trunk rel="copy-dir" href="public/assets"/>
     <link data-trunk rel="rust" data-wasm-opt-params="--all-features"/>
+
+    <link data-trunk rel="copy-file" href="bootstrap.js"/>
+    <script type="module" src="./bootstrap.js"></script>
+
     <title>Tuliprox</title>
 </head>
-<body>
-</body>
+<body></body>
 </html>
