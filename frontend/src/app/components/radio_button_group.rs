@@ -35,7 +35,7 @@ pub fn RadioButtonGroup(props: &RadioButtonGroupProps) -> Html {
                 };
 
                 html! {
-                    <TextButton {onclick} style={class} name={ option.clone() } title={ option.clone() }></TextButton>
+                    <TextButton {onclick} class={class} name={ option.clone() } title={ option.clone() }></TextButton>
                 }
             }) }
         </div>

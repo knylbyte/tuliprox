@@ -20,9 +20,10 @@ pub fn PopupMenu(props: &PopupMenuProps) -> Html {
     let style = {
         let is_open = props.is_open;
         let anchor_ref = props.anchor_ref.clone();
+        let popup_ref = popup_ref.clone();
         use_memo((is_open, anchor_ref.clone()), move |(is_open, anchor_ref)| {
             if !*is_open || anchor_ref.is_none() {
-                return "display: none;".to_string();
+                return "hidden".to_string();
             }
             let anchor_ref = anchor_ref.as_ref().unwrap().clone();
 
@@ -44,7 +45,11 @@ pub fn PopupMenu(props: &PopupMenuProps) -> Html {
                 top = rect.top() - 150.0;
             }
 
-            format!("position: fixed; top: {top}px; left: {left}px;")
+            if let Some(popup) = popup_ref.cast::<HtmlElement>() {
+                popup.style().set_property("--popup-top", &format!("{}px", top)).unwrap();
+                popup.style().set_property("--popup-left", &format!("{}px", left)).unwrap();
+            }
+            "".to_owned()
         })
     };
 
@@ -86,7 +91,7 @@ pub fn PopupMenu(props: &PopupMenuProps) -> Html {
     }
 
     html! {
-        <div class="tp__popup-menu" ref={popup_ref} style={(*style).clone()}>
+        <div class={classes!("tp__popup-menu", (*style).clone())} ref={popup_ref}>
             <ul>
                 { for props.children.iter().map(|child| html! { <li>{child.clone()}</li> }) }
             </ul>

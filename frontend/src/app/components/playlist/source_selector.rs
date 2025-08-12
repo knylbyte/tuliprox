@@ -254,10 +254,10 @@ pub fn PlaylistSourceSelector() -> Html {
                         *active_source == ExplorerSourceType::Custom,
                         {
                             <div class="tp__playlist-source-selector__source-custom-options">
-                               <TextButton style={if matches!(*custom_provider, InputType::Xtream) {"active"} else {""} }
+                               <TextButton class={if matches!(*custom_provider, InputType::Xtream) {"active"} else {""} }
                                         name={"xtream_source"} title={translate.t("LABEL.XTREAM")} icon={"Playlist"}
                                         onclick={move |_| set_custom_provider_1.set(InputType::Xtream)}/>
-                               <TextButton style={if matches!(*custom_provider, InputType::M3u) {"active"} else {""} }
+                               <TextButton class={if matches!(*custom_provider, InputType::M3u) {"active"} else {""} }
                                         name={"m3u_source"} title={translate.t("LABEL.M3U")} icon={"Playlist"}
                                         onclick={move |_| set_custom_provider_2.set(InputType::M3u)}/>
                             </div>

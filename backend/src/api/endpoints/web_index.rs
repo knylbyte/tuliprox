@@ -9,6 +9,10 @@ use shared::model::{TokenResponse, UserCredential};
 use shared::utils::{concat_path_leading_slash, CONSTANTS};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use base64::Engine;
+use base64::engine::general_purpose;
+use openssl::rand::rand_bytes;
+use openssl::sha::{sha256};
 use tower::Service;
 
 fn no_web_auth_token() -> impl axum::response::IntoResponse + Send {
@@ -103,25 +107,52 @@ async fn index(
 ) -> impl axum::response::IntoResponse + Send {
     let config = &app_state.app_config.config.load();
     let path: PathBuf = [&config.api.web_root, "index.html"].iter().collect();
-    if let Some(web_ui_path) = &config.web_ui.as_ref().and_then(|c| c.path.as_ref()) {
-        match tokio::fs::read_to_string(&path).await {
-            Ok(content) => {
-                let mut new_content = CONSTANTS.re_base_href.replace_all(&content, |caps: &regex::Captures| {
-                    format!(r#"{}="{}""#, &caps[1], concat_path_leading_slash(web_ui_path, &caps[2]))
-                }).to_string();
-
-                let base_href = format!(r#"<head><base href="/{web_ui_path}/">"#);
-                if let Some(pos) = new_content.find("<head>") {
-                    new_content.replace_range(pos..pos + 6, &base_href);
+    match tokio::fs::read_to_string(&path).await {
+        Ok(content) => {
+            let mut new_content = {
+                if let Some(web_ui_path) = &config.web_ui.as_ref().and_then(|c| c.path.as_ref()) {
+                    // modify all url or src attributes in the html file
+                    let mut the_content = CONSTANTS.re_base_href.replace_all(&content, |caps: &regex::Captures| {
+                        format!(r#"{}="{}""#, &caps[1], concat_path_leading_slash(web_ui_path, &caps[2]))
+                    }).to_string();
+                    // replace base_href tag
+                    let base_href = format!(r#"<head><base href="/{web_ui_path}/">"#);
+                    if let Some(pos) = the_content.find("<head>") {
+                        the_content.replace_range(pos..pos + 6, &base_href);
+                    }
+                    the_content
+                } else {
+                    content
                 }
+            };
 
+            // ContentSecurityPolicy nonce
+            let mut rnd = [0u8; 32];
+            if let Err(e) = rand_bytes(&mut rnd) {
+                error!("Failed to generate random bytes for nonce: {e}");
+                // Fallback: ohne weitere Manipulation zurück
                 return try_unwrap_body!(axum::response::Response::builder()
                     .header("Content-Type", mime::TEXT_HTML_UTF_8.as_ref())
                     .body(new_content));
             }
-            Err(err) => {
-                error!("Failed to read web ui index.hml: {err}");
+            let hash = sha256(&rnd);
+            let nonce_b64 = general_purpose::STANDARD_NO_PAD.encode(hash);
+
+            // Insert calculated nonce
+            let script_tag = r#"<script type="module">"#;
+            if new_content.contains(script_tag) {
+                let new_tag = format!(r#"<script type="module" nonce="{}">"#, nonce_b64);
+                new_content = new_content.replacen(script_tag, &new_tag, 1);
             }
+
+            return try_unwrap_body!(axum::response::Response::builder()
+                .header("Content-Type", mime::TEXT_HTML_UTF_8.as_ref())
+                .header("Content-Security-Policy",
+                    format!("default-src 'self'; script-src 'self' 'unsafe-eval' 'nonce-{nonce_b64}'; style-src 'self' 'nonce-{nonce_b64}'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+                ).body(new_content));
+        }
+        Err(err) => {
+            error!("Failed to read web ui index.hml: {err}");
         }
     }
     serve_file(&path, mime::TEXT_HTML_UTF_8).await.into_response()

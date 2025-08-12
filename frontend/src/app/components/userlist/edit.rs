@@ -18,7 +18,7 @@ pub fn UserEdit() -> Html {
       <div class="tp__userlist-edit tp__list-create">
         <div class="tp__userlist-edit__header tp__list-create__header">
            <h1>{ translate.t( if userlist_ctx.selected_user.is_none() { "LABEL.CREATE" } else { "LABEL.EDIT" } )}</h1>
-           <TextButton style="primary" name="userlist"
+           <TextButton class="primary" name="userlist"
                icon="Userlist"
                title={ translate.t("LABEL.LIST")}
                onclick={handle_back}></TextButton>

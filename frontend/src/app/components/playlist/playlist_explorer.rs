@@ -168,7 +168,7 @@ pub fn PlaylistExplorer() -> Html {
       <div class="tp__playlist-explorer">
         <div class="tp__playlist-explorer__header">
             <div class="tp__playlist-explorer__header-toolbar">
-                <IconButton style={if matches!(*current_item, ExplorerLevel::Categories) { "disabled" } else {""}} name="back" icon="Back" onclick={handle_back_click} />
+                <IconButton class={if matches!(*current_item, ExplorerLevel::Categories) { "disabled" } else {""}} name="back" icon="Back" onclick={handle_back_click} />
                 <div class="tp__playlist-explorer__header-toolbar-search">
                   <Search onsearch={handle_search}/>
                 </div>

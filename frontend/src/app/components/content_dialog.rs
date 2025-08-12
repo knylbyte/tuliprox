@@ -34,7 +34,7 @@ pub fn ContentDialog(props: &ContentDialogProps) -> Html {
                 html! {
                     <TextButton
                         autofocus={action.focus}
-                        style={action.style.as_ref().map_or_else(String::new, ToString::to_string)}
+                        class={action.style.as_ref().map_or_else(String::new, ToString::to_string)}
                         name={action.name.clone()}
                         icon={action.icon.as_ref().map_or_else(String::new, |i| i.clone())}
                         onclick={Callback::from(move |_| on_result(result.clone()))}

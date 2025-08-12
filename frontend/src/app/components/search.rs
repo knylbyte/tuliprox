@@ -127,7 +127,7 @@ pub fn Search(props: &SearchProps) -> Html {
                     autocomplete={"on"}
                     onkeydown={handle_key_down}
                     />
-                <IconButton style={match *regex_active {
+                <IconButton class={match *regex_active {
                     RegexState::Active => "option-active",
                     RegexState::Invalid => "option-invalid",
                     RegexState::Inactive => ""}}
