@@ -53,6 +53,7 @@ where
                     if c_type.eq("application/json") {
                         if std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
                             // `T = ()` valid
+                            let _ = response.text().await;
                             serde_json::from_str("null").map_err(|_| Error::DeserializeError)
                         } else {
                             let data: Result<T, _> = response.json::<T>().await;

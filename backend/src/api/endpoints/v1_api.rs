@@ -274,7 +274,11 @@ async fn config_batch_content(
          if let Some(batch_url) = config_input.t_batch_url.as_ref() {
             return match download_text_content(Arc::clone(&app_state.http_client.load()), &config_input, batch_url, None).await {
                 Ok((content, _path)) => {
-                    content.into_response()
+                    // Return CSV with explicit content-type
+                    try_unwrap_body!(axum::response::Response::builder()
+                        .status(axum::http::StatusCode::OK)
+                        .header(axum::http::header::CONTENT_TYPE, "text/csv; charset=utf-8")
+                        .body(content))
                 }
                 Err(err) => {
                     error!("Failed to read batch file: {err}");
@@ -283,7 +287,7 @@ async fn config_batch_content(
             };
         }
     }
-    (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid input"}))).into_response()
+    (axum::http::StatusCode::NOT_FOUND, axum::Json(json!({"error": "Input not found or batch URL missing"}))).into_response()
 }
 
 
