@@ -9,11 +9,14 @@ use shared::model::{TokenResponse, UserCredential};
 use shared::utils::{concat_path_leading_slash, CONSTANTS};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use axum::body::Body;
+use axum::http::Request;
 use base64::Engine;
 use base64::engine::general_purpose;
 use openssl::rand::rand_bytes;
 use openssl::sha::{sha256};
-use tower::Service;
+use tower::{Service, ServiceExt};
+use tower_http::services::ServeFile;
 
 fn no_web_auth_token() -> impl axum::response::IntoResponse + Send {
     axum::Json(TokenResponse {
@@ -115,10 +118,24 @@ async fn index(
                     let mut the_content = CONSTANTS.re_base_href.replace_all(&content, |caps: &regex::Captures| {
                         format!(r#"{}="{}""#, &caps[1], concat_path_leading_slash(web_ui_path, &caps[2]))
                     }).to_string();
-                    // replace base_href tag
-                    let base_href = format!(r#"<head><base href="/{web_ui_path}/">"#);
-                    if let Some(pos) = the_content.find("<head>") {
-                        the_content.replace_range(pos..pos + 6, &base_href);
+
+                    // replace wasm paths
+                    the_content = CONSTANTS.re_base_href_wasm.replace_all(&the_content, |caps: &regex::Captures| {
+                        format!("'{}", concat_path_leading_slash(web_ui_path, &caps[1]))
+                    }).to_string();
+
+                    let new_base = format!(r#"<base href="/{web_ui_path}/">"#);
+
+                    if let Some(base_href_match) = CONSTANTS.re_base_href_tag.find(&the_content) {
+                        let abs_start = base_href_match.start();
+                        let abs_end = base_href_match.end();
+                        the_content.replace_range(abs_start..abs_end, &new_base);
+                    } else {
+                        // replace base_href tag
+                        let base_href = format!("<head>{new_base}");
+                        if let Some(pos) = the_content.find("<head>") {
+                            the_content.replace_range(pos..pos + 6, &base_href);
+                        }
                     }
                     the_content
                 } else {
@@ -141,7 +158,7 @@ async fn index(
             // Insert calculated nonce
             let script_tag = r#"<script type="module">"#;
             if new_content.contains(script_tag) {
-                let new_tag = format!(r#"<script type="module" nonce="{}">"#, nonce_b64);
+                let new_tag = format!(r#"<script type="module" nonce="{nonce_b64}">"#);
                 new_content = new_content.replacen(script_tag, &new_tag, 1);
             }
 
@@ -181,6 +198,28 @@ async fn index_config(
                             }
                         }
                     }
+                    if let Some(app_logo) = json_data.get_mut("appLogo") {
+                        if let Some(url) = app_logo.as_str() {
+                            let new_url  = concat_path_leading_slash(web_ui_path, url);
+                            *app_logo = json!(new_url);
+                        }
+                    }
+                    if let Some(ws_url) = json_data.get_mut("wsUrl") {
+                        if let Some(url) = ws_url.as_str() {
+                            let new_url = concat_path_leading_slash(web_ui_path, url);
+                            *ws_url = json!(new_url);
+                        }
+                    }
+
+                    if let Some(web_path) = json_data.get_mut("webPath") {
+                        if let Some(_path) = web_path.as_str() {
+                            let new_url  = format!("/{web_ui_path}");
+                            *web_path = json!(new_url);
+                        }
+                    } else {
+                        json_data["webPath"] = json!(format!("/{web_ui_path}"));
+                    }
+
                     if let Ok(json_content) = serde_json::to_string(&json_data) {
                         return try_unwrap_body!(axum::response::Response::builder()
                             .header("Content-Type", mime::APPLICATION_JSON.as_ref())
@@ -207,16 +246,19 @@ pub fn index_register_without_path(web_dir_path: &Path) -> axum::Router<Arc<AppS
 }
 
 pub fn index_register_with_path(web_dir_path: &Path, web_ui_path: &str) -> axum::Router<Arc<AppState>> {
-    axum::Router::new()
-        .nest(&concat_path_leading_slash(web_ui_path, "auth"), axum::Router::new()
-            .route("/token", axum::routing::post(token))
-            .route("/refresh", axum::routing::post(token_refresh)))
-        .merge(axum::Router::new()
-            .route(&format!("/{web_ui_path}/"), axum::routing::get(index))
-            .route(&concat_path_leading_slash(web_ui_path, "config.json"), axum::routing::get(index_config))
+    let web_dir_path_clone = PathBuf::from(web_dir_path);
+    let web_ui_router = axum::Router::new()
+            .route("/", axum::routing::get(index))
+            .route("/config.json", axum::routing::get(index_config))
+            .route("/{filename}",  axum::routing::get(async move
+                |axum::extract::Path(filename): axum::extract::Path<String>| {
+                 let full_path = web_dir_path_clone.join(&filename);
+                 let svc = ServeFile::new(full_path);
+                 svc.oneshot(Request::new(Body::empty())).await
+            }))
             .fallback({
                 let mut serve_dir = tower_http::services::ServeDir::new(web_dir_path);
-                let path_prefix = web_ui_path.to_string();
+                let path_prefix = format!("/{web_ui_path}");
                 move |req: axum::http::Request<_>| {
                     let mut path = req.uri().path().to_string();
 
@@ -242,5 +284,17 @@ pub fn index_register_with_path(web_dir_path: &Path, web_ui_path: &str) -> axum:
 
                     serve_dir.call(new_req)
                 }
-            }))
+            });
+
+    let auth_router = axum::Router::new()
+        .route("/token", axum::routing::post(token))
+        .route("/refresh", axum::routing::post(token_refresh));
+
+    let web_ui_path_clone = web_ui_path.to_string();
+    axum::Router::new()
+        .nest(&concat_path_leading_slash(web_ui_path, "auth"), auth_router)
+        .route(&format!("/{web_ui_path}"), axum::routing::get(|| async move {
+            axum::response::Redirect::permanent(&format!("/{web_ui_path_clone}/"))
+        }))
+        .nest(&format!("/{web_ui_path}/"), web_ui_router)
 }
