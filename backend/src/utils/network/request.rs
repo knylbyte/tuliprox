@@ -350,7 +350,6 @@ async fn download_epg_content_as_file(client: Arc<reqwest::Client>, input: &Conf
     }
 }
 
-
 pub async fn download_text_content(client: Arc<reqwest::Client>, input: &ConfigInput, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<(String, String), Error> {
     if let Ok(url) = url_str.parse::<url::Url>() {
         let result = if url.scheme() == "file" {

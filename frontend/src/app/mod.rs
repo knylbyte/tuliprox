@@ -79,7 +79,7 @@ pub fn App() -> Html {
             let futures = languages.iter()
                 .map(|lang| async move {
                     let url = format!("assets/i18n/{lang}.json");
-                    let result: Result<Value, Error> = request_get(&url).await;
+                    let result: Result<Value, Error> = request_get(&url, None).await;
                     (lang.to_string(), result)
                 })
                 .collect::<Vec<_>>();
@@ -101,7 +101,7 @@ pub fn App() -> Html {
     {
         let config_state = configuration_state.clone();
         use_async_with_options::<_, (), Error>(async move {
-            match request_get("config.json").await {
+            match request_get("config.json", None).await {
                 Ok(cfg) => config_state.set(Some(cfg)),
                 Err(err) => error!("Failed to load config {err}"),
             }
@@ -112,7 +112,7 @@ pub fn App() -> Html {
     {
         let icon_state = icon_state.clone();
         use_async_with_options::<_, (), Error>(async move {
-            match request_get("assets/icons.json").await {
+            match request_get("assets/icons.json", None).await {
                 Ok(icons) => icon_state.set(Some(icons)),
                 Err(err) => error!("Failed to load icons {err}"),
             }
