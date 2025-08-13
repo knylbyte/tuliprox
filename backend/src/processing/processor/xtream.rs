@@ -1,6 +1,6 @@
 use shared::error::{info_err, notify_err};
-use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
-use crate::model::{AppConfig, Config, ConfigInput};
+use shared::error::{str_to_io_error, TuliproxError};
+use crate::model::{AppConfig, Config, ConfigInput, InputSource};
 use crate::model::{FetchedPlaylist};
 use shared::model::{PlaylistEntry, PlaylistItem, PlaylistItemType, XtreamCluster};
 use crate::model::normalize_release_date;
@@ -21,7 +21,8 @@ pub(in crate::processing) async fn playlist_resolve_download_playlist_item(clien
     let mut result = None;
     let provider_id = pli.get_provider_id()?;
     if let Some(info_url) = xtream::get_xtream_player_api_info_url(input, cluster, provider_id) {
-        result = match xtream::get_xtream_stream_info_content(client, &info_url, input).await {
+        let input_source = InputSource::from(input).with_url(info_url);
+        result = match xtream::get_xtream_stream_info_content(client, &input_source).await {
             Ok(content) => Some(content),
             Err(err) => {
                 errors.push(info_err!(format!("{err}")));

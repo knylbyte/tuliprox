@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use crate::error::{TuliproxError, TuliproxErrorKind};
+use crate::error::{TuliproxError};
 use crate::info_err;
 use crate::utils::parse_size_base_2;
 use path_clean::PathClean;

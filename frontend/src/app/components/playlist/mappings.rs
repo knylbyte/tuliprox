@@ -1,8 +1,7 @@
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{MapperDto, MappingCounter, MappingDto};
-use crate::app::components::{Accordion, AccordionPanel, ConfigContext, FilterView, MapperCounterView, MapperScriptView, NoContent};
-use crate::app::components::toggle_switch::ToggleSwitch;
+use crate::app::components::{Accordion, AccordionPanel, ConfigContext, FilterView, MapperCounterView, MapperScriptView, NoContent, ToggleSwitch};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct PlaylistMappingsProps {

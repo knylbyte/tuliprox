@@ -5,6 +5,7 @@
 - Added `replace` built-in function for mapper scripts 
 - New WebUI features
 - Added `token_ttl_mins` to web_auth config to define auth token expiration duration.
+- Staged sources. Side loading playlist. Load from staged, serve from provider. 
 
 # 3.1.4 (2025-06-17)
 - share live stream refactored

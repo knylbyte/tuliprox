@@ -1,4 +1,4 @@
-use crate::model::{AppConfig, ProxyUserCredentials};
+use crate::model::{AppConfig, InputSource, ProxyUserCredentials};
 use crate::model::{Config, ConfigInput, ConfigTarget};
 use crate::processing::parser::xtream;
 use crate::repository::xtream_repository;
@@ -45,8 +45,8 @@ pub fn get_xtream_player_api_info_url(input: &ConfigInput, cluster: XtreamCluste
 }
 
 
-pub async fn get_xtream_stream_info_content(client: Arc<reqwest::Client>, info_url: &str, input: &ConfigInput) -> Result<String, Error> {
-    match request::download_text_content(client, input, info_url, None).await {
+pub async fn get_xtream_stream_info_content(client: Arc<reqwest::Client>, input: &InputSource) -> Result<String, Error> {
+    match request::download_text_content(client, input, None).await {
         Ok((content, _response_url)) => Ok(content),
         Err(err) => Err(err)
     }
@@ -95,7 +95,8 @@ where
         }
     }
 
-    if let Ok(content) = get_xtream_stream_info_content(client, info_url, input).await {
+    let input_source = InputSource::from(input).with_url(info_url.to_owned());
+    if let Ok(content) = get_xtream_stream_info_content(client, &input_source).await {
         return match cluster {
             XtreamCluster::Live => Ok(content),
             XtreamCluster::Video => xtream_repository::write_and_get_xtream_vod_info(app_config, target, xtream_output, pli, user, &content).await,
@@ -131,19 +132,20 @@ const ACTIONS: [(XtreamCluster, &str, &str); 3] = [
     (XtreamCluster::Video, crate::model::XC_ACTION_GET_VOD_CATEGORIES, crate::model::XC_ACTION_GET_VOD_STREAMS),
     (XtreamCluster::Series, crate::model::XC_ACTION_GET_SERIES_CATEGORIES, crate::model::XC_ACTION_GET_SERIES)];
 
-async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &ConfigInput, username: &str, base_url: &str) -> Result<(), TuliproxError> {
-    let content = match request::get_input_json_content(Arc::clone(client), input, base_url, None).await {
-        Ok(content) => content,
-        Err(_) => {
-            match request::get_input_json_content(Arc::clone(client), input, &format!("{base_url}&action=get_account_info"), None).await {
-                Ok(content) => content,
-                Err(err) => {
-                    warn!("Failed to login xtream account {username} {err}");
-                    return Err(err);
-                }
+async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &InputSource, username: &str) -> Result<(), TuliproxError> {
+    let content = if let Ok(content) = request::get_input_json_content(Arc::clone(client), input, None).await {
+        content
+    } else {
+        let input_source_account_info = input.with_url(format!("{}&action=get_account_info", &input.url));
+        match request::get_input_json_content(Arc::clone(client), &input_source_account_info, None).await {
+            Ok(content) => content,
+            Err(err) => {
+                warn!("Failed to login xtream account {username} {err}");
+                return Err(err);
             }
         }
     };
+
     match content.get("user_info") {
         None => {}
         Some(value) => {
@@ -187,12 +189,19 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Confi
 }
 
 pub async fn get_xtream_playlist(cfg: &Config, client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
-    let username = input.username.as_ref().map_or("", |v| v);
-    let password = input.password.as_ref().map_or("", |v| v);
+    let input_source: InputSource = {
+        match input.staged.as_ref() {
+            None => input.into(),
+            Some(staged) => staged.into(),
+        }
+    };
 
-    let base_url = get_xtream_stream_url_base(&input.url, username, password);
+    let username = input_source.username.as_ref().map_or("", |v| v);
+    let password = input_source.password.as_ref().map_or("", |v| v);
 
-    if let Err(err) = xtream_login(cfg, &client, input, username, &base_url).await {
+    let base_url = get_xtream_stream_url_base(&input_source.url, username, password);
+    let input_source_login = input_source.with_url(base_url.clone());
+    if let Err(err) = xtream_login(cfg, &client, &input_source_login, username).await {
         return (Vec::with_capacity(0), vec![err]);
     }
 
@@ -202,14 +211,14 @@ pub async fn get_xtream_playlist(cfg: &Config, client: Arc<reqwest::Client>, inp
     let mut errors = vec![];
     for (xtream_cluster, category, stream) in &ACTIONS {
         if !skip_cluster.contains(xtream_cluster) {
-            let category_url = format!("{base_url}&action={category}");
-            let stream_url = format!("{base_url}&action={stream}");
+            let input_source_category = input_source.with_url(format!("{base_url}&action={category}"));
+            let input_source_stream = input_source.with_url(format!("{base_url}&action={stream}"));
             let category_file_path = crate::utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{category}_").as_str());
             let stream_file_path = crate::utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{stream}_").as_str());
 
             match futures::join!(
-                request::get_input_json_content(Arc::clone(&client), input, category_url.as_str(), category_file_path),
-                request::get_input_json_content(Arc::clone(&client), input, stream_url.as_str(), stream_file_path)
+                request::get_input_json_content(Arc::clone(&client), &input_source_category, category_file_path),
+                request::get_input_json_content(Arc::clone(&client), &input_source_stream, stream_file_path)
             ) {
                 (Ok(category_content), Ok(stream_content)) => {
                     match xtream::parse_xtream(input,

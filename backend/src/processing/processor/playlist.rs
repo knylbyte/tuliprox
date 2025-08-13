@@ -28,7 +28,7 @@ use crate::utils::StepMeasure;
 use deunicode::deunicode;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use reqwest::Client;
-use shared::error::{get_errors_notify_message, notify_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
 use shared::foundation::filter::{get_field_value, set_field_value, ValueAccessor, ValueProvider};
 use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry,
                     PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
@@ -234,6 +234,15 @@ fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bo
     (!user_targets.enabled && target.enabled) || (user_targets.enabled && user_targets.has_target(target.id))
 }
 
+async fn playlist_download_from_input(client: &Arc<reqwest::Client>, config: &Arc<Config>, input: &ConfigInput) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
+    let working_dir = &config.working_dir;
+    match input.input_type {
+        InputType::M3u => m3u::get_m3u_playlist(Arc::clone(client), config, input, working_dir).await,
+        InputType::Xtream => xtream::get_xtream_playlist(config, Arc::clone(client), input, working_dir).await,
+        InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![])
+    }
+}
+
 async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, source_idx: usize,
                         user_targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>)
                         -> (Vec<InputStats>, Vec<TargetStats>, Vec<TuliproxError>) {
@@ -249,14 +258,9 @@ async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, sourc
             if is_input_enabled(input, &user_targets) {
                 let config = cfg.config.load();
                 let working_dir = &config.working_dir;
-
                 source_downloaded = true;
                 let start_time = Instant::now();
-                let (mut playlistgroups, mut error_list) = match input.input_type {
-                    InputType::M3u => m3u::get_m3u_playlist(Arc::clone(&client), &config, input, working_dir).await,
-                    InputType::Xtream => xtream::get_xtream_playlist(&config, Arc::clone(&client), input, working_dir).await,
-                    InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![])
-                };
+                let (mut playlistgroups, mut error_list) = playlist_download_from_input(&client, &config, input).await;
                 let (tvguide, mut tvguide_errors) = if error_list.is_empty() {
                     epg::get_xmltv(Arc::clone(&client), input, working_dir).await
                 } else {
@@ -600,8 +604,8 @@ pub async fn exec_processing(client: Arc<reqwest::Client>, app_config: Arc<AppCo
     info!("🌷 Update process finished! Took {elapsed} secs.");
 }
 
-#[cfg(test)]
-mod tests {
+// #[cfg(test)]
+// mod tests {
     // #[test]
     // fn test_jaro_winkeler() {
     //     let data = [("yessport5", "heyessport5gold"), ("yessport5", "heyesport5gold")];
@@ -615,4 +619,4 @@ mod tests {
     //     // println!("sorensen dice {:?}", strsim::sorensen_dice(data.0, data.1));
     // }
 
-}
+// }

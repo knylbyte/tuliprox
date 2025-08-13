@@ -9,7 +9,7 @@ macro_rules! get_errors_notify_message {
         } else {
             let text = $errors
                 .iter()
-                .filter(|&err| err.kind == TuliproxErrorKind::Notify)
+                .filter(|&err| err.kind == $crate::error::TuliproxErrorKind::Notify)
                 .map(|err| err.message.as_str())
                 .collect::<Vec<&str>>()
                 .join("\r\n");
@@ -27,7 +27,7 @@ pub use get_errors_notify_message;
 #[macro_export]
 macro_rules! notify_err {
     ($text:expr) => {
-        TuliproxError::new(TuliproxErrorKind::Notify, $text)
+        $crate::error::TuliproxError::new($crate::error::TuliproxErrorKind::Notify, $text)
     };
 }
 
@@ -36,7 +36,7 @@ pub use notify_err;
 #[macro_export]
 macro_rules! info_err {
     ($text:expr) => {
-        TuliproxError::new(TuliproxErrorKind::Info, $text)
+        $crate::error::TuliproxError::new($crate::error::TuliproxErrorKind::Info, $text)
     };
 }
 pub use info_err;
@@ -45,7 +45,7 @@ pub use info_err;
 #[macro_export]
 macro_rules! create_tuliprox_error {
      ($kind: expr, $($arg:tt)*) => {
-        TuliproxError::new($kind, format!($($arg)*))
+        $crate::error::TuliproxError::new($kind, format!($($arg)*))
     }
 }
 pub use create_tuliprox_error;
@@ -53,7 +53,7 @@ pub use create_tuliprox_error;
 #[macro_export]
 macro_rules! create_tuliprox_error_result {
      ($kind: expr, $($arg:tt)*) => {
-        Err(TuliproxError::new($kind, format!($($arg)*)))
+        Err($crate::error::TuliproxError::new($kind, format!($($arg)*)))
     }
 }
 pub use create_tuliprox_error_result;
@@ -71,7 +71,7 @@ macro_rules! handle_tuliprox_error_result_list {
             })
             .collect::<Vec<String>>();
         if !&errors.is_empty() {
-            return Err(TuliproxError::new($kind, errors.join("\n")));
+            return Err($crate::error::TuliproxError::new($kind, errors.join("\n")));
         }
     }
 }
@@ -82,7 +82,7 @@ pub use handle_tuliprox_error_result_list;
 macro_rules! handle_tuliprox_error_result {
     ($kind:expr, $result: expr) => {
         if let Err(err) = $result {
-            return Err(TuliproxError::new($kind, err.to_string()));
+            return Err($crate::error::TuliproxError::new($kind, err.to_string()));
         }
     }
 }

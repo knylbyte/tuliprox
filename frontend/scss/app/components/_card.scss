@@ -6,4 +6,6 @@
   padding: var(--padding-default);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
+  position: relative;
+  gap: var(--gap-default);
 }

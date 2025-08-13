@@ -1,5 +1,5 @@
 use shared::error::info_err;
-use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError};
 use crate::model::{AppConfig, ConfigTarget, TargetOutput};
 use shared::model::{PlaylistGroup, PlaylistItemType};
 use crate::model::Epg;

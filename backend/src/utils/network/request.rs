@@ -16,7 +16,7 @@ use url::Url;
 use shared::error::create_tuliprox_error_result;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::{InputFetchMethod, DEFAULT_USER_AGENT};
-use crate::model::{format_elapsed_time, AppConfig};
+use crate::model::{format_elapsed_time, AppConfig, InputSource};
 use crate::model::{ConfigInput};
 use crate::repository::storage::{get_input_storage_path};
 use crate::repository::storage_const;
@@ -99,19 +99,19 @@ pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: 
 }
 
 
-pub async fn get_input_text_content(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<String, TuliproxError> {
-    debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(url_str));
+pub async fn get_input_text_content(client: Arc<reqwest::Client>, input: &InputSource, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<String, TuliproxError> {
+    debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(&input.url));
 
-    if url_str.parse::<url::Url>().is_ok() {
-        match download_text_content(client, input, url_str, persist_filepath).await {
+    if input.url.parse::<url::Url>().is_ok() {
+        match download_text_content(client, input, persist_filepath).await {
             Ok((content, _response_url)) => Ok(content),
             Err(e) => {
-                error!("cant download input url: {}  => {}", sanitize_sensitive_info(url_str), sanitize_sensitive_info(e.to_string().as_str()));
+                error!("cant download input url: {}  => {}", sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()));
                 create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to download")
             }
         }
     } else {
-        let result = match get_file_path(working_dir, Some(PathBuf::from(url_str))) {
+        let result = match get_file_path(working_dir, Some(PathBuf::from(&input.url))) {
             Some(filepath) => {
                 if filepath.exists() {
                     if let Some(persist_file_value) = persist_filepath {
@@ -138,7 +138,7 @@ pub async fn get_input_text_content(client: Arc<reqwest::Client>, input: &Config
             None => None
         };
         result.map_or_else(|| {
-            let msg = format!("cant read input url: {}", sanitize_sensitive_info(url_str));
+            let msg = format!("cant read input url: {}", sanitize_sensitive_info(&input.url));
             error!("{msg}");
             create_tuliprox_error_result!(TuliproxErrorKind::Notify, "{msg}")
         }, Ok)
@@ -255,7 +255,7 @@ async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &Config
     }
 }
 
-async fn get_remote_content(client: Arc<reqwest::Client>, input: &ConfigInput, url: &Url) -> Result<(String, String), Error> {
+async fn get_remote_content(client: Arc<reqwest::Client>, input: &InputSource, url: &Url) -> Result<(String, String), Error> {
     let start_time = Instant::now();
     let request = get_client_request(&client, input.method, Some(&input.headers), url, None);
     match request.send().await {
@@ -350,10 +350,10 @@ async fn download_epg_content_as_file(client: Arc<reqwest::Client>, input: &Conf
     }
 }
 
-pub async fn download_text_content(client: Arc<reqwest::Client>, input: &ConfigInput, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<(String, String), Error> {
-    if let Ok(url) = url_str.parse::<url::Url>() {
+pub async fn download_text_content(client: Arc<reqwest::Client>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<(String, String), Error> {
+    if let Ok(url) = input.url.parse::<url::Url>() {
         let result = if url.scheme() == "file" {
-            url.to_file_path().map_or_else(|()| Err(str_to_io_error(&format!("Unknown file {}", sanitize_sensitive_info(url_str)))), |file_path|
+            url.to_file_path().map_or_else(|()| Err(str_to_io_error(&format!("Unknown file {}", sanitize_sensitive_info(&input.url)))), |file_path|
                 get_local_file_content(&file_path).map(|c| (c, url.to_string())),
             )
         } else {
@@ -369,13 +369,13 @@ pub async fn download_text_content(client: Arc<reqwest::Client>, input: &ConfigI
             Err(err) => Err(err)
         }
     } else {
-        Err(str_to_io_error(&format!("Malformed URL {}", sanitize_sensitive_info(url_str))))
+        Err(str_to_io_error(&format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
     }
 }
 
-async fn download_json_content(client: Arc<reqwest::Client>, input: &ConfigInput, url: &str, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, Error> {
-    debug_if_enabled!("downloading json content from {}", sanitize_sensitive_info(url));
-    match download_text_content(client, input, url, persist_filepath).await {
+async fn download_json_content(client: Arc<reqwest::Client>, input: &InputSource,persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, Error> {
+    debug_if_enabled!("downloading json content from {}", sanitize_sensitive_info(&input.url));
+    match download_text_content(client, input, persist_filepath).await {
         Ok((content, _response_url)) => {
             match serde_json::from_str::<serde_json::Value>(&content) {
                 Ok(value) => Ok(value),
@@ -386,10 +386,10 @@ async fn download_json_content(client: Arc<reqwest::Client>, input: &ConfigInput
     }
 }
 
-pub async fn get_input_json_content(client: Arc<reqwest::Client>, input: &ConfigInput, url: &str, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, TuliproxError> {
-    match download_json_content(client, input, url, persist_filepath).await {
+pub async fn get_input_json_content(client: Arc<reqwest::Client>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, TuliproxError> {
+    match download_json_content(client, input, persist_filepath).await {
         Ok(content) => Ok(content),
-        Err(e) => create_tuliprox_error_result!(TuliproxErrorKind::Notify, "cant download input url: {}  => {}", sanitize_sensitive_info(url), sanitize_sensitive_info(e.to_string().as_str()))
+        Err(e) => create_tuliprox_error_result!(TuliproxErrorKind::Notify, "cant download input url: {}  => {}", sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()))
     }
 }
 
