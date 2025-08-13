@@ -1,6 +1,6 @@
 use std::fmt::Display;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, BatchInputContentView, Chip, HideContent, InputHeaders, InputOptions, InputTypeView, RevealContent, Table, TableDefinition};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, BatchInputContentView, Chip, HideContent, InputHeaders, InputOptions, InputTypeView, RevealContent, StagedInputView, Table, TableDefinition};
 use std::rc::Rc;
 use std::str::FromStr;
 use yew::platform::spawn_local;
@@ -9,10 +9,11 @@ use yew_i18n::use_translation;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, SortOrder};
 use crate::app::components::menu_item::MenuItem;
+use crate::html_if;
 use crate::model::DialogResult;
 use crate::services::{DialogService};
 
-const HEADERS: [&str; 14] = [
+const HEADERS: [&str; 15] = [
 "TABLE.EMPTY",
 "TABLE.ENABLED",
 "TABLE.NAME",
@@ -27,6 +28,7 @@ const HEADERS: [&str; 14] = [
 "TABLE.METHOD",
 "TABLE.EPG",
 "TABLE.HEADERS",
+"TABLE.STAGED",
 ];
 
 #[derive(Clone, PartialEq)]
@@ -115,8 +117,12 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                             9 => html! { dto.priority.to_string() },
                             10 => html! { dto.max_connections.to_string() },
                             11 => html! { dto.method.to_string() },
-                            12 => html! {  },
-                            13 => html! { <InputHeaders input={dto.clone()} /> },
+                            12 => html! { /* TODO */ },
+                            13 => html! { <InputHeaders headers={dto.headers.clone()} /> },
+                            14 => html_if!(dto.staged.is_some(),
+                                 { <RevealContent preview={ html!{ dto.staged.as_ref().map_or_else(String::new, |s| s.url.clone())} }>
+                                      <StagedInputView input={ dto.staged.clone() } />
+                                   </RevealContent> }),
                             _ => html! {""},
                         }
                     },

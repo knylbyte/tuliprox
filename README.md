@@ -563,6 +563,22 @@ Each input has the following attributes:
   + `xtream_live_stream_without_extension` default false, if set to true `.ts` extension is not added to the stream link.
   + `xtream_live_stream_use_prefix` default true, if set to true `/live/` prefix is added to the stream link.
 - `aliases`  for alias definitions for the same provider with different credentials
+- `staged` for side loading processed playlists. 
+Instead of fully configuring everything yourself, you can “stage” a source — meaning you provide a ready-made playlist
+from somewhere else. The system will only use that staged playlist when updating.
+For actual streaming and fetching details, it will still use the main provider’s settings.
+In plain words: If you don’t want to deal with Tuliprox mapping, or you already have a playlist in another online tool,
+you can plug that playlist in as a staged input. It won’t replace the main provider — it’s just there to update the list.
+All streaming and proxying and info still come from the original provider configuration.
+
+`staged` has the following properties:
+- `type` is optional, default is `m3u`. Valid values are `m3u` and `xtream`
+- `url` for type `m3u` is the download url or a local filename (can be gzip) of the input-source. For type `xtream`it is `http://<hostname>:<port>`
+- `headers` is optional
+- `method` can be `GET` or `POST`
+- `username` only mandatory for type `xtream`
+- `pasword`only mandatory for type `xtream`
+
 
 `persist` should be different for `m3u` and `xtream` types. For `m3u` use full filename like `./playlist_{}.m3u`.
 For `xtream` use a prefix like `./playlist_`

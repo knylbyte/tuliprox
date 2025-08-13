@@ -6,15 +6,15 @@
   right: 0;
   bottom: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: rgba(0, 0, 0, 0.5);
   z-index: 1000;
   animation: fadeIn 0.2s ease-out;
 }
 
 .tp__custom-dialog-modal {
-  /* Additional styles for modal dialogs */
+  padding-top: clamp(0vh, 15vh, 30vh);
 }
 
 .tp__custom-dialog {

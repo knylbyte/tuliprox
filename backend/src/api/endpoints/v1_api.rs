@@ -4,7 +4,7 @@ use crate::api::endpoints::user_api::user_api_register;
 use crate::api::model::AppState;
 use crate::auth::create_access_token;
 use crate::auth::validator_admin;
-use crate::model::{TargetUser};
+use crate::model::{InputSource, TargetUser};
 use crate::model::{ConfigInput, ConfigInputOptions};
 use crate::processing::processor::playlist;
 use crate::repository::user_repository::store_api_user;
@@ -272,7 +272,8 @@ async fn config_batch_content(
     if let Some(config_input) = app_state.app_config.get_input_by_id(input_id) {
         // The url is changed at this point, we need the raw url for the batch file
          if let Some(batch_url) = config_input.t_batch_url.as_ref() {
-            return match download_text_content(Arc::clone(&app_state.http_client.load()), &config_input, batch_url, None).await {
+            let input_source = InputSource::from(&*config_input).with_url(batch_url.to_owned());
+            return match download_text_content(Arc::clone(&app_state.http_client.load()), &input_source, None).await {
                 Ok((content, _path)) => {
                     // Return CSV with explicit content-type
                     try_unwrap_body!(axum::response::Response::builder()

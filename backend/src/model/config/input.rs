@@ -1,8 +1,7 @@
 use crate::model::{macros, EpgConfig};
 use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::{info_err, write_if_some};
-use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType};
-use shared::utils::get_credentials_from_url_str;
+use shared::{check_input_connections, info_err, write_if_some};
+use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, StagedInputDto};
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};
 use shared::{check_input_credentials};
 use std::collections::HashMap;
@@ -67,6 +66,30 @@ impl InputUserInfo {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct StagedInput {
+    pub url: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub method: InputFetchMethod,
+    pub input_type: InputType,
+    pub headers: HashMap<String, String>,
+}
+
+macros::from_impl!(StagedInput);
+impl From<&StagedInputDto> for StagedInput {
+    fn from(dto: &StagedInputDto) -> Self {
+        Self {
+            input_type: dto.input_type,
+            url: dto.url.clone(),
+            username: dto.username.clone(),
+            password: dto.password.clone(),
+            method: dto.method,
+            headers: dto.headers.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ConfigInputAlias {
     pub id: u16,
@@ -110,6 +133,7 @@ pub struct ConfigInput {
     pub priority: i16,
     pub max_connections: u16,
     pub method: InputFetchMethod,
+    pub staged: Option<StagedInput>,
     pub t_batch_url: Option<String>,
 }
 
@@ -117,6 +141,13 @@ impl ConfigInput {
     pub fn prepare(&mut self) -> Result<Option<PathBuf>, TuliproxError> {
         let batch_file_path = self.prepare_batch();
         check_input_credentials!(self, self.input_type, false);
+        check_input_connections!(self, self.input_type);
+        if let Some(staged_input) = &mut self.staged {
+            check_input_credentials!(staged_input, staged_input.input_type, false);
+            if !matches!(staged_input.input_type, InputType::M3u | InputType::Xtream) {
+                return Err(info_err!("Staged input can only be from type m3u or xtream".to_owned()));
+            }
+        }
         Ok(batch_file_path)
     }
 
@@ -189,6 +220,7 @@ impl ConfigInput {
             priority: alias.priority,
             max_connections: alias.max_connections,
             method: self.method,
+            staged: None,
             t_batch_url: None,
         }
     }
@@ -214,6 +246,7 @@ impl From<&ConfigInputDto> for ConfigInput {
             max_connections: dto.max_connections,
             method: dto.method,
             t_batch_url: None,
+            staged: dto.staged.as_ref().map(std::convert::Into::into),
         }
     }
 }
