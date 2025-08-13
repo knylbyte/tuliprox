@@ -28,7 +28,7 @@ use crate::utils::StepMeasure;
 use deunicode::deunicode;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use reqwest::Client;
-use shared::error::{get_errors_notify_message, notify_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
 use shared::foundation::filter::{get_field_value, set_field_value, ValueAccessor, ValueProvider};
 use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry,
                     PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};

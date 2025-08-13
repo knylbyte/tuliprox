@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError};
 use crate::model::{Config};
 use shared::error::{notify_err};
 use crate::repository::storage_const;

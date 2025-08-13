@@ -1,14 +1,14 @@
 use std::fmt;
 use std::str::FromStr;
-use shared::error::{info_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{info_err, TuliproxError};
 
-const DASHBOARD: &'static str = "dashboard";
-const STATS: &'static str = "stats";
-const USERS: &'static str = "users";
-const CONFIG: &'static str = "config";
-const PLAYLIST_UPDATE: &'static str = "playlist_update";
-const PLAYLIST_EDITOR: &'static str = "playlist_editor";
-const PLAYLIST_EXPLORER: &'static str = "playlist_explorer";
+const DASHBOARD: &str = "dashboard";
+const STATS: &str = "stats";
+const USERS: &str = "users";
+const CONFIG: &str = "config";
+const PLAYLIST_UPDATE: &str = "playlist_update";
+const PLAYLIST_EDITOR: &str = "playlist_editor";
+const PLAYLIST_EXPLORER: &str = "playlist_explorer";
 
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

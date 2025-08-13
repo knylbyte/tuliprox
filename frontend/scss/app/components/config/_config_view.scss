@@ -5,6 +5,8 @@
   gap: var(--gap-default);
   padding: var(--padding-default) 0;
   box-sizing: border-box;
+  overflow: hidden;
+
   &__header {
     display: flex;
     flex-flow: row nowrap;
@@ -12,16 +14,39 @@
     width: 100%;
     justify-content: space-between;
     align-items: center;
+    gap: var(--gap-default);
   }
 
   &__body {
     display: flex;
     flex-flow: column;
-
+    overflow: hidden;
     gap: var(--gap-default);
     box-sizing: border-box;
-    overflow-y: auto;
     width: 100%;
+
+    .tp__card {
+      overflow: hidden;
+      gap: var(--gap-large);
+    }
+  }
+
+  &__tags {
+    display: flex;
+    flex-flow: row wrap;
+    gap: var(--gap-default);
+    height: 2.5rem;
+    align-items: center;
+  }
+
+  &__card {
+    gap: var(--gap-large);
+    background-color: var(--table-alternate-background-color);
+    overflow: hidden;
+    h1 {
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
   }
 }
 
@@ -29,12 +54,13 @@
   display: flex;
   gap: var(--gap-default);
   box-sizing: border-box;
-  //max-width: 400px;
+  min-width: 200px;
 
   &__text {
     flex-flow: column;
+  }
 
-    span {
+  &__value {
       display: flex;
       flex-flow: row nowrap;
       align-items: center;
@@ -50,7 +76,6 @@
       border-radius: var(--border-radius);
       box-sizing: border-box;
       white-space: nowrap;
-    }
   }
 
   &__bool {
@@ -67,5 +92,53 @@
     &:after {
       content: ":";
     }
+  }
+}
+
+.tp__config-view-page {
+  display: flex;
+  flex-flow: column;
+  width: 100%;
+  gap: var(--gap-default);
+  padding: var(--padding-default) 0;
+  box-sizing: border-box;
+  overflow: auto;
+
+  &__header {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: var(--gap-large);
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  &__body {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: var(--gap-large);
+    box-sizing: border-box;
+    width: 100%;
+  }
+}
+
+.tp__schedules-config-view {
+  &__schedule {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: var(--gap-default);
+    box-sizing: border-box;
+    padding: var(--padding-default);
+    border: 1px solid var(--card-border-color);
+    border-radius: var(--border-radius);
+  }
+  &__footer {
+    margin-top: var(--margin-default);
+    padding-top: var(--margin-default);
+    border-top : 1px solid var(--card-border-color);
+    svg {
+      width: 240px;
+      height: 60px;
+    }
+    fill: var(--label-color);
   }
 }

@@ -1,0 +1,64 @@
+@use '../../size';
+.tp__tab-set {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+
+  &__header {
+    display: flex;
+    flex-flow: row wrap;
+    border-bottom: 1px solid var(--border-color);
+    padding: 0  0 var(--padding-small) 0;
+    gap: var(--gap-default);
+    box-sizing: border-box;
+  }
+
+  &__tab {
+    position: relative;
+
+    .tp__text-button {
+      color: var(--modest-text-color);
+    }
+
+
+    &--active {
+      fill: var(--active-color);
+      color: var(--active-color);
+      .tp__text-button {
+        color: var(--active-color);
+      }
+
+    }
+
+    &-desktop {
+      display: block;
+    }
+
+    &-mobile {
+      display: none;
+    }
+
+    @media (max-width: size.$mobile-breakpoint) {
+      &-desktop {
+        display: none;
+      }
+
+      &-mobile {
+        display: block;
+      }
+    }
+  }
+
+  &__body {
+    flex: 1;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  &__panel {
+    height: 100%;
+    overflow: auto;
+  }
+}

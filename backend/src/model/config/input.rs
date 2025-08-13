@@ -1,5 +1,5 @@
 use crate::model::{macros, EpgConfig};
-use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError};
 use shared::{check_input_connections, info_err, write_if_some};
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, StagedInputDto};
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};

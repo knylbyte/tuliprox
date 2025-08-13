@@ -1,5 +1,5 @@
 use crate::{info_err};
-use crate::error::{TuliproxError, TuliproxErrorKind};
+use crate::error::{TuliproxError};
 use crate::model::EpgSmartMatchConfigDto;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
