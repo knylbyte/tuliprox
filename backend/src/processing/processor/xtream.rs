@@ -1,5 +1,5 @@
 use shared::error::{info_err, notify_err};
-use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::error::{str_to_io_error, TuliproxError};
 use crate::model::{AppConfig, Config, ConfigInput, InputSource};
 use crate::model::{FetchedPlaylist};
 use shared::model::{PlaylistEntry, PlaylistItem, PlaylistItemType, XtreamCluster};

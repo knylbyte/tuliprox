@@ -1,6 +1,6 @@
 use std::fmt::Display;
 use std::str::FromStr;
-use shared::error::{TuliproxError,TuliproxErrorKind};
+use shared::error::{TuliproxError};
 use shared::info_err;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

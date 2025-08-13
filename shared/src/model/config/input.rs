@@ -259,6 +259,9 @@ impl ConfigInputDto {
         check_input_connections!(self, self.input_type);
         if let Some(staged_input) = self.staged.as_mut() {
             check_input_credentials!(staged_input, staged_input.input_type, true);
+            if !matches!(staged_input.input_type, InputType::M3u | InputType::Xtream) {
+               return Err(info_err!("Staged input can only be of type m3u or xtream".to_owned()));
+            }
         }
 
         self.persist = get_trimmed_string(&self.persist);

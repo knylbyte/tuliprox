@@ -3,7 +3,7 @@ use log::error;
 use serde_json::Value;
 use shared::model::{TargetType, XtreamCluster, XtreamPlaylistItem};
 use shared::error::info_err;
-use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError};
 use crate::model::{xtream_playlistitem_to_document, AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget};
 use crate::model::XtreamMappingOptions;

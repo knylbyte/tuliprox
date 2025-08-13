@@ -1,5 +1,5 @@
 use shared::model::InputType;
-use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError};
 use crate::model::{AppConfig, ConfigTarget};
 use crate::model::{FetchedPlaylist};
 use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster};

@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use crate::error::{info_err, TuliproxError, TuliproxErrorKind};
+use crate::error::{info_err, TuliproxError};
 use crate::model::{ProxyUserCredentialsDto};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]

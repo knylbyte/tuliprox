@@ -3,7 +3,7 @@ use shared::error::TuliproxError;
 use reqwest::header::{HeaderMap, HeaderValue};
 use std::sync::Arc;
 use log::{debug, info};
-use shared::error::{info_err, TuliproxErrorKind};
+use shared::error::{info_err};
 use shared::utils::trim_last_slash;
 use super::errors::{handle_trakt_api_error};
 
