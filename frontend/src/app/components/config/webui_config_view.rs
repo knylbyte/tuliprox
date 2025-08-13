@@ -18,7 +18,7 @@ pub fn WebUiConfigView() -> Html {
                         html! {
                         <>
                             { config_field_bool!(web_ui, translate.t("LABEL.ENABLED"), enabled) }
-                            { config_field_bool!(web_ui, translate.t("LABEL.USER_UI_ENABLED"), enabled) }
+                            { config_field_bool!(web_ui, translate.t("LABEL.USER_UI_ENABLED"), user_ui_enabled) }
                             { config_field_optional!(web_ui, translate.t("LABEL.PATH"), path) }
                             { config_field_optional!(web_ui, translate.t("LABEL.PLAYER_SERVER"), player_server) }
                             <Card>

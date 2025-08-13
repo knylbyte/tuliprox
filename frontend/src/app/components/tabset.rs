@@ -34,7 +34,9 @@ pub fn TabSet(props: &TabSetProps) -> Html {
         let prop_active = props.active_tab.clone();
         use_effect_with(prop_active, move |new_active| {
             if let Some(new_tab) = new_active {
-                active_tab_state.set(new_tab.clone());
+                if &*active_tab_state != new_tab {
+                    active_tab_state.set(new_tab.clone());
+                }
             }
         });
     }
