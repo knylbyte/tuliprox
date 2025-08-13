@@ -198,7 +198,15 @@
     "USERLIST": "Userlist",
     "MAPPER": "Mapper",
     "SCRIPT": "Script",
-    "COUNTER": "Counter"
+    "COUNTER": "Counter",
+    "MAIN_CONFIG": "Main Config",
+    "MAPPING_PATH": "Mapping dir",
+    "USER_CONFIG_DIR": "User Config dir",
+    "USER_ACCESS_CONTROL":  "User Access Control",
+    "SLEEP_TIMER_MINS": "Sleep Timer (mins)",
+    "CONNECT_TIMEOUT_SECS":  "Connect Timeout (secs)",
+    "CONFIG_HOT_RELOAD": "Config Hot Reload",
+    "CUSTOM_STREAM_RESPONSE_PATH":  "Custom Stream Response dir"
   },
   "TABLE": {
     "EMPTY": "",

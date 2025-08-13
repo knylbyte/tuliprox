@@ -10,12 +10,12 @@ use yew_i18n::use_translation;
 #[function_component]
 pub fn UserlistView() -> Html {
     let translate = use_translation();
+    let config_ctx = use_context::<ConfigContext>().expect("Config context not found");
+
     let breadcrumbs = use_state(|| Rc::new(vec![translate.t("LABEL.USERLIST"), translate.t("LABEL.LIST")]));
     let active_page = use_state(|| UserlistPage::List);
     let selected_user= use_state(|| None::<Rc<TargetUser>>);
     let filtered_user= use_state(|| None::<Rc<Vec<Rc<TargetUser>>>>);
-
-    let config_ctx = use_context::<ConfigContext>().expect("Config context not found");
 
     let users = use_memo(config_ctx.config.as_ref().and_then(|c| c.api_proxy.clone()),
      |api_cfg_opt| {
