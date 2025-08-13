@@ -1,12 +1,11 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::EpgConfigDto;
 use crate::utils::{default_as_true, get_base_url_from_str, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info, trim_last_slash};
-use crate::{check_input_credentials, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
+use crate::{check_input_credentials, check_input_connections, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use enum_iterator::Sequence;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::str::FromStr;
-
 
 #[macro_export]
 macro_rules! apply_batch_aliases {
@@ -160,11 +159,29 @@ pub struct ConfigInputOptionsDto {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct StagedInputDto {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub method: InputFetchMethod,
+    #[serde(default, rename = "type")]
+    pub input_type: InputType,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+}
+
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigInputAliasDto {
     #[serde(default)]
     pub id: u16,
     pub name: String,
     pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
@@ -185,9 +202,8 @@ impl ConfigInputAliasDto {
         if self.url.is_empty() {
             return Err(info_err!("url for input is mandatory".to_string()));
         }
-        self.username = get_trimmed_string(&self.username);
-        self.password = get_trimmed_string(&self.password);
         check_input_credentials!(self, input_type, true);
+        check_input_connections!(self, input_type);
 
         Ok(self.id)
     }
@@ -225,24 +241,26 @@ pub struct ConfigInputDto {
     pub max_connections: u16,
     #[serde(default)]
     pub method: InputFetchMethod,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub staged: Option<StagedInputDto>,
 }
 
 impl ConfigInputDto {
     #[allow(clippy::cast_possible_truncation)]
     pub fn prepare(&mut self, index: u16, include_computed: bool) -> Result<u16, TuliproxError> {
-        self.check_url()?;
 
         let is_batch = matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch);
-
         self.name = self.name.trim().to_owned();
         if self.name.is_empty()  && !is_batch {
             return Err(info_err!("name for input is mandatory".to_owned()));
         }
 
-        self.username = get_trimmed_string(&self.username);
-        self.password = get_trimmed_string(&self.password);
-
         check_input_credentials!(self, self.input_type, true);
+        check_input_connections!(self, self.input_type);
+        if let Some(staged_input) = self.staged.as_mut() {
+            check_input_credentials!(staged_input, staged_input.input_type, true);
+        }
+
         self.persist = get_trimmed_string(&self.persist);
 
         if let Some(epg) = self.epg.as_mut() {
@@ -296,14 +314,6 @@ impl ConfigInputDto {
             self.id = current_index;
         }
         Ok(current_index)
-    }
-
-    fn check_url(&mut self) -> Result<(), TuliproxError> {
-        self.url = self.url.trim().to_string();
-        if self.url.is_empty() {
-            return Err(info_err!("url for input is mandatory".to_string()));
-        }
-        Ok(())
     }
 
     pub fn prepare_batch(&mut self, batch_aliases: Vec<ConfigInputAliasDto>, index: u16) -> Option<u16> {

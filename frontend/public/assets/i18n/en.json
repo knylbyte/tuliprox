@@ -233,7 +233,8 @@
     "STATUS":  "Status",
     "UI_ENABLED":  "Ui",
     "COMMENT": "Comment",
-    "PLAYLIST": "Playlist"
+    "PLAYLIST": "Playlist",
+    "STAGED": "Staged"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

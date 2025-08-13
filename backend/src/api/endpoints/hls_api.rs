@@ -7,7 +7,7 @@ use crate::api::model::AppState;
 use crate::api::model::UserSession;
 use crate::api::model::{create_custom_video_stream_response, CustomVideoStreamType};
 use crate::auth::Fingerprint;
-use crate::model::ConfigInput;
+use crate::model::{ConfigInput, InputSource};
 use crate::model::ProxyUserCredentials;
 use crate::processing::parser::hls::{
     get_hls_session_token_and_url_from_token, rewrite_hls, RewriteHlsProps,
@@ -91,10 +91,10 @@ pub(in crate::api) async fn handle_hls_stream_request(
         }
     };
 
+    let input_source = InputSource::from(input).with_url(request_url);
     match request::download_text_content(
         Arc::clone(&app_state.http_client.load()),
-        input,
-        &request_url,
+        &input_source,
         None,
     )
     .await

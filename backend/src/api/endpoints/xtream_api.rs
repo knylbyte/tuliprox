@@ -15,7 +15,7 @@ use crate::api::model::UserApiRequest;
 use crate::api::model::XtreamAuthorizationResponse;
 use crate::api::model::{create_custom_video_stream_response, CustomVideoStreamType};
 use crate::auth::Fingerprint;
-use crate::model::ProxyUserCredentials;
+use crate::model::{InputSource, ProxyUserCredentials};
 use crate::model::{AppConfig, ConfigTarget};
 use crate::model::{Config, ConfigInput};
 use crate::repository::playlist_repository::get_target_id_mapping;
@@ -1078,10 +1078,10 @@ async fn xtream_get_short_epg(
                         }
 
                         // TODO serve epg from own db
+                        let input_source = InputSource::from(&*input).with_url(info_url);
                         return match request::download_text_content(
                             Arc::clone(&app_state.http_client.load()),
-                            &input,
-                            info_url.as_str(),
+                            &input_source,
                             None,
                         )
                         .await
@@ -1228,11 +1228,11 @@ async fn xtream_get_catchup_response(
         crate::model::XC_TAG_STREAM_ID,
         pli.provider_id
     )));
+    let input_source = InputSource::from(&*input).with_url(info_url);
     let content = try_result_bad_request!(
         xtream::get_xtream_stream_info_content(
             Arc::clone(&app_state.http_client.load()),
-            info_url.as_str(),
-            &input
+            &input_source
         )
         .await
     );
