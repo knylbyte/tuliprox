@@ -13,7 +13,12 @@ http:
           base-uri 'self';
           frame-ancestors 'none';
           form-action 'self';
+        browserXSSFilter: true
         customBrowserXSSValue: "1; mode=block"
+        frameDeny: true
+        addVaryHeader: true
+        customResponseHeaders:
+        Permissions-Policy: "camera=(), microphone=(), geolocation=()"
         contentTypeNosniff: true
         referrerPolicy: "strict-origin-when-cross-origin"
         forceSTSHeader: true
