@@ -1,0 +1,6 @@
+http:
+  middlewares:
+    forward-real-ip:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-For: ""

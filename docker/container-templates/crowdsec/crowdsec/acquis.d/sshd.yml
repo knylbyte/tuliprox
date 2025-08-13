@@ -1,0 +1,6 @@
+filenames:
+  - /var/log/ssh.log  # Alpine
+  - /var/log/auth.log # Debian/Ubuntu
+  - /var/log/secure   # RHEL/CentOS
+labels:
+  type: syslog

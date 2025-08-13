@@ -1,0 +1,22 @@
+http:
+  middlewares:
+    default-security-headers:
+      headers:
+        contentSecurityPolicy: >
+          default-src 'self';
+          script-src 'self';
+          style-src 'self';
+          img-src 'self' data:;
+          font-src 'self' data:;
+          connect-src 'self' wss:;
+          object-src 'none';
+          base-uri 'self';
+          frame-ancestors 'none';
+          form-action 'self';
+        customBrowserXSSValue: "1; mode=block"
+        contentTypeNosniff: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 63072000
