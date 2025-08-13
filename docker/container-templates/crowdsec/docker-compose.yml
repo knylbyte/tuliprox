@@ -25,6 +25,8 @@ services:
         crowdsecurity/whitelist-good-actors 
         crowdsecurity/traefik 
         crowdsecurity/sshd
+        crowdsecurity/appsec-virtual-patching
+        crowdsecurity/appsec-generic-rules
     volumes:
       - ./crowdsec/acquis.d:/etc/crowdsec/acquis.d/:ro
       - ./crowdsec/db:/var/lib/crowdsec/data/
