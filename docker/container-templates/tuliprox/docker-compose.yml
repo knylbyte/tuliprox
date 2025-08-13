@@ -1,0 +1,51 @@
+services:
+  tuliprox:
+    container_name: tuliprox
+    image: ghcr.io/euzu/tuliprox:latest
+    restart: on-failure
+    networks:
+      - proxy-net
+    expose:
+      - 8901
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./backup:/app/backup
+      - ./downloads:/app/downloads
+      - ./user-config:/app/user-config
+    environment:
+      - TZ=America/Chicago
+    healthcheck:
+     test: ["CMD", "/app", "-p", "/app/config", "--healthcheck"]  
+     interval: 30s  
+     timeout: 10s   
+     retries: 3     
+     start_period: 10s
+    labels:
+      # ----- Default Service -----
+      - "traefik.enable=true"
+
+      # ----- HTTP (Port 80) -----
+      - "traefik.http.routers.tuliprox.entrypoints=web"
+      - "traefik.http.routers.tuliprox.rule=Host(`cdn.tuliprox.io`)"
+      #- "traefik.http.routers.tuliprox.rule=Host(`cdn.tuliprox.io`) && (PathPrefix(`/tv`) || PathRegexp(`(?i)^.*/tuliprox/.*$`))"             # optional, only if you want to use a path prefix
+
+      # ----- HTTPS (Port 443) -----
+      - "traefik.http.routers.tuliprox-secure.entrypoints=websecure"
+      - "traefik.http.routers.tuliprox.rule=Host(`cdn.tuliprox.io`)"
+      #- "traefik.http.routers.tuliprox-secure.rule=Host(`cdn.tuliprox.io`) && (PathPrefix(`/tv`) || PathRegexp(`(?i)^.*/tuliprox/.*$`))"      # optional, only if you want to use a path prefix
+      - "traefik.http.routers.tuliprox-secure.service=tuliprox"
+      
+      # ----- Serviceport -----
+      - "traefik.http.services.tuliprox.loadbalancer.server.port=8901"
+
+      # ----- Middlewares -----
+      # - "traefik.http.middlewares.tpx-striprx.stripprefix.prefixes=/tv"                                                                      # optional, only if you want to use a path prefix
+      # - "traefik.http.routers.tuliprox.middlewares=forward-real-ip@file,tpx-striprx@docker"                                                  # optional     
+      # - "traefik.http.routers.tuliprox-secure.middlewares=forward-real-ip@file,tpx-striprx@docker"                                           # optional      
+
+networks:
+  proxy-net:
+    external: true
+    name: proxy-net
