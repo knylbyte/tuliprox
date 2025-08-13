@@ -13,11 +13,9 @@ macro_rules! check_input_credentials {
                 if $this.username.is_some() || $this.password.is_some() {
                     return Err(info_err!("Input types of m3u should not use username or password".to_owned()));
                 }
-                if $this.username.is_none() && $this.password.is_none() {
-                    let (username, password) = $crate::utils::get_credentials_from_url_str(&$this.url);
-                    $this.username = username;
-                    $this.password = password;
-                }
+                let (username, password) = $crate::utils::get_credentials_from_url_str(&$this.url);
+                $this.username = username;
+                $this.password = password;
             }
             InputType::M3uBatch => {
                 if $definition {
