@@ -12,7 +12,7 @@ pub fn VideoConfigView() -> Html {
 
     let render_extensions = |extensions: &Vec<String>| html! {
         <Card>
-        { config_field_child!(entry, translate.t("LABEL.EXTENSIONS"), {
+        { config_field_child!(translate.t("LABEL.EXTENSIONS"), {
            html! {
              <div class="tp__config-view__tags">
              {
@@ -31,7 +31,7 @@ pub fn VideoConfigView() -> Html {
                 { config_field_bool!(entry, translate.t("LABEL.ORGANIZE_INTO_DIRECTORIES"), organize_into_directories) }
                 { config_field_optional!(entry, translate.t("LABEL.DIRECTORY"), directory) }
                 { config_field_optional!(entry, translate.t("LABEL.EPISODE_PATTERN"), episode_pattern) }
-                { config_field_child!(entry.headers, translate.t("LABEL.HEADERS"), {
+                { config_field_child!(translate.t("LABEL.HEADERS"), {
                     html! {
                         <div class="tp__config-view__tags">
                           <ul>

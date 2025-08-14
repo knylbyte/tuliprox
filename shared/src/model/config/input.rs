@@ -1,6 +1,6 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::EpgConfigDto;
-use crate::utils::{default_as_true, get_base_url_from_str, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info, trim_last_slash};
+use crate::utils::{default_as_true, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info, trim_last_slash};
 use crate::{check_input_credentials, check_input_connections, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use enum_iterator::Sequence;
 use std::collections::{HashMap, HashSet};
@@ -323,16 +323,14 @@ impl ConfigInputDto {
 
                 if username.is_none() || password.is_none() || base_url.is_none(){
                     Err(format!("auto_epg is enabled for input {}, but no credentials could be extracted", self.name))
+                } else if base_url.is_some() {
+                    let provider_epg_url = format!("{}/xmltv.php?username={}&password={}",
+                                                   trim_last_slash(&base_url.unwrap_or_default()),
+                                                   username.unwrap_or_default(),
+                                                   password.unwrap_or_default());
+                    Ok(provider_epg_url)
                 } else {
-                    if base_url.is_some() {
-                        let provider_epg_url = format!("{}/xmltv.php?username={}&password={}",
-                                                       trim_last_slash(&base_url.unwrap_or_default()),
-                                                       username.unwrap_or_default(),
-                                                       password.unwrap_or_default());
-                        Ok(provider_epg_url)
-                    } else {
-                        Err(format!("auto_epg is enabled for input {}, but url could not be parsed {}", self.name, sanitize_sensitive_info(&self.url)))
-                    }
+                    Err(format!("auto_epg is enabled for input {}, but url could not be parsed {}", self.name, sanitize_sensitive_info(&self.url)))
                 }
             };
 

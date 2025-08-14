@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use log::warn;
 use crate::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 
@@ -8,6 +9,22 @@ pub enum EpgNamePrefix {
     Ignore,
     Suffix(String),
     Prefix(String),
+}
+
+impl EpgNamePrefix {
+    const IGNORE: &'static str = "Ignore";
+    const SUFFIX: &'static str = "Suffix";
+    const PREFIX: &'static str = "Prefix";
+}
+
+impl Display for EpgNamePrefix {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Ignore => write!(f, "{}", Self::IGNORE),
+            Self::Suffix(s) => write!(f, "{}({s})", Self::SUFFIX),
+            Self::Prefix(s) => write!(f, "{}({s})", Self::PREFIX),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
