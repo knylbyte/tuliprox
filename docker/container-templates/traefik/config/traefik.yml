@@ -8,13 +8,13 @@ entryPoints:
     http:
       middlewares:
         - redirect-to-https@file          # ssllabs.com -> A+ rating
-        - crowdsec-bouncer@file           # optional, only if you want to use CrowdSec
+        - cs-bouncer-traefik-plugin@file  # optional, only if you want to use CrowdSec
   websecure:
     address: ":443"
     http:
       middlewares:
         - default-security-headers@file   # ssllabs.com -> A+ rating
-        - crowdsec-bouncer@file           # optional, only if you want to use CrowdSec
+        - cs-bouncer-traefik-plugin@file  # optional, only if you want to use CrowdSec
       tls:
         certResolver: hetzner
         options: default

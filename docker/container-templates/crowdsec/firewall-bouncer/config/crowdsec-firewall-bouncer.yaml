@@ -29,7 +29,7 @@ ipset_type: nethash
 # if present, insert rule in those chains
 iptables_chains:
   - INPUT
-  # - FORWARD
+  - FORWARD
   - DOCKER-USER
 iptables_add_rule_comments: true
 
