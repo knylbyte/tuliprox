@@ -41,6 +41,7 @@ services:
       - "traefik.http.services.tuliprox.loadbalancer.server.port=8901"
 
       # ----- Middlewares -----
+      - "traefik.http.routers.tuliprox.middlewares=strip-forward-headers@file"
       # - "traefik.http.middlewares.tpx-striprx.stripprefix.prefixes=/tv"                                                                      # optional, only if you want to use a path prefix
       # - "traefik.http.routers.tuliprox.middlewares=forward-real-ip@file,tpx-striprx@docker"                                                  # optional     
       # - "traefik.http.routers.tuliprox-secure.middlewares=forward-real-ip@file,tpx-striprx@docker"                                           # optional      
