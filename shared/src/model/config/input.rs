@@ -247,7 +247,7 @@ pub struct ConfigInputDto {
 
 impl ConfigInputDto {
     #[allow(clippy::cast_possible_truncation)]
-    pub fn prepare(&mut self, index: u16, include_computed: bool) -> Result<u16, TuliproxError> {
+    pub fn prepare(&mut self, index: u16, _include_computed: bool) -> Result<u16, TuliproxError> {
 
         let is_batch = matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch);
         self.name = self.name.trim().to_owned();
@@ -266,18 +266,64 @@ impl ConfigInputDto {
 
         self.persist = get_trimmed_string(&self.persist);
 
+
+        let mut current_index = index;
+        if let Some(aliases) = self.aliases.as_mut() {
+            let input_type = &self.input_type;
+            self.id = current_index + 1; // The same id as the first alias
+            handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, aliases.iter_mut()
+                .map(|i| match i.prepare(current_index, input_type) {
+                    Ok(new_idx) => {
+                        current_index = new_idx;
+                        Ok(())
+                    },
+                    Err(err) => Err(err)
+                }));
+        } else if !matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch) {
+            current_index += 1;
+            self.id = current_index;
+        }
+        Ok(current_index)
+    }
+
+    fn prepare_epg(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         if let Some(epg) = self.epg.as_mut() {
             let create_auto_url = || {
-                let (username, password) = if self.username.is_none() || self.password.is_none() {
-                    get_credentials_from_url_str(&self.url)
-                } else {
-                    (self.username.clone(), self.password.clone())
+                let get_creds = || {
+                    if self.username.is_some() && self.password.is_some() {
+                        return (self.username.clone(), self.password.clone(), Some(self.url.clone()));
+                    }
+
+                    let (u, p, r) = self.aliases
+                        .as_ref()
+                        .and_then(|aliases| aliases.first())
+                        .map(|alias|  (alias.username.clone(), alias.password.clone(), Some(alias.url.clone())))
+                        .unwrap_or((None, None, None));
+
+                    if u.is_some() && p.is_some() && r.is_some() {
+                        return (u, p, r);
+                    }
+
+                    let (u, p) = get_credentials_from_url_str(&self.url);
+                    if u.is_some() && p.is_some() {
+                        return (u, p, Some(self.url.clone()));
+                    }
+
+                    self.aliases
+                        .as_ref()
+                        .and_then(|aliases| aliases.first())
+                        .map(|alias| {
+                            let (u, p) = get_credentials_from_url_str(alias.url.as_str());
+                            (u,p, Some(alias.url.clone()))
+                        })
+                        .unwrap_or((None, None, None))
                 };
 
-                if username.is_none() || password.is_none() {
+                let (username, password, base_url) = get_creds();
+
+                if username.is_none() || password.is_none() || base_url.is_none(){
                     Err(format!("auto_epg is enabled for input {}, but no credentials could be extracted", self.name))
                 } else {
-                    let base_url = get_base_url_from_str(&self.url);
                     if base_url.is_some() {
                         let provider_epg_url = format!("{}/xmltv.php?username={}&password={}",
                                                        trim_last_slash(&base_url.unwrap_or_default()),
@@ -299,27 +345,12 @@ impl ConfigInputDto {
                     .collect()
             };
         }
-
-        let mut current_index = index;
-        if let Some(aliases) = self.aliases.as_mut() {
-            let input_type = &self.input_type;
-            self.id = current_index + 1; // The same id as the first alias
-            handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, aliases.iter_mut()
-                .map(|i| match i.prepare(current_index, input_type) {
-                    Ok(new_idx) => {
-                        current_index = new_idx;
-                        Ok(())
-                    },
-                    Err(err) => Err(err)
-                }));
-        } else if !matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch) {
-            current_index += 1;
-            self.id = current_index;
-        }
-        Ok(current_index)
+        Ok(())
     }
 
-    pub fn prepare_batch(&mut self, batch_aliases: Vec<ConfigInputAliasDto>, index: u16) -> Option<u16> {
-        apply_batch_aliases!(self, batch_aliases, Some(index))
+    pub fn prepare_batch(&mut self, batch_aliases: Vec<ConfigInputAliasDto>, index: u16) -> Result<Option<u16>, TuliproxError> {
+        let idx = apply_batch_aliases!(self, batch_aliases, Some(index));
+        self.prepare_epg(true)?;
+        Ok(idx)
     }
 }
