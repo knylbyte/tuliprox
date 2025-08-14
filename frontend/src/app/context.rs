@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use regex::Regex;
 use yew::UseStateHandle;
-use shared::model::{AppConfigDto, ConfigTargetDto, ProxyUserCredentialsDto, SearchRequest, StatusCheck, UiPlaylistCategories};
+use shared::model::{AppConfigDto, ConfigTargetDto, PlaylistRequestType, ProxyUserCredentialsDto, SearchRequest, StatusCheck, UiPlaylistCategories};
 use crate::app::components::{InputRow, PlaylistEditorPage, PlaylistExplorerPage, UserlistPage};
 
 type SingleSource = (Vec<Rc<InputRow>>, Vec<Rc<ConfigTargetDto>>);
@@ -20,6 +20,7 @@ pub struct PlaylistEditorContext {
 pub struct PlaylistExplorerContext {
     pub active_page: UseStateHandle<PlaylistExplorerPage>,
     pub playlist: UseStateHandle<Option<Rc<UiPlaylistCategories>>>,
+    pub playlist_request_type: UseStateHandle<Option<PlaylistRequestType>>,
 }
 
 
