@@ -14,7 +14,7 @@ services:
       GID: "${GID-1000}"
       COLLECTIONS: >
         crowdsecurity/linux
-        crowdsecurity/iptables 
+        crowdsecurity/iptables
         crowdsecurity/http-cve
         crowdsecurity/base-http-scenarios
         crowdsecurity/traefik
