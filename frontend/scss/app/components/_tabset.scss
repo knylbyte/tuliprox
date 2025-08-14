@@ -18,6 +18,12 @@
   &__tab {
     position: relative;
 
+    .tp__icon-button {
+      .svg-icon {
+       height: 1.4rem;
+       width: 1.4rem;
+      }
+    }
     .tp__text-button {
       color: var(--modest-text-color);
     }
@@ -26,7 +32,9 @@
     &--active {
       fill: var(--active-color);
       color: var(--active-color);
+      .tp__icon-button,
       .tp__text-button {
+        fill: var(--active-color);
         color: var(--active-color);
       }
 
