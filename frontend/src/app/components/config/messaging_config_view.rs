@@ -16,7 +16,7 @@ pub fn MessagingConfigView() -> Html {
             <Card class="tp__config-view__card">
                 <h1>{translate.t("LABEL.TELEGRAM")}</h1>
                 { config_field!(entry, translate.t("LABEL.BOT_TOKEN"), bot_token) }
-                { config_field_child!(entry, translate.t("LABEL.CHAT_ID"), {
+                { config_field_child!(translate.t("LABEL.CHAT_ID"), {
                     html! {
                         <div class="tp__config-view__tags">
                             {
@@ -102,7 +102,7 @@ pub fn MessagingConfigView() -> Html {
                         html! {
                           <>
                         <div class="tp__messaging-config-view__header tp__config-view-page__header">
-                          { config_field_child!(entry, translate.t("LABEL.NOTIFY_ON"), {
+                          { config_field_child!(translate.t("LABEL.NOTIFY_ON"), {
                              html! { <div class="tp__messaging-config-view__notify-on">
                                 { for messaging.notify_on.iter().map(|t| html! { <Chip label={t.to_string()} /> }) }
                             </div> }

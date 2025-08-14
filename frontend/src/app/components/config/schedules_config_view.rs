@@ -20,7 +20,7 @@ pub fn SchedulesConfigView() -> Html {
                                 { for schedules.iter().map(|entry| html! {
                                     <div class="tp__schedules-config-view__schedule">
                                         { config_field!(entry, translate.t("LABEL.SCHEDULE"), schedule) }
-                                        { config_field_child!(entry, translate.t("LABEL.TARGETS"), {
+                                        { config_field_child!(translate.t("LABEL.TARGETS"), {
                                            html! { <div class="tp__config-view__tags">
                                               { match entry.targets.as_ref() {
                                                 None => html! { <Chip label={translate.t("LABEL.ALL")} /> },
