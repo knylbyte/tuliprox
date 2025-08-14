@@ -3,36 +3,36 @@ services:
     image: crowdsecurity/crowdsec:latest
     container_name: crowdsec
     networks:
-      crowdsec-net:
-        ipv4_address: 172.22.0.2
+      - crowdsec-net
     ports:
       - 127.0.0.1:8080:8080
     security_opt:
       - apparmor=docker-default   # security_opts are optional
     restart: on-failure
-    userns_mode: host
     environment:
       TZ: America/Chicago
       GID: "${GID-1000}"
       COLLECTIONS: >
-        crowdsecurity/linux 
+        crowdsecurity/linux
         crowdsecurity/iptables 
-        crowdsecurity/http-cve 
-        crowdsecurity/base-http-scenarios 
-        crowdsecurity/http-path-traversal-probing
-        crowdsecurity/http-xss-probing
-        crowdsecurity/http-generic-bf
-        crowdsecurity/whitelist-good-actors 
-        crowdsecurity/traefik 
+        crowdsecurity/http-cve
+        crowdsecurity/base-http-scenarios
+        crowdsecurity/traefik
+        crowdsecurity/whitelist-good-actors
         crowdsecurity/sshd
         crowdsecurity/appsec-virtual-patching
         crowdsecurity/appsec-generic-rules
+      SCENARIOS: >
+        crowdsecurity/http-path-traversal-probing
+        crowdsecurity/http-xss-probing
+        crowdsecurity/http-generic-bf
+      PARSER: >
     volumes:
       - ./crowdsec/acquis.d:/etc/crowdsec/acquis.d/:ro
       - ./crowdsec/db:/var/lib/crowdsec/data/
       - ./crowdsec/config:/etc/crowdsec/
       - /var/log/traefik/:/var/log/traefik/:ro
-      - /var/lib/docker/1000.1000/containers:/var/lib/docker/1000.1000/containers:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/log/ssh.log:/var/log/ssh.log:ro
       - /var/log/mail.log:/var/log/mail.log:ro
       - /var/log/messages:/var/log/messages:ro
@@ -47,8 +47,7 @@ services:
     image: docker.io/fbonalair/traefik-crowdsec-bouncer:latest
     container_name: cs-bouncer-traefik
     networks:
-      crowdsec-net:
-        ipv4_address: 172.22.0.4
+      - crowdsec-net
     expose:
       - 8080
     depends_on:
@@ -69,7 +68,6 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    userns_mode: host
     depends_on:
       crowdsec:
         condition: service_healthy

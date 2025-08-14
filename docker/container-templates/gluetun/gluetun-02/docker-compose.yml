@@ -35,7 +35,7 @@ services:
       retries: 1
 
   socks5-02:
-    image: serjs/go-socks5-proxy
+    image: serjs/go-socks5-proxy:latest
     container_name: socks5-02
     restart: on-failure
     security_opt: 

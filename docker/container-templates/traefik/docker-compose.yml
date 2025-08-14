@@ -27,7 +27,7 @@ services:
       - 1388:1388/udp  # SOCKS5H
       - 1080:1080      # HTTP-PROXY
       - 9443:9443      # HTTPS-PROXY
-    userns_mode: host
+    
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
