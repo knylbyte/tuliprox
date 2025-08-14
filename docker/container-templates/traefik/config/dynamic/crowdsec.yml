@@ -35,12 +35,12 @@ http:
           # crowdsecCapiMachineId: login
           # crowdsecCapiPassword: password
           # crowdsecCapiScenarios:
-          #   - crowdsecurity/http-cve 
-          #   - crowdsecurity/base-http-scenarios 
+          #   - crowdsecurity/http-cve
+          #   - crowdsecurity/base-http-scenarios
           #   - crowdsecurity/http-path-traversal-probing
           #   - crowdsecurity/http-xss-probing
           #   - crowdsecurity/http-generic-bf
-          #   - crowdsecurity/traefik 
+          #   - crowdsecurity/traefik
 
           ### Crowdsec Client Configuration ###
           forwardedHeadersTrustedIPs:

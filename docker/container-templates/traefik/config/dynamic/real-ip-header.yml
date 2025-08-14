@@ -3,4 +3,4 @@ http:
     forward-real-ip:
       headers:
         customRequestHeaders:
-          X-Forwarded-For: ""
+          X-Forwarded-For: "{{ client_ip }}"

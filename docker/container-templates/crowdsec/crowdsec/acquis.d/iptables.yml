@@ -1,4 +1,4 @@
-# iptables 
+# iptables
 filenames:
   - /var/log/messages
 labels:

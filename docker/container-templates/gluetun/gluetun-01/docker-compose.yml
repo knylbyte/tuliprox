@@ -4,7 +4,7 @@ services:
     container_name: gluetun-01
     restart: on-failure
     security_opt:
-      - apparmor=docker-default # security_opts are optional
+      - apparmor=docker-default  # security_opts are optional
     networks:
       - proxy-net
     expose:
@@ -38,7 +38,7 @@ services:
     image: serjs/go-socks5-proxy:latest
     container_name: socks5-01
     restart: on-failure
-    security_opt: 
+    security_opt:
       - apparmor=docker-default  # security_opts are optional
     network_mode: service:gluetun-01
     env_file: ../.env.socks5-proxy
@@ -48,6 +48,6 @@ services:
         restart: true
 
 networks:
-    proxy-net:
-        external: true
-        name: proxy-net	
+  proxy-net:
+    external: true
+    name: proxy-net

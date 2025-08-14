@@ -38,7 +38,7 @@ services:
       - /var/log/messages:/var/log/messages:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q -T 2 -O - http://127.0.0.1:8080/health || exit 1"]
-      interval: 10s     
+      interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
@@ -58,7 +58,6 @@ services:
       - apparmor=docker-default   # security_opts are optional
     env_file:
       - .env.cs-bouncer-traefik
-
 
   firewall-bouncer:
     image: ghcr.io/knylbyte/cs-firewall-bouncer:latest

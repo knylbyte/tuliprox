@@ -38,16 +38,16 @@ services:
     image: serjs/go-socks5-proxy:latest
     container_name: socks5-02
     restart: on-failure
-    security_opt: 
+    security_opt:
       - apparmor=docker-default  # security_opts are optional
     network_mode: service:gluetun-02
     env_file: ../.env.socks5-proxy
-    depends_on: 
+    depends_on:
       gluetun-02:
         condition: service_healthy
         restart: true
 
 networks:
-    proxy-net:
-        external: true
-        name: proxy-net	
+  proxy-net:
+      external: true
+      name: proxy-net
