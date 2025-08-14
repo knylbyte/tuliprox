@@ -86,9 +86,16 @@ pub fn PlaylistExplorer() -> Html {
     {
         let set_playlist = playlist.clone();
         let set_current_item = current_item.clone();
+        let set_selected_channel = selected_channel.clone();
+        let set_popup_is_open = popup_is_open.clone();
+        let set_anchor_ref = popup_anchor_ref.clone();
         use_effect_with(context.playlist.clone(), move |new_playlist| {
             set_current_item.set(ExplorerLevel::Categories);
             set_playlist.set((**new_playlist).clone());
+            // Reset popup state and selection when the underlying data changes
+            set_selected_channel.set(None);
+            set_popup_is_open.set(false);
+            set_anchor_ref.set(None);
             || {}
         });
     }
@@ -96,7 +103,7 @@ pub fn PlaylistExplorer() -> Html {
     let copy_to_clipboard ={
         let clipboard = clipboard.clone();
         move |text: String| {
-            let _ = clipboard.write_text(text);
+            clipboard.write_text(text);
         }
     };
 
@@ -283,8 +290,9 @@ pub fn PlaylistExplorer() -> Html {
             }
           }
         </div>
+
         <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
-            { html_if!(*context.playlist_request_type == Some(PlaylistRequestType::Target), {
+            { html_if!((*context.playlist_request_type).as_ref() == Some(&PlaylistRequestType::Target), {
                  <MenuItem icon="Clipboard" name={ExplorerAction::CopyLinkTuliprox.to_string()} label={translate.t("LABEL.COPY_LINK_TULIPROX")} onclick={&handle_menu_click}></MenuItem>
              })
             }
