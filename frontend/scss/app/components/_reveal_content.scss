@@ -8,7 +8,10 @@
 
   &:hover {
     fill: var(--text-color);
+    cursor: pointer;
+    filter: brightness(1.2);
   }
+
   .svg-icon {
     width: 1.2rem;
     height: 1.2rem;
@@ -22,6 +25,7 @@
     text-overflow: ellipsis;
     max-height: 2rem;
     max-width: var(--max-table-cell-width);
+    pointer-events: none;
   }
 
 }

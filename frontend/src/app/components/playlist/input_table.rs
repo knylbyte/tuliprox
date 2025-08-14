@@ -1,6 +1,6 @@
 use std::fmt::Display;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, BatchInputContentView, Chip, HideContent, InputHeaders, InputOptions, InputTypeView, RevealContent, StagedInputView, Table, TableDefinition};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, BatchInputContentView, Chip, EpgConfigView, HideContent, InputHeaders, InputOptions, InputTypeView, RevealContent, StagedInputView, Table, TableDefinition};
 use std::rc::Rc;
 use std::str::FromStr;
 use yew::platform::spawn_local;
@@ -117,7 +117,14 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                             9 => html! { dto.priority.to_string() },
                             10 => html! { dto.max_connections.to_string() },
                             11 => html! { dto.method.to_string() },
-                            12 => html! { /* TODO */ },
+                            12 => html_if!(dto.epg.is_some(),
+                                 { <RevealContent preview={ html!{ dto.epg.as_ref().map_or_else(|| html!{}, |e| html! {
+                                      <Chip class={if e.smart_match.is_some() {"active"} else { "" }}
+                                       label={ if e.smart_match.is_some() {translator.t("LABEL.SMART_EPG")} else { translator.t("LABEL.DEFAULT_EPG")}}
+                                       />
+                                   })}}>
+                                      <EpgConfigView epg={ dto.epg.clone() } />
+                                   </RevealContent> }),
                             13 => html! { <InputHeaders headers={dto.headers.clone()} /> },
                             14 => html_if!(dto.staged.is_some(),
                                  { <RevealContent preview={ html!{ dto.staged.as_ref().map_or_else(String::new, |s| s.url.clone())} }>

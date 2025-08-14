@@ -83,7 +83,7 @@ macro_rules! config_field {
 
 #[macro_export]
 macro_rules! config_field_child {
-    ($config:expr, $label:expr, $body:block) => {
+    ($label:expr, $body:block) => {
         html! {
             <div class="tp__config-field tp__config-field__text">
                 <label>{$label}</label>

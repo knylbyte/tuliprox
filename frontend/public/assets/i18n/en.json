@@ -228,7 +228,20 @@
     "FIRMWARE_VERSION": "Firmware Version",
     "DEVICE_TYPE":  "Device Type",
     "DEVICE_UDN": "Device UDN",
-    "TUNER_COUNT":  "Tuner Count"
+    "TUNER_COUNT":  "Tuner Count",
+    "SOURCE": "Source",
+    "PRIORITY": "Priority",
+    "LOGO_OVERRIDE": "logo Override",
+    "SMART_EPG": "Smart Epg",
+    "DEFAULT_EPG": "Normal Epg",
+    "EPG_SMART_MATCH": "EPG Smart Match",
+    "FUZZY_MATCHING": "Fuzzy Matching",
+    "MATCH_THRESHOLD": "Match Threshold",
+    "BEST_MATCH_THRESHOLD": "Best Match Threshold",
+    "NORMALIZE_REGEX": "Normalize Regex",
+    "NAME_PREFIX": "Name Prefix",
+    "NAME_PREFIX_SEPARATOR":"Name Prefix Separator",
+    "STRIP": "Strip"
   },
   "TABLE": {
     "EMPTY": "",
