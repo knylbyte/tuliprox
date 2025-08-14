@@ -1,11 +1,14 @@
 # Changelog
+# 3.1.5 (2025-08-14)
 - Hot reload for config
+- New WebUI (currently only readonly)
 - Fixed shared stream provider connection count
 - Added hanging client connection release
 - Added `replace` built-in function for mapper scripts 
-- New WebUI features
 - Added `token_ttl_mins` to web_auth config to define auth token expiration duration.
-- Staged sources. Side loading playlist. Load from staged, serve from provider. 
+- Staged sources. Side loading playlist. Load from staged, serve from provider.
+- Fixed proxy config
+- Added Content Security Policy to WebUI
 
 # 3.1.4 (2025-06-17)
 - share live stream refactored
