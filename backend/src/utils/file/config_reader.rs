@@ -149,7 +149,7 @@ pub fn prepare_sources_batch(sources: &mut SourcesConfigDto) -> Result<(), Tulip
         for input in &mut source.inputs {
             match get_batch_aliases(input.input_type, input.url.as_str()) {
                 Ok(Some((_, aliases))) => {
-                    if let Some(idx) = input.prepare_batch(aliases, current_index) {
+                    if let Some(idx) = input.prepare_batch(aliases, current_index)? {
                         current_index = idx;
                     }
                 }

@@ -13,40 +13,49 @@
   display: flex;
   flex-flow: row;
   align-items: center;
-  padding: var(--padding-small) var(--padding-default);
-  border-radius: 6px;
-  font-size: 14px;
+  padding: var(--padding-default) var(--padding-large);
+  border-radius: var(--border-radius);
+  font-size: 1.1rem;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
   animation: fadeIn 0.3s ease-out;
 
   .svg-icon {
-    width: 1.2rem;
-    height: 1.2rem;
+    width: 1.5rem;
+    height: 1.5rem;
   }
 }
 
 .tp__toast.success {
   background-color: var(--toastr-success-background-color);
   color: var(--toastr-success-color);
-  fill: var(--toastr-success-color);
+
+  .tp__icon-button {
+    fill: var(--toastr-success-color);
+  }
 }
 
 .tp__toast.error {
   background-color: var(--toastr-error-background-color);
   color: var(--toastr-error-color);
-  fill: var(--toastr-error-color);
+  .tp__icon-button {
+    fill: var(--toastr-error-color);
+  }
 }
 
 .tp__toast.info {
   background-color: var(--toastr-info-background-color);
   color: var(--toastr-info-color);
-  fill: var(--toastr-info-color);
+  .tp__icon-button {
+    fill: var(--toastr-info-color);
+  }
 }
 
 .tp__toast.warning {
   background-color: var(--toastr-warning-background-color);
   color: var(--toastr-warning-color);
-  fill: var(--toastr-warning-color);
+  .tp__icon-button {
+    fill: var(--toastr-warning-color);
+  }
 }
 
 @keyframes fadeIn {
