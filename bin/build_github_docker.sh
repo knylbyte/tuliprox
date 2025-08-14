@@ -78,7 +78,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
         -t "ghcr.io/euzu/${IMAGE_NAME}:${VERSION}" \
         --target "$BUILD_TARGET" .
 
-      docker tag "ghcr.io/euzu/${IMAGE_NAME}:${VERSION} ghcr.io/euzu/${IMAGE_NAME}:latest"
+      docker tag "ghcr.io/euzu/${IMAGE_NAME}:${VERSION}" "ghcr.io/euzu/${IMAGE_NAME}:latest"
 
       BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${VERSION}")
       BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:latest")

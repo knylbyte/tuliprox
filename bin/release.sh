@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-set -e
-set -o pipefail
+set -eo pipefail
 
 WORKING_DIR=$(pwd)
 RESOURCES_DIR="$WORKING_DIR/resources"
 RELEASE_DIR="$WORKING_DIR/release"
 FRONTEND_DIR="${WORKING_DIR}/frontend"
 FRONTEND_BUILD_DIR="${FRONTEND_DIR}/dist"
+BACKEND_DIR="${WORKING_DIR}/backend"
 
 if ! command -v cargo-set-version &> /dev/null
 then
@@ -16,13 +16,27 @@ fi
 
 cd "$FRONTEND_DIR" || (echo "🧨 Can't find frontend directory" && exit 1)
 
-if [ "$1" = "m" ]; then
-  NEW_VERSION=$(yarn version --no-git-tag-version --major | grep "New version" | grep -Po "(\d+\.)+\d+" || true)
-elif [ "$1" = "p" ]; then
-  NEW_VERSION=$(yarn version --no-git-tag-version --minor | grep "New version" | grep -Po "(\d+\.)+\d+" || true)
-else
-  NEW_VERSION=$(yarn version --no-git-tag-version --patch | grep "New version" | grep -Po "(\d+\.)+\d+" || true)
-fi
+# Read current version from Cargo.toml
+OLD_VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
+
+IFS='.' read -r major minor patch <<< "$OLD_VERSION"
+
+case "$1" in
+  m) # Major bump
+     ((major++))
+     minor=0
+     patch=0
+     ;;
+  p) # Minor bump
+     ((minor++))
+     patch=0
+     ;;
+  *) # Patch bump (default)
+     ((patch++))
+     ;;
+esac
+
+NEW_VERSION="${major}.${minor}.${patch}"
 
 cd "$WORKING_DIR"
 
