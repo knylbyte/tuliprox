@@ -45,9 +45,11 @@ pub fn PlaylistSourceSelector() -> Html {
                 set_loading.set(true);
                 services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
                 let set_loading = set_loading.clone();
+                let req_type = request.rtype;
                 spawn_local(async move {
                     let playlist = services.playlist.get_playlist_categories(&request).await;
                     playlist_explorer_ctx_clone.playlist.set(playlist);
+                    playlist_explorer_ctx_clone.playlist_request_type.set(Some(req_type));
                     set_loading.set(false);
                     services.event.broadcast(EventMessage::Busy(BusyStatus::Hide));
                 });

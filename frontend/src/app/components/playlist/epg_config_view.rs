@@ -110,7 +110,7 @@ pub fn EpgConfigView(props: &EpgConfigViewProps) -> Html {
     };
 
     let render_empty = || html! {
-        <div class="tp__messaging-config-view__body tp__config-view-page__body">
+        <div class="tp__epg-config-view__body tp__config-view-page__body">
              {render_smart_match(None)}
              {render_sources(None)}
         </div>

@@ -1,12 +1,50 @@
+use std::fmt::Display;
 use std::rc::Rc;
+use std::str::FromStr;
 use wasm_bindgen::JsCast;
 use yew::platform::spawn_local;
 use crate::app::context::PlaylistExplorerContext;
 use yew::prelude::*;
-use shared::model::{CommonPlaylistItem, SearchRequest, UiPlaylistGroup, XtreamCluster};
-use crate::app::components::{IconButton, NoContent, Search};
+use yew_hooks::use_clipboard;
+use yew_i18n::use_translation;
+use shared::create_tuliprox_error_result;
+use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::model::{CommonPlaylistItem, PlaylistRequestType, SearchRequest, UiPlaylistGroup, XtreamCluster};
+use crate::app::components::{AppIcon, IconButton, NoContent, Search};
+use crate::app::components::menu_item::MenuItem;
+use crate::app::components::popup_menu::PopupMenu;
 use crate::hooks::use_service_context;
+use crate::html_if;
 use crate::model::{BusyStatus, EventMessage};
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum ExplorerAction {
+    CopyLinkTuliprox,
+    CopyLinkProvider,
+}
+
+impl Display for ExplorerAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            Self::CopyLinkTuliprox => "copy_link_tuliprox",
+            Self::CopyLinkProvider => "copy_link_provider",
+        })
+    }
+}
+
+impl FromStr for ExplorerAction {
+    type Err = TuliproxError;
+
+    fn from_str(s: &str) -> Result<Self, TuliproxError> {
+        if s.eq("copy_link_tuliprox") {
+            Ok(Self::CopyLinkTuliprox)
+        } else if s.eq("copy_link_provider") {
+            Ok(Self::CopyLinkProvider)
+        } else {
+            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
+        }
+    }
+}
 
 enum ExplorerLevel {
     Categories,
@@ -16,17 +54,73 @@ enum ExplorerLevel {
 #[function_component]
 pub fn PlaylistExplorer() -> Html {
     let context = use_context::<PlaylistExplorerContext>().expect("PlaylistExplorer context not found");
+    let translate = use_translation();
     let service_ctx = use_service_context();
     let current_item = use_state(|| ExplorerLevel::Categories);
     let playlist = use_state(|| (*context.playlist).clone());
+    let selected_channel = use_state(|| None::<Rc<CommonPlaylistItem>>);
+    let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
+    let popup_is_open = use_state(|| false);
+    let clipboard = use_clipboard();
+
+    let handle_popup_close = {
+        let set_is_open = popup_is_open.clone();
+        Callback::from(move |()| {
+            set_is_open.set(false);
+        })
+    };
+
+    let handle_popup_onclick = {
+        let set_selected_channel = selected_channel.clone();
+        let set_anchor_ref = popup_anchor_ref.clone();
+        let set_is_open = popup_is_open.clone();
+        Callback::from(move |(dto, event): (Rc<CommonPlaylistItem>, MouseEvent)| {
+            if let Some(target) = event.target_dyn_into::<web_sys::Element>() {
+                set_selected_channel.set(Some(dto.clone()));
+                set_anchor_ref.set(Some(target));
+                set_is_open.set(true);
+            }
+        })
+    };
 
     {
         let set_playlist = playlist.clone();
+        let set_current_item = current_item.clone();
         use_effect_with(context.playlist.clone(), move |new_playlist| {
+            set_current_item.set(ExplorerLevel::Categories);
             set_playlist.set((**new_playlist).clone());
             || {}
         });
     }
+
+    let copy_to_clipboard ={
+        let clipboard = clipboard.clone();
+        move |text: String| {
+            let _ = clipboard.write_text(text);
+        }
+    };
+
+    let handle_menu_click = {
+        let popup_is_open_state = popup_is_open.clone();
+        let selected_channel = selected_channel.clone();
+        Callback::from(move |(name, _): (String, _)| {
+            if let Ok(action) = ExplorerAction::from_str(&name) {
+                match action {
+                    ExplorerAction::CopyLinkTuliprox => {
+                        if let Some(dto) = &*selected_channel {
+                            copy_to_clipboard(dto.virtual_id.to_string());
+                        }
+                    }
+                    ExplorerAction::CopyLinkProvider => {
+                        if let Some(dto) = &*selected_channel {
+                            copy_to_clipboard(dto.url.clone());
+                        }
+                    }
+                }
+            }
+            popup_is_open_state.set(false);
+        })
+    };
 
     let handle_back_click = {
         let current_item = current_item.clone();
@@ -151,10 +245,17 @@ pub fn PlaylistExplorer() -> Html {
                 <div class="tp__playlist-explorer__group">
                   <div class="tp__playlist-explorer__group-list">
                   {
-                      group.channels.iter().map(|c| {
+                      group.channels.iter().map(|chan| {
+                        let chan_clone = chan.clone();
+                        let popup_onclick = handle_popup_onclick.clone();
                         html! {
-                            <span class="tp__playlist-explorer__item">
-                              {render_channel_logo(c)}  {c.title.clone()}
+                            <span class="tp__playlist-explorer__item tp__playlist-explorer__channel">
+                                <button class="tp__icon-button"
+                                    onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((chan_clone.clone(), event)))}>
+                                    <AppIcon name="Popup"></AppIcon>
+                                </button>
+                                {render_channel_logo(chan)}
+                                {chan.title.clone()}
                             </span>
                           }
                        }).collect::<Html>()
@@ -182,6 +283,13 @@ pub fn PlaylistExplorer() -> Html {
             }
           }
         </div>
+        <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
+            { html_if!(*context.playlist_request_type == Some(PlaylistRequestType::Target), {
+                 <MenuItem icon="Clipboard" name={ExplorerAction::CopyLinkTuliprox.to_string()} label={translate.t("LABEL.COPY_LINK_TULIPROX")} onclick={&handle_menu_click}></MenuItem>
+             })
+            }
+            <MenuItem icon="Clipboard" name={ExplorerAction::CopyLinkProvider.to_string()} label={translate.t("LABEL.COPY_LINK_PROVIDER")} onclick={&handle_menu_click}></MenuItem>
+        </PopupMenu>
       </div>
     }
 }
