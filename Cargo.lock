@@ -905,17 +905,18 @@ dependencies = [
 
 [[package]]
 name = "frontend"
-version = "0.1.0"
+version = "3.1.5"
 dependencies = [
  "anyhow",
  "bytes",
  "chrono",
  "futures",
  "futures-signals",
- "gloo-storage 0.3.0",
- "gloo-timers 0.3.0",
+ "gloo-storage 0.2.2",
+ "gloo-timers 0.2.6",
+ "gloo-utils 0.1.7",
  "gloo-utils 0.2.0",
- "implicit-clone 0.6.0",
+ "implicit-clone",
  "js-sys",
  "log",
  "prost",
@@ -1446,6 +1447,8 @@ version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b995a66bb87bebce9a0f4a95aed01daca4872c050bfcb21653361c03bc35e5c"
 dependencies = [
+ "futures-channel",
+ "futures-core",
  "js-sys",
  "wasm-bindgen",
 ]
@@ -1909,15 +1912,6 @@ checksum = "f8a9aa791c7b5a71b636b7a68207fdebf171ddfc593d9c8506ec4cbc527b6a84"
 dependencies = [
  "implicit-clone-derive",
  "indexmap",
-]
-
-[[package]]
-name = "implicit-clone"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1689b939ee35e3a075b0834b5672efd43aec8a6e81a1c6002b76a5ca2f211ae0"
-dependencies = [
- "implicit-clone-derive",
 ]
 
 [[package]]
@@ -3332,7 +3326,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "0.1.0"
+version = "3.1.5"
 dependencies = [
  "base64",
  "bitflags 2.9.1",
@@ -3842,7 +3836,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tuliprox"
-version = "3.1.4"
+version = "3.1.5"
 dependencies = [
  "arc-swap",
  "axum",
@@ -4609,7 +4603,7 @@ dependencies = [
  "console_error_panic_hook",
  "futures",
  "gloo 0.10.0",
- "implicit-clone 0.4.9",
+ "implicit-clone",
  "indexmap",
  "js-sys",
  "prokio",
