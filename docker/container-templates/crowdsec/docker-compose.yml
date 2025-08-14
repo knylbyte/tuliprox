@@ -11,7 +11,7 @@ services:
     restart: on-failure
     environment:
       TZ: America/Chicago
-      GID: "${GID-1000}"
+      GID: "${GID:-1000}"
       COLLECTIONS: >
         crowdsecurity/linux
         crowdsecurity/iptables
