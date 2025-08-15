@@ -221,7 +221,7 @@ Each instance (`gluetun-01`, `gluetun-02`, `gluetun-03`) has its own `.env.wg-0x
    docker logs -f gluetun-02
    ```
 
-### Test from the Docker network
+### Test from the your Docker host
 
 ```bash
 # Test SOCKS5(H) via traefik:
