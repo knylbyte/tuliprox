@@ -32,6 +32,14 @@ Define complex filters using expressive logic, e.g.:
 - Integrate **HDHomeRun** devices with **Plex**, **Emby**, or **Jellyfin**.
 - Use provider aliases to manage multiple lines from the same source.
 
+## 🐋 Docker Container Templates: 
+- traefik template
+- crowdsec template
+- gluetun/socks5 template
+- tuliprox (inc. traefik) template
+
+`> ./docker/container-templates`
+
 ## Want to join the community: [on <img src="https://cdn.simpleicons.org/discord/5865F2" height="24" /> Discord ](https://discord.gg/gkzCmWw9Tf)
 
 ## Command line Arguments
