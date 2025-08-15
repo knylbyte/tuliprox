@@ -19,7 +19,7 @@ use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputTy
 use shared::utils::{concat_path_leading_slash, sanitize_sensitive_info};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
-use crate::utils::prepare_sources_batch;
+use crate::utils::{prepare_sources_batch, prepare_users};
 use crate::utils::request::download_text_content;
 
 fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfigDto, file_path: &str) -> Option<TuliproxError> {
@@ -253,6 +253,9 @@ async fn config(
         Ok(mut app_config) => {
             if let Err(err) = prepare_sources_batch(&mut app_config.sources) {
                 error!("Failed to prepare sources batch: {err}");
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            } else if let Err(err) = prepare_users(&mut app_config, &app_state.app_config) {
+                error!("Failed to prepare users: {err}");
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
             } else {
                 axum::response::Json(app_config).into_response()

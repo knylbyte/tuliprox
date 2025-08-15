@@ -1,4 +1,9 @@
 # Changelog
+# 3.1.6 (2025-xx-xx)
+- EPG Config View
+- Fixed loading users for WebUI from user DB
+- Fixed auto EPG for batch inputs
+
 # 3.1.5 (2025-08-14)
 - Hot reload for config
 - New WebUI (currently only readonly)

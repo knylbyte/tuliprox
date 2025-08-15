@@ -1,4 +1,4 @@
-use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView};
+use crate::app::components::{DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView};
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
@@ -142,7 +142,7 @@ pub fn Home() -> Html {
                             if let Some(ref title) = services.config.ui_config.app_title {
                                 html! { title.as_str() }
                             } else {
-                                html! { <AppIcon name="AppTitle" /> }
+                                html! { /*<AppIcon name="AppTitle" /> */ }
                             }
                         }
                         <div class={"tp__app-header-toolbar"}>
