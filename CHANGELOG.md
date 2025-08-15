@@ -1,4 +1,8 @@
 # Changelog
+# 3.1.6 (2025-xx-xx)
+- Epg Config View
+- Fixed reading users for Web-UI from userdb
+
 # 3.1.5 (2025-08-14)
 - Hot reload for config
 - New WebUI (currently only readonly)

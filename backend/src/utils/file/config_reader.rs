@@ -9,7 +9,7 @@ use chrono::Local;
 use log::{error, info, warn};
 use serde::Serialize;
 use shared::error::{create_tuliprox_error, info_err, to_io_error, TuliproxError, TuliproxErrorKind};
-use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto};
+use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto, TargetUserDto};
 use shared::utils::{CONSTANTS};
 use std::env;
 use std::fs::File;
@@ -17,6 +17,7 @@ use std::io::{self, BufReader, Read};
 use std::path::PathBuf;
 use std::sync::Arc;
 use arc_swap::access::{Access};
+use crate::repository::user_repository::{get_api_user_db_path, load_api_user};
 
 enum EitherReader<L, R> {
     Left(L),
@@ -178,6 +179,24 @@ pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(Pat
     Ok(None)
 }
 
+pub fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppConfig) -> Result<(), TuliproxError> {
+    let use_user_db = app_config_dto
+        .api_proxy
+        .as_ref()
+        .is_some_and(|p| p.use_user_db);
+
+    if use_user_db {
+        let user_db_path = get_api_user_db_path(app_config);
+        if user_db_path.exists() {
+            if let Ok(stored_users) = load_api_user(app_config) {
+                if let Some(api_proxy) = app_config_dto.api_proxy.as_mut() {
+                    api_proxy.user.extend(stored_users.iter().map(TargetUserDto::from));
+                }
+            }
+        }
+    }
+    Ok(())
+}
 
 pub fn read_initial_app_config(paths: &mut ConfigPaths,
                        resolve_env: bool,

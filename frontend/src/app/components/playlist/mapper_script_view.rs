@@ -20,7 +20,7 @@ pub fn MapperScriptView(props: &MapperScriptViewProps) -> Html {
                 match props.script.as_ref() {
                     Some(script) => html! {
                         <pre class="tp__mapper-script__code">
-                            { render_script(script, props.pretty, 0, false, 1) }
+                            { render_script(script, props.pretty, 0/*, false, 1*/) }
                         </pre>
                     },
                     None => html! { },
@@ -33,8 +33,8 @@ pub fn MapperScriptView(props: &MapperScriptViewProps) -> Html {
 struct FormatParams {
     pub pretty: bool,
     pub level: usize,
-    pub do_indent: bool,
-    pub p_count: usize,
+    // pub do_indent: bool,
+    // pub p_count: usize,
 }
 
 impl FormatParams {
@@ -306,9 +306,9 @@ fn render_expression(expr_id: &ExprId, script: &MapperScript, format_params: &mu
     }).unwrap_or_else(|| html! { <span class="expr-not-found">{"ExprNotFound"}</span> })
 }
 
-fn render_script(script: &MapperScript, pretty: bool, level: usize, do_indent: bool, p_count: usize) -> Html {
+fn render_script(script: &MapperScript, pretty: bool, level: usize /*, do_indent: bool, p_count: usize*/) -> Html {
     let mut format_params = FormatParams {
-        pretty, level, do_indent, p_count
+        pretty, level /*, do_indent, p_count*/
     };
     let items = script.statements.iter().map(|stmt| {
         match stmt {
