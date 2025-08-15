@@ -195,7 +195,7 @@ docker logs -f traefik
 
 **Folder:** `container-templates/gluetun/`
 
-Each instance (`gluetun-01`, `gluetun-02`, `gluetun-03`) has its own `.env.wg-0x` with WireGuard settings. Sidecars (e.g., `socks5-02`) use `network_mode: service:gluetun-02` to share Gluetun’s network. Otherwise connect the provided proxys within your tuliprox instance through traefik. 
+Each instance (`gluetun-01`, `gluetun-02`, `gluetun-03`) has its own `.env.wg-0x` with WireGuard settings. Sidecars (e.g., `socks5-02`) use `network_mode: service:gluetun-02` to share Gluetun’s network. Otherwise connect the provided proxies within your tuliprox instance through traefik. 
 
 ### Configure minimum one instance (example: gluetun-02)
 
@@ -221,7 +221,7 @@ Each instance (`gluetun-01`, `gluetun-02`, `gluetun-03`) has its own `.env.wg-0x
    docker logs -f gluetun-02
    ```
 
-### Test from the your Docker host
+### Test from your Docker host
 
 ```bash
 # Test SOCKS5(H) via traefik:
