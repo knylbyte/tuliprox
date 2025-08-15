@@ -106,12 +106,10 @@ impl StoredProxyUserCredentials {
     }
 }
 
-
 pub fn get_api_user_db_path(cfg: &AppConfig) -> PathBuf {
     let paths = cfg.paths.load();
     PathBuf::from(&paths.config_path).join(storage_const::API_USER_DB_FILE)
 }
-
 
 fn add_target_user_to_user_tree(target_users: &[TargetUser], user_tree: &mut BPlusTree<String, StoredProxyUserCredentials>) {
     for target_user in target_users {

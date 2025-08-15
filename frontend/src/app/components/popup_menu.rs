@@ -46,8 +46,8 @@ pub fn PopupMenu(props: &PopupMenuProps) -> Html {
             }
 
             if let Some(popup) = popup_ref.cast::<HtmlElement>() {
-                let _ = popup.style().set_property("--popup-top", &format!("{}px", top));
-                let _ = popup.style().set_property("--popup-left", &format!("{}px", left));
+                let _ = popup.style().set_property("--popup-top", &format!("{top}px"));
+                let _ = popup.style().set_property("--popup-left", &format!("{left}px"));
             }
             "".to_owned()
 
