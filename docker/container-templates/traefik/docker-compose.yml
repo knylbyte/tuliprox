@@ -1,0 +1,56 @@
+secrets:
+  cf-token:
+    file: ./cf-token
+services:
+  traefik:
+    image: traefik:latest 
+    container_name: traefik
+    restart: on-failure
+    security_opt:
+      - apparmor=docker-default   # security_opts are optional
+    secrets:
+      - cf-token
+    env_file:
+      - .env
+    networks:
+      crowdsec-net:
+      proxy-net:
+        aliases:
+          - proxy.tuliprox.io
+    ports:
+      - 80:80          # HTTP
+      - 443:443        # HTTPS
+      - 9388:9388/tcp  # SHADOWSOCKS
+      - 9388:9388/udp  # SHADOWSOCKS
+      - 1388:1388/tcp  # SOCKS5H
+      - 1388:1388/udp  # SOCKS5H
+      - 1080:1080      # HTTP-PROXY
+      - 9443:9443      # HTTPS-PROXY
+
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log/traefik:/var/log/traefik
+      - ./config/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./config/acme.json:/etc/traefik/acme.json
+      - ./config/dynamic:/etc/traefik/dynamic/:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.tuliprox.io`)"
+      - "traefik.http.routers.traefik-secure.entrypoints=websecure"
+      - "traefik.http.routers.traefik-secure.rule=Host(`traefik.tuliprox.io`)"
+
+      - "traefik.http.routers.traefik-secure.middlewares=traefik-auth"
+      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_CREDENTIALS}"
+
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+
+networks:
+  proxy-net:
+    external: true
+    name: proxy-net
+  crowdsec-net:
+    external: true
+    name: crowdsec-net

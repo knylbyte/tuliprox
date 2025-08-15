@@ -1,0 +1,11 @@
+http:
+  middlewares:
+    strip-forward-headers:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Port: ""
+          X-Forwarded-Proto: ""
+          X-Forwarded-Server: ""
+          X-Forwarded-Host: ""
+          X-Forwarded-For: ""
+          X-Real-IP: ""
