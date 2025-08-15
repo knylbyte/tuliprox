@@ -188,9 +188,12 @@ pub fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppConfig) 
     if use_user_db {
         let user_db_path = get_api_user_db_path(app_config);
         if user_db_path.exists() {
-            if let Ok(stored_users) = load_api_user(app_config) {
-                if let Some(api_proxy) = app_config_dto.api_proxy.as_mut() {
+            match load_api_user(app_config) {
+                Ok(stored_users) => if let Some(api_proxy) = app_config_dto.api_proxy.as_mut() {
                     api_proxy.user.extend(stored_users.iter().map(TargetUserDto::from));
+                },
+                Err(err) => {
+                    warn!("Failed to load users from DB at {}: {err}", user_db_path.display());
                 }
             }
         }
