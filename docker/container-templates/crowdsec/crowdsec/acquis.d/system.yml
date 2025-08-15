@@ -1,0 +1,5 @@
+# System & Auth
+filenames:
+  - /var/log/messages
+labels:
+  type: syslog
