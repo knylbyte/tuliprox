@@ -36,7 +36,7 @@ Define complex filters using expressive logic, e.g.:
 - traefik template
 - crowdsec template
 - gluetun/socks5 template
-- tuliprox (inc. traefik) template
+- tuliprox (incl. traefik) template
 
 `> ./docker/container-templates`
 
