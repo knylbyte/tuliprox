@@ -16,7 +16,7 @@ entryPoints:
         - default-security-headers@file   # ssllabs.com -> A+ rating
         - cs-bouncer-traefik-plugin@file  # optional, only if you want to use CrowdSec
       tls:
-        certResolver: cloudclare
+        certResolver: cloudflare
         options: default
     forwardedHeaders:
       insecure: false
@@ -52,14 +52,14 @@ providers:
     watch: true
 
 certificatesResolvers:
-  cloudclare:
+  cloudflare:
     acme:
       caServer: https://acme-v02.api.letsencrypt.org/directory  # production (default)
       # caServer: https://acme-staging-v02.api.letsencrypt.org/directory # staging (testing)
       email: <your@email.com>                                                                   # change to your email
       storage: /etc/traefik/acme.json
       dnsChallenge:
-        provider: cloudclare  # change as required
+        provider: cloudflare  # change as required
         # disablePropagationCheck: true # Some people using Cloudflare note this can solve DNS propagation issues.
         resolvers:
           - "1.1.1.1:53"
