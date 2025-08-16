@@ -16,7 +16,7 @@ entryPoints:
         - default-security-headers@file   # ssllabs.com -> A+ rating
         - cs-bouncer-traefik-plugin@file  # optional, only if you want to use CrowdSec
       tls:
-        certResolver: cloudclare
+        certResolver: cloudflare
         options: default
     forwardedHeaders:
       insecure: false
