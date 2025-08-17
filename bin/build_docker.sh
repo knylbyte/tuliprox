@@ -127,10 +127,31 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
         
         echo "🎯 Building ${IMAGE_NAME} with target ${BUILD_TARGET}"
         
-        # Build with version tag
-        docker build -f Dockerfile-manual \
+        # Determine Docker platform from Rust target
+        case "$ARCHITECTURE" in
+            aarch64-*)
+                DOCKER_PLATFORM="linux/arm64"
+                ;;
+            x86_64-*)
+                DOCKER_PLATFORM="linux/amd64"
+                ;;
+            armv7-*)
+                DOCKER_PLATFORM="linux/arm/v7"
+                ;;
+            *)
+                DOCKER_PLATFORM="linux/amd64"  # Default fallback
+                ;;
+        esac
+        
+        echo "🏗️ Building for platform: $DOCKER_PLATFORM"
+        
+        # Build with version tag using buildx for multi-platform support
+        docker buildx build -f Dockerfile-manual \
             -t "ghcr.io/euzu/${IMAGE_NAME}:${VERSION}" \
-            --target "$BUILD_TARGET" .
+            --target "$BUILD_TARGET" \
+            --platform "$DOCKER_PLATFORM" \
+            --load \
+            .
         
         # Tag with branch-specific tag
         docker tag "ghcr.io/euzu/${IMAGE_NAME}:${VERSION}" "ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}"
