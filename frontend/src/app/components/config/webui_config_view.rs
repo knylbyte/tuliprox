@@ -1,6 +1,9 @@
-use crate::app::components::{Card, NoContent};
+use crate::app::components::Card;
 use crate::app::context::ConfigContext;
-use crate::{config_field, config_field_bool, config_field_empty, config_field_hide, config_field_optional};
+use crate::{
+    config_field, config_field_bool, config_field_bool_empty, config_field_empty,
+    config_field_hide, config_field_optional,
+};
 use yew::prelude::*;
 use yew_i18n::use_translation;
 
@@ -8,6 +11,32 @@ use yew_i18n::use_translation;
 pub fn WebUiConfigView() -> Html {
     let translate = use_translation();
     let config_ctx = use_context::<ConfigContext>().expect("ConfigContext not found");
+
+    let render_empty_auth = || {
+        html! {
+        <Card>
+            <h1>{translate.t("LABEL.AUTH")}</h1>
+                { config_field_empty!(translate.t("LABEL.ENABLED")) }
+                { config_field_empty!(translate.t("LABEL.ISSUER")) }
+                { config_field_empty!(translate.t("LABEL.SECRET")) }
+                { config_field_empty!(translate.t("LABEL.TOKEN_TTL_MINS")) }
+                { config_field_empty!(translate.t("LABEL.USERFILE")) }
+        </Card>
+        }
+    };
+
+    let render_empty = || {
+        html! {
+           <>
+            { config_field_bool_empty!(translate.t("LABEL.ENABLED")) }
+            { config_field_bool_empty!(translate.t("LABEL.USER_UI_ENABLED")) }
+            { config_field_bool_empty!(translate.t("LABEL.CONTENT_SECURITY_POLICY")) }
+            { config_field_empty!(translate.t("LABEL.PATH")) }
+            { config_field_empty!(translate.t("LABEL.PLAYER_SERVER")) }
+            { render_empty_auth()}
+            </>
+        }
+    };
 
     html! {
         <div class="tp__webui-config-view tp__config-view-page">
@@ -19,6 +48,7 @@ pub fn WebUiConfigView() -> Html {
                         <>
                             { config_field_bool!(web_ui, translate.t("LABEL.ENABLED"), enabled) }
                             { config_field_bool!(web_ui, translate.t("LABEL.USER_UI_ENABLED"), user_ui_enabled) }
+                            { config_field_bool!(web_ui, translate.t("LABEL.CONTENT_SECURITY_POLICY"), content_security_policy) }
                             { config_field_optional!(web_ui, translate.t("LABEL.PATH"), path) }
                             { config_field_optional!(web_ui, translate.t("LABEL.PLAYER_SERVER"), player_server) }
                             <Card>
@@ -34,24 +64,16 @@ pub fn WebUiConfigView() -> Html {
                                         { config_field_optional!(auth, translate.t("LABEL.USERFILE"), userfile) }
                                         </>
                                     },
-                                    None => html!{
-                                        <>
-                                        { config_field_empty!(translate.t("LABEL.ENABLED")) }
-                                        { config_field_empty!(translate.t("LABEL.ISSUER")) }
-                                        { config_field_empty!(translate.t("LABEL.SECRET")) }
-                                        { config_field_empty!(translate.t("LABEL.TOKEN_TTL_MINS")) }
-                                        { config_field_empty!(translate.t("LABEL.USERFILE")) }
-                                        </>
-                                    }
+                                    None => render_empty_auth(),
                                 }}
                             </Card>
                         </>
                         }
                     } else {
-                         html! { <NoContent /> }
+                         { render_empty() }
                     }
                 } else {
-                     html! { <NoContent /> }
+                     { render_empty() }
                 }
             }
         </div>
