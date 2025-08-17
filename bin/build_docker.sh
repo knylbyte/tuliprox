@@ -60,9 +60,10 @@ declare -A ARCHITECTURES=(
     [AARCH64]=aarch64-unknown-linux-musl
 )
 
-declare -A BUILDS=(
-    [LINUX]="tuliprox:scratch-final tuliprox-alpine:alpine-final"
-    [AARCH64]="tuliprox-aarch64:scratch-final"
+# Images to build with multi-platform support
+declare -A MULTI_PLATFORM_IMAGES=(
+    [tuliprox]="scratch-final"
+    [tuliprox-alpine]="alpine-final"
 )
 
 # Get version from Cargo.toml
@@ -93,13 +94,12 @@ fi
 
 cd "$WORKING_DIR"
 
-declare -a BUILT_IMAGES=()
-
-# Build for each platform
+# Build binaries for all architectures first
+echo "🏗️ Building binaries for all architectures..."
 for PLATFORM in "${!ARCHITECTURES[@]}"; do
     ARCHITECTURE=${ARCHITECTURES[$PLATFORM]}
     
-    echo "🏗️ Building binary for architecture: $ARCHITECTURE"
+    echo "🔨 Building binary for architecture: $ARCHITECTURE"
     
     cargo clean || true
     env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target "$ARCHITECTURE"
@@ -110,49 +110,50 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
         exit 1
     fi
     
-    # Prepare Docker context
-    echo "📋 Preparing Docker context for $PLATFORM..."
-    cp "$BINARY_PATH" "${DOCKER_DIR}/"
-    rm -rf "${DOCKER_DIR}/web"
-    cp -r "${FRONTEND_BUILD_DIR}" "${DOCKER_DIR}/web"
-    cp -r "${RESOURCES_DIR}" "${DOCKER_DIR}/resources"
-    
-    cd "${DOCKER_DIR}"
-    echo "🐳 Building Docker images for platform: $PLATFORM"
-    
-    # Build all configured images for this platform
-    for pair in ${BUILDS[$PLATFORM]}; do
-        IMAGE_NAME="${pair%%:*}"
-        BUILD_TARGET="${pair##*:}"
-        
-        echo "🎯 Building ${IMAGE_NAME} with target ${BUILD_TARGET}"
-        
-        # Build with version tag
-        docker build -f Dockerfile-manual \
-            -t "ghcr.io/euzu/${IMAGE_NAME}:${VERSION}" \
-            --target "$BUILD_TARGET" .
-        
-        # Tag with branch-specific tag
-        docker tag "ghcr.io/euzu/${IMAGE_NAME}:${VERSION}" "ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}"
-        
-        BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${VERSION}")
-        BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}")
-    done
-    
-    # Clean up Docker context for next iteration
-    rm -f "${DOCKER_DIR}/tuliprox"
+    # Copy binary with architecture suffix for multi-platform build
+    mkdir -p "${DOCKER_DIR}/binaries"
+    cp "$BINARY_PATH" "${DOCKER_DIR}/binaries/tuliprox-${ARCHITECTURE}"
 done
 
-cd "$WORKING_DIR"
+# Prepare common Docker context
+echo "📋 Preparing Docker context..."
+rm -rf "${DOCKER_DIR}/web"
+rm -rf "${DOCKER_DIR}/resources"
+cp -r "${FRONTEND_BUILD_DIR}" "${DOCKER_DIR}/web"
+cp -r "${RESOURCES_DIR}" "${DOCKER_DIR}/resources"
 
-# Login and push all images
+cd "${DOCKER_DIR}"
+
+# Login to GitHub Container Registry (needed before buildx push)
 echo "🔑 Logging into GitHub Container Registry..."
 docker login ghcr.io -u euzu -p "${GHCR_IO_TOKEN}"
 
-for img in "${BUILT_IMAGES[@]}"; do
-    echo "📤 Pushing $img"
-    docker push "$img"
+declare -a BUILT_IMAGES=()
+
+# Build multi-platform images
+for IMAGE_NAME in "${!MULTI_PLATFORM_IMAGES[@]}"; do
+    BUILD_TARGET="${MULTI_PLATFORM_IMAGES[$IMAGE_NAME]}"
+    
+    echo "🎯 Building multi-platform image: ${IMAGE_NAME} with target ${BUILD_TARGET}"
+    
+    # Build and push multi-platform image directly
+    docker buildx build -f Dockerfile-manual \
+        -t "ghcr.io/euzu/${IMAGE_NAME}:${VERSION}" \
+        -t "ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}" \
+        --target "$BUILD_TARGET" \
+        --platform "linux/amd64,linux/arm64" \
+        --push \
+        .
+    
+    BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${VERSION}")
+    BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}")
 done
+
+# Clean up Docker context
+echo "🗑️ Cleaning up binaries..."
+rm -rf "${DOCKER_DIR}/binaries"
+
+cd "$WORKING_DIR"
 
 # Final cleanup
 echo "🗑️ Cleaning up Docker context..."
