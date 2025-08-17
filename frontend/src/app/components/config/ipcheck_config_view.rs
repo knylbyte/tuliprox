@@ -8,7 +8,7 @@ pub fn IpCheckConfigView() -> Html {
     let translate = use_translation();
     let config_ctx = use_context::<ConfigContext>().expect("ConfigContext not found");
 
-    let render_empty = || html! {
+    let render_empty = || {
             html! {
               <>
                 { config_field_empty!(translate.t("LABEL.URL")) }

@@ -323,6 +323,7 @@ log:
 ### 1.10 `web_ui`
 - enabled: default is true, if set to false the web_ui is disabled
 - user_ui_enabled, true or false,  for user bouquet editor
+- content_security_policy, default false, if set to true enables cross site scripting protection.
 - path is for web_ui path like `/ui` for reverse proxy integration if necessary.
 - auth for authentication settings
   - `enabled` can be deactivated if `enabled` is set to `false`. If not set default is `true`.
