@@ -11,6 +11,23 @@ RUN apk add --no-cache tzdata \
   && mkdir -p /output/etc/ssl/certs \
   && cp /etc/ssl/certs/ca-certificates.crt /output/etc/ssl/certs/ca-certificates.crt
 
+# Binary selector stage
+FROM alpine:latest AS binary-selector
+
+ARG TARGETARCH
+
+WORKDIR /app
+
+# Copy all binaries
+COPY ./binaries ./binaries
+
+# Select the appropriate binary based on target architecture
+RUN case "${TARGETARCH}" in \
+        "amd64") cp ./binaries/tuliprox-x86_64-unknown-linux-musl ./tuliprox ;; \
+        "arm64") cp ./binaries/tuliprox-aarch64-unknown-linux-musl ./tuliprox ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac
+
 # Scratch Final container
 FROM scratch AS scratch-final
 
@@ -26,7 +43,8 @@ COPY --from=tz-prep /output/etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-
 
 WORKDIR /app
 
-COPY ./tuliprox ./
+# Copy the selected binary from binary-selector stage
+COPY --from=binary-selector /app/tuliprox ./tuliprox
 COPY ./web ./web
 COPY ./resources ./resources
 
@@ -49,7 +67,8 @@ RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 WORKDIR /app
 
-COPY ./tuliprox ./
+# Copy the selected binary from binary-selector stage
+COPY --from=binary-selector /app/tuliprox ./tuliprox
 COPY ./web ./web
 COPY ./resources ./resources
 # config should be mounted as volume
