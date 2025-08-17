@@ -16,7 +16,7 @@ pub fn MessagingConfigView() -> Html {
             <Card class="tp__config-view__card">
                 <h1>{translate.t("LABEL.TELEGRAM")}</h1>
                 { config_field!(entry, translate.t("LABEL.BOT_TOKEN"), bot_token) }
-                { config_field_child!(translate.t("LABEL.CHAT_ID"), {
+                { config_field_child!(translate.t("LABEL.CHAT_IDS"), {
                     html! {
                         <div class="tp__config-view__tags">
                             {
