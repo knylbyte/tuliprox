@@ -23,21 +23,32 @@ jobs:
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
       
+      - name: Cache cargo tools
+        id: cache-tools
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-cargo-tools-cross-trunk
+      
       - name: Install cross
+        if: steps.cache-tools.outputs.cache-hit != 'true'
         run: cargo install cross --git https://github.com/cross-rs/cross
       
       - name: Install trunk
+        if: steps.cache-tools.outputs.cache-hit != 'true'
         run: cargo install trunk
       
       - name: Cache cargo registry
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             ${{ runner.os }}-cargo-
       
       - name: Extract branch name
