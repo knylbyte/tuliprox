@@ -75,21 +75,35 @@ fi
 
 echo "📦 Version: ${VERSION}"
 
-# Build resources if needed
-if [ ! -f "${BIN_DIR}/build_resources.sh" ]; then
+# Build resources if needed (check if resources are already built)
+RESOURCES_BUILT=true
+for resource in "channel_unavailable.ts" "user_connections_exhausted.ts" "provider_connections_exhausted.ts" "user_account_expired.ts"; do
+    if [ ! -f "${RESOURCES_DIR}/${resource}" ]; then
+        RESOURCES_BUILT=false
+        break
+    fi
+done
+
+if [ "$RESOURCES_BUILT" = "false" ] && [ -f "${BIN_DIR}/build_resources.sh" ]; then
     echo "🛠️ Building resources..."
     "${BIN_DIR}/build_resources.sh"
+elif [ "$RESOURCES_BUILT" = "true" ]; then
+    echo "🛠️ Resources already built, skipping..."
 fi
 
-# Build frontend
-echo "🎨 Building frontend..."
-rm -rf "${FRONTEND_BUILD_DIR}"
-cd "${FRONTEND_DIR}" && env RUSTFLAGS="--remap-path-prefix $HOME=~" trunk build --release
+# Build frontend (skip if cached)
+if [ "${FRONTEND_CACHE_HIT:-false}" = "true" ] && [ -d "${FRONTEND_BUILD_DIR}" ]; then
+    echo "🎨 Frontend build found in cache, skipping build..."
+else
+    echo "🎨 Building frontend..."
+    rm -rf "${FRONTEND_BUILD_DIR}"
+    cd "${FRONTEND_DIR}" && env RUSTFLAGS="--remap-path-prefix $HOME=~" trunk build --release
 
-# Check if the frontend build directory exists
-if [ ! -d "${FRONTEND_BUILD_DIR}" ]; then
-    echo "🧨 Error: Frontend build directory '${FRONTEND_BUILD_DIR}' does not exist"
-    exit 1
+    # Check if the frontend build directory exists
+    if [ ! -d "${FRONTEND_BUILD_DIR}" ]; then
+        echo "🧨 Error: Frontend build directory '${FRONTEND_BUILD_DIR}' does not exist"
+        exit 1
+    fi
 fi
 
 cd "$WORKING_DIR"
@@ -101,8 +115,15 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     
     echo "🔨 Building binary for architecture: $ARCHITECTURE"
     
-    cargo clean || true
-    env RUSTFLAGS="--remap-path-prefix $HOME=~" cross build -p tuliprox --release --target "$ARCHITECTURE"
+    # Don't clean if we have cached dependencies
+    if [ -z "${CARGO_DEPS_CACHE_HIT:-}" ]; then
+        cargo clean || true
+    fi
+    
+    # Use incremental compilation and enable cache-friendly flags
+    env RUSTFLAGS="--remap-path-prefix $HOME=~ -C incremental=/tmp/rust-incremental-${ARCHITECTURE}" \
+        CARGO_INCREMENTAL=1 \
+        cross build -p tuliprox --release --target "$ARCHITECTURE"
     
     BINARY_PATH="${WORKING_DIR}/target/${ARCHITECTURE}/release/tuliprox"
     if [ ! -f "$BINARY_PATH" ]; then
@@ -136,12 +157,14 @@ for IMAGE_NAME in "${!MULTI_PLATFORM_IMAGES[@]}"; do
     
     echo "🎯 Building multi-platform image: ${IMAGE_NAME} with target ${BUILD_TARGET}"
     
-    # Build and push multi-platform image directly
+    # Build and push multi-platform image directly with cache
     docker buildx build -f Dockerfile-manual \
         -t "ghcr.io/euzu/${IMAGE_NAME}:${VERSION}" \
         -t "ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}" \
         --target "$BUILD_TARGET" \
         --platform "linux/amd64,linux/arm64" \
+        --cache-from "${BUILDX_CACHE_FROM:-}" \
+        --cache-to "${BUILDX_CACHE_TO:-}" \
         --push \
         .
     
