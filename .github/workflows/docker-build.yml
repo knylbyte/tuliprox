@@ -50,5 +50,8 @@ jobs:
           mkdir -p $HOME
           echo "GHCR_IO_TOKEN=${{ secrets.GHCR_IO_TOKEN }}" > $HOME/.ghcr.io
       
+      - name: Make build script executable
+        run: chmod +x ./bin/build_docker.sh
+      
       - name: Build and push Docker images
         run: ./bin/build_docker.sh ${{ steps.extract_branch.outputs.branch }}
