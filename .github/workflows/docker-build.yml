@@ -33,7 +33,7 @@ jobs:
     
     - name: Install trunk
       run: |
-        wget -qO- https://github.com/trunk-rs/trunk/releases/download/v0.18.8/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xzf-
+        wget -qO- https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xzf-
         sudo mv trunk /usr/local/bin/
     
     - name: Add Rust targets
@@ -83,7 +83,7 @@ jobs:
     
     - name: Install trunk
       run: |
-        wget -qO- https://github.com/trunk-rs/trunk/releases/download/v0.18.8/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xzf-
+        wget -qO- https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xzf-
         sudo mv trunk /usr/local/bin/
     
     - name: Add Rust targets
