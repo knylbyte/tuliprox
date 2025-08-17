@@ -10,46 +10,52 @@ jobs:
   docker-build:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop'
-    
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+          - linux/arm/v7
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: all
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          platforms: linux/amd64,linux/arm64
-          
+
       - name: Create and use multi-platform builder
         run: |
-          docker buildx create --name multiarch --use --bootstrap
+          docker buildx create --name multiarch --use --bootstrap || docker buildx use multiarch
           docker buildx inspect multiarch
-      
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,wasm32-unknown-unknown
-      
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,armv7-unknown-linux-musleabihf,wasm32-unknown-unknown
+
       - name: Cache cargo tools
         id: cache-tools
         uses: actions/cache@v3
         with:
           path: ~/.cargo/bin
           key: ${{ runner.os }}-cargo-tools-cross-trunk
-      
+
       - name: Install cross
         if: steps.cache-tools.outputs.cache-hit != 'true'
         run: cargo install cross --git https://github.com/cross-rs/cross
-      
+
       - name: Install trunk
         if: steps.cache-tools.outputs.cache-hit != 'true'
         run: cargo install trunk
-      
+
       - name: Cache cargo registry
         uses: actions/cache@v3
         with:
@@ -62,19 +68,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             ${{ runner.os }}-cargo-
-      
+
       - name: Extract branch name
+        id: extract_branch
         shell: bash
         run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
-        id: extract_branch
-      
+
       - name: Create GHCR token file
         run: |
           mkdir -p $HOME
           echo "GHCR_IO_TOKEN=${{ secrets.GHCR_IO_TOKEN }}" > $HOME/.ghcr.io
-      
+
       - name: Make build script executable
         run: chmod +x ./bin/build_docker.sh
-      
+
       - name: Build and push Docker images
+        env:
+          DOCKER_DEFAULT_PLATFORM: ${{ matrix.platform }}
         run: ./bin/build_docker.sh ${{ steps.extract_branch.outputs.branch }}
