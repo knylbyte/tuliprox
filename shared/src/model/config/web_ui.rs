@@ -16,6 +16,8 @@ pub struct WebUiConfigDto {
     pub enabled: bool,
     #[serde(default = "default_as_true")]
     pub user_ui_enabled: bool,
+    #[serde(default)]
+    pub content_security_policy: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

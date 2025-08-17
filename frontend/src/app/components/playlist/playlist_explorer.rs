@@ -240,8 +240,10 @@ pub fn PlaylistExplorer() -> Html {
         } else {
             html! { <img alt={"n/a"} src={logo.to_owned()}
                     onerror={Callback::from(move |e: web_sys::Event| {
-                        let img = e.target().unwrap().dyn_into::<web_sys::HtmlMediaElement >().unwrap();
+                    if let Some(target)  = e.target() {
+                        let img = target.dyn_into::<web_sys::HtmlMediaElement >().unwrap();
                         img.set_src("assets/missing-logo.svg");
+                    }
                     })}
                 />}
         }

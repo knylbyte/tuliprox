@@ -1,13 +1,24 @@
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::app::components::{NoContent};
 use crate::app::context::ConfigContext;
-use crate::{config_field_optional};
+use crate::{config_field_empty, config_field_optional};
 
 #[function_component]
 pub fn IpCheckConfigView() -> Html {
     let translate = use_translation();
     let config_ctx = use_context::<ConfigContext>().expect("ConfigContext not found");
+
+    let render_empty = || html! {
+            html! {
+              <>
+                { config_field_empty!(translate.t("LABEL.URL")) }
+                { config_field_empty!(translate.t("LABEL.URL_IPV4")) }
+                { config_field_empty!(translate.t("LABEL.URL_IPV6")) }
+                { config_field_empty!(translate.t("LABEL.PATTERN_IPV4")) }
+                { config_field_empty!(translate.t("LABEL.PATTERN_IPV6")) }
+              </>
+            }
+    };
 
     html! {
         <div class="tp__ipcheck-config-view tp__config-view-page">
@@ -25,10 +36,10 @@ pub fn IpCheckConfigView() -> Html {
                           </>
                         }
                     } else {
-                           html! { <NoContent /> }
+                           { render_empty() }
                     }
                 } else {
-                    html! { <NoContent /> }
+                    { render_empty() }
                 }
             }
           </div>

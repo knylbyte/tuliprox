@@ -162,11 +162,14 @@ async fn index(
                 new_content = new_content.replacen(script_tag, &new_tag, 1);
             }
 
-            return try_unwrap_body!(axum::response::Response::builder()
-                .header("Content-Type", mime::TEXT_HTML_UTF_8.as_ref())
-                .header("Content-Security-Policy",
-                    format!("default-src 'self'; script-src 'self' 'unsafe-eval' 'nonce-{nonce_b64}'; style-src 'self' 'nonce-{nonce_b64}'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
-                ).body(new_content));
+            let mut builder = axum::response::Response::builder()
+                .header("Content-Type", mime::TEXT_HTML_UTF_8.as_ref());
+            if config.web_ui.as_ref().is_some_and(|w| w.content_security_policy) {
+                builder = builder.header("Content-Security-Policy",
+                        format!("default-src 'self'; script-src 'self' 'unsafe-eval' 'nonce-{nonce_b64}'; style-src 'self' 'nonce-{nonce_b64}'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"));
+
+            }
+            return try_unwrap_body!(builder.body(new_content));
         }
         Err(err) => {
             error!("Failed to read web ui index.html: {err}");
