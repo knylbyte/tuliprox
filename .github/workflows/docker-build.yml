@@ -111,6 +111,7 @@ jobs:
             ${{ runner.os }}-cross-
       
       - name: Cache built resources
+        id: cache-resources
         uses: actions/cache@v4
         with:
           path: |
@@ -119,7 +120,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-resources-
       
-      - name: Install ffmpeg
+      - name: Install ffmpeg (only if resources not cached)
         if: steps.cache-resources.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
@@ -142,6 +143,7 @@ jobs:
         env:
           FRONTEND_CACHE_HIT: ${{ steps.cache-frontend.outputs.cache-hit }}
           CARGO_DEPS_CACHE_HIT: ${{ steps.cache-cargo-deps.outputs.cache-hit }}
+          RESOURCES_CACHE_HIT: ${{ steps.cache-resources.outputs.cache-hit }}
           BUILDX_CACHE_FROM: type=local,src=/tmp/.buildx-cache
           BUILDX_CACHE_TO: type=local,dest=/tmp/.buildx-cache-new,mode=max
         run: ./bin/build_docker.sh ${{ steps.extract_branch.outputs.branch }}
@@ -150,4 +152,3 @@ jobs:
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
-          
