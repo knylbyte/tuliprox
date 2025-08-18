@@ -167,7 +167,7 @@ async fn index(
             if let Some(csp) = config
                 .web_ui
                 .as_ref()
-                .and_then(|w| w.content_security_policies.as_ref())
+                .and_then(|w| w.content_security_policy.as_ref())
                 .filter(|c| c.enabled)
             {
                 let mut attrs = vec![

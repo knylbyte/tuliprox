@@ -27,7 +27,7 @@ update_on_boot: false # best not to hammer upstream during testing
 web_ui:
   enabled: true
   user_ui_enabled: true
-  content-security-policies:
+  content_security_policy:
     enabled: true
     custom-attributes:
       - "default-src 'self'"
