@@ -12,11 +12,12 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::Request;
 use base64::Engine;
-use base64::engine::general_purpose;
+//use base64::engine::general_purpose;
 use openssl::rand::rand_bytes;
-use openssl::sha::{sha256};
+//use openssl::sha::{sha256};
 use tower::{Service, ServiceExt};
 use tower_http::services::ServeFile;
+use lol_html::{element, RewriteStrSettings};
 
 fn no_web_auth_token() -> impl axum::response::IntoResponse + Send {
     axum::Json(TokenResponse {
@@ -105,6 +106,29 @@ async fn token_refresh(
     }
 }
 
+/// Adds `nonce` to all <script> tags that do not yet have one.
+/// Also removes any existing <meta http-equiv="Content-Security-Policy"> tags.
+fn inject_nonce_with_parser(html: String, nonce_b64: &str) -> String {
+    let settings = RewriteStrSettings {
+        element_content_handlers: vec![
+            // 1) All <script> without nonce → add nonce
+            element!("script:not([nonce])", move |el| {
+                el.set_attribute("nonce", nonce_b64)?;
+                Ok(())
+            }),
+            // 2) Remove meta CSP from HTML, if present
+            element!("meta[http-equiv='Content-Security-Policy']", |el| {
+                el.remove();
+                Ok(())
+            }),
+        ],
+        ..RewriteStrSettings::default()
+    };
+
+    lol_html::rewrite_str(&html, settings).unwrap_or(html)
+}
+
+
 async fn index(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse + Send {
@@ -147,20 +171,24 @@ async fn index(
             let mut rnd = [0u8; 32];
             if let Err(e) = rand_bytes(&mut rnd) {
                 error!("Failed to generate random bytes for nonce: {e}");
-                // Fallback: ohne weitere Manipulation zurück
+                // Fallback: without further manipulation back
                 return try_unwrap_body!(axum::response::Response::builder()
                     .header("Content-Type", mime::TEXT_HTML_UTF_8.as_ref())
                     .body(new_content));
             }
-            let hash = sha256(&rnd);
-            let nonce_b64 = general_purpose::STANDARD_NO_PAD.encode(hash);
+            let nonce_b64 = base64::engine::general_purpose::STANDARD.encode(rnd);
+
+            // let hash = sha256(&rnd);
+            // let nonce_b64 = general_purpose::STANDARD_NO_PAD.encode(hash);
 
             // Insert calculated nonce
-            let script_tag = r#"<script type="module">"#;
-            if new_content.contains(script_tag) {
-                let new_tag = format!(r#"<script type="module" nonce="{nonce_b64}">"#);
-                new_content = new_content.replacen(script_tag, &new_tag, 1);
-            }
+            // let script_tag = r#"<script type="module">"#;
+            // if new_content.contains(script_tag) {
+            //     let new_tag = format!(r#"<script type="module" nonce="{nonce_b64}">"#);
+            //     new_content = new_content.replacen(script_tag, &new_tag, 1);
+            // }
+
+            new_content = inject_nonce_with_parser(new_content, &nonce_b64);
 
             let mut builder = axum::response::Response::builder()
                 .header("Content-Type", mime::TEXT_HTML_UTF_8.as_ref());
