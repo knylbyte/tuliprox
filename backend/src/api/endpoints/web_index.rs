@@ -164,10 +164,22 @@ async fn index(
 
             let mut builder = axum::response::Response::builder()
                 .header("Content-Type", mime::TEXT_HTML_UTF_8.as_ref());
-            if config.web_ui.as_ref().is_some_and(|w| w.content_security_policy) {
-                builder = builder.header("Content-Security-Policy",
-                        format!("default-src 'self'; script-src 'self' 'unsafe-eval' 'nonce-{nonce_b64}'; style-src 'self' 'nonce-{nonce_b64}'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"));
-
+            if let Some(csp) = config
+                .web_ui
+                .as_ref()
+                .and_then(|w| w.content_security_policies.as_ref())
+                .filter(|c| c.enabled)
+            {
+                let mut attrs = vec![
+                    "default-src 'self'".to_string(),
+                    format!("script-src 'self' nonce-{nonce_b64}"),
+                    "frame-ancestors 'none'".to_string(),
+                ];
+                attrs.extend(csp.custom_attributes.iter().cloned());
+                for attr in attrs.iter_mut() {
+                    *attr = attr.replace("{nonce_b64}", &nonce_b64);
+                }
+                builder = builder.header("Content-Security-Policy", attrs.join("; "));
             }
             return try_unwrap_body!(builder.body(new_content));
         }
