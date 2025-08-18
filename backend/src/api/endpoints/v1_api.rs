@@ -15,7 +15,7 @@ use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
 use shared::error::TuliproxError;
-use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputType, IpCheckDto, PlaylistRequest, PlaylistRequestType, StatusCheck, TargetUserDto, XtreamPlaylistItem};
+use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputType, IpCheckDto, PlaylistRequest, PlaylistRequestType, StatusCheck, TargetUserDto, WebplayerUrlRequest};
 use shared::utils::{concat_path_leading_slash, sanitize_sensitive_info};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -233,16 +233,15 @@ async fn playlist_content(
 }
 
 async fn playlist_webplayer(
-    axum::extract::Path(target_id): axum::extract::Path<u32>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
-    axum::extract::Json(playlist_item): axum::extract::Json<XtreamPlaylistItem>,
+    axum::extract::Json(playlist_item): axum::extract::Json<WebplayerUrlRequest>,
 ) -> impl axum::response::IntoResponse + Send {
-    let access_token = create_access_token(&app_state.app_config.access_token_secret, 5);
+    let access_token = create_access_token(&app_state.app_config.access_token_secret, 30);
     let config = app_state.app_config.config.load();
     let server_name = config.web_ui.as_ref().and_then(|web_ui| web_ui.player_server.as_ref()).map_or("default", |server_name| server_name.as_str());
     let server_info = app_state.app_config.get_server_info(server_name);
     let base_url = server_info.get_base_url();
-    format!("{base_url}/token/{access_token}/{target_id}/{}/{}", playlist_item.xtream_cluster.as_stream_type(), playlist_item.virtual_id).into_response()
+    format!("{base_url}/token/{access_token}/{}/{}/{}", playlist_item.target_id, playlist_item.cluster.as_stream_type(), playlist_item.virtual_id).into_response()
 }
 
 async fn config(
@@ -251,7 +250,7 @@ async fn config(
     let paths = app_state.app_config.paths.load();
     match utils::read_app_config_dto(&paths, true, false) {
         Ok(mut app_config) => {
-            if let Err(err) = prepare_sources_batch(&mut app_config.sources) {
+            if let Err(err) = prepare_sources_batch(&mut app_config.sources, false) {
                 error!("Failed to prepare sources batch: {err}");
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
             } else if let Err(err) = prepare_users(&mut app_config, &app_state.app_config) {
@@ -364,7 +363,7 @@ pub fn v1_api_register(web_auth_enabled: bool, app_state: Arc<AppState>, web_ui_
         .route("/config/main", axum::routing::post(save_config_main))
         .route("/config/user", axum::routing::post(save_config_api_proxy_user))
         .route("/config/apiproxy", axum::routing::post(save_config_api_proxy_config))
-        .route("/playlist/webplayer/{target_id}", axum::routing::post(playlist_webplayer))
+        .route("/playlist/webplayer", axum::routing::post(playlist_webplayer))
         .route("/playlist/update", axum::routing::post(playlist_update))
         .route("/playlist", axum::routing::post(playlist_content))
         .route("/file/download", axum::routing::post(download_api::queue_download_file))

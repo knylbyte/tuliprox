@@ -286,7 +286,7 @@ impl ConfigInputDto {
         Ok(current_index)
     }
 
-    fn prepare_epg(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
+    pub fn prepare_epg(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         if let Some(epg) = self.epg.as_mut() {
             let create_auto_url = || {
                 let get_creds = || {
@@ -348,7 +348,6 @@ impl ConfigInputDto {
 
     pub fn prepare_batch(&mut self, batch_aliases: Vec<ConfigInputAliasDto>, index: u16) -> Result<Option<u16>, TuliproxError> {
         let idx = apply_batch_aliases!(self, batch_aliases, Some(index));
-        self.prepare_epg(true)?;
         Ok(idx)
     }
 }

@@ -29,8 +29,8 @@ macros::from_impl!(EpgConfig);
 impl From<&EpgConfigDto> for EpgConfig {
     fn from(dto: &EpgConfigDto) -> Self {
         Self {
-            sources: dto.t_sources.iter().map(Into::into).collect(),
-            smart_match: dto.smart_match.as_ref().map(Into::into),
+            sources: dto.t_sources.iter().map(EpgSource::from).collect(),
+            smart_match: dto.smart_match.as_ref().map(EpgSmartMatchConfig::from),
         }
     }
 }

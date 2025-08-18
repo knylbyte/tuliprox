@@ -53,9 +53,13 @@ impl SourcesConfigDto {
     fn prepare_sources(&mut self, include_computed: bool, hdhr_config: Option<&HdHomeRunDeviceOverview>) -> Result<(), TuliproxError> {
         // prepare sources and set id's
         let mut source_index: u16 = 0;
+        let mut input_index: u16 = 0;
         let mut target_index: u16 = 1;
         for source in &mut self.sources {
             source_index = source.prepare(source_index, include_computed)?;
+            for input in &mut source.inputs {
+               input_index = input.prepare(input_index, include_computed)?;
+            }
             for target in &mut source.targets {
                 // prepare target templates
                 let prepare_result = match &self.templates {

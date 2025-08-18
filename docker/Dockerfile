@@ -23,13 +23,23 @@ RUN rustup update && rustup target add $RUST_TARGET
 # Set Rust compiler flags for better optimization and reproducibility
 ENV RUSTFLAGS='--remap-path-prefix $HOME=~ -C target-feature=+crt-static'
 
-# Copy only Cargo.toml and Cargo.lock for dependency caching
+# Copy dependency files first for better layer caching
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
+COPY backend/Cargo.toml ./backend/
+COPY frontend/Cargo.toml ./frontend/
+COPY shared/Cargo.toml ./shared/
 
-# Create a dummy src/main.rs to build dependencies only
-RUN mkdir src && echo "fn main() {}" > src/main.rs
+# Create dummy source files to build dependencies only
+RUN mkdir -p src backend/src frontend/src shared/src && \
+    echo "fn main() {}" > src/main.rs && \
+    echo "fn main() {}" > backend/src/main.rs && \
+    echo "fn main() {}" > frontend/src/main.rs && \
+    echo "pub fn dummy() {}" > shared/src/lib.rs
+
+# Build dependencies (this layer will be cached unless dependencies change)
 RUN cargo build -p tuliprox --target $RUST_TARGET --release || true
+RUN cargo build -p shared --target $RUST_TARGET --release || true
 
 # Now copy the actual source code and build the project
 COPY . .
@@ -54,8 +64,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install --locked trunk wasm-bindgen-cli
 
+# Copy dependency files first for better layer caching
+COPY Cargo.toml Cargo.lock ./
+COPY frontend/Cargo.toml frontend/Trunk.toml ./frontend/
+COPY shared/Cargo.toml ./shared/
+
+# Create dummy source files
+RUN mkdir -p frontend/src shared/src && \
+    echo "fn main() {}" > frontend/src/main.rs && \
+    echo "pub fn dummy() {}" > shared/src/lib.rs
+
+# Pre-build dependencies
+WORKDIR /src/frontend
+RUN cargo build --target wasm32-unknown-unknown --release || true
 
 # Now copy the actual source code and build the project
+WORKDIR /src
 COPY . .
 
 WORKDIR /src/frontend

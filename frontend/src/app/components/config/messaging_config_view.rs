@@ -5,6 +5,17 @@ use shared::model::{PushoverMessagingConfigDto, RestMessagingConfigDto, Telegram
 use yew::prelude::*;
 use yew_i18n::use_translation;
 
+const LABEL_NOTIFY_ON: &str = "LABEL.NOTIFY_ON";
+const LABEL_TELEGRAM: &str = "LABEL.TELEGRAM";
+const LABEL_PUSHOVER: &str = "LABEL.PUSHOVER";
+const LABEL_REST: &str = "LABEL.REST";
+const LABEL_BOT_TOKEN: &str = "LABEL.BOT_TOKEN";
+const LABEL_CHAT_IDS: &str = "LABEL.CHAT_IDS";
+const LABEL_URL: &str = "LABEL.URL";
+const LABEL_TOKEN: &str = "LABEL.TOKEN";
+const LABEL_USER: &str = "LABEL.USER";
+
+
 #[function_component]
 pub fn MessagingConfigView() -> Html {
     let translate = use_translation();
@@ -15,8 +26,8 @@ pub fn MessagingConfigView() -> Html {
             Some(entry) => html! {
             <Card class="tp__config-view__card">
                 <h1>{translate.t("LABEL.TELEGRAM")}</h1>
-                { config_field!(entry, translate.t("LABEL.BOT_TOKEN"), bot_token) }
-                { config_field_child!(translate.t("LABEL.CHAT_ID"), {
+                { config_field!(entry, translate.t(LABEL_BOT_TOKEN), bot_token) }
+                { config_field_child!(translate.t(LABEL_CHAT_IDS), {
                     html! {
                         <div class="tp__config-view__tags">
                             {
@@ -33,9 +44,9 @@ pub fn MessagingConfigView() -> Html {
           },
             None => html! {
             <Card class="tp__config-view__card">
-               <h1>{translate.t("LABEL.TELEGRAM")}</h1>
-               { config_field_empty!(translate.t("LABEL.BOT_TOKEN")) }
-               { config_field_empty!(translate.t("LABEL.CHAT_IDS")) }
+               <h1>{translate.t(LABEL_TELEGRAM)}</h1>
+               { config_field_empty!(translate.t(LABEL_BOT_TOKEN)) }
+               { config_field_empty!(translate.t(LABEL_CHAT_IDS)) }
             </Card>
           },
         }
@@ -45,14 +56,14 @@ pub fn MessagingConfigView() -> Html {
         match rest {
             Some(entry) => html! {
             <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.REST")}</h1>
-                { config_field!(entry, translate.t("LABEL.URL"), url) }
+                <h1>{translate.t(LABEL_REST)}</h1>
+                { config_field!(entry, translate.t(LABEL_URL), url) }
             </Card>
           },
             None => html! {
             <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.REST")}</h1>
-                { config_field_empty!(translate.t("LABEL.URL")) }
+                <h1>{translate.t(LABEL_REST)}</h1>
+                { config_field_empty!(translate.t(LABEL_URL)) }
             </Card>
           },
         }
@@ -62,18 +73,18 @@ pub fn MessagingConfigView() -> Html {
         match pushover {
             Some(entry) => html! {
             <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.PUSHOVER")}</h1>
-                { config_field_optional!(entry, translate.t("LABEL.URL"), url) }
-                { config_field_hide!(entry, translate.t("LABEL.TOKEN"), token) }
-                { config_field!(entry, translate.t("LABEL.USER"), user) }
+                <h1>{translate.t(LABEL_PUSHOVER)}</h1>
+                { config_field_optional!(entry, translate.t(LABEL_URL), url) }
+                { config_field_hide!(entry, translate.t(LABEL_TOKEN), token) }
+                { config_field!(entry, translate.t(LABEL_USER), user) }
             </Card>
             },
             None => html! {
             <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.PUSHOVER")}</h1>
-                { config_field_empty!(translate.t("LABEL.URL")) }
-                { config_field_empty!(translate.t("LABEL.TOKEN")) }
-                { config_field_empty!(translate.t("LABEL.USER")) }
+                <h1>{translate.t(LABEL_PUSHOVER)}</h1>
+                { config_field_empty!(translate.t(LABEL_URL)) }
+                { config_field_empty!(translate.t(LABEL_TOKEN)) }
+                { config_field_empty!(translate.t(LABEL_USER)) }
             </Card>
           },
         }
@@ -83,7 +94,7 @@ pub fn MessagingConfigView() -> Html {
         html! {
           <>
             <div class="tp__messaging-config-view__header tp__config-view-page__header">
-             { config_field_empty!(translate.t("LABEL.NOTIFY_ON")) }
+             { config_field_empty!(translate.t(LABEL_NOTIFY_ON)) }
             </div>
             <div class="tp__messaging-config-view__body tp__config-view-page__body">
              {render_telegram(None)}
@@ -102,7 +113,7 @@ pub fn MessagingConfigView() -> Html {
                         html! {
                           <>
                         <div class="tp__messaging-config-view__header tp__config-view-page__header">
-                          { config_field_child!(translate.t("LABEL.NOTIFY_ON"), {
+                          { config_field_child!(translate.t(LABEL_NOTIFY_ON), {
                              html! { <div class="tp__messaging-config-view__notify-on">
                                 { for messaging.notify_on.iter().map(|t| html! { <Chip label={t.to_string()} /> }) }
                             </div> }
