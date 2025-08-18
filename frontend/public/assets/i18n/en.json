@@ -244,7 +244,8 @@
     "STRIP": "Strip",
     "COPY_LINK_TULIPROX": "Copy Virtual Id",
     "COPY_LINK_PROVIDER": "Copy Provider Url",
-    "CONTENT_SECURITY_POLICY" : "Content Security Policy"
+    "CONTENT_SECURITY_POLICY" : "Content Security Policy",
+    "CUSTOM_ATTRIBUTES": "Custom Attributes"
   },
   "TABLE": {
     "EMPTY": "",
