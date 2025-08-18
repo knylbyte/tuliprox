@@ -1,6 +1,6 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::WebAuthConfigDto;
-use crate::utils::{default_as_true};
+use crate::utils::default_as_true;
 
 const RESERVED_PATHS: &[&str] = &[
     "live", "movie", "series", "m3u-stream", "healthcheck", "status",
@@ -11,13 +11,22 @@ const RESERVED_PATHS: &[&str] = &[
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
+pub struct ContentSecurityPolicyDto {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub custom_attributes: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct WebUiConfigDto {
     #[serde(default = "default_as_true")]
     pub enabled: bool,
     #[serde(default = "default_as_true")]
     pub user_ui_enabled: bool,
-    #[serde(default)]
-    pub content_security_policy: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_security_policy: Option<ContentSecurityPolicyDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -30,6 +39,7 @@ impl WebUiConfigDto {
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
         if !self.enabled {
             self.auth = None;
+            self.content_security_policy = None;
         }
 
         if let Some(web_ui_path) = self.path.as_ref() {
