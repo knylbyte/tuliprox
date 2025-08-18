@@ -2,26 +2,29 @@ http:
   middlewares:
     default-security-headers:
       headers:
-        contentSecurityPolicy: >
-          default-src 'self';
-          script-src 'self';
-          style-src 'self';
-          img-src 'self' data:;
-          font-src 'self' data:;
-          connect-src 'self' wss:;
-          object-src 'none';
-          base-uri 'self';
-          frame-ancestors 'none';
-          form-action 'self';
+        permissionsPolicy: >-
+          camera=(),
+          microphone=(),
+          geolocation=()
+        contentSecurityPolicy: >-
+          default-src 'self'
+          script-src 'self'
+          style-src 'self'
+          img-src 'self' data:
+          font-src 'self' data:
+          connect-src 'self' wss:
+          object-src 'none'
+          base-uri 'self'
+          frame-ancestors 'none'
+          form-action 'self'
         browserXSSFilter: true
         customBrowserXSSValue: "1; mode=block"
         frameDeny: true
         addVaryHeader: true
-        customResponseHeaders:
-        Permissions-Policy: "camera=(), microphone=(), geolocation=()"
         contentTypeNosniff: true
         referrerPolicy: "strict-origin-when-cross-origin"
         forceSTSHeader: true
         stsIncludeSubdomains: true
         stsPreload: true
         stsSeconds: 63072000
+        customResponseHeaders:
