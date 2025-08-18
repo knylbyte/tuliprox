@@ -172,7 +172,7 @@ async fn index(
             {
                 let mut attrs = vec![
                     "default-src 'self'".to_string(),
-                    format!("script-src 'self' nonce-{nonce_b64}"),
+                    format!("script-src 'self' 'nonce-{nonce_b64}'"),
                     "frame-ancestors 'none'".to_string(),
                 ];
                 attrs.extend(csp.custom_attributes.iter().cloned());
