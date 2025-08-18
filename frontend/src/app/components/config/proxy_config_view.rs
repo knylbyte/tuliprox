@@ -3,6 +3,11 @@ use yew_i18n::use_translation;
 use crate::app::context::ConfigContext;
 use crate::{config_field, config_field_empty, config_field_optional, config_field_optional_hide};
 
+const LABEL_URL: &str = "LABEL.URL";
+const LABEL_USERNAME: &str = "LABEL.USERNAME";
+const LABEL_PASSWORD: &str = "LABEL.PASSWORD";
+
+
 #[function_component]
 pub fn ProxyConfigView() -> Html {
     let translate = use_translation();
@@ -11,9 +16,9 @@ pub fn ProxyConfigView() -> Html {
     let render_empty = || {
         html! {
           <div class="tp__proxy-config-config-view__body tp__config-view-page__body">
-            { config_field_empty!(translate.t("LABEL.URL")) }
-            { config_field_empty!(translate.t("LABEL.USERNAME")) }
-            { config_field_empty!(translate.t("LABEL.PASSWORD")) }
+            { config_field_empty!(translate.t(LABEL_URL)) }
+            { config_field_empty!(translate.t(LABEL_USERNAME)) }
+            { config_field_empty!(translate.t(LABEL_PASSWORD)) }
           </div>
         }
     };
@@ -26,9 +31,9 @@ pub fn ProxyConfigView() -> Html {
                         html! {
                          <>
                           <div class="tp__proxy-config-config-view__body tp__config-view-page__body">
-                            { config_field!(proxy, translate.t("LABEL.URL"), url) }
-                            { config_field_optional!(proxy, translate.t("LABEL.USERNAME"), username) }
-                            { config_field_optional_hide!(proxy, translate.t("LABEL.PASSWORD"), password) }
+                            { config_field!(proxy, translate.t(LABEL_URL), url) }
+                            { config_field_optional!(proxy, translate.t(LABEL_USERNAME), username) }
+                            { config_field_optional_hide!(proxy, translate.t(LABEL_PASSWORD), password) }
                           </div>
                          </>
                         }

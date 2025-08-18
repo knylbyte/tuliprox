@@ -10,6 +10,9 @@ use arc_swap::ArcSwap;
 use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigPaths, TargetUserDto};
 use crate::{utils};
 
+const API_USER: &str = "api";
+const TEST_USER: &str = "test";
+
 #[derive(Debug, Clone)]
 pub struct ApiProxyServerInfo {
     pub name: String,
@@ -167,7 +170,7 @@ impl ApiProxyConfig {
                 return Some((credentials.clone(), target_name.to_string()));
             }
         }
-        if log::log_enabled!(log::Level::Debug) && !username.eq("api") {
+        if log::log_enabled!(log::Level::Debug) && !username.eq(API_USER) {
            debug!("Could not find any target for user {username}");
         }
         None
@@ -187,7 +190,7 @@ impl ApiProxyConfig {
             .flat_map(|target_user| &target_user.credentials)
             .find(|credential| credential.username == username)
             .cloned();
-        if result.is_none() && (username != "test" || username != "api") {
+        if result.is_none() && (username != TEST_USER || username != API_USER) {
             debug!("Could not find any user credentials for: {username}");
         }
         result

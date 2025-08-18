@@ -1,8 +1,12 @@
-use crate::app::components::{NoContent};
 use crate::app::ConfigContext;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::{config_field};
+use crate::{config_field, config_field_empty};
+
+const LABEL_HOST: &str =  "LABEL.HOST";
+const LABEL_PORT: &str =  "LABEL.PORT";
+const LABEL_WEB_ROOT: &str =  "LABEL.WEB_ROOT";
+
 
 #[function_component]
 pub fn ApiConfigView() -> Html {
@@ -17,12 +21,20 @@ pub fn ApiConfigView() -> Html {
                         Some(config) => {
                             html!{
                             <>
-                            { config_field!(config.config.api, translate.t("LABEL.HOST"), host) }
-                            { config_field!(config.config.api, translate.t("LABEL.PORT"), port) }
-                            { config_field!(config.config.api, translate.t("LABEL.WEB_ROOT"), web_root) }
+                            { config_field!(config.config.api, translate.t(LABEL_HOST), host) }
+                            { config_field!(config.config.api, translate.t(LABEL_PORT), port) }
+                            { config_field!(config.config.api, translate.t(LABEL_WEB_ROOT), web_root) }
                             </>
                         }},
-                        None => html! { <NoContent /> }
+                        None => {
+                            html!{
+                            <>
+                            { config_field_empty!(translate.t(LABEL_HOST)) }
+                            { config_field_empty!(translate.t(LABEL_PORT)) }
+                            { config_field_empty!(translate.t(LABEL_WEB_ROOT)) }
+                            </>
+                         }
+                        }
                     }
                 }
             </div>

@@ -54,7 +54,7 @@ impl ConfigService {
         if self.is_fetching.swap(true, Ordering::SeqCst) {
             return;
         }
-        let result = match request_get::<AppConfigDto>(&self.config_path, None).await {
+        let result = match request_get::<AppConfigDto>(&self.config_path, None, None).await {
             Ok(mut app_config) => {
                 let templates = {
                     if let Some(templ) = app_config.sources.templates.as_mut() {
@@ -96,7 +96,7 @@ impl ConfigService {
     }
 
     pub async fn get_ip_info(&self) -> Option<IpCheckDto> {
-        match request_get::<IpCheckDto>(&self.ip_check_path, None).await {
+        match request_get::<IpCheckDto>(&self.ip_check_path, None, None).await {
             Ok(cfg) => Some(cfg),
             Err(err) => {
                 error!("{err}");
@@ -108,7 +108,7 @@ impl ConfigService {
     pub async fn get_batch_input_content(&self, input: &ConfigInputDto) -> Option<String> {
         let id = input.id.to_string();
         let path = concat_path(&self.batch_input_content_path, &id);
-        match request_get::<String>(&path, Some("text/plain".to_owned())).await {
+        match request_get::<String>(&path, None, Some("text/plain".to_owned())).await {
             Ok(cfg) => Some(cfg),
             Err(err) => {
                 error!("{err}");
