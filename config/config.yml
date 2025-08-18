@@ -31,7 +31,7 @@ web_ui:
     enabled: true
     custom-attributes:
       - "default-src 'self'"
-      - "script-src 'self' nonce-{nonce_b64}"
+      - "script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'"
       - "frame-ancestors 'none'"
       - "style-src 'self'"
       - "img-src 'self' data:"
