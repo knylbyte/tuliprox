@@ -34,29 +34,37 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,wasm32-unknown-unknown
-      
+          
       - name: Cache cargo tools
         id: cache-tools
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/cross
-            ~/.cargo/bin/trunk
-            ~/.cargo/bin/wasm-bindgen
-          key: ${{ runner.os }}-cargo-tools-${{ hashFiles('**/Cargo.lock') }}-v2
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-tools-v1
           restore-keys: |
             ${{ runner.os }}-cargo-tools-
-      
+
       - name: Install cross
-        if: steps.cache-tools.outputs.cache-hit != 'true'
-        run: cargo install cross --git https://github.com/cross-rs/cross
-      
-      - name: Install trunk and wasm-bindgen-cli
-        if: steps.cache-tools.outputs.cache-hit != 'true'
         run: |
-          cargo install trunk
-          cargo install wasm-bindgen-cli
-      
+          if ! command -v cross &> /dev/null; then
+            cargo install cross --git https://github.com/cross-rs/cross
+          fi
+
+      - name: Install trunk
+        run: |
+          if ! command -v trunk &> /dev/null; then
+            cargo install trunk
+          fi
+
+      - name: Install wasm-bindgen-cli
+        run: |
+          if ! command -v wasm-bindgen &> /dev/null; then
+            cargo install wasm-bindgen-cli
+          fi
+
       - name: Cache cargo registry and dependencies
         id: cache-cargo-deps
         uses: actions/cache@v4
@@ -141,3 +149,4 @@ jobs:
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
+          
