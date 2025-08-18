@@ -22,14 +22,14 @@ pub fn SchedulesConfigView() -> Html {
                                         { config_field!(entry, translate.t("LABEL.SCHEDULE"), schedule) }
                                         { config_field_child!(translate.t("LABEL.TARGETS"), {
                                            html! { <div class="tp__config-view__tags">
+                                                <Chip label={translate.t("LABEL.ALL")} />
                                               { match entry.targets.as_ref() {
-                                                None => html! { <Chip label={translate.t("LABEL.ALL")} /> },
-                                                Some(targets) => if targets.is_empty() {
-                                                    html! { <Chip label={translate.t("LABEL.ALL")} /> }
-                                                } else {
-                                                    html! { for targets.iter().map(|t| html! { <Chip label={t.clone()} /> }) }
+                                                    Some(targets) if !targets.is_empty() => html! {
+                                                        for targets.iter().map(|t| html! { <Chip label={t.clone()} /> })
+                                                    },
+                                                    _ => html! {},
                                                 }
-                                             }}
+                                              }
                                           </div> }
                                         })}
                                      </div>

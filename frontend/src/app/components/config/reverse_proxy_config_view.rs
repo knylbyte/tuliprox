@@ -5,6 +5,27 @@ use crate::app::context::ConfigContext;
 use crate::{config_field, config_field_bool, config_field_bool_empty, config_field_empty, config_field_optional};
 use crate::app::components::Card;
 
+const LABEL_CACHE: &str =  "LABEL.CACHE";
+const LABEL_ENABLED: &str =  "LABEL.ENABLED";
+const LABEL_SIZE: &str =  "LABEL.SIZE";
+const LABEL_DIRECTORY: &str =  "LABEL.DIRECTORY";
+
+const LABEL_STREAM: &str = "LABEL.STREAM";
+const LABEL_RETRY: &str = "LABEL.RETRY";
+const LABEL_THROTTLE: &str = "LABEL.THROTTLE";
+const LABEL_GRACE_PERIOD_MILLIS: &str = "LABEL.GRACE_PERIOD_MILLIS";
+const LABEL_GRACE_PERIOD_TIMEOUT_SECS: &str = "LABEL.GRACE_PERIOD_TIMEOUT_SECS";
+const LABEL_FORCED_RETRY_INTERVAL_SECS: &str = "LABEL.FORCED_RETRY_INTERVAL_SECS";
+const LABEL_THROTTLE_KBPS: &str = "LABEL.THROTTLE_KBPS";
+
+const LABEL_RATE_LIMIT: &str =  "LABEL.RATE_LIMIT";
+const LABEL_PERIOD_MILLIS: &str = "LABEL.PERIOD_MILLIS";
+const LABEL_BURST_SIZE: &str = "LABEL.BURST_SIZE";
+
+const LABEL_RESOURCE_REWRITE_DISABLED: &str = "LABEL.RESOURCE_REWRITE_DISABLED";
+const LABEL_DISABLE_REFERER_HEADER: &str = "LABEL.DISABLE_REFERER_HEADER";
+
+
 #[function_component]
 pub fn ReverseProxyConfigView() -> Html {
     let translate = use_translation();
@@ -14,18 +35,18 @@ pub fn ReverseProxyConfigView() -> Html {
         match config {
             Some(entry) => html! {
             <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.CACHE")}</h1>
-                { config_field_bool!(entry, translate.t("LABEL.ENABLED"), enabled) }
-                { config_field_optional!(entry, translate.t("LABEL.SIZE"), size) }
-                { config_field_optional!(entry, translate.t("LABEL.DIRECTORY"), dir) }
+                <h1>{translate.t(LABEL_CACHE)}</h1>
+                { config_field_bool!(entry, translate.t(LABEL_ENABLED), enabled) }
+                { config_field_optional!(entry, translate.t(LABEL_SIZE), size) }
+                { config_field_optional!(entry, translate.t(LABEL_DIRECTORY), dir) }
             </Card>
             },
             None => html! {
             <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.CACHE")}</h1>
-                { config_field_empty!(translate.t("LABEL.ENABLED")) }
-                { config_field_empty!(translate.t("LABEL.SIZE")) }
-                { config_field_empty!(translate.t("LABEL.DIRECTORY")) }
+                <h1>{translate.t(LABEL_CACHE)}</h1>
+                { config_field_empty!(translate.t(LABEL_ENABLED)) }
+                { config_field_empty!(translate.t(LABEL_SIZE)) }
+                { config_field_empty!(translate.t(LABEL_DIRECTORY)) }
             </Card>
           },
         }
@@ -35,24 +56,24 @@ pub fn ReverseProxyConfigView() -> Html {
         match config {
             Some(entry) => html! {
             <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.STREAM")}</h1>
-                { config_field_bool!(entry, translate.t("LABEL.RETRY"), retry) }
-                { config_field_optional!(entry, translate.t("LABEL.THROTTLE"), throttle) }
-                { config_field!(entry, translate.t("LABEL.GRACE_PERIOD_MILLIS"), grace_period_millis) }
-                { config_field!(entry, translate.t("LABEL.GRACE_PERIOD_TIMEOUT_SECS"), grace_period_timeout_secs) }
-                { config_field!(entry, translate.t("LABEL.FORCED_RETRY_INTERVAL_SECS"), forced_retry_interval_secs) }
-                { config_field!(entry, translate.t("LABEL.THROTTLE_KBPS"), throttle_kbps) }
+                <h1>{translate.t(LABEL_STREAM)}</h1>
+                { config_field_bool!(entry, translate.t(LABEL_RETRY), retry) }
+                { config_field_optional!(entry, translate.t(LABEL_THROTTLE), throttle) }
+                { config_field!(entry, translate.t(LABEL_GRACE_PERIOD_MILLIS), grace_period_millis) }
+                { config_field!(entry, translate.t(LABEL_GRACE_PERIOD_TIMEOUT_SECS), grace_period_timeout_secs) }
+                { config_field!(entry, translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS), forced_retry_interval_secs) }
+                { config_field!(entry, translate.t(LABEL_THROTTLE_KBPS), throttle_kbps) }
             </Card>
             },
             None => html! {
             <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.STREAM")}</h1>
-                { config_field_empty!(translate.t("LABEL.RETRY")) }
-                { config_field_empty!(translate.t("LABEL.THROTTLE")) }
-                { config_field_empty!(translate.t("LABEL.GRACE_PERIOD_MILLIS")) }
-                { config_field_empty!(translate.t("LABEL.GRACE_PERIOD_TIMEOUT_SECS")) }
-                { config_field_empty!(translate.t("LABEL.FORCED_RETRY_INTERVAL_SECS")) }
-                { config_field_empty!(translate.t("LABEL.THROTTLE_KBPS")) }
+                <h1>{translate.t(LABEL_STREAM)}</h1>
+                { config_field_empty!(translate.t(LABEL_RETRY)) }
+                { config_field_empty!(translate.t(LABEL_THROTTLE)) }
+                { config_field_empty!(translate.t(LABEL_GRACE_PERIOD_MILLIS)) }
+                { config_field_empty!(translate.t(LABEL_GRACE_PERIOD_TIMEOUT_SECS)) }
+                { config_field_empty!(translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS)) }
+                { config_field_empty!(translate.t(LABEL_THROTTLE_KBPS)) }
             </Card>
           },
         }
@@ -62,18 +83,18 @@ pub fn ReverseProxyConfigView() -> Html {
         match config {
             Some(entry) => html! {
             <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.RATE_LIMIT")}</h1>
-                { config_field_bool!(entry, translate.t("LABEL.ENABLED"), enabled) }
-                { config_field!(entry, translate.t("LABEL.PERIOD_MILLIS"), period_millis) }
-                { config_field!(entry, translate.t("LABEL.BURST_SIZE"), burst_size) }
+                <h1>{translate.t(LABEL_RATE_LIMIT)}</h1>
+                { config_field_bool!(entry, translate.t(LABEL_ENABLED), enabled) }
+                { config_field!(entry, translate.t(LABEL_PERIOD_MILLIS), period_millis) }
+                { config_field!(entry, translate.t(LABEL_BURST_SIZE), burst_size) }
             </Card>
             },
             None => html! {
             <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.RATE_LIMIT")}</h1>
-                { config_field_empty!(translate.t("LABEL.ENABLED")) }
-                { config_field_empty!(translate.t("LABEL.PERIOD_MILLIS")) }
-                { config_field_empty!(translate.t("LABEL.BURST_SIZE")) }
+                <h1>{translate.t(LABEL_RATE_LIMIT)}</h1>
+                { config_field_empty!(translate.t(LABEL_ENABLED)) }
+                { config_field_empty!(translate.t(LABEL_PERIOD_MILLIS)) }
+                { config_field_empty!(translate.t(LABEL_BURST_SIZE)) }
             </Card>
           },
         }
@@ -83,8 +104,8 @@ pub fn ReverseProxyConfigView() -> Html {
         html! {
           <>
             <div class="tp__reverse-proxy-config-view__header tp__config-view-page__header">
-              { config_field_bool_empty!(translate.t("LABEL.RESOURCE_REWRITE_DISABLED")) }
-              { config_field_bool_empty!(translate.t("LABEL.DISABLE_REFERER_HEADER")) }
+              { config_field_bool_empty!(translate.t(LABEL_RESOURCE_REWRITE_DISABLED)) }
+              { config_field_bool_empty!(translate.t(LABEL_DISABLE_REFERER_HEADER)) }
             </div>
             <div class="tp__reverse-proxy-config-view__body tp__config-view-page__body">
              {render_cache(None)}
@@ -103,8 +124,8 @@ pub fn ReverseProxyConfigView() -> Html {
                         html! {
                         <>
                           <div class="tp__reverse-proxy-config-view__header tp__config-view-page__header">
-                            { config_field_bool!(reverse_proxy, translate.t("LABEL.RESOURCE_REWRITE_DISABLED"), resource_rewrite_disabled) }
-                            { config_field_bool!(reverse_proxy, translate.t("LABEL.DISABLE_REFERER_HEADER"), disable_referer_header) }
+                            { config_field_bool!(reverse_proxy, translate.t(LABEL_RESOURCE_REWRITE_DISABLED), resource_rewrite_disabled) }
+                            { config_field_bool!(reverse_proxy, translate.t(LABEL_DISABLE_REFERER_HEADER), disable_referer_header) }
                           </div>
                           <div class="tp__reverse-proxy-config-view__body tp__config-view-page__body">
                             { render_cache(reverse_proxy.cache.as_ref()) }
