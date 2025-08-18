@@ -65,17 +65,21 @@ impl EpgIdCache<'_> {
     /// assert!(cache.normalized.contains_key(&cache.normalize("Discovery Channel")));
     /// ```
     fn normalize_and_store(&mut self, name: &str, epg_id: Option<&String>) {
-        let normalized_name = self.normalize(name);
-        let phonetic = self.phonetic(&normalized_name);
-        self.normalized.insert(normalized_name.to_string(), None, /*epg_id.map(std::string::ToString::to_string) */);
-        self.phonetics.entry(phonetic.to_string()).or_default().insert(normalized_name);
+        self.insert_normalized(name);
 
         if let Some(chan_epg_id) = epg_id {
-            let normalized_name = self.normalize(chan_epg_id);
-            let phonetic = self.phonetic(&normalized_name);
-            self.normalized.insert(normalized_name.to_string(), None, /*epg_id.map(std::string::ToString::to_string) */);
-            self.phonetics.entry(phonetic.to_string()).or_default().insert(normalized_name);
+            self.insert_normalized(chan_epg_id);
         }
+    }
+    fn insert_normalized(&mut self, key: &str) {
+        let normalized = self.normalize(key);
+        let phonetic = self.phonetic(&normalized);
+
+        self.normalized.insert(normalized.to_string(), None);
+        self.phonetics
+            .entry(phonetic.to_string())
+            .or_default()
+            .insert(normalized);
     }
 
     /// Returns the normalized form of a channel name using the configured smart match settings.
