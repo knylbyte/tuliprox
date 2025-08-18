@@ -245,7 +245,8 @@
     "COPY_LINK_TULIPROX_VIRTUAL_ID": "Copy Virtual Id",
     "COPY_LINK_TULIPROX_WEBPLAYER_URL": "Copy Webplayer Url",
     "COPY_LINK_PROVIDER_URL": "Copy Provider Url",
-    "CONTENT_SECURITY_POLICY" : "Content Security Policy"
+    "CONTENT_SECURITY_POLICY" : "Content Security Policy",
+    "CUSTOM_ATTRIBUTES": "Custom Attributes"
   },
   "TABLE": {
     "EMPTY": "",

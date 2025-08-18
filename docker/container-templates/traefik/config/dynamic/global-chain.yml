@@ -1,0 +1,7 @@
+http:
+  middlewares:
+    global-chain:
+      chain:
+        middlewares:
+          - cs-bouncer-traefik-plugin
+          - default-security-headers

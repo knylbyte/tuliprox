@@ -4,7 +4,7 @@
 - Fixed loading users for WebUI from user DB
 - Fixed auto EPG for batch inputs
 - Fixed EPG URL prepare
-- ContentSecurityPolicy can be enabled, default off
+- Content Security Policies configurable via config, default OFF
 
 # 3.1.5 (2025-08-14)
 - Hot reload for config
