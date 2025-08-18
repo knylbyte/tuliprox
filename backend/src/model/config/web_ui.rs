@@ -5,7 +5,7 @@ use crate::model::{macros, WebAuthConfig};
 #[derive(Debug, Clone)]
 pub struct ContentSecurityPolicyConfig {
     pub enabled: bool,
-    pub custom_attributes: Vec<String>,
+    pub custom_attributes: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
