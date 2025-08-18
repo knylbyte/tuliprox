@@ -204,7 +204,7 @@ async fn index(
                     "frame-ancestors 'none'".to_string(),
                 ];
                 attrs.extend(csp.custom_attributes.iter().cloned());
-                for attr in attrs.iter_mut() {
+                for attr in &mut attrs {
                     *attr = attr.replace("{nonce_b64}", &nonce_b64);
                 }
                 builder = builder.header("Content-Security-Policy", attrs.join("; "));
