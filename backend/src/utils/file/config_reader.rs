@@ -160,6 +160,8 @@ pub fn prepare_sources_batch(sources: &mut SourcesConfigDto) -> Result<(), Tulip
                     return Err(err);
                 }
             }
+            // we need to prepare epg after alias, because epg `auto` depends on the first input url.
+            input.prepare_epg(true)?;
         }
     }
     Ok(())
