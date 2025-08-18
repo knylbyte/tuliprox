@@ -235,18 +235,18 @@ impl From<&ConfigInputDto> for ConfigInput {
             input_type: dto.input_type,
             headers: dto.headers.clone(),
             url: dto.url.clone(), //get_base_url_from_str(&dto.url).map_or_else(|| dto.url.to_string(), |base_url| base_url),
-            epg: dto.epg.as_ref().map(std::convert::Into::into),
+            epg: dto.epg.as_ref().map(EpgConfig::from),
             username: dto.username.clone(),
             password: dto.password.clone(),
             persist: dto.persist.clone(),
             enabled: dto.enabled,
-            options: dto.options.as_ref().map(std::convert::Into::into),
-            aliases: dto.aliases.as_ref().map(|list| list.iter().map(std::convert::Into::into).collect()),
+            options: dto.options.as_ref().map(ConfigInputOptions::from),
+            aliases: dto.aliases.as_ref().map(|list| list.iter().map(ConfigInputAlias::from).collect()),
             priority: dto.priority,
             max_connections: dto.max_connections,
             method: dto.method,
             t_batch_url: None,
-            staged: dto.staged.as_ref().map(std::convert::Into::into),
+            staged: dto.staged.as_ref().map(StagedInput::from),
         }
     }
 }
