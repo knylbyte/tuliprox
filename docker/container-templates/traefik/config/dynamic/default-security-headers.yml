@@ -23,14 +23,15 @@ http:
     # If you want to use the default csp header, you can use the
     # `default-csp-headers` middleware.
     default-csp-headers:
-      contentSecurityPolicy: >-
-        default-src 'self'
-        script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'
-        style-src 'self'
-        img-src 'self' data:
-        font-src 'self' data:
-        connect-src 'self' wss:
-        object-src 'none'
-        base-uri 'self'
-        frame-ancestors 'none'
-        form-action 'self'
+      headers:
+        contentSecurityPolicy: >-
+          default-src 'self'
+          script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'
+          style-src 'self'
+          img-src 'self' data:
+          font-src 'self' data:
+          connect-src 'self' wss:
+          object-src 'none'
+          base-uri 'self'
+          frame-ancestors 'none'
+          form-action 'self'
