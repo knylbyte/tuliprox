@@ -32,14 +32,22 @@ impl WebUiConfig {
 }
 
 macros::from_impl!(ContentSecurityPolicyConfig);
+
 impl From<&ContentSecurityPolicyConfigDto> for ContentSecurityPolicyConfig {
     fn from(dto: &ContentSecurityPolicyConfigDto) -> Self {
-        Self { enabled: dto.enabled, custom_attributes: dto.custom_attributes.clone() }
+        Self {
+            enabled: dto.enabled,
+            custom_attributes: dto.custom_attributes.clone(),
+        }
     }
 }
+
 impl From<&ContentSecurityPolicyConfig> for ContentSecurityPolicyConfigDto {
-    fn from(instance: &ContentSecurityPolicyConfig) -> Self {
-        Self { enabled: instance.enabled, custom_attributes: instance.custom_attributes.clone() }
+    fn from(e: &ContentSecurityPolicyConfig) -> Self {
+        Self {
+            enabled: e.enabled,
+            custom_attributes: e.custom_attributes.clone(),
+        }
     }
 }
 

@@ -76,7 +76,13 @@ pub fn WebUiConfigView() -> Html {
                                                 { config_field_child!(translate.t(LABEL_CONTENT_SECURITY_POLICY_CUSTOM_ATTRIBUTES), {
                                                     html! {
                                                         <div class="tp__config-view__tags">
-                                                            { for csp.custom_attributes.iter().map(|a| html! { <Chip label={a.clone()} /> }) }
+                                                            {
+                                                                if let Some(custom) = &csp.custom_attributes {
+                                                                    html! { for custom.iter().map(|a| html! { <Chip label={a.clone()} /> }) }
+                                                                } else {
+                                                                    html! {}
+                                                                }
+                                                            }
                                                         </div>
                                                     }
                                                 }) }

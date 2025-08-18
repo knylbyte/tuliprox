@@ -203,7 +203,11 @@ async fn index(
                     format!("script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'"),
                     "frame-ancestors 'none'".to_string(),
                 ];
-                attrs.extend(csp.custom_attributes.iter().cloned());
+
+                if let Some(custom) = &csp.custom_attributes {
+                    attrs.extend(custom.clone());
+                }
+
                 for attr in &mut attrs {
                     *attr = attr.replace("{nonce_b64}", &nonce_b64);
                 }

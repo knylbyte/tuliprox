@@ -26,8 +26,8 @@ const RESERVED_PATHS: &[&str] = &[
 pub struct ContentSecurityPolicyConfigDto {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub custom_attributes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_attributes: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -46,6 +46,34 @@ pub struct WebUiConfigDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub player_server: Option<String>,
 }
+
+impl ContentSecurityPolicyConfigDto {
+    pub fn validate(&self) -> Result<(), TuliproxError> {
+        if let Some(attrs) = self.custom_attributes.as_ref() {
+            for (i, attr) in attrs.iter().enumerate() {
+                // Prohibit CR/LF/NUL (header injection)
+                if attr.contains('\r') || attr.contains('\n') || attr.contains('\0') {
+                    return Err(TuliproxError::new(
+                        TuliproxErrorKind::Info,
+                        format!("custom-attributes[{i}] contains forbidden control characters"),
+                    ));
+                }
+                //Optional: prohibit additional CTLs (except HTAB)
+                if attr.chars().any(|c| {
+                    let u = c as u32;
+                    (u < 0x20 && c != '\t') || u == 0x7F
+                }) {
+                    return Err(TuliproxError::new(
+                        TuliproxErrorKind::Info,
+                        format!("custom-attributes[{i}] contains control characters"),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 
 impl WebUiConfigDto {
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
@@ -71,6 +99,9 @@ impl WebUiConfigDto {
                 }
                 self.path = Some(web_path);
             }
+        }
+        if let Some(csp) = &self.content_security_policy {
+            csp.validate()?;
         }
         Ok(())
     }
