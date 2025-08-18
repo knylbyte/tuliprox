@@ -120,6 +120,7 @@ jobs:
             ${{ runner.os }}-resources-
       
       - name: Install ffmpeg
+        if: steps.cache-resources.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
