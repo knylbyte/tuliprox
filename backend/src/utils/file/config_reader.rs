@@ -125,7 +125,7 @@ pub fn read_app_config_dto(paths: &ConfigPaths,
     })
 }
 
-pub fn prepare_sources_batch(sources: &mut SourcesConfigDto) -> Result<(), TuliproxError> {
+pub fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_computed: bool) -> Result<(), TuliproxError> {
 
     let mut current_index = 0;
 
@@ -161,7 +161,7 @@ pub fn prepare_sources_batch(sources: &mut SourcesConfigDto) -> Result<(), Tulip
                 }
             }
             // we need to prepare epg after alias, because epg `auto` depends on the first input url.
-            input.prepare_epg(true)?;
+            input.prepare_epg(include_computed)?;
         }
     }
     Ok(())
@@ -213,7 +213,7 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
 
     let config_dto = read_config_file(config_file, resolve_env)?;
     let mut sources_dto = read_sources_file(sources_file, resolve_env, include_computed, config_dto.get_hdhr_device_overview().as_ref())?;
-    prepare_sources_batch(&mut  sources_dto)?;
+    prepare_sources_batch(&mut  sources_dto, include_computed)?;
     let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
     let mut config: Config = Config::from(config_dto);
     config.prepare(config_path)?;
