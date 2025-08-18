@@ -23,7 +23,7 @@ const RESERVED_PATHS: &[&str] = &[
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-pub struct ContentSecurityPoliciesConfigDto {
+pub struct ContentSecurityPolicyConfigDto {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -37,12 +37,8 @@ pub struct WebUiConfigDto {
     pub enabled: bool,
     #[serde(default = "default_as_true")]
     pub user_ui_enabled: bool,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        rename = "content-security-policies"
-    )]
-    pub content_security_policies: Option<ContentSecurityPoliciesConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_security_policy: Option<ContentSecurityPolicyConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

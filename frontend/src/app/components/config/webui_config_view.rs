@@ -57,7 +57,7 @@ pub fn WebUiConfigView() -> Html {
                             { config_field_bool!(web_ui, translate.t("LABEL.USER_UI_ENABLED"), user_ui_enabled) }
                             { config_field_child!(translate.t("LABEL.CONTENT_SECURITY_POLICY"), {
                                 html! {
-                                    match web_ui.content_security_policies.as_ref() {
+                                    match web_ui.content_security_policy.as_ref() {
                                         Some(csp) => html! {
                                             <>
                                                 { config_field_bool!(csp, translate.t("LABEL.ENABLED"), enabled) }
