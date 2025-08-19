@@ -1,11 +1,15 @@
-use std::fmt;
-use std::str::FromStr;
-use crate::app::components::config::{ApiConfigView, HdHomerunConfigView, IpCheckConfigView, MainConfigView, MessagingConfigView, ProxyConfigView, ReverseProxyConfigView, SchedulesConfigView, VideoConfigView, WebUiConfigView};
-use yew::prelude::*;
-use yew_i18n::use_translation;
+use crate::app::components::config::{
+    ApiConfigView, DatabaseConfigView, HdHomerunConfigView, IpCheckConfigView, MainConfigView,
+    MessagingConfigView, ProxyConfigView, ReverseProxyConfigView, SchedulesConfigView,
+    VideoConfigView, WebUiConfigView,
+};
+use crate::app::components::{Card, TabItem, TabSet};
 use shared::error::TuliproxError;
 use shared::info_err;
-use crate::app::components::{Card, TabItem, TabSet};
+use std::fmt;
+use std::str::FromStr;
+use yew::prelude::*;
+use yew_i18n::use_translation;
 
 const MAIN_PAGE: &str = "main";
 const API_PAGE: &str = "api";
@@ -16,20 +20,21 @@ const REVERSE_PROXY_PAGE: &str = "reverse_proxy";
 const HDHOMERUN_PAGE: &str = "hdhomerun";
 const PROXY_PAGE: &str = "proxy";
 const IPCHECK_PAGE: &str = "ipcheck";
+const DATABASE_PAGE: &str = "database";
 const VIDEO_PAGE: &str = "video";
-
 
 enum ConfigPage {
     Main,
     Api,
     Schedules,
-    Video,
     Messaging,
     WebUi,
     ReverseProxy,
     HdHomerun,
     Proxy,
     IpCheck,
+    Database,
+    Video,
 }
 
 impl FromStr for ConfigPage {
@@ -40,14 +45,15 @@ impl FromStr for ConfigPage {
             MAIN_PAGE => Ok(ConfigPage::Main),
             API_PAGE => Ok(ConfigPage::Api),
             SCHEDULES_PAGE => Ok(ConfigPage::Schedules),
-            VIDEO_PAGE => Ok(ConfigPage::Video),
             MESSAGING_PAGE => Ok(ConfigPage::Messaging),
             WEBUI_PAGE => Ok(ConfigPage::WebUi),
             REVERSE_PROXY_PAGE => Ok(ConfigPage::ReverseProxy),
             HDHOMERUN_PAGE => Ok(ConfigPage::HdHomerun),
             PROXY_PAGE => Ok(ConfigPage::Proxy),
             IPCHECK_PAGE => Ok(ConfigPage::IpCheck),
-        _ => Err(info_err!(format!("Unknown config page: {s}"))),
+            DATABASE_PAGE => Ok(ConfigPage::Database),
+            VIDEO_PAGE => Ok(ConfigPage::Video),
+            _ => Err(info_err!(format!("Unknown config page: {s}"))),
         }
     }
 }
@@ -58,13 +64,14 @@ impl fmt::Display for ConfigPage {
             ConfigPage::Main => MAIN_PAGE,
             ConfigPage::Api => API_PAGE,
             ConfigPage::Schedules => SCHEDULES_PAGE,
-            ConfigPage::Video => VIDEO_PAGE,
             ConfigPage::Messaging => MESSAGING_PAGE,
             ConfigPage::WebUi => WEBUI_PAGE,
             ConfigPage::ReverseProxy => REVERSE_PROXY_PAGE,
             ConfigPage::HdHomerun => HDHOMERUN_PAGE,
             ConfigPage::Proxy => PROXY_PAGE,
             ConfigPage::IpCheck => IPCHECK_PAGE,
+            ConfigPage::Database => DATABASE_PAGE,
+            ConfigPage::Video => VIDEO_PAGE,
         };
         write!(f, "{s}")
     }
@@ -140,11 +147,17 @@ pub fn ConfigView() -> Html {
             children: html! { <IpCheckConfigView/> },
         },
         TabItem {
+            id: ConfigPage::Database.to_string(),
+            title: translate.t("LABEL.DATABASE"),
+            icon: "DatabaseConfig".to_string(),
+            children: html! { <DatabaseConfigView/> },
+        },
+        TabItem {
             id: ConfigPage::Video.to_string(),
             title: translate.t("LABEL.VIDEO"),
             icon: "VideoConfig".to_string(),
             children: html! { <VideoConfigView/> },
-        }
+        },
     ];
 
     html! {

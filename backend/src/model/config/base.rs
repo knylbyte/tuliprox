@@ -1,14 +1,17 @@
-use std::borrow::Cow;
-use std::path::{Path, PathBuf};
+use crate::model::{macros, ConfigApi, ReverseProxyConfig, ScheduleConfig};
+use crate::model::{DatabaseConfig, PostgresConfig};
+use crate::model::{
+    HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig,
+    WebUiConfig,
+};
+use crate::utils;
 use log::{error, info};
 use path_clean::PathClean;
-use shared::error::{TuliproxError};
+use shared::error::TuliproxError;
 use shared::model::{ConfigDto, HdHomeRunDeviceOverview};
-use crate::model::DatabaseConfig;
 use shared::utils::set_sanitize_sensitive_info;
-use crate::model::{macros, ConfigApi, ReverseProxyConfig, ScheduleConfig};
-use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
-use crate::{utils};
+use std::borrow::Cow;
+use std::path::{Path, PathBuf};
 
 const DEFAULT_BACKUP_DIR: &str = "backup";
 
@@ -18,13 +21,26 @@ fn create_directories(cfg: &Config, temp_path: &Path) {
         Some(cfg.working_dir.clone()),
         cfg.backup_dir.clone(),
         cfg.user_config_dir.clone(),
-        cfg.video.as_ref().and_then(|v| v.download.as_ref()).map(|d| d.directory.to_string()),
-        cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref().and_then(|c| if c.enabled { Some(c.dir.to_string()) } else { None }))
+        cfg.video
+            .as_ref()
+            .and_then(|v| v.download.as_ref())
+            .map(|d| d.directory.to_string()),
+        cfg.reverse_proxy.as_ref().and_then(|r| {
+            r.cache.as_ref().and_then(|c| {
+                if c.enabled {
+                    Some(c.dir.to_string())
+                } else {
+                    None
+                }
+            })
+        }),
     ];
 
-    let mut paths: Vec<PathBuf> = paths_strings.iter()
+    let mut paths: Vec<PathBuf> = paths_strings
+        .iter()
         .filter_map(|opt| opt.as_ref()) // Get rid of the `Option`
-        .map(PathBuf::from).collect();
+        .map(PathBuf::from)
+        .collect();
     paths.push(temp_path.to_path_buf());
 
     // Iterate over the paths, filter out `None` values, and process the `Some(path)` values.
@@ -65,6 +81,7 @@ pub struct Config {
     pub proxy: Option<ProxyConfig>,
     pub ipcheck: Option<IpCheckConfig>,
     pub database: Option<DatabaseConfig>,
+    pub postgresql: Option<PostgresConfig>,
 }
 
 impl Config {
@@ -85,7 +102,11 @@ impl Config {
         fn set_directory(path: &mut Option<String>, default_subdir: &str, working_dir: &str) {
             *path = Some(match path.as_ref() {
                 Some(existing) => existing.to_owned(),
-                None => PathBuf::from(working_dir).join(default_subdir).clean().to_string_lossy().to_string(),
+                None => PathBuf::from(working_dir)
+                    .join(default_subdir)
+                    .clean()
+                    .to_string_lossy()
+                    .to_string(),
             });
         }
 
@@ -94,7 +115,9 @@ impl Config {
     }
 
     pub fn get_backup_dir(&self) -> Cow<'_, str> {
-        self.backup_dir.as_ref().map_or_else(|| Cow::Borrowed(DEFAULT_BACKUP_DIR), |v| Cow::Borrowed(v))
+        self.backup_dir
+            .as_ref()
+            .map_or_else(|| Cow::Borrowed(DEFAULT_BACKUP_DIR), |v| Cow::Borrowed(v))
     }
 
     fn prepare_api_web_root(&mut self) {
@@ -111,11 +134,14 @@ impl Config {
     }
 
     pub fn get_hdhr_device_overview(&self) -> Option<HdHomeRunDeviceOverview> {
-        self.hdhomerun.as_ref().map(|hdhr|
-            HdHomeRunDeviceOverview {
-                enabled: hdhr.enabled,
-                devices: hdhr.devices.iter().map(|d| d.name.to_string()).collect::<Vec<String>>(),
-            })
+        self.hdhomerun.as_ref().map(|hdhr| HdHomeRunDeviceOverview {
+            enabled: hdhr.enabled,
+            devices: hdhr
+                .devices
+                .iter()
+                .map(|d| d.name.to_string())
+                .collect::<Vec<String>>(),
+        })
     }
 }
 
@@ -132,7 +158,10 @@ impl From<&ConfigDto> for Config {
             mapping_path: dto.mapping_path.clone(),
             custom_stream_response_path: dto.custom_stream_response_path.clone(),
             video: dto.video.as_ref().map(Into::into),
-            schedules: dto.schedules.as_ref().map(|s| s.iter().map(Into::into).collect()),
+            schedules: dto
+                .schedules
+                .as_ref()
+                .map(|s| s.iter().map(Into::into).collect()),
             log: dto.log.as_ref().map(Into::into),
             user_access_control: dto.user_access_control,
             connect_timeout_secs: dto.connect_timeout_secs,
@@ -146,6 +175,7 @@ impl From<&ConfigDto> for Config {
             proxy: dto.proxy.as_ref().map(Into::into),
             ipcheck: dto.ipcheck.as_ref().map(Into::into),
             database: dto.database.as_ref().map(Into::into),
+            postgresql: dto.postgresql.as_ref().map(Into::into),
         }
     }
 }

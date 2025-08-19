@@ -1,7 +1,6 @@
 use crate::model::Config;
 use crate::model::PlaylistXtreamCategory;
 use crate::model::{AppConfig, ProxyUserCredentials, TargetUser};
-use crate::model::{DatabaseConfig, DatabaseType};
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::xtream_get_playlist_categories;
@@ -210,12 +209,13 @@ fn add_target_user_to_user_tree(
 }
 
 pub fn merge_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
-    if let Some(DatabaseConfig {
-        kind: DatabaseType::Postgres,
-        url: Some(url),
-    }) = cfg.config.load().database.as_ref()
+    let cfg_guard = cfg.config.load();
+    if let Some(url) = cfg_guard
+        .database
+        .as_ref()
+        .and_then(|db| db.url(cfg_guard.postgresql.as_ref()))
     {
-        let mut client = pg_client(url)?;
+        let mut client = pg_client(&url)?;
         postgres_insert_users(&mut client, target_users)
     } else {
         let path = get_api_user_db_path(cfg);
@@ -254,12 +254,13 @@ pub fn backup_api_user_db_file(cfg: &AppConfig, path: &Path) {
 }
 
 pub fn store_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
-    if let Some(DatabaseConfig {
-        kind: DatabaseType::Postgres,
-        url: Some(url),
-    }) = cfg.config.load().database.as_ref()
+    let cfg_guard = cfg.config.load();
+    if let Some(url) = cfg_guard
+        .database
+        .as_ref()
+        .and_then(|db| db.url(cfg_guard.postgresql.as_ref()))
     {
-        let mut client = pg_client(url)?;
+        let mut client = pg_client(&url)?;
         client
             .batch_execute("TRUNCATE TABLE api_users")
             .map_err(|e| Error::other(e.to_string()))?;
@@ -302,12 +303,13 @@ pub fn load_api_user_deprecated(cfg: &AppConfig) -> Result<Vec<TargetUser>, Erro
 }
 
 pub fn load_api_user(cfg: &AppConfig) -> Result<Vec<TargetUser>, Error> {
-    if let Some(DatabaseConfig {
-        kind: DatabaseType::Postgres,
-        url: Some(url),
-    }) = cfg.config.load().database.as_ref()
+    let cfg_guard = cfg.config.load();
+    if let Some(url) = cfg_guard
+        .database
+        .as_ref()
+        .and_then(|db| db.url(cfg_guard.postgresql.as_ref()))
     {
-        let mut client = pg_client(url)?;
+        let mut client = pg_client(&url)?;
         let rows = client
             .query(
                 "SELECT target, username, password, token, proxy, server, epg_timeshift, created_at, exp_date, max_connections, status, ui_enabled, comment FROM api_users",

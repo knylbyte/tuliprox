@@ -1,15 +1,16 @@
-use std::borrow::Cow;
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, MaxConnections,
-                             ProxyTypeView, RevealContent, Table, TableDefinition, UserStatus,
-                             UserlistContext, UserlistPage};
+use crate::app::components::{
+    convert_bool_to_chip_style, AppIcon, Chip, HideContent, MaxConnections, ProxyTypeView,
+    RevealContent, Table, TableDefinition, UserStatus, UserlistContext, UserlistPage,
+};
 use crate::app::context::TargetUser;
 use crate::model::DialogResult;
 use crate::services::DialogService;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use shared::model::SortOrder;
 use shared::utils::{unix_ts_to_str, Substring};
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -38,19 +39,28 @@ const HEADERS: [&str; 15] = [
 fn get_cell_value(user: &TargetUser, col: usize) -> Cow<'_, str> {
     match col {
         1 => Cow::Owned(user.credentials.is_active().to_string()),
-        2 => Cow::Owned(user.credentials.status.as_ref().map_or_else(String::new, ToString::to_string)),
+        2 => Cow::Owned(
+            user.credentials
+                .status
+                .as_ref()
+                .map_or_else(String::new, ToString::to_string),
+        ),
         3 => Cow::Borrowed(user.target.as_str()),
         4 => Cow::Borrowed(user.credentials.username.as_str()),
         7 => Cow::Owned(user.credentials.proxy.to_string()),
-        8 => Cow::Owned(user.credentials.server.as_ref().map_or_else(String::new, Clone::clone)),
-        _ => Cow::Owned(String::new())
+        8 => Cow::Owned(
+            user.credentials
+                .server
+                .as_ref()
+                .map_or_else(String::new, Clone::clone),
+        ),
+        _ => Cow::Owned(String::new()),
     }
 }
 
 fn is_col_sortable(col: usize) -> bool {
     matches!(col, 1 | 2 | 3 | 4 | 7 | 8)
 }
-
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct UserTableProps {
@@ -152,19 +162,18 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                                      |comment| html! { <RevealContent preview={Some(html! {comment.substring(0, 50)})}>{comment}</RevealContent> }),
                     _ => html! {""},
                 }
-            })
+            },
+        )
     };
 
-    let is_sortable = Callback::<usize, bool>::from(move |col| {
-            is_col_sortable(col)
-    });
+    let is_sortable = Callback::<usize, bool>::from(is_col_sortable);
 
     let on_sort = {
         let users = props.users.clone();
         let user_list = user_list.clone();
         Callback::<Option<(usize, SortOrder)>, ()>::from(move |args| {
             if let Some((col, order)) = args {
-                if let Some(new_user_list)= users.as_ref() {
+                if let Some(new_user_list) = users.as_ref() {
                     let mut new_user_list = new_user_list.as_ref().clone();
                     new_user_list.sort_by(|a, b| {
                         let a_value = get_cell_value(a, col);
@@ -191,7 +200,11 @@ pub fn UserTable(props: &UserTableProps) -> Html {
         let num_cols = HEADERS.len();
         let user_list_clone = user_list.clone();
         use_memo(user_list_clone.clone(), move |targets| {
-            let items = if (*targets).as_ref().is_none_or(|l| l.is_empty()) {None} else {(**targets).clone()};
+            let items = if (*targets).as_ref().is_none_or(|l| l.is_empty()) {
+                None
+            } else {
+                (**targets).clone()
+            };
             TableDefinition::<TargetUser> {
                 items,
                 num_cols,
@@ -202,7 +215,6 @@ pub fn UserTable(props: &UserTableProps) -> Html {
             }
         })
     };
-
 
     let handle_menu_click = {
         let popup_is_open_state = popup_is_open.clone();
@@ -224,7 +236,9 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                         let confirm = confirm.clone();
                         let translator = translate.clone();
                         spawn_local(async move {
-                            let result = confirm.confirm(&translator.t("MESSAGES.CONFIRM_DELETE")).await;
+                            let result = confirm
+                                .confirm(&translator.t("MESSAGES.CONFIRM_DELETE"))
+                                .await;
                             if result == DialogResult::Ok {
                                 // TODO edit
                             }
@@ -254,7 +268,6 @@ pub fn UserTable(props: &UserTableProps) -> Html {
     }
 }
 
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum TableAction {
     Edit,
@@ -264,11 +277,15 @@ enum TableAction {
 
 impl Display for TableAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Edit => "edit",
-            Self::Refresh => "refresh",
-            Self::Delete => "delete",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Edit => "edit",
+                Self::Refresh => "refresh",
+                Self::Delete => "delete",
+            }
+        )
     }
 }
 

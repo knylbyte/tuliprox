@@ -1,20 +1,24 @@
-use shared::error::info_err;
-use shared::error::{TuliproxError};
-use crate::model::{AppConfig, ConfigTarget, TargetOutput};
-use shared::model::{PlaylistGroup, PlaylistItemType};
 use crate::model::Epg;
+use crate::model::{AppConfig, ConfigTarget, TargetOutput};
 use crate::repository::epg_repository::epg_write;
-use crate::repository::strm_repository::write_strm_playlist;
 use crate::repository::m3u_repository::m3u_write_playlist;
 use crate::repository::storage::{ensure_target_storage_path, get_target_id_mapping_file};
+use crate::repository::strm_repository::write_strm_playlist;
 use crate::repository::target_id_mapping::TargetIdMapping;
 use crate::repository::xtream_repository::xtream_write_playlist;
-use std::path::Path;
-use shared::utils::{is_dash_url, is_hls_url};
 use crate::utils;
+use shared::error::info_err;
+use shared::error::TuliproxError;
+use shared::model::{PlaylistGroup, PlaylistItemType};
+use shared::utils::{is_dash_url, is_hls_url};
+use std::path::Path;
 
-pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGroup], epg: Option<&Epg>,
-                              target: &ConfigTarget) -> Result<(), Vec<TuliproxError>> {
+pub async fn persist_playlist(
+    app_config: &AppConfig,
+    playlist: &mut [PlaylistGroup],
+    epg: Option<&Epg>,
+    target: &ConfigTarget,
+) -> Result<(), Vec<TuliproxError>> {
     let mut errors = vec![];
     let config = &app_config.config.load();
     let target_path = match ensure_target_storage_path(config, &target.name) {
@@ -44,15 +48,22 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
             }
             let uuid = header.get_uuid();
             let item_type = header.item_type;
-            header.virtual_id = target_id_mapping.get_and_update_virtual_id(uuid, provider_id, item_type, 0);
+            header.virtual_id =
+                target_id_mapping.get_and_update_virtual_id(uuid, provider_id, item_type, 0);
         }
     }
 
     for output in &target.output {
         let result = match output {
-            TargetOutput::Xtream(_xtream_output) => xtream_write_playlist(app_config, target, playlist).await,
-            TargetOutput::M3u(m3u_output) => m3u_write_playlist(app_config, target, m3u_output, &target_path, playlist).await,
-            TargetOutput::Strm(strm_output) => write_strm_playlist(app_config, target, strm_output, playlist).await,
+            TargetOutput::Xtream(_xtream_output) => {
+                xtream_write_playlist(app_config, target, playlist).await
+            }
+            TargetOutput::M3u(m3u_output) => {
+                m3u_write_playlist(app_config, target, m3u_output, &target_path, playlist).await
+            }
+            TargetOutput::Strm(strm_output) => {
+                write_strm_playlist(app_config, target, strm_output, playlist).await
+            }
             TargetOutput::HdHomeRun(_hdhomerun_output) => Ok(()),
         };
 
@@ -70,12 +81,24 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
     }
     drop(file_lock);
 
-    if errors.is_empty() { Ok(()) } else { Err(errors) }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
-pub async fn get_target_id_mapping(cfg: &AppConfig, target_path: &Path) -> (TargetIdMapping, utils::FileWriteGuard) {
+pub async fn get_target_id_mapping(
+    cfg: &AppConfig,
+    target_path: &Path,
+) -> (TargetIdMapping, utils::FileWriteGuard) {
     let target_id_mapping_file = get_target_id_mapping_file(target_path);
     let file_lock = cfg.file_locks.write_lock(&target_id_mapping_file).await;
-    let db_cfg = cfg.config.load().database.clone();
-    (TargetIdMapping::new(&target_id_mapping_file, db_cfg.as_ref()), file_lock)
+    let cfg_guard = cfg.config.load();
+    let db_cfg = cfg_guard.database.clone();
+    let pg_cfg = cfg_guard.postgresql.clone();
+    (
+        TargetIdMapping::new(&target_id_mapping_file, db_cfg.as_ref(), pg_cfg.as_ref()),
+        file_lock,
+    )
 }
