@@ -455,6 +455,8 @@ fn flatten_groups(playlistgroups: Vec<PlaylistGroup>) -> Vec<PlaylistGroup> {
             std::collections::hash_map::Entry::Occupied(o) => {
                 if let Some(pl_group) = sort_order.get_mut(*o.get()) {
                     pl_group.channels.extend(group.channels);
+                    // Preserve Trakt group status: if either group is a Trakt group, the merged group should be too
+                    pl_group.is_trakt_group = pl_group.is_trakt_group || group.is_trakt_group;
                 }
             }
         }
