@@ -266,7 +266,7 @@ where
         if let Some((cluster, group_title)) = channel.map(|pli|
             (pli.header.xtream_cluster, &pli.header.group)) {
             grp_id += 1;
-            Some(PlaylistGroup { id: grp_id, xtream_cluster: cluster, title: group_title.to_string(), channels })
+            Some(PlaylistGroup { id: grp_id, xtream_cluster: cluster, title: group_title.to_string(), channels, is_trakt_group: false })
         } else {
             None
         }

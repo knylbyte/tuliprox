@@ -743,6 +743,9 @@ pub struct PlaylistGroup {
     pub channels: Vec<PlaylistItem>,
     #[serde(skip)]
     pub xtream_cluster: XtreamCluster,
+    #[serde(skip)]
+    #[serde(default)]
+    pub is_trakt_group: bool,
 }
 
 impl PlaylistGroup {

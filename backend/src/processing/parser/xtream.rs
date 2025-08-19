@@ -180,6 +180,7 @@ pub fn parse_xtream(input: &ConfigInput,
                                 xtream_cluster,
                                 title: category.category_name.to_string(),
                                 channels: category.channels.clone(),
+                                is_trakt_group: false,
                             }
                         }).collect()))
                 }

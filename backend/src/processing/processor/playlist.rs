@@ -55,6 +55,7 @@ fn filter_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Opt
                 title: pg.title.clone(),
                 channels,
                 xtream_cluster: pg.xtream_cluster,
+                is_trakt_group: pg.is_trakt_group,
             });
         }
     }
@@ -175,6 +176,7 @@ fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option
                         title: title.to_string(),
                         channels: vec![channel.clone()],
                         xtream_cluster: *cluster,
+                        is_trakt_group: false,
                     });
                 }
             }

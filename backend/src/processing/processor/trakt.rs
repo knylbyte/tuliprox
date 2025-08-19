@@ -206,6 +206,7 @@ fn create_category_from_matches<'a>(
         title: String::from(group_title),
         channels: matched_items,
         xtream_cluster: cluster,
+        is_trakt_group: true,
     })
 }
 

@@ -197,6 +197,7 @@ async fn process_series_info(
                 title: plg.title.clone(),
                 channels: group_series,
                 xtream_cluster: XtreamCluster::Series,
+                is_trakt_group: false,
             });
         }
     }
