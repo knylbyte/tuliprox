@@ -94,20 +94,7 @@ fn playlist_comparator(
     }
 }
 
-fn trakt_priority_comparator(a: &PlaylistGroup, b: &PlaylistGroup) -> Option<Ordering> {
-    match (a.is_trakt_group, b.is_trakt_group) {
-        (true, false) => Some(Ordering::Less),    // Trakt categories come first
-        (false, true) => Some(Ordering::Greater), // Non-Trakt categories come after
-        _ => None, // Both are Trakt or both are not Trakt, use other sorting criteria
-    }
-}
-
 fn playlistgroup_comparator(a: &PlaylistGroup, b: &PlaylistGroup, group_sort: &ConfigSortGroup, match_as_ascii: bool) -> Ordering {
-    // Prioritize Trakt categories first
-    if let Some(ordering) = trakt_priority_comparator(a, b) {
-        return ordering;
-    }
-
     let value_a = if match_as_ascii { deunicode(&a.title) } else { a.title.to_string() };
     let value_b = if match_as_ascii { deunicode(&b.title) } else { b.title.to_string() };
 
@@ -133,11 +120,6 @@ pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new
         let match_as_ascii = sort.match_as_ascii;
         if let Some(group_sort) = &sort.groups {
             new_playlist.sort_by(|a, b| playlistgroup_comparator(a, b, group_sort, match_as_ascii));
-        } else {
-            // Even without specific group sorting, prioritize Trakt categories then alphabetical
-            new_playlist.sort_by(|a, b| {
-                trakt_priority_comparator(a, b).unwrap_or_else(|| a.title.cmp(&b.title))
-            });
         }
         if let Some(channel_sorts) = &sort.channels {
             for channel_sort in channel_sorts {
@@ -150,11 +132,6 @@ pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new
                 }
             }
         }
-    } else {
-        // No sort configuration at all - still prioritize Trakt categories then alphabetical
-        new_playlist.sort_by(|a, b| {
-            trakt_priority_comparator(a, b).unwrap_or_else(|| a.title.cmp(&b.title))
-        });
     }
 }
 
