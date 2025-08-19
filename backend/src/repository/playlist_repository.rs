@@ -76,5 +76,6 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
 pub async fn get_target_id_mapping(cfg: &AppConfig, target_path: &Path) -> (TargetIdMapping, utils::FileWriteGuard) {
     let target_id_mapping_file = get_target_id_mapping_file(target_path);
     let file_lock = cfg.file_locks.write_lock(&target_id_mapping_file).await;
-    (TargetIdMapping::new(&target_id_mapping_file), file_lock)
+    let db_cfg = cfg.config.load().database.clone();
+    (TargetIdMapping::new(&target_id_mapping_file, db_cfg.as_ref()), file_lock)
 }
