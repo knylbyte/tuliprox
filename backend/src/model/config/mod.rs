@@ -26,6 +26,7 @@ mod app;
 mod api;
 mod api_user;
 mod trakt_api;
+mod database;
 pub mod macros;
 
 pub use api::*;
@@ -55,3 +56,4 @@ pub use trakt_api::*;
 pub use video_download::*;
 pub use web_auth::*;
 pub use web_ui::*;
+pub use database::*;
