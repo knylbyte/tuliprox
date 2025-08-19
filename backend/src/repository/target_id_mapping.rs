@@ -8,7 +8,7 @@ use log::error;
 use serde::{Deserialize, Serialize};
 use shared::model::{PlaylistItemType, UUIDType};
 
-use crate::model::{DatabaseConfig, DatabaseType};
+use crate::model::{DatabaseConfig, PostgresConfig};
 use crate::repository::bplustree::BPlusTree;
 use postgres::{Client, NoTls};
 
@@ -26,9 +26,22 @@ pub struct VirtualIdRecord {
 }
 
 impl VirtualIdRecord {
-    fn new(provider_id: u32, virtual_id: u32, item_type: PlaylistItemType, parent_virtual_id: u32, uuid: UUIDType) -> Self {
+    fn new(
+        provider_id: u32,
+        virtual_id: u32,
+        item_type: PlaylistItemType,
+        parent_virtual_id: u32,
+        uuid: UUIDType,
+    ) -> Self {
         let last_updated = Local::now().timestamp();
-        Self { virtual_id, provider_id, uuid, item_type, parent_virtual_id, last_updated }
+        Self {
+            virtual_id,
+            provider_id,
+            uuid,
+            item_type,
+            parent_virtual_id,
+            last_updated,
+        }
     }
 
     pub fn is_expired(&self) -> bool {
@@ -36,12 +49,24 @@ impl VirtualIdRecord {
     }
 
     pub fn copy_update_timestamp(&self) -> Self {
-        Self::new(self.provider_id, self.virtual_id, self.item_type, self.parent_virtual_id, self.uuid)
+        Self::new(
+            self.provider_id,
+            self.virtual_id,
+            self.item_type,
+            self.parent_virtual_id,
+            self.uuid,
+        )
     }
 }
 
 trait TargetIdMappingStore {
-    fn get_and_update_virtual_id(&mut self, uuid: &UUIDType, provider_id: u32, item_type: PlaylistItemType, parent_virtual_id: u32) -> u32;
+    fn get_and_update_virtual_id(
+        &mut self,
+        uuid: &UUIDType,
+        provider_id: u32,
+        item_type: PlaylistItemType,
+        parent_virtual_id: u32,
+    ) -> u32;
     fn persist(&mut self) -> Result<(), Error>;
 }
 
@@ -56,7 +81,8 @@ struct BTreeTargetIdMappingStore {
 impl BTreeTargetIdMappingStore {
     fn new(path: &Path) -> Self {
         let tree_virtual_id: BPlusTree<u32, VirtualIdRecord> =
-            BPlusTree::<u32, VirtualIdRecord>::load(path).unwrap_or_else(|_| BPlusTree::<u32, VirtualIdRecord>::new());
+            BPlusTree::<u32, VirtualIdRecord>::load(path)
+                .unwrap_or_else(|_| BPlusTree::<u32, VirtualIdRecord>::new());
         let mut tree_uuid = BTreeMap::new();
         let mut virtual_id_counter: u32 = 0;
         tree_virtual_id.traverse(|keys, values| {
@@ -78,22 +104,42 @@ impl BTreeTargetIdMappingStore {
 }
 
 impl TargetIdMappingStore for BTreeTargetIdMappingStore {
-    fn get_and_update_virtual_id(&mut self, uuid: &UUIDType, provider_id: u32, item_type: PlaylistItemType, parent_virtual_id: u32) -> u32 {
+    fn get_and_update_virtual_id(
+        &mut self,
+        uuid: &UUIDType,
+        provider_id: u32,
+        item_type: PlaylistItemType,
+        parent_virtual_id: u32,
+    ) -> u32 {
         match self.by_uuid.get(uuid) {
             None => {
                 self.dirty = true;
                 self.virtual_id_counter += 1;
                 let virtual_id = self.virtual_id_counter;
-                let record = VirtualIdRecord::new(provider_id, virtual_id, item_type, parent_virtual_id, *uuid);
+                let record = VirtualIdRecord::new(
+                    provider_id,
+                    virtual_id,
+                    item_type,
+                    parent_virtual_id,
+                    *uuid,
+                );
                 self.by_virtual_id.insert(virtual_id, record);
                 self.by_uuid.insert(*uuid, virtual_id);
                 self.virtual_id_counter
             }
             Some(virtual_id) => {
                 if let Some(record) = self.by_virtual_id.query(virtual_id) {
-                    if record.provider_id == provider_id &&
-                        (record.item_type != item_type || record.parent_virtual_id != parent_virtual_id) {
-                        let new_record = VirtualIdRecord::new(provider_id, *virtual_id, item_type, parent_virtual_id, *uuid);
+                    if record.provider_id == provider_id
+                        && (record.item_type != item_type
+                            || record.parent_virtual_id != parent_virtual_id)
+                    {
+                        let new_record = VirtualIdRecord::new(
+                            provider_id,
+                            *virtual_id,
+                            item_type,
+                            parent_virtual_id,
+                            *uuid,
+                        );
                         self.by_virtual_id.insert(*virtual_id, new_record);
                         self.dirty = true;
                     }
@@ -134,7 +180,13 @@ impl PostgresTargetIdMappingStore {
 }
 
 impl TargetIdMappingStore for PostgresTargetIdMappingStore {
-    fn get_and_update_virtual_id(&mut self, uuid: &UUIDType, provider_id: u32, item_type: PlaylistItemType, parent_virtual_id: u32) -> u32 {
+    fn get_and_update_virtual_id(
+        &mut self,
+        uuid: &UUIDType,
+        provider_id: u32,
+        item_type: PlaylistItemType,
+        parent_virtual_id: u32,
+    ) -> u32 {
         let uuid_bytes: &[u8] = uuid;
         let item_type_i32 = item_type as i32;
         let now = Local::now().timestamp();
@@ -178,22 +230,30 @@ pub struct TargetIdMapping {
 }
 
 impl TargetIdMapping {
-    pub fn new(path: &Path, db: Option<&DatabaseConfig>) -> Self {
-        match db {
-            Some(DatabaseConfig { kind: DatabaseType::Postgres, url: Some(url) }) => {
-                let store = PostgresTargetIdMappingStore::new(url)
-                    .expect("Failed to connect to PostgreSQL");
-                Self { store: Box::new(store) }
+    pub fn new(path: &Path, db: Option<&DatabaseConfig>, pg: Option<&PostgresConfig>) -> Self {
+        if let Some(url) = db.and_then(|d| d.url(pg)) {
+            let store =
+                PostgresTargetIdMappingStore::new(&url).expect("Failed to connect to PostgreSQL");
+            Self {
+                store: Box::new(store),
             }
-            _ => {
-                let store = BTreeTargetIdMappingStore::new(path);
-                Self { store: Box::new(store) }
+        } else {
+            let store = BTreeTargetIdMappingStore::new(path);
+            Self {
+                store: Box::new(store),
             }
         }
     }
 
-    pub fn get_and_update_virtual_id(&mut self, uuid: &UUIDType, provider_id: u32, item_type: PlaylistItemType, parent_virtual_id: u32) -> u32 {
-        self.store.get_and_update_virtual_id(uuid, provider_id, item_type, parent_virtual_id)
+    pub fn get_and_update_virtual_id(
+        &mut self,
+        uuid: &UUIDType,
+        provider_id: u32,
+        item_type: PlaylistItemType,
+        parent_virtual_id: u32,
+    ) -> u32 {
+        self.store
+            .get_and_update_virtual_id(uuid, provider_id, item_type, parent_virtual_id)
     }
 
     pub fn persist(&mut self) -> Result<(), Error> {
@@ -208,4 +268,3 @@ impl Drop for TargetIdMapping {
         }
     }
 }
-

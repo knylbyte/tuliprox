@@ -10,6 +10,19 @@ custom_stream_response_path: ${env:TULIPROX_HOME}/resources
 connect_timeout_secs: 10
 user_access_control: false
 
+database:
+  enabled: false
+  kind: "btree"
+
+postgresql:
+  host: "localhost"
+  port: 5432
+  user: "myuser"
+  password: "mypassword"
+  database: "tuliprox"
+  sslmode: "disable"
+  max_connections: 10
+
 schedules:
   - schedule: 0 0  4/23  *  *  *
     targets: []

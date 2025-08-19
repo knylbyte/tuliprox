@@ -1,5 +1,9 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::{ConfigApiDto, DatabaseConfigDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto, DEFAULT_VIDEO_EXTENSIONS};
+use crate::model::{
+    ConfigApiDto, DatabaseConfigDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto,
+    MessagingConfigDto, PostgresConfigDto, ProxyConfigDto, ReverseProxyConfigDto,
+    ScheduleConfigDto, VideoConfigDto, WebUiConfigDto, DEFAULT_VIDEO_EXTENSIONS,
+};
 use crate::utils::default_connect_timeout_secs;
 
 pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
@@ -50,6 +54,8 @@ pub struct ConfigDto {
     pub ipcheck: Option<IpCheckConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub database: Option<DatabaseConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postgresql: Option<PostgresConfigDto>,
 }
 
 pub struct HdHomeRunDeviceOverview {
@@ -61,7 +67,10 @@ impl ConfigDto {
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
         if let Some(mins) = self.sleep_timer_mins {
             if mins == 0 {
-                return Err(TuliproxError::new(TuliproxErrorKind::Info, "`sleep_timer_mins` must be > 0 when specified".to_string()));
+                return Err(TuliproxError::new(
+                    TuliproxErrorKind::Info,
+                    "`sleep_timer_mins` must be > 0 when specified".to_string(),
+                ));
             }
         }
 
@@ -103,17 +112,18 @@ impl ConfigDto {
         match &mut self.video {
             None => {
                 self.video = Some(VideoConfigDto {
-                    extensions: DEFAULT_VIDEO_EXTENSIONS.iter().map(ToString::to_string).collect(),
+                    extensions: DEFAULT_VIDEO_EXTENSIONS
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
                     download: None,
                     web_search: None,
                 });
             }
-            Some(video) => {
-                match video.prepare() {
-                    Ok(()) => {}
-                    Err(err) => return Err(err)
-                }
-            }
+            Some(video) => match video.prepare() {
+                Ok(()) => {}
+                Err(err) => return Err(err),
+            },
         }
         Ok(())
     }
@@ -139,10 +149,13 @@ impl ConfigDto {
     }
 
     pub fn get_hdhr_device_overview(&self) -> Option<HdHomeRunDeviceOverview> {
-        self.hdhomerun.as_ref().map(|hdhr|
-            HdHomeRunDeviceOverview {
-                enabled: hdhr.enabled,
-                devices: hdhr.devices.iter().map(|d| d.name.to_string()).collect::<Vec<String>>(),
-            })
+        self.hdhomerun.as_ref().map(|hdhr| HdHomeRunDeviceOverview {
+            enabled: hdhr.enabled,
+            devices: hdhr
+                .devices
+                .iter()
+                .map(|d| d.name.to_string())
+                .collect::<Vec<String>>(),
+        })
     }
 }
