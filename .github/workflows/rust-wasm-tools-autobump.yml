@@ -1,4 +1,4 @@
-name: Auto-bump trunk & wasm-bindgen-cli
+name: Rust Bump trunk & wasm-bindgen-cli
 
 on:
   workflow_dispatch:

@@ -1,4 +1,4 @@
-name: Build rust-wasm-tools
+name: Rust Build rust-wasm-tools
 
 on:
   workflow_dispatch:
