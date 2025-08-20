@@ -8,8 +8,8 @@
 
 FROM rust:bookworm
 
-ARG TRUNK_VER=0.21.13
-ARG BINDGEN_VER=0.2.99
+ARG TRUNK_VER=0.21.14
+ARG BINDGEN_VER=0.2.100
 
 RUN rustup target add wasm32-unknown-unknown \
  && cargo install --locked trunk${TRUNK_VER:+@${TRUNK_VER}} \
