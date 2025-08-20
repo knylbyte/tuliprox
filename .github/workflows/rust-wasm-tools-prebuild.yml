@@ -6,6 +6,10 @@ on:
     paths:
       - docker/build-tools/rust-wasm-tools.Dockerfile
       - .github/workflows/rust-wasm-tools-prebuild.yml
+  pull_request:
+    paths:
+      - docker/build-tools/rust-wasm-tools.Dockerfile
+      - .github/workflows/rust-wasm-tools-prebuild.yml
 
 permissions:
   contents: read
