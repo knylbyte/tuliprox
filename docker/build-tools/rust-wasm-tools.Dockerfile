@@ -11,9 +11,13 @@ FROM rust:bookworm
 ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.100
 
-RUN rustup target add wasm32-unknown-unknown \
- && cargo install --locked trunk${TRUNK_VER:+@${TRUNK_VER}} \
- && cargo install --locked wasm-bindgen-cli${BINDGEN_VER:+@${BINDGEN_VER}}
+ENV DEBIAN_FRONTEND=noninteractive
 
-# (Optional) Node/Yarn, if your front end needs it
-# RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config libssl-dev ca-certificates curl libclang-dev binaryen \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add wasm32-unknown-unknown
+
+RUN cargo install --locked trunk ${TRUNK_VER:+--version ${TRUNK_VER}} \
+ && cargo install --locked wasm-bindgen-cli ${BINDGEN_VER:+--version ${BINDGEN_VER}}
