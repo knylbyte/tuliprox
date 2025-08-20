@@ -1,0 +1,86 @@
+name: Auto-bump trunk & wasm-bindgen-cli
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */4 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-bump:
+    runs-on: ubuntu-latest
+    env:
+      FILE: docker/build-tools/rust-wasm-tools.Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Get current versions from Dockerfile
+        id: current
+        shell: bash
+        run: |
+          set -euo pipefail
+          trunk_current="$(grep -Eo 'ARG TRUNK_VER=([0-9]+\.[0-9]+\.[0-9]+)' "$FILE" | cut -d= -f2)"
+          bindgen_current="$(grep -Eo 'ARG BINDGEN_VER=([0-9]+\.[0-9]+\.[0-9]+)' "$FILE" | cut -d= -f2)"
+          echo "trunk_current=$trunk_current" >> "$GITHUB_OUTPUT"
+          echo "bindgen_current=$bindgen_current" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch latest versions from crates.io
+        id: fetch-version
+        shell: bash
+        run: |
+          set -euo pipefail
+          trunk_latest="$(curl -fsSL https://crates.io/api/v1/crates/trunk | jq -r '.crate.max_stable_version')"
+          bindgen_latest="$(curl -fsSL https://crates.io/api/v1/crates/wasm-bindgen-cli | jq -r '.crate.max_stable_version')"
+          echo "version-trunk=$trunk_latest" >> "$GITHUB_OUTPUT"
+          echo "version-bindgen=$bindgen_latest" >> "$GITHUB_OUTPUT"
+
+      - name: Show versions
+        run: |
+          echo "Current -> trunk=${{ steps.current.outputs.trunk_current }}, wasm-bindgen-cli=${{ steps.current.outputs.bindgen_current }}"
+          echo "Latest  -> trunk=${{ steps.fetch-version.outputs.version-trunk }}, wasm-bindgen-cli=${{ steps.fetch-version.outputs.version-bindgen }}"
+
+      - name: Update Dockerfile if newer versions found
+        id: update
+        shell: bash
+        run: |
+          set -euo pipefail
+          updated=0
+
+          if [ "${{ steps.fetch-version.outputs.version-trunk }}" != "${{ steps.current.outputs.trunk_current }}" ]; then
+            sed -i -E "s/^(ARG TRUNK_VER=).*/\1${{ steps.fetch-version.outputs.version-trunk }}/" "$FILE"
+            updated=1
+          fi
+
+          if [ "${{ steps.fetch-version.outputs.version-bindgen }}" != "${{ steps.current.outputs.bindgen_current }}" ]; then
+            sed -i -E "s/^(ARG BINDGEN_VER=).*/\1${{ steps.fetch-version.outputs.version-bindgen }}/" "$FILE"
+            updated=1
+          fi
+
+          echo "updated=$updated" >> "$GITHUB_OUTPUT"
+
+          if [ "$updated" -eq 0 ]; then
+            echo "Nothing to do. Running the latest version trunk=${{ steps.fetch-version.outputs.version-trunk }}, bindgen=${{ steps.fetch-version.outputs.version-bindgen }}"
+          fi
+
+      - name: Commit & push
+        if: steps.update.outputs.updated == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="${{ github.event.repository.default_branch }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$FILE"
+          git commit -m "chore(build-tools): bump trunk to ${{ steps.fetch-version.outputs.version-trunk }} and wasm-bindgen-cli to ${{ steps.fetch-version.outputs.version-bindgen }}"
+          git push origin "HEAD:${branch}"
