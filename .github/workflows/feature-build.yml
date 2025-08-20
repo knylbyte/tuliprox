@@ -1,7 +1,12 @@
-name: Feature Build
+name: Feature/Bugfix/Hotfix Build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'feature/*'
+      - 'bugfix/*'
+      - 'hotfix/*'
 
 jobs:
   build:
