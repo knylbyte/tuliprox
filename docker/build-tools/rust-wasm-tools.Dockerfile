@@ -13,9 +13,9 @@ ARG BINDGEN_VER=0.2.100
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config libssl-dev ca-certificates curl libclang-dev binaryen \
- && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates curl libclang-dev binaryen \
+  && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add wasm32-unknown-unknown
 
