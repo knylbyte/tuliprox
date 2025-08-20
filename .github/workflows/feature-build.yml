@@ -2,11 +2,6 @@ name: Feature Build
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Branch to build'
-        default: 'feature/example'
-        required: true
 
 jobs:
   build:
@@ -14,15 +9,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch }}
 
-      - name: Extract feature name
-        id: extract
-        run: |
-          branch="${{ inputs.branch }}"
-          feature="${branch#feature/}"
-          echo "feature=$feature" >> "$GITHUB_OUTPUT"
+      - name: Extract branch name
+        id: extract_branch
+        shell: bash
+        run: echo "feature=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -39,5 +30,5 @@ jobs:
             --platform linux/amd64 \
             -f docker/Dockerfile \
             --build-arg RUST_TARGET=x86_64-unknown-linux-musl \
-            -t ghcr.io/{{ github.actor }}/tuliprox:${{ steps.extract.outputs.feature }} \
+            -t ghcr.io/{{ github.actor }}/tuliprox:${{ steps.extract_branch.outputs.feature }} \
             --push .
