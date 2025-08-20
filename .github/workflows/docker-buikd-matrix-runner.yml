@@ -25,17 +25,14 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-24.04
             rust_target: x86_64-unknown-linux-musl
-            resource_stage: resource-build-lsio
             tag_suffix: linux-amd64
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
             rust_target: aarch64-unknown-linux-musl
-            resource_stage: resource-build-lsio
             tag_suffix: linux-arm64
           - platform: linux/arm/v7
             runner: ubuntu-24.04-arm
             rust_target: armv7-unknown-linux-musleabihf
-            resource_stage: resource-build-alpine
             tag_suffix: linux-armv7
 
     runs-on: ${{ matrix.runner || ' ubuntu-24.04' }}
