@@ -40,7 +40,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: rust-wasm-tools.Dockerfile
+          file: docker/build-tools/rust-wasm-tools.Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ env.IMAGE_NAME }}:${{ matrix.tag }}
