@@ -9,9 +9,9 @@ pub fn UserlistList() -> Html {
     let translate = use_translation();
     let userlist_ctx = use_context::<UserlistContext>().expect("Userlist context not found");
     let search_fields = use_memo((), |_| Rc::new(vec![
-        DropDownOption::new("username", "TABLE.NAME", true),
-        DropDownOption::new("playlist", "TABLE.PLAYLIST", false),
-        DropDownOption::new("server", "TABLE.SERVER", false),
+        DropDownOption::new("username", "LABEL.NAME", true),
+        DropDownOption::new("playlist", "LABEL.PLAYLIST", false),
+        DropDownOption::new("server", "LABEL.SERVER", false),
     ]));
 
     let handle_create = {

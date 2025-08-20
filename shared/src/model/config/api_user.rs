@@ -175,7 +175,7 @@ impl FromStr for ProxyUserStatus {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyUserCredentialsDto {
     pub username: String,

@@ -1,6 +1,7 @@
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::app::components::{UserlistContext, UserlistPage, TextButton};
+use crate::app::components::{UserlistContext, UserlistPage, TextButton, Card};
+use crate::app::components::userlist::proxy_user_credentials_form::ProxyUserCredentialsForm;
 
 #[function_component]
 pub fn UserEdit() -> Html {
@@ -24,6 +25,9 @@ pub fn UserEdit() -> Html {
                onclick={handle_back}></TextButton>
         </div>
         <div class="tp__userlist-edit__body tp__list-create__body">
+            <Card>
+               <ProxyUserCredentialsForm user={(*userlist_ctx.selected_user).clone()}/>
+            </Card>
         </div>
       </div>
     }

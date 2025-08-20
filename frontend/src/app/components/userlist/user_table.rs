@@ -18,21 +18,21 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 
 const HEADERS: [&str; 15] = [
-    "TABLE.EMPTY",
-    "TABLE.ENABLED",
-    "TABLE.STATUS",
-    "TABLE.PLAYLIST",
-    "TABLE.USERNAME",
-    "TABLE.PASSWORD",
-    "TABLE.TOKEN",
-    "TABLE.PROXY",
-    "TABLE.SERVER",
-    "TABLE.MAX_CONNECTIONS",
-    "TABLE.UI_ENABLED",
-    "TABLE.EPG_TIMESHIFT",
-    "TABLE.CREATED_AT",
-    "TABLE.EXP_DATE",
-    "TABLE.COMMENT",
+    "LABEL.EMPTY",
+    "LABEL.ENABLED",
+    "LABEL.STATUS",
+    "LABEL.PLAYLIST",
+    "LABEL.USERNAME",
+    "LABEL.PASSWORD",
+    "LABEL.TOKEN",
+    "LABEL.PROXY",
+    "LABEL.SERVER",
+    "LABEL.MAX_CONNECTIONS",
+    "LABEL.UI_ENABLED",
+    "LABEL.EPG_TIMESHIFT",
+    "LABEL.CREATED_AT",
+    "LABEL.EXP_DATE",
+    "LABEL.COMMENT",
 ];
 
 fn get_cell_value(user: &TargetUser, col: usize) -> Cow<'_, str> {

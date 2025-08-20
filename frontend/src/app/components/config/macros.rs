@@ -105,6 +105,78 @@ macro_rules! config_field_empty {
     };
 }
 
-// pub use config_field;
-// pub use config_field_bool;
-// pub use config_field_optional;
+#[macro_export]
+macro_rules! edit_field_text {
+    ($instance:expr, $label:expr, $field:ident) => {
+        $crate::edit_field_text!(@inner $instance, $label, $field, false)
+    };
+    ($instance:expr, $label:expr, $field:ident, $hidden:expr) => {
+        $crate::edit_field_text!(@inner $instance, $label, $field, $hidden)
+    };
+    (@inner $instance:expr, $label:expr, $field:ident, $hidden:expr) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__config-field tp__config-field__text">
+                <$crate::app::components::input::Input
+                    label={$label}
+                    hidden={$hidden}
+                    name={stringify!($field)}
+                    autocomplete={true}
+                    value={instance.borrow().$field.clone()}
+                    ontext={Callback::from(move |value: String| {
+                        instance.borrow_mut().$field = value;
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! edit_field_text_option {
+    ($instance:expr, $label:expr, $field:ident) => {
+        $crate::edit_field_text_option!(@inner $instance, $label, $field, false)
+    };
+    ($instance:expr, $label:expr, $field:ident, $hidden:expr) => {
+        $crate::edit_field_text_option!(@inner $instance, $label, $field, $hidden)
+    };
+    (@inner $instance:expr, $label:expr, $field:ident, $hidden:expr) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__config-field tp__config-field__text">
+                <$crate::app::components::input::Input
+                    label={$label}
+                    hidden={$hidden}
+                    name={stringify!($field)}
+                    autocomplete={true}
+                    value={instance.borrow().$field.as_ref().map_or_else(String::new, |v|v.to_string())}
+                    ontext={Callback::from(move |value: String| {
+                        instance.borrow_mut().$field = if value.is_empty() {
+                            None
+                        } else {
+                            Some(value)
+                        };
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+//<Input label={translate.t("LABEL.PASSWORD")} input_ref={password_ref} input_type="password" name="password"  autocomplete={false} onkeydown={handle_key_down.clone()}/>
+
+#[macro_export]
+macro_rules! edit_field_bool {
+    ($instance:expr, $label:expr, $field:ident) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__config-field tp__config-field__bool">
+                <label>{$label}</label>
+                <$crate::app::components::ToggleSwitch
+                     value={instance.borrow().$field}
+                     readonly={false}
+                     onchange={Callback::from(move |value| instance.borrow_mut().$field = value)} />
+            </div>
+        }
+    }};
+}
