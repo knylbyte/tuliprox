@@ -1,0 +1,68 @@
+name: Build rust-wasm-tools
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - docker/build-tools/rust-wasm-tools.Dockerfile
+      - .github/workflows/rust-wasm-tools-prebuild.yml
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/rust-wasm-tools
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            tag: linux-amd64
+          - platform: linux/arm64
+            tag: linux-arm64
+          - platform: linux/arm/v7
+            tag: linux-armv7
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push ${{ matrix.platform }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/build-tools/rust-wasm-tools.Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ matrix.tag }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-${{ matrix.tag }}
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-${{ matrix.tag }},mode=max
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create and push multi-arch manifest :latest
+        run: |
+          IMAGE=${{ env.IMAGE_NAME }}
+          docker buildx imagetools create -t ${IMAGE}:latest \
+            ${IMAGE}:linux-amd64 \
+            ${IMAGE}:linux-arm64 \
+            ${IMAGE}:linux-armv7
+      - name: Inspect manifest
+        run: docker buildx imagetools inspect ${{ env.IMAGE_NAME }}:latest
