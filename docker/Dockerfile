@@ -54,10 +54,11 @@ WORKDIR /src/frontend
 RUN trunk build --release
 
 # -----------------------------------------------------------------
-# Stage 3: Build video resources with ffmpeg
+# Stage 3: Build video resources with ffmpeg (Alpine, multi-arch)
 # -----------------------------------------------------------------
-FROM linuxserver/ffmpeg:latest AS resource-build
+FROM alpine:latest AS resource-build
 
+RUN apk add --no-cache ffmpeg
 WORKDIR /src
 COPY resources ./resources
 
@@ -154,8 +155,6 @@ COPY --from=tz-prep /output/etc/localtime /etc/localtime
 
 # Certificates
 COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-# RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 # App
 WORKDIR /app
