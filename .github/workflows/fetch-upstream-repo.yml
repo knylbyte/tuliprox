@@ -1,0 +1,29 @@
+name: Sync fork with upstream Repository
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: GitHub Sync to Upstream Repository
+        uses: dabreadman/sync-upstream-repo@v1.3.0
+        with:
+          upstream_repo: https://github.com/euzu/tuliprox.git
+          upstream_branch: master
+          downstream_branch: master
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: GitHub Sync to Upstream Repository
+        uses: dabreadman/sync-upstream-repo@v1.3.0
+        with:
+          upstream_repo: https://github.com/euzu/tuliprox.git
+          upstream_branch: develop
+          downstream_branch: develop
+          token: ${{ secrets.GITHUB_TOKEN }}
