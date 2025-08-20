@@ -1,0 +1,141 @@
+name: Build & Push tuliprox (multi-arch)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - develop
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-musl
+            resource_stage: resource-build-lsio
+            tag_suffix: linux-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-musl
+            resource_stage: resource-build-lsio
+            tag_suffix: linux-arm64
+          - platform: linux/arm/v7
+            runner: ubuntu-24.04-arm
+            rust_target: armv7-unknown-linux-musleabihf
+            resource_stage: resource-build-alpine
+            tag_suffix: linux-armv7
+
+    runs-on: ${{ matrix.runner || ' ubuntu-24.04' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="${GITHUB_REF_NAME}"
+          # Arch-spezifische Tags
+          echo "ARCH_TAG=${{ env.IMAGE }}:${{ matrix.tag_suffix }}" >> "$GITHUB_OUTPUT"
+          echo "REF_ARCH_TAG=${{ env.IMAGE }}:${REF}-${{ matrix.tag_suffix }}" >> "$GITHUB_OUTPUT"
+          # Tools-Image (für trunk-build) arch-spezifisch
+          echo "TOOLS_IMAGE=ghcr.io/${{ github.repository }}/rust-wasm-tools:${{ matrix.tag_suffix }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push ${{ matrix.platform }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.ARCH_TAG }}
+            ${{ steps.meta.outputs.REF_ARCH_TAG }}
+          build-args: |
+            RUST_TARGET=${{ matrix.rust_target }}
+            RESOURCE_STAGE=${{ matrix.resource_stage }}
+            GHCR_IMAGE=${{ steps.meta.outputs.TOOLS_IMAGE }}
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.tag_suffix }}
+          cache-to: |
+            type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.tag_suffix }},mode=max
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set ref outputs
+        id: ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "$REF" == v* ]]; then
+            echo "CREATE_LATEST=true" >> "$GITHUB_OUTPUT"
+            echo "TARGET_TAG=${REF}" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF_TYPE}" == "branch" && ( "$REF" == "master" || "$REF" == "develop" ) ]]; then
+            echo "CREATE_LATEST=false" >> "$GITHUB_OUTPUT"
+            echo "TARGET_TAG=${REF}" >> "$GITHUB_OUTPUT"
+          else
+            echo "CREATE_LATEST=false" >> "$GITHUB_OUTPUT"
+            echo "TARGET_TAG=${REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest ${{ steps.ref.outputs.TARGET_TAG }}
+        run: |
+          IMAGE="${{ env.IMAGE }}"
+          TAG="${{ steps.ref.outputs.TARGET_TAG }}"
+          docker buildx imagetools create -t "${IMAGE}:${TAG}" \
+            "${IMAGE}:linux-amd64" \
+            "${IMAGE}:linux-arm64" \
+            "${IMAGE}:linux-armv7"
+
+      - name: Create/Update manifest :latest (only on tags v*)
+        if: steps.ref.outputs.CREATE_LATEST == 'true'
+        run: |
+          IMAGE="${{ env.IMAGE }}"
+          docker buildx imagetools create -t "${IMAGE}:latest" \
+            "${IMAGE}:linux-amd64" \
+            "${IMAGE}:linux-arm64" \
+            "${IMAGE}:linux-armv7"
+
+      - name: Inspect manifest
+        run: docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.ref.outputs.TARGET_TAG }}
