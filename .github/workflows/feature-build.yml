@@ -1,0 +1,43 @@
+name: Feature Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        default: 'feature/example'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Extract feature name
+        id: extract
+        run: |
+          branch="${{ inputs.branch }}"
+          feature="${branch#feature/}"
+          echo "feature=$feature" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GHCR_IO_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push image
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -f docker/Dockerfile \
+            --build-arg RUST_TARGET=x86_64-unknown-linux-musl \
+            -t ghcr.io/{{ github.actor }}/tuliprox:${{ steps.extract.outputs.feature }} \
+            --push .
