@@ -1,4 +1,4 @@
-name: Feature/Bugfix/Hotfix Build
+name: Feature/Bugfix/Hotfix Build (only x86_64)
 
 on:
   workflow_dispatch:
