@@ -1,5 +1,5 @@
 name: Build rust-wasm-tools
-
+#run
 on:
   workflow_dispatch:
   push:
