@@ -1551,6 +1551,17 @@ This will build the complete project and create a docker image.
 To start the container, you can use the `docker-compose.yml`
 But you need to change `image: ghcr.io/euzu/tuliprox:latest` to `image: tuliprox`
 
+### Build feature branch image via GitHub Actions
+
+You can also build and publish a Docker image for a feature branch via GitHub Actions.
+Trigger the **Feature Build** workflow from the **Actions** tab and provide the branch name, e.g.:
+
+```text
+branch: feature/my-feature
+```
+
+This will push an image tagged `ghcr.io/{{ github.actor }}/tuliprox:my-feature`.
+
 
 ### Manual build static binary for docker
 
