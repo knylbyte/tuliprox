@@ -15,7 +15,8 @@ FROM rust:bookworm AS rust-build
 # Get target architecture
 ARG RUST_TARGET
 
-RUN apt-get update && apt-get install -y --no-install-recommends pkg-config musl-tools libssl-dev
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends pkg-config musl-tools libssl-dev
 
 # Update Rust toolchain and add necessary target
 RUN rustup update && rustup target add $RUST_TARGET
@@ -37,30 +38,19 @@ COPY . .
 RUN cargo build -p tuliprox --target $RUST_TARGET --release
 
 # -----------------------------------------------------------------
-# Stage 2: Build the rust frontend
+# Stage 2: Build the rust frontend and use prebuilt tools
 # -----------------------------------------------------------------
-FROM rust:bookworm AS trunk-build
+ARG GHCR_IMAGE
+FROM ${GHCR_IMAGE:-ghcr.io/knylbyte/tuliprox/rust-wasm-tools:latest} AS trunk-build
 
-ARG RUST_TARGET=wasm32-unknown-unknown
-
-# Set working directory
 WORKDIR /src
 
-# Install dependencies for Trunk and WebAssembly
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  pkg-config libssl-dev curl libclang-dev binaryen
+RUN apt-get update && apt-get install -y --no-install-recommends libclang-dev binaryen \
+  && rm -rf /var/lib/apt/lists/*
 
-# Add wasm target & install trunk
-RUN rustup target add wasm32-unknown-unknown
-RUN cargo install --locked trunk wasm-bindgen-cli
-
-
-# Now copy the actual source code and build the project
 COPY . .
 
 WORKDIR /src/frontend
-
-# Run Trunk build
 RUN trunk build --release
 
 # -----------------------------------------------------------------
