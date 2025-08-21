@@ -1,63 +1,67 @@
 use std::rc::Rc;
-use log::warn;
 use yew::prelude::*;
-use crate::app::components::{DropDownIconButton, DropDownOption, Tag, TagList};
+use crate::app::components::{DropDownIconButton, DropDownOption};
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct SelectProps {
     pub name: String,
     #[prop_or_default]
     pub icon: Option<String>,
-    pub onselect: Callback<(String, Vec<String>)>,
+    pub onselect: Callback<(String, Vec<Rc<DropDownOption>>)>,
     #[prop_or_default]
     pub class: String,
-    pub options: Rc<Vec<DropDownOption>>,
+    pub options: Vec<Rc<DropDownOption>>,
     #[prop_or_default]
     pub multi_select: bool,
 }
 
-fn create_tag_from_str(s: &str) -> Rc<Tag> {
-    Rc::new(Tag { label: s.to_owned(), class: Some("active".to_string()) })
-}
-
-fn create_tag_from_option(o: &DropDownOption) -> Rc<Tag> {
-  create_tag_from_str(o.label.as_str())
-}
-
 #[function_component]
 pub fn Select(props: &SelectProps) -> Html {
+    let button_ref = use_node_ref();
 
-    // TODO render for selections !!!
-
-    let selected_options = use_state(|| props.options.as_ref().iter().filter(|o| o.selected)
-        .map(create_tag_from_option)
-        .collect::<Vec<Rc<Tag>>>());
+    let selected_options = use_state(|| props.options.iter().filter(|o| o.selected)
+        .map(|o| o.label.clone()).collect::<Vec<Html>>());
     {
         let set_selected_options = selected_options.clone();
-        use_effect_with(props.options.clone(), move |options| {
-            let selections = options.as_ref().iter().filter(|o| o.selected)
-                .map(create_tag_from_option)
-                .collect::<Vec<Rc<Tag>>>();
+        use_effect_with(props.options.clone(), move |options: &Vec<Rc<DropDownOption>>| {
+            let selections = options.iter().filter(|o| o.selected)
+                .map(|o| o.label.clone()).collect::<Vec<Html>>();
             set_selected_options.set(selections);
         });
     }
 
     let handle_options_click = {
         let onselect = props.onselect.clone();
+        let options = props.options.clone();
         let set_selections = selected_options.clone();
         Callback::from(move |(name, selections): (String, Vec<String>)| {
-            set_selections.set(selections.iter().map(|s|s.as_str()).map(create_tag_from_str).collect::<Vec<Rc<Tag>>>());
-            onselect.emit((name, selections));
+            let selected_options: Vec<Rc<DropDownOption>> = options.iter().filter(|&o| selections.contains(&o.id)).cloned().collect();
+            set_selections.set(selected_options.iter().map(|o| o.label.clone()).collect());
+            onselect.emit((name, selected_options));
+        })
+    };
+
+    let handle_click_button = {
+        let button_ref = button_ref.clone();
+        Callback::from(move |event: MouseEvent| {
+            if let Some(target) = event.target_dyn_into::<web_sys::Element>() {
+                if target.class_name().contains("tp__select-wrapper") {
+                    if let Some(button) = button_ref.cast::<web_sys::HtmlInputElement>() {
+                        button.click();
+                    }
+                }
+            }
         })
     };
 
     html! {
         <div class={classes!("tp__select", props.class.clone())}>
-            <div class="tp__select-wrapper">
+            <div class="tp__select-wrapper" onclick={handle_click_button}>
                 <div class="tp__select__selected">
-                    <TagList tags={(*selected_options).clone()} />
+                    {(*selected_options).clone()}
                 </div>
                 <DropDownIconButton
+                     button_ref={button_ref}
                      multi_select={props.multi_select}
                      options={props.options.clone()}
                      name={props.name.clone()}

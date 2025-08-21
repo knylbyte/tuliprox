@@ -3,15 +3,17 @@ use std::rc::Rc;
 use log::warn;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::{ProxyUserCredentialsDto, ProxyUserStatus};
+use shared::model::{ApiProxyServerInfoDto, ConfigTargetDto, ProxyUserCredentialsDto, ProxyUserStatus};
 use crate::app::TargetUser;
 use crate::{edit_field_bool, edit_field_text, edit_field_text_option};
 use crate::app::components::select::Select;
-use crate::app::components::{convert_bool_to_chip_style, Chip, DropDownOption, TextButton};
+use crate::app::components::{DropDownOption, TextButton, UserStatus};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct ProxyUserCredentialsFormProps {
     pub user: Option<Rc<TargetUser>>,
+    pub targets: Rc<Vec<Rc<ConfigTargetDto>>>,
+    pub server: Rc<Vec<ApiProxyServerInfoDto>>,
 }
 
 #[function_component]
@@ -21,6 +23,22 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                               |user| RefCell::new(user.as_ref()
                                   .map_or_else(|| ProxyUserCredentialsDto::default(), |usr| usr.credentials.as_ref().clone())));
 
+    let targets = use_memo((props.targets.clone(), props.user.clone()), |(targets, user)|
+        targets.iter().map(|t| Rc::new(DropDownOption {
+            id: t.name.to_string(),
+            label: html! { t.name.clone() },
+            selected: user.as_ref().is_some_and(|user| user.target == t.name),
+        })).collect::<Vec<Rc<DropDownOption>>>()
+    );
+
+    let server = use_memo((props.server.clone(), props.user.clone()), |(server, user)|
+        server.iter().map(|s| Rc::new(DropDownOption {
+            id: s.name.to_string(),
+            label: html! { s.name.clone() },
+            selected: user.as_ref().is_some_and(|user| user.credentials.server.as_ref() == Some(&s.name)),
+        })).collect::<Vec<Rc<DropDownOption>>>()
+    );
+
     let proxy_user_status = use_memo(props.user.clone(), |user|
          vec![
               ProxyUserStatus::Active,
@@ -29,11 +47,11 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
               ProxyUserStatus::Trial,
               ProxyUserStatus::Disabled,
               ProxyUserStatus::Pending,
-        ].iter().map(|s| DropDownOption {
+        ].iter().map(|s| Rc::new(DropDownOption {
               id: s.to_string(),
-              label: format!("LABEL.USER_STATUS_{}", s.to_string().to_uppercase()),
+              label: html! { <UserStatus status={Some(s.clone())} /> },
               selected: user.as_ref().is_some_and(|user| user.credentials.status.as_ref() == Some(s)),
-          }).collect::<Vec<DropDownOption>>()
+          })).collect::<Vec<Rc<DropDownOption>>>()
     );
 
     let handle_save_user = {
@@ -43,32 +61,48 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
       })
     };
 
-    let user_active = props.user.as_ref().is_some_and(|u| u.credentials.is_active());
-
     html! {
         <div class="tp__proxy-user-credentials-form tp__form-page">
           <div class="tp__proxy-user-credentials-form__body tp__form-page__body">
-            <div class="tp__config-field tp__config-field__bool">
-                <Chip class={ convert_bool_to_chip_style(user_active) }
-                    label={if user_active {translate.t("LABEL.ENABLED")} else { translate.t("LABEL.DISABLED")} }
+
+             <div class="tp__config-field tp__config-field__text">
+                <label>{translate.t("LABEL.PLAYLIST")}</label>
+                <Select name="target"
+                    multi_select={false}
+                    onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
+                         warn!("{}", selections.iter().map(|o| o.id.to_string()).collect::<Vec<String>>().join(", "));
+                    })}
+                    options={(*targets).clone()}
                 />
             </div>
+
             <div class="tp__config-field tp__config-field__text">
                 <label>{translate.t("LABEL.STATUS")}</label>
                 <Select name="status"
                     multi_select={false}
-                    onselect={Callback::from(move |(_name, selections):(String, Vec<String>)| {
-                        warn!("{}", selections.join(", "));
+                    onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
+                        warn!("{}", selections.iter().map(|o| o.id.to_string()).collect::<Vec<String>>().join(", "));
                     })}
-                    options={proxy_user_status.clone()}
+                    options={(*proxy_user_status).clone()}
                 />
             </div>
             { edit_field_text!(*form_state,  translate.t("LABEL.USERNAME"), username) }
             { edit_field_text!(*form_state,  translate.t("LABEL.PASSWORD"), password, true) }
-            { edit_field_bool!(*form_state,  translate.t("LABEL.USER_UI_ENABLED"), ui_enabled) }
             { edit_field_text_option!(*form_state,  translate.t("LABEL.TOKEN"), token, true) }
             <label>{ translate.t("LABEL.PROXY") }</label>
             <span>{"TODO"}</span>
+
+            <div class="tp__config-field tp__config-field__text">
+                <label>{translate.t("LABEL.SERVER")}</label>
+                <Select name="server"
+                    multi_select={false}
+                    onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
+                         warn!("{}", selections.iter().map(|o| o.id.to_string()).collect::<Vec<String>>().join(", "));
+                    })}
+                    options={(*server).clone()}
+                />
+            </div>
+
 
     // pub server: Option<String>,
     // pub epg_timeshift: Option<String>,
@@ -76,6 +110,7 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
     // pub exp_date: Option<i64>,
     // pub max_connections: u32,
 
+            { edit_field_bool!(*form_state,  translate.t("LABEL.USER_UI_ENABLED"), ui_enabled) }
             { edit_field_text_option!(*form_state,  translate.t("LABEL.COMMENT"), comment) }
 
           </div>

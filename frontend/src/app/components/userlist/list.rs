@@ -8,11 +8,12 @@ use crate::app::components::userlist::user_table::UserTable;
 pub fn UserlistList() -> Html {
     let translate = use_translation();
     let userlist_ctx = use_context::<UserlistContext>().expect("Userlist context not found");
-    let search_fields = use_memo((), |_| Rc::new(vec![
-        DropDownOption::new("username", "LABEL.NAME", true),
-        DropDownOption::new("playlist", "LABEL.PLAYLIST", false),
-        DropDownOption::new("server", "LABEL.SERVER", false),
-    ]));
+    let search_fields = use_memo((), |_| vec![
+        Rc::new(DropDownOption::new("username", html! { translate.t("LABEL.NAME") }, true)),
+        Rc::new(DropDownOption::new("playlist", html! { translate.t("LABEL.PLAYLIST") }, false)),
+        Rc::new(DropDownOption::new("server", html! { translate.t("LABEL.SERVER") }, false)),
+    ]);
+
 
     let handle_create = {
         let userlist_ctx = userlist_ctx.clone();

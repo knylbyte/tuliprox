@@ -16,6 +16,8 @@
     border: 1px solid var(--input-border-color);
     border-radius: var(--border-radius);
     background-color: var(--input-background-color);
+    cursor: pointer;
+
     &:focus-within {
       border-color: var(--input-focus-border-color);
     }
@@ -39,7 +41,10 @@
 
   &__selected {
     display: flex;
-    flex-flow: row nowrap;
+    flex-flow: row wrap;
+    align-items: center;
     flex: 1 1 auto;
+    gap: var(--gap-default);
+    pointer-events: none;
   }
 }
