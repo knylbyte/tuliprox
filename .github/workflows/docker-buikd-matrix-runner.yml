@@ -76,10 +76,11 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.ARCH_TAG }}
             ${{ steps.meta.outputs.REF_ARCH_TAG }}
+        # GHCR_IMAGE not clear yet !
           build-args: |
             RUST_TARGET=${{ matrix.rust_target }}
-            RESOURCE_STAGE=${{ matrix.resource_stage }}
             GHCR_IMAGE=${{ steps.meta.outputs.TOOLS_IMAGE }}
+            GHCR_IMAGE=ghcr.io/${{ github.repository }}/rust-wasm-tools:latest
           cache-from: |
             type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.tag_suffix }}
           cache-to: |
