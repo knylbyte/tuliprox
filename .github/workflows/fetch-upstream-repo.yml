@@ -11,19 +11,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-
-      - name: GitHub Sync to Upstream Repository
-        uses: dabreadman/sync-upstream-repo@v1.3.0
         with:
-          upstream_repo: https://github.com/euzu/tuliprox.git
-          upstream_branch: master
-          downstream_branch: master
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-      - name: GitHub Sync to Upstream Repository
-        uses: dabreadman/sync-upstream-repo@v1.3.0
+      - name: Sync master via Fork-Sync action
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
         with:
-          upstream_repo: https://github.com/euzu/tuliprox.git
-          upstream_branch: develop
-          downstream_branch: develop
-          token: ${{ secrets.GITHUB_TOKEN }}
+          target_sync_branch: master
+          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          upstream_sync_repo: euzu/tuliprox
+          upstream_sync_branch: master
+
+      - name: Sync develop via Fork-Sync action
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
+        with:
+          target_sync_branch: develop
+          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          upstream_sync_repo: euzu/tuliprox
+          upstream_sync_branch: develop
+
