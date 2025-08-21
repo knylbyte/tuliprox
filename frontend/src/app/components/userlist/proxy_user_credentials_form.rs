@@ -3,11 +3,12 @@ use std::rc::Rc;
 use log::warn;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::{ApiProxyServerInfoDto, ConfigTargetDto, ProxyUserCredentialsDto, ProxyUserStatus};
+use shared::model::{ApiProxyServerInfoDto, ConfigTargetDto, ProxyType, ProxyUserCredentialsDto, ProxyUserStatus};
 use crate::app::TargetUser;
-use crate::{edit_field_bool, edit_field_text, edit_field_text_option};
+use crate::{config_field_child, edit_field_bool, edit_field_text, edit_field_text_option};
 use crate::app::components::select::Select;
 use crate::app::components::{DropDownOption, TextButton, UserStatus};
+use crate::app::components::userlist::proxy_type_input::ProxyTypeInput;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct ProxyUserCredentialsFormProps {
@@ -64,36 +65,37 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
     html! {
         <div class="tp__proxy-user-credentials-form tp__form-page">
           <div class="tp__proxy-user-credentials-form__body tp__form-page__body">
-
-             <div class="tp__config-field tp__config-field__text">
-                <label>{translate.t("LABEL.PLAYLIST")}</label>
-                <Select name="target"
+            { config_field_child!(translate.t("LABEL.PLAYLIST"), {
+               html! { <Select name="target"
                     multi_select={false}
                     onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
                          warn!("{}", selections.iter().map(|o| o.id.to_string()).collect::<Vec<String>>().join(", "));
                     })}
                     options={(*targets).clone()}
                 />
-            </div>
-
-            <div class="tp__config-field tp__config-field__text">
-                <label>{translate.t("LABEL.STATUS")}</label>
-                <Select name="status"
+            }})}
+            { config_field_child!(translate.t("LABEL.STATUS"), {
+               html! { <Select name="status"
                     multi_select={false}
                     onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
                         warn!("{}", selections.iter().map(|o| o.id.to_string()).collect::<Vec<String>>().join(", "));
                     })}
                     options={(*proxy_user_status).clone()}
                 />
-            </div>
+            }})}
             { edit_field_text!(*form_state,  translate.t("LABEL.USERNAME"), username) }
             { edit_field_text!(*form_state,  translate.t("LABEL.PASSWORD"), password, true) }
             { edit_field_text_option!(*form_state,  translate.t("LABEL.TOKEN"), token, true) }
+
+            { config_field_child!(translate.t("LABEL.PROXY"), {
+               html! {
+                     <ProxyTypeInput value={props.user.as_ref().map_or_else(|| ProxyType::Reverse(None), |u| u.credentials.proxy)} />
+            }})}
             <label>{ translate.t("LABEL.PROXY") }</label>
             <span>{"TODO"}</span>
 
-            <div class="tp__config-field tp__config-field__text">
-                <label>{translate.t("LABEL.SERVER")}</label>
+          { config_field_child!(translate.t("LABEL.SERVER"), {
+               html! {
                 <Select name="server"
                     multi_select={false}
                     onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
@@ -101,8 +103,7 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                     })}
                     options={(*server).clone()}
                 />
-            </div>
-
+            }})}
 
     // pub server: Option<String>,
     // pub epg_timeshift: Option<String>,

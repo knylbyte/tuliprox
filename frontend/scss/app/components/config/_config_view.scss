@@ -1,6 +1,4 @@
-$config-grid-cell-width: 400px;
-$config-max-grid-cells: 3;
-$config-field-min-width: 200px;
+@use "../../../size";
 
 .tp__config-view {
   display: flex;
@@ -58,7 +56,7 @@ $config-field-min-width: 200px;
   display: flex;
   gap: var(--gap-default);
   box-sizing: border-box;
-  min-width: $config-field-min-width;
+  min-width: size.$config-field-min-width;
 
   &__text {
     flex-flow: column;
@@ -107,8 +105,8 @@ $config-field-min-width: 200px;
 
   &__header {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax($config-grid-cell-width, 1fr));
-    max-width: calc($config-max-grid-cells * $config-grid-cell-width + 2 * 1rem);
+    grid-template-columns: repeat(auto-fit, minmax(size.$config-grid-cell-width, 1fr));
+    max-width: calc(size.$config-max-grid-cells * size.$config-grid-cell-width + 2 * 1rem);
     gap: var(--gap-large);
     box-sizing: border-box;
     width: 100%;
@@ -116,8 +114,8 @@ $config-field-min-width: 200px;
 
   &__body {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax($config-grid-cell-width, 1fr));
-    max-width: calc($config-max-grid-cells * $config-grid-cell-width + 2 * 1rem);
+    grid-template-columns: repeat(auto-fit, minmax(size.$config-grid-cell-width, 1fr));
+    max-width: calc(size.$config-max-grid-cells * size.$config-grid-cell-width + 2 * 1rem);
     gap: var(--gap-large);
     box-sizing: border-box;
     width: 100%;
@@ -127,8 +125,8 @@ $config-field-min-width: 200px;
 .tp__schedules-config-view {
   &__schedule {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax($config-grid-cell-width, 1fr));
-    max-width: calc($config-max-grid-cells * $config-grid-cell-width + 2 * 1rem);
+    grid-template-columns: repeat(auto-fit, minmax(size.$config-grid-cell-width, 1fr));
+    max-width: calc(size.$config-max-grid-cells * size.$config-grid-cell-width + 2 * 1rem);
     gap: var(--gap-default);
     box-sizing: border-box;
     padding: var(--padding-default);
