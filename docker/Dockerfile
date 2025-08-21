@@ -7,6 +7,8 @@
 #
 # =================================================================
 
+ARG GHCR_IMAGE
+
 # -----------------------------------------------------------------
 # Stage 1: Build the Rust binary for production
 # -----------------------------------------------------------------
@@ -40,7 +42,6 @@ RUN cargo build -p tuliprox --target $RUST_TARGET --release
 # -----------------------------------------------------------------
 # Stage 2: Build the rust frontend and use prebuilt tools
 # -----------------------------------------------------------------
-ARG GHCR_IMAGE
 FROM ${GHCR_IMAGE:-ghcr.io/knylbyte/tuliprox/rust-wasm-tools:latest} AS trunk-build
 
 WORKDIR /src
