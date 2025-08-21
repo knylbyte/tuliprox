@@ -106,33 +106,6 @@ macro_rules! config_field_empty {
 }
 
 #[macro_export]
-macro_rules! edit_field_text {
-    ($instance:expr, $label:expr, $field:ident) => {
-        $crate::edit_field_text!(@inner $instance, $label, $field, false)
-    };
-    ($instance:expr, $label:expr, $field:ident, $hidden:expr) => {
-        $crate::edit_field_text!(@inner $instance, $label, $field, $hidden)
-    };
-    (@inner $instance:expr, $label:expr, $field:ident, $hidden:expr) => {{
-        let instance = $instance.clone();
-        html! {
-            <div class="tp__config-field tp__config-field__text">
-                <$crate::app::components::input::Input
-                    label={$label}
-                    hidden={$hidden}
-                    name={stringify!($field)}
-                    autocomplete={true}
-                    value={instance.borrow().$field.clone()}
-                    ontext={Callback::from(move |value: String| {
-                        instance.borrow_mut().$field = value;
-                    })}
-                />
-            </div>
-        }
-    }};
-}
-
-#[macro_export]
 macro_rules! edit_field_text_option {
     ($instance:expr, $label:expr, $field:ident) => {
         $crate::edit_field_text_option!(@inner $instance, $label, $field, false)
@@ -156,6 +129,33 @@ macro_rules! edit_field_text_option {
                         } else {
                             Some(value)
                         };
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! edit_field_text {
+    ($instance:expr, $label:expr, $field:ident) => {
+        $crate::edit_field_text!(@inner $instance, $label, $field, false)
+    };
+    ($instance:expr, $label:expr, $field:ident, $hidden:expr) => {
+        $crate::edit_field_text!(@inner $instance, $label, $field, $hidden)
+    };
+    (@inner $instance:expr, $label:expr, $field:ident, $hidden:expr) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__config-field tp__config-field__text">
+                <$crate::app::components::input::Input
+                    label={$label}
+                    hidden={$hidden}
+                    name={stringify!($field)}
+                    autocomplete={true}
+                    value={instance.borrow().$field.clone()}
+                    ontext={Callback::from(move |value: String| {
+                        instance.borrow_mut().$field = value;
                     })}
                 />
             </div>

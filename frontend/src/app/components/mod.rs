@@ -35,6 +35,7 @@ mod accordion_panel;
 mod csv_table;
 mod config;
 mod tabset;
+mod select;
 // pub use self::input::*;
 // pub use self::menu_item::*;
 // pub use self::popup_menu::*;

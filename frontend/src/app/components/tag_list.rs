@@ -32,6 +32,14 @@ pub fn tag_list(props: &TagListProps) -> Html {
     let tag_state = use_state(|| tags.clone());
     let new_tag = use_state(String::default);
 
+    {
+        let tag_state = tag_state.clone();
+        use_effect_with(tags.clone(), move |tags| {
+            tag_state.set(tags.clone());
+            || ()
+        });
+    }
+
     let on_remove = {
         let tag_state = tag_state.clone();
         let on_change = on_change.clone();

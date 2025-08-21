@@ -10,9 +10,9 @@ use crate::html_if;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct DropDownOption {
-    id: String,
-    label: String,
-    selected: bool,
+    pub(crate) id: String,
+    pub(crate) label: String,
+    pub(crate) selected: bool,
 }
 
 impl DropDownOption {
@@ -31,7 +31,6 @@ pub struct DropDownIconButtonProps {
     pub options: Rc<Vec<DropDownOption>>,
     #[prop_or_default]
     pub multi_select: bool,
-
 }
 
 #[function_component]
