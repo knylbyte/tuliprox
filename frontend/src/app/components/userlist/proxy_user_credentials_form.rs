@@ -5,7 +5,7 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{ApiProxyServerInfoDto, ConfigTargetDto, ProxyType, ProxyUserCredentialsDto, ProxyUserStatus};
 use crate::app::TargetUser;
-use crate::{config_field_child, edit_field_bool, edit_field_text, edit_field_text_option};
+use crate::{config_field_child, edit_field_bool, edit_field_date, edit_field_number, edit_field_text, edit_field_text_option};
 use crate::app::components::select::Select;
 use crate::app::components::{DropDownOption, TextButton, UserStatus};
 use crate::app::components::userlist::proxy_type_input::ProxyTypeInput;
@@ -29,7 +29,7 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
             id: t.name.to_string(),
             label: html! { t.name.clone() },
             selected: user.as_ref().is_some_and(|user| user.target == t.name),
-        })).collect::<Vec<Rc<DropDownOption>>>()
+        })).collect::<Vec<Rc<DropDownOption>>>(),
     );
 
     let server = use_memo((props.server.clone(), props.user.clone()), |(server, user)|
@@ -37,29 +37,29 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
             id: s.name.to_string(),
             label: html! { s.name.clone() },
             selected: user.as_ref().is_some_and(|user| user.credentials.server.as_ref() == Some(&s.name)),
-        })).collect::<Vec<Rc<DropDownOption>>>()
+        })).collect::<Vec<Rc<DropDownOption>>>(),
     );
 
     let proxy_user_status = use_memo(props.user.clone(), |user|
-         vec![
-              ProxyUserStatus::Active,
-              ProxyUserStatus::Expired,
-              ProxyUserStatus::Banned,
-              ProxyUserStatus::Trial,
-              ProxyUserStatus::Disabled,
-              ProxyUserStatus::Pending,
+        vec![
+            ProxyUserStatus::Active,
+            ProxyUserStatus::Expired,
+            ProxyUserStatus::Banned,
+            ProxyUserStatus::Trial,
+            ProxyUserStatus::Disabled,
+            ProxyUserStatus::Pending,
         ].iter().map(|s| Rc::new(DropDownOption {
-              id: s.to_string(),
-              label: html! { <UserStatus status={Some(s.clone())} /> },
-              selected: user.as_ref().is_some_and(|user| user.credentials.status.as_ref() == Some(s)),
-          })).collect::<Vec<Rc<DropDownOption>>>()
+            id: s.to_string(),
+            label: html! { <UserStatus status={Some(s.clone())} /> },
+            selected: user.as_ref().is_some_and(|user| user.credentials.status.as_ref() == Some(s)),
+        })).collect::<Vec<Rc<DropDownOption>>>(),
     );
 
     let handle_save_user = {
-      let user = form_state.clone();
-      Callback::from(move |_| {
-          warn!("{:?}", user.borrow());
-      })
+        let user = form_state.clone();
+        Callback::from(move |_| {
+            warn!("{:?}", user.borrow());
+        })
     };
 
     html! {
@@ -90,15 +90,12 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
             { config_field_child!(translate.t("LABEL.PROXY"), {
                html! {
                      <ProxyTypeInput value={props.user.as_ref().map_or_else(|| ProxyType::Reverse(None), |u| u.credentials.proxy)}
-                    onchange={Callback::from(|proxy_type: ProxyType|
+                        on_change={Callback::from(|proxy_type: ProxyType|
                         warn!("Proxy Type: {:?}", proxy_type)
                     )}/>
             }})}
 
-            <label>{ translate.t("LABEL.PROXY") }</label>
-            <span>{"TODO"}</span>
-
-          { config_field_child!(translate.t("LABEL.SERVER"), {
+            { config_field_child!(translate.t("LABEL.SERVER"), {
                html! {
                 <Select name="server"
                     multi_select={false}
@@ -109,11 +106,9 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                 />
             }})}
 
-    // pub server: Option<String>,
-    // pub epg_timeshift: Option<String>,
-    // pub created_at: Option<i64>,
-    // pub exp_date: Option<i64>,
-    // pub max_connections: u32,
+            { edit_field_number!(*form_state,  translate.t("LABEL.MAX_CONNECTIONS"), max_connections) }
+            { edit_field_date!(*form_state,  translate.t("LABEL.EXP_DATE"), exp_date) }
+            { edit_field_text_option!(*form_state,  translate.t("LABEL.EPG_TIMESHIFT"), epg_timeshift) }
 
             { edit_field_bool!(*form_state,  translate.t("LABEL.USER_UI_ENABLED"), ui_enabled) }
             { edit_field_text_option!(*form_state,  translate.t("LABEL.COMMENT"), comment) }

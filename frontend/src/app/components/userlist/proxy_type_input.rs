@@ -1,3 +1,5 @@
+use std::hash::Hash;
+use log::warn;
 use shared::model::{ClusterFlags, ProxyType};
 use yew::prelude::*;
 use yew_i18n::use_translation;
@@ -15,11 +17,20 @@ fn get_flags(pt: ProxyType)-> (bool, bool, bool, bool, bool) {
     }
 }
 
+fn check_flag_validity(flags: (bool, bool, bool, bool, bool)) -> (bool, bool, bool, bool, bool) {
+    let (redirect, reverse, live, vod, series) = flags;
+    if reverse && !vod && !live && !series {
+        (false, true, true, true, true)
+    } else {
+        flags
+    }
+}
+
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct ProxyTypeInputProps {
     pub value: ProxyType,
     #[prop_or_default]
-    pub onchange: Callback<ProxyType>,
+    pub on_change: Callback<ProxyType>,
 }
 
 #[function_component]
@@ -28,14 +39,17 @@ pub fn ProxyTypeInput(props: &ProxyTypeInputProps) -> Html {
     let selections = use_state(|| get_flags(props.value));
 
     {
+        let hash = props.value.to_string();
+        let pt = props.value.clone();
         let set_selections = selections.clone();
-        use_effect_with(props.value, move |pt| {
-            set_selections.set(get_flags(*pt));
+        use_effect_with(hash, move |_| {
+            warn!("changed pt: {:?}", pt);
+            set_selections.set(get_flags(pt));
         });
     }
 
     let handle_change = {
-      let onchange = props.onchange.clone();
+      let onchange = props.on_change.clone();
       Callback::from(move |(redirect, _reverse, live, vod, series)| {
         if redirect {
             onchange.emit(ProxyType::Redirect);
@@ -88,6 +102,7 @@ pub fn ProxyTypeInput(props: &ProxyTypeInputProps) -> Html {
             } else {
                (false, true, !flags.2, flags.3, flags.4)
             };
+            let new_flags = check_flag_validity(new_flags);
             set_selections.set(new_flags);
             emit_change.emit(new_flags);
         })
@@ -102,6 +117,7 @@ pub fn ProxyTypeInput(props: &ProxyTypeInputProps) -> Html {
             } else {
                 (false, true, flags.2, !flags.3, flags.4)
             };
+            let new_flags = check_flag_validity(new_flags);
             set_selections.set(new_flags);
             emit_change.emit(new_flags);
         })
@@ -117,6 +133,7 @@ pub fn ProxyTypeInput(props: &ProxyTypeInputProps) -> Html {
             } else {
                 (false, true, flags.2, flags.3, !flags.4)
             };
+            let new_flags = check_flag_validity(new_flags);
             set_selections.set(new_flags);
             emit_change.emit(new_flags);
         })

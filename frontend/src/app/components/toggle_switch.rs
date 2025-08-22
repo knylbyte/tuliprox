@@ -7,7 +7,7 @@ pub struct ToggleSwitchProps {
     #[prop_or_default]
     pub readonly: bool,
     #[prop_or_else(Callback::noop)]
-    pub onchange: Callback<bool>,
+    pub on_change: Callback<bool>,
 }
 
 #[function_component]
@@ -25,7 +25,7 @@ pub fn ToggleSwitch(props: &ToggleSwitchProps) -> Html {
     let onclick = {
         let toggled = toggled.clone();
         let readonly = props.readonly;
-        let onchange = props.onchange.clone();
+        let onchange = props.on_change.clone();
         Callback::from(move |e: MouseEvent|  {
             if readonly {
                 e.prevent_default();

@@ -123,7 +123,7 @@ macro_rules! edit_field_text_option {
                     name={stringify!($field)}
                     autocomplete={true}
                     value={instance.borrow().$field.as_ref().map_or_else(String::new, |v|v.to_string())}
-                    ontext={Callback::from(move |value: String| {
+                    on_change={Callback::from(move |value: String| {
                         instance.borrow_mut().$field = if value.is_empty() {
                             None
                         } else {
@@ -154,7 +154,7 @@ macro_rules! edit_field_text {
                     name={stringify!($field)}
                     autocomplete={true}
                     value={instance.borrow().$field.clone()}
-                    ontext={Callback::from(move |value: String| {
+                    on_change={Callback::from(move |value: String| {
                         instance.borrow_mut().$field = value;
                     })}
                 />
@@ -175,7 +175,48 @@ macro_rules! edit_field_bool {
                 <$crate::app::components::ToggleSwitch
                      value={instance.borrow().$field}
                      readonly={false}
-                     onchange={Callback::from(move |value| instance.borrow_mut().$field = value)} />
+                     on_change={Callback::from(move |value| instance.borrow_mut().$field = value)} />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! edit_field_number {
+    ($instance:expr, $label:expr, $field:ident) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__number">
+                <$crate::app::components::number_input::NumberInput
+                    label={$label}
+                    name={stringify!($field)}
+                    value={instance.borrow().$field.clone()}
+                    on_change={Callback::from(move |value: Option<u32>| {
+                        match value {
+                            Some(value) => instance.borrow_mut().$field = value,
+                            None => instance.borrow_mut().$field = 0,
+                        }
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! edit_field_date {
+    ($instance:expr, $label:expr, $field:ident) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__date">
+                <$crate::app::components::date_input::DateInput
+                    label={$label}
+                    name={stringify!($field)}
+                    value={instance.borrow().$field.clone()}
+                    on_change={Callback::from(move |value: Option<i64>| {
+                        instance.borrow_mut().$field = value;
+                    })}
+                />
             </div>
         }
     }};

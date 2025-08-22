@@ -18,7 +18,7 @@ pub struct InputProps {
     #[prop_or_default]
     pub onkeydown: Option<Callback<KeyboardEvent>>,
     #[prop_or_default]
-    pub ontext: Option<Callback<String>>,
+    pub on_change: Option<Callback<String>>,
     #[prop_or_default]
     pub value: String,
 }
@@ -48,7 +48,7 @@ pub fn Input(props: &InputProps) -> Html {
 
     let handle_keydown = {
         let onkeydown_clone = props.onkeydown.clone();
-        let ontext_clone = props.ontext.clone();
+        let ontext_clone = props.on_change.clone();
         Callback::from(move |event: KeyboardEvent| {
             if event.key() == "Enter" {
                 event.prevent_default();

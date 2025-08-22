@@ -77,23 +77,3 @@
    flex-flow: row nowrap;
    gap: var(--gap-default);
 }
-
-//   &__sub {
-//      display: flex;
-//      flex-flow: row nowrap;
-//      span:not(:first-child) {
-//         border-top-left-radius: 0;
-//         border-bottom-left-radius: 0;
-//      }
-//      span:not(:last-child) {
-//         border-top-right-radius: 0;
-//         border-bottom-right-radius: 0;
-//      }
-//
-//      .tp__chip.active {
-//         background-color: var(--tag-active-background-color);
-//         color: var(--tag-active-color);
-//         fill: var(--tag-active-color);
-//      }
-//   }
-//}

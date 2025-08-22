@@ -68,3 +68,14 @@ input:-internal-autofill-selected {
   caret-color: var(--text-color) !important;
   border: none !important;
 }
+
+body:not([data-theme="bright"]) input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(0.6) saturate(0) opacity(0.7);
+}
+
+body[data-theme="bright"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
+}
+
+.tp__input-date {
+}
