@@ -2,9 +2,9 @@
 macro_rules! config_field_optional {
     ($config:expr, $label:expr, $field:ident) => {
         html! {
-            <div class="tp__config-field tp__config-field__text">
+            <div class="tp__form-field tp__form-field__text">
                 <label>{$label}</label>
-                <span class="tp__config-field__value">
+                <span class="tp__form-field__value">
                 {
                     match $config.$field.as_ref() {
                         Some(value) => html! { &value },
@@ -21,9 +21,9 @@ macro_rules! config_field_optional {
 macro_rules! config_field_optional_hide {
     ($config:expr, $label:expr, $field:ident) => {
         html! {
-            <div class="tp__config-field tp__config-field__text">
+            <div class="tp__form-field tp__form-field__text">
                 <label>{$label}</label>
-                <span class="tp__config-field__value">
+                <span class="tp__form-field__value">
                     <$crate::app::components::HideContent content={$config.$field.as_ref().map_or_else(String::new, |content| content.clone())}></$crate::app::components::HideContent>
                 </span>
             </div>
@@ -35,9 +35,9 @@ macro_rules! config_field_optional_hide {
 macro_rules! config_field_hide {
     ($config:expr, $label:expr, $field:ident) => {
         html! {
-            <div class="tp__config-field tp__config-field__text">
+            <div class="tp__form-field tp__form-field__text">
                 <label>{$label}</label>
-                <span class="tp__config-field__value">
+                <span class="tp__form-field__value">
                     <$crate::app::components::HideContent content={$config.$field.clone()}></$crate::app::components::HideContent>
                 </span>
             </div>
@@ -49,7 +49,7 @@ macro_rules! config_field_hide {
 macro_rules! config_field_bool {
     ($config:expr, $label:expr, $field:ident) => {
         html! {
-            <div class="tp__config-field tp__config-field__bool">
+            <div class="tp__form-field tp__form-field__bool">
                 <label>{$label}</label>
                 <$crate::app::components::ToggleSwitch value={$config.$field} readonly={true} />
             </div>
@@ -61,7 +61,7 @@ macro_rules! config_field_bool {
 macro_rules! config_field_bool_empty {
     ($label:expr) => {
         html! {
-            <div class="tp__config-field tp__config-field__bool">
+            <div class="tp__form-field tp__form-field__bool">
                 <label>{$label}</label>
                 <$crate::app::components::ToggleSwitch value={false} readonly={true} />
             </div>
@@ -73,9 +73,9 @@ macro_rules! config_field_bool_empty {
 macro_rules! config_field {
     ($config:expr, $label:expr, $field:ident) => {
         html! {
-            <div class="tp__config-field tp__config-field__text">
+            <div class="tp__form-field tp__form-field__text">
                 <label>{$label}</label>
-                <span class="tp__config-field__value">{$config.$field.to_string()}</span>
+                <span class="tp__form-field__value">{$config.$field.to_string()}</span>
             </div>
         }
     };
@@ -85,7 +85,7 @@ macro_rules! config_field {
 macro_rules! config_field_child {
     ($label:expr, $body:block) => {
         html! {
-            <div class="tp__config-field tp__config-field__text">
+            <div class="tp__form-field tp__form-field__text">
                 <label>{$label}</label>
                 { $body }
             </div>
@@ -97,9 +97,9 @@ macro_rules! config_field_child {
 macro_rules! config_field_empty {
     ($label:expr) => {
         html! {
-            <div class="tp__config-field tp__config-field__text">
+            <div class="tp__form-field tp__form-field__text">
                 <label>{$label}</label>
-                <span class="tp__config-field__value"></span>
+                <span class="tp__form-field__value"></span>
             </div>
         }
     };
@@ -116,7 +116,7 @@ macro_rules! edit_field_text_option {
     (@inner $instance:expr, $label:expr, $field:ident, $hidden:expr) => {{
         let instance = $instance.clone();
         html! {
-            <div class="tp__config-field tp__config-field__text">
+            <div class="tp__form-field tp__form-field__text">
                 <$crate::app::components::input::Input
                     label={$label}
                     hidden={$hidden}
@@ -147,7 +147,7 @@ macro_rules! edit_field_text {
     (@inner $instance:expr, $label:expr, $field:ident, $hidden:expr) => {{
         let instance = $instance.clone();
         html! {
-            <div class="tp__config-field tp__config-field__text">
+            <div class="tp__form-field tp__form-field__text">
                 <$crate::app::components::input::Input
                     label={$label}
                     hidden={$hidden}
@@ -170,7 +170,7 @@ macro_rules! edit_field_bool {
     ($instance:expr, $label:expr, $field:ident) => {{
         let instance = $instance.clone();
         html! {
-            <div class="tp__config-field tp__config-field__bool">
+            <div class="tp__form-field tp__form-field__bool">
                 <label>{$label}</label>
                 <$crate::app::components::ToggleSwitch
                      value={instance.borrow().$field}

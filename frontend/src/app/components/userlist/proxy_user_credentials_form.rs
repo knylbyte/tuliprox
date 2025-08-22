@@ -89,8 +89,12 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
 
             { config_field_child!(translate.t("LABEL.PROXY"), {
                html! {
-                     <ProxyTypeInput value={props.user.as_ref().map_or_else(|| ProxyType::Reverse(None), |u| u.credentials.proxy)} />
+                     <ProxyTypeInput value={props.user.as_ref().map_or_else(|| ProxyType::Reverse(None), |u| u.credentials.proxy)}
+                    onchange={Callback::from(|proxy_type: ProxyType|
+                        warn!("Proxy Type: {:?}", proxy_type)
+                    )}/>
             }})}
+
             <label>{ translate.t("LABEL.PROXY") }</label>
             <span>{"TODO"}</span>
 
