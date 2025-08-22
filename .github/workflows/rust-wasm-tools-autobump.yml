@@ -33,7 +33,7 @@ jobs:
           echo "bindgen_current=$bindgen_current" >> "$GITHUB_OUTPUT"
 
       - name: Fetch latest versions
-        id: fetch-version
+        id: latest
         shell: bash
         run: |
           set -euo pipefail
@@ -46,37 +46,20 @@ jobs:
               "https://crates.io/api/v1/crates/${crate}" \
             | jq -r '.crate.max_stable_version'
           }
-          get_latest_from_sparse () {
-            local crate="$1"
-            local a b path
-            a="$(printf "%s" "$crate" | cut -c1-2)"
-            b="$(printf "%s" "$crate" | cut -c3-4)"
-            if [ "${#crate}" -eq 1 ]; then path="1/${crate}";
-            elif [ "${#crate}" -eq 2 ]; then path="2/$(printf "%s" "$crate" | cut -c1)/${crate}";
-            elif [ "${#crate}" -eq 3 ]; then path="3/$(printf "%s" "$crate" | cut -c1)/$(printf "%s" "$crate" | cut -c2)/${crate}";
-            else path="${a}/${b}/${crate}";
-            fi
-            curl -fsSL -H "User-Agent: $UA" --retry 3 --retry-delay 2 \
-              "https://index.crates.io/${path}" \
-            | jq -r -s 'map(select(.yanked==false) | select(.vers | test("-") | not)) | last | .vers'
-          }
+
           trunk_latest="$(get_latest_from_api trunk || true)"
           bindgen_latest="$(get_latest_from_api wasm-bindgen-cli || true)"
-          if [ -z "${trunk_latest:-}" ] || [ "${trunk_latest}" = "null" ]; then
-            trunk_latest="$(get_latest_from_sparse trunk || true)"
-          fi
-          if [ -z "${bindgen_latest:-}" ] || [ "${bindgen_latest}" = "null" ]; then
-            bindgen_latest="$(get_latest_from_sparse wasm-bindgen-cli || true)"
-          fi
+
           [[ -n "${trunk_latest:-}" && "${trunk_latest}" != "null" ]]
           [[ -n "${bindgen_latest:-}" && "${bindgen_latest}" != "null" ]]
-          echo "version-trunk=$trunk_latest" >> "$GITHUB_OUTPUT"
-          echo "version-bindgen=$bindgen_latest" >> "$GITHUB_OUTPUT"
+
+          echo "trunk_latest=$trunk_latest" >> "$GITHUB_OUTPUT"
+          echo "bindgen_latest=$bindgen_latest" >> "$GITHUB_OUTPUT"
 
       - name: Show versions
         run: |
           echo "Current -> trunk=${{ steps.current.outputs.trunk_current }}, wasm-bindgen-cli=${{ steps.current.outputs.bindgen_current }}"
-          echo "Latest  -> trunk=${{ steps['fetch-version'].outputs['version-trunk'] }}, wasm-bindgen-cli=${{ steps['fetch-version'].outputs['version-bindgen'] }}"
+          echo "Latest  -> trunk=${{ steps.latest.outputs.trunk_latest }}, wasm-bindgen-cli=${{ steps.latest.outputs.bindgen_latest }}"
 
       - name: Update Dockerfile if newer versions found
         id: update
@@ -84,17 +67,17 @@ jobs:
         run: |
           set -euo pipefail
           updated=0
-          if [ "${{ steps['fetch-version'].outputs['version-trunk'] }}" != "${{ steps.current.outputs.trunk_current }}" ]; then
-            sed -i -E "s/^(ARG TRUNK_VER=).*/\1${{ steps['fetch-version'].outputs['version-trunk'] }}/" "$FILE"
+          if [ "${{ steps.latest.outputs.trunk_latest }}" != "${{ steps.current.outputs.trunk_current }}" ]; then
+            sed -i -E "s/^(ARG TRUNK_VER=).*/\1${{ steps.latest.outputs.trunk_latest }}/" "$FILE"
             updated=1
           fi
-          if [ "${{ steps['fetch-version'].outputs['version-bindgen'] }}" != "${{ steps.current.outputs.bindgen_current }}" ]; then
-            sed -i -E "s/^(ARG BINDGEN_VER=).*/\1${{ steps['fetch-version'].outputs['version-bindgen'] }}/" "$FILE"
+          if [ "${{ steps.latest.outputs.bindgen_latest }}" != "${{ steps.current.outputs.bindgen_current }}" ]; then
+            sed -i -E "s/^(ARG BINDGEN_VER=).*/\1${{ steps.latest.outputs.bindgen_latest }}/" "$FILE"
             updated=1
           fi
           echo "updated=$updated" >> "$GITHUB_OUTPUT"
           if [ "$updated" -eq 0 ]; then
-            echo "Nothing to do. Running the latest version trunk=${{ steps['fetch-version'].outputs['version-trunk'] }}, bindgen=${{ steps['fetch-version'].outputs['version-bindgen'] }}"
+            echo "Nothing to do. Running the latest version trunk=${{ steps.latest.outputs.trunk_latest }}, bindgen=${{ steps.latest.outputs.bindgen_latest }}"
           fi
 
       - name: Commit & push
@@ -106,5 +89,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$FILE"
-          git commit -m "chore(build-tools): bump trunk to ${{ steps['fetch-version'].outputs['version-trunk'] }} and wasm-bindgen-cli to ${{ steps['fetch-version'].outputs['version-bindgen'] }}"
+          git commit -m "chore(build-tools): bump trunk to ${{ steps.latest.outputs.trunk_latest }} and wasm-bindgen-cli to ${{ steps.latest.outputs.bindgen_latest }}"
           git push origin "HEAD:${branch}"
