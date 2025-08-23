@@ -47,9 +47,6 @@ FROM ${GHCR_IMAGE:-ghcr.io/knylbyte/tuliprox/}rust-wasm-tools:${GHCR_TAG_SUFFIX:
 
 WORKDIR /src
 
-RUN apt-get update && apt-get install -y --no-install-recommends libclang-dev binaryen \
-  && rm -rf /var/lib/apt/lists/*
-
 COPY . .
 
 WORKDIR /src/frontend
