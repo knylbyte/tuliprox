@@ -8,6 +8,12 @@
 # =================================================================
 
 # -----------------------------------------------------------------
+# Global ARGs
+# -----------------------------------------------------------------
+ARG GHCR_IMAGE=ghcr.io/knylbyte/tuliprox
+ARG GHCR_TAG_SUFFIX=latest
+
+# -----------------------------------------------------------------
 # Stage 1: Build the Rust binary for production
 # -----------------------------------------------------------------
 FROM rust:bookworm AS rust-build
@@ -40,10 +46,7 @@ RUN cargo build -p tuliprox --target $RUST_TARGET --release
 # -----------------------------------------------------------------
 # Stage 2: Build the rust frontend and use prebuilt tools
 # -----------------------------------------------------------------
-ARG GHCR_IMAGE
-ARG GHCR_TAG_SUFFIX
-
-FROM ${GHCR_IMAGE:-ghcr.io/knylbyte/tuliprox/}rust-wasm-tools:${GHCR_TAG_SUFFIX:-latest} AS trunk-build
+FROM ${GHCR_IMAGE}/rust-wasm-tools:${GHCR_TAG_SUFFIX} AS trunk-build
 
 WORKDIR /src
 
