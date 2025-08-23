@@ -35,33 +35,35 @@ pub fn NumberInput(props: &NumberInputProps) -> Html {
     }
 
     let on_input = {
-        let on_change = props.on_change.clone();
+        let onchange = props.on_change.clone();
         Callback::from(move |e: InputEvent| {
             if let Some(input) = e.target_dyn_into::<HtmlInputElement>() {
                 let raw = input.value();
                 let parsed = raw.parse::<u32>().ok();
-                on_change.emit(parsed);
+                onchange.emit(parsed);
             }
         })
     };
 
-    let handle_keydown = Callback::from(move |e: KeyboardEvent| {
-        let key = e.key();
-        let allowed = key.chars().all(|c| c.is_ascii_digit())
-            || key == "Backspace"
-            || key == "Delete"
-            || key == "ArrowLeft"
-            || key == "ArrowRight"
-            || key == "Tab"
-            || key == "Enter"
-            || key == "."
-            || key == ","
-            || key == "-";
+    let handle_keydown = {
+        Callback::from(move |e: KeyboardEvent| {
+            let key = e.key();
+            let allowed = key.chars().all(|c| c.is_ascii_digit())
+                || key == "Backspace"
+                || key == "Delete"
+                || key == "ArrowLeft"
+                || key == "ArrowRight"
+                || key == "Tab"
+                || key == "Enter"
+                || key == "."
+                || key == ","
+                || key == "-";
 
-        if !allowed {
-            e.prevent_default();
-        }
-    });
+            if !allowed {
+                e.prevent_default();
+            }
+        })
+    };
 
     html! {
         <div class="tp__input">
@@ -78,6 +80,7 @@ pub fn NumberInput(props: &NumberInputProps) -> Html {
                     name={props.name.clone()}
                     placeholder={props.placeholder.clone()}
                     onkeydown={handle_keydown.clone()}
+                    oninput={on_input.clone()}
                     />
             </div>
         </div>

@@ -74,5 +74,5 @@ pub use self::accordion::*;
 pub use self::accordion_panel::*;
 pub use self::csv_table::*;
 pub use self::tabset::*;
-pub use self::number_input::*;
-pub use self::date_input::*;
+//pub use self::number_input::*;
+//pub use self::date_input::*;

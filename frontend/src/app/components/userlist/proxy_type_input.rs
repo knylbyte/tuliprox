@@ -1,4 +1,3 @@
-use std::hash::Hash;
 use log::warn;
 use shared::model::{ClusterFlags, ProxyType};
 use yew::prelude::*;
@@ -18,7 +17,7 @@ fn get_flags(pt: ProxyType)-> (bool, bool, bool, bool, bool) {
 }
 
 fn check_flag_validity(flags: (bool, bool, bool, bool, bool)) -> (bool, bool, bool, bool, bool) {
-    let (redirect, reverse, live, vod, series) = flags;
+    let (_redirect, reverse, live, vod, series) = flags;
     if reverse && !vod && !live && !series {
         (false, true, true, true, true)
     } else {
