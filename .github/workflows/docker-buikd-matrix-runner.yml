@@ -1,4 +1,4 @@
-name: Build & Push tuliprox (multi-arch)
+name: Docker Build & Push tuliprox (multi-arch)
 
 on:
   workflow_dispatch:
