@@ -79,7 +79,7 @@ jobs:
           build-args: |
             RUST_TARGET=${{ matrix.rust_target }}
             GHCR_IMAGE=ghcr.io/${{ github.repository }}
-            GHCR_PLATFORM=${{ matrix.tag_suffix }}
+            GHCR_TAG_SUFFIX=${{ matrix.tag_suffix }}
           cache-from: |
             type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.tag_suffix }}
           cache-to: |
