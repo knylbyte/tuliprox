@@ -35,7 +35,7 @@ jobs:
             rust_target: armv7-unknown-linux-musleabihf
             tag_suffix: linux-armv7
 
-    runs-on: ${{ matrix.runner || ' ubuntu-24.04' }}
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
 
     steps:
       - name: Checkout
@@ -76,11 +76,10 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.ARCH_TAG }}
             ${{ steps.meta.outputs.REF_ARCH_TAG }}
-        # GHCR_IMAGE not clear yet !
           build-args: |
             RUST_TARGET=${{ matrix.rust_target }}
-            GHCR_IMAGE=${{ steps.meta.outputs.TOOLS_IMAGE }}
-            GHCR_IMAGE=ghcr.io/${{ github.repository }}/rust-wasm-tools:latest
+            GHCR_IMAGE=ghcr.io/${{ github.repository }}
+            GHCR_PLATFORM=${{ matrix.tag_suffix }}
           cache-from: |
             type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.tag_suffix }}
           cache-to: |
