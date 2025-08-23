@@ -27,8 +27,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           trunk_current="$(grep -Eo 'ARG TRUNK_VER=([0-9]+\.[0-9]+\.[0-9]+)' "$FILE" | cut -d= -f2)"
           bindgen_current="$(grep -Eo 'ARG BINDGEN_VER=([0-9]+\.[0-9]+\.[0-9]+)' "$FILE" | cut -d= -f2)"
+
           echo "trunk_current=$trunk_current" >> "$GITHUB_OUTPUT"
           echo "bindgen_current=$bindgen_current" >> "$GITHUB_OUTPUT"
 
@@ -37,6 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           get_latest_from_api () {
             local crate="$1"
             curl -fsSL \
@@ -66,16 +69,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           updated=0
+
           if [ "${{ steps.latest.outputs.trunk_latest }}" != "${{ steps.current.outputs.trunk_current }}" ]; then
             sed -i -E "s/^(ARG TRUNK_VER=).*/\1${{ steps.latest.outputs.trunk_latest }}/" "$FILE"
             updated=1
           fi
+
           if [ "${{ steps.latest.outputs.bindgen_latest }}" != "${{ steps.current.outputs.bindgen_current }}" ]; then
             sed -i -E "s/^(ARG BINDGEN_VER=).*/\1${{ steps.latest.outputs.bindgen_latest }}/" "$FILE"
             updated=1
           fi
+
           echo "updated=$updated" >> "$GITHUB_OUTPUT"
+
           if [ "$updated" -eq 0 ]; then
             echo "Nothing to do. Running the latest version trunk=${{ steps.latest.outputs.trunk_latest }}, bindgen=${{ steps.latest.outputs.bindgen_latest }}"
           fi
