@@ -1,4 +1,4 @@
-use web_sys::{HtmlInputElement, KeyboardEvent};
+use web_sys::{HtmlInputElement, InputEvent, KeyboardEvent};
 use yew::{function_component, html, use_effect_with, use_state, Callback, Html, NodeRef, Properties, TargetCast};
 use crate::app::components::IconButton;
 use crate::html_if;
@@ -46,22 +46,14 @@ pub fn Input(props: &InputProps) -> Html {
       })
     };
 
-    let handle_keydown = {
-        let onkeydown_clone = props.onkeydown.clone();
+    let handle_oninput = {
         let ontext_clone = props.on_change.clone();
-        Callback::from(move |event: KeyboardEvent| {
-            if event.key() == "Enter" {
-                event.prevent_default();
-            }
-
+        Callback::from(move |event: InputEvent| {
             if let Some(input) = event.target_dyn_into::<web_sys::HtmlInputElement>() {
                 let value = input.value();
                 if let Some(cb) = ontext_clone.as_ref() {
-                        cb.emit(value);
+                    cb.emit(value);
                 }
-            }
-            if let Some(cb) = onkeydown_clone.as_ref() {
-                cb.emit(event);
             }
         })
     };
@@ -80,7 +72,8 @@ pub fn Input(props: &InputProps) -> Html {
                     type={if *hide_content { "password".to_string() } else { "text".to_string() }}
                     name={props.name.clone()}
                     autocomplete={if props.autocomplete { "on".to_string() } else { "off".to_string() }}
-                    onkeydown={handle_keydown.clone()}
+                    onkeydown={props.onkeydown.clone()}
+                    oninput={handle_oninput}
                     />
                 { html_if!(props.hidden, {
                      <IconButton name="hide" icon="Visibility" onclick={handle_hide_content} />

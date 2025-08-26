@@ -1,68 +1,146 @@
-use std::cell::RefCell;
 use std::rc::Rc;
-use log::warn;
+use chrono::{Duration, Utc};
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{ApiProxyServerInfoDto, ConfigTargetDto, ProxyType, ProxyUserCredentialsDto, ProxyUserStatus};
 use crate::app::TargetUser;
-use crate::{config_field_child, edit_field_bool, edit_field_date, edit_field_number, edit_field_text, edit_field_text_option};
+use crate::{config_field_child, config_field_custom, edit_field_bool, edit_field_date, edit_field_number, edit_field_text, edit_field_text_option, generate_form_reducer};
 use crate::app::components::select::Select;
 use crate::app::components::{DropDownOption, TextButton, UserStatus};
+use crate::app::components::config::HasFormData;
 use crate::app::components::userlist::proxy_type_input::ProxyTypeInput;
+use crate::hooks::use_service_context;
+
+generate_form_reducer!(
+    state: UserFormState { form: ProxyUserCredentialsDto },
+    action_name: UserFormAction,
+    fields {
+        Username => username: String,
+        Password => password: String,
+        Token => token: Option<String>,
+        Proxy => proxy: ProxyType,
+        Server => server: Option<String>,
+        Status => status: Option<ProxyUserStatus>,
+        MaxConnections => max_connections: u32,
+        ExpDate => exp_date: Option<i64>,
+        UiEnabled => ui_enabled: bool,
+        EpgTimeshift => epg_timeshift: Option<String>,
+        Comment => comment: Option<String>,
+    }
+);
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct ProxyUserCredentialsFormProps {
     pub user: Option<Rc<TargetUser>>,
     pub targets: Rc<Vec<Rc<ConfigTargetDto>>>,
     pub server: Rc<Vec<ApiProxyServerInfoDto>>,
+    pub on_save: Callback<(bool, String, ProxyUserCredentialsDto)>,
 }
 
 #[function_component]
 pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
     let translate = use_translation();
-    let selected_target = use_state(|| props.user.as_ref().map(|u| u.target.clone()));
-    let form_state = use_memo(props.user.clone(),
-                              |user| RefCell::new(user.as_ref()
-                                  .map_or_else(|| ProxyUserCredentialsDto::default(),
-                                               |usr| usr.credentials.as_ref().clone())));
+    let service_ctx = use_service_context();
+    let selected_target = use_state(|| None);
+    let update = use_state(|| false);
 
-    let targets = use_memo((props.targets.clone(), props.user.clone()),
-                           |(targets, user)|
-        targets.iter().map(|t| Rc::new(DropDownOption {
-            id: t.name.to_string(),
-            label: html! { t.name.clone() },
-            selected: user.as_ref().is_some_and(|user| user.target == t.name),
-        })).collect::<Vec<Rc<DropDownOption>>>(),
-    );
+    let form_state: UseReducerHandle<UserFormState> = use_reducer(|| {
+        UserFormState { form: ProxyUserCredentialsDto::default(), modified: false }
+    });
 
-    let server = use_memo((props.server.clone(), props.user.clone()),
-                          |(server, user)|
-        server.iter().map(|s| Rc::new(DropDownOption {
-            id: s.name.to_string(),
-            label: html! { s.name.clone() },
-            selected: user.as_ref().is_some_and(|user| user.credentials.server.as_ref() == Some(&s.name)),
-        })).collect::<Vec<Rc<DropDownOption>>>(),
-    );
-
-    let proxy_user_status = use_memo(props.user.clone(), |user|
-        vec![
-            ProxyUserStatus::Active,
+    let proxy_user_status = use_memo(form_state.clone(), |user|
+        [ProxyUserStatus::Active,
             ProxyUserStatus::Expired,
             ProxyUserStatus::Banned,
             ProxyUserStatus::Trial,
             ProxyUserStatus::Disabled,
-            ProxyUserStatus::Pending,
-        ].iter().map(|s| Rc::new(DropDownOption {
+            ProxyUserStatus::Pending].iter().map(|s| Rc::new(DropDownOption {
             id: s.to_string(),
-            label: html! { <UserStatus status={Some(s.clone())} /> },
-            selected: user.as_ref().is_some_and(|user| user.credentials.status.as_ref() == Some(s)),
+            label: html! { <UserStatus status={Some(*s)} /> },
+            selected: user.data().status.as_ref() == Some(s),
         })).collect::<Vec<Rc<DropDownOption>>>(),
     );
 
+    let targets = use_memo((props.targets.clone(), selected_target.clone()),
+                           |(targets, user)|
+        targets.iter().map(|t| Rc::new(DropDownOption {
+            id: t.name.clone(),
+            label: html! { t.name.clone() },
+            selected: (*user).as_ref().is_some_and(|ut: &String| ut == &t.name),
+        })).collect::<Vec<Rc<DropDownOption>>>(),
+    );
+
+    let server = use_memo((props.server.clone(), form_state.clone()),
+                          |(server, user)|
+        server.iter().map(|s| Rc::new(DropDownOption {
+            id: s.name.to_string(),
+            label: html! { s.name.clone() },
+            selected: user.data().server.as_ref() == Some(&s.name),
+        })).collect::<Vec<Rc<DropDownOption>>>(),
+    );
+
+    {
+        let form_state = form_state.clone();
+        let set_selected_target = selected_target.clone();
+        let set_update = update.clone();
+        use_effect_with((props.user.clone(), props.server.clone()), move |(user, server)| {
+            if let Some(u) = user.clone() {
+                set_update.set(true);
+                set_selected_target.set(Some(u.target.clone()));
+                form_state.dispatch(UserFormAction::SetAll((*u.credentials).clone()));
+            } else {
+                set_update.set(false);
+                set_selected_target.set(None);
+                let mut user = ProxyUserCredentialsDto::default();
+                if let Some(api_server) = (*server).first() {
+                    user.server = Some(api_server.name.clone());
+                }
+                user.max_connections = 1;
+                user.proxy = ProxyType::Redirect;
+                user.status = Some(ProxyUserStatus::Active);
+                user.ui_enabled = true;
+                let now = Utc::now();
+                user.created_at = Some(now.timestamp());
+                let in_one_year = now + Duration::days(365);
+                user.exp_date = Some(in_one_year.timestamp());
+
+                form_state.dispatch(UserFormAction::SetAll(user));
+            }
+            || ()
+        },
+        );
+    }
+
     let handle_save_user = {
         let user = form_state.clone();
+        let original = props.user.clone();
+        let services = service_ctx.clone();
+        let translate_clone = translate.clone();
+        let target: Option<String> = (*selected_target).clone();
+        let onsave = props.on_save.clone();
+        let is_update = update.clone();
         Callback::from(move |_| {
-            warn!("{:?}", user.borrow());
+            if let Some(target_name) = target.as_ref() {
+                if user.modified() {
+                    let user = user.data();
+                    if let Err(err) = user.validate() {
+                        services.toastr.error(err.to_string());
+                    } else {
+                        match original.as_ref().map(|t| t.credentials.clone()) {
+                            None => onsave.emit((*is_update, target_name.clone(), user.clone())),
+                            Some(original_user) => {
+                                if &(*original_user) != user {
+                                    onsave.emit((*is_update, target_name.clone(), user.clone()));
+                                }
+                            }
+                        };
+                    }
+                } else {
+                    services.toastr.warning(translate_clone.t("MESSAGES.SAVE.USER.NOTHING_TO_SAVE"));
+                }
+            } else {
+                services.toastr.error(translate_clone.t("MESSAGES.SAVE.USER.TARGET_NOT_SELECTED"));
+            }
         })
     };
 
@@ -74,40 +152,48 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
     html! {
         <div class="tp__proxy-user-credentials-form tp__form-page">
           <div class="tp__proxy-user-credentials-form__body tp__form-page__body">
-            { config_field_child!(translate.t("LABEL.PLAYLIST"), {
+            { if *update {
+                 config_field_custom!(translate.t("LABEL.PLAYLIST"), (*set_selected_target).as_ref().map_or_else(String::new, |t| t.clone()))
+               } else { config_field_child!(translate.t("LABEL.PLAYLIST"), {
                html! { <Select name="target"
                     multi_select={false}
                     onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
                         if let Some(target_option) =  selections.first() {
-                           set_selected_target.set(Some(target_option.id.clone()));
+                            set_selected_target.set(Some(target_option.id.clone()));
                         } else {
                             set_selected_target.set(None);
                         }
                     })}
                     options={(*targets).clone()}
                 />
-            }})}
+            }})}}
             { config_field_child!(translate.t("LABEL.STATUS"), {
                html! { <Select name="status"
                     multi_select={false}
                     onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
                         if let Some(status_option) =  selections.first() {
-                            if let Some(status) = status_option.id.parse::<ProxyUserStatus>().ok() {
-                               instance_status.borrow_mut().status = Some(status);
+                            if let Ok(status) = status_option.id.parse::<ProxyUserStatus>() {
+                                instance_status.dispatch(UserFormAction::Status(Some(status)));
                             }
                         }
                     })}
                     options={(*proxy_user_status).clone()}
                 />
             }})}
-            { edit_field_text!(form_state, translate.t("LABEL.USERNAME"), username) }
-            { edit_field_text!(form_state, translate.t("LABEL.PASSWORD"), password, true) }
-            { edit_field_text_option!(form_state,  translate.t("LABEL.TOKEN"), token, true) }
+            { if *update {
+                  config_field_custom!(translate.t("LABEL.USERNAME"), form_state.data().username.clone())
+                } else {
+                  edit_field_text!(form_state, translate.t("LABEL.USERNAME"), username, UserFormAction::Username)
+               }
+            }
+            { edit_field_text!(form_state, translate.t("LABEL.PASSWORD"), password, UserFormAction::Password, true) }
+            { edit_field_text_option!(form_state,  translate.t("LABEL.TOKEN"), token, UserFormAction::Token, true) }
             { config_field_child!(translate.t("LABEL.PROXY"), {
                html! {
-                     <ProxyTypeInput value={props.user.as_ref().map_or_else(|| ProxyType::Reverse(None), |u| u.credentials.proxy)}
-                        on_change={Callback::from(move |proxy_type: ProxyType|
-                        instance_proxy.borrow_mut().proxy = proxy_type
+                     <ProxyTypeInput value={form_state.data().proxy}
+                        on_change={Callback::from(move |proxy_type: ProxyType| {
+                         instance_proxy.dispatch(UserFormAction::Proxy(proxy_type));
+                        }
                     )}/>
             }})}
             { config_field_child!(translate.t("LABEL.SERVER"), {
@@ -116,19 +202,19 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                     multi_select={false}
                     onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
                         if let Some(server_option) =  selections.first().or((*server).first()) {
-                            instance_server.borrow_mut().server = Some(server_option.id.clone());
+                            instance_server.dispatch(UserFormAction::Server(Some(server_option.id.clone())));
                         } else {
-                            instance_server.borrow_mut().server = None;
+                            instance_server.dispatch(UserFormAction::Server(None));
                         };
                     })}
                     options={(*server_list).clone()}
                 />
             }})}
-            { edit_field_number!(form_state,  translate.t("LABEL.MAX_CONNECTIONS"), max_connections) }
-            { edit_field_date!(form_state,  translate.t("LABEL.EXP_DATE"), exp_date) }
-            { edit_field_text_option!(form_state,  translate.t("LABEL.EPG_TIMESHIFT"), epg_timeshift) }
-            { edit_field_bool!(form_state,  translate.t("LABEL.USER_UI_ENABLED"), ui_enabled) }
-            { edit_field_text_option!(form_state,  translate.t("LABEL.COMMENT"), comment) }
+            { edit_field_number!(form_state,  translate.t("LABEL.MAX_CONNECTIONS"), max_connections, UserFormAction::MaxConnections) }
+            { edit_field_date!(form_state,  translate.t("LABEL.EXP_DATE"), exp_date, UserFormAction::ExpDate) }
+            { edit_field_text_option!(form_state,  translate.t("LABEL.EPG_TIMESHIFT"), epg_timeshift, UserFormAction::EpgTimeshift) }
+            { edit_field_bool!(form_state,  translate.t("LABEL.USER_UI_ENABLED"), ui_enabled, UserFormAction::UiEnabled) }
+            { edit_field_text_option!(form_state,  translate.t("LABEL.COMMENT"), comment, UserFormAction::Comment) }
 
           </div>
           <div class="tp__proxy-user-credentials-form__toolbar tp__form-page__toolbar">

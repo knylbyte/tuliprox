@@ -26,10 +26,9 @@ pub fn DateInput(props: &DateInputProps) -> Html {
             if let Some(input) = local_ref.cast::<HtmlInputElement>() {
                 if let Some(ts) = val {
                     // Timestamp -> yyyy-mm-dd
-                    let date = chrono::NaiveDateTime::from_timestamp_opt(*ts, 0)
-                        .unwrap()
-                        .date();
-                    input.set_value(&date.format("%Y-%m-%d").to_string());
+                    if let Some(date) = chrono::DateTime::from_timestamp(*ts, 0) {
+                        input.set_value(&date.format("%Y-%m-%d").to_string());
+                    }
                 } else {
                     input.set_value("");
                 }
@@ -42,13 +41,14 @@ pub fn DateInput(props: &DateInputProps) -> Html {
         let onchange_cb = props.on_change.clone();
         Callback::from(move |event: yew::events::Event| {
             if let Some(input) = event.target_dyn_into::<HtmlInputElement>() {
-                let value = input.value(); // z.B. "2025-08-22"
+                let value = input.value(); // "2025-08-22"
                 let ts = if value.is_empty() {
                     None
                 } else {
                     chrono::NaiveDate::parse_from_str(&value, "%Y-%m-%d")
                         .ok()
-                        .map(|date| date.and_hms_opt(0, 0, 0).unwrap().timestamp())
+                        .and_then(|date| date.and_hms_opt(0, 0, 0))
+                        .map(|dt| dt.and_utc().timestamp())
                 };
                 if let Some(cb) = onchange_cb.as_ref() {
                     cb.emit(ts);

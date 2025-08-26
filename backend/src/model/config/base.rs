@@ -17,8 +17,8 @@ fn create_directories(cfg: &Config, temp_path: &Path) {
         Some(cfg.working_dir.clone()),
         cfg.backup_dir.clone(),
         cfg.user_config_dir.clone(),
-        cfg.video.as_ref().and_then(|v| v.download.as_ref()).map(|d| d.directory.to_string()),
-        cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref().and_then(|c| if c.enabled { Some(c.dir.to_string()) } else { None }))
+        cfg.video.as_ref().and_then(|v| v.download.as_ref()).map(|d| d.directory.clone()),
+        cfg.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref().and_then(|c| if c.enabled { Some(c.dir.clone()) } else { None }))
     ];
 
     let mut paths: Vec<PathBuf> = paths_strings.iter()
@@ -112,7 +112,7 @@ impl Config {
         self.hdhomerun.as_ref().map(|hdhr|
             HdHomeRunDeviceOverview {
                 enabled: hdhr.enabled,
-                devices: hdhr.devices.iter().map(|d| d.name.to_string()).collect::<Vec<String>>(),
+                devices: hdhr.devices.iter().map(|d| d.name.clone()).collect::<Vec<String>>(),
             })
     }
 }
@@ -124,7 +124,7 @@ impl From<&ConfigDto> for Config {
         Config {
             threads: dto.threads,
             api: ConfigApi::from(&dto.api),
-            working_dir: dto.working_dir.to_string(),
+            working_dir: dto.working_dir.clone(),
             backup_dir: dto.backup_dir.clone(),
             user_config_dir: dto.user_config_dir.clone(),
             mapping_path: dto.mapping_path.clone(),

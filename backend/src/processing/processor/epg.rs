@@ -75,9 +75,9 @@ impl EpgIdCache<'_> {
         let normalized = self.normalize(key);
         let phonetic = self.phonetic(&normalized);
 
-        self.normalized.insert(normalized.to_string(), None);
+        self.normalized.insert(normalized.clone(), None);
         self.phonetics
-            .entry(phonetic.to_string())
+            .entry(phonetic.clone())
             .or_default()
             .insert(normalized);
     }
@@ -196,13 +196,13 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
                             (epg_source.logo_override || chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
                             if let Some(icon_tag) = icon_tags.get(epg_channel_id) {
                                 if let XmlTagIcon::Src(icon) = &icon_tag.icon {
-                                    icon_assigned.insert(epg_channel_id.to_string());
+                                    icon_assigned.insert(epg_channel_id.clone());
                                     if epg_source.logo_override || chan.header.logo.is_empty() {
                                         trace!("Matched channel {} to epg icon {icon}", chan.header.name);
-                                        chan.header.logo = (*icon).to_string();
+                                        chan.header.logo = (*icon).clone();
                                     }
                                     if epg_source.logo_override || chan.header.logo_small.is_empty() {
-                                        chan.header.logo_small = (*icon).to_string();
+                                        chan.header.logo_small = (*icon).clone();
                                     }
                                 }
                             }

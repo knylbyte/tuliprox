@@ -107,7 +107,7 @@ impl SourcesConfig {
                         let key = user_target.to_lowercase();
                         if target.name.eq_ignore_ascii_case(key.as_str()) {
                             targets.push(target.id);
-                            target_names.push(target.name.to_string());
+                            target_names.push(target.name.clone());
                             target_added = true;
                             if let Some(value) = check_targets.get(key.as_str()) {
                                 check_targets.insert(key, value + 1);
@@ -120,7 +120,7 @@ impl SourcesConfig {
                 }
             }
 
-            let missing_targets: Vec<String> = check_targets.iter().filter(|&(_, v)| *v == 0).map(|(k, _)| k.to_string()).collect();
+            let missing_targets: Vec<String> = check_targets.iter().filter(|&(_, v)| *v == 0).map(|(k, _)| k.clone()).collect();
             if !missing_targets.is_empty() {
                 return create_tuliprox_error_result!(TuliproxErrorKind::Info, "No target found for {}", missing_targets.join(", "));
             }

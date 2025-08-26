@@ -11,7 +11,7 @@ macros::from_impl!(TelegramMessagingConfig);
 impl From<&TelegramMessagingConfigDto>  for TelegramMessagingConfig {
     fn from(dto: &TelegramMessagingConfigDto) -> Self {
         Self {
-            bot_token: dto.bot_token.to_string(),
+            bot_token: dto.bot_token.clone(),
             chat_ids: dto.chat_ids.clone(),
         }
     }
@@ -20,7 +20,7 @@ impl From<&TelegramMessagingConfigDto>  for TelegramMessagingConfig {
 impl From<&TelegramMessagingConfig>  for TelegramMessagingConfigDto {
     fn from(instance: &TelegramMessagingConfig) -> Self {
         Self {
-            bot_token: instance.bot_token.to_string(),
+            bot_token: instance.bot_token.clone(),
             chat_ids: instance.chat_ids.clone(),
         }
     }
@@ -35,7 +35,7 @@ macros::from_impl!(RestMessagingConfig);
 impl From<&RestMessagingConfigDto> for RestMessagingConfig {
     fn from(dto: &RestMessagingConfigDto) -> Self {
         Self {
-            url: dto.url.to_string(),
+            url: dto.url.clone(),
         }
     }
 }
@@ -43,7 +43,7 @@ impl From<&RestMessagingConfigDto> for RestMessagingConfig {
 impl From<&RestMessagingConfig> for RestMessagingConfigDto {
     fn from(instance: &RestMessagingConfig) -> Self {
         Self {
-            url: instance.url.to_string(),
+            url: instance.url.clone(),
         }
     }
 }
@@ -60,8 +60,8 @@ impl From<&PushoverMessagingConfigDto> for PushoverMessagingConfig {
     fn from(dto: &PushoverMessagingConfigDto) -> Self {
         Self {
             url: dto.url.as_ref().map_or_else(|| String::from("https://api.pushover.net/1/messages.json"), ToString::to_string),
-            token: dto.token.to_string(),
-            user: dto.user.to_string(),
+            token: dto.token.clone(),
+            user: dto.user.clone(),
         }
     }
 }
@@ -69,9 +69,9 @@ impl From<&PushoverMessagingConfigDto> for PushoverMessagingConfig {
 impl From<&PushoverMessagingConfig> for PushoverMessagingConfigDto {
     fn from(instance: &PushoverMessagingConfig) -> Self {
         Self {
-            url: Some(instance.url.to_string()),
-            token: instance.token.to_string(),
-            user: instance.user.to_string(),
+            url: Some(instance.url.clone()),
+            token: instance.token.clone(),
+            user: instance.user.clone(),
         }
     }
 }

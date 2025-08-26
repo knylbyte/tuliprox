@@ -29,7 +29,7 @@ fn csv_assign_mandatory_fields(alias: &mut ConfigInputAliasDto, input_type: Inpu
                 if username.is_none() || password.is_none() {
                     // xtream url
                     if input_type == InputType::XtreamBatch {
-                        alias.url = url.origin().ascii_serialization().to_string();
+                        alias.url = url.origin().ascii_serialization();
                     } else if input_type == InputType::M3uBatch && alias.username.is_some() && alias.password.is_some() {
                         alias.url = format!("{}/get.php?username={}&password={}&type=m3u_plus",
                                             trim_last_slash(&url.origin().ascii_serialization()),
@@ -39,7 +39,7 @@ fn csv_assign_mandatory_fields(alias: &mut ConfigInputAliasDto, input_type: Inpu
                     }
                 } else {
                     if input_type == InputType::XtreamBatch {
-                        alias.url = url.origin().ascii_serialization().to_string();
+                        alias.url = url.origin().ascii_serialization();
                     }
                     // m3u url
                     alias.username = username;

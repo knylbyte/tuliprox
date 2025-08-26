@@ -48,7 +48,7 @@ async fn token(
                             return axum::Json(
                                 TokenResponse {
                                     token,
-                                    username: req.username.to_string(),
+                                    username: req.username.clone(),
                                 }).into_response();
                         }
                     }
@@ -60,7 +60,7 @@ async fn token(
                             return axum::Json(
                                 TokenResponse {
                                     token,
-                                    username: req.username.to_string(),
+                                    username: req.username.clone(),
                                 }).into_response();
                         }
                     }
@@ -97,7 +97,7 @@ async fn token_refresh(
                     return axum::Json(
                         TokenResponse {
                             token,
-                            username: username.to_string(),
+                            username: username.clone(),
                         }).into_response();
                 }
             }

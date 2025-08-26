@@ -106,8 +106,8 @@ impl From<&ConfigInputAliasDto> for ConfigInputAlias {
     fn from(dto: &ConfigInputAliasDto) -> Self {
         Self {
             id: dto.id,
-            name: dto.name.to_string(),
-            url: get_base_url_from_str(&dto.url).map_or_else(|| dto.url.to_string(), |base_url| base_url),
+            name: dto.name.clone(),
+            url: get_base_url_from_str(&dto.url).map_or_else(|| dto.url.clone(), |base_url| base_url),
             username: dto.username.clone(),
             password: dto.password.clone(),
             priority: dto.priority,
@@ -191,7 +191,7 @@ impl ConfigInput {
                     self.max_connections = first.max_connections;
                     self.priority = first.priority;
                     if self.name.is_empty() {
-                        self.name = first.name.to_string();
+                        self.name.clone_from(&first.name);
                     }
                 }
             }
@@ -209,7 +209,7 @@ impl ConfigInput {
             name: alias.name.clone(),
             input_type: self.input_type,
             headers: self.headers.clone(),
-            url: alias.url.to_string(),
+            url: alias.url.clone(),
             epg: self.epg.clone(),
             username: alias.username.clone(),
             password: alias.password.clone(),
@@ -231,7 +231,7 @@ impl From<&ConfigInputDto> for ConfigInput {
     fn from(dto: &ConfigInputDto) -> Self {
         Self {
             id: dto.id,
-            name: dto.name.to_string(),
+            name: dto.name.clone(),
             input_type: dto.input_type,
             headers: dto.headers.clone(),
             url: dto.url.clone(), //get_base_url_from_str(&dto.url).map_or_else(|| dto.url.to_string(), |base_url| base_url),

@@ -12,7 +12,7 @@ pub fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, target_n
     let mut new_tree = BTreeSet::new();
     pl.channels.iter().for_each(|chan| {
         let header = &chan.header;
-        let title = if header.title.is_empty() { header.title.to_string() } else { header.name.to_string() };
+        let title = if header.title.is_empty() { header.title.clone() } else { header.name.clone() };
         new_tree.insert(title);
     });
 

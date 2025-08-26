@@ -30,13 +30,13 @@ pub struct TargetUser {
     pub credentials: Rc<ProxyUserCredentialsDto>,
 }
 
-type TargetUserList = Option<Rc<Vec<Rc<TargetUser>>>>;
+pub type TargetUserList = Option<Rc<Vec<Rc<TargetUser>>>>;
 
 #[derive(Clone, PartialEq)]
 pub struct UserlistContext {
     pub selected_user: UseStateHandle<Option<Rc<TargetUser>>>,
     pub filtered_users: UseStateHandle<TargetUserList>,
-    pub users: TargetUserList,
+    pub users: UseStateHandle<TargetUserList>,
     pub active_page: UseStateHandle<UserlistPage>,
 }
 
@@ -44,7 +44,7 @@ impl UserlistContext {
     pub fn get_users(&self) ->  TargetUserList {
         match &*self.filtered_users {
             Some(filtered) => Some(Rc::clone(filtered)),
-            None => self.users.clone(),
+            None => (*self.users).clone(),
         }
     }
 

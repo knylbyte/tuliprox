@@ -12,7 +12,7 @@ macros::from_impl!(EpgSource);
 impl From<&EpgSourceDto> for EpgSource {
     fn from(dto: &EpgSourceDto) -> Self {
         Self {
-            url: dto.url.to_string(),
+            url: dto.url.clone(),
             priority: dto.priority,
             logo_override: dto.logo_override,
         }

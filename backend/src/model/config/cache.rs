@@ -28,7 +28,7 @@ impl From<&CacheConfig> for CacheConfigDto {
         Self {
             enabled: instance.enabled,
             // Dto prepare should have set the right path
-            dir: Some(instance.dir.to_string()),
+            dir: Some(instance.dir.clone()),
             size: instance.size_str.clone(),
         }
     }

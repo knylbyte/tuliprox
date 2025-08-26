@@ -23,3 +23,4 @@ pub use hdhomerung_config_view::*;
 pub use proxy_config_view::*;
 pub use ipcheck_config_view::*;
 pub use video_config_view::*;
+pub use macros::*;

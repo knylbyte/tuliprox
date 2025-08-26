@@ -283,6 +283,7 @@
     "TARGET_NOT_EXISTS": "Target does not exist",
     "CONFIRM_DELETE": "You really want to delete?",
     "CONFIG_CHANGED": "Configuration on server changed.",
+    "USER_DELETED": "User successfully deleted",
     "DOWNLOAD": {
       "SUCCESS": "Successfully downloaded",
       "FAIL": "Failed to download!",
@@ -310,7 +311,9 @@
         "DUPLICATE_USERNAME": "Duplicate username!",
         "DUPLICATE_TOKEN": "Duplicate token!",
         "TARGET_NOT_FOUND": "Target not found!",
-        "MAX_CONNECTIONS_INVALID": "MaxConnections invalid"
+        "MAX_CONNECTIONS_INVALID": "MaxConnections invalid",
+        "NOTHING_TO_SAVE": "Nothing changed",
+        "TARGET_NOT_SELECTED": "Playlist not selected"
       }
     },
     "PLAYLIST_UPDATE": {

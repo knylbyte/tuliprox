@@ -31,7 +31,7 @@ async fn m3u_api(api_req: &UserApiRequest, app_state: &AppState) -> impl IntoRes
                     // Convert the iterator into a stream of `Bytes`
                     let content_stream = stream::iter(m3u_iter.map(|line| {
                         Ok::<Bytes, String>(Bytes::from(
-                            [line.to_string().as_bytes(), b"\n"].concat(),
+                            [line.clone().as_bytes(), b"\n"].concat(),
                         ))
                     }));
 

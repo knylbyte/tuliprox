@@ -82,6 +82,18 @@ macro_rules! config_field {
 }
 
 #[macro_export]
+macro_rules! config_field_custom {
+    ($label:expr, $value:expr) => {
+        html! {
+            <div class="tp__form-field tp__form-field__text">
+                <label>{$label}</label>
+                <span class="tp__form-field__value">{$value}</span>
+            </div>
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! config_field_child {
     ($label:expr, $body:block) => {
         html! {
@@ -105,15 +117,21 @@ macro_rules! config_field_empty {
     };
 }
 
+pub trait HasFormData {
+    type Data;
+    fn data(&self) -> &Self::Data;
+    //fn data_mut(&mut self) -> &mut Self::Data;
+}
+
 #[macro_export]
 macro_rules! edit_field_text_option {
-    ($instance:expr, $label:expr, $field:ident) => {
-        $crate::edit_field_text_option!(@inner $instance, $label, $field, false)
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {
+        $crate::edit_field_text_option!(@inner $instance, $label, $field, $action, false)
     };
-    ($instance:expr, $label:expr, $field:ident, $hidden:expr) => {
-        $crate::edit_field_text_option!(@inner $instance, $label, $field, $hidden)
+    ($instance:expr, $label:expr, $field:ident, $action:path, $hidden:expr) => {
+        $crate::edit_field_text_option!(@inner $instance, $label, $field, $action, $hidden)
     };
-    (@inner $instance:expr, $label:expr, $field:ident, $hidden:expr) => {{
+    (@inner $instance:expr, $label:expr, $field:ident, $action:path, $hidden:expr) => {{
         let instance = $instance.clone();
         html! {
             <div class="tp__form-field tp__form-field__text">
@@ -122,13 +140,13 @@ macro_rules! edit_field_text_option {
                     hidden={$hidden}
                     name={stringify!($field)}
                     autocomplete={true}
-                    value={instance.borrow().$field.as_ref().map_or_else(String::new, |v|v.to_string())}
+                    value={(*instance).data().$field.as_ref().map_or_else(String::new, |v|v.to_string())}
                     on_change={Callback::from(move |value: String| {
-                        instance.borrow_mut().$field = if value.is_empty() {
+                        instance.dispatch($action(if value.is_empty() {
                             None
                         } else {
                             Some(value)
-                        };
+                        }));
                     })}
                 />
             </div>
@@ -138,13 +156,13 @@ macro_rules! edit_field_text_option {
 
 #[macro_export]
 macro_rules! edit_field_text {
-    ($instance:expr, $label:expr, $field:ident) => {
-        $crate::edit_field_text!(@inner $instance, $label, $field, false)
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {
+        $crate::edit_field_text!(@inner $instance, $label, $field, $action, false)
     };
-    ($instance:expr, $label:expr, $field:ident, $hidden:expr) => {
-        $crate::edit_field_text!(@inner $instance, $label, $field, $hidden)
+    ($instance:expr, $label:expr, $field:ident, $action:path,  $hidden:expr) => {
+        $crate::edit_field_text!(@inner $instance, $label, $field, $action, $hidden)
     };
-    (@inner $instance:expr, $label:expr, $field:ident, $hidden:expr) => {{
+    (@inner $instance:expr, $label:expr, $field:ident, $action:path, $hidden:expr) => {{
         let instance = $instance.clone();
         html! {
             <div class="tp__form-field tp__form-field__text">
@@ -153,9 +171,9 @@ macro_rules! edit_field_text {
                     hidden={$hidden}
                     name={stringify!($field)}
                     autocomplete={true}
-                    value={instance.borrow().$field.clone()}
+                    value={(*instance).data().$field.clone()}
                     on_change={Callback::from(move |value: String| {
-                        instance.borrow_mut().$field = value;
+                        instance.dispatch($action(value));
                     })}
                 />
             </div>
@@ -163,19 +181,17 @@ macro_rules! edit_field_text {
     }};
 }
 
-//<Input label={translate.t("LABEL.PASSWORD")} input_ref={password_ref} input_type="password" name="password"  autocomplete={false} onkeydown={handle_key_down.clone()}/>
-
 #[macro_export]
 macro_rules! edit_field_bool {
-    ($instance:expr, $label:expr, $field:ident) => {{
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
         let instance = $instance.clone();
         html! {
             <div class="tp__form-field tp__form-field__bool">
                 <label>{$label}</label>
                 <$crate::app::components::ToggleSwitch
-                     value={instance.borrow().$field}
+                     value={(*instance).data().$field}
                      readonly={false}
-                     on_change={Callback::from(move |value| instance.borrow_mut().$field = value)} />
+                     on_change={Callback::from(move |value| instance.dispatch($action(value)))} />
             </div>
         }
     }};
@@ -183,18 +199,18 @@ macro_rules! edit_field_bool {
 
 #[macro_export]
 macro_rules! edit_field_number {
-    ($instance:expr, $label:expr, $field:ident) => {{
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
         let instance = $instance.clone();
         html! {
             <div class="tp__form-field tp__form-field__number">
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={instance.borrow().$field.clone()}
+                    value={(*instance).data().$field.clone()}
                     on_change={Callback::from(move |value: Option<u32>| {
                         match value {
-                            Some(value) => instance.borrow_mut().$field = value,
-                            None => instance.borrow_mut().$field = 0,
+                            Some(value) => instance.dispatch($action(value)),
+                            None => instance.dispatch($action(0)),
                         }
                     })}
                 />
@@ -205,19 +221,84 @@ macro_rules! edit_field_number {
 
 #[macro_export]
 macro_rules! edit_field_date {
-    ($instance:expr, $label:expr, $field:ident) => {{
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
         let instance = $instance.clone();
         html! {
             <div class="tp__form-field tp__form-field__date">
                 <$crate::app::components::date_input::DateInput
                     label={$label}
                     name={stringify!($field)}
-                    value={instance.borrow().$field.clone()}
+                    value={(*instance).data().$field.clone()}
                     on_change={Callback::from(move |value: Option<i64>| {
-                        instance.borrow_mut().$field = value;
+                        instance.dispatch($action(value));
                     })}
                 />
             </div>
         }
     }};
+}
+
+#[macro_export]
+macro_rules! generate_form_reducer {
+    (
+        state: $state_name:ident { $data_field:ident: $data_type:ty },
+        action_name: $action_name:ident,
+        fields {
+            $($set_name:ident => $field_name:ident : $field_type:ty),* $(,)?
+        }
+    ) => {
+        #[derive(Debug, Clone, PartialEq)]
+        pub struct $state_name {
+            pub $data_field: $data_type,
+            modified: bool,
+        }
+
+        impl $state_name {
+            pub fn modified(&self) -> bool {
+                self.modified
+            }
+        }
+
+        #[derive(Clone)]
+        pub enum $action_name {
+            $(
+                $set_name($field_type),
+            )*
+            SetAll($data_type),
+        }
+
+        impl yew::prelude::Reducible for $state_name {
+            type Action = $action_name;
+
+            fn reduce(self: std::rc::Rc<Self>, action: Self::Action) -> std::rc::Rc<Self> {
+                let mut new_data = self.$data_field.clone();
+                let mut modified = self.modified;
+                match action {
+                    $(
+                        $action_name::$set_name(v) => {
+                            new_data.$field_name = v;
+                            if !modified { modified = true; }
+                        },
+                    )*
+                    $action_name::SetAll(v) => {
+                        new_data = v;
+                        modified = false;
+                    },
+                }
+                $state_name { $data_field: new_data, modified }.into()
+            }
+        }
+
+        impl $crate::app::components::config::HasFormData for $state_name {
+            type Data = $data_type;
+
+            fn data(&self) -> &Self::Data {
+                &self.$data_field
+            }
+
+            // fn data_mut(&mut self) -> &mut Self::Data {
+            //     &mut self.$data_field
+            // }
+        }
+    };
 }

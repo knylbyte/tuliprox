@@ -16,29 +16,34 @@ pub fn UserlistView() -> Html {
     let active_page = use_state(|| UserlistPage::List);
     let selected_user= use_state(|| None::<Rc<TargetUser>>);
     let filtered_user= use_state(|| None::<Rc<Vec<Rc<TargetUser>>>>);
+    let users = use_state(|| None::<Rc<Vec<Rc<TargetUser>>>>);
 
-    let users = use_memo(config_ctx.config.as_ref().and_then(|c| c.api_proxy.clone()),
-     |api_cfg_opt| {
-         if let Some(api_cfg) = api_cfg_opt {
-             let mut users = Vec::new();
-             for target in &api_cfg.user {
-                 for creds in &target.credentials {
-                     users.push(Rc::new(TargetUser {
-                         target: target.target.to_string(),
-                         credentials: Rc::new(creds.clone()),
-                     }));
-                 }
-             }
-             Some(Rc::new(users))
-         } else {
-             None
-         }
-     });
+    {
+        let users_state = users.clone();
+        use_effect_with(config_ctx.config, move |api_cfg_opt| {
+            let new_users = api_cfg_opt.as_ref().and_then(|cfg| {
+                cfg.api_proxy.as_ref().map(|api_cfg| {
+                    let mut users_vec = Vec::new();
+                    for target in &api_cfg.user {
+                        for creds in &target.credentials {
+                            users_vec.push(Rc::new(TargetUser {
+                                target: target.target.to_string(),
+                                credentials: Rc::new(creds.clone()),
+                            }));
+                        }
+                    }
+                    Rc::new(users_vec)
+                })
+            });
+            users_state.set(new_users);
+            || ()
+        });
+    }
     
     let userlist_context = UserlistContext {
         selected_user: selected_user.clone(),
         filtered_users: filtered_user.clone(),
-        users: (*users).clone(),
+        users: users.clone(),
         active_page: active_page.clone(),
     };
     

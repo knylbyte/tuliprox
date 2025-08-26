@@ -13,9 +13,9 @@ macros::from_impl!(TraktApiConfig);
 impl From<&TraktApiConfigDto> for TraktApiConfig {
     fn from(dto: &TraktApiConfigDto) -> Self {
         Self {
-            key: dto.key.to_string(),
-            version: dto.version.to_string(),
-            url: dto.url.to_string(),
+            key: dto.key.clone(),
+            version: dto.version.clone(),
+            url: dto.url.clone(),
         }
     }
 }
@@ -23,9 +23,9 @@ impl From<&TraktApiConfigDto> for TraktApiConfig {
 impl From<&TraktApiConfig> for TraktApiConfigDto {
     fn from(instance: &TraktApiConfig) -> Self {
         Self {
-            key: instance.key.to_string(),
-            version: instance.version.to_string(),
-            url: instance.url.to_string(),
+            key: instance.key.clone(),
+            version: instance.version.clone(),
+            url: instance.url.clone(),
         }
     }
 }
@@ -43,9 +43,9 @@ macros::from_impl!(TraktListConfig);
 impl From<&TraktListConfigDto> for TraktListConfig {
     fn from(dto: &TraktListConfigDto) -> Self {
         Self {
-            user: dto.user.to_string(),
-            list_slug: dto.list_slug.to_string(),
-            category_name: dto.category_name.to_string(),
+            user: dto.user.clone(),
+            list_slug: dto.list_slug.clone(),
+            category_name: dto.category_name.clone(),
             content_type: dto.content_type,
             fuzzy_match_threshold: dto.fuzzy_match_threshold
         }
@@ -55,9 +55,9 @@ impl From<&TraktListConfigDto> for TraktListConfig {
 impl From<&TraktListConfig> for TraktListConfigDto {
     fn from(instance: &TraktListConfig) -> Self {
         Self {
-            user: instance.user.to_string(),
-            list_slug: instance.list_slug.to_string(),
-            category_name: instance.category_name.to_string(),
+            user: instance.user.clone(),
+            list_slug: instance.list_slug.clone(),
+            category_name: instance.category_name.clone(),
             content_type: instance.content_type,
             fuzzy_match_threshold: instance.fuzzy_match_threshold
         }
