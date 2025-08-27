@@ -60,19 +60,14 @@ pub fn UserEdit() -> Html {
                     Ok(()) => {
                         let new_user = Rc::new(TargetUser {target: target.clone(), credentials: Rc::new(user.clone()) });
                         let new_user_list = if let Some(user_list) = userlist.users.as_ref() {
-                            let mut new_list: Vec<Rc<TargetUser>> = user_list.iter().map(|target_user| {
-                                   let mut new_user = target_user.as_ref().clone();
-                                   if new_user.target == target {
-                                       if is_update {
-                                           if new_user.credentials.username == user.username {
-                                               new_user.credentials = Rc::new(user.clone());
-                                           };
-                                       } else {
-                                           new_user.credentials = Rc::new(user.clone());
-                                       }
-                                   }
-                                   Rc::new(new_user)
-                               }).collect();
+                             let mut new_list: Vec<Rc<TargetUser>> = user_list.iter().map(|target_user| {
+                               let mut cloned = target_user.as_ref().clone();
+                               if is_update && cloned.target == target && cloned.credentials.username == user.username {
+                                   cloned.credentials = Rc::new(user.clone());
+                               }
+                               Rc::new(cloned)
+                            }).collect();
+
                             if !is_update {
                                 new_list.push(new_user);
                             }

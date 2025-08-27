@@ -104,7 +104,6 @@ async fn save_config_api_proxy_user(
         }
 
         let new_api_proxy = Arc::new(api_proxy);
-        app_state.app_config.api_proxy.store(Some(Arc::clone(&new_api_proxy)));
 
         if new_api_proxy.use_user_db {
             if let Err(err) = store_api_user(&app_state.app_config, &new_api_proxy.user) {
@@ -118,6 +117,8 @@ async fn save_config_api_proxy_user(
                 return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
             }
         }
+        // Udate state after successful save
+        app_state.app_config.api_proxy.store(Some(Arc::clone(&new_api_proxy)));
     }
     axum::http::StatusCode::OK.into_response()
 }

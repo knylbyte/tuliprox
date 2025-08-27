@@ -46,7 +46,7 @@ pub fn Select(props: &SelectProps) -> Html {
         Callback::from(move |event: MouseEvent| {
             if let Some(target) = event.target_dyn_into::<web_sys::Element>() {
                 if target.class_name().contains("tp__select-wrapper") {
-                    if let Some(button) = button_ref.cast::<web_sys::HtmlInputElement>() {
+                    if let Some(button) = button_ref.cast::<web_sys::HtmlElement>() {
                         button.click();
                     }
                 }

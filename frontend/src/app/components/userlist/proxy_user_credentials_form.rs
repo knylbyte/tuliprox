@@ -11,6 +11,9 @@ use crate::app::components::config::HasFormData;
 use crate::app::components::userlist::proxy_type_input::ProxyTypeInput;
 use crate::hooks::use_service_context;
 
+const DEFAULT_MAX_CONNECTIONS: u32 = 1;
+const DEFAULT_EXPIRATION_DAYS: i64 = 365;
+
 generate_form_reducer!(
     state: UserFormState { form: ProxyUserCredentialsDto },
     action_name: UserFormAction,
@@ -48,7 +51,7 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
         UserFormState { form: ProxyUserCredentialsDto::default(), modified: false }
     });
 
-    let proxy_user_status = use_memo(form_state.clone(), |user|
+    let proxy_user_status = use_memo(form_state.data().status, |status|
         [ProxyUserStatus::Active,
             ProxyUserStatus::Expired,
             ProxyUserStatus::Banned,
@@ -57,7 +60,7 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
             ProxyUserStatus::Pending].iter().map(|s| Rc::new(DropDownOption {
             id: s.to_string(),
             label: html! { <UserStatus status={Some(*s)} /> },
-            selected: user.data().status.as_ref() == Some(s),
+            selected: status.as_ref() == Some(s),
         })).collect::<Vec<Rc<DropDownOption>>>(),
     );
 
@@ -70,12 +73,12 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
         })).collect::<Vec<Rc<DropDownOption>>>(),
     );
 
-    let server = use_memo((props.server.clone(), form_state.clone()),
-                          |(server, user)|
-        server.iter().map(|s| Rc::new(DropDownOption {
+    let server = use_memo((props.server.clone(), form_state.data().server.clone()),
+                          |(server_list, user_server)|
+        server_list.iter().map(|s| Rc::new(DropDownOption {
             id: s.name.to_string(),
             label: html! { s.name.clone() },
-            selected: user.data().server.as_ref() == Some(&s.name),
+            selected: user_server.as_ref() == Some(&s.name),
         })).collect::<Vec<Rc<DropDownOption>>>(),
     );
 
@@ -95,13 +98,13 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                 if let Some(api_server) = (*server).first() {
                     user.server = Some(api_server.name.clone());
                 }
-                user.max_connections = 1;
+                user.max_connections = DEFAULT_MAX_CONNECTIONS;
                 user.proxy = ProxyType::Redirect;
                 user.status = Some(ProxyUserStatus::Active);
                 user.ui_enabled = true;
                 let now = Utc::now();
                 user.created_at = Some(now.timestamp());
-                let in_one_year = now + Duration::days(365);
+                let in_one_year = now + Duration::days(DEFAULT_EXPIRATION_DAYS);
                 user.exp_date = Some(in_one_year.timestamp());
 
                 form_state.dispatch(UserFormAction::SetAll(user));
@@ -201,7 +204,7 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                 <Select name="server"
                     multi_select={false}
                     onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
-                        if let Some(server_option) =  selections.first().or((*server).first()) {
+                        if let Some(server_option) =  selections.first() {
                             instance_server.dispatch(UserFormAction::Server(Some(server_option.id.clone())));
                         } else {
                             instance_server.dispatch(UserFormAction::Server(None));
