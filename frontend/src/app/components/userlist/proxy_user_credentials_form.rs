@@ -64,12 +64,12 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
         })).collect::<Vec<Rc<DropDownOption>>>(),
     );
 
-    let targets = use_memo((props.targets.clone(), selected_target.clone()),
-                           |(targets, user)|
+    let targets = use_memo((props.targets.clone(), (*selected_target).clone()),
+                           |(targets, selected)|
         targets.iter().map(|t| Rc::new(DropDownOption {
             id: t.name.clone(),
             label: html! { t.name.clone() },
-            selected: (*user).as_ref().is_some_and(|ut: &String| ut == &t.name),
+            selected: selected.as_ref().is_some_and(|ut: &String| ut == &t.name),
         })).collect::<Vec<Rc<DropDownOption>>>(),
     );
 
@@ -119,21 +119,21 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
         let original = props.user.clone();
         let services = service_ctx.clone();
         let translate_clone = translate.clone();
-        let target: Option<String> = (*selected_target).clone();
+        let target = selected_target.clone();
         let onsave = props.on_save.clone();
         let is_update = update.clone();
         Callback::from(move |_| {
-            if let Some(target_name) = target.as_ref() {
+            if let Some(target_name) = (*target).as_ref().cloned() {
                 if user.modified() {
                     let user = user.data();
                     if let Err(err) = user.validate() {
                         services.toastr.error(err.to_string());
                     } else {
                         match original.as_ref().map(|t| t.credentials.clone()) {
-                            None => onsave.emit((*is_update, target_name.clone(), user.clone())),
+                            None => onsave.emit((*is_update, target_name, user.clone())),
                             Some(original_user) => {
                                 if &(*original_user) != user {
-                                    onsave.emit((*is_update, target_name.clone(), user.clone()));
+                                    onsave.emit((*is_update, target_name, user.clone()));
                                 }
                             }
                         };
