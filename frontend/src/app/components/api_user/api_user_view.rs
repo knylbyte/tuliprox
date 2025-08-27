@@ -1,6 +1,6 @@
 use yew::{function_component, html, Callback, Html};
 use crate::app::components::loading_indicator::BusyIndicator;
-use crate::app::components::{IconButton, ToastrView};
+use crate::app::components::{AppIcon, IconButton, ToastrView};
 use crate::hooks::use_service_context;
 use crate::provider::DialogProvider;
 
@@ -24,9 +24,9 @@ pub fn ApiUserView() -> Html {
                       <div class="tp__app-main__header-left">
                         {
                             if let Some(ref title) = services.config.ui_config.app_title {
-                                html! { title.as_str() }
+                                 html! { <span class="tp__app-title">{ title }</span> }
                             } else {
-                                html! { /*<AppIcon name="AppTitle" /> */ }
+                                html! { <AppIcon name="AppTitle" /> }
                             }
                         }
                         </div>

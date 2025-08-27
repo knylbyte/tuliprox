@@ -8,6 +8,10 @@ use crate::hooks::use_service_context;
 pub fn RoleBasedContent() -> Html {
     let services = use_service_context();
 
+    if !services.auth.is_authenticated() {
+       return html! { "Not authorized" };
+    }
+
     if services.auth.is_admin() {
         html! {  <Switch<AppRoute> render={switch} /> }
     } else if services.auth.is_user() {

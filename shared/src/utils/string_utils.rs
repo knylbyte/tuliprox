@@ -30,7 +30,7 @@ pub fn get_trimmed_string(value: &Option<String>) -> Option<String> {
 }
 
 pub fn generate_random_string(length: usize) -> String {
-    let mut rng = fastrand::Rng::with_seed(Utc::now().timestamp() as u64);
+    let mut rng = fastrand::Rng::new();
     let random_string: String = (0..length).map(|_| rng.alphanumeric()).collect();
     random_string
 }
