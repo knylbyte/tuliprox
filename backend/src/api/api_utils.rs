@@ -9,7 +9,6 @@ use crate::api::model::{
     ProviderStreamFactoryOptions, ProviderStreamInfo, ProviderStreamResponse, SharedStreamManager,
     StreamError, ThrottledStream, UserApiRequest,
 };
-use crate::auth::Claims;
 use crate::model::ConfigInput;
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
@@ -25,10 +24,7 @@ use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, log_enabled, trace};
-use shared::model::{
-    InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission,
-    XtreamCluster,
-};
+use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission, XtreamCluster};
 use shared::utils::{default_grace_period_millis, human_readable_byte_size, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,

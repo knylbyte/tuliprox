@@ -1,7 +1,8 @@
 use std::rc::Rc;
 use yew::prelude::*;
 use crate::model::WebConfig;
-use crate::services::{AuthService, ConfigService, EventService, PlaylistService, StatusService, ToastrService, UserService, WebSocketService};
+use crate::services::{AuthService, ConfigService, EventService, PlaylistService, StatusService, ToastrService,
+                      UserService, WebSocketService};
 
 pub struct Services {
     pub auth: Rc<AuthService>,
@@ -15,9 +16,9 @@ pub struct Services {
 }
 
 impl Services {
-    pub fn new(config: &WebConfig) -> Self {
+    pub fn new(web_config: &WebConfig) -> Self {
+        let config = Rc::new(ConfigService::new(web_config));
         let auth = Rc::new(AuthService::new());
-        let config = Rc::new(ConfigService::new(config));
         let status = Rc::new(StatusService::new());
         let event = Rc::new(EventService::new());
         let playlist = Rc::new(PlaylistService::new());

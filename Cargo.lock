@@ -987,6 +987,7 @@ name = "frontend"
 version = "3.1.5"
 dependencies = [
  "anyhow",
+ "base64",
  "bytes",
  "chrono",
  "futures",
@@ -997,7 +998,6 @@ dependencies = [
  "implicit-clone",
  "js-sys",
  "log",
- "paste",
  "prost",
  "regex",
  "reqwasm",

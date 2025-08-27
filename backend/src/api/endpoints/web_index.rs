@@ -5,7 +5,7 @@ use crate::auth::{create_jwt_admin, create_jwt_user, is_admin, verify_password, 
 use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
-use shared::model::{TokenResponse, UserCredential};
+use shared::model::{TokenResponse, UserCredential, TOKEN_NO_AUTH};
 use shared::utils::{concat_path_leading_slash, CONSTANTS};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,7 +21,7 @@ use lol_html::{element, RewriteStrSettings};
 
 fn no_web_auth_token() -> impl axum::response::IntoResponse + Send {
     axum::Json(TokenResponse {
-        token: "authorized".to_string(),
+        token: TOKEN_NO_AUTH.to_string(),
         username: "admin".to_string(),
     }).into_response()
 }

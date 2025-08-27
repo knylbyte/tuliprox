@@ -61,6 +61,7 @@ pub fn Login() -> Html {
         let login = do_login.clone();
         Callback::from(move |e: KeyboardEvent| {
             if e.key() == "Enter" {
+                e.prevent_default();
                 login.emit(());
             }
         })
