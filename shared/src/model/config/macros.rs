@@ -11,7 +11,8 @@ macro_rules! check_input_credentials {
      match $input_type {
             InputType::M3u => {
                 if $this.username.is_some() || $this.password.is_some() {
-                    return Err(info_err!("Input types of m3u should not use username or password".to_owned()));
+                    // TODO only for initial check
+                    //return Err(info_err!("Input types of m3u should not use username or password".to_owned()));
                 }
                 let (username, password) = $crate::utils::get_credentials_from_url_str(&$this.url);
                 $this.username = username;
@@ -24,7 +25,8 @@ macro_rules! check_input_credentials {
                   }
                 }
                 if $this.username.is_some() || $this.password.is_some() {
-                    return Err(info_err!("Input types of m3u-batch should not define username or password".to_owned()));
+                    // TODO only for initial check
+                   // return Err(info_err!("Input types of m3u-batch should not define username or password".to_owned()));
                 }
             }
             InputType::Xtream => {
