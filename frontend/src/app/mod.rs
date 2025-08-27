@@ -6,13 +6,14 @@ use std::rc::Rc;
 use futures::future::join_all;
 use log::error;
 use serde_json::Value;
+use web_sys::window;
 use crate::provider::IconContextProvider;
 use crate::provider::ServiceContextProvider;
 use yew_i18n::I18nProvider;
 use yew::prelude::*;
 use yew_hooks::{use_async_with_options, UseAsyncOptions};
 use yew_router::prelude::*;
-use crate::app::components::{Authentication, Home, Login};
+use crate::app::components::{Authentication, Home, Login, RoleBasedContent};
 use crate::error::Error;
 use crate::hooks::{IconDefinition};
 use crate::model::WebConfig;
@@ -101,8 +102,17 @@ pub fn App() -> Html {
     {
         let config_state = configuration_state.clone();
         use_async_with_options::<_, (), Error>(async move {
-            match request_get("config.json", None, None).await {
-                Ok(cfg) => config_state.set(Some(cfg)),
+            match request_get::<WebConfig>("config.json", None, None).await {
+                Ok(cfg) => {
+                    if let Some(tab_title) = cfg.tab_title.as_deref() {
+                        if let Some(win) = window() {
+                            if let Some(doc) = win.document() {
+                                doc.set_title(tab_title);
+                            }
+                        }
+                    }
+                    config_state.set(Some(cfg));
+                },
                 Err(err) => error!("Failed to load config {err}"),
             }
             Ok(())
@@ -134,7 +144,7 @@ pub fn App() -> Html {
                 <IconContextProvider icons={icons.clone()}>
                     <I18nProvider supported_languages={supported_languages} translations={transl.clone()}>
                         <Authentication>
-                           <Switch<AppRoute> render={switch} />
+                            <RoleBasedContent />
                         </Authentication>
                     </I18nProvider>
                 </IconContextProvider>

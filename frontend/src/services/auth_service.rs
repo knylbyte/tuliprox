@@ -4,14 +4,22 @@ use crate::error::Error;
 use crate::services::requests::set_token;
 use futures_signals::signal::Mutable;
 use futures_signals::signal::SignalExt;
-use shared::model::{TokenResponse, UserCredential};
+use shared::model::{Claims, TokenResponse, UserCredential, ROLE_ADMIN, ROLE_USER, TOKEN_NO_AUTH};
 use std::future::Future;
 use shared::utils::{concat_path, concat_path_leading_slash};
+use base64::{engine::general_purpose, Engine as _};
+use log::warn;
 
-#[derive(Debug)]
+fn decode_jwt_payload(token: &str) -> Option<Claims> {
+    let payload_enc = token.split('.').nth(1)?;
+    let payload_bytes = general_purpose::URL_SAFE_NO_PAD.decode(payload_enc).ok()?;
+    serde_json::from_slice::<Claims>(&payload_bytes).ok()
+}
+
 pub struct AuthService {
     auth_path: String,
     username: RefCell<String>,
+    roles: RefCell<Vec<String>>,
     auth_channel: Mutable<bool>,
 }
 
@@ -22,11 +30,23 @@ impl AuthService {
             auth_path: concat_path_leading_slash(&base_href, "auth"),
             username: RefCell::new(String::new()),
             auth_channel: Mutable::new(false),
+            roles: RefCell::new(vec![]),
         }
     }
 
     pub fn get_username(&self) -> String {
       self.username.borrow().to_string()
+    }
+    pub fn is_admin(&self) -> bool {
+        self.roles.borrow().iter().any(|r| r == ROLE_ADMIN)
+    }
+
+    pub fn is_user(&self) -> bool {
+        self.roles.borrow().iter().any(|r| r == ROLE_USER)
+    }
+
+    pub fn is_authenticated(&self) -> bool {
+        self.auth_channel.get()
     }
 
     pub async fn auth_subscribe<F, U>(&self, callback: &mut F)
@@ -54,6 +74,7 @@ impl AuthService {
                 self.username.replace(token.username.to_string());
                 self.auth_channel.set(true);
                 set_token(Some(&token.token));
+                self.handle_token(&token.token);
                 Ok(token)
             }
             Err(e) => {
@@ -71,6 +92,7 @@ impl AuthService {
                 self.username.replace(token.username.to_string());
                 self.auth_channel.set(true);
                 set_token(Some(&token.token));
+                self.handle_token(&token.token);
                 Ok(token)
             }
             Err(e) => {
@@ -79,6 +101,23 @@ impl AuthService {
                 set_token(None);
                 Err(e)
             }
+        }
+    }
+
+    fn handle_token(&self, token: &str) {
+        let mut roles = self.roles.borrow_mut();
+        roles.clear();
+
+        if token == TOKEN_NO_AUTH {
+            roles.push(ROLE_ADMIN.to_string());
+        }
+        
+        if let Some(claims) = decode_jwt_payload(token) {
+            for role in claims.roles.iter() {
+                roles.push(role.clone());
+            }
+        } else {
+            warn!("no claims");
         }
     }
 }

@@ -6,18 +6,7 @@ use crate::model::WebAuthConfig;
 use crate::api::model::AppState;
 use crate::auth::AuthBearer;
 use shared::error::to_io_error;
-
-const ROLE_ADMIN: &str = "ADMIN";
-const ROLE_USER: &str = "USER";
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Claims {
-    pub(crate) username: String,
-    iss: String,
-    iat: i64,
-    exp: i64,
-    roles: Vec<String>,
-}
+use shared::model::{Claims, ROLE_ADMIN, ROLE_USER};
 
 pub fn create_jwt_admin(web_auth_config: &WebAuthConfig, username: &str) -> Result<String, std::io::Error> {
     create_jwt(web_auth_config, username, vec![ROLE_ADMIN.to_string()])

@@ -1,4 +1,4 @@
-use web_sys::{HtmlInputElement, InputEvent, KeyboardEvent};
+use web_sys::{HtmlInputElement, InputEvent, KeyboardEvent, MouseEvent};
 use yew::{function_component, html, use_effect_with, use_state, Callback, Html, NodeRef, Properties, TargetCast};
 use crate::app::components::IconButton;
 use crate::html_if;
@@ -38,11 +38,12 @@ pub fn Input(props: &InputProps) -> Html {
         });
     }
 
-
     let handle_hide_content = {
       let hide_content = hide_content.clone();
-      Callback::from(move |_| {
-          hide_content.set(!*hide_content);
+      Callback::from(move |(name, _event): (String, MouseEvent)| {
+          if name == "hide" {
+              hide_content.set(!*hide_content);
+          }
       })
     };
 
@@ -76,7 +77,7 @@ pub fn Input(props: &InputProps) -> Html {
                     oninput={handle_oninput}
                     />
                 { html_if!(props.hidden, {
-                     <IconButton name="hide" icon="Visibility" onclick={handle_hide_content} />
+                     <IconButton name="hide" icon="Visibility" class={if !*hide_content {"active"} else {""}} onclick={handle_hide_content} />
                 })}
             </div>
         </div>

@@ -1,13 +1,19 @@
 .tp__hide-content {
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
   align-items: center;
   gap: var(--gap-default);
   cursor: pointer;
   fill: var(--modest-text-color);
+  box-sizing: border-box;
+  width: 100%;
 
   &:hover {
     fill: var(--text-color);
+  }
+
+  &__text {
+    overflow: hidden;
   }
 
   .svg-icon {
@@ -16,4 +22,8 @@
     min-height: 1.2rem;
     min-width: 1.2rem;
   }
+}
+
+.tp__hide-content.active {
+  fill: var(--tag-active-color);
 }

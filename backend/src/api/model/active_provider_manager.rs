@@ -916,6 +916,8 @@ mod tests {
             headers: HashMap::default(),
             options: None,
             method: InputFetchMethod::default(),
+            staged: None,
+            t_batch_url: None,
         }
     }
 

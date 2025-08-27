@@ -1,7 +1,7 @@
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::HdHomeRunDeviceConfigDto;
-use crate::app::components::{Card};
+use crate::app::components::{Card, NoContent};
 use crate::app::context::ConfigContext;
 use crate::{config_field, config_field_bool, config_field_bool_empty};
 
@@ -38,8 +38,8 @@ pub fn HdHomerunConfigView() -> Html {
             </div>
             <div class="tp__hdhomerun-config-view__body tp__config-view-page__body">
                 <Card class="tp__config-view__card">
-                <h1>{translate.t("LABEL.DEVICES")}</h1>
-
+                  <h1>{translate.t("LABEL.DEVICES")}</h1>
+                  <NoContent />
                 </Card>
             </div>
           </>

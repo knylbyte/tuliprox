@@ -27,6 +27,11 @@
         width: 1.5rem;
       }
     }
+
+    .tp__icon-button.active {
+        color: var(--tag-active-color);
+        fill: var(--tag-active-color);
+    }
   }
   label {
     padding-left: 2px;

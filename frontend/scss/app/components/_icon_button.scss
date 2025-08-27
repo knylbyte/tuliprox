@@ -17,4 +17,8 @@
     fill: var(--icon-button-hover-color);
     outline: none;
   }
+
+  .svg-icon {
+    pointer-events: none;
+  }
 }
