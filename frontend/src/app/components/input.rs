@@ -40,7 +40,7 @@ pub fn Input(props: &InputProps) -> Html {
 
     let handle_hide_content = {
       let hide_content = hide_content.clone();
-      Callback::from(move |(name, event): (String, MouseEvent)| {
+      Callback::from(move |(name, _event): (String, MouseEvent)| {
           if name == "hide" {
               hide_content.set(!*hide_content);
           }

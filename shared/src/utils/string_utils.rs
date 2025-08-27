@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use chrono::Utc;
 
 pub trait Capitalize {
     fn capitalize(&self) -> String;
