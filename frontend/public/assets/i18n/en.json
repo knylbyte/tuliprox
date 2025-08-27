@@ -177,6 +177,7 @@
     "CLEANUP": "Cleanup",
     "PROPERTIES": "Properties",
     "DEVICE": "Device",
+    "DEVICES": "Devices",
     "USE_OUTPUT": "Use output",
     "MATCH_AS_ASCII": "Match as ascii",
     "SORT_SETTINGS": "Sort Settings",
