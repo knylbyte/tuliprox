@@ -267,13 +267,13 @@ impl StrmItemInfo {
 
 fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
     let header = &mut pli.header;
-    let group = header.group.to_string();
-    let title = header.title.to_string();
+    let group = header.group.clone();
+    let title = header.title.clone();
     let item_type = header.item_type;
     let provider_id = header.get_provider_id();
     let virtual_id = header.virtual_id;
-    let input_name = header.input_name.to_string();
-    let url = header.url.to_string();
+    let input_name = header.input_name.clone();
+    let url = header.url.clone();
     let (series_name, release_date, added, season, episode) = match header.item_type {
         PlaylistItemType::Series => {
             let series_name = match header.get_field("name") {
@@ -1006,11 +1006,11 @@ fn get_strm_url(
     user_and_server_info: Option<&(ProxyUserCredentials, ApiProxyServerInfo)>,
     str_item_info: &StrmItemInfo,
 ) -> String {
-    let Some((user, server_info)) = user_and_server_info else { return str_item_info.url.to_string(); };
+    let Some((user, server_info)) = user_and_server_info else { return str_item_info.url.clone(); };
 
     let redirect = user.proxy.is_redirect(str_item_info.item_type) || target_force_redirect.is_some_and(|f| f.has_cluster(str_item_info.item_type));
     if redirect {
-        return str_item_info.url.to_string();
+        return str_item_info.url.clone();
     }
 
     if let Some(stream_type) = match str_item_info.item_type {
@@ -1030,7 +1030,7 @@ fn get_strm_url(
             str_item_info.virtual_id
         )
     } else {
-        str_item_info.url.to_string()
+        str_item_info.url.clone()
     }
 }
 

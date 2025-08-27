@@ -11,7 +11,7 @@ macros::from_impl!(ScheduleConfig);
 impl From<&ScheduleConfigDto> for ScheduleConfig {
     fn from(dto: &ScheduleConfigDto) -> Self {
         Self {
-            schedule: dto.schedule.to_string(),
+            schedule: dto.schedule.clone(),
             targets: dto.targets.clone(),
         }
     }
@@ -19,7 +19,7 @@ impl From<&ScheduleConfigDto> for ScheduleConfig {
 impl From<&ScheduleConfig> for ScheduleConfigDto {
     fn from(dto: &ScheduleConfig) -> Self {
         Self {
-            schedule: dto.schedule.to_string(),
+            schedule: dto.schedule.clone(),
             targets: dto.targets.clone(),
         }
     }

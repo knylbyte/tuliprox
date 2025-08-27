@@ -12,7 +12,7 @@ macros::from_impl!(ProxyConfig);
 impl From<&ProxyConfigDto>  for ProxyConfig {
     fn from(dto: &ProxyConfigDto) -> Self {
         Self {
-            url: dto.url.to_string(),
+            url: dto.url.clone(),
             username: dto.username.clone(),
             password: dto.password.clone(),
         }
@@ -22,7 +22,7 @@ impl From<&ProxyConfigDto>  for ProxyConfig {
 impl From<&ProxyConfig>  for ProxyConfigDto {
     fn from(dto: &ProxyConfig) -> Self {
         Self {
-            url: dto.url.to_string(),
+            url: dto.url.clone(),
             username: dto.username.clone(),
             password: dto.password.clone(),
         }

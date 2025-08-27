@@ -38,7 +38,7 @@ fn get_value(stack: &mut String, it: &mut std::str::Chars) -> String {
         stack.push(c);
     }
 
-    let result = (*stack).to_string();
+    let result = (*stack).clone();
     stack.clear();
     result
 }
@@ -67,7 +67,7 @@ fn token_till(stack: &mut String, it: &mut std::str::Chars, stop_char: char, sta
     if stack.is_empty() {
         None
     } else {
-        let result = (*stack).to_string();
+        let result = (*stack).clone();
         stack.clear();
         Some(result)
     }
@@ -161,7 +161,7 @@ fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url:
                 plih.id = chanid;
             }
         } else {
-            plih.epg_channel_id = Some(plih.id.to_string());
+            plih.epg_channel_id = Some(plih.id.clone());
             if let Some(pid) = provider_id {
                 plih.id = pid;
             }
@@ -266,7 +266,7 @@ where
         if let Some((cluster, group_title)) = channel.map(|pli|
             (pli.header.xtream_cluster, &pli.header.group)) {
             grp_id += 1;
-            Some(PlaylistGroup { id: grp_id, xtream_cluster: cluster, title: group_title.to_string(), channels })
+            Some(PlaylistGroup { id: grp_id, xtream_cluster: cluster, title: group_title.clone(), channels })
         } else {
             None
         }

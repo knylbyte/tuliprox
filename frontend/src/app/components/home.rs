@@ -138,6 +138,7 @@ pub fn Home() -> Html {
 
               <div class="tp__app-main">
                     <div class="tp__app-main__header tp__app-header">
+                      <div class="tp__app-main__header-left">
                         {
                             if let Some(ref title) = services.config.ui_config.app_title {
                                 html! { title.as_str() }
@@ -145,6 +146,7 @@ pub fn Home() -> Html {
                                 html! { /*<AppIcon name="AppTitle" /> */ }
                             }
                         }
+                        </div>
                         <div class={"tp__app-header-toolbar"}>
                             <IconButton name="Logout" icon="Logout" onclick={handle_logout} />
                         </div>

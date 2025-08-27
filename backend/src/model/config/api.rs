@@ -12,9 +12,9 @@ macros::from_impl!(ConfigApi);
 impl From<&ConfigApiDto> for ConfigApi {
     fn from(dto: &ConfigApiDto) -> Self {
         Self {
-            host:dto.host.to_string(),
+            host:dto.host.clone(),
             port: dto.port,
-            web_root: dto.web_root.to_string(),
+            web_root: dto.web_root.clone(),
         }
     }
 }
@@ -22,9 +22,9 @@ impl From<&ConfigApiDto> for ConfigApi {
 impl From<&ConfigApi> for ConfigApiDto {
     fn from(instance: &ConfigApi) -> Self {
         Self {
-            host: instance.host.to_string(),
+            host: instance.host.clone(),
             port: instance.port,
-            web_root: instance.web_root.to_string(),
+            web_root: instance.web_root.clone(),
         }
     }
 }

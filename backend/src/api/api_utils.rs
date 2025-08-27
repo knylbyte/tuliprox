@@ -390,10 +390,10 @@ async fn resolve_streaming_strategy(
             // force_stream_provider means we keep the url and the provider.
             // If force_stream_provider or the input is the same as the config we don't need to get new url
             let (provider, url) = if force_provider.is_some() || provider.id == input.id {
-                (input.name.to_string(), stream_url.to_string())
+                (input.name.clone(), stream_url.to_string())
             } else {
                 (
-                    provider.name.to_string(),
+                    provider.name.clone(),
                     get_stream_alternative_url(stream_url, input, provider),
                 )
             };

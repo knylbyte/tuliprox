@@ -49,10 +49,10 @@ pub fn parse_xtream_series_info(info: &Value, group_title: &str, series_name: &s
                     (episode.clone(),
                      PlaylistItem {
                          header: PlaylistItemHeader {
-                             id: episode.id.to_string(),
+                             id: episode.id.clone(),
                              uuid: generate_playlist_uuid(&input.name, &episode.id, PlaylistItemType::Series, &episode_url),
                              name: series_name.to_string(),
-                             logo: episode.info.as_ref().map_or_else(String::new, |info| info.movie_image.to_string()),
+                             logo: episode.info.as_ref().map_or_else(String::new, |info| info.movie_image.clone()),
                              group: group_title.to_string(),
                              title: episode.title.clone(),
                              url: episode_url.to_string(),
@@ -60,7 +60,7 @@ pub fn parse_xtream_series_info(info: &Value, group_title: &str, series_name: &s
                              xtream_cluster: XtreamCluster::Series,
                              additional_properties: episode.get_additional_properties(&series_info),
                              category_id: 0,
-                             input_name: input.name.to_string(),
+                             input_name: input.name.clone(),
                              ..Default::default()
                          }
                      })
@@ -104,7 +104,7 @@ pub fn create_xtream_url(xtream_cluster: XtreamCluster, url: &str, username: &st
                        stream.container_extension.as_ref().map(std::string::ToString::to_string).as_ref(),
                        live_stream_use_prefix, live_stream_without_extension)
     } else {
-        stream.direct_source.to_string()
+        stream.direct_source.clone()
     }
 }
 
@@ -114,7 +114,7 @@ pub fn parse_xtream(input: &ConfigInput,
                     streams: &Value) -> Result<Option<Vec<PlaylistGroup>>, TuliproxError> {
     match map_to_xtream_category(categories) {
         Ok(xtream_categories) => {
-            let input_name = Arc::new(input.name.to_string());
+            let input_name = Arc::new(input.name.clone());
             let url = input.url.as_str();
             let username = input.username.as_ref().map_or("", |v| v);
             let password = input.password.as_ref().map_or("", |v| v);
@@ -123,7 +123,7 @@ pub fn parse_xtream(input: &ConfigInput,
                 Ok(mut xtream_streams) => {
                     let mut group_map: HashMap<String, XtreamCategory> =
                         xtream_categories.into_iter().map(|category|
-                            (category.category_id.to_string(), category)
+                            (category.category_id.clone(), category)
                         ).collect();
                     let mut unknown_grp = XtreamCategory {
                         category_id: "0".to_string(),
@@ -152,11 +152,11 @@ pub fn parse_xtream(input: &ConfigInput,
                             header: PlaylistItemHeader {
                                 id: stream.get_stream_id().to_string(),
                                 uuid: generate_playlist_uuid(&input_name, &stream.get_stream_id().to_string(), item_type, &stream_url),
-                                name: stream.name.to_string(),
-                                logo: stream.stream_icon.to_string(),
-                                group: category_name.to_string(),
-                                title: stream.name.to_string(),
-                                url: stream_url.to_string(),
+                                name: stream.name.clone(),
+                                logo: stream.stream_icon.clone(),
+                                group: category_name.clone(),
+                                title: stream.name.clone(),
+                                url: stream_url.clone(),
                                 epg_channel_id: stream.epg_channel_id.clone(),
                                 item_type,
                                 xtream_cluster,
@@ -178,7 +178,7 @@ pub fn parse_xtream(input: &ConfigInput,
                             PlaylistGroup {
                                 id: category.category_id.parse::<u32>().unwrap_or(0),
                                 xtream_cluster,
-                                title: category.category_name.to_string(),
+                                title: category.category_name.clone(),
                                 channels: category.channels.clone(),
                             }
                         }).collect()))

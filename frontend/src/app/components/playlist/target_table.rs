@@ -15,17 +15,17 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 
 const HEADERS: [&str; 11] = [
-    "TABLE.EMPTY",
-    "TABLE.ENABLED",
-    "TABLE.NAME",
-    "TABLE.OUTPUT",
-    "TABLE.OPTIONS",
-    "TABLE.SORT",
-    "TABLE.FILTER",
-    "TABLE.RENAME",
-    "TABLE.MAPPING",
-    "TABLE.PROCESSING_ORDER",
-    "TABLE.WATCH",
+    "LABEL.EMPTY",
+    "LABEL.ENABLED",
+    "LABEL.NAME",
+    "LABEL.OUTPUT",
+    "LABEL.OPTIONS",
+    "LABEL.SORT",
+    "LABEL.FILTER",
+    "LABEL.RENAME",
+    "LABEL.MAPPING",
+    "LABEL.PROCESSING_ORDER",
+    "LABEL.WATCH",
 ];
 
 #[derive(Properties, PartialEq, Clone)]

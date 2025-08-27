@@ -27,8 +27,8 @@ macros::from_impl!(ProxyUserCredentials);
 impl From<&ProxyUserCredentialsDto> for ProxyUserCredentials {
     fn from(dto: &ProxyUserCredentialsDto) -> Self {
         Self {
-            username: dto.username.to_string(),
-            password: dto.password.to_string(),
+            username: dto.username.clone(),
+            password: dto.password.clone(),
             token: dto.token.clone(),
             proxy: dto.proxy,
             server: dto.server.clone(),
@@ -46,8 +46,8 @@ impl From<&ProxyUserCredentialsDto> for ProxyUserCredentials {
 impl From<&ProxyUserCredentials> for ProxyUserCredentialsDto {
     fn from(instance: &ProxyUserCredentials) -> Self {
         Self {
-            username: instance.username.to_string(),
-            password: instance.password.to_string(),
+            username: instance.username.clone(),
+            password: instance.password.clone(),
             token: instance.token.clone(),
             proxy: instance.proxy,
             server: instance.server.clone(),
@@ -122,7 +122,7 @@ macros::from_impl!(TargetUser);
 impl From<&TargetUserDto> for TargetUser {
     fn from(dto: &TargetUserDto) -> Self {
         Self {
-            target: dto.target.to_string(),
+            target: dto.target.clone(),
             credentials: dto.credentials.iter().map(Into::into).collect(),
         }
     }
@@ -131,7 +131,7 @@ impl From<&TargetUserDto> for TargetUser {
 impl From<&TargetUser> for TargetUserDto {
     fn from(instance: &TargetUser) -> Self {
         Self {
-            target: instance.target.to_string(),
+            target: instance.target.clone(),
             credentials: instance.credentials.iter().map(Into::into).collect(),
         }
     }

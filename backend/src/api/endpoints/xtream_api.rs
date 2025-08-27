@@ -889,9 +889,9 @@ async fn xtream_player_api_timeshift_stream(
     );
 
     let action_path = format!("{duration}/{start}");
-    api_req.username = username.to_string();
-    api_req.password = password.to_string();
-    api_req.stream_id = stream_id.to_string();
+    api_req.username.clone_from(&username);
+    api_req.password.clone_from(&password);
+    api_req.stream_id.clone_from(&stream_id);
 
     xtream_player_api_stream(
         &fingerprint,
@@ -1503,7 +1503,7 @@ fn xtream_create_content_stream(
             Ok::<Bytes, String>(Bytes::from(if has_next {
                 format!("{line},")
             } else {
-                line.to_string()
+                line.clone()
             }))
         }))
         .chain(stream::once(async {

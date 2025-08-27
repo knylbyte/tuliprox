@@ -36,7 +36,7 @@ pub fn exec_scheduler(client: &Arc<reqwest::Client>, app_state: &Arc<AppState>, 
         vec![]
     };
     for schedule in schedules {
-        let expression = schedule.schedule.to_string();
+        let expression = schedule.schedule.clone();
         let exec_targets = get_process_targets(cfg, targets, schedule.targets.as_ref());
         let app_state_clone = Arc::clone(app_state);
         let http_client = Arc::clone(client);

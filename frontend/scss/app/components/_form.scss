@@ -1,0 +1,43 @@
+@use '../../size';
+
+.tp__form-field {
+  display: flex;
+  gap: var(--gap-default);
+  box-sizing: border-box;
+  min-width: size.$config-field-min-width;
+
+  &__text {
+    flex-flow: column;
+  }
+
+  &__value {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    flex: 1 1 auto;
+    background-color: var(--input-background-color);
+    color: var(--modest-text-color);
+    padding: var(--padding-small) var(--padding-mini);
+    min-height: 2.5rem;
+    max-height: 2.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border: 1px solid var(--input-border-color);
+    border-radius: var(--border-radius);
+    box-sizing: border-box;
+    white-space: nowrap;
+  }
+
+  &__bool {
+    flex-flow: row;
+    align-items: center;
+  }
+
+  label {
+    font-weight: bold;
+    white-space: nowrap;
+    vertical-align: middle;
+    color: var(--text-color);
+    font-size: 1.1rem;
+  }
+}

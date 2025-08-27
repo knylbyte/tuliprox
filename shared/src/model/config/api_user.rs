@@ -6,6 +6,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ClusterFlags, PlaylistItemType};
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum UserConnectionPermission {
@@ -14,10 +15,41 @@ pub enum UserConnectionPermission {
     GracePeriod,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone)]
 pub enum ProxyType {
     Reverse(Option<ClusterFlags>),
     Redirect,
+}
+
+impl PartialEq for ProxyType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ProxyType::Redirect, ProxyType::Redirect) => true,
+            (ProxyType::Reverse(a), ProxyType::Reverse(b)) => {
+                let a_flags = a.map_or(0u16, |f| if f.has_full_flags() { 0u16 } else { f.bits() } );
+                let b_flags = b.map_or(0u16, |f| if f.has_full_flags() { 0u16 } else { f.bits() } );
+                a_flags == b_flags
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ProxyType {}
+
+impl Hash for ProxyType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            ProxyType::Redirect => {
+                0u8.hash(state);
+            }
+            ProxyType::Reverse(flags_opt) => {
+                1u8.hash(state);
+                let flags = flags_opt.map_or(0u16, |f| if f.has_full_flags() { 0u16 } else { f.bits() } );
+                flags.hash(state);
+            }
+        }
+    }
 }
 
 impl Default for ProxyType {
@@ -175,7 +207,7 @@ impl FromStr for ProxyUserStatus {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyUserCredentialsDto {
     pub username: String,

@@ -28,12 +28,12 @@ macros::from_impl!(ApiProxyServerInfo);
 impl From<&ApiProxyServerInfoDto> for ApiProxyServerInfo {
     fn from(dto: &ApiProxyServerInfoDto) -> Self {
         Self {
-            name: dto.name.to_string(),
-            protocol: dto.protocol.to_string(),
-            host: dto.host.to_string(),
+            name: dto.name.clone(),
+            protocol: dto.protocol.clone(),
+            host: dto.host.clone(),
             port: dto.port.clone(),
-            timezone: dto.timezone.to_string(),
-            message: dto.message.to_string(),
+            timezone: dto.timezone.clone(),
+            message: dto.message.clone(),
             path: dto.path.clone(),
         }
     }
@@ -42,12 +42,12 @@ impl From<&ApiProxyServerInfoDto> for ApiProxyServerInfo {
 impl From<&ApiProxyServerInfo> for ApiProxyServerInfoDto {
     fn from(instance: &ApiProxyServerInfo) -> Self {
         Self {
-            name: instance.name.to_string(),
-            protocol: instance.protocol.to_string(),
-            host: instance.host.to_string(),
+            name: instance.name.clone(),
+            protocol: instance.protocol.clone(),
+            host: instance.host.clone(),
             port: instance.port.clone(),
-            timezone: instance.timezone.to_string(),
-            message: instance.message.to_string(),
+            timezone: instance.timezone.clone(),
+            message: instance.message.clone(),
             path: instance.path.clone(),
         }
     }

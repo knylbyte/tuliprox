@@ -28,3 +28,52 @@
       }
    }
 }
+
+.tp__proxy-type-input {
+   display: flex;
+   flex-flow: row wrap;
+   gap: var(--gap-default);
+   .tp__chip {
+      cursor: pointer;
+      &:hover {
+         border-color: var(--active-color);
+      }
+   }
+
+   &__reverse.active,
+   &__reverse-live.active,
+   &__reverse-vod.active,
+   &__reverse-series.active {
+      color: var(--tag-active-color);
+      background-color: var(--tag-active-background-color);
+      border-color: var(--tag-active-border-color);
+   }
+
+   &__reverse-live.redirect-active,
+   &__reverse-vod.redirect-active,
+   &__reverse-series.redirect-active,
+   &__redirect.active {
+      color: var(--tag-alt-active-color);
+      background-color: var(--tag-alt-active-background-color);
+      border-color: var(--tag-alt-active-border-color);
+   }
+
+   &__mixed {
+      display: flex;
+      flex-flow: row nowrap;
+      span:not(:first-child) {
+         border-top-left-radius: 0;
+         border-bottom-left-radius: 0;
+      }
+      span:not(:last-child) {
+         border-top-right-radius: 0;
+         border-bottom-right-radius: 0;
+      }
+   }
+}
+
+.tp__chip__group {
+   display: flex;
+   flex-flow: row nowrap;
+   gap: var(--gap-default);
+}

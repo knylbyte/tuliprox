@@ -1,4 +1,4 @@
-use crate::error::{Error, ErrorInfo};
+use crate::error::{Error, ErrorInfo, ErrorSetInfo};
 use gloo_storage::{LocalStorage, Storage};
 use log::error;
 use reqwasm::http::Request;
@@ -76,12 +76,20 @@ where
                         }
                     }
                 }
+                400 =>  {
+                    let data: Result<ErrorInfo, _> = response.json::<ErrorInfo>().await;
+                    if let Ok(data) = data {
+                        Err(Error::BadRequest(data.error))
+                    } else {
+                        Err(Error::DeserializeError)
+                    }
+                },
                 401 => Err(Error::Unauthorized),
                 403 => Err(Error::Forbidden),
                 404 => Err(Error::NotFound),
                 500 => Err(Error::InternalServerError),
                 422 => {
-                    let data: Result<ErrorInfo, _> = response.json::<ErrorInfo>().await;
+                    let data: Result<ErrorSetInfo, _> = response.json::<ErrorSetInfo>().await;
                     if let Ok(data) = data {
                         Err(Error::UnprocessableEntity(data))
                     } else {

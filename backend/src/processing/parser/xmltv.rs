@@ -134,7 +134,7 @@ impl TVGuide {
                     EPG_TAG_ICON => {
                         if let Some(src) = child.get_attribute_value("src") {
                             if !src.is_empty() {
-                                tag.icon = XmlTagIcon::Src(src.to_string());
+                                tag.icon = XmlTagIcon::Src(src.clone());
                                 child.icon = XmlTagIcon::Exists;
                             }
                         }
@@ -207,7 +207,7 @@ impl TVGuide {
                     let score = min(100, (jw * 100.0).round() as u16);
                     score >= best_match_threshold
                 }) {
-                    return (true, Some(good_enough.to_string()));
+                    return (true, Some(good_enough.clone()));
                 }
             }
         }
@@ -436,7 +436,7 @@ fn collect_tag_attributes(e: &BytesStart, is_channel: bool, is_program: bool) ->
                 if value.is_empty() {
                     None
                 } else if (is_channel && key == EPG_ATTRIB_ID) || (is_program && key == EPG_ATTRIB_CHANNEL) {
-                    Some((key, value.to_lowercase().to_string()))
+                    Some((key, value.to_lowercase().clone()))
                 } else {
                     Some((key, value.to_string()))
                 }

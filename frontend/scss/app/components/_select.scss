@@ -1,0 +1,51 @@
+.tp__select {
+  display: flex;
+  flex-flow: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  gap: 6px;
+
+  &-wrapper {
+    fill: var(--menu-icon-color);
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    overflow: hidden;
+    box-sizing: border-box;
+    padding-left: var(--padding-mini);
+    border: 1px solid var(--input-border-color);
+    border-radius: var(--border-radius);
+    background-color: var(--input-background-color);
+    cursor: pointer;
+
+    &:focus-within {
+      border-color: var(--input-focus-border-color);
+    }
+
+    .svg-icon {
+      height: 2rem;
+      width: 2rem;
+    }
+
+    .tp__icon-button {
+      .svg-icon {
+        height: 1.5rem;
+        width: 1.5rem;
+      }
+    }
+  }
+  label {
+    padding-left: 2px;
+    color: var(--text-color);
+  }
+
+  &__selected {
+    display: flex;
+    flex-flow: row wrap;
+    align-items: center;
+    flex: 1 1 auto;
+    gap: var(--gap-default);
+    color: var(--text-color);
+    pointer-events: none;
+  }
+}
