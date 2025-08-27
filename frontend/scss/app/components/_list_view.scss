@@ -41,7 +41,18 @@
     flex-flow: column;
     box-sizing: border-box;
     width: 100%;
-    overflow: hidden;
     gap: var(--gap-default);
   }
+}
+
+.tp__list-list {
+  &__body {
+    overflow: hidden;
+  }
+}
+
+.tp__list-create {
+   &__body {
+     overflow: auto;
+   }
 }

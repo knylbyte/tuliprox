@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use chrono::Utc;
 
 pub trait Capitalize {
     fn capitalize(&self) -> String;
@@ -29,15 +30,8 @@ pub fn get_trimmed_string(value: &Option<String>) -> Option<String> {
 }
 
 pub fn generate_random_string(length: usize) -> String {
-    let charset = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let range = ..charset.len();
-    let random_string: String = (0..length)
-        .map(|_| {
-            let idx = fastrand::usize(range);
-            charset[idx] as char
-        })
-        .collect();
-
+    let mut rng = fastrand::Rng::with_seed(Utc::now().timestamp() as u64);
+    let random_string: String = (0..length).map(|_| rng.alphanumeric()).collect();
     random_string
 }
 

@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use super::{get_base_href, request_post, ConfigService};
+use super::{get_base_href, request_post};
 use crate::error::Error;
 use crate::services::requests::set_token;
 use futures_signals::signal::Mutable;
@@ -119,5 +119,11 @@ impl AuthService {
         } else {
             warn!("no claims");
         }
+    }
+}
+
+impl Default for AuthService {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -3,6 +3,7 @@ use chrono::{Duration, Utc};
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{ApiProxyServerInfoDto, ConfigTargetDto, ProxyType, ProxyUserCredentialsDto, ProxyUserStatus};
+use shared::utils::generate_random_string;
 use crate::app::TargetUser;
 use crate::{config_field_child, config_field_custom, edit_field_bool, edit_field_date, edit_field_number, edit_field_text, edit_field_text_option, generate_form_reducer};
 use crate::app::components::select::Select;
@@ -106,6 +107,7 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                 user.created_at = Some(now.timestamp());
                 let in_one_year = now + Duration::days(DEFAULT_EXPIRATION_DAYS);
                 user.exp_date = Some(in_one_year.timestamp());
+                user.token = Some(generate_random_string(6));
 
                 form_state.dispatch(UserFormAction::SetAll(user));
             }

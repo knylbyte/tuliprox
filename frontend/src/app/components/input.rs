@@ -1,5 +1,5 @@
-use web_sys::{HtmlInputElement, InputEvent, KeyboardEvent};
-use yew::{function_component, html, use_effect_with, use_state, Callback, Html, NodeRef, Properties, TargetCast};
+use web_sys::{HtmlInputElement, InputEvent, KeyboardEvent, MouseEvent};
+use yew::{function_component, html, use_effect_with, use_node_ref, use_state, Callback, Html, NodeRef, Properties, TargetCast};
 use crate::app::components::IconButton;
 use crate::html_if;
 
@@ -25,6 +25,7 @@ pub struct InputProps {
 
 #[function_component]
 pub fn Input(props: &InputProps) -> Html {
+    let icon_btn_ref = use_node_ref();
     let hide_content = use_state(|| props.hidden);
     let local_ref = props.input_ref.clone().unwrap_or_default();
 
@@ -38,11 +39,17 @@ pub fn Input(props: &InputProps) -> Html {
         });
     }
 
-
     let handle_hide_content = {
       let hide_content = hide_content.clone();
-      Callback::from(move |_| {
-          hide_content.set(!*hide_content);
+      let button_ref = icon_btn_ref.clone();
+      Callback::from(move |(_, event): (String, MouseEvent)| {
+          if let Some(target) = event.target_dyn_into::<web_sys::HtmlElement>() {
+              if let Some(button) = button_ref.cast::<web_sys::HtmlElement>() {
+                  if button == target {
+                      hide_content.set(!*hide_content);
+                  }
+              }
+          }
       })
     };
 
@@ -76,7 +83,7 @@ pub fn Input(props: &InputProps) -> Html {
                     oninput={handle_oninput}
                     />
                 { html_if!(props.hidden, {
-                     <IconButton name="hide" icon="Visibility" onclick={handle_hide_content} />
+                     <IconButton button_ref={icon_btn_ref} name="hide" icon="Visibility" class={if !*hide_content {"active"} else {""}} onclick={handle_hide_content} />
                 })}
             </div>
         </div>
