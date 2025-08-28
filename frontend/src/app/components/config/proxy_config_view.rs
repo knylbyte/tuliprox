@@ -7,7 +7,6 @@ const LABEL_URL: &str = "LABEL.URL";
 const LABEL_USERNAME: &str = "LABEL.USERNAME";
 const LABEL_PASSWORD: &str = "LABEL.PASSWORD";
 
-
 #[function_component]
 pub fn ProxyConfigView() -> Html {
     let translate = use_translation();

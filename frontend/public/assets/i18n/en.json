@@ -82,7 +82,6 @@
     "PROXY": "Proxy",
     "REFRESH": "Refresh",
     "STATUS": "Status",
-    "MAX_CON": "MaxCon",
     "USERNAME": "Username",
     "PASSWORD": "Password",
     "SERVER": "Server",
@@ -273,7 +272,8 @@
     "USER_STATUS_BANNED": "Banned",
     "USER_STATUS_TRIAL": "Trial",
     "USER_STATUS_DISABLED": "Disabled",
-    "USER_STATUS_PENDING": "Pending"
+    "USER_STATUS_PENDING": "Pending",
+    "VIEW": "View"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

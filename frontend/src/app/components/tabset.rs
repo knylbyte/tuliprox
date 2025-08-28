@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use yew::prelude::*;
 use crate::app::components::{IconButton, TextButton, Panel};
 
@@ -11,7 +12,7 @@ pub struct TabItem {
 
 #[derive(Properties, Clone, PartialEq)]
 pub struct TabSetProps {
-    pub tabs: Vec<TabItem>,
+    pub tabs: Rc<Vec<TabItem>>,
     #[prop_or_default]
     pub class: String,
     #[prop_or_default]
