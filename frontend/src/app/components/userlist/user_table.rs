@@ -1,14 +1,11 @@
-use std::borrow::Cow;
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, MaxConnections,
-                             ProxyTypeView, RevealContent, Table, TableDefinition, UserStatus,
-                             UserlistContext, UserlistPage};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, CellValue, Chip, HideContent, MaxConnections, ProxyTypeView, RevealContent, Table, TableDefinition, UserStatus, UserlistContext, UserlistPage};
 use crate::app::context::TargetUser;
 use crate::model::DialogResult;
 use crate::services::DialogService;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
-use shared::model::SortOrder;
+use shared::model::{SortOrder};
 use shared::utils::{unix_ts_to_str, Substring};
 use std::fmt::Display;
 use std::rc::Rc;
@@ -29,7 +26,7 @@ const HEADERS: [&str; 15] = [
     "LABEL.TOKEN",
     "LABEL.PROXY",
     "LABEL.SERVER",
-    "LABEL.MAX_CONNECTIONS",
+    "LABEL.MAX_CON",
     "LABEL.UI_ENABLED",
     "LABEL.EPG_TIMESHIFT",
     "LABEL.CREATED_AT",
@@ -37,20 +34,22 @@ const HEADERS: [&str; 15] = [
     "LABEL.COMMENT",
 ];
 
-fn get_cell_value(user: &TargetUser, col: usize) -> Cow<'_, str> {
+fn get_cell_value(user: &TargetUser, col: usize) -> CellValue<'_> {
     match col {
-        1 => Cow::Owned(user.credentials.is_active().to_string()),
-        2 => Cow::Owned(user.credentials.status.as_ref().map_or_else(String::new, ToString::to_string)),
-        3 => Cow::Borrowed(user.target.as_str()),
-        4 => Cow::Borrowed(user.credentials.username.as_str()),
-        7 => Cow::Owned(user.credentials.proxy.to_string()),
-        8 => Cow::Owned(user.credentials.server.as_ref().map_or_else(String::new, Clone::clone)),
-        _ => Cow::Owned(String::new())
+        1 => CellValue::Bool(user.credentials.is_active()),
+        2 => user.credentials.status.as_ref().map_or(CellValue::Empty, |s| CellValue::Status(*s)),
+        3 => CellValue::Text(user.target.as_str()),
+        4 => CellValue::Text(user.credentials.username.as_str()),
+        7 => CellValue::Proxy(user.credentials.proxy),
+        8 => user.credentials.server.as_ref().map_or(CellValue::Empty, |s|CellValue::Text(s)),
+        12 => user.credentials.created_at.as_ref().map_or(CellValue::Empty, |d| CellValue::Date(*d)),
+        13 => user.credentials.exp_date.as_ref().map_or(CellValue::Empty, |d| CellValue::Date(*d)),
+        _ => CellValue::Empty,
     }
 }
 
 fn is_col_sortable(col: usize) -> bool {
-    matches!(col, 1 | 2 | 3 | 4 | 7 | 8)
+    matches!(col, 1 | 2 | 3 | 4 | 7 | 8 | 12  | 13)
 }
 
 

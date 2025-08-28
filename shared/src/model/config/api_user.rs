@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use crate::utils::default_as_true;
 use std::fmt::Display;
 use std::str::FromStr;
@@ -36,6 +37,28 @@ impl PartialEq for ProxyType {
 }
 
 impl Eq for ProxyType {}
+
+
+impl Ord for ProxyType {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+impl PartialOrd for ProxyType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+        // Some(match (self, other) {
+        //     (ProxyType::Redirect, ProxyType::Redirect) => std::cmp::Ordering::Equal,
+        //     (ProxyType::Reverse(a), ProxyType::Reverse(b)) => {
+        //         let a_flags = a.map_or(0u16, |f| if f.has_full_flags() { 0u16 } else { f.bits() });
+        //         let b_flags = b.map_or(0u16, |f| if f.has_full_flags() { 0u16 } else { f.bits() });
+        //         a_flags.cmp(&b_flags)
+        //     }
+        //     (ProxyType::Redirect, _) => std::cmp::Ordering::Less,
+        //     (ProxyType::Reverse(_), _) => std::cmp::Ordering::Greater,
+        // })
+    }
+}
 
 impl Hash for ProxyType {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -204,6 +227,37 @@ impl FromStr for ProxyUserStatus {
             Self::PENDING => Ok(Self::Pending),
             _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown ProxyUserStatus: {}", s)
         }
+    }
+}
+
+impl Ord for ProxyUserStatus {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Definiere numerische Werte für die Sortierreihenfolge
+        let self_value = match self {
+            ProxyUserStatus::Active => 0,
+            ProxyUserStatus::Trial => 1,
+            ProxyUserStatus::Pending => 2,
+            ProxyUserStatus::Disabled => 3,
+            ProxyUserStatus::Expired => 4,
+            ProxyUserStatus::Banned => 5,
+        };
+
+        let other_value = match other {
+            ProxyUserStatus::Active => 0,
+            ProxyUserStatus::Trial => 1,
+            ProxyUserStatus::Pending => 2,
+            ProxyUserStatus::Disabled => 3,
+            ProxyUserStatus::Expired => 4,
+            ProxyUserStatus::Banned => 5,
+        };
+
+        self_value.cmp(&other_value)
+    }
+}
+
+impl PartialOrd for ProxyUserStatus {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

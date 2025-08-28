@@ -259,6 +259,7 @@
     "EPG": "Epg",
     "PERSIST": "Persist",
     "ALIASES": "Aliases",
+    "MAX_CON": "Max Con.",
     "MAX_CONNECTIONS": "Max Connections",
     "METHOD": "Method",
     "EPG_TIMESHIFT": "Epg Timeshift",
