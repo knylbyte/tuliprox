@@ -11,27 +11,6 @@ fn default_firmware_version() -> String { String::from("20170930") }
 fn default_device_type() -> String { String::from("urn:schemas-upnp-org:device:MediaServer:1") }
 fn default_device_udn() -> String { String::from("uuid:12345678-90ab-cdef-1234-567890abcdef::urn:dial-multicast:com.silicondust.hdhomerun") }
 
-
-// #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash)]
-// enum HdHomeRunUseTargetType {
-//     #[serde(rename = "m3u")]
-//     M3u,
-//     #[serde(rename = "xtream")]
-//     Xtream,
-// }
-//
-// impl TryFrom<TargetType> for HdHomeRunUseTargetType {
-//     type Error = &'static str;
-//
-//     fn try_from(value: TargetType) -> Result<Self, Self::Error> {
-//         match value {
-//             TargetType::Xtream => Ok(Self::Xtream),
-//             TargetType::M3u => Ok(Self::M3u),
-//             _ => Err("Not allowed!"),
-//         }
-//     }
-// }
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HdHomeRunDeviceConfigDto {

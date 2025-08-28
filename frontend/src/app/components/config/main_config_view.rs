@@ -15,7 +15,6 @@ const LABEL_SLEEP_TIMER_MINS: &str = "LABEL.SLEEP_TIMER_MINS";
 const LABEL_CONNECT_TIMEOUT_SECS: &str = "LABEL.CONNECT_TIMEOUT_SECS";
 const LABEL_CUSTOM_STREAM_RESPONSE_PATH: &str = "LABEL.CUSTOM_STREAM_RESPONSE_PATH";
 
-
 #[function_component]
 pub fn MainConfigView() -> Html {
     let translate = use_translation();

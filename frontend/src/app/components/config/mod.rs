@@ -11,6 +11,8 @@ mod hdhomerung_config_view;
 mod proxy_config_view;
 mod ipcheck_config_view;
 mod video_config_view;
+mod config_view_context;
+mod config_page;
 
 pub use config_view::*;
 pub use main_config_view::*;

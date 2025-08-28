@@ -50,6 +50,51 @@ pub struct ConfigDto {
     pub ipcheck: Option<IpCheckConfigDto>,
 }
 
+// This MainConfigDto is a copy of ConfigDto simple fields for form editing.
+// It has no other purpose than editing and saving the simple config values
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+pub struct MainConfigDto {
+    #[serde(default)]
+    pub threads: u8,
+    pub working_dir: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_config_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mapping_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_stream_response_path: Option<String>,
+    #[serde(default)]
+    pub user_access_control: bool,
+    #[serde(default = "default_connect_timeout_secs")]
+    pub connect_timeout_secs: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sleep_timer_mins: Option<u32>,
+    #[serde(default)]
+    pub update_on_boot: bool,
+    #[serde(default)]
+    pub config_hot_reload: bool,
+}
+
+impl From<&ConfigDto> for MainConfigDto {
+    fn from(config: &ConfigDto) -> Self {
+        Self {
+            threads: config.threads,
+            working_dir: config.working_dir.clone(),
+            backup_dir: config.backup_dir.clone(),
+            user_config_dir: config.user_config_dir.clone(),
+            mapping_path: config.mapping_path.clone(),
+            custom_stream_response_path: config.custom_stream_response_path.clone(),
+            user_access_control: config.user_access_control,
+            connect_timeout_secs: config.connect_timeout_secs,
+            sleep_timer_mins: config.sleep_timer_mins,
+            update_on_boot: config.update_on_boot,
+            config_hot_reload: config.config_hot_reload,
+        }
+    }
+}
+
 pub struct HdHomeRunDeviceOverview {
     pub enabled: bool,
     pub devices: Vec<String>,
