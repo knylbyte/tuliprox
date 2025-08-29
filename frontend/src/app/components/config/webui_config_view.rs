@@ -80,12 +80,13 @@ pub fn WebUiConfigView() -> Html {
         let auth_state = auth_state.clone();
         let csp_state = csp_state.clone();
 
-        use_effect_with((webui_state, auth_state, csp_state), move |(w, a, c)| {
+        use_effect_with((webui_state.modified, auth_state.modified, csp_state.modified, webui_state, auth_state, csp_state),
+                        move |(wm, am, cm, w, a, c)| {
             let mut form = w.form.clone();
             form.auth = Some(a.form.clone());
             form.content_security_policy = Some(c.form.clone());
 
-            let modified = w.modified || a.modified || c.modified;
+            let modified = *wm || *am || *cm;
             on_form_change.emit(ConfigForm::WebUi(modified, form));
         });
     }

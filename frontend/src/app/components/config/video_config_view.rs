@@ -87,10 +87,11 @@ pub fn VideoConfigView() -> Html {
         let on_form_change = config_view_ctx.on_form_change.clone();
         let download_state = download_state.clone();
         let video_state = video_state.clone();
-        use_effect_with((video_state, download_state), move |(v, d)| {
+        use_effect_with((video_state.modified, download_state.modified, video_state, download_state),
+                        move |(vm, dm, v, d)| {
             let mut form = v.form.clone();
-            form.download = Some(d.form.clone());
-            let modified = v.modified || d.modified;
+            form.download = if *dm { Some(d.form.clone()) } else { form.download };
+            let modified = *vm || *dm;
             on_form_change.emit(ConfigForm::Video(modified, form));
         });
     }
