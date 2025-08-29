@@ -275,7 +275,8 @@
     "USER_STATUS_PENDING": "Pending",
     "VIEW": "View",
     "ADD_CHAT_ID": "Add ChatId...",
-    "ADD_ATTRIBUTE": "Add Attribute..."
+    "ADD_ATTRIBUTE": "Add Attribute...",
+    "ADD_EXTENSION": "Add Extension..."
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

@@ -123,15 +123,23 @@ pub fn ReverseProxyConfigView() -> Html {
         use_effect_with((reverse_proxy_cfg, config_view_ctx.edit_mode.clone()), move |(cfg, _mode)| {
             if let Some(rp) = cfg {
                 reverse_proxy_state.dispatch(ReverseProxyConfigFormAction::SetAll((*rp).clone()));
+
                 if let Some(cache) = &rp.cache {
-                    cache_state.dispatch(CacheConfigFormAction::SetAll(cache.clone()));
-                }
-                if let Some(rl) = &rp.rate_limit {
-                    rate_limit_state.dispatch(RateLimitConfigFormAction::SetAll(rl.clone()));
-                }
-                if let Some(stream) = &rp.stream {
-                    stream_state.dispatch(StreamConfigFormAction::SetAll(stream.clone()));
-                }
+                     cache_state.dispatch(CacheConfigFormAction::SetAll(cache.clone()));
+                 } else {
+                     cache_state.dispatch(CacheConfigFormAction::SetAll(CacheConfigDto::default()));
+                 }
+                 if let Some(rl) = &rp.rate_limit {
+                     rate_limit_state.dispatch(RateLimitConfigFormAction::SetAll(rl.clone()));
+                 } else {
+                     rate_limit_state.dispatch(RateLimitConfigFormAction::SetAll(RateLimitConfigDto::default()));
+                 }
+                 if let Some(stream) = &rp.stream {
+                     stream_state.dispatch(StreamConfigFormAction::SetAll(stream.clone()));
+                 } else {
+                     stream_state.dispatch(StreamConfigFormAction::SetAll(StreamConfigDto::default()));
+                 }
+
             } else {
                 reverse_proxy_state.dispatch(ReverseProxyConfigFormAction::SetAll(ReverseProxyConfigDto::default()));
                 cache_state.dispatch(CacheConfigFormAction::SetAll(CacheConfigDto::default()));

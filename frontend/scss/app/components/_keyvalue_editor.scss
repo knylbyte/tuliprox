@@ -1,0 +1,23 @@
+.tp__keyvalue-editor {
+  display: flex;
+  flex-flow: column;
+  box-sizing: border-box;
+  gap: var(--gap-small);
+
+  &__entries {
+    display: flex;
+    flex-flow: row wrap;
+    box-sizing: border-box;
+    gap: var(--gap-small);
+  }
+
+  label{
+    font-size: 1.1rem;
+  }
+  &__inputs {
+    display: flex;
+    flex-flow: row;
+    box-sizing: border-box;
+    gap: var(--gap-small);
+  }
+}

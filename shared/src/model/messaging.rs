@@ -30,13 +30,13 @@ impl FromStr for MsgKind {
     type Err = TuliproxError;
 
     fn from_str(s: &str) -> Result<Self, TuliproxError> {
-        if s.eq("Info") {
+        if s.eq_ignore_ascii_case("info") {
             Ok(Self::Info)
-        } else if s.eq("Stats") {
+        } else if s.eq_ignore_ascii_case("stats") {
             Ok(Self::Stats)
-        } else if s.eq("Error") {
+        } else if s.eq_ignore_ascii_case("error") {
             Ok(Self::Error)
-        } else if s.eq("Watch") {
+        } else if s.eq_ignore_ascii_case("watch") {
             Ok(Self::Watch)
         } else {
             create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown MsgKind: {}", s)

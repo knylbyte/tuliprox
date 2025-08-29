@@ -40,13 +40,78 @@ pub fn ApiConfigView() -> Html {
     }
 
     {
+        let on_form_change = config_view_ctx.on_form_change.clone();
+        let deps = (form_state.form.clone(), form_state.modified);
+        use_effect_with(deps, move |(form, modified)| {
+            on_form_change.emit(ConfigForm::Api(*modified, form.clone()));
+            || ()
+        });
+    }
+
+    {
+        let on_form_change = config_view_ctx.on_form_change.clone();
+        let deps = (form_state.form.clone(), form_state.modified);
+        use_effect_with(deps, move |(form, modified)| {
+            on_form_change.emit(ConfigForm::Api(*modified, form.clone()));
+            || ()
+        });
+    }
+
+    {
+        let on_form_change = config_view_ctx.on_form_change.clone();
+        let deps = (form_state.form.clone(), form_state.modified);
+        use_effect_with(deps, move |(form, modified)| {
+            on_form_change.emit(ConfigForm::Api(*modified, form.clone()));
+            || ()
+        });
+    }
+
+    {
+        let on_form_change = config_view_ctx.on_form_change.clone();
+        let deps = (form_state.form.clone(), form_state.modified);
+        use_effect_with(deps, move |(form, modified)| {
+            on_form_change.emit(ConfigForm::Api(*modified, form.clone()));
+            || ()
+        });
+    }
+
+    {
+        let on_form_change = config_view_ctx.on_form_change.clone();
+        let deps = (form_state.form.clone(), form_state.modified);
+        use_effect_with(deps, move |(form, modified)| {
+            on_form_change.emit(ConfigForm::Api(*modified, form.clone()));
+            || ()
+        });
+    }
+
+    {
+        let on_form_change = config_view_ctx.on_form_change.clone();
+        let deps = (form_state.form.clone(), form_state.modified);
+        use_effect_with(deps, move |(form, modified)| {
+            on_form_change.emit(ConfigForm::Api(*modified, form.clone()));
+            || ()
+        });
+    }
+
+    {
+        let on_form_change = config_view_ctx.on_form_change.clone();
+        let deps = (form_state.form.clone(), form_state.modified);
+        use_effect_with(deps, move |(form, modified)| {
+            on_form_change.emit(ConfigForm::Api(*modified, form.clone()));
+            || ()
+        });
+    }
+
+
+    {
         let form_state = form_state.clone();
         let api_config = config_ctx
             .config
             .as_ref()
             .map(|c| c.config.api.clone());
 
-        use_effect_with((api_config, config_view_ctx.edit_mode.clone()), move |(cfg, _mode)| {
+        let deps = (api_config, *config_view_ctx.edit_mode);
+        use_effect_with(deps, move |(cfg, _mode)| {
             if let Some(api) = cfg {
                 form_state.dispatch(ApiConfigFormAction::SetAll(api.clone()));
             } else {
@@ -54,6 +119,7 @@ pub fn ApiConfigView() -> Html {
             }
             || ()
         });
+
     }
 
     let render_empty = || {

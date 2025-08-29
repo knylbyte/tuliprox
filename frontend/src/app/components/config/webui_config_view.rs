@@ -102,10 +102,15 @@ pub fn WebUiConfigView() -> Html {
                 webui_state.dispatch(WebUiConfigFormAction::SetAll((*webui).clone()));
                 if let Some(auth) = &webui.auth {
                     auth_state.dispatch(WebUiAuthConfigFormAction::SetAll(auth.clone()));
+                } else {
+                    auth_state.dispatch(WebUiAuthConfigFormAction::SetAll(WebAuthConfigDto::default()));
                 }
                 if let Some(csp) = &webui.content_security_policy {
                     csp_state.dispatch(CspConfigFormAction::SetAll(csp.clone()));
+                } else {
+                    csp_state.dispatch(CspConfigFormAction::SetAll(ContentSecurityPolicyConfigDto::default()));
                 }
+
             } else {
                 webui_state.dispatch(WebUiConfigFormAction::SetAll(WebUiConfigDto::default()));
                 auth_state.dispatch(WebUiAuthConfigFormAction::SetAll(WebAuthConfigDto::default()));
