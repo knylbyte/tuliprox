@@ -4,9 +4,23 @@
   gap: var(--gap-small);
 
   .tp__add-input {
-    padding: 0.3rem 0.6rem;
-    border: 1px solid #ccc;
-    border-radius: 16px;
-    font-size: 0.9rem;
+    background-clip: content-box;
+    box-sizing: border-box;
+    width: 100%;
+    font-family: inherit;
+    font-size: 1.1rem;
+    line-height: 1.5rem;
+    border: none;
+    color: var(--text-color);
+    background-color: var(--input-background-color);
+    padding: 6px 12px;
+    flex: 1 1 auto;
+    caret-color: var(--text-color) !important;
+
+    &:focus,
+    &:hover {
+      outline: none;
+      background-color: var(--input-background-color);
+    }
   }
 }

@@ -1,4 +1,7 @@
 use std::fmt;
+use std::str::FromStr;
+use crate::create_tuliprox_error_result;
+use crate::error::{TuliproxError, TuliproxErrorKind};
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum MsgKind {
@@ -20,5 +23,23 @@ impl fmt::Display for MsgKind {
             MsgKind::Watch => "Watch",
         };
         write!(f, "{s}")
+    }
+}
+
+impl FromStr for MsgKind {
+    type Err = TuliproxError;
+
+    fn from_str(s: &str) -> Result<Self, TuliproxError> {
+        if s.eq("Info") {
+            Ok(Self::Info)
+        } else if s.eq("Stats") {
+            Ok(Self::Stats)
+        } else if s.eq("Error") {
+            Ok(Self::Error)
+        } else if s.eq("Watch") {
+            Ok(Self::Watch)
+        } else {
+            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown MsgKind: {}", s)
+        }
     }
 }

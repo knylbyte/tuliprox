@@ -60,7 +60,7 @@
     "EXTENSIONS": "Extensions",
     "HEADERS": "Headers",
     "DIRECTORY": "Directory",
-    "ORGANIZE_INTO_DIRECTORIES": "Organize Into Directorie",
+    "ORGANIZE_INTO_DIRECTORIES": "Organize Into Directories",
     "EPISODE_PATTERN": "Episode Pattern",
     "API": "Api",
     "MAIN": "Main",
@@ -273,7 +273,9 @@
     "USER_STATUS_TRIAL": "Trial",
     "USER_STATUS_DISABLED": "Disabled",
     "USER_STATUS_PENDING": "Pending",
-    "VIEW": "View"
+    "VIEW": "View",
+    "ADD_CHAT_ID": "Add ChatId...",
+    "ADD_ATTRIBUTE": "Add Attribute..."
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

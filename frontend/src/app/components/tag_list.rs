@@ -1,7 +1,7 @@
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use std::rc::Rc;
-use crate::app::components::chip::{Chip};
+use crate::app::components::chip::Chip;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Tag {
@@ -14,24 +14,25 @@ pub struct TagListProps {
     pub tags: Vec<Rc<Tag>>,
     #[prop_or_else(Callback::noop)]
     pub on_change: Callback<Vec<Rc<Tag>>>,
-    // #[prop_or(false)]
-    // pub removable: bool,
-    #[prop_or(false)]
-    pub allow_add: bool,
+    #[prop_or(true)]
+    pub readonly: bool,
+    #[prop_or_else(|| "Add tag...".to_string())]
+    pub placeholder: String,
 }
 
-#[function_component(TagList)]
-pub fn tag_list(props: &TagListProps) -> Html {
+#[function_component]
+pub fn TagList(props: &TagListProps) -> Html {
     let TagListProps {
         tags,
         on_change,
-        // removable,
-        allow_add,
+        readonly,
+        placeholder,
     } = props.clone();
 
     let tag_state = use_state(|| tags.clone());
     let new_tag = use_state(String::default);
 
+    // keep local state in sync when parent updates
     {
         let tag_state = tag_state.clone();
         use_effect_with(tags.clone(), move |tags| {
@@ -40,6 +41,7 @@ pub fn tag_list(props: &TagListProps) -> Html {
         });
     }
 
+    // remove existing tag
     let on_remove = {
         let tag_state = tag_state.clone();
         let on_change = on_change.clone();
@@ -51,6 +53,7 @@ pub fn tag_list(props: &TagListProps) -> Html {
         })
     };
 
+    // input change for new tag
     let on_input = {
         let new_tag = new_tag.clone();
         Callback::from(move |e: InputEvent| {
@@ -59,47 +62,55 @@ pub fn tag_list(props: &TagListProps) -> Html {
         })
     };
 
-    let on_keypress = {
-        // TODO
-        // let new_tag = new_tag.clone();
-        // let tag_state = tag_state.clone();
-        // let on_change = on_change.clone();
+    // add new tag on enter
+    let on_keydown = {
+        let new_tag = new_tag.clone();
+        let tag_state = tag_state.clone();
+        let on_change = on_change.clone();
         Callback::from(move |e: KeyboardEvent| {
             if e.key() == "Enter" {
-                // let val = (*new_tag).trim().to_string();
-                // if !val.is_empty() && !tag_state.contains(&val) {
-                //     let mut updated = (*tag_state).clone();
-                //     updated.push(val.clone());
-                //     on_change.emit(updated.clone());
-                //     tag_state.set(updated);
-                // }
-                // new_tag.set("".into());
+                e.prevent_default();
+                let val = (*new_tag).trim().to_string();
+                if !val.is_empty() && !tag_state.iter().any(|t| t.label == val) {
+                    let mut updated = (*tag_state).clone();
+                    updated.push(Rc::new(Tag { label: val.clone(), class: None }));
+                    on_change.emit(updated.clone());
+                    tag_state.set(updated);
+                }
+                new_tag.set(String::new());
             }
         })
     };
 
     html! {
-    <div class="tp__tag_list">
-        { for (*tag_state).iter().map(|tag| html! {
-            <Chip label={tag.label.clone()} class={tag.class.clone()} /*removable={props.removable}*/ on_remove={on_remove.clone()}/>
-          })
-        }
-        {
-            if allow_add {
-                html! {
-                    <input
-                        class="tp__add-input"
-                        type="text"
-                        value={(*new_tag).clone()}
-                        oninput={on_input.clone()}
-                        onkeypress={on_keypress.clone()}
-                        placeholder="Add tag..."
-                    />
+        <div class="tp__tag_list">
+            { for (*tag_state).iter().map(|tag| html! {
+                <Chip
+                    label={tag.label.clone()}
+                    class={tag.class.clone()}
+                    removable={!readonly}
+                    on_remove={if readonly { Callback::noop() } else { on_remove.clone() }}
+                />
+            })}
+            {
+                if readonly {
+                    html! {}
+                } else {
+                    html! {
+                    <div class="tp__input">
+                    <div class="tp__input-wrapper">
+                        <input
+                            type="text"
+                            value={(*new_tag).clone()}
+                            oninput={on_input.clone()}
+                            onkeydown={on_keydown.clone()}
+                            placeholder={placeholder}
+                        />
+                    </div>
+                    </div>
+                    }
                 }
-            } else {
-                html! {}
             }
-        }
-    </div>
-}
+        </div>
+    }
 }

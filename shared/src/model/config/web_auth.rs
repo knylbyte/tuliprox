@@ -4,7 +4,7 @@ fn default_token_ttl_mins() -> u32 {
     30
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct WebAuthConfigDto {
     #[serde(default = "default_as_true")]

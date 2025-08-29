@@ -133,7 +133,7 @@ pub fn ConfigView() -> Html {
                     main, api, schedules, video, messaging, web_ui,
                     reverse_proxy, hd_homerun, proxy, ipcheck
                 ]);
-            warn!("Modified: {:?}", modified);
+            warn!("Modified: {modified:?}");
         })
     };
 
