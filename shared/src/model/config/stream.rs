@@ -62,6 +62,8 @@ impl StreamConfigDto {
         }
         if let Some(throttle) = &self.throttle {
             parse_to_kbps(throttle).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err))?;
+        } else {
+            self.throttle_kbps = 0;
         }
 
         if self.grace_period_millis > 0 {
