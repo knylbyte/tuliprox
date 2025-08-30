@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use log::warn;
 use yew::prelude::*;
 use crate::app::components::{DropDownIconButton, DropDownOption};
 
@@ -56,6 +57,8 @@ pub fn Select(props: &SelectProps) -> Html {
             }
         })
     };
+
+    warn!("{:?}", props.options);
 
     html! {
         <div class={classes!("tp__select", props.class.clone())}>

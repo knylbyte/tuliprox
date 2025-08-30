@@ -52,7 +52,7 @@ pub struct ConfigDto {
 
 // This MainConfigDto is a copy of ConfigDto simple fields for form editing.
 // It has no other purpose than editing and saving the simple config values
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct MainConfigDto {
     #[serde(default)]
     pub threads: u8,
@@ -75,6 +75,24 @@ pub struct MainConfigDto {
     pub update_on_boot: bool,
     #[serde(default)]
     pub config_hot_reload: bool,
+}
+
+impl Default for MainConfigDto {
+    fn default() -> Self {
+        MainConfigDto {
+            threads: 0,
+            working_dir: String::new(),
+            backup_dir: None,
+            user_config_dir: None,
+            mapping_path: None,
+            custom_stream_response_path: None,
+            user_access_control: false,
+            connect_timeout_secs: default_connect_timeout_secs(),
+            sleep_timer_mins: None,
+            update_on_boot: false,
+            config_hot_reload: false,
+        }
+    }
 }
 
 impl From<&ConfigDto> for MainConfigDto {

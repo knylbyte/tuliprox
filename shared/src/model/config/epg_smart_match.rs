@@ -27,7 +27,7 @@ impl Display for EpgNamePrefix {
     }
 }
 
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EpgSmartMatchConfigDto {
     #[serde(default)]
@@ -45,6 +45,20 @@ pub struct EpgSmartMatchConfigDto {
     pub match_threshold: u16,
     #[serde(default)]
     pub best_match_threshold: u16,
+}
+impl Default for EpgSmartMatchConfigDto {
+    fn default() -> Self {
+        EpgSmartMatchConfigDto {
+            enabled: false,
+            normalize_regex: None,
+            strip: None,
+            name_prefix: EpgNamePrefix::default(),
+            name_prefix_separator: None,
+            fuzzy_matching: false,
+            match_threshold: 80,
+            best_match_threshold: 95,
+        }
+    }
 }
 
 impl EpgSmartMatchConfigDto {

@@ -55,6 +55,18 @@ pub struct TraktListConfigDto {
     pub fuzzy_match_threshold: u8, // Percentage (0-100)
 }
 
+impl Default for TraktListConfigDto {
+    fn default() -> Self {
+        TraktListConfigDto {
+            user: String::new(),
+            list_slug: String::new(),
+            category_name: String::new(),
+            content_type: TraktContentType::default(),
+            fuzzy_match_threshold: default_fuzzy_threshold(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TraktConfigDto {

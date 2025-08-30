@@ -36,16 +36,22 @@ pub fn SchedulesConfigView() -> Html {
     let selected_schedule = use_state(|| None);
 
     let all_targets = use_memo(config_ctx.config.clone(),
-                     move |config| config
-                        .as_ref()
-                        .map(|c| &c.sources.sources)
-                        .into_iter()
-                        .flat_map(|sources| sources.iter())
-                        .flat_map(|s| s.targets.iter())
+                               move |config| config
+                                   .as_ref()
+                                   .map(|c| &c.sources.sources)
+                                   .into_iter()
+                                   .flat_map(|sources| sources.iter())
+                                   .flat_map(|s| s.targets.iter())
+                                   .map(|t| t.name.clone()).collect::<Vec<String>>(),
+    );
+
+    let target_options = use_memo((selected_targets.clone(), all_targets.clone()),
+                     move |(selected, all_targets)| all_targets
+                        .iter()
                         .map(|t| Rc::new(DropDownOption {
-                           id: t.name.clone(),
-                           label: html! { t.name.clone() },
-                           selected: false,
+                           id: t.clone(),
+                           label: html! { t.clone() },
+                           selected: (*selected).as_ref().is_some_and(|s| s.contains(t)),
                        })).collect::<Vec<Rc<DropDownOption>>>(),
     );
 
@@ -209,13 +215,13 @@ pub fn SchedulesConfigView() -> Html {
       html! {
           <div class="tp__schedules-config-view__editor">
           {config_field_child!(translate.t(LABEL_SCHEDULE), {
-              html!{ <Input name="schedule" on_change={handle_schedule_selection} /> }
+              html!{ <Input name="schedule" value={(*selected_schedule).as_ref().map_or_else(String::new, ToString::to_string)} on_change={handle_schedule_selection} /> }
           })}
           {config_field_child!(translate.t(LABEL_TARGETS), {
                html!{ <Select name="target"
                     multi_select={true}
                     onselect={handle_target_selection}
-                    options={(*all_targets).clone()}
+                    options={(*target_options).clone()}
                 />
            }})}
           <IconButton name="AddSchedule" icon="ScheduleAdd" class="tp__button-primary" onclick={handle_add_schedule} />

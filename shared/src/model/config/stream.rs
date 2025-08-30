@@ -22,7 +22,7 @@ impl StreamBufferConfigDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StreamConfigDto {
     #[serde(default)]
@@ -39,6 +39,20 @@ pub struct StreamConfigDto {
     pub forced_retry_interval_secs: u32,
     #[serde(default, skip)]
     pub throttle_kbps: u64,
+}
+
+impl Default for StreamConfigDto {
+    fn default() -> Self {
+        StreamConfigDto {
+            retry: false,
+            buffer: None,
+            throttle: None,
+            grace_period_millis: default_grace_period_millis(),
+            grace_period_timeout_secs: default_grace_period_timeout_secs(),
+            forced_retry_interval_secs: 0,
+            throttle_kbps: 0,
+        }
+    }
 }
 
 impl StreamConfigDto {

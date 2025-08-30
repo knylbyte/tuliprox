@@ -30,23 +30,6 @@ pub struct ContentSecurityPolicyConfigDto {
     pub custom_attributes: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct WebUiConfigDto {
-    #[serde(default = "default_as_true")]
-    pub enabled: bool,
-    #[serde(default = "default_as_true")]
-    pub user_ui_enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub content_security_policy: Option<ContentSecurityPolicyConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auth: Option<WebAuthConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub player_server: Option<String>,
-}
-
 impl ContentSecurityPolicyConfigDto {
     pub fn validate(&self) -> Result<(), TuliproxError> {
         if let Some(attrs) = self.custom_attributes.as_ref() {
@@ -74,6 +57,36 @@ impl ContentSecurityPolicyConfigDto {
     }
 }
 
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WebUiConfigDto {
+    #[serde(default = "default_as_true")]
+    pub enabled: bool,
+    #[serde(default = "default_as_true")]
+    pub user_ui_enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_security_policy: Option<ContentSecurityPolicyConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<WebAuthConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player_server: Option<String>,
+}
+
+impl Default for WebUiConfigDto {
+    fn default() -> Self {
+        WebUiConfigDto {
+            enabled: default_as_true(),
+            user_ui_enabled: default_as_true(),
+            content_security_policy: None,
+            path: None,
+            auth: None,
+            player_server: None,
+        }
+    }
+}
 
 impl WebUiConfigDto {
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
