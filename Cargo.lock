@@ -993,6 +993,7 @@ dependencies = [
  "base64",
  "bytes",
  "chrono",
+ "cron",
  "futures",
  "futures-signals",
  "gloo-storage 0.3.0",

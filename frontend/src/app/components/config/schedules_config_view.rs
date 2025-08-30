@@ -1,9 +1,11 @@
 use std::rc::Rc;
+use std::str::FromStr;
+use cron::Schedule;
 use crate::app::components::{Card, Chip, DropDownOption, IconButton, NoContent};
 use crate::app::ConfigContext;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::{validate_cron, ScheduleConfigDto, SchedulesConfigDto};
+use shared::model::{ScheduleConfigDto, SchedulesConfigDto};
 use crate::app::components::config::config_page::ConfigForm;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::HasFormData;
@@ -88,35 +90,49 @@ pub fn SchedulesConfigView() -> Html {
         let set_selected_targets = selected_targets.clone();
         Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
             if selections.is_empty() {
-                set_selected_targets.set(Some(selections.iter().map(|t| t.id.clone()).collect()));
-            } else {
                 set_selected_targets.set(None);
+            } else {
+                set_selected_targets.set(Some(selections.iter().map(|t| t.id.clone()).collect()));
             }
         })
     };
 
     let handle_add_schedule = {
         let services = services_ctx.clone();
+        let translate = translate.clone();
         let form_state = form_state.clone();
         let set_selected_targets = selected_targets.clone();
         let set_selected_schedule = selected_schedule.clone();
         Callback::from(move |_| {
             if let Some(schedule) = (*set_selected_schedule).as_ref() {
                 let targets = (*set_selected_targets).clone();
-                match validate_cron(schedule) {
-                    Ok(()) => {
+                match Schedule::from_str(schedule) {
+                    Ok(_) => {
                         let dto = ScheduleConfigDto {
                             schedule: schedule.clone(),
                             targets,
                         };
                         let mut new_schedules = form_state.data().schedules.as_ref().cloned().unwrap_or_default();
-                        new_schedules.push(dto);
-                        form_state.dispatch(SchedulesConfigFormAction::Schedules(Some(new_schedules)));
+
+                        let exists = new_schedules.iter().any(|s|
+                            s.schedule == dto.schedule && s.targets.as_deref() == dto.targets.as_deref()
+                        );
+                        if exists {
+                            services.toastr.warning(translate.t("MESSAGES.SCHEDULE_EXISTS"));
+                        } else {
+                            new_schedules.push(dto);
+                            form_state.dispatch(SchedulesConfigFormAction::Schedules(Some(new_schedules)));
+                            // clear editor
+                            set_selected_schedule.set(None);
+                            set_selected_targets.set(None);
+                        }
                     }
                     Err(err) => {
-                        services.toastr.error(err);
+                        services.toastr.error(err.to_string());
                     }
                 }
+            } else {
+                services.toastr.warning(translate.t("MESSAGES.SCHEDULE_NOT_SET"));
             }
         })
     };
