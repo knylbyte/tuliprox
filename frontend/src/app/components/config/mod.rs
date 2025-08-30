@@ -13,6 +13,7 @@ mod ipcheck_config_view;
 mod video_config_view;
 mod config_view_context;
 mod config_page;
+mod hdhomerun_device_editor;
 
 pub use config_view::*;
 pub use main_config_view::*;

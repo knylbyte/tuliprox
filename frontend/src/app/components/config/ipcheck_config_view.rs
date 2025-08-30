@@ -25,7 +25,6 @@ generate_form_reducer!(
     }
 );
 
-
 #[function_component]
 pub fn IpCheckConfigView() -> Html {
     let translate = use_translation();
