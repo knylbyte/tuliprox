@@ -47,5 +47,12 @@
     gap: var(--gap-default);
     color: var(--text-color);
     pointer-events: none;
+
+    span {
+      color: var(--tag-color);
+      background-color: var(--tag-background-color);
+      padding: var(--padding-micro) var(--padding-mini);
+      border-radius: var(--border-radius);
+    }
   }
 }

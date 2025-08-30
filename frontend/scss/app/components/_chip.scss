@@ -18,11 +18,9 @@
     margin-left: 0.5rem;
     font-weight: bold;
     cursor: pointer;
-    color: #666;
-    fill: var(--menu-button-warn-hover-color);
-
+    color: var(--modest-text-color);
     &:hover {
-      color: red;
+      color: var(--menu-button-warn-hover-color);
     }
   }
 }

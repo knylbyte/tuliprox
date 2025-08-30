@@ -1,6 +1,7 @@
 use shared::error::TuliproxError;
 use shared::info_err;
-use shared::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, MainConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto};
+use shared::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, MainConfigDto, MessagingConfigDto,
+                    ProxyConfigDto, ReverseProxyConfigDto, SchedulesConfigDto, VideoConfigDto, WebUiConfigDto};
 use std::fmt;
 use std::str::FromStr;
 
@@ -71,7 +72,7 @@ impl fmt::Display for ConfigPage {
 pub enum ConfigForm {
     Main(bool, MainConfigDto),
     Api(bool, ConfigApiDto),
-    Schedules(bool, ScheduleConfigDto),
+    Schedules(bool, SchedulesConfigDto),
     Video(bool, VideoConfigDto),
     Messaging(bool, MessagingConfigDto),
     WebUi(bool, WebUiConfigDto),

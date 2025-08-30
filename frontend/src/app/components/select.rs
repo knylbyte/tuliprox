@@ -2,6 +2,10 @@ use std::rc::Rc;
 use yew::prelude::*;
 use crate::app::components::{DropDownIconButton, DropDownOption};
 
+fn map_selection(o: &Rc<DropDownOption>) -> Html  {
+    html! {<span>{o.label.clone()}</span>}
+}
+
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct SelectProps {
     pub name: String,
@@ -19,13 +23,12 @@ pub struct SelectProps {
 pub fn Select(props: &SelectProps) -> Html {
     let button_ref = use_node_ref();
 
-    let selected_options = use_state(|| props.options.iter().filter(|o| o.selected)
-        .map(|o| o.label.clone()).collect::<Vec<Html>>());
+    let selected_options = use_state(Vec::new);
     {
         let set_selected_options = selected_options.clone();
         use_effect_with(props.options.clone(), move |options: &Vec<Rc<DropDownOption>>| {
             let selections = options.iter().filter(|o| o.selected)
-                .map(|o| o.label.clone()).collect::<Vec<Html>>();
+                .map(map_selection).collect::<Vec<Html>>();
             set_selected_options.set(selections);
         });
     }
@@ -36,7 +39,7 @@ pub fn Select(props: &SelectProps) -> Html {
         let set_selections = selected_options.clone();
         Callback::from(move |(name, selections): (String, Vec<String>)| {
             let selected_options: Vec<Rc<DropDownOption>> = options.iter().filter(|&o| selections.contains(&o.id)).cloned().collect();
-            set_selections.set(selected_options.iter().map(|o| o.label.clone()).collect());
+            set_selections.set(selected_options.iter().map(map_selection).collect());
             onselect.emit((name, selected_options));
         })
     };

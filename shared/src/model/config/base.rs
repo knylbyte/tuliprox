@@ -95,6 +95,23 @@ impl From<&ConfigDto> for MainConfigDto {
     }
 }
 
+// This SchedulesConfigDto is a copy of ConfigDto schedules fields for form editing.
+// It has no other purpose than editing and saving the schedules
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+pub struct SchedulesConfigDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedules: Option<Vec<ScheduleConfigDto>>,
+}
+
+impl From<&ConfigDto> for SchedulesConfigDto {
+    fn from(config: &ConfigDto) -> Self {
+        Self {
+            schedules: config.schedules.clone(),
+        }
+    }
+}
+
+
 pub struct HdHomeRunDeviceOverview {
     pub enabled: bool,
     pub devices: Vec<String>,
