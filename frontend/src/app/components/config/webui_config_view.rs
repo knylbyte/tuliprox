@@ -79,8 +79,8 @@ pub fn WebUiConfigView() -> Html {
         let webui_state = webui_state.clone();
         let auth_state = auth_state.clone();
         let csp_state = csp_state.clone();
-
-        use_effect_with((webui_state.modified, auth_state.modified, csp_state.modified, webui_state, auth_state, csp_state),
+        let deps = (webui_state.modified, auth_state.modified, csp_state.modified, webui_state, auth_state, csp_state);
+        use_effect_with(deps,
                         move |(wm, am, cm, w, a, c)| {
             let mut form = w.form.clone();
             form.auth = Some(a.form.clone());

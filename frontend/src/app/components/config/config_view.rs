@@ -70,12 +70,12 @@ pub fn ConfigView() -> Html {
         let translate = translate.clone();
         let edit_mode = edit_mode.clone();
 
-        use_memo((form_state, edit_mode), move |(forms, edit)| {
-            let modified = collect_modified!(forms, [
-            main, api, schedules, video, messaging, web_ui,
-            reverse_proxy, hd_homerun, proxy, ipcheck
-        ])
-                .iter()
+        use_memo((form_state, edit_mode, translate), move |(forms, edit, translate)| {
+            let forms: &ConfigFormState = forms;
+            let modified_pages = collect_modified!(forms, [
+                main, api, schedules, video, messaging, web_ui,
+                reverse_proxy, hd_homerun, proxy, ipcheck
+            ]).iter()
                 .filter_map(|maybe_form| maybe_form.as_ref().map(config_form_to_config_page))
                 .collect::<Vec<ConfigPage>>();
 
@@ -94,7 +94,7 @@ pub fn ConfigView() -> Html {
 
             let editing = **edit;
             tab_configs.into_iter().map(|(page, label, children, icon)| {
-                let is_modified = editing && modified.contains(&page);
+                let is_modified = editing && modified_pages.contains(&page);
                 TabItem {
                     id: page.to_string(),
                     title: translate.t(label),

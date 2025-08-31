@@ -37,8 +37,9 @@ pub fn IpCheckConfigView() -> Html {
 
     {
         let on_form_change = config_view_ctx.on_form_change.clone();
-        use_effect_with(form_state.clone(), move |state| {
-            on_form_change.emit(ConfigForm::IpCheck(state.modified, state.form.clone()));
+        let deps = (form_state.clone(), form_state.modified);
+        use_effect_with(deps, move |(state, modified)| {
+            on_form_change.emit(ConfigForm::IpCheck(*modified, state.form.clone()));
         });
     }
 

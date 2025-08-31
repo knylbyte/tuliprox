@@ -34,9 +34,9 @@ pub fn ApiConfigView() -> Html {
 
     {
         let on_form_change = config_view_ctx.on_form_change.clone();
-        let deps = (form_state.form.clone(), form_state.modified);
-        use_effect_with(deps, move |(form, modified)| {
-            on_form_change.emit(ConfigForm::Api(*modified, form.clone()));
+        let deps = (form_state.clone(), form_state.modified);
+        use_effect_with(deps, move |(state, modified)| {
+            on_form_change.emit(ConfigForm::Api(*modified, state.form.clone()));
             || ()
         });
     }

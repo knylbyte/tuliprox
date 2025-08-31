@@ -79,7 +79,8 @@ pub fn VideoConfigView() -> Html {
         let on_form_change = config_view_ctx.on_form_change.clone();
         let download_state = download_state.clone();
         let video_state = video_state.clone();
-        use_effect_with((video_state.modified, download_state.modified, video_state, download_state),
+        let deps = (video_state.modified, download_state.modified, video_state, download_state);
+        use_effect_with(deps,
                         move |(vm, dm, v, d)| {
             let mut form = v.form.clone();
             form.download = if *dm { Some(d.form.clone()) } else { form.download };
