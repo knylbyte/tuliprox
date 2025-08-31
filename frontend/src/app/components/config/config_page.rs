@@ -68,7 +68,7 @@ impl fmt::Display for ConfigPage {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConfigForm {
     Main(bool, MainConfigDto),
     Api(bool, ConfigApiDto),

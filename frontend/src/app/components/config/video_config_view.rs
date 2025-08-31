@@ -64,16 +64,8 @@ pub fn VideoConfigView() -> Html {
         let video_cfg = config_ctx.config.as_ref().and_then(|c| c.config.video.clone());
         use_effect_with(video_cfg, move |video_cfg| {
             if let Some(video) = video_cfg {
-                video_state.dispatch(VideoConfigFormAction::Extensions(video.extensions.clone()));
-                video_state.dispatch(VideoConfigFormAction::WebSearch(video.web_search.clone()));
-                if let Some(download) = video.download.as_ref() {
-                    download_state.dispatch(VideoDownloadConfigFormAction::OrganizeIntoDirectories(download.organize_into_directories));
-                    download_state.dispatch(VideoDownloadConfigFormAction::Directory(download.directory.clone()));
-                    download_state.dispatch(VideoDownloadConfigFormAction::EpisodePattern(download.episode_pattern.clone()));
-                    download_state.dispatch(VideoDownloadConfigFormAction::Headers(download.headers.clone()));
-                } else {
-                    download_state.dispatch(VideoDownloadConfigFormAction::SetAll(VideoDownloadConfigDto::default()));
-                }
+                video_state.dispatch(VideoConfigFormAction::SetAll(video.clone()));
+                download_state.dispatch(VideoDownloadConfigFormAction::SetAll(video.download.as_ref().map_or_else(VideoDownloadConfigDto::default, |d| d.clone() )));
             } else {
                 video_state.dispatch(VideoConfigFormAction::SetAll(VideoConfigDto::default()));
                 download_state.dispatch(VideoDownloadConfigFormAction::SetAll(VideoDownloadConfigDto::default()));

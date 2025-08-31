@@ -5,14 +5,14 @@ use crate::app::components::{Card};
 use crate::{config_field};
 
 #[derive(Properties, PartialEq)]
-pub struct HdHomerunDeviceEditorProps {
+pub struct HdHomerunDeviceViewProps {
     pub device: HdHomeRunDeviceConfigDto,
     #[prop_or(false)]
     pub edit_mode: bool,
 }
 
 #[function_component]
-pub fn HdHomerunDeviceEditor(props: &HdHomerunDeviceEditorProps) -> Html {
+pub fn HdHomerunDeviceView(props: &HdHomerunDeviceViewProps) -> Html {
     let translate = use_translation();
 
     let device = use_state(HdHomeRunDeviceConfigDto::default);

@@ -81,7 +81,7 @@ where
                     if let Ok(data) = data {
                         Err(Error::BadRequest(data.error))
                     } else {
-                        Err(Error::DeserializeError)
+                        Err(Error::BadRequest("400".to_string()))
                     }
                 },
                 401 => Err(Error::Unauthorized),

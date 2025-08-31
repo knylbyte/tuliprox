@@ -15,10 +15,15 @@
   }
 
   &__remove {
+    display: flex;
+    align-items: center;
     margin-left: 0.5rem;
     font-weight: bold;
     cursor: pointer;
     color: var(--modest-text-color);
+    .svg-icon {
+      fill: var(--menu-button-warn-hover-color);
+    }
     &:hover {
       color: var(--menu-button-warn-hover-color);
     }

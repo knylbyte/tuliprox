@@ -153,3 +153,16 @@
     fill: var(--menu-button-warn-hover-color);
   }
 }
+
+.tp__tab__modified {
+  &__active {
+    button {
+      border-color: var(--warn-color);
+    }
+  }
+  &__inactive {
+    button {
+      border-color: var(--warn-color);
+    }
+  }
+}

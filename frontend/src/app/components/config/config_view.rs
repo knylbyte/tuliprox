@@ -20,7 +20,22 @@ macro_rules! collect_modified {
     }};
 }
 
-#[derive(Default, Debug, Clone)]
+fn config_form_to_config_page(form: &ConfigForm) -> ConfigPage {
+    match form {
+        ConfigForm::Main(_, _) => ConfigPage::Main,
+        ConfigForm::Api(_, _) => ConfigPage::Api,
+        ConfigForm::Schedules(_, _) => ConfigPage::Schedules,
+        ConfigForm::Video(_, _) => ConfigPage::Video,
+        ConfigForm::Messaging(_, _) => ConfigPage::Messaging,
+        ConfigForm::WebUi(_, _) => ConfigPage::WebUi,
+        ConfigForm::ReverseProxy(_, _) => ConfigPage::ReverseProxy,
+        ConfigForm::HdHomerun(_, _) => ConfigPage::HdHomerun,
+        ConfigForm::Proxy(_, _) => ConfigPage::Proxy,
+        ConfigForm::IpCheck(_, _) => ConfigPage::IpCheck
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq)]
 struct ConfigFormState {
     pub main: Option<ConfigForm>,
     pub api: Option<ConfigForm>,
@@ -51,70 +66,44 @@ pub fn ConfigView() -> Html {
     };
 
     let tabs = {
+        let form_state = form_state.clone();
         let translate = translate.clone();
-        use_memo((), move |_| {
-            vec![
+        let edit_mode = edit_mode.clone();
+
+        use_memo((form_state, edit_mode), move |(forms, edit)| {
+            let modified = collect_modified!(forms, [
+            main, api, schedules, video, messaging, web_ui,
+            reverse_proxy, hd_homerun, proxy, ipcheck
+        ])
+                .iter()
+                .filter_map(|maybe_form| maybe_form.as_ref().map(config_form_to_config_page))
+                .collect::<Vec<ConfigPage>>();
+
+            let tab_configs = vec![
+                (ConfigPage::Main, "LABEL.MAIN", html! { <MainConfigView/> }, "MainConfig"),
+                (ConfigPage::Api, "LABEL.API", html! { <ApiConfigView/> }, "ApiConfig"),
+                (ConfigPage::Schedules, "LABEL.SCHEDULES", html! { <SchedulesConfigView/> }, "SchedulesConfig"),
+                (ConfigPage::Messaging, "LABEL.MESSAGING", html! { <MessagingConfigView/> }, "MessagingConfig"),
+                (ConfigPage::WebUi, "LABEL.WEB_UI", html! { <WebUiConfigView/> }, "WebUiConfig"),
+                (ConfigPage::ReverseProxy, "LABEL.REVERSE_PROXY", html! { <ReverseProxyConfigView/> }, "ReverseProxyConfig"),
+                (ConfigPage::HdHomerun, "LABEL.HDHOMERUN_CONFIG", html! { <HdHomerunConfigView/> }, "HdHomerunConfig"),
+                (ConfigPage::Proxy, "LABEL.PROXY", html! { <ProxyConfigView/> }, "ProxyConfig"),
+                (ConfigPage::IpCheck, "LABEL.IP_CHECK", html! { <IpCheckConfigView/> }, "IpCheckConfig"),
+                (ConfigPage::Video, "LABEL.VIDEO", html! { <VideoConfigView/> }, "VideoConfig"),
+            ];
+
+            let editing = **edit;
+            tab_configs.into_iter().map(|(page, label, children, icon)| {
+                let is_modified = editing && modified.contains(&page);
                 TabItem {
-                    id: ConfigPage::Main.to_string(),
-                    title: translate.t("LABEL.MAIN"),
-                    icon: "MainConfig".to_string(),
-                    children: html! { <MainConfigView/> },
-                },
-                TabItem {
-                    id: ConfigPage::Api.to_string(),
-                    title: translate.t("LABEL.API"),
-                    icon: "ApiConfig".to_string(),
-                    children: html! { <ApiConfigView/> },
-                },
-                TabItem {
-                    id: ConfigPage::Schedules.to_string(),
-                    title: translate.t("LABEL.SCHEDULES"),
-                    icon: "SchedulesConfig".to_string(),
-                    children: html! { <SchedulesConfigView/> },
-                },
-                TabItem {
-                    id: ConfigPage::Messaging.to_string(),
-                    title: translate.t("LABEL.MESSAGING"),
-                    icon: "MessagingConfig".to_string(),
-                    children: html! { <MessagingConfigView/> },
-                },
-                TabItem {
-                    id: ConfigPage::WebUi.to_string(),
-                    title: translate.t("LABEL.WEB_UI"),
-                    icon: "WebUiConfig".to_string(),
-                    children: html! { <WebUiConfigView/> },
-                },
-                TabItem {
-                    id: ConfigPage::ReverseProxy.to_string(),
-                    title: translate.t("LABEL.REVERSE_PROXY"),
-                    icon: "ReverseProxyConfig".to_string(),
-                    children: html! { <ReverseProxyConfigView/> },
-                },
-                TabItem {
-                    id: ConfigPage::HdHomerun.to_string(),
-                    title: translate.t("LABEL.HDHOMERUN_CONFIG"),
-                    icon: "HdHomerunConfig".to_string(),
-                    children: html! { <HdHomerunConfigView/> },
-                },
-                TabItem {
-                    id: ConfigPage::Proxy.to_string(),
-                    title: translate.t("LABEL.PROXY"),
-                    icon: "ProxyConfig".to_string(),
-                    children: html! { <ProxyConfigView/> },
-                },
-                TabItem {
-                    id: ConfigPage::IpCheck.to_string(),
-                    title: translate.t("LABEL.IP_CHECK"),
-                    icon: "IpCheckConfig".to_string(),
-                    children: html! { <IpCheckConfigView/> },
-                },
-                TabItem {
-                    id: ConfigPage::Video.to_string(),
-                    title: translate.t("LABEL.VIDEO"),
-                    icon: "VideoConfig".to_string(),
-                    children: html! { <VideoConfigView/> },
-                },
-            ]
+                    id: page.to_string(),
+                    title: translate.t(label),
+                    icon: icon.to_string(),
+                    children,
+                    active_class: if is_modified { Some("tp__tab__modified__active".to_string()) } else { None },
+                    inactive_class: if is_modified { Some("tp__tab__modified__inactive".to_string()) } else { None },
+                }
+            }).collect::<Vec<TabItem>>()
         })
     };
 

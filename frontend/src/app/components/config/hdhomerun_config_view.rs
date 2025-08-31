@@ -5,7 +5,7 @@ use crate::app::components::{Card, NoContent, TextButton};
 use crate::app::context::ConfigContext;
 use crate::{config_field_bool, edit_field_bool, generate_form_reducer, html_if};
 use crate::app::components::config::config_page::ConfigForm;
-use crate::app::components::config::hdhomerun_device_editor::{HdHomerunDeviceEditor};
+use crate::app::components::config::hdhomerun_device_view::{HdHomerunDeviceView};
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::HasFormData;
 
@@ -82,7 +82,7 @@ pub fn HdHomerunConfigView() -> Html {
             render_empty()
         } else {
             html!{ for devices.iter().map(|entry| html! {
-                <HdHomerunDeviceEditor device={entry.clone()} edit_mode={edit_mode} />
+                <HdHomerunDeviceView device={entry.clone()} edit_mode={edit_mode} />
             })}
         }
     };
