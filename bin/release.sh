@@ -8,6 +8,8 @@ FRONTEND_DIR="${WORKING_DIR}/frontend"
 FRONTEND_BUILD_DIR="${FRONTEND_DIR}/dist"
 BACKEND_DIR="${WORKING_DIR}/backend"
 
+./bin/build_resources.sh
+
 if ! command -v cargo-set-version &> /dev/null
 then
     echo "🧨 cargo-set-version could not be found. Install it with 'cargo install cargo-edit'"
@@ -22,6 +24,8 @@ OLD_VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"'
 IFS='.' read -r major minor patch <<< "$OLD_VERSION"
 
 case "$1" in
+  k)
+    ;;
   m) # Major bump
      ((major++))
      minor=0

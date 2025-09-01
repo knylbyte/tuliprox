@@ -1,10 +1,11 @@
 # Changelog
-# 3.1.6 (2025-08-18)
+# 3.1.6 (2025-09-01)
 - EPG Config View added
 - Fixed loading users for WebUI from user DB
 - Fixed auto EPG for batch inputs
 - Fixed EPG URL prepare
 - Content Security Policies configurable via config, default OFF
+- WebUI Config View editor for config.yml added 
 
 # 3.1.5 (2025-08-14)
 - Hot reload for config
