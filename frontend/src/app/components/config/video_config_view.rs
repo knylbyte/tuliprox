@@ -102,23 +102,21 @@ pub fn VideoConfigView() -> Html {
     };
 
     let render_download_view = || html! {
-        html! {
-            <Card class="tp__config-view__card">
-                <h1>{translate.t(LABEL_DOWNLOAD)}</h1>
-                { config_field_bool!(download_state.form, translate.t(LABEL_ORGANIZE_INTO_DIRECTORIES), organize_into_directories) }
-                { config_field_optional!(download_state.form, translate.t(LABEL_DIRECTORY), directory) }
-                { config_field_optional!(download_state.form, translate.t(LABEL_EPISODE_PATTERN), episode_pattern) }
-                { config_field_child!(translate.t(LABEL_HEADERS), {
-                    html! {
-                        <div class="tp__config-view__tags">
-                          <ul>
-                            { for download_state.form.headers.iter().map(|(k,v)| html!{ <li>{k}{":"} {v}</li> }) }
-                          </ul>
-                        </div>
-                    }
-                })}
-            </Card>
-        }
+        <Card class="tp__config-view__card">
+            <h1>{translate.t(LABEL_DOWNLOAD)}</h1>
+            { config_field_bool!(download_state.form, translate.t(LABEL_ORGANIZE_INTO_DIRECTORIES), organize_into_directories) }
+            { config_field_optional!(download_state.form, translate.t(LABEL_DIRECTORY), directory) }
+            { config_field_optional!(download_state.form, translate.t(LABEL_EPISODE_PATTERN), episode_pattern) }
+            { config_field_child!(translate.t(LABEL_HEADERS), {
+                html! {
+                    <div class="tp__config-view__tags">
+                      <ul>
+                        { for download_state.form.headers.iter().map(|(k,v)| html!{ <li>{k}{":"} {v}</li> }) }
+                      </ul>
+                    </div>
+                }
+            })}
+        </Card>
     };
 
     let render_view_mode = || {

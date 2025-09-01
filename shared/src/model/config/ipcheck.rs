@@ -36,49 +36,25 @@ impl IpCheckConfigDto {
     }
 
     pub fn clean(&mut self) {
-        if is_blank_optional_string(&self.url) {
-            self.url = None;
-        }
-        if is_blank_optional_string(&self.url_ipv4) {
-            self.url_ipv4 = None;
-        }
-        if is_blank_optional_string(&self.url_ipv6) {
-            self.url_ipv6 = None;
-        }
-        if is_blank_optional_string(&self.pattern_ipv4) {
-            self.pattern_ipv4 = None;
-        }
-        if is_blank_optional_string(&self.pattern_ipv6) {
-            self.pattern_ipv6 = None;
-        }
+        let norm = |s: &mut Option<String>| {
+            if let Some(val) = s.as_mut() {
+                let trimmed = val.trim();
+                if trimmed.is_empty() {
+                    *s = None;
+                } else if trimmed.len() != val.len() {
+                    *val = trimmed.to_owned();
+                }
+            }
+        };
+        norm(&mut self.url);
+        norm(&mut self.url_ipv4);
+        norm(&mut self.url_ipv6);
+        norm(&mut self.pattern_ipv4);
+        norm(&mut self.pattern_ipv6);
     }
 
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
-        if let Some(url) = &self.url {
-            let url = url.trim();
-            if url.is_empty() {
-                self.url = None;
-            } else {
-                self.url = Some(url.to_owned());
-            }
-        }
-        if let Some(url) = &self.url_ipv4 {
-            let url = url.trim();
-            if url.is_empty() {
-                self.url_ipv4 = None;
-            } else {
-                self.url_ipv4 = Some(url.to_owned());
-            }
-        }
-        if let Some(url) = &self.url_ipv6 {
-            let url = url.trim();
-            if url.is_empty() {
-                self.url_ipv6 = None;
-            } else {
-                self.url_ipv6 = Some(url.to_owned());
-            }
-        }
-
+        self.clean();
         if self.url.is_none() && self.url_ipv4.is_none() && self.url_ipv6.is_none() {
             return Err(TuliproxError::new(
                 TuliproxErrorKind::Info,

@@ -10,7 +10,7 @@ pub struct TelegramMessagingConfigDto {
 
 impl TelegramMessagingConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.bot_token.trim().is_empty() || self.chat_ids.is_empty()
+        self.bot_token.trim().is_empty() && self.chat_ids.is_empty()
     }
 }
 

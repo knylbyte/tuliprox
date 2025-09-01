@@ -113,7 +113,12 @@ pub fn App() -> Html {
                     }
                     config_state.set(Some(cfg));
                 },
-                Err(err) => error!("Failed to load config {err}"),
+                Err(err) => {
+                    error!("Failed to load config {err}");
+                   // Fallback: render app with defaults instead of spinning forever
+                    #[allow(clippy::default_trait_access)]
+                    config_state.set(Some(WebConfig::default()));
+                },
             }
             Ok(())
         }, UseAsyncOptions::enable_auto());
@@ -124,7 +129,11 @@ pub fn App() -> Html {
         use_async_with_options::<_, (), Error>(async move {
             match request_get("assets/icons.json", None, None).await {
                 Ok(icons) => icon_state.set(Some(icons)),
-                Err(err) => error!("Failed to load icons {err}"),
+                Err(err) => {
+                    // Fallback: proceed with an empty icon set
+                    icon_state.set(Some(Vec::new()));
+                    error!("Failed to load icons {err}")
+                },
             }
             Ok(())
         }, UseAsyncOptions::enable_auto());
@@ -132,7 +141,7 @@ pub fn App() -> Html {
 
     if translations_state.as_ref().is_none() || configuration_state.as_ref().is_none()
     || icon_state.as_ref().is_none(){
-        return html! { <div><LoadingScreen/></div> };
+        return html! { <LoadingScreen/> };
     }
     let transl = translations_state.as_ref().unwrap();
     let config: &WebConfig = configuration_state.as_ref().unwrap();

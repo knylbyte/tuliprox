@@ -97,9 +97,9 @@ pub fn ConfigView() -> Html {
     let tabs = {
         let form_state = form_state.clone();
         let translate = translate.clone();
-        let set_edit_mode = edit_mode.clone();
+        let edit_value = *edit_mode;
 
-        use_memo((form_state, set_edit_mode, translate), move |(forms, edit, translate)| {
+        use_memo((form_state, edit_value, translate.clone()), move |(forms, editing, translate)| {
             let forms: &ConfigFormState = forms;
             let modified_pages = collect_modified!(forms, [
                 main, api, log, schedules, video, messaging, web_ui,
@@ -122,7 +122,7 @@ pub fn ConfigView() -> Html {
                 (ConfigPage::Video, LABEL_VIDEO, html! { <VideoConfigView/> }, "VideoConfig"),
             ];
 
-            let editing = **edit;
+            let editing = *editing;
             tab_configs.into_iter().map(|(page, label, children, icon)| {
                 let is_modified = editing && modified_pages.contains(&page);
                 TabItem {

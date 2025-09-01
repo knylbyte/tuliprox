@@ -37,8 +37,9 @@ impl EventService {
             self.block_config_updated_message.store(value, Ordering::Relaxed);
         } else {
             let flag = Rc::clone(&self.block_config_updated_message);
-            let _ = gloo_timers::callback::Timeout::new(500, move || {
-                flag.store(value, Ordering::Relaxed);
+            wasm_bindgen_futures::spawn_local(async move {
+                gloo_timers::future::TimeoutFuture::new(500).await;
+                flag.store(false, Ordering::Relaxed);
             });
         }
     }

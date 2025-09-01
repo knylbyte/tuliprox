@@ -240,5 +240,7 @@ impl ConfigDto {
         self.user_access_control = main_config.user_access_control;
         self.connect_timeout_secs = main_config.connect_timeout_secs;
         self.sleep_timer_mins = main_config.sleep_timer_mins;
+        self.update_on_boot = main_config.update_on_boot;
+        self.config_hot_reload = main_config.config_hot_reload;
     }
 }

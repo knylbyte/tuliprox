@@ -186,3 +186,15 @@
   gap: var(--gap-default);
   box-sizing: border-box;
 }
+
+.tp__config-view-page {
+  &__info {
+    display: flex;
+    flex-flow: row;
+    color:var(--warn-color);
+    fill: var(--warn-color);
+    span {
+      white-space: wrap;
+    }
+  }
+}

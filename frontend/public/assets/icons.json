@@ -483,5 +483,9 @@
   {
     "keys": ["Note", "Text", "Log"],
     "path": "M19 5v9h-5v5H5V5zm0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h10l6-6V5c0-1.1-.9-2-2-2m-7 11H7v-2h5zm5-4H7V8h10z"
+  },
+  {
+    "keys": ["Warn", "Warning"],
+    "path": "M12 5.99 19.53 19H4.47zM12 2 1 21h22zm1 14h-2v2h2zm0-6h-2v4h2z"
   }
 ]

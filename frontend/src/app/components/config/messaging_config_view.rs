@@ -2,7 +2,6 @@ use crate::app::components::config::config_page::ConfigForm;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::macros::HasFormData;
 use crate::app::components::{Card, Chip, RadioButtonGroup};
-use crate::app::context::ConfigContext;
 use crate::{
     config_field, config_field_child, config_field_empty, config_field_hide, config_field_optional,
     edit_field_list, edit_field_text, edit_field_text_option, generate_form_reducer,
@@ -12,6 +11,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use yew::prelude::*;
 use yew_i18n::use_translation;
+use crate::app::ConfigContext;
 
 const LABEL_NOTIFY_ON: &str = "LABEL.NOTIFY_ON";
 const LABEL_TELEGRAM: &str = "LABEL.TELEGRAM";
@@ -96,7 +96,7 @@ pub fn MessagingConfigView() -> Html {
         ]
     });
 
-    let notify_on_options_text = use_memo(notify_on_options.clone(), |options| {
+    let notify_on_options_text = use_memo((*notify_on_options).clone(), |options: &Vec<MsgKind>| {
         options.iter().map(ToString::to_string).collect::<Vec<String>>()
     });
 
