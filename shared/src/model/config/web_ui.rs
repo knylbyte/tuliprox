@@ -1,6 +1,6 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::WebAuthConfigDto;
-use crate::utils::default_as_true;
+use crate::utils::{default_as_true, is_blank_optional_string};
 
 const RESERVED_PATHS: &[&str] = &[
     "live",
@@ -31,6 +31,15 @@ pub struct ContentSecurityPolicyConfigDto {
 }
 
 impl ContentSecurityPolicyConfigDto {
+    pub fn is_empty(&self) -> bool {
+        !self.enabled
+            && (self.custom_attributes.is_none()
+                || self
+                    .custom_attributes
+                    .as_ref()
+                    .is_some_and(|v| v.is_empty()))
+    }
+
     pub fn validate(&self) -> Result<(), TuliproxError> {
         if let Some(attrs) = self.custom_attributes.as_ref() {
             for (i, attr) in attrs.iter().enumerate() {
@@ -56,7 +65,6 @@ impl ContentSecurityPolicyConfigDto {
         Ok(())
     }
 }
-
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -89,6 +97,40 @@ impl Default for WebUiConfigDto {
 }
 
 impl WebUiConfigDto {
+    pub fn is_empty(&self) -> bool {
+        let empty = WebUiConfigDto::default();
+        self.enabled == empty.enabled
+            && self.user_ui_enabled == empty.user_ui_enabled
+            && is_blank_optional_string(&self.path)
+            && is_blank_optional_string(&self.player_server)
+            && (self.content_security_policy.is_none()
+                || self
+                    .content_security_policy
+                    .as_ref()
+                    .is_some_and(|c| c.is_empty()))
+            && (self.auth.is_none() || self.auth.as_ref().is_some_and(|c| c.is_empty()))
+    }
+
+    pub fn clean(&mut self) {
+        if self
+            .content_security_policy
+            .as_ref()
+            .is_some_and(|c| c.is_empty())
+        {
+            self.content_security_policy = None;
+        }
+        if self.auth.as_ref().is_some_and(|c| c.is_empty()) {
+            self.auth = None;
+        }
+
+        if is_blank_optional_string(&self.path) {
+            self.path = None;
+        }
+        if is_blank_optional_string(&self.player_server) {
+            self.player_server = None;
+        }
+    }
+
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
         if !self.enabled {
             self.auth = None;

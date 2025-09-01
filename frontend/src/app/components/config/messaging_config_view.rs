@@ -7,10 +7,7 @@ use crate::{
     config_field, config_field_child, config_field_empty, config_field_hide, config_field_optional,
     edit_field_list, edit_field_text, edit_field_text_option, generate_form_reducer,
 };
-use shared::model::{
-    MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto,
-    TelegramMessagingConfigDto,
-};
+use shared::model::{MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto, TelegramMessagingConfigDto};
 use std::rc::Rc;
 use std::str::FromStr;
 use yew::prelude::*;
@@ -92,11 +89,15 @@ pub fn MessagingConfigView() -> Html {
 
     let notify_on_options = use_memo((), |_| {
         vec![
-            MsgKind::Info.to_string(),
-            MsgKind::Stats.to_string(),
-            MsgKind::Error.to_string(),
-            MsgKind::Watch.to_string(),
+            MsgKind::Info,
+            MsgKind::Stats,
+            MsgKind::Error,
+            MsgKind::Watch,
         ]
+    });
+
+    let notify_on_options_text = use_memo(notify_on_options.clone(), |options| {
+        options.iter().map(ToString::to_string).collect::<Vec<String>>()
     });
 
     {
@@ -124,6 +125,43 @@ pub fn MessagingConfigView() -> Html {
 
             let modified = *mm || *tm || *rm || *pm;
             on_form_change.emit(ConfigForm::Messaging(modified, form));
+        });
+    }
+
+
+    {
+        let msg_state = messaging_state.clone();
+        let t_state = telegram_state.clone();
+        let p_state = pushover_state.clone();
+        let r_state = rest_state.clone();
+
+        let msg_config : MessagingConfigDto = config_ctx
+            .config
+            .as_ref()
+            .and_then(|c| c.config.messaging.as_ref())
+            .map_or_else(MessagingConfigDto::default, |m| m.clone());
+
+        let telegram_cfg = msg_config.telegram.as_ref().map_or_else(TelegramMessagingConfigDto::default, |t| t.clone());
+        use_effect_with((telegram_cfg, config_view_ctx.edit_mode.clone()), move |(telegram_cfg, _mode)| {
+            t_state.dispatch(TelegramMessagingConfigFormAction::SetAll(telegram_cfg.clone()));
+            || ()
+        });
+
+        let rest_cfg = msg_config.rest.as_ref().map_or_else(RestMessagingConfigDto::default, |t| t.clone());
+        use_effect_with((rest_cfg, config_view_ctx.edit_mode.clone()), move |(rest_cfg, _mode)| {
+            r_state.dispatch(RestMessagingConfigFormAction::SetAll(rest_cfg.clone()));
+            || ()
+        });
+
+        let pushover_cfg = msg_config.pushover.as_ref().map_or_else(PushoverMessagingConfigDto::default, |t| t.clone());
+        use_effect_with((pushover_cfg, config_view_ctx.edit_mode.clone()), move |(pushover_cfg, _mode)| {
+            p_state.dispatch(PushoverMessagingConfigFormAction::SetAll(pushover_cfg.clone()));
+            || ()
+        });
+
+        use_effect_with((msg_config, config_view_ctx.edit_mode.clone()), move |(msg_config, _mode)| {
+            msg_state.dispatch(MessagingConfigFormAction::SetAll(msg_config.clone()));
+            || ()
         });
     }
 
@@ -190,45 +228,29 @@ pub fn MessagingConfigView() -> Html {
         },
     };
 
-    let render_empty = || {
+    let render_view_mode = || {
+        let msg_state = messaging_state.clone();
         html! {
           <>
-            <div class="tp__messaging-config-view__header tp__config-view-page__header">
-             { config_field_empty!(translate.t(LABEL_NOTIFY_ON)) }
-            </div>
-            <div class="tp__messaging-config-view__body tp__config-view-page__body">
-             {render_telegram(None)}
-             {render_rest(None)}
-             {render_pushover(None)}
-            </div>
-          </>
-        }
-    };
-
-    let render_view_mode = || {
-        if let Some(config) = &config_ctx.config {
-            if let Some(messaging) = &config.config.messaging {
-                html! {
-                  <>
-                <div class="tp__messaging-config-view__header tp__config-view-page__header">
-                  { config_field_child!(translate.t(LABEL_NOTIFY_ON), {
-                     html! { <div class="tp__messaging-config-view__notify-on">
-                        { for messaging.notify_on.iter().map(|t| html! { <Chip label={t.to_string()} /> }) }
-                    </div> }
-                  })}
+        <div class="tp__messaging-config-view__header tp__config-view-page__header">
+          { config_field_child!(translate.t(LABEL_NOTIFY_ON), {
+             html! { <div class="tp__messaging-config-view__notify-on">
+                 { for  notify_on_options.iter().map(|t| {
+                     let is_selected = msg_state.form.notify_on.contains(t);
+                      let class = if is_selected { "tp__text-button primary" } else { "tp__text-button" };
+                     html! {
+                     <Chip label={t.to_string()} class={class}/>
+                 }}) }
                 </div>
-                <div class="tp__messaging-config-view__body tp__config-view-page__body">
-                  {render_telegram(messaging.telegram.as_ref())}
-                  {render_rest(messaging.rest.as_ref())}
-                  {render_pushover(messaging.pushover.as_ref())}
-                </div>
-                </>
-                }
-            } else {
-                render_empty()
-            }
-        } else {
-            render_empty()
+              }
+          })}
+        </div>
+        <div class="tp__messaging-config-view__body tp__config-view-page__body">
+          {render_telegram(msg_state.form.telegram.as_ref())}
+          {render_rest(msg_state.form.rest.as_ref())}
+          {render_pushover(msg_state.form.pushover.as_ref())}
+        </div>
+        </>
         }
     };
 
@@ -252,7 +274,7 @@ pub fn MessagingConfigView() -> Html {
                             msg_state.dispatch(MessagingConfigFormAction::NotifyOn(
                                 selections.iter().filter_map(|s| MsgKind::from_str(s).ok()).collect()));
                         })}
-                        options={notify_on_options.clone()}
+                        options={notify_on_options_text.clone()}
                         selected={notify_on_selections}
                     />
                 }})}

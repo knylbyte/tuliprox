@@ -9,7 +9,7 @@ type Subscriber = RefCell<HashMap<usize, Box<dyn Fn(EventMessage)>>>;
 pub struct EventService {
     subscriber_id: Rc<AtomicUsize>,
     subscribers: Rc<Subscriber>,
-    block_config_updated_message: AtomicBool,
+    block_config_updated_message: Rc<AtomicBool>,
 }
 
 impl Default for EventService {
@@ -24,7 +24,7 @@ impl EventService {
         Self {
             subscriber_id: Rc::new(AtomicUsize::new(0)),
             subscribers: Rc::new(RefCell::new(HashMap::new())),
-            block_config_updated_message: AtomicBool::new(false),
+            block_config_updated_message: Rc::new(AtomicBool::new(false)),
         }
     }
 
@@ -33,7 +33,14 @@ impl EventService {
     }
 
     pub fn set_config_change_message_blocked(&self, value: bool)  {
-        self.block_config_updated_message.store(value, Ordering::Relaxed);
+        if value {
+            self.block_config_updated_message.store(value, Ordering::Relaxed);
+        } else {
+            let flag = Rc::clone(&self.block_config_updated_message);
+            let _ = gloo_timers::callback::Timeout::new(500, move || {
+                flag.store(value, Ordering::Relaxed);
+            });
+        }
     }
 
     pub fn subscribe<F: Fn(EventMessage) + 'static>(&self, callback: F) -> usize {

@@ -89,6 +89,13 @@ pub struct HdHomeRunConfigDto {
 }
 
 impl HdHomeRunConfigDto {
+    pub fn is_empty(&self) -> bool {
+        !self.enabled && !self.auth && self.devices.is_empty()
+    }
+
+    pub fn clean(&mut self) {
+    }
+
     pub fn prepare(&mut self, api_port: u16)  -> Result<(), TuliproxError> {
         let mut names = HashSet::new();
         let mut ports = HashSet::new();

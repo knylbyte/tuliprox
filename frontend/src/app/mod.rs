@@ -13,7 +13,7 @@ use yew_i18n::I18nProvider;
 use yew::prelude::*;
 use yew_hooks::{use_async_with_options, UseAsyncOptions};
 use yew_router::prelude::*;
-use crate::app::components::{Authentication, Home, Login, RoleBasedContent};
+use crate::app::components::{Authentication, Home, LoadingScreen, Login, RoleBasedContent};
 use crate::error::Error;
 use crate::hooks::{IconDefinition};
 use crate::model::WebConfig;
@@ -132,7 +132,7 @@ pub fn App() -> Html {
 
     if translations_state.as_ref().is_none() || configuration_state.as_ref().is_none()
     || icon_state.as_ref().is_none(){
-        return html! { <div>{ "Loading..." }</div> };
+        return html! { <div><LoadingScreen/></div> };
     }
     let transl = translations_state.as_ref().unwrap();
     let config: &WebConfig = configuration_state.as_ref().unwrap();

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use crate::error::{TuliproxError};
 use crate::info_err;
-use crate::utils::parse_size_base_2;
+use crate::utils::{is_blank_optional_string, parse_size_base_2};
 use path_clean::PathClean;
 
 
@@ -17,6 +17,10 @@ pub struct CacheConfigDto {
 }
 
 impl CacheConfigDto {
+    pub fn is_empty(&self) -> bool {
+        !self.enabled && is_blank_optional_string(&self.size) && is_blank_optional_string(&self.dir)
+    }
+
     pub(crate) fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {
         if self.enabled {
             let work_path = PathBuf::from(working_dir);

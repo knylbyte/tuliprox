@@ -121,6 +121,12 @@ pub struct SchedulesConfigDto {
     pub schedules: Option<Vec<ScheduleConfigDto>>,
 }
 
+impl SchedulesConfigDto {
+    pub fn is_empty(&self) -> bool {
+        self.schedules.is_none() || self.schedules.as_ref().unwrap().is_empty()
+    }
+}
+
 impl From<&ConfigDto> for SchedulesConfigDto {
     fn from(config: &ConfigDto) -> Self {
         Self {
@@ -222,5 +228,17 @@ impl ConfigDto {
                 enabled: hdhr.enabled,
                 devices: hdhr.devices.iter().map(|d| d.name.to_string()).collect::<Vec<String>>(),
             })
+    }
+
+    pub fn update_from_main_config(&mut self, main_config: &MainConfigDto) {
+        self.threads = main_config.threads;
+        self.working_dir = main_config.working_dir.clone();
+        self.backup_dir = main_config.backup_dir.clone();
+        self.user_config_dir = main_config.user_config_dir.clone();
+        self.mapping_path = main_config.mapping_path.clone();
+        self.custom_stream_response_path = main_config.custom_stream_response_path.clone();
+        self.user_access_control = main_config.user_access_control;
+        self.connect_timeout_secs = main_config.connect_timeout_secs;
+        self.sleep_timer_mins = main_config.sleep_timer_mins;
     }
 }

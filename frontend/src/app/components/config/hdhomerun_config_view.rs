@@ -9,6 +9,11 @@ use crate::app::components::config::hdhomerun_device_view::{HdHomerunDeviceView}
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::HasFormData;
 
+const LABEL_ENABLED: &str = "LABEL.ENABLED";
+const LABEL_DEVICE_AUTH: &str = "LABEL.DEVICE_AUTH";
+const LABEL_DEVICES: &str ="LABEL.DEVICES";
+
+
 generate_form_reducer!(
     state: HdHomeRunConfigFormState { form: HdHomeRunConfigDto },
     action_name: HdHomeRunConfigFormAction,
@@ -54,22 +59,48 @@ pub fn HdHomerunConfigView() -> Html {
         });
     }
 
+    let handle_device_change = {
+        let form_state = form_state.clone();
+        Callback::from(move |(device_idx, _device_modified, device)| {
+            let mut devices = form_state.form.devices.clone();
+            if let Some(slot) = devices.get_mut(device_idx) {
+                *slot = device;
+            }
+            form_state.dispatch(HdHomeRunConfigFormAction::Devices(devices));
+        })
+    };
+
     let handle_add_device = {
         let form_state = form_state.clone();
         Callback::from(move |_| {
-            let mut new_state = form_state.data().clone();
+            let mut devices = form_state.form.devices.clone();
             let mut new_device = HdHomeRunDeviceConfigDto::default();
-            new_device.prepare(new_state.devices.len() as u8);
-            new_state.devices.push(new_device);
-            form_state.dispatch(HdHomeRunConfigFormAction::SetAll(new_state));
+            let next_port = devices.iter()
+                .map(|d| d.port)
+                .max()
+                .unwrap_or(8901) + 1;
+            new_device.port = next_port;
+            new_device.name = format!("hdhr_{next_port}");
+            new_device.prepare(devices.len() as u8);
+            devices.push(new_device);
+            form_state.dispatch(HdHomeRunConfigFormAction::Devices(devices));
         })
+    };
+
+    let handle_remove_device = {
+        let form_state = form_state.clone();
+        Callback::from(move |device_idx| {
+          let mut devices = form_state.form.devices.clone();
+          devices.remove(device_idx);
+          form_state.dispatch(HdHomeRunConfigFormAction::Devices(devices));
+      })
     };
 
     let render_empty = || {
         html! {
             <div class="tp__hdhomerun-config-view__body tp__config-view-page__body">
                 <Card class="tp__config-view__card">
-                  <h1>{translate.t("LABEL.DEVICES")}</h1>
+                  <h1>{translate.t(LABEL_DEVICES)}</h1>
                   <NoContent />
                 </Card>
             </div>
@@ -82,29 +113,29 @@ pub fn HdHomerunConfigView() -> Html {
         if devices.is_empty() {
             render_empty()
         } else {
-            html!{ for devices.iter().map(|entry| html! {
-                <HdHomerunDeviceView device={entry.clone()} edit_mode={edit_mode} />
+            html!{ for devices.iter().enumerate().map(|(idx, entry)| html! {
+                <HdHomerunDeviceView key={entry.port.to_string()} device_id={idx} device={entry.clone()}
+                edit_mode={edit_mode} on_form_change={handle_device_change.clone()} on_remove={handle_remove_device.clone()}/>
             })}
         }
     };
 
-    let hdhomerun = form_state.data();
     html! {
         <div class="tp__hdhomerun-config-view tp__config-view-page">
             <div class="hdhomerun-config-view__body tp__config-view-page__header">
               {if  edit_mode {
                  html! {
                  <>
-                 { edit_field_bool!(form_state, translate.t("LABEL.ENABLED"), enabled, HdHomeRunConfigFormAction::Enabled) }
-                 { edit_field_bool!(form_state, translate.t("LABEL.DEVICE_AUTH"), auth, HdHomeRunConfigFormAction::Auth) }
+                 { edit_field_bool!(form_state, translate.t(LABEL_ENABLED), enabled, HdHomeRunConfigFormAction::Enabled) }
+                 { edit_field_bool!(form_state, translate.t(LABEL_DEVICE_AUTH), auth, HdHomeRunConfigFormAction::Auth) }
                  </>
                 }
               } else {
                 html! {
-                  <>
-                  { config_field_bool!(hdhomerun, translate.t("LABEL.ENABLED"), enabled) }
-                  { config_field_bool!(hdhomerun, translate.t("LABEL.DEVICE_AUTH"), auth) }
-                  </>
+                <>
+                { config_field_bool!(&form_state.form, translate.t(LABEL_ENABLED), enabled) }
+                { config_field_bool!(&form_state.form, translate.t(LABEL_DEVICE_AUTH), auth) }
+                </>
                 }
               }
               }
@@ -115,7 +146,7 @@ pub fn HdHomerunConfigView() -> Html {
                 </div>
             })}
             <div class="hdhomerun-config-view__body tp__config-view-page__body">
-              {render_devices(&hdhomerun.devices)}
+              {render_devices(&form_state.form.devices)}
             </div>
         </div>
     }

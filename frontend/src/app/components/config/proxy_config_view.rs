@@ -6,7 +6,7 @@ use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::ConfigForm;
 use crate::app::components::config::macros::HasFormData;
 use crate::{
-    config_field, config_field_empty, config_field_optional, config_field_optional_hide,
+    config_field, config_field_optional, config_field_optional_hide,
     edit_field_text, edit_field_text_option, generate_form_reducer,
 };
 
@@ -55,29 +55,13 @@ pub fn ProxyConfigView() -> Html {
         });
     }
 
-    let render_empty = || html! {
-        <div class="tp__proxy-config-config-view__body tp__config-view-page__body">
-            { config_field_empty!(translate.t(LABEL_URL)) }
-            { config_field_empty!(translate.t(LABEL_USERNAME)) }
-            { config_field_empty!(translate.t(LABEL_PASSWORD)) }
-        </div>
-    };
-
     let render_view_mode = || {
-        if let Some(config) = &config_ctx.config {
-            if let Some(proxy) = &config.config.proxy {
-                html! {
-                    <div class="tp__proxy-config-config-view__body tp__config-view-page__body">
-                        { config_field!(proxy, translate.t(LABEL_URL), url) }
-                        { config_field_optional!(proxy, translate.t(LABEL_USERNAME), username) }
-                        { config_field_optional_hide!(proxy, translate.t(LABEL_PASSWORD), password) }
-                    </div>
-                }
-            } else {
-                render_empty()
-            }
-        } else {
-            render_empty()
+        html! {
+            <div class="tp__proxy-config-config-view__body tp__config-view-page__body">
+                { config_field!(form_state.form, translate.t(LABEL_URL), url) }
+                { config_field_optional!(form_state.form, translate.t(LABEL_USERNAME), username) }
+                { config_field_optional_hide!(form_state.form, translate.t(LABEL_PASSWORD), password) }
+            </div>
         }
     };
 

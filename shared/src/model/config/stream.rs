@@ -15,6 +15,9 @@ pub struct StreamBufferConfigDto {
 
 
 impl StreamBufferConfigDto {
+    pub fn is_empty(&self) -> bool {
+        !self.enabled && self.size == 0
+    }
     fn prepare(&mut self) {
         if self.enabled && self.size == 0 {
             self.size = STREAM_QUEUE_SIZE;
@@ -56,6 +59,18 @@ impl Default for StreamConfigDto {
 }
 
 impl StreamConfigDto {
+    pub fn is_empty(&self) -> bool {
+        let empty = Self::default();
+        self.retry == empty.retry
+        && (self.buffer.is_none() || self.buffer.as_ref().is_some_and(|b| b.is_empty()))
+        && (self.throttle.is_none() || self.throttle.as_ref().is_some_and(|t| t.is_empty()))
+        && self.grace_period_millis == empty.grace_period_millis
+        && self.grace_period_timeout_secs == empty.grace_period_timeout_secs
+        && self.forced_retry_interval_secs == empty.forced_retry_interval_secs
+        && self.throttle_kbps == empty.throttle_kbps
+    }
+
+
     pub(crate) fn prepare(&mut self) -> Result<(), TuliproxError> {
         if let Some(buffer) = self.buffer.as_mut() {
             buffer.prepare();

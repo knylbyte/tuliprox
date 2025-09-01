@@ -74,7 +74,8 @@
     "CACHE": "Cache",
     "STREAM": "Stream",
     "LOG": "Log",
-    "LOG_LEVEL": "Log level",
+    "LOG_LEVEL": "Log Level",
+    "LOG_ACTIVE_USER": "Log Active User",
     "CONFIG": "Config",
     "TELEGRAM": "Telegram",
     "REST": "Rest",
@@ -277,7 +278,8 @@
     "ADD_CHAT_ID": "Add ChatId",
     "ADD_ATTRIBUTE": "Add Attribute",
     "ADD_EXTENSION": "Add Extension",
-    "ADD_DEVICE": "Add Device"
+    "ADD_DEVICE": "Add Device",
+    "EXTENDED_ATTRIBUTES": "Extended Attributes"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

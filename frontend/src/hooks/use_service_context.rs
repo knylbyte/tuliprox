@@ -17,10 +17,10 @@ pub struct Services {
 
 impl Services {
     pub fn new(web_config: &WebConfig) -> Self {
-        let config = Rc::new(ConfigService::new(web_config));
+        let event = Rc::new(EventService::new());
+        let config = Rc::new(ConfigService::new(web_config, Rc::clone(&event)));
         let auth = Rc::new(AuthService::new());
         let status = Rc::new(StatusService::new());
-        let event = Rc::new(EventService::new());
         let playlist = Rc::new(PlaylistService::new());
         let toastr = Rc::new(ToastrService::new());
         let user = Rc::new(UserService::new(Rc::clone(&event)));

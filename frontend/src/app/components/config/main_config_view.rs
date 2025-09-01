@@ -5,7 +5,7 @@ use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::ConfigForm;
 use crate::app::components::config::macros::HasFormData;
-use crate::{config_field_empty, config_field_optional, config_field_bool_empty, config_field_bool, config_field, edit_field_text_option, edit_field_bool, generate_form_reducer, edit_field_number, edit_field_number_option, edit_field_text, edit_field_number_u8};
+use crate::{config_field_optional, config_field_bool, config_field, edit_field_text_option, edit_field_bool, generate_form_reducer, edit_field_number, edit_field_number_option, edit_field_text, edit_field_number_u8};
 
 const LABEL_UPDATE_ON_BOOT: &str = "LABEL.UPDATE_ON_BOOT";
 const LABEL_CONFIG_HOT_RELOAD: &str = "LABEL.CONFIG_HOT_RELOAD";
@@ -69,41 +69,21 @@ pub fn MainConfigView() -> Html {
         });
     }
 
-    let render_empty = || html! {
-        <>
-            { config_field_bool_empty!(translate.t(LABEL_UPDATE_ON_BOOT)) }
-            { config_field_bool_empty!(translate.t(LABEL_CONFIG_HOT_RELOAD)) }
-            { config_field_bool_empty!(translate.t(LABEL_USER_ACCESS_CONTROL)) }
-            { config_field_empty!(translate.t(LABEL_THREADS)) }
-            { config_field_empty!(translate.t(LABEL_WORKING_DIR)) }
-            { config_field_empty!(translate.t(LABEL_MAPPING_PATH)) }
-            { config_field_empty!(translate.t(LABEL_BACKUP_DIR)) }
-            { config_field_empty!(translate.t(LABEL_USER_CONFIG_DIR)) }
-            { config_field_empty!(translate.t(LABEL_SLEEP_TIMER_MINS)) }
-            { config_field_empty!(translate.t(LABEL_CONNECT_TIMEOUT_SECS)) }
-            { config_field_empty!(translate.t(LABEL_CUSTOM_STREAM_RESPONSE_PATH)) }
-        </>
-    };
-
     let render_view_mode = || {
-        if let Some(config) = &config_ctx.config {
-            html! {
-                <>
-                    { config_field_bool!(config.config, translate.t(LABEL_UPDATE_ON_BOOT), update_on_boot) }
-                    { config_field_bool!(config.config, translate.t(LABEL_CONFIG_HOT_RELOAD), config_hot_reload) }
-                    { config_field_bool!(config.config, translate.t(LABEL_USER_ACCESS_CONTROL), user_access_control) }
-                    { config_field!(config.config, translate.t(LABEL_THREADS), threads) }
-                    { config_field!(config.config, translate.t(LABEL_WORKING_DIR), working_dir) }
-                    { config_field_optional!(config.config, translate.t(LABEL_MAPPING_PATH), mapping_path) }
-                    { config_field_optional!(config.config, translate.t(LABEL_BACKUP_DIR), backup_dir) }
-                    { config_field_optional!(config.config, translate.t(LABEL_USER_CONFIG_DIR), user_config_dir) }
-                    { config_field_optional!(config.config, translate.t(LABEL_SLEEP_TIMER_MINS), sleep_timer_mins) }
-                    { config_field!(config.config, translate.t(LABEL_CONNECT_TIMEOUT_SECS), connect_timeout_secs) }
-                    { config_field_optional!(config.config, translate.t(LABEL_CUSTOM_STREAM_RESPONSE_PATH), custom_stream_response_path) }
-                </>
-            }
-        } else {
-            render_empty()
+        html! {
+            <>
+                { config_field_bool!(form_state.form, translate.t(LABEL_UPDATE_ON_BOOT), update_on_boot) }
+                { config_field_bool!(form_state.form, translate.t(LABEL_CONFIG_HOT_RELOAD), config_hot_reload) }
+                { config_field_bool!(form_state.form, translate.t(LABEL_USER_ACCESS_CONTROL), user_access_control) }
+                { config_field!(form_state.form, translate.t(LABEL_THREADS), threads) }
+                { config_field!(form_state.form, translate.t(LABEL_WORKING_DIR), working_dir) }
+                { config_field_optional!(form_state.form, translate.t(LABEL_MAPPING_PATH), mapping_path) }
+                { config_field_optional!(form_state.form, translate.t(LABEL_BACKUP_DIR), backup_dir) }
+                { config_field_optional!(form_state.form, translate.t(LABEL_USER_CONFIG_DIR), user_config_dir) }
+                { config_field_optional!(form_state.form, translate.t(LABEL_SLEEP_TIMER_MINS), sleep_timer_mins) }
+                { config_field!(form_state.form, translate.t(LABEL_CONNECT_TIMEOUT_SECS), connect_timeout_secs) }
+                { config_field_optional!(form_state.form, translate.t(LABEL_CUSTOM_STREAM_RESPONSE_PATH), custom_stream_response_path) }
+            </>
         }
     };
 

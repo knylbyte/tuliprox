@@ -1,6 +1,6 @@
 use crate::model::WebConfig;
-use crate::services::{get_base_href, request_get};
-use shared::model::{AppConfigDto, ConfigInputDto, IpCheckDto};
+use crate::services::{get_base_href, request_get, request_post, EventService};
+use shared::model::{AppConfigDto, ConfigDto, ConfigInputDto, IpCheckDto};
 use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
@@ -11,6 +11,7 @@ use futures_signals::signal::SignalExt;
 use shared::foundation::filter::{get_filter, prepare_templates};
 use shared::foundation::mapper::MapperScript;
 use shared::utils::{concat_path, concat_path_leading_slash};
+use crate::error::Error;
 
 pub struct ConfigService {
     pub ui_config: Rc<WebConfig>,
@@ -20,10 +21,11 @@ pub struct ConfigService {
     config_path: String,
     ip_check_path: String,
     batch_input_content_path: String,
+    event_service: Rc<EventService>
 }
 
 impl ConfigService {
-    pub fn new(config: &WebConfig) -> Self {
+    pub fn new(config: &WebConfig, event_service: Rc<EventService>) -> Self {
         let base_href = get_base_href();
         Self {
             ui_config: Rc::new(config.clone()),
@@ -33,6 +35,7 @@ impl ConfigService {
             config_path: concat_path_leading_slash(&base_href, "api/v1/config"),
             ip_check_path: concat_path_leading_slash(&base_href, "api/v1/ipinfo"),
             batch_input_content_path: concat_path_leading_slash(&base_href, "api/v1/config/batchContent"),
+            event_service
         }
     }
 
@@ -116,4 +119,21 @@ impl ConfigService {
             }
         }
     }
+
+    pub async fn save_config(&self, dto: ConfigDto) -> Result<(), Error> {
+        let path = concat_path(&self.config_path, "main");
+        self.event_service.set_config_change_message_blocked(true);
+        match request_post::<ConfigDto, ()>(&path, dto, None, None).await {
+            Ok(()) => {
+                self.event_service.set_config_change_message_blocked(false);
+                Ok(())
+            },
+            Err(err) => {
+                self.event_service.set_config_change_message_blocked(false);
+                error!("{err}");
+                Err(err)
+            }
+        }
+    }
+
 }

@@ -8,7 +8,7 @@ use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::ConfigForm;
 use crate::app::components::config::macros::HasFormData;
 use crate::app::components::Card;
-use crate::{config_field, config_field_bool, config_field_bool_empty, config_field_empty, config_field_optional,
+use crate::{config_field, config_field_bool, config_field_optional,
             edit_field_bool, edit_field_number, edit_field_number_u64, edit_field_text_option, generate_form_reducer};
 
 const LABEL_CACHE: &str = "LABEL.CACHE";
@@ -136,112 +136,54 @@ pub fn ReverseProxyConfigView() -> Html {
         });
     }
 
-    let render_cache = |config: Option<&CacheConfigDto>| {
-        match config {
-            Some(entry) => html! {
-            <Card class="tp__config-view__card">
-                <h1>{translate.t(LABEL_CACHE)}</h1>
-                { config_field_bool!(entry, translate.t(LABEL_ENABLED), enabled) }
-                { config_field_optional!(entry, translate.t(LABEL_SIZE), size) }
-                { config_field_optional!(entry, translate.t(LABEL_DIRECTORY), dir) }
-            </Card>
-            },
-            None => html! {
-            <Card class="tp__config-view__card">
-                <h1>{translate.t(LABEL_CACHE)}</h1>
-                { config_field_empty!(translate.t(LABEL_ENABLED)) }
-                { config_field_empty!(translate.t(LABEL_SIZE)) }
-                { config_field_empty!(translate.t(LABEL_DIRECTORY)) }
-            </Card>
-          },
-        }
-    };
-    let render_stream = |config: Option<&StreamConfigDto>| {
-        //pub buffer: Option<StreamBufferConfigDto>,
-        match config {
-            Some(entry) => html! {
-            <Card class="tp__config-view__card">
-                <h1>{translate.t(LABEL_STREAM)}</h1>
-                { config_field_bool!(entry, translate.t(LABEL_RETRY), retry) }
-                { config_field_optional!(entry, translate.t(LABEL_THROTTLE), throttle) }
-                { config_field!(entry, translate.t(LABEL_GRACE_PERIOD_MILLIS), grace_period_millis) }
-                { config_field!(entry, translate.t(LABEL_GRACE_PERIOD_TIMEOUT_SECS), grace_period_timeout_secs) }
-                { config_field!(entry, translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS), forced_retry_interval_secs) }
-                { config_field!(entry, translate.t(LABEL_THROTTLE_KBPS), throttle_kbps) }
-            </Card>
-            },
-            None => html! {
-            <Card class="tp__config-view__card">
-                <h1>{translate.t(LABEL_STREAM)}</h1>
-                { config_field_empty!(translate.t(LABEL_RETRY)) }
-                { config_field_empty!(translate.t(LABEL_THROTTLE)) }
-                { config_field_empty!(translate.t(LABEL_GRACE_PERIOD_MILLIS)) }
-                { config_field_empty!(translate.t(LABEL_GRACE_PERIOD_TIMEOUT_SECS)) }
-                { config_field_empty!(translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS)) }
-                { config_field_empty!(translate.t(LABEL_THROTTLE_KBPS)) }
-            </Card>
-          },
-        }
-    };
-
-    let render_rate_limit = |config: Option<&RateLimitConfigDto>| {
-        match config {
-            Some(entry) => html! {
-            <Card class="tp__config-view__card">
-                <h1>{translate.t(LABEL_RATE_LIMIT)}</h1>
-                { config_field_bool!(entry, translate.t(LABEL_ENABLED), enabled) }
-                { config_field!(entry, translate.t(LABEL_PERIOD_MILLIS), period_millis) }
-                { config_field!(entry, translate.t(LABEL_BURST_SIZE), burst_size) }
-            </Card>
-            },
-            None => html! {
-            <Card class="tp__config-view__card">
-                <h1>{translate.t(LABEL_RATE_LIMIT)}</h1>
-                { config_field_empty!(translate.t(LABEL_ENABLED)) }
-                { config_field_empty!(translate.t(LABEL_PERIOD_MILLIS)) }
-                { config_field_empty!(translate.t(LABEL_BURST_SIZE)) }
-            </Card>
-          },
-        }
-    };
-
-    let render_empty = || {
+    let render_cache = || {
         html! {
-          <>
-            <div class="tp__reverse-proxy-config-view__header tp__config-view-page__header">
-              { config_field_bool_empty!(translate.t(LABEL_RESOURCE_REWRITE_DISABLED)) }
-              { config_field_bool_empty!(translate.t(LABEL_DISABLE_REFERER_HEADER)) }
-            </div>
-            <div class="tp__reverse-proxy-config-view__body tp__config-view-page__body">
-             {render_cache(None)}
-             {render_rate_limit(None)}
-             {render_stream(None)}
-            </div>
-          </>
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_CACHE)}</h1>
+                { config_field_bool!(cache_state.form, translate.t(LABEL_ENABLED), enabled) }
+                { config_field_optional!(cache_state.form, translate.t(LABEL_SIZE), size) }
+                { config_field_optional!(cache_state.form, translate.t(LABEL_DIRECTORY), dir) }
+            </Card>
+        }
+    };
+    let render_stream = || {
+        html! {
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_STREAM)}</h1>
+                { config_field_bool!(stream_state.form, translate.t(LABEL_RETRY), retry) }
+                { config_field_optional!(stream_state.form, translate.t(LABEL_THROTTLE), throttle) }
+                { config_field!(stream_state.form, translate.t(LABEL_GRACE_PERIOD_MILLIS), grace_period_millis) }
+                { config_field!(stream_state.form, translate.t(LABEL_GRACE_PERIOD_TIMEOUT_SECS), grace_period_timeout_secs) }
+                { config_field!(stream_state.form, translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS), forced_retry_interval_secs) }
+                { config_field!(stream_state.form, translate.t(LABEL_THROTTLE_KBPS), throttle_kbps) }
+            </Card>
+        }
+    };
+
+    let render_rate_limit = || {
+        html! {
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_RATE_LIMIT)}</h1>
+                { config_field_bool!(rate_limit_state.form, translate.t(LABEL_ENABLED), enabled) }
+                { config_field!(rate_limit_state.form, translate.t(LABEL_PERIOD_MILLIS), period_millis) }
+                { config_field!(rate_limit_state.form, translate.t(LABEL_BURST_SIZE), burst_size) }
+            </Card>
         }
     };
 
     let render_view_mode = || {
-        if let Some(config) = &config_ctx.config {
-            if let Some(reverse_proxy) = &config.config.reverse_proxy {
-                html! {
-                        <>
-                          <div class="tp__reverse-proxy-config-view__header tp__config-view-page__header">
-                            { config_field_bool!(reverse_proxy, translate.t(LABEL_RESOURCE_REWRITE_DISABLED), resource_rewrite_disabled) }
-                            { config_field_bool!(reverse_proxy, translate.t(LABEL_DISABLE_REFERER_HEADER), disable_referer_header) }
-                          </div>
-                          <div class="tp__reverse-proxy-config-view__body tp__config-view-page__body">
-                            { render_cache(reverse_proxy.cache.as_ref()) }
-                            { render_rate_limit(reverse_proxy.rate_limit.as_ref()) }
-                            { render_stream(reverse_proxy.stream.as_ref()) }
-                          </div>
-                        </>
-                        }
-            } else {
-                render_empty()
-            }
-        } else {
-            render_empty()
+       html! {
+            <>
+              <div class="tp__reverse-proxy-config-view__header tp__config-view-page__header">
+                { config_field_bool!(reverse_proxy_state.form, translate.t(LABEL_RESOURCE_REWRITE_DISABLED), resource_rewrite_disabled) }
+                { config_field_bool!(reverse_proxy_state.form, translate.t(LABEL_DISABLE_REFERER_HEADER), disable_referer_header) }
+              </div>
+              <div class="tp__reverse-proxy-config-view__body tp__config-view-page__body">
+                { render_cache() }
+                { render_rate_limit() }
+                { render_stream() }
+              </div>
+            </>
         }
     };
 

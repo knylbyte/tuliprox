@@ -1,5 +1,6 @@
-use regex::Regex;
 use crate::error::{TuliproxError, TuliproxErrorKind};
+use crate::utils::is_blank_optional_string;
+use regex::Regex;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -23,10 +24,35 @@ pub struct IpCheckConfigDto {
     /// Optional regex pattern to extract IPv6
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pattern_ipv6: Option<String>,
-
 }
 
 impl IpCheckConfigDto {
+    pub fn is_empty(&self) -> bool {
+        is_blank_optional_string(&self.url)
+            && is_blank_optional_string(&self.url_ipv4)
+            && is_blank_optional_string(&self.url_ipv6)
+            && is_blank_optional_string(&self.pattern_ipv4)
+            && is_blank_optional_string(&self.pattern_ipv6)
+    }
+
+    pub fn clean(&mut self) {
+        if is_blank_optional_string(&self.url) {
+            self.url = None;
+        }
+        if is_blank_optional_string(&self.url_ipv4) {
+            self.url_ipv4 = None;
+        }
+        if is_blank_optional_string(&self.url_ipv6) {
+            self.url_ipv6 = None;
+        }
+        if is_blank_optional_string(&self.pattern_ipv4) {
+            self.pattern_ipv4 = None;
+        }
+        if is_blank_optional_string(&self.pattern_ipv6) {
+            self.pattern_ipv6 = None;
+        }
+    }
+
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
         if let Some(url) = &self.url {
             let url = url.trim();
@@ -53,8 +79,11 @@ impl IpCheckConfigDto {
             }
         }
 
-        if self.url.is_none()  && self.url_ipv4.is_none() && self.url_ipv6.is_none() {
-            return Err(TuliproxError::new(TuliproxErrorKind::Info, "No url provided!".to_owned()));
+        if self.url.is_none() && self.url_ipv4.is_none() && self.url_ipv6.is_none() {
+            return Err(TuliproxError::new(
+                TuliproxErrorKind::Info,
+                "No url provided!".to_owned(),
+            ));
         }
 
         // TODO allow or do not allow ?
@@ -63,10 +92,20 @@ impl IpCheckConfigDto {
         // }
 
         if let Some(p4) = &self.pattern_ipv4 {
-            Regex::new(p4).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, format!("Invalid IPv4 regex: {p4} {err}")))?;
+            Regex::new(p4).map_err(|err| {
+                TuliproxError::new(
+                    TuliproxErrorKind::Info,
+                    format!("Invalid IPv4 regex: {p4} {err}"),
+                )
+            })?;
         }
         if let Some(p6) = &self.pattern_ipv6 {
-            Regex::new(p6).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, format!("Invalid IPv6 regex: {p6} {err}")))?;
+            Regex::new(p6).map_err(|err| {
+                TuliproxError::new(
+                    TuliproxErrorKind::Info,
+                    format!("Invalid IPv6 regex: {p6} {err}"),
+                )
+            })?;
         }
         Ok(())
     }

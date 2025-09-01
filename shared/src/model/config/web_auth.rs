@@ -1,4 +1,4 @@
-use crate::utils::{default_as_true};
+use crate::utils::{default_as_true, is_blank_optional_string};
 /// 30 minutes by default; `0` still means “no expiration.”
 fn default_token_ttl_mins() -> u32 {
     30
@@ -26,5 +26,16 @@ impl Default for WebAuthConfigDto {
             token_ttl_mins: default_token_ttl_mins(),
             userfile: None,
         }
+    }
+}
+
+impl WebAuthConfigDto {
+    pub fn is_empty(&self) -> bool {
+        let empty = WebAuthConfigDto::default();
+        self.enabled == empty.enabled
+            && self.token_ttl_mins == empty.token_ttl_mins
+            && self.issuer.trim().is_empty()
+            && self.secret.trim().is_empty()
+            && is_blank_optional_string(&self.userfile)
     }
 }

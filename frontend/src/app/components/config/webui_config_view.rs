@@ -3,7 +3,7 @@ use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::ConfigForm;
 use crate::app::components::config::macros::HasFormData;
-use crate::{config_field, config_field_bool, config_field_bool_empty, config_field_child, config_field_empty,
+use crate::{config_field, config_field_bool, config_field_child,
             config_field_hide, config_field_optional, edit_field_bool, edit_field_list_option, edit_field_number,
             edit_field_text, edit_field_text_option, generate_form_reducer};
 use yew::prelude::*;
@@ -121,99 +121,40 @@ pub fn WebUiConfigView() -> Html {
         });
     }
 
-    // Empty renderings
-    let render_empty_auth = || {
-        html! {
-        <Card class="tp__config-view__card">
-            <h1>{translate.t(LABEL_AUTH)}</h1>
-                { config_field_empty!(translate.t(LABEL_ENABLED)) }
-                { config_field_empty!(translate.t(LABEL_ISSUER)) }
-                { config_field_empty!(translate.t(LABEL_SECRET)) }
-                { config_field_empty!(translate.t(LABEL_TOKEN_TTL_MINS)) }
-                { config_field_empty!(translate.t(LABEL_USERFILE)) }
-        </Card>
-        }
-    };
-
-    let render_empty_csp = || {
-        html! {
-            <Card class="tp__config-view__card">
-                 <h1>{translate.t(LABEL_CONTENT_SECURITY_POLICY)}</h1>
-                { config_field_bool_empty!(translate.t(LABEL_ENABLED)) }
-                { config_field_empty!(translate.t(LABEL_CONTENT_SECURITY_POLICY_CUSTOM_ATTRIBUTES)) }
-             </Card>
-        }
-    };
-
-    let render_empty = || {
-        html! {
-           <>
-            { config_field_bool_empty!(translate.t(LABEL_ENABLED)) }
-            { config_field_bool_empty!(translate.t(LABEL_USER_UI_ENABLED)) }
-            { config_field_empty!(translate.t(LABEL_PATH)) }
-            { config_field_empty!(translate.t(LABEL_PLAYER_SERVER)) }
-            { render_empty_csp()}
-            { render_empty_auth() }
-           </>
-        }
-    };
-
     // View mode
     let render_view_mode = || {
-        if let Some(config) = &config_ctx.config {
-            if let Some(web_ui) = &config.config.web_ui {
-                html! {
-                <>
-                    { config_field_bool!(web_ui, translate.t(LABEL_ENABLED), enabled) }
-                    { config_field_bool!(web_ui, translate.t(LABEL_USER_UI_ENABLED), user_ui_enabled) }
-                    { config_field_optional!(web_ui, translate.t(LABEL_PATH), path) }
-                    { config_field_optional!(web_ui, translate.t(LABEL_PLAYER_SERVER), player_server) }
-                    {
-                        match web_ui.content_security_policy.as_ref() {
-                            Some(csp) => html! {
-                                <Card class="tp__config-view__card">
-                                    <h1>{translate.t(LABEL_CONTENT_SECURITY_POLICY)}</h1>
-                                    { config_field_bool!(csp, translate.t(LABEL_ENABLED), enabled) }
-                                    { config_field_child!(translate.t(LABEL_CONTENT_SECURITY_POLICY_CUSTOM_ATTRIBUTES), {
-                                        html! {
-                                            <div class="tp__config-view__tags">
-                                                {
-                                                    if let Some(custom) = &csp.custom_attributes {
-                                                        html! { for custom.iter().map(|a| html! { <Chip label={a.clone()} /> }) }
-                                                    } else {
-                                                        html! {}
-                                                    }
-                                                }
-                                            </div>
-                                        }
-                                    }) }
-                                </Card>
-                            },
-                            None => render_empty_csp()
-                        }
+        html! {
+        <>
+            { config_field_bool!(webui_state.form, translate.t(LABEL_ENABLED), enabled) }
+            { config_field_bool!(webui_state.form, translate.t(LABEL_USER_UI_ENABLED), user_ui_enabled) }
+            { config_field_optional!(webui_state.form, translate.t(LABEL_PATH), path) }
+            { config_field_optional!(webui_state.form, translate.t(LABEL_PLAYER_SERVER), player_server) }
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_CONTENT_SECURITY_POLICY)}</h1>
+                { config_field_bool!(csp_state.form, translate.t(LABEL_ENABLED), enabled) }
+                { config_field_child!(translate.t(LABEL_CONTENT_SECURITY_POLICY_CUSTOM_ATTRIBUTES), {
+                    html! {
+                        <div class="tp__config-view__tags">
+                            {
+                                if let Some(custom) = &csp_state.form.custom_attributes {
+                                    html! { for custom.iter().map(|a| html! { <Chip label={a.clone()} /> }) }
+                                } else {
+                                    html! {}
+                                }
+                            }
+                        </div>
                     }
-                    {
-                        match web_ui.auth.as_ref() {
-                            Some(auth) => html!{
-                               <Card class="tp__config-view__card">
-                                <h1>{translate.t(LABEL_AUTH)}</h1>
-                                { config_field_bool!(auth, translate.t(LABEL_ENABLED), enabled) }
-                                { config_field!(auth, translate.t(LABEL_ISSUER), issuer) }
-                                { config_field_hide!(auth, translate.t(LABEL_SECRET), secret) }
-                                { config_field!(auth, translate.t(LABEL_TOKEN_TTL_MINS), token_ttl_mins) }
-                                { config_field_optional!(auth, translate.t(LABEL_USERFILE), userfile) }
-                                </Card>
-                            },
-                            None => render_empty_auth(),
-                        }
-                    }
-                </>
-                }
-            } else {
-                render_empty()
-            }
-        } else {
-            render_empty()
+                }) }
+            </Card>
+           <Card class="tp__config-view__card">
+            <h1>{translate.t(LABEL_AUTH)}</h1>
+            { config_field_bool!(auth_state.form, translate.t(LABEL_ENABLED), enabled) }
+            { config_field!(auth_state.form, translate.t(LABEL_ISSUER), issuer) }
+            { config_field_hide!(auth_state.form, translate.t(LABEL_SECRET), secret) }
+            { config_field!(auth_state.form, translate.t(LABEL_TOKEN_TTL_MINS), token_ttl_mins) }
+            { config_field_optional!(auth_state.form, translate.t(LABEL_USERFILE), userfile) }
+            </Card>
+        </>
         }
     };
 

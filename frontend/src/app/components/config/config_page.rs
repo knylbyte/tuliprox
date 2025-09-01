@@ -1,12 +1,12 @@
 use shared::error::TuliproxError;
 use shared::info_err;
-use shared::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, MainConfigDto, MessagingConfigDto,
-                    ProxyConfigDto, ReverseProxyConfigDto, SchedulesConfigDto, VideoConfigDto, WebUiConfigDto};
+use shared::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MainConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, SchedulesConfigDto, VideoConfigDto, WebUiConfigDto};
 use std::fmt;
 use std::str::FromStr;
 
 const MAIN_PAGE: &str = "main";
 const API_PAGE: &str = "api";
+const LOG_PAGE: &str = "log";
 const SCHEDULES_PAGE: &str = "schedules";
 const MESSAGING_PAGE: &str = "messaging";
 const WEBUI_PAGE: &str = "webui";
@@ -20,6 +20,7 @@ const VIDEO_PAGE: &str = "video";
 pub enum ConfigPage {
     Main,
     Api,
+    Log,
     Schedules,
     Video,
     Messaging,
@@ -37,6 +38,7 @@ impl FromStr for ConfigPage {
         match s.to_lowercase().as_str() {
             MAIN_PAGE => Ok(ConfigPage::Main),
             API_PAGE => Ok(ConfigPage::Api),
+            LOG_PAGE => Ok(ConfigPage::Log),
             SCHEDULES_PAGE => Ok(ConfigPage::Schedules),
             VIDEO_PAGE => Ok(ConfigPage::Video),
             MESSAGING_PAGE => Ok(ConfigPage::Messaging),
@@ -55,6 +57,7 @@ impl fmt::Display for ConfigPage {
         let s = match self {
             ConfigPage::Main => MAIN_PAGE,
             ConfigPage::Api => API_PAGE,
+            ConfigPage::Log => LOG_PAGE,
             ConfigPage::Schedules => SCHEDULES_PAGE,
             ConfigPage::Video => VIDEO_PAGE,
             ConfigPage::Messaging => MESSAGING_PAGE,
@@ -72,6 +75,7 @@ impl fmt::Display for ConfigPage {
 pub enum ConfigForm {
     Main(bool, MainConfigDto),
     Api(bool, ConfigApiDto),
+    Log(bool, LogConfigDto),
     Schedules(bool, SchedulesConfigDto),
     Video(bool, VideoConfigDto),
     Messaging(bool, MessagingConfigDto),
@@ -86,6 +90,7 @@ impl ConfigForm {
     pub(crate) fn is_modified(&self) -> bool {
         matches!(self, ConfigForm::Main(true, _)
               | ConfigForm::Api(true, _)
+              | ConfigForm::Log(true, _)
               | ConfigForm::Schedules(true, _)
               | ConfigForm::Video(true, _)
               | ConfigForm::Messaging(true, _)

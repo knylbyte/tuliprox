@@ -166,3 +166,23 @@
     }
   }
 }
+
+.tp__hdhomerun__device-extended-fields {
+  .tp__collapse-panel {
+    &__header {
+      padding: var(--padding-micro) 0;
+      font-size: 1.1rem;
+    }
+
+    &__body {
+      padding-top: var(--padding-default);
+    }
+  }
+}
+
+.tp__messaging-config-view__notify-on {
+  display: flex;
+  flex-flow: row wrap;
+  gap: var(--gap-default);
+  box-sizing: border-box;
+}
