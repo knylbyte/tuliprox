@@ -50,6 +50,92 @@ pub struct ConfigDto {
     pub ipcheck: Option<IpCheckConfigDto>,
 }
 
+// This MainConfigDto is a copy of ConfigDto simple fields for form editing.
+// It has no other purpose than editing and saving the simple config values
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct MainConfigDto {
+    #[serde(default)]
+    pub threads: u8,
+    pub working_dir: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_config_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mapping_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_stream_response_path: Option<String>,
+    #[serde(default)]
+    pub user_access_control: bool,
+    #[serde(default = "default_connect_timeout_secs")]
+    pub connect_timeout_secs: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sleep_timer_mins: Option<u32>,
+    #[serde(default)]
+    pub update_on_boot: bool,
+    #[serde(default)]
+    pub config_hot_reload: bool,
+}
+
+impl Default for MainConfigDto {
+    fn default() -> Self {
+        MainConfigDto {
+            threads: 0,
+            working_dir: String::new(),
+            backup_dir: None,
+            user_config_dir: None,
+            mapping_path: None,
+            custom_stream_response_path: None,
+            user_access_control: false,
+            connect_timeout_secs: default_connect_timeout_secs(),
+            sleep_timer_mins: None,
+            update_on_boot: false,
+            config_hot_reload: false,
+        }
+    }
+}
+
+impl From<&ConfigDto> for MainConfigDto {
+    fn from(config: &ConfigDto) -> Self {
+        Self {
+            threads: config.threads,
+            working_dir: config.working_dir.clone(),
+            backup_dir: config.backup_dir.clone(),
+            user_config_dir: config.user_config_dir.clone(),
+            mapping_path: config.mapping_path.clone(),
+            custom_stream_response_path: config.custom_stream_response_path.clone(),
+            user_access_control: config.user_access_control,
+            connect_timeout_secs: config.connect_timeout_secs,
+            sleep_timer_mins: config.sleep_timer_mins,
+            update_on_boot: config.update_on_boot,
+            config_hot_reload: config.config_hot_reload,
+        }
+    }
+}
+
+// This SchedulesConfigDto is a copy of ConfigDto schedules fields for form editing.
+// It has no other purpose than editing and saving the schedules
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+pub struct SchedulesConfigDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedules: Option<Vec<ScheduleConfigDto>>,
+}
+
+impl SchedulesConfigDto {
+    pub fn is_empty(&self) -> bool {
+        self.schedules.is_none() || self.schedules.as_ref().unwrap().is_empty()
+    }
+}
+
+impl From<&ConfigDto> for SchedulesConfigDto {
+    fn from(config: &ConfigDto) -> Self {
+        Self {
+            schedules: config.schedules.clone(),
+        }
+    }
+}
+
+
 pub struct HdHomeRunDeviceOverview {
     pub enabled: bool,
     pub devices: Vec<String>,
@@ -142,5 +228,19 @@ impl ConfigDto {
                 enabled: hdhr.enabled,
                 devices: hdhr.devices.iter().map(|d| d.name.to_string()).collect::<Vec<String>>(),
             })
+    }
+
+    pub fn update_from_main_config(&mut self, main_config: &MainConfigDto) {
+        self.threads = main_config.threads;
+        self.working_dir = main_config.working_dir.clone();
+        self.backup_dir = main_config.backup_dir.clone();
+        self.user_config_dir = main_config.user_config_dir.clone();
+        self.mapping_path = main_config.mapping_path.clone();
+        self.custom_stream_response_path = main_config.custom_stream_response_path.clone();
+        self.user_access_control = main_config.user_access_control;
+        self.connect_timeout_secs = main_config.connect_timeout_secs;
+        self.sleep_timer_mins = main_config.sleep_timer_mins;
+        self.update_on_boot = main_config.update_on_boot;
+        self.config_hot_reload = main_config.config_hot_reload;
     }
 }

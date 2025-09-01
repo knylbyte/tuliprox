@@ -1,79 +1,89 @@
-use std::fmt;
+use crate::app::components::config::config_page::{ConfigForm, ConfigPage};
+use crate::app::components::config::config_view_context::ConfigViewContext;
+use crate::app::components::config::{ApiConfigView, HdHomerunConfigView, IpCheckConfigView, LogConfigView, MainConfigView, MessagingConfigView, ProxyConfigView, ReverseProxyConfigView, SchedulesConfigView, VideoConfigView, WebUiConfigView};
+use crate::app::components::{Card, TabItem, TabSet, TextButton};
+use crate::html_if;
 use std::str::FromStr;
-use crate::app::components::config::{ApiConfigView, HdHomerunConfigView, IpCheckConfigView, MainConfigView, MessagingConfigView, ProxyConfigView, ReverseProxyConfigView, SchedulesConfigView, VideoConfigView, WebUiConfigView};
+use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::error::TuliproxError;
-use shared::info_err;
-use crate::app::components::{Card, TabItem, TabSet};
+use shared::model::ConfigDto;
+use crate::app::components::config::config_update::update_config;
+use crate::app::{ConfigContext};
+use crate::hooks::use_service_context;
 
-const MAIN_PAGE: &str = "main";
-const API_PAGE: &str = "api";
-const SCHEDULES_PAGE: &str = "schedules";
-const MESSAGING_PAGE: &str = "messaging";
-const WEBUI_PAGE: &str = "webui";
-const REVERSE_PROXY_PAGE: &str = "reverse_proxy";
-const HDHOMERUN_PAGE: &str = "hdhomerun";
-const PROXY_PAGE: &str = "proxy";
-const IPCHECK_PAGE: &str = "ipcheck";
-const VIDEO_PAGE: &str = "video";
+// ==== Label Konstanten ====
+const LABEL_MAIN: &str = "LABEL.MAIN";
+const LABEL_API: &str = "LABEL.API";
+const LABEL_LOG: &str = "LABEL.LOG";
+const LABEL_SCHEDULES: &str = "LABEL.SCHEDULES";
+const LABEL_MESSAGING: &str = "LABEL.MESSAGING";
+const LABEL_WEB_UI: &str = "LABEL.WEB_UI";
+const LABEL_REVERSE_PROXY: &str = "LABEL.REVERSE_PROXY";
+const LABEL_HDHOMERUN_CONFIG: &str = "LABEL.HDHOMERUN_CONFIG";
+const LABEL_PROXY: &str = "LABEL.PROXY";
+const LABEL_IP_CHECK: &str = "LABEL.IP_CHECK";
+const LABEL_VIDEO: &str = "LABEL.VIDEO";
+const LABEL_CONFIG: &str = "LABEL.CONFIG";
+const LABEL_EDIT: &str = "LABEL.EDIT";
+const LABEL_VIEW: &str = "LABEL.VIEW";
+const LABEL_SAVE: &str = "LABEL.SAVE";
+// ==========================
 
-
-enum ConfigPage {
-    Main,
-    Api,
-    Schedules,
-    Video,
-    Messaging,
-    WebUi,
-    ReverseProxy,
-    HdHomerun,
-    Proxy,
-    IpCheck,
+macro_rules! collect_modified {
+    ($forms:expr, [ $($field:ident),+ $(,)? ]) => {{
+        let mut modified = Vec::new();
+        $(
+            if let Some(form) = $forms.$field.as_ref() {
+                if form.is_modified() {
+                   modified.push(form.clone());
+                }
+            }
+        )+
+        modified
+    }};
 }
 
-impl FromStr for ConfigPage {
-    type Err = TuliproxError;
-
-    fn from_str(s: &str) -> Result<Self, TuliproxError> {
-        match s.to_lowercase().as_str() {
-            MAIN_PAGE => Ok(ConfigPage::Main),
-            API_PAGE => Ok(ConfigPage::Api),
-            SCHEDULES_PAGE => Ok(ConfigPage::Schedules),
-            VIDEO_PAGE => Ok(ConfigPage::Video),
-            MESSAGING_PAGE => Ok(ConfigPage::Messaging),
-            WEBUI_PAGE => Ok(ConfigPage::WebUi),
-            REVERSE_PROXY_PAGE => Ok(ConfigPage::ReverseProxy),
-            HDHOMERUN_PAGE => Ok(ConfigPage::HdHomerun),
-            PROXY_PAGE => Ok(ConfigPage::Proxy),
-            IPCHECK_PAGE => Ok(ConfigPage::IpCheck),
-        _ => Err(info_err!(format!("Unknown config page: {s}"))),
-        }
+fn config_form_to_config_page(form: &ConfigForm) -> ConfigPage {
+    match form {
+        ConfigForm::Main(_, _) => ConfigPage::Main,
+        ConfigForm::Api(_, _) => ConfigPage::Api,
+        ConfigForm::Log(_, _) => ConfigPage::Log,
+        ConfigForm::Schedules(_, _) => ConfigPage::Schedules,
+        ConfigForm::Video(_, _) => ConfigPage::Video,
+        ConfigForm::Messaging(_, _) => ConfigPage::Messaging,
+        ConfigForm::WebUi(_, _) => ConfigPage::WebUi,
+        ConfigForm::ReverseProxy(_, _) => ConfigPage::ReverseProxy,
+        ConfigForm::HdHomerun(_, _) => ConfigPage::HdHomerun,
+        ConfigForm::Proxy(_, _) => ConfigPage::Proxy,
+        ConfigForm::IpCheck(_, _) => ConfigPage::IpCheck
     }
 }
 
-impl fmt::Display for ConfigPage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            ConfigPage::Main => MAIN_PAGE,
-            ConfigPage::Api => API_PAGE,
-            ConfigPage::Schedules => SCHEDULES_PAGE,
-            ConfigPage::Video => VIDEO_PAGE,
-            ConfigPage::Messaging => MESSAGING_PAGE,
-            ConfigPage::WebUi => WEBUI_PAGE,
-            ConfigPage::ReverseProxy => REVERSE_PROXY_PAGE,
-            ConfigPage::HdHomerun => HDHOMERUN_PAGE,
-            ConfigPage::Proxy => PROXY_PAGE,
-            ConfigPage::IpCheck => IPCHECK_PAGE,
-        };
-        write!(f, "{s}")
-    }
+#[derive(Default, Debug, Clone, PartialEq)]
+struct ConfigFormState {
+    pub main: Option<ConfigForm>,
+    pub api: Option<ConfigForm>,
+    pub log: Option<ConfigForm>,
+    pub schedules: Option<ConfigForm>,
+    pub video: Option<ConfigForm>,
+    pub messaging: Option<ConfigForm>,
+    pub web_ui: Option<ConfigForm>,
+    pub reverse_proxy: Option<ConfigForm>,
+    pub hd_homerun: Option<ConfigForm>,
+    pub proxy: Option<ConfigForm>,
+    pub ipcheck: Option<ConfigForm>,
 }
 
 #[function_component]
 pub fn ConfigView() -> Html {
     let translate = use_translation();
+    let services_ctx = use_service_context();
+    let config_ctx = use_context::<ConfigContext>().expect("ConfigContext not found");
+
     let active_tab = use_state(|| ConfigPage::Main);
+    let edit_mode = use_state(|| false);
+    let form_state = use_state(ConfigFormState::default);
 
     let handle_tab_change = {
         let active_tab = active_tab.clone();
@@ -84,81 +94,159 @@ pub fn ConfigView() -> Html {
         })
     };
 
-    let tabs = vec![
-        TabItem {
-            id: ConfigPage::Main.to_string(),
-            title: translate.t("LABEL.MAIN"),
-            icon: "MainConfig".to_string(),
-            children: html! { <MainConfigView/> },
-        },
-        TabItem {
-            id: ConfigPage::Api.to_string(),
-            title: translate.t("LABEL.API"),
-            icon: "ApiConfig".to_string(),
-            children: html! { <ApiConfigView/> },
-        },
-        TabItem {
-            id: ConfigPage::Schedules.to_string(),
-            title: translate.t("LABEL.SCHEDULES"),
-            icon: "SchedulesConfig".to_string(),
-            children: html! { <SchedulesConfigView/> },
-        },
-        TabItem {
-            id: ConfigPage::Messaging.to_string(),
-            title: translate.t("LABEL.MESSAGING"),
-            icon: "MessagingConfig".to_string(),
-            children: html! { <MessagingConfigView/> },
-        },
-        TabItem {
-            id: ConfigPage::WebUi.to_string(),
-            title: translate.t("LABEL.WEB_UI"),
-            icon: "WebUiConfig".to_string(),
-            children: html! { <WebUiConfigView/> },
-        },
-        TabItem {
-            id: ConfigPage::ReverseProxy.to_string(),
-            title: translate.t("LABEL.REVERSE_PROXY"),
-            icon: "ReverseProxyConfig".to_string(),
-            children: html! { <ReverseProxyConfigView/> },
-        },
-        TabItem {
-            id: ConfigPage::HdHomerun.to_string(),
-            title: translate.t("LABEL.HDHOMERUN_CONFIG"),
-            icon: "HdHomerunConfig".to_string(),
-            children: html! { <HdHomerunConfigView/> },
-        },
-        TabItem {
-            id: ConfigPage::Proxy.to_string(),
-            title: translate.t("LABEL.PROXY"),
-            icon: "ProxyConfig".to_string(),
-            children: html! { <ProxyConfigView/> },
-        },
-        TabItem {
-            id: ConfigPage::IpCheck.to_string(),
-            title: translate.t("LABEL.IP_CHECK"),
-            icon: "IpCheckConfig".to_string(),
-            children: html! { <IpCheckConfigView/> },
-        },
-        TabItem {
-            id: ConfigPage::Video.to_string(),
-            title: translate.t("LABEL.VIDEO"),
-            icon: "VideoConfig".to_string(),
-            children: html! { <VideoConfigView/> },
-        }
-    ];
+    let tabs = {
+        let form_state = form_state.clone();
+        let translate = translate.clone();
+        let edit_value = *edit_mode;
+
+        use_memo((form_state, edit_value, translate.clone()), move |(forms, editing, translate)| {
+            let forms: &ConfigFormState = forms;
+            let modified_pages = collect_modified!(forms, [
+                main, api, log, schedules, video, messaging, web_ui,
+                reverse_proxy, hd_homerun, proxy, ipcheck
+            ]).iter()
+                .map(config_form_to_config_page)
+                .collect::<Vec<ConfigPage>>();
+
+            let tab_configs = vec![
+                (ConfigPage::Main, LABEL_MAIN, html! { <MainConfigView/> }, "MainConfig"),
+                (ConfigPage::Api, LABEL_API, html! { <ApiConfigView/> }, "ApiConfig"),
+                (ConfigPage::Log, LABEL_LOG, html! { <LogConfigView/> }, "Log"),
+                (ConfigPage::Schedules, LABEL_SCHEDULES, html! { <SchedulesConfigView/> }, "SchedulesConfig"),
+                (ConfigPage::Messaging, LABEL_MESSAGING, html! { <MessagingConfigView/> }, "MessagingConfig"),
+                (ConfigPage::WebUi, LABEL_WEB_UI, html! { <WebUiConfigView/> }, "WebUiConfig"),
+                (ConfigPage::ReverseProxy, LABEL_REVERSE_PROXY, html! { <ReverseProxyConfigView/> }, "ReverseProxyConfig"),
+                (ConfigPage::HdHomerun, LABEL_HDHOMERUN_CONFIG, html! { <HdHomerunConfigView/> }, "HdHomerunConfig"),
+                (ConfigPage::Proxy, LABEL_PROXY, html! { <ProxyConfigView/> }, "ProxyConfig"),
+                (ConfigPage::IpCheck, LABEL_IP_CHECK, html! { <IpCheckConfigView/> }, "IpCheckConfig"),
+                (ConfigPage::Video, LABEL_VIDEO, html! { <VideoConfigView/> }, "VideoConfig"),
+            ];
+
+            let editing = *editing;
+            tab_configs.into_iter().map(|(page, label, children, icon)| {
+                let is_modified = editing && modified_pages.contains(&page);
+                TabItem {
+                    id: page.to_string(),
+                    title: translate.t(label),
+                    icon: icon.to_string(),
+                    children,
+                    active_class: if is_modified { Some("tp__tab__modified__active".to_string()) } else { None },
+                    inactive_class: if is_modified { Some("tp__tab__modified__inactive".to_string()) } else { None },
+                }
+            }).collect::<Vec<TabItem>>()
+        })
+    };
+
+    let handle_config_edit = {
+        let set_edit_mode = edit_mode.clone();
+        Callback::from(move |_| {
+            set_edit_mode.set(!*set_edit_mode);
+        })
+    };
+
+    let handle_save_config = {
+        let config_ctx = config_ctx.clone();
+        let translate = translate.clone();
+        let services = services_ctx.clone();
+        let get_form_state = form_state.clone();
+        let set_edit_mode = edit_mode.clone();
+
+        Callback::from(move |_| {
+            let forms = &*get_form_state;
+            let modified_forms: Vec<ConfigForm> = collect_modified!(forms, [
+                main, api, log, schedules, video, messaging, web_ui,
+                reverse_proxy, hd_homerun, proxy, ipcheck
+            ]);
+
+            if !modified_forms.is_empty() {
+                let mut config_dto = config_ctx.config.as_ref().map_or_else(ConfigDto::default,
+                                                                            |app_cfg| app_cfg.config.clone());
+                update_config(&mut config_dto, modified_forms);
+                match config_dto.prepare() {
+                    Ok(_) => {
+                        let services = services.clone();
+                        let translate = translate.clone();
+                        let set_edit_mode = set_edit_mode.clone();
+                        spawn_local(async move {
+                            match services.config.save_config(config_dto).await{
+                                Ok(()) => {
+                                    services.toastr.success(translate.t("MESSAGES.SAVE.MAIN_CONFIG.SUCCESS"));
+                                    set_edit_mode.set(false);
+                                    let _cfg = services.config.get_server_config().await;
+                                },
+                                Err(err) => {
+                                    services.toastr.error(translate.t("MESSAGES.SAVE.MAIN_CONFIG.FAIL"));
+                                    services.toastr.error(err.to_string());
+                                }
+                            }
+                        });
+                    }
+                    Err(err) => {
+                        services.toastr.error(err.to_string());
+                    }
+                }
+            } else {
+                set_edit_mode.set(false);
+            }
+        })
+    };
+
+    let on_form_change = {
+        let set_form_state = form_state.clone();
+        Callback::from(move |form_data: ConfigForm| {
+            let mut new_state = (*set_form_state).clone();
+
+            match form_data {
+                ConfigForm::Main(_, _) => new_state.main = Some(form_data),
+                ConfigForm::Api(_, _) => new_state.api = Some(form_data),
+                ConfigForm::Log(_, _) => new_state.log = Some(form_data),
+                ConfigForm::Schedules(_, _) => new_state.schedules = Some(form_data),
+                ConfigForm::Video(_, _) => new_state.video = Some(form_data),
+                ConfigForm::Messaging(_, _) => new_state.messaging = Some(form_data),
+                ConfigForm::WebUi(_, _) => new_state.web_ui = Some(form_data),
+                ConfigForm::ReverseProxy(_, _) => new_state.reverse_proxy = Some(form_data),
+                ConfigForm::HdHomerun(_, _) => new_state.hd_homerun = Some(form_data),
+                ConfigForm::Proxy(_, _) => new_state.proxy = Some(form_data),
+                ConfigForm::IpCheck(_, _) => new_state.ipcheck = Some(form_data),
+            };
+            set_form_state.set(new_state);
+        })
+    };
+
+
+    let context = ConfigViewContext {
+        edit_mode: edit_mode.clone(),
+        on_form_change: on_form_change.clone(),
+    };
 
     html! {
+        <ContextProvider<ConfigViewContext> context={context}>
         <div class="tp__config-view">
             <div class="tp__config-view__header">
-                <h1>{ translate.t("LABEL.CONFIG") } </h1>
+                <h1>{ translate.t(LABEL_CONFIG) } </h1>
+                <TextButton name="config_edit"
+                    class={ if *edit_mode { "secondary" } else { "primary" }}
+                    icon={ if *edit_mode { "Unlocked" } else { "Locked" }}
+                    title={ if *edit_mode { translate.t(LABEL_EDIT) } else { translate.t(LABEL_VIEW) }}
+                    onclick={handle_config_edit}></TextButton>
             </div>
             <div class="tp__config-view__body">
             <Card>
-                 <TabSet tabs={tabs} active_tab={Some((*active_tab).to_string())}
+                 <TabSet tabs={tabs.clone()} active_tab={Some((*active_tab).to_string())}
                      on_tab_change={Some(handle_tab_change)}
                      class="tp__config-view__tabset"/>
+
+                { html_if!(*edit_mode, {
+                    <div class="tp__config-view__toolbar tp__form-page__toolbar">
+                     <TextButton class="primary" name="save_config"
+                        icon="Save"
+                        title={ translate.t(LABEL_SAVE)}
+                        onclick={handle_save_config}></TextButton>
+                    </div>
+                })}
             </Card>
             </div>
         </div>
+        </ContextProvider<ConfigViewContext>>
     }
 }

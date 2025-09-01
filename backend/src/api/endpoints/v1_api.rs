@@ -440,14 +440,12 @@ pub fn v1_api_register(web_auth_enabled: bool, app_state: Arc<AppState>, web_ui_
         .route("/playlist/update", axum::routing::post(playlist_update))
         .route("/playlist", axum::routing::post(playlist_content))
         .route("/file/download", axum::routing::post(download_api::queue_download_file))
-        .route("/file/download/info", axum::routing::get(download_api::download_file_info));
-    let config = app_state.app_config.config.load();
-    if config.ipcheck.is_some() {
-        router = router.route("/ipinfo", axum::routing::get(ipinfo));
-    }
+        .route("/file/download/info", axum::routing::get(download_api::download_file_info))
+        .route("/ipinfo", axum::routing::get(ipinfo));
     if web_auth_enabled {
         router = router.route_layer(axum::middleware::from_fn_with_state(Arc::clone(&app_state), validator_admin));
     }
+    let config = app_state.app_config.config.load();
 
     let mut base_router = axum::Router::new();
     if config.web_ui.as_ref().is_none_or(|c| c.user_ui_enabled) {

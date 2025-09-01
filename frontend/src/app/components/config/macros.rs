@@ -206,11 +206,113 @@ macro_rules! edit_field_number {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field.clone()}
-                    on_change={Callback::from(move |value: Option<u32>| {
+                    value={(*instance).data().$field as u64}
+                    on_change={Callback::from(move |value: Option<u64>| {
                         match value {
-                            Some(value) => instance.dispatch($action(value)),
+                            Some(value) => {
+                                let val = u32::try_from(value).unwrap_or(0);
+                                instance.dispatch($action(val));
+                            }
                             None => instance.dispatch($action(0)),
+                        }
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! edit_field_number_u8 {
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__number">
+                <$crate::app::components::number_input::NumberInput
+                    label={$label}
+                    name={stringify!($field)}
+                    value={(*instance).data().$field as u64}
+                    on_change={Callback::from(move |value: Option<u64>| {
+                        match value {
+                            Some(value) => {
+                                let val = u8::try_from(value).unwrap_or(0);
+                                instance.dispatch($action(val))
+                            },
+                            None => instance.dispatch($action(0)),
+                        }
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! edit_field_number_u16 {
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__number">
+                <$crate::app::components::number_input::NumberInput
+                    label={$label}
+                    name={stringify!($field)}
+                    value={(*instance).data().$field as u64}
+                    on_change={Callback::from(move |value: Option<u64>| {
+                        match value {
+                            Some(value) => {
+                                let val = u16::try_from(value).unwrap_or(0);
+                                instance.dispatch($action(val))
+                            },
+                            None => instance.dispatch($action(0)),
+                        }
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! edit_field_number_u64 {
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__number">
+                <$crate::app::components::number_input::NumberInput
+                    label={$label}
+                    name={stringify!($field)}
+                    value={(*instance).data().$field}
+                    on_change={Callback::from(move |value: Option<u64>| {
+                        match value {
+                            Some(value) => {
+                                instance.dispatch($action(value))
+                            },
+                            None => instance.dispatch($action(0)),
+                        }
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! edit_field_number_option {
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__number">
+                <$crate::app::components::number_input::NumberInput
+                    label={$label}
+                    name={stringify!($field)}
+                    value={(*instance).data().$field.map(|v| v as u64)}
+                    on_change={Callback::from(move |value: Option<u64>| {
+                        match value {
+                            Some(value) => {
+                                let val = u32::try_from(value).ok();
+                                instance.dispatch($action(val))
+                            },
+                            None => instance.dispatch($action(None)),
                         }
                     })}
                 />
@@ -239,6 +341,56 @@ macro_rules! edit_field_date {
 }
 
 #[macro_export]
+macro_rules! edit_field_list {
+    ($instance:expr, $label:expr, $field:ident, $action:path, $placeholder:expr) => {{
+        let instance = $instance.clone();
+        let tag_list = (*instance).data().$field.iter()
+              .map(|s| std::rc::Rc::new($crate::app::components::Tag { label: s.clone(), class: None }))
+              .collect::<Vec<std::rc::Rc<$crate::app::components::Tag>>>();
+        html! {
+            <div class="tp__form-field tp__form-field__list">
+                <label>{$label}</label>
+                <$crate::app::components::TagList
+                     tags={tag_list}
+                     placeholder={$placeholder}
+                     readonly={false}
+                     on_change={Callback::from(move |value: Vec<std::rc::Rc<$crate::app::components::Tag>>| {
+                        let list = value.iter().map(|t| t.label.clone()).collect();
+                        instance.dispatch($action(list));
+                     })}/>
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! edit_field_list_option {
+    ($instance:expr, $label:expr, $field:ident, $action:path, $placeholder:expr) => {{
+        let instance = $instance.clone();
+        let tag_list = (*instance).data().$field.as_ref().map_or_else(Vec::new, |f| f.iter()
+              .map(|s| std::rc::Rc::new($crate::app::components::Tag { label: s.clone(), class: None }))
+              .collect::<Vec<std::rc::Rc<$crate::app::components::Tag>>>());
+        html! {
+            <div class="tp__form-field tp__form-field__list">
+                <label>{$label}</label>
+                <$crate::app::components::TagList
+                     tags={tag_list}
+                     placeholder={$placeholder}
+                     readonly={false}
+                     on_change={Callback::from(move |value: Vec< std::rc::Rc<$crate::app::components::Tag>>| {
+                        let list: Vec<String> = value.iter().map(|t| t.label.clone()).collect();
+                        if list.is_empty() {
+                            instance.dispatch($action(None));
+                        } else {
+                            instance.dispatch($action(Some(list)));
+                        }
+                     })}/>
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
 macro_rules! generate_form_reducer {
     (
         state: $state_name:ident { $data_field:ident: $data_type:ty },
@@ -254,6 +406,7 @@ macro_rules! generate_form_reducer {
         }
 
         impl $state_name {
+            #[allow(dead_code)]
             pub fn modified(&self) -> bool {
                 self.modified
             }
@@ -264,6 +417,7 @@ macro_rules! generate_form_reducer {
             $(
                 $set_name($field_type),
             )*
+            #[allow(dead_code)]
             SetAll($data_type),
         }
 

@@ -64,6 +64,23 @@ impl AuthService {
         self.auth_channel.set(false);
     }
 
+    fn no_auth(&self, err: Error) -> Result<TokenResponse, Error> {
+        if matches!(err, Error::BadRequest(_)) {
+            self.username.replace("admin".to_string());
+            self.auth_channel.set(true);
+            set_token(Some(TOKEN_NO_AUTH));
+            self.roles.borrow_mut().push(ROLE_ADMIN.to_string());
+            Ok(TokenResponse {
+                token: TOKEN_NO_AUTH.to_string(),
+                username: "admin".to_string(),
+            })
+        } else {
+            self.auth_channel.set(false);
+            set_token(None);
+            Err(err)
+        }
+    }
+
     pub async fn authenticate(&self, username: String, password: String) -> Result<TokenResponse, Error> {
         let credentials = UserCredential {
             username,
@@ -78,10 +95,7 @@ impl AuthService {
                 Ok(token)
             }
             Err(e) => {
-                self.username.borrow_mut().clear();
-                self.auth_channel.set(false);
-                set_token(None);
-                Err(e)
+                self.no_auth(e)
             }
         }
     }
@@ -96,10 +110,7 @@ impl AuthService {
                 Ok(token)
             }
             Err(e) => {
-                // self.username.borrow_mut().clear();
-                self.auth_channel.set(false);
-                set_token(None);
-                Err(e)
+                self.no_auth(e)
             }
         }
     }

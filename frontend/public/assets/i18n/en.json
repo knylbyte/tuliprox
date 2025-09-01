@@ -60,7 +60,7 @@
     "EXTENSIONS": "Extensions",
     "HEADERS": "Headers",
     "DIRECTORY": "Directory",
-    "ORGANIZE_INTO_DIRECTORIES": "Organize Into Directorie",
+    "ORGANIZE_INTO_DIRECTORIES": "Organize Into Directories",
     "EPISODE_PATTERN": "Episode Pattern",
     "API": "Api",
     "MAIN": "Main",
@@ -74,7 +74,8 @@
     "CACHE": "Cache",
     "STREAM": "Stream",
     "LOG": "Log",
-    "LOG_LEVEL": "Log level",
+    "LOG_LEVEL": "Log Level",
+    "LOG_ACTIVE_USER": "Log Active User",
     "CONFIG": "Config",
     "TELEGRAM": "Telegram",
     "REST": "Rest",
@@ -82,7 +83,6 @@
     "PROXY": "Proxy",
     "REFRESH": "Refresh",
     "STATUS": "Status",
-    "MAX_CON": "MaxCon",
     "USERNAME": "Username",
     "PASSWORD": "Password",
     "SERVER": "Server",
@@ -273,7 +273,13 @@
     "USER_STATUS_BANNED": "Banned",
     "USER_STATUS_TRIAL": "Trial",
     "USER_STATUS_DISABLED": "Disabled",
-    "USER_STATUS_PENDING": "Pending"
+    "USER_STATUS_PENDING": "Pending",
+    "VIEW": "View",
+    "ADD_CHAT_ID": "Add ChatId",
+    "ADD_ATTRIBUTE": "Add Attribute",
+    "ADD_EXTENSION": "Add Extension",
+    "ADD_DEVICE": "Add Device",
+    "EXTENDED_ATTRIBUTES": "Extended Attributes"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"
@@ -286,6 +292,8 @@
     "CONFIRM_DELETE": "You really want to delete?",
     "CONFIG_CHANGED": "Configuration on server changed.",
     "USER_DELETED": "User successfully deleted",
+    "SCHEDULE_NOT_SET": "Please enter a schedule before adding",
+    "SCHEDULE_EXISTS": "Schedule already exists",
     "DOWNLOAD": {
       "SUCCESS": "Successfully downloaded",
       "FAIL": "Failed to download!",

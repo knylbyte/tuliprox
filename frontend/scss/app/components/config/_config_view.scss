@@ -33,6 +33,16 @@
     }
   }
 
+  &__toolbar {
+    padding-top: var(--padding-default);
+    display: flex;
+    flex-flow: row;
+    gap: var(--gap-large);
+    box-sizing: border-box;
+    width: 100%;
+    border-top: 1px solid var(--card-border-color);
+  }
+
   &__tags {
     display: flex;
     flex-flow: row wrap;
@@ -43,7 +53,7 @@
 
   &__card {
     gap: var(--gap-large);
-    background-color: var(--table-alternate-background-color);
+    background-color: var(--sub-card-background-color);
     overflow: hidden;
     h1 {
       font-size: 1.2rem;
@@ -81,24 +91,110 @@
 }
 
 .tp__schedules-config-view {
+  &__body {
+    display: flex;
+    flex-flow: column;
+    gap: var(--gap-default);
+    box-sizing: border-box;
+  }
   &__schedule {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(size.$config-grid-cell-width, 1fr));
-    max-width: calc(size.$config-max-grid-cells * size.$config-grid-cell-width + 2 * 1rem);
+    display: flex;
+    flex-flow: column;
     gap: var(--gap-default);
     box-sizing: border-box;
     padding: var(--padding-default);
-    border: 1px solid var(--card-border-color);
-    border-radius: var(--border-radius);
+
+    .tp__config-view__table {
+      th {
+        text-align: left;
+      }
+
+      th,td {
+        width: 1%;
+        white-space: nowrap;
+      }
+      th:last-child,
+      td:last-child {
+        width: auto;
+      }
+      td {
+        vertical-align: middle;
+      }
+
+      .tp__config-view__tags {
+        padding-left: var(--padding-default);
+      }
+    }
+
   }
   &__footer {
     margin-top: var(--margin-default);
     padding-top: var(--margin-default);
     border-top : 1px solid var(--card-border-color);
     svg {
-      width: 240px;
-      height: 60px;
+      width: 320px;
+      height: 90px;
     }
     fill: var(--label-color);
+  }
+  &__editor {
+    display: flex;
+    flex-flow: row wrap;
+    align-items: flex-end;
+    gap: var(--gap-default);
+    box-sizing: border-box;
+    .tp__icon-button {
+      svg {
+        width: 2.3rem;
+      }
+    }
+  }
+  &__delete-btn {
+    fill: var(--menu-button-warn-hover-color);
+  }
+}
+
+.tp__tab__modified {
+  &__active {
+    button {
+      border-color: var(--warn-color);
+    }
+  }
+  &__inactive {
+    button {
+      border-color: var(--warn-color);
+    }
+  }
+}
+
+.tp__hdhomerun__device-extended-fields {
+  .tp__collapse-panel {
+    &__header {
+      padding: var(--padding-micro) 0;
+      font-size: 1.1rem;
+    }
+
+    &__body {
+      padding-top: var(--padding-default);
+    }
+  }
+}
+
+.tp__messaging-config-view__notify-on {
+  display: flex;
+  flex-flow: row wrap;
+  gap: var(--gap-default);
+  box-sizing: border-box;
+}
+
+.tp__config-view-page {
+  &__info {
+    display: flex;
+    flex-flow: row;
+    color:var(--warn-color);
+    fill: var(--warn-color);
+    span {
+      white-space: wrap;
+    }
   }
 }

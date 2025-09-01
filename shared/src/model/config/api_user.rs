@@ -36,7 +36,6 @@ pub struct ProxyUserCredentialsDto {
     pub comment: Option<String>,
 }
 
-
 impl ProxyUserCredentialsDto {
     pub fn prepare(&mut self) {
         self.trim();

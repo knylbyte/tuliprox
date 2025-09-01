@@ -13,7 +13,7 @@ use yew_i18n::I18nProvider;
 use yew::prelude::*;
 use yew_hooks::{use_async_with_options, UseAsyncOptions};
 use yew_router::prelude::*;
-use crate::app::components::{Authentication, Home, Login, RoleBasedContent};
+use crate::app::components::{Authentication, Home, LoadingScreen, Login, RoleBasedContent};
 use crate::error::Error;
 use crate::hooks::{IconDefinition};
 use crate::model::WebConfig;
@@ -113,7 +113,12 @@ pub fn App() -> Html {
                     }
                     config_state.set(Some(cfg));
                 },
-                Err(err) => error!("Failed to load config {err}"),
+                Err(err) => {
+                    error!("Failed to load config {err}");
+                   // Fallback: render app with defaults instead of spinning forever
+                    #[allow(clippy::default_trait_access)]
+                    config_state.set(Some(WebConfig::default()));
+                },
             }
             Ok(())
         }, UseAsyncOptions::enable_auto());
@@ -124,7 +129,11 @@ pub fn App() -> Html {
         use_async_with_options::<_, (), Error>(async move {
             match request_get("assets/icons.json", None, None).await {
                 Ok(icons) => icon_state.set(Some(icons)),
-                Err(err) => error!("Failed to load icons {err}"),
+                Err(err) => {
+                    // Fallback: proceed with an empty icon set
+                    icon_state.set(Some(Vec::new()));
+                    error!("Failed to load icons {err}")
+                },
             }
             Ok(())
         }, UseAsyncOptions::enable_auto());
@@ -132,7 +141,7 @@ pub fn App() -> Html {
 
     if translations_state.as_ref().is_none() || configuration_state.as_ref().is_none()
     || icon_state.as_ref().is_none(){
-        return html! { <div>{ "Loading..." }</div> };
+        return html! { <LoadingScreen/> };
     }
     let transl = translations_state.as_ref().unwrap();
     let config: &WebConfig = configuration_state.as_ref().unwrap();

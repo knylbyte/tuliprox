@@ -9,9 +9,9 @@ pub struct NumberInputProps {
     #[prop_or_default]
     pub label: Option<String>,
     #[prop_or_default]
-    pub value: Option<u32>,
+    pub value: Option<u64>,
     #[prop_or_default]
-    pub on_change: Callback<Option<u32>>,
+    pub on_change: Callback<Option<u64>>,
     #[prop_or_default]
     pub placeholder: String,
 }
@@ -39,7 +39,7 @@ pub fn NumberInput(props: &NumberInputProps) -> Html {
         Callback::from(move |e: InputEvent| {
             if let Some(input) = e.target_dyn_into::<HtmlInputElement>() {
                 let raw = input.value();
-                let parsed = raw.parse::<u32>().ok();
+                let parsed = raw.parse::<u64>().ok();
                 onchange.emit(parsed);
             }
         })

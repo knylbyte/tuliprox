@@ -29,6 +29,7 @@ wasm-bindgen-futures = "0"
 bytes = "1"
 regex = "1.11.1"
 base64 = "0.22.1"
+cron = "0.15"
 
 [dependencies.web-sys]
 version = "0.3"

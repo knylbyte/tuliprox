@@ -142,7 +142,7 @@ impl FromStr for InputFetchMethod {
 
 
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputOptionsDto {
     #[serde(default)]
@@ -155,6 +155,18 @@ pub struct ConfigInputOptionsDto {
     pub xtream_live_stream_use_prefix: bool,
     #[serde(default)]
     pub xtream_live_stream_without_extension: bool,
+}
+
+impl Default for ConfigInputOptionsDto {
+    fn default() -> Self {
+        ConfigInputOptionsDto {
+            xtream_skip_live: false,
+            xtream_skip_vod: false,
+            xtream_skip_series: false,
+            xtream_live_stream_use_prefix: default_as_true(),
+            xtream_live_stream_without_extension: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -209,7 +221,7 @@ impl ConfigInputAliasDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputDto {
     #[serde(default)]
@@ -243,6 +255,29 @@ pub struct ConfigInputDto {
     pub method: InputFetchMethod,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub staged: Option<StagedInputDto>,
+}
+
+impl Default for ConfigInputDto {
+    fn default() -> Self {
+        ConfigInputDto {
+            id: 0,
+            name: String::new(),
+            input_type: InputType::default(),
+            headers: HashMap::new(),
+            url: String::new(),
+            epg: None,
+            username: None,
+            password: None,
+            persist: None,
+            enabled: default_as_true(),
+            options: None,
+            aliases: None,
+            priority: 0,
+            max_connections: 0,
+            method: InputFetchMethod::default(),
+            staged: None,
+        }
+    }
 }
 
 impl ConfigInputDto {

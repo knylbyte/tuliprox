@@ -24,12 +24,15 @@ pub fn PlaylistSourceSelector() -> Html {
     let username_ref = use_node_ref();
     let password_ref = use_node_ref();
     let url_ref = use_node_ref();
+    let source_types = use_memo((), |_| vec![ExplorerSourceType::Hosted.to_string(), ExplorerSourceType::Provider.to_string(), ExplorerSourceType::Custom.to_string()]);
 
     let handle_source_select = {
         let active_source_clone = active_source.clone();
-        Callback::from(move |source_type_str: String| {
-            if let Ok(source_type) = ExplorerSourceType::from_str(&source_type_str) {
-                active_source_clone.set(source_type)
+        Callback::from(move |source_selection: Rc<Vec<String>>| {
+            if let Some(source_type_str) = source_selection.first() {
+                if let Ok(source_type) = ExplorerSourceType::from_str(source_type_str) {
+                    active_source_clone.set(source_type)
+                }
             }
         })
     };
@@ -245,12 +248,9 @@ pub fn PlaylistSourceSelector() -> Html {
                title={translate.t("LABEL.SOURCE_PICKER")}>
                <Card>
                 <div class="tp__playlist-source-selector__source-picker__header">
-                    <RadioButtonGroup options={vec![
-                                    ExplorerSourceType::Hosted.to_string(),
-                                    ExplorerSourceType::Provider.to_string(),
-                                    ExplorerSourceType::Custom.to_string()]}
-                                  selected={(*active_source).to_string()}
-                                  on_change={handle_source_select} />
+                    <RadioButtonGroup options={source_types.clone()}
+                                  selected={Rc::new(vec![(*active_source).to_string()])}
+                                  on_select={handle_source_select} />
                     {
                         html_if! {
                         *active_source == ExplorerSourceType::Custom,

@@ -43,8 +43,9 @@ pub fn Home() -> Html {
                         services_ctx_clone.toastr.error(msg);
                     },
                     EventMessage::ConfigChange(config_type) => {
-                        services_ctx_clone.toastr.warning_with_options(format!("{}: {config_type}", translate_clone.t("MESSAGES.CONFIG_CHANGED")),
-                                                                       ToastOptions { close_mode: ToastCloseMode::Manual });
+                        services_ctx_clone.toastr.warning_with_options(
+                            format!("{}: {config_type}", translate_clone.t("MESSAGES.CONFIG_CHANGED")),
+                            ToastOptions { close_mode: ToastCloseMode::Manual });
                     },
                     EventMessage::PlaylistUpdate(update_state) => {
                         match update_state {
