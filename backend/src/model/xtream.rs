@@ -322,13 +322,13 @@ impl XtreamSeriesEpisode {
         Self {
             id: info_episode.get_id(),
             episode_num: info_episode.episode_num,
-            title: info_episode.title.to_string(),
-            container_extension: info_episode.container_extension.to_string(),
-            custom_sid: info_episode.custom_sid.to_string(),
-            added: info_episode.added.to_string(),
+            title: info_episode.title.clone(),
+            container_extension: info_episode.container_extension.clone(),
+            custom_sid: info_episode.custom_sid.clone(),
+            added: info_episode.added.clone(),
             season: info_episode.season,
             tmdb_id: info_episode.info.as_ref().and_then(|info| info.tmdb_id).unwrap_or(0),
-            direct_source: info_episode.direct_source.to_string(),
+            direct_source: info_episode.direct_source.clone(),
         }
     }
 }
@@ -428,7 +428,7 @@ fn append_prepared_series_properties(add_props: Option<&Map<String, Value>>, doc
             Some(value) => {
                 document.insert("rating".to_string(), match value {
                     Value::Number(val) => Value::String(format!("{:.0}", val.as_f64().unwrap_or(0f64))),
-                    Value::String(val) => Value::String(val.to_string()),
+                    Value::String(val) => Value::String(val.clone()),
                     _ => Value::String("0".to_string()),
                 });
             }
@@ -499,7 +499,7 @@ pub fn xtream_playlistitem_to_document(pli: &XtreamPlaylistItem, url: &str, opti
     if let Some(ref add_props) = props {
         for (field_name, field_value) in add_props {
             if !document.contains_key(field_name) {
-                document.insert(field_name.to_string(), field_value.to_owned());
+                document.insert(field_name.clone(), field_value.to_owned());
             }
         }
     }

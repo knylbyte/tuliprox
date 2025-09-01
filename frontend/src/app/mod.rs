@@ -6,13 +6,14 @@ use std::rc::Rc;
 use futures::future::join_all;
 use log::error;
 use serde_json::Value;
+use web_sys::window;
 use crate::provider::IconContextProvider;
 use crate::provider::ServiceContextProvider;
 use yew_i18n::I18nProvider;
 use yew::prelude::*;
 use yew_hooks::{use_async_with_options, UseAsyncOptions};
 use yew_router::prelude::*;
-use crate::app::components::{Authentication, Home, Login};
+use crate::app::components::{Authentication, Home, LoadingScreen, Login, RoleBasedContent};
 use crate::error::Error;
 use crate::hooks::{IconDefinition};
 use crate::model::WebConfig;
@@ -79,7 +80,7 @@ pub fn App() -> Html {
             let futures = languages.iter()
                 .map(|lang| async move {
                     let url = format!("assets/i18n/{lang}.json");
-                    let result: Result<Value, Error> = request_get(&url, None).await;
+                    let result: Result<Value, Error> = request_get(&url, None, None).await;
                     (lang.to_string(), result)
                 })
                 .collect::<Vec<_>>();
@@ -101,9 +102,23 @@ pub fn App() -> Html {
     {
         let config_state = configuration_state.clone();
         use_async_with_options::<_, (), Error>(async move {
-            match request_get("config.json", None).await {
-                Ok(cfg) => config_state.set(Some(cfg)),
-                Err(err) => error!("Failed to load config {err}"),
+            match request_get::<WebConfig>("config.json", None, None).await {
+                Ok(cfg) => {
+                    if let Some(tab_title) = cfg.tab_title.as_deref() {
+                        if let Some(win) = window() {
+                            if let Some(doc) = win.document() {
+                                doc.set_title(tab_title);
+                            }
+                        }
+                    }
+                    config_state.set(Some(cfg));
+                },
+                Err(err) => {
+                    error!("Failed to load config {err}");
+                   // Fallback: render app with defaults instead of spinning forever
+                    #[allow(clippy::default_trait_access)]
+                    config_state.set(Some(WebConfig::default()));
+                },
             }
             Ok(())
         }, UseAsyncOptions::enable_auto());
@@ -112,9 +127,13 @@ pub fn App() -> Html {
     {
         let icon_state = icon_state.clone();
         use_async_with_options::<_, (), Error>(async move {
-            match request_get("assets/icons.json", None).await {
+            match request_get("assets/icons.json", None, None).await {
                 Ok(icons) => icon_state.set(Some(icons)),
-                Err(err) => error!("Failed to load icons {err}"),
+                Err(err) => {
+                    // Fallback: proceed with an empty icon set
+                    icon_state.set(Some(Vec::new()));
+                    error!("Failed to load icons {err}")
+                },
             }
             Ok(())
         }, UseAsyncOptions::enable_auto());
@@ -122,7 +141,7 @@ pub fn App() -> Html {
 
     if translations_state.as_ref().is_none() || configuration_state.as_ref().is_none()
     || icon_state.as_ref().is_none(){
-        return html! { <div>{ "Loading..." }</div> };
+        return html! { <LoadingScreen/> };
     }
     let transl = translations_state.as_ref().unwrap();
     let config: &WebConfig = configuration_state.as_ref().unwrap();
@@ -134,7 +153,7 @@ pub fn App() -> Html {
                 <IconContextProvider icons={icons.clone()}>
                     <I18nProvider supported_languages={supported_languages} translations={transl.clone()}>
                         <Authentication>
-                           <Switch<AppRoute> render={switch} />
+                            <RoleBasedContent />
                         </Authentication>
                     </I18nProvider>
                 </IconContextProvider>

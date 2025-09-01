@@ -10,6 +10,9 @@ $toggle-switch-toggle-end-pos: calc($toggle-switch-width - ($toggle-switch-toggl
   width: $toggle-switch-width;
   height: $toggle-switch-height;
   cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: var(--border-radius);
+
   &__readonly {
     cursor: default;
   }
@@ -45,5 +48,9 @@ $toggle-switch-toggle-end-pos: calc($toggle-switch-width - ($toggle-switch-toggl
   }
   &__active {
 
+  }
+
+  &:focus-within {
+    border-color: var(--input-focus-border-color);
   }
 }

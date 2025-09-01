@@ -29,15 +29,8 @@ pub fn get_trimmed_string(value: &Option<String>) -> Option<String> {
 }
 
 pub fn generate_random_string(length: usize) -> String {
-    let charset = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let range = ..charset.len();
-    let random_string: String = (0..length)
-        .map(|_| {
-            let idx = fastrand::usize(range);
-            charset[idx] as char
-        })
-        .collect();
-
+    let mut rng = fastrand::Rng::new();
+    let random_string: String = (0..length).map(|_| rng.alphanumeric()).collect();
     random_string
 }
 
@@ -63,6 +56,10 @@ pub fn get_non_empty_str<'a>(first: &'a str, second: &'a str, third: &'a str) ->
     } else {
         third
     }
+}
+
+pub fn is_blank_optional_string(s: &Option<String>) -> bool {
+    s.is_none() || s.as_ref().is_some_and(|s| s.trim().is_empty())
 }
 
 pub fn trim_slash(s: &str) -> Cow<'_, str> {

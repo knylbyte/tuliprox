@@ -1,7 +1,5 @@
-use wasm_bindgen::JsCast;
-use web_sys::{ MouseEvent};
 use yew::{classes, function_component, html, Callback, Html, Properties};
-
+use crate::app::components::AppIcon;
 
 pub fn convert_bool_to_chip_style(value: bool) -> Option<String> {
     Option::from((if value { "active" } else { "inactive" }).to_string())
@@ -23,27 +21,30 @@ pub fn Chip(props: &ChipProps) -> Html {
 
     let handle_remove = {
         if props.removable {
-            Callback::noop()
-        } else {
             let on_remove = props.on_remove.clone();
-            Callback::from(move |e: MouseEvent| {
-                if let Some(target) = e.target() {
-                    if let Ok(element) = target.dyn_into::<web_sys::Element>() {
-                        if let Some(data_label) = element.get_attribute("data-label") {
-                            on_remove.emit(data_label.to_string());
-                        }
-                    }
-                }
-            })
+            Callback::from(move |label: String| on_remove.emit(label))
+        } else {
+            Callback::noop()
         }
+    };
+
+    let remove_button = if props.removable {
+        let remove = handle_remove.clone();
+        let label = props.label.clone();
+        let on_remove = Callback::from(move |_| remove.emit(label.clone()));
+        html ! {
+            <span class="tp__chip__remove" onclick={on_remove}>
+               <AppIcon name="Delete"/>
+            </span>
+        }
+    } else {
+        html! {}
     };
 
     html! {
          <span class={classes!("tp__chip", props.class.clone())}>
             <span class="tp__chip__label">{ &props.label }</span>
-            if props.removable {
-                <span class="tp__remove" onclick={handle_remove}>{"×"}</span>
-            }
+           { remove_button }
         </span>
     }
 }

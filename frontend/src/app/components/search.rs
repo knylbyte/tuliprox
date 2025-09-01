@@ -19,7 +19,7 @@ pub struct SearchProps {
     #[prop_or_default]
     pub class: String,
     #[prop_or_default]
-    pub options: Option<Rc<Vec<DropDownOption>>>,
+    pub options: Option<Vec<Rc<DropDownOption>>>,
     pub onsearch: Option<Callback<SearchRequest>>,
     #[prop_or(3)]
     pub min_length: usize,

@@ -563,7 +563,7 @@ fn rewrite_xtream_vod_info<P>(
         } else {
             movie_data.insert(
                 crate::model::XC_TAG_DIRECT_SOURCE.to_string(),
-                Value::String(pli.get_provider_url().to_string()),
+                Value::String(pli.get_provider_url().clone()),
             );
         }
     }

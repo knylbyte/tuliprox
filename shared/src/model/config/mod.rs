@@ -29,7 +29,12 @@ mod paths;
 mod app_config;
 mod config_type;
 mod playlist_update_state;
+mod proxy_type;
 
+mod proxy_user_status;
+
+pub use proxy_type::*;
+pub use proxy_user_status::*;
 pub use base::*;
 pub use api::*;
 pub use api_proxy::*;

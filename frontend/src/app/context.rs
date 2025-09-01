@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use regex::Regex;
 use yew::UseStateHandle;
-use shared::model::{AppConfigDto, ConfigTargetDto, PlaylistRequestType, ProxyUserCredentialsDto, SearchRequest, StatusCheck, UiPlaylistCategories};
+use shared::model::{AppConfigDto, ConfigTargetDto, PlaylistRequest, ProxyUserCredentialsDto, SearchRequest, StatusCheck, UiPlaylistCategories};
 use crate::app::components::{InputRow, PlaylistEditorPage, PlaylistExplorerPage, UserlistPage};
 
 type SingleSource = (Vec<Rc<InputRow>>, Vec<Rc<ConfigTargetDto>>);
@@ -20,7 +20,7 @@ pub struct PlaylistEditorContext {
 pub struct PlaylistExplorerContext {
     pub active_page: UseStateHandle<PlaylistExplorerPage>,
     pub playlist: UseStateHandle<Option<Rc<UiPlaylistCategories>>>,
-    pub playlist_request_type: UseStateHandle<Option<PlaylistRequestType>>,
+    pub playlist_request: UseStateHandle<Option<PlaylistRequest>>,
 }
 
 
@@ -30,13 +30,13 @@ pub struct TargetUser {
     pub credentials: Rc<ProxyUserCredentialsDto>,
 }
 
-type TargetUserList = Option<Rc<Vec<Rc<TargetUser>>>>;
+pub type TargetUserList = Option<Rc<Vec<Rc<TargetUser>>>>;
 
 #[derive(Clone, PartialEq)]
 pub struct UserlistContext {
     pub selected_user: UseStateHandle<Option<Rc<TargetUser>>>,
     pub filtered_users: UseStateHandle<TargetUserList>,
-    pub users: TargetUserList,
+    pub users: UseStateHandle<TargetUserList>,
     pub active_page: UseStateHandle<UserlistPage>,
 }
 
@@ -44,7 +44,7 @@ impl UserlistContext {
     pub fn get_users(&self) ->  TargetUserList {
         match &*self.filtered_users {
             Some(filtered) => Some(Rc::clone(filtered)),
-            None => self.users.clone(),
+            None => (*self.users).clone(),
         }
     }
 

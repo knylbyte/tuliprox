@@ -1,4 +1,4 @@
-use crate::app::components::{DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView};
+use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView};
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
@@ -43,8 +43,9 @@ pub fn Home() -> Html {
                         services_ctx_clone.toastr.error(msg);
                     },
                     EventMessage::ConfigChange(config_type) => {
-                        services_ctx_clone.toastr.warning_with_options(format!("{}: {config_type}", translate_clone.t("MESSAGES.CONFIG_CHANGED")),
-                                                                       ToastOptions { close_mode: ToastCloseMode::Manual });
+                        services_ctx_clone.toastr.warning_with_options(
+                            format!("{}: {config_type}", translate_clone.t("MESSAGES.CONFIG_CHANGED")),
+                            ToastOptions { close_mode: ToastCloseMode::Manual });
                     },
                     EventMessage::PlaylistUpdate(update_state) => {
                         match update_state {
@@ -138,13 +139,15 @@ pub fn Home() -> Html {
 
               <div class="tp__app-main">
                     <div class="tp__app-main__header tp__app-header">
+                      <div class="tp__app-main__header-left">
                         {
                             if let Some(ref title) = services.config.ui_config.app_title {
-                                html! { title.as_str() }
+                                 html! { <span class="tp__app-title">{ title }</span> }
                             } else {
-                                html! { /*<AppIcon name="AppTitle" /> */ }
+                                html! { <AppIcon name="AppTitle" /> }
                             }
                         }
+                        </div>
                         <div class={"tp__app-header-toolbar"}>
                             <IconButton name="Logout" icon="Logout" onclick={handle_logout} />
                         </div>

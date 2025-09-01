@@ -13,8 +13,7 @@ use std::borrow::Cow;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::mem;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Mutex};
 
 /// Splits a string at the first delimiter if the prefix matches a known country code.
 ///
@@ -109,6 +108,17 @@ impl TVGuide {
     }
 
     fn prepare_tag(id_cache: &mut EpgIdCache, tag: &mut XmlTag, smart_match: bool) {
+        {
+            let maybe_epg_id = {
+                tag.get_attribute_value(EPG_ATTRIB_ID).cloned()
+            };
+            if let Some(epg_id) = maybe_epg_id {
+            tag.normalized_epg_ids
+                    .get_or_insert_with(Vec::new)
+                    .push(normalize_channel_name(&epg_id, &id_cache.smart_match_config));
+            }
+        }
+
         if let Some(children) = &mut tag.children {
             for child in children {
                 match child.name.as_str() {
@@ -124,7 +134,7 @@ impl TVGuide {
                     EPG_TAG_ICON => {
                         if let Some(src) = child.get_attribute_value("src") {
                             if !src.is_empty() {
-                                tag.icon = XmlTagIcon::Src(src.to_string());
+                                tag.icon = XmlTagIcon::Src(src.clone());
                                 child.icon = XmlTagIcon::Exists;
                             }
                         }
@@ -175,43 +185,58 @@ impl TVGuide {
     /// }
     /// ```
     fn find_best_fuzzy_match(id_cache: &mut EpgIdCache, tag: &XmlTag) -> (bool, Option<String>) {
-        let early_exit_flag = Arc::new(AtomicBool::new(false));
-        let data: Mutex<(u16, Option<Cow<str>>)> = Mutex::new((0, None));
-
         let match_threshold = id_cache.smart_match_config.match_threshold;
         let best_match_threshold = id_cache.smart_match_config.best_match_threshold;
 
-        if let Some(normalized_epg_ids) = tag.normalized_epg_ids.as_ref() {
-            for tag_normalized in normalized_epg_ids {
-                let tag_code = id_cache.phonetic(tag_normalized);
-                if let Some(normalized) = id_cache.phonetics.get(&tag_code) {
-                    normalized.par_iter().find_any(|norm_key| {
-                        let match_jw = strsim::jaro_winkler(norm_key, tag_normalized);
-                        #[allow(clippy::cast_possible_truncation)]
-                        #[allow(clippy::cast_sign_loss)]
-                        let mjw = min(100, (match_jw * 100.0).round() as u16);
-                        if mjw >= match_threshold {
-                            if let Ok(mut lock) = data.lock() {
-                                if lock.0 < mjw {
-                                    *lock = (mjw, Some(Cow::Borrowed(norm_key)));
-                                }
-                            }
-                            if mjw > best_match_threshold {
-                                return true; // (true, matched_normalized_epg_id.map(|s| s.to_string()));
-                            }
-                        }
-                        false
-                    });
+        let Some(normalized_epg_ids) = tag.normalized_epg_ids.as_ref() else {
+            return (false, None);
+        };
+
+        // 1) Precalculation: (tag_normalized, tag_code)
+        let pre: Vec<(&str, String)> = normalized_epg_ids
+            .iter()
+            .map(|tn| (tn.as_str(), id_cache.phonetic(tn)))
+            .collect();
+
+        // 2) Early exit if match >= best_match_threshold
+        for (tag_normalized, tag_code) in &pre {
+            if let Some(candidates) = id_cache.phonetics.get(tag_code) {
+                if let Some(good_enough) = candidates.par_iter().find_any(|norm_key| {
+                    let jw = strsim::jaro_winkler(norm_key.as_str(), tag_normalized);
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let score = min(100, (jw * 100.0).round() as u16);
+                    score >= best_match_threshold
+                }) {
+                    return (true, Some(good_enough.clone()));
                 }
             }
         }
-        // is there an early exit strategy ???
 
-        if early_exit_flag.load(Ordering::SeqCst) {
-            if let Ok(mut result) = data.lock() {
-                return (true, result.1.take().as_ref().map(ToString::to_string));
+        // 3) No full match: find best match with match_threshold
+        let best = pre
+            .par_iter()
+            .filter_map(|(tag_normalized, tag_code)| {
+                id_cache.phonetics.get(tag_code).map(|candidates| {
+                    candidates
+                        .par_iter()
+                        .map(|norm_key| {
+                            let jw = strsim::jaro_winkler(norm_key.as_str(), tag_normalized);
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let score = min(100, (jw * 100.0).round() as u16);
+                            (score, norm_key.as_str())
+                        })
+                        .reduce_with(|a, b| if a.0 >= b.0 { a } else { b })
+                })
+            })
+            .flatten()
+            .reduce_with(|a, b| if a.0 >= b.0 { a } else { b });
+
+        if let Some((score, best_key)) = best {
+            if score >= match_threshold {
+                return (true, Some(best_key.to_string()));
             }
         }
+
         (false, None)
     }
 
@@ -239,19 +264,19 @@ impl TVGuide {
                 let mut filter_tags = |mut tag: XmlTag| {
                     match tag.name.as_str() {
                         EPG_TAG_CHANNEL => {
-                            let epg_id = tag.get_attribute_value(EPG_ATTRIB_ID).map_or_else(String::new, std::string::ToString::to_string);
-                            if !epg_id.is_empty() && !id_cache.processed.contains(&epg_id) {
+                            let tag_epg_id = tag.get_attribute_value(EPG_ATTRIB_ID).map_or_else(String::new, std::string::ToString::to_string);
+                            if !tag_epg_id.is_empty() && !id_cache.processed.contains(&tag_epg_id) {
                                 Self::prepare_tag(id_cache, &mut tag, smart_match);
                                 if smart_match {
-                                    if Self::try_fuzzy_matching(id_cache, &epg_id, &tag, fuzzy_matching) {
+                                    if Self::try_fuzzy_matching(id_cache, &tag_epg_id, &tag, fuzzy_matching) {
                                         children.push(tag);
-                                        id_cache.processed.insert(epg_id);
+                                        id_cache.processed.insert(tag_epg_id);
                                     }
                                 } else {
-                                    let borrowed_epg_id = Cow::Borrowed(epg_id.as_str());
-                                    if id_cache.channel_epg_id.contains(&borrowed_epg_id) {
+                                    let borrowed_tag_epg_id = Cow::Borrowed(tag_epg_id.as_str());
+                                    if id_cache.channel_epg_id.contains(&borrowed_tag_epg_id) {
                                         children.push(tag);
-                                        id_cache.processed.insert(epg_id);
+                                        id_cache.processed.insert(tag_epg_id);
                                     }
                                 }
                             }
@@ -411,7 +436,7 @@ fn collect_tag_attributes(e: &BytesStart, is_channel: bool, is_program: bool) ->
                 if value.is_empty() {
                     None
                 } else if (is_channel && key == EPG_ATTRIB_ID) || (is_program && key == EPG_ATTRIB_CHANNEL) {
-                    Some((key, value.to_lowercase().to_string()))
+                    Some((key, value.to_lowercase().clone()))
                 } else {
                     Some((key, value.to_string()))
                 }

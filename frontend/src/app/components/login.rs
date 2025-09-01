@@ -61,6 +61,7 @@ pub fn Login() -> Html {
         let login = do_login.clone();
         Callback::from(move |e: KeyboardEvent| {
             if e.key() == "Enter" {
+                e.prevent_default();
                 login.emit(());
             }
         })
@@ -84,8 +85,8 @@ pub fn Login() -> Html {
             </div>
             <form>
                 <div class="tp__login-view__form">
-                    <Input label={translation.t("LABEL.USERNAME")} input_ref={username_ref} input_type="text" name="username" autocomplete={true} />
-                    <Input label={translation.t("LABEL.PASSWORD")} input_ref={password_ref} input_type="password" name="password"  autocomplete={false} onkeydown={handle_key_down}/>
+                    <Input label={translation.t("LABEL.USERNAME")} input_ref={username_ref} name="username" autocomplete={true} />
+                    <Input label={translation.t("LABEL.PASSWORD")} input_ref={password_ref} name="password" hidden={true}  autocomplete={false} onkeydown={handle_key_down}/>
                     <div class="tp__login-view__form-action">
                         <TextButton class="primary" name="login" title={ translation.t("LABEL.LOGIN")} onclick={handle_login}></TextButton>
                         <span class={if *auth_success { "tp__hidden" }  else { "tp__error-text" }}>{ "Failed to login" }</span>

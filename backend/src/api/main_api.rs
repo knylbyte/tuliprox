@@ -149,7 +149,7 @@ pub(in crate::api) fn start_hdhomerun(
     cancel_token: &CancellationToken,
 ) {
     let config = app_config.config.load();
-    let host = config.api.host.to_string();
+    let host = config.api.host.clone();
     let guard = app_config.hdhomerun.load();
     if let Some(hdhomerun) = &*guard {
         if hdhomerun.enabled {
@@ -213,7 +213,7 @@ pub async fn start_server(
 ) -> futures::io::Result<()> {
     let mut infos = Vec::new();
     let cfg = app_config.config.load();
-    let host = cfg.api.host.to_string();
+    let host = cfg.api.host.clone();
     let port = cfg.api.port;
     let web_ui_enabled = cfg.web_ui.as_ref().is_some_and(|c| c.enabled);
     let web_dir_path = match get_web_dir_path(web_ui_enabled, cfg.api.web_root.as_str()) {

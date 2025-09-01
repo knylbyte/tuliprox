@@ -39,6 +39,21 @@ pub struct XtreamTargetOutputDto {
     pub trakt: Option<TraktConfigDto>,
 }
 
+impl Default for XtreamTargetOutputDto {
+    fn default() -> Self {
+        XtreamTargetOutputDto {
+            skip_live_direct_source: default_as_true(),
+            skip_video_direct_source: default_as_true(),
+            skip_series_direct_source: default_as_true(),
+            resolve_series: false,
+            resolve_series_delay: default_resolve_delay_secs(),
+            resolve_vod: false,
+            resolve_vod_delay: default_resolve_delay_secs(),
+            trakt: None,
+        }
+    }
+}
+
 impl XtreamTargetOutputDto {
     pub fn prepare(&mut self) {
         if let Some(trakt) = &mut self.trakt {
@@ -121,7 +136,7 @@ impl TargetOutputDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigTargetDto {
     #[serde(default)]
@@ -147,6 +162,25 @@ pub struct ConfigTargetDto {
     pub watch: Option<Vec<String>>,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
+}
+
+impl Default for ConfigTargetDto {
+    fn default() -> Self {
+        ConfigTargetDto {
+            id: 0,
+            enabled: default_as_true(),
+            name: default_as_default(),
+            options: None,
+            sort: None,
+            filter: String::new(),
+            output: Vec::new(),
+            rename: None,
+            mapping: None,
+            processing_order: ProcessingOrder::default(),
+            watch: None,
+            t_filter: None,
+        }
+    }
 }
 
 impl ConfigTargetDto {

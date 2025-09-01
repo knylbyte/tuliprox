@@ -61,7 +61,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
             {
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
-                    (stream_url, Some(session.token.to_string()))
+                    (stream_url, Some(session.token.clone()))
                 }
                 None => (url, None),
             }

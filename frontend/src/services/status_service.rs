@@ -22,6 +22,6 @@ impl StatusService {
     }
 
     pub async fn get_server_status(&self) -> Result<Rc<StatusCheck>, crate::error::Error> {
-        request_get::<Rc<StatusCheck>>(&self.status_path, None).await
+        request_get::<Rc<StatusCheck>>(&self.status_path, None, None).await
     }
 }

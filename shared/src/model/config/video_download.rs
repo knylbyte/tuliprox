@@ -3,6 +3,7 @@ use std::borrow::BorrowMut;
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::DEFAULT_USER_AGENT;
+use crate::utils::is_blank_optional_string;
 
 pub const DEFAULT_VIDEO_EXTENSIONS: [&str; 6] = ["mkv", "avi", "mp4", "mpeg", "divx", "mov"];
 
@@ -19,6 +20,15 @@ pub struct VideoDownloadConfigDto {
     pub episode_pattern: Option<String>,
 }
 
+impl VideoDownloadConfigDto {
+    pub fn is_empty(&self) -> bool {
+        !self.organize_into_directories
+            && self.headers.is_empty()
+            && is_blank_optional_string(&self.directory)
+            && is_blank_optional_string(&self.episode_pattern)
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct VideoConfigDto {
@@ -32,6 +42,17 @@ pub struct VideoConfigDto {
 
 
 impl VideoConfigDto {
+    pub fn is_empty(&self) -> bool {
+        self.extensions.is_empty() && is_blank_optional_string(&self.web_search)
+        && (self.download.is_none() || self.download.as_ref().is_some_and(|d| d.is_empty()))
+    }
+
+    pub fn clean(&mut self) {
+        if self.download.as_ref().is_some_and(|d| d.is_empty()) {
+            self.download = None;
+        }
+    }
+
     /// # Panics
     ///
     /// Will panic if default `RegEx` gets invalid

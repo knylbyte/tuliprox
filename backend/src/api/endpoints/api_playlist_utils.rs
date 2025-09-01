@@ -34,7 +34,7 @@ where
         .map(|(index, (key, value))| PlaylistResponseGroup {
             #[allow(clippy::cast_possible_truncation)]
             id: index as u32,
-            title: key.to_string(),
+            title: key.clone(),
             channels: value.into_iter().map(Into::into).collect(),
             xtream_cluster: cluster,
         })

@@ -27,6 +27,19 @@ update_on_boot: false # best not to hammer upstream during testing
 web_ui:
   enabled: true
   user_ui_enabled: true
+  content_security_policy:
+    enabled: true
+    custom-attributes:
+      - "default-src 'self'"
+      - "script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'"
+      - "frame-ancestors 'none'"
+      - "style-src 'self'"
+      - "img-src 'self' data:"
+      - "font-src 'self' data:"
+      - "connect-src 'self' wss:"
+      - "object-src 'none'"
+      - "base-uri 'self'"
+      - "form-action 'self'"
   path:
   auth:
     enabled: true

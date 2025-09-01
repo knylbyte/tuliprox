@@ -6,21 +6,34 @@ pub struct ToggleSwitchProps {
     pub value: bool,
     #[prop_or_default]
     pub readonly: bool,
+    #[prop_or_else(Callback::noop)]
+    pub on_change: Callback<bool>,
 }
 
 #[function_component]
 pub fn ToggleSwitch(props: &ToggleSwitchProps) -> Html {
     let toggled = use_state(|| props.value);
 
+    {
+        let toggled = toggled.clone();
+        use_effect_with(props.value, move |value| {
+            toggled.set(*value);
+            || ()
+        });
+    }
+
     let onclick = {
         let toggled = toggled.clone();
         let readonly = props.readonly;
+        let onchange = props.on_change.clone();
         Callback::from(move |e: MouseEvent|  {
             if readonly {
                 e.prevent_default();
                 return;
             }
-            toggled.set(!*toggled)
+            let new_value = !*toggled;
+            toggled.set(new_value);
+            onchange.emit(new_value);
         })
     };
 

@@ -1,4 +1,4 @@
-use crate::error::{Error, ErrorInfo};
+use crate::error::{Error, ErrorInfo, ErrorSetInfo};
 use gloo_storage::{LocalStorage, Storage};
 use log::error;
 use reqwasm::http::Request;
@@ -30,12 +30,13 @@ pub fn set_token(token: Option<&str>) {
 }
 
 /// build all kinds of http request: post/get/delete etc.
-async fn request<B, T>(method: RequestMethod, url: &str, body: B, content_type: Option<String>) -> Result<T, Error>
+async fn request<B, T>(method: RequestMethod, url: &str, body: B, content_type: Option<String>, response_type: Option<String>) -> Result<T, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
     B: Serialize + std::fmt::Debug,
 {
     let c_type = content_type.as_ref().map_or("application/json", |c| c.as_str());
+    let r_type = response_type.as_ref().map_or("application/json", |c| c.as_str());
     let mut request = match method {
         RequestMethod::Get => Request::get(url),
         RequestMethod::Post => Request::post(url).body(serde_json::to_string(&body).unwrap()),
@@ -50,7 +51,7 @@ where
         Ok(response) => {
             match response.status() {
                 200 => {
-                    if c_type.eq("application/json") {
+                    if r_type.eq("application/json") {
                         if std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
                             // `T = ()` valid
                             let _ = response.text().await;
@@ -75,12 +76,20 @@ where
                         }
                     }
                 }
+                400 =>  {
+                    let data: Result<ErrorInfo, _> = response.json::<ErrorInfo>().await;
+                    if let Ok(data) = data {
+                        Err(Error::BadRequest(data.error))
+                    } else {
+                        Err(Error::BadRequest("400".to_string()))
+                    }
+                },
                 401 => Err(Error::Unauthorized),
                 403 => Err(Error::Forbidden),
                 404 => Err(Error::NotFound),
                 500 => Err(Error::InternalServerError),
                 422 => {
-                    let data: Result<ErrorInfo, _> = response.json::<ErrorInfo>().await;
+                    let data: Result<ErrorSetInfo, _> = response.json::<ErrorSetInfo>().await;
                     if let Ok(data) = data {
                         Err(Error::UnprocessableEntity(data))
                     } else {
@@ -98,19 +107,19 @@ where
 }
 
 /// Delete request
-pub async fn request_delete<T>(url: &str, content_type: Option<String>) -> Result<T, Error>
+pub async fn request_delete<T>(url: &str, content_type: Option<String>, response_type: Option<String>) -> Result<T, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
 {
-    request(RequestMethod::Delete, url, (), content_type).await
+    request(RequestMethod::Delete, url, (), content_type, response_type).await
 }
 
 /// Get request
-pub async fn request_get<T>(url: &str, content_type: Option<String>) -> Result<T, Error>
+pub async fn request_get<T>(url: &str, content_type: Option<String>, response_type: Option<String>) -> Result<T, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
 {
-    request(RequestMethod::Get, url, (), content_type).await
+    request(RequestMethod::Get, url, (), content_type, response_type).await
 }
 
 // pub async fn request_get_api<T>(url: &str) -> Result<T, Error>
@@ -121,21 +130,21 @@ where
 // }
 
 /// Post request with a body
-pub async fn request_post<B, T>(url: &str, body: B, content_type: Option<String>) -> Result<T, Error>
+pub async fn request_post<B, T>(url: &str, body: B, content_type: Option<String>, response_type: Option<String>) -> Result<T, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
     B: Serialize + std::fmt::Debug,
 {
-    request(RequestMethod::Post, url, body, content_type).await
+    request(RequestMethod::Post, url, body, content_type, response_type).await
 }
 
 /// Put request with a body
-pub async fn request_put<B, T>(url: &str, body: B, content_type: Option<String>) -> Result<T, Error>
+pub async fn request_put<B, T>(url: &str, body: B, content_type: Option<String>, response_type: Option<String>) -> Result<T, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
     B: Serialize + std::fmt::Debug,
 {
-    request(RequestMethod::Put, url, body, content_type).await
+    request(RequestMethod::Put, url, body, content_type, response_type).await
 }
 
 /// Set limit for pagination

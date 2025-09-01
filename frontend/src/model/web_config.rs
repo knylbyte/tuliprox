@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 
-#[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Debug)]
+#[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Debug, Default)]
 pub struct ApiConfig {
     #[serde(alias = "apiUrl")]
     pub api_url: String,
@@ -9,7 +9,7 @@ pub struct ApiConfig {
     pub auth_url: String,
 }
 
-#[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Debug)]
+#[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Debug, Default)]
 pub struct WebConfig {
     #[serde(alias = "webPath")]
     pub web_path: Option<String>,
@@ -30,5 +30,4 @@ pub struct WebConfig {
     pub ws_url: String,
     #[serde(alias = "protocolVersion")]
     pub protocol_version: u8,
-
 }

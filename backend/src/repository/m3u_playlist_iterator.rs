@@ -50,8 +50,8 @@ impl M3uPlaylistIterator {
         Ok(Self {
             reader,
             base_url: server_info.get_base_url(),
-            username: user.username.to_string(),
-            password: user.password.to_string(),
+            username: user.username.clone(),
+            password: user.password.clone(),
             target_options: target.options.clone(),
             include_type_in_url: m3u_output.include_type_in_url,
             mask_redirect_url: m3u_output.mask_redirect_url,
@@ -98,14 +98,14 @@ impl M3uPlaylistIterator {
     fn get_next(&mut self) -> Option<(M3uPlaylistItem, bool)> {
         let entry = if let Some(set) = &self.filter {
             if let Some((current_item, _)) = self.lookup_item.take() {
-                let next_valid = self.reader.find(|(pli, _)| set.contains(&pli.group.to_string()));
+                let next_valid = self.reader.find(|(pli, _)| set.contains(&pli.group.clone()));
                 self.lookup_item = next_valid;
                 let has_next = self.lookup_item.is_some();
                 Some((current_item, has_next))
             } else {
-                let current_item = self.reader.find(|(item, _)| set.contains(&item.group.to_string()));
+                let current_item = self.reader.find(|(item, _)| set.contains(&item.group.clone()));
                 if let Some((item, _)) = current_item {
-                    self.lookup_item = self.reader.find(|(item, _)| set.contains(&item.group.to_string()));
+                    self.lookup_item = self.reader.find(|(item, _)| set.contains(&item.group.clone()));
                     let has_next = self.lookup_item.is_some();
                     Some((item, has_next))
                 } else {
@@ -125,12 +125,12 @@ impl M3uPlaylistIterator {
             } else {
                 None
             };
-            let url = m3u_pli.url.to_string();
+            let url = m3u_pli.url.clone();
             let (stream_url, resource_url) = rewrite_urls
                 .map_or_else(|| (url, None), |(su, ru)| (su, ru.as_ref().map(String::to_string)));
 
-            m3u_pli.t_stream_url = stream_url.to_string();
-            m3u_pli.t_resource_url = resource_url.map(|s| s.to_string());
+            m3u_pli.t_stream_url.clone_from(&stream_url);
+            m3u_pli.t_resource_url.clone_from(&resource_url);
             (m3u_pli, has_next)
         })
     }

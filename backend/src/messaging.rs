@@ -49,7 +49,7 @@ fn send_pushover_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &M
             .append_pair("message", msg)
             .finish();
         let the_client = Arc::clone(client);
-        let pushover_url = pushover.url.to_string();
+        let pushover_url = pushover.url.clone();
         tokio::spawn(async move {
             match the_client
                 .post(pushover_url)

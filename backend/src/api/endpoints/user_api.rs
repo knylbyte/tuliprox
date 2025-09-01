@@ -20,7 +20,7 @@ fn get_categories_from_xtream(categories: Option<Vec<PlaylistXtreamCategory>>) -
     let mut groups: Vec<String> = Vec::new();
     if let Some(cats) = categories {
         for category in cats {
-            groups.push(category.name.to_string());
+            groups.push(category.name.clone());
         }
     }
     groups
@@ -33,8 +33,8 @@ async fn get_categories_from_m3u_playlist(target: &ConfigTarget, config: &AppCon
         let mut unique_groups = HashSet::new();
         for (item, _has_next) in iter {
             if !unique_groups.contains(item.group.as_str()) {
-                unique_groups.insert(item.group.to_string());
-                groups.push(item.group.to_string());
+                unique_groups.insert(item.group.clone());
+                groups.push(item.group.clone());
             }
         }
     }

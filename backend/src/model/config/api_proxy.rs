@@ -10,6 +10,9 @@ use arc_swap::ArcSwap;
 use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigPaths, TargetUserDto};
 use crate::{utils};
 
+const API_USER: &str = "api";
+const TEST_USER: &str = "test";
+
 #[derive(Debug, Clone)]
 pub struct ApiProxyServerInfo {
     pub name: String,
@@ -25,12 +28,12 @@ macros::from_impl!(ApiProxyServerInfo);
 impl From<&ApiProxyServerInfoDto> for ApiProxyServerInfo {
     fn from(dto: &ApiProxyServerInfoDto) -> Self {
         Self {
-            name: dto.name.to_string(),
-            protocol: dto.protocol.to_string(),
-            host: dto.host.to_string(),
+            name: dto.name.clone(),
+            protocol: dto.protocol.clone(),
+            host: dto.host.clone(),
             port: dto.port.clone(),
-            timezone: dto.timezone.to_string(),
-            message: dto.message.to_string(),
+            timezone: dto.timezone.clone(),
+            message: dto.message.clone(),
             path: dto.path.clone(),
         }
     }
@@ -39,12 +42,12 @@ impl From<&ApiProxyServerInfoDto> for ApiProxyServerInfo {
 impl From<&ApiProxyServerInfo> for ApiProxyServerInfoDto {
     fn from(instance: &ApiProxyServerInfo) -> Self {
         Self {
-            name: instance.name.to_string(),
-            protocol: instance.protocol.to_string(),
-            host: instance.host.to_string(),
+            name: instance.name.clone(),
+            protocol: instance.protocol.clone(),
+            host: instance.host.clone(),
             port: instance.port.clone(),
-            timezone: instance.timezone.to_string(),
-            message: instance.message.to_string(),
+            timezone: instance.timezone.clone(),
+            message: instance.message.clone(),
             path: instance.path.clone(),
         }
     }
@@ -167,7 +170,7 @@ impl ApiProxyConfig {
                 return Some((credentials.clone(), target_name.to_string()));
             }
         }
-        if log::log_enabled!(log::Level::Debug) && !username.eq("api") {
+        if log::log_enabled!(log::Level::Debug) && !username.eq(API_USER) {
            debug!("Could not find any target for user {username}");
         }
         None
@@ -187,7 +190,7 @@ impl ApiProxyConfig {
             .flat_map(|target_user| &target_user.credentials)
             .find(|credential| credential.username == username)
             .cloned();
-        if result.is_none() && (username != "test" || username != "api") {
+        if result.is_none() && (username != TEST_USER || username != API_USER) {
             debug!("Could not find any user credentials for: {username}");
         }
         result

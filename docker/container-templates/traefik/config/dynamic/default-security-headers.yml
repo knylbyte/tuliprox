@@ -2,26 +2,36 @@ http:
   middlewares:
     default-security-headers:
       headers:
-        contentSecurityPolicy: >
-          default-src 'self';
-          script-src 'self';
-          style-src 'self';
-          img-src 'self' data:;
-          font-src 'self' data:;
-          connect-src 'self' wss:;
-          object-src 'none';
-          base-uri 'self';
-          frame-ancestors 'none';
-          form-action 'self';
+        permissionsPolicy: >-
+          camera=(),
+          microphone=(),
+          geolocation=()
         browserXSSFilter: true
         customBrowserXSSValue: "1; mode=block"
         frameDeny: true
         addVaryHeader: true
-        customResponseHeaders:
-        Permissions-Policy: "camera=(), microphone=(), geolocation=()"
         contentTypeNosniff: true
         referrerPolicy: "strict-origin-when-cross-origin"
         forceSTSHeader: true
         stsIncludeSubdomains: true
         stsPreload: true
         stsSeconds: 63072000
+        customResponseHeaders:
+
+    # Import the csp header only if your application does not set it
+    # directly, otherwise it will override the application header.
+    # If you want to use the default csp header, you can use the
+    # `default-csp-headers` middleware.
+    default-csp-headers:
+      headers:
+        contentSecurityPolicy: >-
+          default-src 'self'
+          script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'
+          style-src 'self'
+          img-src 'self' data:
+          font-src 'self' data:
+          connect-src 'self' wss:
+          object-src 'none'
+          base-uri 'self'
+          frame-ancestors 'none'
+          form-action 'self'

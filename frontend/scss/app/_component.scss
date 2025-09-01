@@ -55,6 +55,7 @@
 @forward "components/userlist/user_state";
 @forward "components/userlist/proxy_type";
 @forward "components/userlist/max_connections";
+@forward "components/userlist/proxy-user-credentials-form";
 @forward "components/radio_button_group";
 @forward "components/no_content";
 @forward "components/search";
@@ -65,3 +66,8 @@
 @forward "components/cvs_table";
 @forward "components/config/config_view";
 @forward "components/tabset";
+@forward "components/select";
+@forward "components/form";
+@forward "components/api_user/api_user_view";
+@forward "components/keyvalue_editor";
+@forward "components/loading_screen";
