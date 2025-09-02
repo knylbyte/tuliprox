@@ -31,8 +31,8 @@
     .tp__icon-button,
     .tp__text-button {
       &:hover {
-        fill: var(--tab-hover-color);
         color: var(--tab-hover-color);
+        fill: currentColor;
         background-color: var(--tab-hover-background-color);
       }
     }
@@ -41,8 +41,8 @@
       .tp__icon-button,
       .tp__text-button {
         background-color: var(--tab-active-background-color);
-        fill: var(--tab-active-color);
         color: var(--tab-active-color);
+        fill: currentColor;
         border-color: var(--tab-active-border-color);
       }
 

@@ -74,7 +74,7 @@ pub fn LogConfigView() -> Html {
                 { config_field_child!(translate.t(LABEL_LOG_LEVEL), {
                     match log_state.form.log_level.as_ref() {
                         Some(level) => html! { <div><Chip label={level.to_string()} /></div> },
-                        None => html! { <div><Chip label={"INFO".to_string()} /></div> },
+                        None => html! { <div><Chip class="tp__text-button" label={"INFO".to_string()} /></div> },
                     }
                 })}
             </div>

@@ -62,12 +62,12 @@ option {
 
 .tp__delete_action {
    color: var(--attention-color) !important;
-   fill: var(--attention-color) !important;
+   fill: currentColor !important;
 }
 
 .tp__update_action {
   color: var(--active-color) !important;
-  fill: var(--active-color) !important;
+  fill: currentColor !important;
 }
 
 .svg-icon {
