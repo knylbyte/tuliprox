@@ -13,7 +13,7 @@
     padding: var(--padding-default);
     background-color: var(--tag-background-color);
     color: var(--tag-color);
-    fill: var(--tag-color);
+    fill: currentColor;
     border-radius: 50%;
     width: 2rem;
     height: 2rem;

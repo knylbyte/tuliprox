@@ -1,4 +1,7 @@
 # Changelog
+# 3.1.7 (2025-09-xx)
+- Added Dark / Bright theme switch
+
 # 3.1.6 (2025-09-01)
 - EPG Config View added
 - Fixed loading users for WebUI from user DB
@@ -14,7 +17,7 @@
 - Added hanging client connection release
 - Added `replace` built-in function for mapper scripts 
 - Added `token_ttl_mins` to web_auth config to define auth token expiration duration.
-- Staged sources. Side loading playlist. Load from staged, serve from provider.
+- Staged sources. Side-loading playlist. Load from staged, serve from provider.
 - Fixed proxy config
 - Added Content Security Policy to WebUI
 
