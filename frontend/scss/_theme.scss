@@ -237,12 +237,11 @@
   --tabset-background-color: #44475a47; // #282A36;
   --tabset-border-color: #535353;
   --tab-background-color: #44475A;
-  --tab-color: #fff;
-  --tab-hover-background-color: #6272A4;
-  --tab-hover-color: #50FA7B;
-  --tab-avtive-indicator-color: #50FA7B;
-  --tab-active-background-color: #36c55a;
+  --tab-hover-background-color: #2bb249;
+  --tab-hover-color: #fdfdfd;
+  --tab-active-background-color: #1a672c;
   --tab-active-color: #fdfdfd;
+  --tab-active-border-color: #2ea14b;
 
   --table-border-color: #44475a;
 
@@ -481,13 +480,12 @@ body[data-theme="bright"] {
 
   --tabset-background-color: #f3f4f6;
   --tabset-border-color: #e5e7eb;
-  --tab-background-color: #ffffff;
-  --tab-color: #374151;
-  --tab-hover-background-color: #e0e7ff;
-  --tab-hover-color: var(--primary-color);
-  --tab-avtive-indicator-color: var(--primary-color);
-  --tab-active-background-color: #dbeafe;
-  --tab-active-color: var(--primary-color);
+  --tab-background-color: #44475A;
+  --tab-hover-background-color: #2bb249;
+  --tab-hover-color: #fdfdfd;
+  --tab-active-background-color: #22c55e;
+  --tab-active-color: #fdfdfd;
+  --tab-active-border-color: #3fb55c;
 
   --table-border-color: #e5e7eb;
 

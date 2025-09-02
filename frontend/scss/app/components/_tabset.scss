@@ -28,14 +28,22 @@
       color: var(--modest-text-color);
     }
 
+    .tp__icon-button,
+    .tp__text-button {
+      &:hover {
+        fill: var(--tab-hover-color);
+        color: var(--tab-hover-color);
+        background-color: var(--tab-hover-background-color);
+      }
+    }
 
     &--active {
-      fill: var(--text-button-active-color);
-      color: var(--text-button-active-color);
       .tp__icon-button,
       .tp__text-button {
-        fill: var(--text-button-active-color);
-        color: var(--text-button-active-color);
+        background-color: var(--tab-active-background-color);
+        fill: var(--tab-active-color);
+        color: var(--tab-active-color);
+        border-color: var(--tab-active-border-color);
       }
 
     }
