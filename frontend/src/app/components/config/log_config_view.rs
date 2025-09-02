@@ -68,16 +68,16 @@ pub fn LogConfigView() -> Html {
         let log_state = form_state.clone();
         html! {
           <>
+            { config_field_bool!(log_state.form, translate.t(LABEL_LOG_ACTIVE_USER),  log_active_user) }
+            { config_field_bool!(log_state.form, translate.t(LABEL_LOG_SANITIZE_SENSITIVE_INFO),  sanitize_sensitive_info) }
             <div class="tp__log-config-view__header tp__config-view-page__header">
                 { config_field_child!(translate.t(LABEL_LOG_LEVEL), {
                     match log_state.form.log_level.as_ref() {
-                        Some(level) => html! { <Chip label={level.to_string()} /> },
-                        None => html! { <Chip label={"INFO".to_string()} /> },
+                        Some(level) => html! { <div><Chip label={level.to_string()} /></div> },
+                        None => html! { <div><Chip label={"INFO".to_string()} /></div> },
                     }
                 })}
             </div>
-            { config_field_bool!(log_state.form, translate.t(LABEL_LOG_ACTIVE_USER),  log_active_user) }
-            { config_field_bool!(log_state.form, translate.t(LABEL_LOG_SANITIZE_SENSITIVE_INFO),  sanitize_sensitive_info) }
           </>
         }
     };
@@ -87,6 +87,8 @@ pub fn LogConfigView() -> Html {
         let log_level_selection = Rc::new(forms.form.log_level.as_ref().map_or_else(Vec::new, |l| vec![l.to_uppercase()]));
         html! {
             <>
+            { edit_field_bool!(form_state, translate.t(LABEL_LOG_ACTIVE_USER), log_active_user, LogConfigFormAction::LogActiveUser) }
+            { edit_field_bool!(form_state, translate.t(LABEL_LOG_SANITIZE_SENSITIVE_INFO),  sanitize_sensitive_info, LogConfigFormAction::SanitizeSensitiveInfo) }
             { config_field_child!(translate.t(LABEL_LOG_LEVEL), {
                html! { <RadioButtonGroup
                     multi_select={false} none_allowed={true}
@@ -98,8 +100,6 @@ pub fn LogConfigView() -> Html {
                     selected={log_level_selection}
                 />
             }})}
-            { edit_field_bool!(form_state, translate.t(LABEL_LOG_ACTIVE_USER), log_active_user, LogConfigFormAction::LogActiveUser) }
-            { edit_field_bool!(form_state, translate.t(LABEL_LOG_SANITIZE_SENSITIVE_INFO),  sanitize_sensitive_info, LogConfigFormAction::SanitizeSensitiveInfo) }
             </>
         }
     };

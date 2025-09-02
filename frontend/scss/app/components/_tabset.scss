@@ -30,12 +30,12 @@
 
 
     &--active {
-      fill: var(--active-color);
-      color: var(--active-color);
+      fill: var(--text-button-active-color);
+      color: var(--text-button-active-color);
       .tp__icon-button,
       .tp__text-button {
-        fill: var(--active-color);
-        color: var(--active-color);
+        fill: var(--text-button-active-color);
+        color: var(--text-button-active-color);
       }
 
     }

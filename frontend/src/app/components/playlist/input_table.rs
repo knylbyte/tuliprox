@@ -12,6 +12,8 @@ use crate::app::components::menu_item::MenuItem;
 use crate::html_if;
 use crate::model::DialogResult;
 use crate::services::{DialogService};
+use shared::model::InputType;
+
 
 const HEADERS: [&str; 15] = [
 "LABEL.EMPTY",
@@ -109,7 +111,12 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                                   /> },
                             2 => html! { dto.name.as_str() },
                             3 => html! { <InputTypeView input_type={dto.input_type}/> },
-                            4 => html! { <RevealContent preview={html!{dto.url.as_str()}}><BatchInputContentView input={ dto.clone() } /></RevealContent> },
+                            4 => html! { if matches!(dto.input_type, InputType::XtreamBatch | InputType::M3uBatch) {
+                                <RevealContent preview={html!{dto.url.as_str()}}><BatchInputContentView input={ dto.clone() } /></RevealContent>
+                                } else {
+                                  {dto.url.as_str()}
+                                }
+                            },
                             5 => dto.username.as_ref().map_or_else(|| html!{}, |u| html!{u}),
                             6 => dto.password.as_ref().map_or_else(|| html!{}, |pwd| html! { <HideContent content={pwd.to_string()}></HideContent>}),
                             7 => dto.persist.as_ref().map_or_else(|| html!{}, |p| html!{p}),
