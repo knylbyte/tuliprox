@@ -98,13 +98,13 @@ where
                     .map_or((true, false), |o| (o.xtream_live_stream_use_prefix, o.xtream_live_stream_without_extension));
                 let container_extension = item.get_additional_property("container_extension").map(|v| get_string_from_serde_value(&v).unwrap_or_default());
                 let stream_url = match &base_url {
-                    None => item.url.to_string(),
+                    None => item.url.clone(),
                     Some(url) => get_xtream_url(cluster, url, &credentials.username, &credentials.password, item.virtual_id, container_extension.as_ref(), live_stream_use_prefix, live_stream_without_extension)
                 };
 
                 let lineup = Lineup {
-                    guide_number: item.epg_channel_id.unwrap_or(item.name).to_string(),
-                    guide_name: item.title.to_string(),
+                    guide_number: item.epg_channel_id.unwrap_or(item.name).clone(),
+                    guide_name: item.title.clone(),
                     url: stream_url,
                 };
                 match serde_json::to_string(&lineup) {
@@ -134,9 +134,9 @@ where
         Some(chans) => {
             let mapped = chans.map(move |(item, has_next)| {
                 let lineup = Lineup {
-                    guide_number: item.epg_channel_id.unwrap_or(item.name).to_string(),
-                    guide_name: item.title.to_string(),
-                    url: (if item.t_stream_url.is_empty() { &item.url } else { &item.t_stream_url }).to_string(),
+                    guide_number: item.epg_channel_id.unwrap_or(item.name).clone(),
+                    guide_name: item.title.clone(),
+                    url: (if item.t_stream_url.is_empty() { &item.url } else { &item.t_stream_url }).clone(),
                 };
                 match serde_json::to_string(&lineup) {
                     Ok(content) => {
@@ -163,16 +163,16 @@ fn create_device(app_state: &Arc<HdHomerunAppState>) -> Option<Device> {
         let device = &app_state.device;
         let device_url = format!("{}://{}:{}", server_info.protocol, server_info.host, device.port);
         Some(Device {
-            friendly_name: device.friendly_name.to_string(),
-            manufacturer: device.manufacturer.to_string(),
+            friendly_name: device.friendly_name.clone(),
+            manufacturer: device.manufacturer.clone(),
             //manufacturer_url: "https://github.com/euzu/tuliprox".to_string(),
-            model_number: device.model_number.to_string(),
-            model_name: device.model_name.to_string(),
-            firmware_name: device.firmware_name.to_string(),
+            model_number: device.model_number.clone(),
+            model_name: device.model_name.clone(),
+            firmware_name: device.firmware_name.clone(),
             tuner_count: device.tuner_count,
-            firmware_version: device.firmware_version.to_string(),
+            firmware_version: device.firmware_version.clone(),
             auth: String::new(),
-            id: device.device_udn.to_string(),
+            id: device.device_udn.clone(),
             lineup_url: concat_path(&device_url, "lineup.json"),
             discover_url: concat_path(&device_url, "discover.json"),
             base_url: device_url,

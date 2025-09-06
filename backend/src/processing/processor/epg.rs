@@ -65,10 +65,21 @@ impl EpgIdCache<'_> {
     /// assert!(cache.normalized.contains_key(&cache.normalize("Discovery Channel")));
     /// ```
     fn normalize_and_store(&mut self, name: &str, epg_id: Option<&String>) {
-        let normalized_name = self.normalize(name);
-        let phonetic = self.phonetic(&normalized_name);
-        self.normalized.insert(normalized_name.to_string(), epg_id.map(std::string::ToString::to_string));
-        self.phonetics.entry(phonetic.to_string()).or_default().insert(normalized_name);
+        self.insert_normalized(name);
+
+        if let Some(chan_epg_id) = epg_id {
+            self.insert_normalized(chan_epg_id);
+        }
+    }
+    fn insert_normalized(&mut self, key: &str) {
+        let normalized = self.normalize(key);
+        let phonetic = self.phonetic(&normalized);
+
+        self.normalized.insert(normalized.clone(), None);
+        self.phonetics
+            .entry(phonetic.clone())
+            .or_default()
+            .insert(normalized);
     }
 
     /// Returns the normalized form of a channel name using the configured smart match settings.
@@ -85,7 +96,12 @@ impl EpgIdCache<'_> {
     }
 
     pub(crate) fn phonetic(&self, name: &str) -> String {
-        self.metaphone.encode(name)
+        let result = self.metaphone.encode(name);
+        if result.is_empty() {
+            name.to_owned()
+        } else {
+            result
+        }
     }
 
     pub fn collect_epg_id(&mut self, fp: &mut FetchedPlaylist) {
@@ -138,7 +154,7 @@ impl EpgIdCache<'_> {
 /// assign_channel_epg(&mut new_epg, &mut playlist, &mut id_cache);
 /// ```
 fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache: &mut EpgIdCache) {
-    id_cache.normalized.retain(|_, v| v.is_some());
+    //id_cache.normalized.retain(|_, v| v.is_some());
     if let Some(tv_guide) = &fp.epg {
         let mut processed_epgs = vec![];
         if let Some(epg_sources) = tv_guide.filter(id_cache) {
@@ -151,19 +167,27 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
                     .collect();
 
                 let assign_values = |chan: &mut PlaylistItem| {
-                    if id_cache.smart_match_enabled && chan.header.epg_channel_id.is_none() {
-                        // if the channel has no epg_id  or the epg_id is not present in xmltv/tvguide then we need to match one from existing tvguide
-                        let not_processed = match &chan.header.epg_channel_id {
+                    if id_cache.smart_match_enabled {
+                        // id_cache.processed contains the epg_ids from the xml epg file.
+                        // if the channel has no epg_id or the epg_id is not present in xmltv/tvguide then we need to match one from existing tvguide
+                        let not_found_in_epg = match &chan.header.epg_channel_id {
                             None => true,
                             Some(epg_id) => !id_cache.processed.contains(epg_id),
                         };
-                        if not_processed {
-                            let normalized = id_cache.normalize(&chan.header.name);
-                            if let Some(epg_id) = id_cache.normalized.get(&normalized) {
-                                if epg_id.is_some() {
-                                    trace!("Matched channel {} to epg {epg_id:?}", chan.header.name);
-                                    chan.header.epg_channel_id.clone_from(epg_id);
-                                }
+                        if not_found_in_epg {
+                            let try_match = |key: &str| {
+                                let normalized = id_cache.normalize(key);
+                                id_cache.normalized.get(&normalized).and_then(|epg_id| {
+                                    epg_id.as_ref().map(|id| {
+                                        trace!("Matched channel {} to epg {id:?}", chan.header.name);
+                                        id.clone()
+                                    })
+                                })
+                            };
+                            if let Some(new_id) = try_match(&chan.header.name)
+                                .or_else(|| chan.header.epg_channel_id.as_deref().and_then(try_match))
+                            {
+                                chan.header.epg_channel_id = Some(new_id);
                             }
                         }
                     }
@@ -172,13 +196,13 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
                             (epg_source.logo_override || chan.header.logo.is_empty() || chan.header.logo_small.is_empty()) {
                             if let Some(icon_tag) = icon_tags.get(epg_channel_id) {
                                 if let XmlTagIcon::Src(icon) = &icon_tag.icon {
-                                    icon_assigned.insert(epg_channel_id.to_string());
+                                    icon_assigned.insert(epg_channel_id.clone());
                                     if epg_source.logo_override || chan.header.logo.is_empty() {
                                         trace!("Matched channel {} to epg icon {icon}", chan.header.name);
-                                        chan.header.logo = (*icon).to_string();
+                                        chan.header.logo = (*icon).clone();
                                     }
                                     if epg_source.logo_override || chan.header.logo_small.is_empty() {
-                                        chan.header.logo_small = (*icon).to_string();
+                                        chan.header.logo_small = (*icon).clone();
                                     }
                                 }
                             }

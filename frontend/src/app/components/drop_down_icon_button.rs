@@ -1,23 +1,22 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 use web_sys::MouseEvent;
-use yew::{classes, function_component, html, use_node_ref, use_state, Callback, Html, Properties, TargetCast};
+use yew::{classes, function_component, html, use_effect_with, use_state, Callback, Html, NodeRef, Properties};
 use yew_hooks::use_set;
-use yew_i18n::use_translation;
 use crate::app::components::{AppIcon, IconButton};
 use crate::app::components::popup_menu::PopupMenu;
 use crate::html_if;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct DropDownOption {
-    id: String,
-    label: String,
-    selected: bool,
+    pub(crate) id: String,
+    pub(crate) label: Html,
+    pub(crate) selected: bool,
 }
 
 impl DropDownOption {
-    pub fn new(id: &str, label: &str, selected: bool) -> Self {
-        Self { id: id.to_owned(), label: label.to_owned(), selected }
+    pub fn new(id: &str, label: Html, selected: bool) -> Self {
+        Self { id: id.to_owned(), label, selected }
     }
 }
 
@@ -28,19 +27,27 @@ pub struct DropDownIconButtonProps {
     pub onselect: Callback<(String, Vec<String>)>,
     #[prop_or_default]
     pub class: String,
-    pub options: Rc<Vec<DropDownOption>>,
+    pub options: Vec<Rc<DropDownOption>>,
     #[prop_or_default]
     pub multi_select: bool,
-
+    #[prop_or_default]
+    pub button_ref: Option<NodeRef>,
 }
 
 #[function_component]
 pub fn DropDownIconButton(props: &DropDownIconButtonProps) -> Html {
-    let translate = use_translation();
-    let button_ref = use_node_ref();
+    let button_ref = props.button_ref.clone().unwrap_or_default();
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
-    let selections = use_set(props.options.as_ref().iter().filter(|x| x.selected).map(|x|x.id.clone()).collect::<HashSet<String>>());
+    let selections = use_set(HashSet::<String>::new());
+
+    {
+        let set_selections = selections.clone();
+        use_effect_with(props.options.clone(), move |options| {
+            let selections = options.iter().filter(|x| x.selected).map(|x|x.id.clone()).collect::<HashSet<String>>();
+            set_selections.set(selections);
+        })
+    }
 
     let handle_popup_close = {
         let set_is_open = popup_is_open.clone();
@@ -50,11 +57,13 @@ pub fn DropDownIconButton(props: &DropDownIconButtonProps) -> Html {
     };
 
     let handle_click = {
+        let button_ref = button_ref.clone();
         let set_anchor_ref = popup_anchor_ref.clone();
         let set_is_open = popup_is_open.clone();
         Callback::from(move |(_name, event): (String, MouseEvent)| {
-            if let Some(target) = event.target_dyn_into::<web_sys::Element>() {
-                set_anchor_ref.set(Some(target));
+            event.prevent_default();
+            if let Some(button) = button_ref.cast::<web_sys::Element>() {
+                set_anchor_ref.set(Some(button));
                 set_is_open.set(true);
             }
         })
@@ -65,7 +74,7 @@ pub fn DropDownIconButton(props: &DropDownIconButtonProps) -> Html {
         let name = props.name.clone();
         let selections = selections.clone();
         let onselect = props.onselect.clone();
-        let close_popup = handle_popup_close.clone();
+        let set_is_open = popup_is_open.clone();
         Callback::from(move |(id, e): (String, MouseEvent)| {
             e.prevent_default();
             if selections.current().contains(&id) {
@@ -80,7 +89,7 @@ pub fn DropDownIconButton(props: &DropDownIconButtonProps) -> Html {
             };
             onselect.emit((name.clone(), selected_options));
             if !multi_select {
-                close_popup.emit(());
+                set_is_open.set(false);
             }
         })
     };
@@ -110,11 +119,11 @@ pub fn DropDownIconButton(props: &DropDownIconButtonProps) -> Html {
                                         }
                                 })
                             }
-                            <label>{ translate.t(&o.label) }</label>
+                            <span class={"tp__dropdown-icon-button__option-item"}>{o.label.clone()}</span>
                         </div>
                 }})
             }
         </PopupMenu>
-         </>
+        </>
     }
 }

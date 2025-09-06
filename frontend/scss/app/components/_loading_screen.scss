@@ -1,0 +1,23 @@
+.tp__loading-screen {
+  display: flex;
+  flex-flow: column;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  width: 100vw;
+  perspective: 20rem;
+  .svg-logo {
+    fill: var(--primary-color);
+    transform-style: preserve-3d;
+    animation: spinY 3s linear infinite;
+  }
+}
+
+@keyframes spinY {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(360deg);
+  }
+}

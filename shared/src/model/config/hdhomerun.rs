@@ -11,28 +11,7 @@ fn default_firmware_version() -> String { String::from("20170930") }
 fn default_device_type() -> String { String::from("urn:schemas-upnp-org:device:MediaServer:1") }
 fn default_device_udn() -> String { String::from("uuid:12345678-90ab-cdef-1234-567890abcdef::urn:dial-multicast:com.silicondust.hdhomerun") }
 
-
-// #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash)]
-// enum HdHomeRunUseTargetType {
-//     #[serde(rename = "m3u")]
-//     M3u,
-//     #[serde(rename = "xtream")]
-//     Xtream,
-// }
-//
-// impl TryFrom<TargetType> for HdHomeRunUseTargetType {
-//     type Error = &'static str;
-//
-//     fn try_from(value: TargetType) -> Result<Self, Self::Error> {
-//         match value {
-//             TargetType::Xtream => Ok(Self::Xtream),
-//             TargetType::M3u => Ok(Self::M3u),
-//             _ => Err("Not allowed!"),
-//         }
-//     }
-// }
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HdHomeRunDeviceConfigDto {
     #[serde(default = "default_friendly_name")]
@@ -57,6 +36,24 @@ pub struct HdHomeRunDeviceConfigDto {
     pub port: u16,
     #[serde(default)]
     pub tuner_count: u8,
+}
+
+impl Default for HdHomeRunDeviceConfigDto {
+    fn default() -> Self {
+        Self {
+            friendly_name: default_friendly_name(),
+            manufacturer: default_manufacturer(),
+            model_name: default_model_name(),
+            model_number: default_model_name(),
+            firmware_name: default_firmware_name(),
+            firmware_version: default_firmware_version(),
+            device_type: default_device_type(),
+            device_udn: default_device_udn(),
+            name: String::new(),
+            port: 0,
+            tuner_count: 0,
+        }
+    }
 }
 
 impl HdHomeRunDeviceConfigDto {
@@ -92,6 +89,13 @@ pub struct HdHomeRunConfigDto {
 }
 
 impl HdHomeRunConfigDto {
+    pub fn is_empty(&self) -> bool {
+        !self.enabled && !self.auth && self.devices.is_empty()
+    }
+
+    pub fn clean(&mut self) {
+    }
+
     pub fn prepare(&mut self, api_port: u16)  -> Result<(), TuliproxError> {
         let mut names = HashSet::new();
         let mut ports = HashSet::new();

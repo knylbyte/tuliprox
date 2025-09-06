@@ -4,7 +4,7 @@ use crate::api::endpoints::user_api::user_api_register;
 use crate::api::model::AppState;
 use crate::auth::create_access_token;
 use crate::auth::validator_admin;
-use crate::model::{InputSource, TargetUser};
+use crate::model::{InputSource, ProxyUserCredentials};
 use crate::model::{ConfigInput, ConfigInputOptions};
 use crate::processing::processor::playlist;
 use crate::repository::user_repository::store_api_user;
@@ -15,9 +15,9 @@ use axum::response::IntoResponse;
 use log::error;
 use serde_json::json;
 use shared::error::TuliproxError;
-use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputType, IpCheckDto, PlaylistRequest, PlaylistRequestType, StatusCheck, TargetUserDto, XtreamPlaylistItem};
+use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, InputType, IpCheckDto, PlaylistRequest, PlaylistRequestType, ProxyUserCredentialsDto, StatusCheck, WebplayerUrlRequest};
 use shared::utils::{concat_path_leading_slash, sanitize_sensitive_info};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap};
 use std::sync::Arc;
 use crate::utils::{prepare_sources_batch, prepare_users};
 use crate::utils::request::download_text_content;
@@ -45,35 +45,65 @@ fn intern_save_config_main(file_path: &str, backup_dir: &str, cfg: &ConfigDto) -
 }
 
 async fn save_config_api_proxy_user(
+    method: axum::http::Method,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
-    axum::extract::Json(mut users): axum::extract::Json<Vec<TargetUserDto>>,
+    axum::extract::Path(target_name): axum::extract::Path<String>,
+    axum::extract::Json(mut credential): axum::extract::Json<ProxyUserCredentialsDto>,
 ) -> impl axum::response::IntoResponse + Send {
-    let mut usernames = HashSet::new();
-    let mut tokens = HashSet::new();
-    for target_user in &mut users {
-        for credential in &mut target_user.credentials {
-            credential.prepare();
-            if let Err(err) = credential.validate() {
-                return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": err.to_string()}))).into_response();
-            }
-            if usernames.contains(&credential.username) {
-                return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": format!("Duplicate username {}", &credential.username)}))).into_response();
-            }
-            usernames.insert(&credential.username);
-            if let Some(token) = &credential.token {
-                if tokens.contains(token) {
-                    return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": format!("Duplicate token {token}")}))).into_response();
-                }
-                tokens.insert(token);
-            }
-        }
+    credential.prepare();
+    if let Err(err) = credential.validate() {
+        return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": err.to_string()}))).into_response();
     }
+
+    let is_update = method == axum::http::Method::PUT;
 
     if let Some(old_api_proxy) = app_state.app_config.api_proxy.load().clone() {
         let mut api_proxy = (*old_api_proxy).clone();
-        api_proxy.user = users.iter().map(TargetUser::from).collect();
+        let mut target_found = false;
+        for target_user in &api_proxy.user {
+            if target_user.target == target_name {
+                target_found = true;
+            }
+            for user in &target_user.credentials {
+                if !is_update && user.username == credential.username {
+                    return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": format!("Duplicate username {}", &credential.username)}))).into_response();
+                }
+                if let (Some(u), Some(c)) = (&user.token, &credential.token) {
+                    if u == c && user.username != credential.username {
+                        return (
+                            axum::http::StatusCode::BAD_REQUEST,
+                            axum::Json(json!({"error": format!("Duplicate token {c}")}))
+                        ).into_response();
+                    }
+                }
+            }
+        }
+
+        if is_update && !target_found {
+            return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": format!("Target not found {target_name}")}))).into_response();
+        }
+
+        for target in &mut api_proxy.user {
+            if target.target == target_name {
+                if is_update {
+                    let mut updated = false;
+                    for user in &mut target.credentials {
+                        if user.username == credential.username {
+                            *user = ProxyUserCredentials::from(&credential);
+                            updated = true;
+                            break;
+                        }
+                    }
+                    if !updated {
+                        return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": format!("User {} not found in target {target_name}", credential.username)}))).into_response();
+                    }
+                } else {
+                    target.credentials.push(ProxyUserCredentials::from(&credential));
+                }
+            }
+        }
+
         let new_api_proxy = Arc::new(api_proxy);
-        app_state.app_config.api_proxy.store(Some(Arc::clone(&new_api_proxy)));
 
         if new_api_proxy.use_user_db {
             if let Err(err) = store_api_user(&app_state.app_config, &new_api_proxy.user) {
@@ -86,6 +116,47 @@ async fn save_config_api_proxy_user(
             if let Some(err) = intern_save_config_api_proxy(backup_dir.as_ref(), &ApiProxyConfigDto::from(&*new_api_proxy), paths.api_proxy_file_path.as_str()) {
                 return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
             }
+        }
+        // Udate state after successful save
+        app_state.app_config.api_proxy.store(Some(Arc::clone(&new_api_proxy)));
+    }
+    axum::http::StatusCode::OK.into_response()
+}
+
+async fn delete_config_api_proxy_user(
+    axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Path((target_name, username)): axum::extract::Path<(String, String)>,
+) -> impl axum::response::IntoResponse + Send {
+    if let Some(old_api_proxy) = app_state.app_config.api_proxy.load().clone() {
+        let mut api_proxy = (*old_api_proxy).clone();
+        let mut modified = false;
+
+        for target_user in &mut api_proxy.user {
+            if target_user.target == target_name {
+                let count = target_user.credentials.len();
+                target_user.credentials.retain(|user| user.username != username);
+                modified = count != target_user.credentials.len();
+                break;
+            }
+        }
+        if modified {
+            let new_api_proxy = Arc::new(api_proxy);
+            app_state.app_config.api_proxy.store(Some(Arc::clone(&new_api_proxy)));
+
+            if new_api_proxy.use_user_db {
+                if let Err(err) = store_api_user(&app_state.app_config, &new_api_proxy.user) {
+                    return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
+                }
+            } else {
+                let config = app_state.app_config.config.load();
+                let backup_dir = config.get_backup_dir();
+                let paths = app_state.app_config.paths.load();
+                if let Some(err) = intern_save_config_api_proxy(backup_dir.as_ref(), &ApiProxyConfigDto::from(&*new_api_proxy), paths.api_proxy_file_path.as_str()) {
+                    return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
+                }
+            }
+        } else {
+            return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": format!("User not found {username} in target {target_name}")}))).into_response();
         }
     }
     axum::http::StatusCode::OK.into_response()
@@ -233,16 +304,15 @@ async fn playlist_content(
 }
 
 async fn playlist_webplayer(
-    axum::extract::Path(target_id): axum::extract::Path<u32>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
-    axum::extract::Json(playlist_item): axum::extract::Json<XtreamPlaylistItem>,
+    axum::extract::Json(playlist_item): axum::extract::Json<WebplayerUrlRequest>,
 ) -> impl axum::response::IntoResponse + Send {
-    let access_token = create_access_token(&app_state.app_config.access_token_secret, 5);
+    let access_token = create_access_token(&app_state.app_config.access_token_secret, 30);
     let config = app_state.app_config.config.load();
     let server_name = config.web_ui.as_ref().and_then(|web_ui| web_ui.player_server.as_ref()).map_or("default", |server_name| server_name.as_str());
     let server_info = app_state.app_config.get_server_info(server_name);
     let base_url = server_info.get_base_url();
-    format!("{base_url}/token/{access_token}/{target_id}/{}/{}", playlist_item.xtream_cluster.as_stream_type(), playlist_item.virtual_id).into_response()
+    format!("{base_url}/token/{access_token}/{}/{}/{}", playlist_item.target_id, playlist_item.cluster.as_stream_type(), playlist_item.virtual_id).into_response()
 }
 
 async fn config(
@@ -251,7 +321,7 @@ async fn config(
     let paths = app_state.app_config.paths.load();
     match utils::read_app_config_dto(&paths, true, false) {
         Ok(mut app_config) => {
-            if let Err(err) = prepare_sources_batch(&mut app_config.sources) {
+            if let Err(err) = prepare_sources_batch(&mut app_config.sources, false) {
                 error!("Failed to prepare sources batch: {err}");
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
             } else if let Err(err) = prepare_users(&mut app_config, &app_state.app_config) {
@@ -362,20 +432,20 @@ pub fn v1_api_register(web_auth_enabled: bool, app_state: Arc<AppState>, web_ui_
         .route("/config", axum::routing::get(config))
         .route("/config/batchContent/{input_id}", axum::routing::get(config_batch_content))
         .route("/config/main", axum::routing::post(save_config_main))
-        .route("/config/user", axum::routing::post(save_config_api_proxy_user))
+        .route("/user/{target}", axum::routing::post(save_config_api_proxy_user))
+        .route("/user/{target}", axum::routing::put(save_config_api_proxy_user))
+        .route("/user/{target}/{username}", axum::routing::delete(delete_config_api_proxy_user))
         .route("/config/apiproxy", axum::routing::post(save_config_api_proxy_config))
-        .route("/playlist/webplayer/{target_id}", axum::routing::post(playlist_webplayer))
+        .route("/playlist/webplayer", axum::routing::post(playlist_webplayer))
         .route("/playlist/update", axum::routing::post(playlist_update))
         .route("/playlist", axum::routing::post(playlist_content))
         .route("/file/download", axum::routing::post(download_api::queue_download_file))
-        .route("/file/download/info", axum::routing::get(download_api::download_file_info));
-    let config = app_state.app_config.config.load();
-    if config.ipcheck.is_some() {
-        router = router.route("/ipinfo", axum::routing::get(ipinfo));
-    }
+        .route("/file/download/info", axum::routing::get(download_api::download_file_info))
+        .route("/ipinfo", axum::routing::get(ipinfo));
     if web_auth_enabled {
         router = router.route_layer(axum::middleware::from_fn_with_state(Arc::clone(&app_state), validator_admin));
     }
+    let config = app_state.app_config.config.load();
 
     let mut base_router = axum::Router::new();
     if config.web_ui.as_ref().is_none_or(|c| c.user_ui_enabled) {

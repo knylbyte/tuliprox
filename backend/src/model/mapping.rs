@@ -17,8 +17,8 @@ macros::from_impl!(Mapper);
 impl From<&MapperDto>  for Mapper {
     fn from(dto: &MapperDto) -> Self {
         Self {
-            filter: dto.filter.to_string(),
-            script: dto.script.to_string(),
+            filter: dto.filter.clone(),
+            script: dto.script.clone(),
             t_filter: dto.t_filter.clone(),
             t_script: dto.t_script.clone(),
         }
@@ -41,7 +41,7 @@ pub struct Mapping {
 impl From<&MappingDto>  for Mapping {
     fn from(dto: &MappingDto) -> Self {
         Self {
-            id: dto.id.to_string(),
+            id: dto.id.clone(),
             match_as_ascii: dto.match_as_ascii,
             mapper: dto.mapper.as_ref().map(|l| l.iter().map(Mapper::from).collect()),
             counter: dto.counter.clone(),

@@ -17,17 +17,23 @@ use crate::hooks::use_service_context;
 use crate::html_if;
 use crate::model::{BusyStatus, EventMessage};
 
+const COPY_LINK_TULIPROX_VIRTUAL_ID: &str = "copy_link_tuliprox_virtual_id";
+const COPY_LINK_TULIPROX_WEBPLAYER_URL: &str = "copy_link_tuliprox_webplayer_url";
+const COPY_LINK_PROVIDER_URL: &str = "copy_link_provider_url";
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum ExplorerAction {
-    CopyLinkTuliprox,
-    CopyLinkProvider,
+    CopyLinkTuliproxVirtualId,
+    CopyLinkTuliproxWebPlayerUrl,
+    CopyLinkProviderUrl,
 }
 
 impl Display for ExplorerAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
-            Self::CopyLinkTuliprox => "copy_link_tuliprox",
-            Self::CopyLinkProvider => "copy_link_provider",
+            Self::CopyLinkTuliproxVirtualId => COPY_LINK_TULIPROX_VIRTUAL_ID,
+            Self::CopyLinkTuliproxWebPlayerUrl => COPY_LINK_TULIPROX_WEBPLAYER_URL,
+            Self::CopyLinkProviderUrl => COPY_LINK_PROVIDER_URL,
         })
     }
 }
@@ -36,10 +42,12 @@ impl FromStr for ExplorerAction {
     type Err = TuliproxError;
 
     fn from_str(s: &str) -> Result<Self, TuliproxError> {
-        if s.eq("copy_link_tuliprox") {
-            Ok(Self::CopyLinkTuliprox)
-        } else if s.eq("copy_link_provider") {
-            Ok(Self::CopyLinkProvider)
+        if s.eq(COPY_LINK_TULIPROX_VIRTUAL_ID) {
+            Ok(Self::CopyLinkTuliproxVirtualId)
+        } else if s.eq(COPY_LINK_TULIPROX_WEBPLAYER_URL) {
+                Ok(Self::CopyLinkTuliproxWebPlayerUrl)
+        } else if s.eq(COPY_LINK_PROVIDER_URL) {
+            Ok(Self::CopyLinkProviderUrl)
         } else {
             create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
         }
@@ -108,17 +116,38 @@ pub fn PlaylistExplorer() -> Html {
     };
 
     let handle_menu_click = {
+        let services = service_ctx.clone();
         let popup_is_open_state = popup_is_open.clone();
         let selected_channel = selected_channel.clone();
+        let playlist_ctx = context.clone();
+        let translate_clone = translate.clone();
         Callback::from(move |(name, _): (String, _)| {
             if let Ok(action) = ExplorerAction::from_str(&name) {
                 match action {
-                    ExplorerAction::CopyLinkTuliprox => {
+                    ExplorerAction::CopyLinkTuliproxVirtualId => {
                         if let Some(dto) = &*selected_channel {
                             copy_to_clipboard(dto.virtual_id.to_string());
                         }
                     }
-                    ExplorerAction::CopyLinkProvider => {
+                    ExplorerAction::CopyLinkTuliproxWebPlayerUrl => {
+                        if let Some(playlist_request)= playlist_ctx.playlist_request.as_ref() {
+                            if let Some(target_id) = playlist_request.source_id {
+                                if let Some(dto) = &*selected_channel {
+                                    let copy_to_clipboard = copy_to_clipboard.clone();
+                                    let services = services.clone();
+                                    let dto = dto.clone();
+                                    let translate_clone = translate_clone.clone();
+                                    spawn_local(async move {
+                                        if let Some(url) = services.playlist.get_playlist_webplayer_url(target_id, &dto).await {
+                                            copy_to_clipboard(url);
+                                            services.toastr.success(translate_clone.t("MESSAGES.PLAYLIST.WEBPLAYER_URL_COPY_TO_CLIPBOARD"));
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    ExplorerAction::CopyLinkProviderUrl => {
                         if let Some(dto) = &*selected_channel {
                             copy_to_clipboard(dto.url.clone());
                         }
@@ -295,11 +324,14 @@ pub fn PlaylistExplorer() -> Html {
         </div>
 
         <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
-            { html_if!((*context.playlist_request_type).as_ref() == Some(&PlaylistRequestType::Target), {
-                 <MenuItem icon="Clipboard" name={ExplorerAction::CopyLinkTuliprox.to_string()} label={translate.t("LABEL.COPY_LINK_TULIPROX")} onclick={&handle_menu_click}></MenuItem>
+            { html_if!((context.playlist_request.as_ref().map(|r| r.rtype)).as_ref() == Some(&PlaylistRequestType::Target), {
+                <>
+                 <MenuItem icon="Clipboard" name={ExplorerAction::CopyLinkTuliproxVirtualId.to_string()} label={translate.t("LABEL.COPY_LINK_TULIPROX_VIRTUAL_ID")} onclick={&handle_menu_click}></MenuItem>
+                 <MenuItem icon="Clipboard" name={ExplorerAction::CopyLinkTuliproxWebPlayerUrl.to_string()} label={translate.t("LABEL.COPY_LINK_TULIPROX_WEBPLAYER_URL")} onclick={&handle_menu_click}></MenuItem>
+                </>
              })
             }
-            <MenuItem icon="Clipboard" name={ExplorerAction::CopyLinkProvider.to_string()} label={translate.t("LABEL.COPY_LINK_PROVIDER")} onclick={&handle_menu_click}></MenuItem>
+            <MenuItem icon="Clipboard" name={ExplorerAction::CopyLinkProviderUrl.to_string()} label={translate.t("LABEL.COPY_LINK_PROVIDER_URL")} onclick={&handle_menu_click}></MenuItem>
         </PopupMenu>
       </div>
     }

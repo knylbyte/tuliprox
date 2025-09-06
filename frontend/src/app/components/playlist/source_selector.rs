@@ -24,12 +24,15 @@ pub fn PlaylistSourceSelector() -> Html {
     let username_ref = use_node_ref();
     let password_ref = use_node_ref();
     let url_ref = use_node_ref();
+    let source_types = use_memo((), |_| vec![ExplorerSourceType::Hosted.to_string(), ExplorerSourceType::Provider.to_string(), ExplorerSourceType::Custom.to_string()]);
 
     let handle_source_select = {
         let active_source_clone = active_source.clone();
-        Callback::from(move |source_type_str: String| {
-            if let Ok(source_type) = ExplorerSourceType::from_str(&source_type_str) {
-                active_source_clone.set(source_type)
+        Callback::from(move |source_selection: Rc<Vec<String>>| {
+            if let Some(source_type_str) = source_selection.first() {
+                if let Ok(source_type) = ExplorerSourceType::from_str(source_type_str) {
+                    active_source_clone.set(source_type)
+                }
             }
         })
     };
@@ -45,12 +48,11 @@ pub fn PlaylistSourceSelector() -> Html {
                 set_loading.set(true);
                 services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
                 let set_loading = set_loading.clone();
-                let req_type = request.rtype;
                 let req = request;
                 spawn_local(async move {
                     let playlist = services.playlist.get_playlist_categories(&req).await;
                     playlist_explorer_ctx_clone.playlist.set(playlist);
-                    playlist_explorer_ctx_clone.playlist_request_type.set(Some(req_type));
+                    playlist_explorer_ctx_clone.playlist_request.set(Some(req));
                     set_loading.set(false);
                     services.event.broadcast(EventMessage::Busy(BusyStatus::Hide));
                 });
@@ -219,12 +221,12 @@ pub fn PlaylistSourceSelector() -> Html {
                   {
                     html_if!(matches!(*set_custom_provider, InputType::Xtream), {
                        <>
-                        <Input label={translate.t("LABEL.USERNAME")} input_ref={username_ref} input_type="text" name="username" autocomplete={true} />
-                        <Input label={translate.t("LABEL.PASSWORD")} input_ref={password_ref} input_type="password" name="password"  autocomplete={false} onkeydown={handle_key_down.clone()}/>
+                        <Input label={translate.t("LABEL.USERNAME")} input_ref={username_ref} name="username" autocomplete={true} />
+                        <Input label={translate.t("LABEL.PASSWORD")} input_ref={password_ref} name="password" hidden={true} autocomplete={false} onkeydown={handle_key_down.clone()}/>
                        </>
                       })
                   }
-                    <Input label={translate.t("LABEL.URL")} input_ref={url_ref} input_type="text" name="url"  autocomplete={true} onkeydown={handle_key_down} />
+                    <Input label={translate.t("LABEL.URL")} input_ref={url_ref} name="url" autocomplete={true} onkeydown={handle_key_down} />
                     <TextButton name={"custom"} title={translate.t("LABEL.DOWNLOAD")} icon={"CloudDownload"}
                        onclick={handle_custom_source}/>
                   </div>
@@ -246,12 +248,9 @@ pub fn PlaylistSourceSelector() -> Html {
                title={translate.t("LABEL.SOURCE_PICKER")}>
                <Card>
                 <div class="tp__playlist-source-selector__source-picker__header">
-                    <RadioButtonGroup options={vec![
-                                    ExplorerSourceType::Hosted.to_string(),
-                                    ExplorerSourceType::Provider.to_string(),
-                                    ExplorerSourceType::Custom.to_string()]}
-                                  selected={(*active_source).to_string()}
-                                  on_change={handle_source_select} />
+                    <RadioButtonGroup options={source_types.clone()}
+                                  selected={Rc::new(vec![(*active_source).to_string()])}
+                                  on_select={handle_source_select} />
                     {
                         html_if! {
                         *active_source == ExplorerSourceType::Custom,

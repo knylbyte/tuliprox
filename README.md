@@ -323,8 +323,7 @@ log:
 ### 1.10 `web_ui`
 - enabled: default is true, if set to false the web_ui is disabled
 - user_ui_enabled, true or false,  for user bouquet editor
-- content_security_policy: default false; when true, sends a Content-Security-Policy (CSP) header to help protect against cross-site scripting (XSS).
-   Not: enabling CSP may block external images/logos unless allowed via the img-src directive.
+- content_security_policy: configure Content-Security-Policy headers. When `enabled` is true, the default directives `default-src 'self'`, `script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'`, and `frame-ancestors 'none'` are applied. Additional directives can be added via `custom-attributes`. Enabling CSP may block external images/logos unless allowed via directives like `img-src`.
 - path is for web_ui path like `/ui` for reverse proxy integration if necessary.
 - auth for authentication settings
   - `enabled` can be deactivated if `enabled` is set to `false`. If not set default is `true`.
@@ -336,6 +335,19 @@ log:
 web_ui:
   enabled: true
   user_ui_enabled: true
+  content_security_policy:
+    enabled: true
+    custom-attributes:
+      - "default-src 'self'"                                        # default value
+      - "script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'"  # default value
+      - "frame-ancestors 'none'"                                    # default value
+      - "style-src 'self'"
+      - "img-src 'self' data:"
+      - "font-src 'self' data:"
+      - "connect-src 'self' wss:"
+      - "object-src 'none'"
+      - "base-uri 'self'"
+      - "form-action 'self'"
   path:
   auth:
     enabled: true

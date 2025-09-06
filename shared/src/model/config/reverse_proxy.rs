@@ -1,6 +1,6 @@
-use log::warn;
 use crate::error::TuliproxError;
 use crate::model::{CacheConfigDto, RateLimitConfigDto, StreamConfigDto};
+use log::warn;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -18,6 +18,26 @@ pub struct ReverseProxyConfigDto {
 }
 
 impl ReverseProxyConfigDto {
+    pub fn is_empty(&self) -> bool {
+        !self.resource_rewrite_disabled
+            && !self.disable_referer_header
+            && (self.stream.is_none() || self.stream.as_ref().is_some_and(|s| s.is_empty()))
+            && (self.cache.is_none() || self.cache.as_ref().is_some_and(|c| c.is_empty()))
+            && (self.rate_limit.is_none() || self.rate_limit.as_ref().is_some_and(|r| r.is_empty()))
+    }
+
+    pub fn clean(&mut self) {
+        if self.stream.as_ref().is_some_and(|s| s.is_empty()) {
+            self.stream = None;
+        }
+        if self.cache.as_ref().is_some_and(|s| s.is_empty()) {
+            self.cache = None;
+        }
+        if self.rate_limit.as_ref().is_some_and(|s| s.is_empty()) {
+            self.rate_limit = None;
+        }
+    }
+
     pub(crate) fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {
         if let Some(stream) = self.stream.as_mut() {
             stream.prepare()?;

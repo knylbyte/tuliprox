@@ -22,7 +22,7 @@ fn create_video_stream(video_buffer: Option<&TransportStreamBuffer>, headers: &[
         trace!("{log_message}");
         let mut response_headers: Vec<(String, String)> = headers.iter()
             .filter(|(key, _)| !(key.eq("content-type") || key.eq("content-length") || key.contains("range")))
-            .map(|(key, value)| (key.to_string(), value.to_string())).collect();
+            .map(|(key, value)| (key.clone(), value.clone())).collect();
         response_headers.push(("content-type".to_string(), "video/mp2t".to_string()));
         (Some(Box::pin(CustomVideoStream::new(video.clone()))), Some((response_headers, StatusCode::OK, None)))
     } else {

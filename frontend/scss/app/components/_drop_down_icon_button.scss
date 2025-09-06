@@ -12,4 +12,12 @@
       height: 1rem;
     }
   }
+
+  &__option {
+    cursor: pointer;
+  }
+
+  &__option-item {
+    pointer-events: none;
+  }
 }

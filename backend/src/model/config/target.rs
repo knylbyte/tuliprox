@@ -116,7 +116,7 @@ macros::from_impl!(StrmTargetOutput);
 impl From<&StrmTargetOutputDto> for StrmTargetOutput {
     fn from(dto: &StrmTargetOutputDto) -> Self {
         Self {
-            directory: dto.directory.to_string(),
+            directory: dto.directory.clone(),
             username: dto.username.clone(),
             style: dto.style,
             flat: dto.flat,
@@ -129,7 +129,7 @@ impl From<&StrmTargetOutputDto> for StrmTargetOutput {
 impl From<&StrmTargetOutput> for StrmTargetOutputDto {
     fn from(instance: &StrmTargetOutput) -> Self {
         Self {
-            directory: instance.directory.to_string(),
+            directory: instance.directory.clone(),
             username: instance.username.clone(),
             style: instance.style,
             flat: instance.flat,
@@ -151,8 +151,8 @@ macros::from_impl!(HdHomeRunTargetOutput);
 impl From<&HdHomeRunTargetOutputDto> for HdHomeRunTargetOutput {
     fn from(dto: &HdHomeRunTargetOutputDto) -> Self {
         Self {
-            device: dto.device.to_string(),
-            username: dto.username.to_string(),
+            device: dto.device.clone(),
+            username: dto.username.clone(),
             use_output: dto.use_output,
         }
     }
@@ -160,8 +160,8 @@ impl From<&HdHomeRunTargetOutputDto> for HdHomeRunTargetOutput {
 impl From<&HdHomeRunTargetOutput> for HdHomeRunTargetOutputDto {
     fn from(instance: &HdHomeRunTargetOutput) -> Self {
         Self {
-            device: instance.device.to_string(),
-            username: instance.username.to_string(),
+            device: instance.device.clone(),
+            username: instance.username.clone(),
             use_output: instance.use_output,
         }
     }
@@ -279,7 +279,7 @@ impl From<&ConfigTargetDto> for ConfigTarget {
         Self {
             id: dto.id,
             enabled: dto.enabled,
-            name: dto.name.to_string(),
+            name: dto.name.clone(),
             options: dto.options.clone(),
             sort: dto.sort.as_ref().map(Into::into),
             filter: dto.t_filter.as_ref().unwrap().clone(),

@@ -78,6 +78,7 @@
   --icon-button-hover-color: #8f8f97;
   --card-background-color: #18181b;
   --card-color: var(--modest-text-color);
+  --sub-card-background-color: #27272a;
 
   --text-button-background-color: var(--action-item-background-color);
   --text-button-color: #ffffff;
@@ -129,17 +130,13 @@
   --tag-inactive-background-color:  #3a3a3a;
   --tag-inactive-border-color: #555;
 
-  --tag-alt-active-color: #49dcdc;
-  --tag-alt-active-background-color: #1e252d;
-  --tag-alt-active-border-color: #2b4c61;
+  --tag-alt-active-color: #d070e7;
+  --tag-alt-active-background-color: #311a38;
+  --tag-alt-active-border-color: #5d2f69;
 
-  //--tag-status-expired-color: #b7af91;
-  //--tag-status-expired-background-color: #4b421f;
-  //--tag-status-expired-border-color: #645828;
-
-  --tag-status-expired-color: #f3e1ae;
-  --tag-status-expired-background-color: #6b5e33;
-  --tag-status-expired-border-color: #a99653;
+  --tag-status-expired-color: #efda8f;
+  --tag-status-expired-background-color: #393320;
+  --tag-status-expired-border-color: #b69e5c;
 
   --tag-status-banned-color: #dd7573;
   --tag-status-banned-background-color: #4c3434;

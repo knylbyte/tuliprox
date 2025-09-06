@@ -12,7 +12,7 @@ pub enum PlaylistRequestType {
     M3U
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct PlaylistRequest {
     pub rtype: PlaylistRequestType,
     pub username: Option<String>,

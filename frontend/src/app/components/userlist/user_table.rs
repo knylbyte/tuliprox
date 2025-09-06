@@ -1,14 +1,11 @@
-use std::borrow::Cow;
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, HideContent, MaxConnections,
-                             ProxyTypeView, RevealContent, Table, TableDefinition, UserStatus,
-                             UserlistContext, UserlistPage};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, CellValue, Chip, HideContent, MaxConnections, ProxyTypeView, RevealContent, Table, TableDefinition, UserStatus, UserlistContext, UserlistPage};
 use crate::app::context::TargetUser;
 use crate::model::DialogResult;
 use crate::services::DialogService;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
-use shared::model::SortOrder;
+use shared::model::{SortOrder};
 use shared::utils::{unix_ts_to_str, Substring};
 use std::fmt::Display;
 use std::rc::Rc;
@@ -16,50 +13,88 @@ use std::str::FromStr;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
+use crate::app::TargetUserList;
+use crate::hooks::use_service_context;
 
 const HEADERS: [&str; 15] = [
-    "TABLE.EMPTY",
-    "TABLE.ENABLED",
-    "TABLE.STATUS",
-    "TABLE.PLAYLIST",
-    "TABLE.USERNAME",
-    "TABLE.PASSWORD",
-    "TABLE.TOKEN",
-    "TABLE.PROXY",
-    "TABLE.SERVER",
-    "TABLE.MAX_CONNECTIONS",
-    "TABLE.UI_ENABLED",
-    "TABLE.EPG_TIMESHIFT",
-    "TABLE.CREATED_AT",
-    "TABLE.EXP_DATE",
-    "TABLE.COMMENT",
+    "LABEL.EMPTY",
+    "LABEL.ENABLED",
+    "LABEL.STATUS",
+    "LABEL.PLAYLIST",
+    "LABEL.USERNAME",
+    "LABEL.PASSWORD",
+    "LABEL.TOKEN",
+    "LABEL.PROXY",
+    "LABEL.SERVER",
+    "LABEL.MAX_CON",
+    "LABEL.UI_ENABLED",
+    "LABEL.EPG_TIMESHIFT",
+    "LABEL.CREATED_AT",
+    "LABEL.EXP_DATE",
+    "LABEL.COMMENT",
 ];
 
-fn get_cell_value(user: &TargetUser, col: usize) -> Cow<'_, str> {
+fn get_cell_value(user: &TargetUser, col: usize) -> CellValue<'_> {
     match col {
-        1 => Cow::Owned(user.credentials.is_active().to_string()),
-        2 => Cow::Owned(user.credentials.status.as_ref().map_or_else(String::new, ToString::to_string)),
-        3 => Cow::Borrowed(user.target.as_str()),
-        4 => Cow::Borrowed(user.credentials.username.as_str()),
-        7 => Cow::Owned(user.credentials.proxy.to_string()),
-        8 => Cow::Owned(user.credentials.server.as_ref().map_or_else(String::new, Clone::clone)),
-        _ => Cow::Owned(String::new())
+        1 => CellValue::Bool(user.credentials.is_active()),
+        2 => user.credentials.status.as_ref().map_or(CellValue::Empty, |s| CellValue::Status(*s)),
+        3 => CellValue::Text(user.target.as_str()),
+        4 => CellValue::Text(user.credentials.username.as_str()),
+        7 => CellValue::Proxy(user.credentials.proxy),
+        8 => user.credentials.server.as_ref().map_or(CellValue::Empty, |s|CellValue::Text(s)),
+        12 => user.credentials.created_at.as_ref().map_or(CellValue::Empty, |d| CellValue::Date(*d)),
+        13 => user.credentials.exp_date.as_ref().map_or(CellValue::Empty, |d| CellValue::Date(*d)),
+        _ => CellValue::Empty,
     }
 }
 
 fn is_col_sortable(col: usize) -> bool {
-    matches!(col, 1 | 2 | 3 | 4 | 7 | 8)
+    matches!(col, 1 | 2 | 3 | 4 | 7 | 8 | 12  | 13)
 }
 
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum TableAction {
+    Edit,
+    Refresh,
+    Delete,
+}
+
+impl Display for TableAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            Self::Edit => "edit",
+            Self::Refresh => "refresh",
+            Self::Delete => "delete",
+        })
+    }
+}
+
+impl FromStr for TableAction {
+    type Err = TuliproxError;
+
+    fn from_str(s: &str) -> Result<Self, TuliproxError> {
+        if s.eq("edit") {
+            Ok(Self::Edit)
+        } else if s.eq("refresh") {
+            Ok(Self::Refresh)
+        } else if s.eq("delete") {
+            Ok(Self::Delete)
+        } else {
+            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
+        }
+    }
+}
+
 #[derive(Properties, PartialEq, Clone)]
 pub struct UserTableProps {
-    pub users: Option<Rc<Vec<Rc<TargetUser>>>>,
+    pub users: TargetUserList,
 }
 
 #[function_component]
 pub fn UserTable(props: &UserTableProps) -> Html {
     let translate = use_translation();
+    let service_ctx = use_service_context();
     let dialog = use_context::<DialogService>().expect("Dialog service not found");
     let userlist_context = use_context::<UserlistContext>().expect("Userlist context not found");
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
@@ -208,6 +243,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
         let popup_is_open_state = popup_is_open.clone();
         let confirm = dialog.clone();
         let translate = translate.clone();
+        let services = service_ctx.clone();
         let selected_dto = selected_dto.clone();
         let ul_context = userlist_context.clone();
         Callback::from(move |(name, _): (String, _)| {
@@ -223,10 +259,28 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                     TableAction::Delete => {
                         let confirm = confirm.clone();
                         let translator = translate.clone();
+                        let services = services.clone();
+                        let userlist = ul_context.clone();
+                        let selected_user = selected_dto.clone();
                         spawn_local(async move {
                             let result = confirm.confirm(&translator.t("MESSAGES.CONFIRM_DELETE")).await;
                             if result == DialogResult::Ok {
-                                // TODO edit
+                                if let Some(dto) = &*selected_user {
+                                    match services.user.delete_user(dto.target.clone(), dto.credentials.username.clone()).await {
+                                        Ok(()) => {
+                                            if let Some(user_list) = userlist.users.as_ref() {
+                                                let new_list: Vec<Rc<TargetUser>> = user_list.iter().filter(|target_user|
+                                                    !(target_user.target.eq(&dto.target) && target_user.credentials.username.eq(&dto.credentials.username))
+                                                ).map(Rc::clone).collect();
+                                                userlist.users.set(Some(Rc::new(new_list)));
+                                                services.toastr.success(translator.t("MESSAGES.USER_DELETED"));
+                                            }
+                                        },
+                                        Err(err) => {
+                                           services.toastr.error(err.to_string());
+                                        }
+                                    }
+                                }
                             }
                         });
                     }
@@ -251,39 +305,5 @@ pub fn UserTable(props: &UserTableProps) -> Html {
              }
           }
         </div>
-    }
-}
-
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-enum TableAction {
-    Edit,
-    Refresh,
-    Delete,
-}
-
-impl Display for TableAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Edit => "edit",
-            Self::Refresh => "refresh",
-            Self::Delete => "delete",
-        })
-    }
-}
-
-impl FromStr for TableAction {
-    type Err = TuliproxError;
-
-    fn from_str(s: &str) -> Result<Self, TuliproxError> {
-        if s.eq("edit") {
-            Ok(Self::Edit)
-        } else if s.eq("refresh") {
-            Ok(Self::Refresh)
-        } else if s.eq("delete") {
-            Ok(Self::Delete)
-        } else {
-            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
-        }
     }
 }

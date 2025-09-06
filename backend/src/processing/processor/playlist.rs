@@ -128,7 +128,7 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
     if let Some(mapper) = &mapping.mapper {
         if !mapper.is_empty() {
             let header = &channel.header;
-            let channel_name = if mapping.match_as_ascii { deunicode(&header.name) } else { header.name.to_string() };
+            let channel_name = if mapping.match_as_ascii { deunicode(&header.name) } else { header.name.clone() };
             if mapping.match_as_ascii && log_enabled!(Level::Trace) { trace!("Decoded {} for matching to {}", &header.name, &channel_name); }
             let ref_chan = &mut channel;
             let templates = mapping.templates.as_ref();
@@ -172,7 +172,7 @@ fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option
                     grp_id += 1;
                     new_groups.push(PlaylistGroup {
                         id: grp_id,
-                        title: title.to_string(),
+                        title: title.clone(),
                         channels: vec![channel.clone()],
                         xtream_cluster: *cluster,
                     });
@@ -287,7 +287,7 @@ async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, sourc
                     );
                 }
                 let elapsed = start_time.elapsed().as_secs();
-                input_stats.insert(input_name.to_string(), create_input_stat(group_count, channel_count, error_list.len(),
+                input_stats.insert(input_name.clone(), create_input_stat(group_count, channel_count, error_list.len(),
                                                                              input.input_type, input_name, elapsed));
             }
         }
@@ -443,7 +443,7 @@ fn flatten_groups(playlistgroups: Vec<PlaylistGroup>) -> Vec<PlaylistGroup> {
     let mut idx: usize = 0;
     let mut group_map: HashMap<(String, XtreamCluster), usize> = HashMap::new();
     for group in playlistgroups {
-        let key = (group.title.to_string(), group.xtream_cluster);
+        let key = (group.title.clone(), group.xtream_cluster);
         match group_map.entry(key) {
             std::collections::hash_map::Entry::Vacant(v) => {
                 v.insert(idx);

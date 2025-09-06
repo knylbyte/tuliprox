@@ -1,11 +1,13 @@
 use std::rc::Rc;
 use yew::prelude::*;
 use crate::model::WebConfig;
-use crate::services::{AuthService, ConfigService, EventService, PlaylistService, StatusService, ToastrService, WebSocketService};
+use crate::services::{AuthService, ConfigService, EventService, PlaylistService, StatusService, ToastrService,
+                      UserService, WebSocketService};
 
 pub struct Services {
     pub auth: Rc<AuthService>,
     pub config: Rc<ConfigService>,
+    pub user: Rc<UserService>,
     pub status: Rc<StatusService>,
     pub event: Rc<EventService>,
     pub playlist: Rc<PlaylistService>,
@@ -14,13 +16,14 @@ pub struct Services {
 }
 
 impl Services {
-    pub fn new(config: &WebConfig) -> Self {
-        let auth = Rc::new(AuthService::new());
-        let config = Rc::new(ConfigService::new(config));
-        let status = Rc::new(StatusService::new());
+    pub fn new(web_config: &WebConfig) -> Self {
         let event = Rc::new(EventService::new());
+        let config = Rc::new(ConfigService::new(web_config, Rc::clone(&event)));
+        let auth = Rc::new(AuthService::new());
+        let status = Rc::new(StatusService::new());
         let playlist = Rc::new(PlaylistService::new());
         let toastr = Rc::new(ToastrService::new());
+        let user = Rc::new(UserService::new(Rc::clone(&event)));
         let websocket = Rc::new(WebSocketService::new(Rc::clone(&status), Rc::clone(&event)));
         Self {
             auth,
@@ -28,6 +31,7 @@ impl Services {
             status,
             event,
             playlist,
+            user,
             toastr,
             websocket
         }

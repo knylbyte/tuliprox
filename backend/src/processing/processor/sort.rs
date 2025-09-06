@@ -95,8 +95,8 @@ fn playlist_comparator(
 }
 
 fn playlistgroup_comparator(a: &PlaylistGroup, b: &PlaylistGroup, group_sort: &ConfigSortGroup, match_as_ascii: bool) -> Ordering {
-    let value_a = if match_as_ascii { deunicode(&a.title) } else { a.title.to_string() };
-    let value_b = if match_as_ascii { deunicode(&b.title) } else { b.title.to_string() };
+    let value_a = if match_as_ascii { deunicode(&a.title) } else { a.title.clone() };
+    let value_b = if match_as_ascii { deunicode(&b.title) } else { b.title.clone() };
 
     playlist_comparator(group_sort.sequence.as_ref(), group_sort.order, &value_a, &value_b)
 }
@@ -125,7 +125,7 @@ pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new
             for channel_sort in channel_sorts {
                 let regexp = &channel_sort.group_pattern;
                 for group in new_playlist.iter_mut() {
-                    let group_title = if match_as_ascii { deunicode(&group.title) } else { group.title.to_string() };
+                    let group_title = if match_as_ascii { deunicode(&group.title) } else { group.title.clone() };
                     if regexp.is_match(group_title.as_str()) {
                         group.channels.sort_by(|chan1, chan2| playlistitem_comparator(chan1, chan2, channel_sort, match_as_ascii));
                     }

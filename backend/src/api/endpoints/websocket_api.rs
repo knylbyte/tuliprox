@@ -3,10 +3,7 @@ use crate::api::model::AppState;
 use crate::api::model::EventMessage;
 use crate::auth::{verify_token_admin, verify_token_user};
 use axum::extract::ws::CloseFrame;
-use axum::{
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    response::IntoResponse,
-};
+use axum::{extract::ws::{Message, WebSocket, WebSocketUpgrade},response::IntoResponse};
 use log::{error, info};
 use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserRole, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
@@ -114,7 +111,7 @@ async fn handle_protocol_message(
         match ProtocolMessage::from_bytes(bytes) {
             Ok(ProtocolMessage::Auth(auth_token)) => {
                  mem.token = None;
-                 if verify_auth_admin_token(&auth_token, secret_key) {
+                 if !auth || verify_auth_admin_token(&auth_token, secret_key) {
                      mem.role = UserRole::Admin;
                      mem.token = Some(auth_token);
                      Some(ProtocolMessage::Authorized)
