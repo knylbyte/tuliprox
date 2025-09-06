@@ -8,12 +8,6 @@
 # =================================================================
 
 # -----------------------------------------------------------------
-# Global ARGs
-# -----------------------------------------------------------------
-ARG GHCR_IMAGE=ghcr.io/knylbyte/tuliprox
-ARG GHCR_TAG_SUFFIX=latest
-
-# -----------------------------------------------------------------
 # Stage 1: Build the Rust binary for production
 # -----------------------------------------------------------------
 FROM rust:bookworm AS rust-build
@@ -21,8 +15,7 @@ FROM rust:bookworm AS rust-build
 # Get target architecture
 ARG RUST_TARGET
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends pkg-config musl-tools libssl-dev
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config musl-tools libssl-dev
 
 # Update Rust toolchain and add necessary target
 RUN rustup update && rustup target add $RUST_TARGET
@@ -30,13 +23,23 @@ RUN rustup update && rustup target add $RUST_TARGET
 # Set Rust compiler flags for better optimization and reproducibility
 ENV RUSTFLAGS='--remap-path-prefix $HOME=~ -C target-feature=+crt-static'
 
-# Copy only Cargo.toml and Cargo.lock for dependency caching
+# Copy dependency files first for better layer caching
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
+COPY backend/Cargo.toml ./backend/
+COPY frontend/Cargo.toml ./frontend/
+COPY shared/Cargo.toml ./shared/
 
-# Create a dummy src/main.rs to build dependencies only
-RUN mkdir src && echo "fn main() {}" > src/main.rs
+# Create dummy source files to build dependencies only
+RUN mkdir -p src backend/src frontend/src shared/src && \
+    echo "fn main() {}" > src/main.rs && \
+    echo "fn main() {}" > backend/src/main.rs && \
+    echo "fn main() {}" > frontend/src/main.rs && \
+    echo "pub fn dummy() {}" > shared/src/lib.rs
+
+# Build dependencies (this layer will be cached unless dependencies change)
 RUN cargo build -p tuliprox --target $RUST_TARGET --release || true
+RUN cargo build -p shared --target $RUST_TARGET --release || true
 
 # Now copy the actual source code and build the project
 COPY . .
@@ -44,23 +47,51 @@ COPY . .
 RUN cargo build -p tuliprox --target $RUST_TARGET --release
 
 # -----------------------------------------------------------------
-# Stage 2: Build the rust frontend and use prebuilt tools
+# Stage 2: Build the rust frontend
 # -----------------------------------------------------------------
-FROM ${GHCR_IMAGE}/rust-wasm-tools:${GHCR_TAG_SUFFIX} AS trunk-build
+FROM rust:bookworm AS trunk-build
 
+ARG RUST_TARGET=wasm32-unknown-unknown
+
+# Set working directory
 WORKDIR /src
 
+# Install dependencies for Trunk and WebAssembly
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  pkg-config libssl-dev curl libclang-dev binaryen
+
+# Add wasm target & install trunk
+RUN rustup target add wasm32-unknown-unknown
+RUN cargo install --locked trunk wasm-bindgen-cli
+
+# Copy dependency files first for better layer caching
+COPY Cargo.toml Cargo.lock ./
+COPY frontend/Cargo.toml frontend/Trunk.toml ./frontend/
+COPY shared/Cargo.toml ./shared/
+
+# Create dummy source files
+RUN mkdir -p frontend/src shared/src && \
+    echo "fn main() {}" > frontend/src/main.rs && \
+    echo "pub fn dummy() {}" > shared/src/lib.rs
+
+# Pre-build dependencies
+WORKDIR /src/frontend
+RUN cargo build --target wasm32-unknown-unknown --release || true
+
+# Now copy the actual source code and build the project
+WORKDIR /src
 COPY . .
 
 WORKDIR /src/frontend
+
+# Run Trunk build
 RUN trunk build --release
 
 # -----------------------------------------------------------------
-# Stage 3: Build video resources with ffmpeg (Alpine, multi-arch)
+# Stage 3: Build video resources with ffmpeg
 # -----------------------------------------------------------------
-FROM alpine:latest AS resource-build
+FROM linuxserver/ffmpeg:latest AS resource-build
 
-RUN apk add --no-cache ffmpeg
 WORKDIR /src
 COPY resources ./resources
 
@@ -157,6 +188,8 @@ COPY --from=tz-prep /output/etc/localtime /etc/localtime
 
 # Certificates
 COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 # App
 WORKDIR /app
