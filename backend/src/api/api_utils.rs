@@ -34,8 +34,11 @@ use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio::time::sleep;
 use url::Url;
+use reqwest::header::{HeaderValue, RETRY_AFTER};
 
 #[macro_export]
 macro_rules! try_option_bad_request {
@@ -1014,6 +1017,22 @@ fn get_add_cache_content(
     add_cache_content
 }
 
+fn parse_retry_after(header: &HeaderValue) -> Option<Duration> {
+    if let Ok(value) = header.to_str() {
+        if let Ok(secs) = value.parse::<u64>() {
+            return Some(Duration::from_secs(secs));
+        }
+        if let Ok(date) = DateTime::parse_from_rfc2822(value) {
+            let now = Utc::now();
+            let wait = date.with_timezone(&Utc) - now;
+            if wait > chrono::Duration::zero() {
+                return wait.to_std().ok();
+            }
+        }
+    }
+    None
+}
+
 /// # Panics
 pub async fn resource_response(
     app_state: &AppState,
@@ -1045,62 +1064,88 @@ pub async fn resource_response(
         sanitize_sensitive_info(resource_url)
     );
     if let Ok(url) = Url::parse(resource_url) {
-        let client = request::get_client_request(
-            &app_state.http_client.load(),
-            input.map_or(InputFetchMethod::GET, |i| i.method),
-            input.map(|i| &i.headers),
-            &url,
-            Some(&req_headers),
-        );
-        match client.send().await {
-            Ok(response) => {
-                let status = response.status();
-                if status.is_success() {
-                    let mut response_builder =
-                        axum::response::Response::builder().status(axum::http::StatusCode::OK);
-                    for (key, value) in response.headers() {
-                        response_builder = response_builder.header(key, value);
-                    }
+        for attempt in 1..=3 {
+            let client = request::get_client_request(
+                &app_state.http_client.load(),
+                input.map_or(InputFetchMethod::GET, |i| i.method),
+                input.map(|i| &i.headers),
+                &url,
+                Some(&req_headers),
+            );
+            match client.send().await {
+                Ok(response) => {
+                    let status = response.status();
+                    if status.is_success() {
+                        let mut response_builder =
+                            axum::response::Response::builder().status(axum::http::StatusCode::OK);
+                        for (key, value) in response.headers() {
+                            response_builder = response_builder.header(key, value);
+                        }
 
-                    let byte_stream = response
-                        .bytes_stream()
-                        .map_err(|err| StreamError::reqwest(&err));
-                    let cache_resource_path = {
-                        if let Some(cache) = app_state.cache.load().as_ref() {
-                            Some(cache.lock().await.store_path(resource_url))
-                        } else {
-                            None
+                        let byte_stream = response
+                            .bytes_stream()
+                            .map_err(|err| StreamError::reqwest(&err));
+                        let cache_resource_path = {
+                            if let Some(cache) = app_state.cache.load().as_ref() {
+                                Some(cache.lock().await.store_path(resource_url))
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(resource_path) = cache_resource_path {
+                            if let Ok(file) = create_new_file_for_write(&resource_path) {
+                                let writer = BufWriter::new(file);
+                                let add_cache_content =
+                                    get_add_cache_content(resource_url, &app_state.cache);
+                                let stream =
+                                    PersistPipeStream::new(byte_stream, writer, add_cache_content);
+                                return try_unwrap_body!(
+                                    response_builder.body(axum::body::Body::from_stream(stream))
+                                );
+                            }
                         }
-                    };
-                    if let Some(resource_path) = cache_resource_path {
-                        if let Ok(file) = create_new_file_for_write(&resource_path) {
-                            let writer = BufWriter::new(file);
-                            let add_cache_content =
-                                get_add_cache_content(resource_url, &app_state.cache);
-                            let stream =
-                                PersistPipeStream::new(byte_stream, writer, add_cache_content);
-                            return try_unwrap_body!(
-                                response_builder.body(axum::body::Body::from_stream(stream))
-                            );
-                        }
+                        return try_unwrap_body!(
+                            response_builder.body(axum::body::Body::from_stream(byte_stream))
+                        );
                     }
-                    return try_unwrap_body!(
-                        response_builder.body(axum::body::Body::from_stream(byte_stream))
+                    if attempt < 3 {
+                        debug_if_enabled!(
+                            "Failed to open resource got status {} for {}. Retrying...",
+                            status,
+                            sanitize_sensitive_info(resource_url)
+                        );
+                        let wait = response
+                            .headers()
+                            .get(RETRY_AFTER)
+                            .and_then(parse_retry_after)
+                            .unwrap_or_else(|| Duration::from_millis(500));
+                        sleep(wait).await;
+                        continue;
+                    }
+                    debug_if_enabled!(
+                        "Failed to open resource got status {} for {}",
+                        status,
+                        sanitize_sensitive_info(resource_url)
                     );
                 }
-                debug_if_enabled!(
-                    "Failed to open resource got status {} for {}",
-                    status,
-                    sanitize_sensitive_info(resource_url)
-                );
+                Err(err) => {
+                    if attempt < 3 {
+                        error!(
+                            "Received failure from server {}:  {}. Retrying...",
+                            sanitize_sensitive_info(resource_url),
+                            err
+                        );
+                        sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+                    error!(
+                        "Received failure from server {}:  {}",
+                        sanitize_sensitive_info(resource_url),
+                        err
+                    );
+                }
             }
-            Err(err) => {
-                error!(
-                    "Received failure from server {}:  {}",
-                    sanitize_sensitive_info(resource_url),
-                    err
-                );
-            }
+            break;
         }
     } else {
         error!("Url is malformed {}", sanitize_sensitive_info(resource_url));
