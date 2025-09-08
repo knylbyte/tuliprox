@@ -40,6 +40,7 @@
     "ACTIVE_USER": "Active User",
     "RESOURCE_REWRITE_DISABLE": "Resource Rewrite disable",
     "DISABLE_REFERER_HEADER": "Referer header disable",
+    "REMOVE_X_HEADER": "Remove X headers",
     "RECONNECT": "Reconnect",
     "THROTTLE": "Throttle",
     "GRACE_PERIOD": "Grace period ms",
@@ -361,6 +362,7 @@
       "PROXY": {
         "RESOURCE_REWRITE_DISABLE": "If activated, the URL rewrite of resources in reverse proxy mode is disabled",
         "DISABLE_REFERER_HEADER": "If activated, the referer header is not sent to the provider",
+        "REMOVE_X_HEADER": "If activated, request headers starting with 'x' are dropped",
         "THROTTLE": "Supported units are KB/s,MB/s,KiB/s,MiB/s,kbps,mbps,Mibps"
       },
       "WEB_UI": {

@@ -8,7 +8,7 @@
     display: flex;
     flex-flow: row nowrap;
     color: var(--modest-text-color);
-    fill: var(--modest-text-color);
+    fill: currentColor;
     //max-height: 1.2rem;
     cursor: pointer;
     box-sizing: border-box;
@@ -16,7 +16,7 @@
 
     &:hover {
       color: var(--menu-button-hover-color);
-      fill: var(--menu-button-hover-color);
+      fill: currentColor;
       background-color: var(--card-background-color);
     }
     &-title {

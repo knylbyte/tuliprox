@@ -1,11 +1,17 @@
+use crate::utils::{
+    CONSTANTS, DASH_EXT, DASH_EXT_FRAGMENT, DASH_EXT_QUERY, HLS_EXT, HLS_EXT_FRAGMENT,
+    HLS_EXT_QUERY,
+};
 use std::borrow::Cow;
 use std::sync::atomic::Ordering;
 use url::Url;
-use crate::utils::{CONSTANTS, DASH_EXT, DASH_EXT_FRAGMENT, DASH_EXT_QUERY, HLS_EXT, HLS_EXT_FRAGMENT, HLS_EXT_QUERY};
-
 
 pub fn set_sanitize_sensitive_info(value: bool) {
     CONSTANTS.sanitize.store(value, Ordering::SeqCst);
+}
+
+pub fn set_remove_x_header(value: bool) {
+    CONSTANTS.remove_x_header.store(value, Ordering::SeqCst);
 }
 pub fn sanitize_sensitive_info(query: &str) -> Cow<'_, str> {
     if !CONSTANTS.sanitize.load(Ordering::SeqCst) {
@@ -58,7 +64,9 @@ pub fn is_hls_url(url: &str) -> bool {
 
 pub fn is_dash_url(url: &str) -> bool {
     let lc_url = url.to_lowercase();
-    lc_url.ends_with(DASH_EXT) || lc_url.contains(DASH_EXT_QUERY) || lc_url.contains(DASH_EXT_FRAGMENT)
+    lc_url.ends_with(DASH_EXT)
+        || lc_url.contains(DASH_EXT_QUERY)
+        || lc_url.contains(DASH_EXT_FRAGMENT)
 }
 
 pub fn replace_url_extension(url: &str, new_ext: &str) -> String {
@@ -67,12 +75,13 @@ pub fn replace_url_extension(url: &str, new_ext: &str) -> String {
     // Split URL into the base part (domain and path) and the suffix (query/fragment)
     let (base_url, suffix) = match url.find(['?', '#'].as_ref()) {
         Some(pos) => (&url[..pos], &url[pos..]), // Base URL and suffix
-        None => (url, ""), // No query or fragment
+        None => (url, ""),                       // No query or fragment
     };
 
     // Find the last '/' in the base URL, which marks the end of the domain and the beginning of the file path
     if let Some(last_slash_pos) = base_url.rfind('/') {
-        if last_slash_pos < 9 { // protocol slash, return url as is
+        if last_slash_pos < 9 {
+            // protocol slash, return url as is
             return url.to_string();
         }
         let (path_part, file_name_with_extension) = base_url.split_at(last_slash_pos + 1);
@@ -82,8 +91,8 @@ pub fn replace_url_extension(url: &str, new_ext: &str) -> String {
                 "{}{}.{}{}",
                 path_part,
                 &file_name_with_extension[..dot_pos], // Keep the name part before the dot
-                ext, // Add the new extension
-                suffix // Add the query or fragment if any
+                ext,                                  // Add the new extension
+                suffix                                // Add the query or fragment if any
             );
         }
     }
@@ -105,7 +114,9 @@ pub fn get_credentials_from_url(url: &Url) -> (Option<String>, Option<String>) {
     (username, password)
 }
 
-pub fn get_credentials_from_url_str(url_with_credentials: &str) -> (Option<String>, Option<String>) {
+pub fn get_credentials_from_url_str(
+    url_with_credentials: &str,
+) -> (Option<String>, Option<String>) {
     if let Ok(url) = Url::parse(url_with_credentials) {
         get_credentials_from_url(&url)
     } else {
@@ -125,9 +136,9 @@ pub fn concat_path(first: &str, second: &str) -> String {
     let first = first.trim_end_matches('/');
     let second = second.trim_start_matches('/');
     match (first.is_empty(), second.is_empty()) {
-        (true, true)   => String::new(),
-        (true, false)  => second.to_string(),
-        (false, true)  => first.to_string(),
+        (true, true) => String::new(),
+        (true, false) => second.to_string(),
+        (false, true) => first.to_string(),
         (false, false) => format!("{first}/{second}"),
     }
 }
