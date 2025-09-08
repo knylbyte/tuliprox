@@ -1038,7 +1038,7 @@ async fn build_stream_response(
     response: reqwest::Response,
 ) -> axum::response::Response {
     let mut response_builder =
-        axum::response::Response::builder().status(axum::http::StatusCode::OK);
+        axum::response::Response::builder().status(response.status());
     for (key, value) in response.headers() {
         response_builder = response_builder.header(key, value);
     }
@@ -1086,7 +1086,17 @@ async fn fetch_resource_with_retry(
                         build_stream_response(app_state, resource_url, response).await,
                     );
                 }
-                if attempt < 2 && status.is_client_error() {
+                // Retry only for 400, 408, 425, 429 and all 5xx statuses
+                let should_retry = status.is_server_error()
+                    || matches!(
+                        status,
+                        reqwest::StatusCode::BAD_REQUEST
+                            | reqwest::StatusCode::REQUEST_TIMEOUT
+                            | reqwest::StatusCode::TOO_EARLY
+                            | reqwest::StatusCode::TOO_MANY_REQUESTS
+                    );
+
+                if attempt < 2 && should_retry {
                     let wait_dur = response
                         .headers()
                         .get(RETRY_AFTER)
@@ -1096,11 +1106,23 @@ async fn fetch_resource_with_retry(
                     tokio::time::sleep(wait_dur).await;
                     continue;
                 }
+
+                // For non-retriable statuses or when attempts are exhausted, return upstream response including body
                 debug_if_enabled!(
                     "Failed to open resource got status {} for {}",
                     status,
                     sanitize_sensitive_info(resource_url)
                 );
+                let mut response_builder = axum::response::Response::builder().status(status);
+                for (key, value) in response.headers() {
+                    response_builder = response_builder.header(key, value);
+                }
+                let stream = response
+                    .bytes_stream()
+                    .map_err(|err| StreamError::reqwest(&err));
+                return Some(try_unwrap_body!(
+                    response_builder.body(axum::body::Body::from_stream(stream))
+                ));
             }
             Err(err) => {
                 if attempt < 2 {
