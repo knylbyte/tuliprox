@@ -9,6 +9,8 @@ pub struct ReverseProxyConfigDto {
     pub resource_rewrite_disabled: bool,
     #[serde(default)]
     pub disable_referer_header: bool,
+    #[serde(default)]
+    pub remove_x_header: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream: Option<StreamConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -21,6 +23,7 @@ impl ReverseProxyConfigDto {
     pub fn is_empty(&self) -> bool {
         !self.resource_rewrite_disabled
             && !self.disable_referer_header
+            && !self.remove_x_header
             && (self.stream.is_none() || self.stream.as_ref().is_some_and(|s| s.is_empty()))
             && (self.cache.is_none() || self.cache.as_ref().is_some_and(|c| c.is_empty()))
             && (self.rate_limit.is_none() || self.rate_limit.as_ref().is_some_and(|r| r.is_empty()))

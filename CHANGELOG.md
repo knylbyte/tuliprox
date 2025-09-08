@@ -1,6 +1,7 @@
 # Changelog
 # 3.1.7 (2025-09-xx)
 - Added Dark / Bright theme switch
+- Added `remove_x_header` option for reverse proxy to strip custom `X-` headers (default: false)
 
 # 3.1.6 (2025-09-01)
 - EPG Config View added

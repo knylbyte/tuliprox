@@ -4,7 +4,7 @@ use log::{error, info};
 use path_clean::PathClean;
 use shared::error::{TuliproxError};
 use shared::model::{ConfigDto, HdHomeRunDeviceOverview};
-use shared::utils::set_sanitize_sensitive_info;
+use shared::utils::{set_remove_x_header, set_sanitize_sensitive_info};
 use crate::model::{macros, ConfigApi, ReverseProxyConfig, ScheduleConfig};
 use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
 use crate::{utils};
@@ -103,6 +103,8 @@ impl Config {
 
     pub fn update_runtime(&self) {
         set_sanitize_sensitive_info(self.log.as_ref().is_none_or(|l| l.sanitize_sensitive_info));
+        let remove_x_header = self.reverse_proxy.as_ref().map_or(false, |r| r.remove_x_header);
+        set_remove_x_header(remove_x_header);
         let temp_path = PathBuf::from(&self.working_dir).join("tmp");
         create_directories(self, &temp_path);
         let _ = tempfile::env::override_temp_dir(&temp_path);
