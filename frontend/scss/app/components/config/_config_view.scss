@@ -192,19 +192,9 @@
     display: flex;
     flex-flow: row;
     color:var(--warn-color);
-    fill: currentColor;
+    fill: var(--warn-color);
     span {
       white-space: wrap;
     }
-  }
-}
-
-.tp__log-config-view__header {
-  .tp__form-field {
-    display: flex;
-    flex-flow: row wrap;
-    gap: var(--gap-default);
-    box-sizing: border-box;
-    align-items: center;
   }
 }

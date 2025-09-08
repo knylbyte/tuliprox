@@ -28,22 +28,14 @@
       color: var(--modest-text-color);
     }
 
-    .tp__icon-button,
-    .tp__text-button {
-      &:hover {
-        color: var(--tab-hover-color);
-        fill: currentColor;
-        background-color: var(--tab-hover-background-color);
-      }
-    }
 
     &--active {
+      fill: var(--active-color);
+      color: var(--active-color);
       .tp__icon-button,
       .tp__text-button {
-        background-color: var(--tab-active-background-color);
-        color: var(--tab-active-color);
-        fill: currentColor;
-        border-color: var(--tab-active-border-color);
+        fill: var(--active-color);
+        color: var(--active-color);
       }
 
     }

@@ -1,8 +1,9 @@
 use regex::Regex;
 use std::collections::HashSet;
 use std::string::ToString;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::LazyLock;
+
 
 pub const USER_FILE: &str = "user.txt";
 pub const CONFIG_PATH: &str = "config";
@@ -11,8 +12,10 @@ pub const SOURCE_FILE: &str = "source.yml";
 pub const MAPPING_FILE: &str = "mapping.yml";
 pub const API_PROXY_FILE: &str = "api-proxy.yml";
 
+
 pub const ENCODING_GZIP: &str = "gzip";
 pub const ENCODING_DEFLATE: &str = "deflate";
+
 
 pub const HLS_EXT: &str = ".m3u8";
 pub const DASH_EXT: &str = ".mpd";
@@ -42,8 +45,9 @@ const SUPPORTED_RESPONSE_HEADERS: &[&str] = &[
     "last-modified",
     "cache-control",
     "etag",
-    "expires",
+    "expires"
 ];
+
 
 pub fn filter_response_header(key: &str) -> bool {
     SUPPORTED_RESPONSE_HEADERS.contains(&key)
@@ -51,9 +55,6 @@ pub fn filter_response_header(key: &str) -> bool {
 
 pub fn filter_request_header(key: &str) -> bool {
     if key == "host" || key == "connection" {
-        return false;
-    }
-    if CONSTANTS.remove_x_header.load(Ordering::Relaxed) && key.starts_with('x') {
         return false;
     }
     true
@@ -89,15 +90,14 @@ pub struct Constants {
     pub re_whitespace: Regex,
     pub re_hls_uri: Regex,
     pub sanitize: AtomicBool,
-    pub remove_x_header: AtomicBool,
     pub export_style_config: ExportStyleConfig,
     pub country_codes: HashSet<&'static str>,
     pub allowed_output_formats: Vec<String>,
-    pub re_trakt_year: Regex,
-    pub re_quality: Regex,
+    pub re_trakt_year:  Regex,
+    pub re_quality:  Regex,
 }
 
-pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(|| {
+pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
     Constants {
         re_credentials: Regex::new(r"((username|password|token)=)[^&]*").unwrap(),
         re_ipv4: Regex::new(r"\b((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\b").unwrap(),
@@ -118,8 +118,8 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(|| {
         re_remove_filename_ending: Regex::new(r"[_.\s-]$").unwrap(),
         re_whitespace: Regex::new(r"\s+").unwrap(),
         re_hls_uri: Regex::new(r#"URI="([^"]+)""#).unwrap(),
+
         sanitize: AtomicBool::new(true),
-        remove_x_header: AtomicBool::new(true),
         export_style_config: ExportStyleConfig {
             season: Regex::new(r"[Ss]\d{1,2}").unwrap(),
             episode: Regex::new(r"[Ee]\d{1,2}").unwrap(),
@@ -146,4 +146,4 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(|| {
         re_trakt_year: Regex::new(r"\(?(\d{4})\)?$").unwrap(),
         re_quality: Regex::new(r"(?i)\b(4K|UHD|8K|2160p?|1080p?|720p?|480p?|BLURAY|HDTV|DVDRIP|CAM|TS|HDR|DV|SDR)\b").unwrap(),
     }
-});
+);

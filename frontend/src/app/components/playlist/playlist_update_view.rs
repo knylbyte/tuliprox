@@ -29,8 +29,6 @@ pub fn PlaylistUpdateView() -> Html {
             let exists = selected_targets.current().iter().any(|t| t.id == target.id);
             if !exists {
                 selected_targets.push(target);
-            } else {
-                selected_targets.retain(|t: &Rc<ConfigTargetDto>| t.id != target.id);
             }
         })
     };
@@ -81,9 +79,8 @@ pub fn PlaylistUpdateView() -> Html {
                     .map(|target| {
                         let handle_click = handle_target_select.clone();
                         let target_name = target.name.clone();
-                        let button_class = if selected_targets.current().iter().any(|t| t.id == target.id) { "active" } else {""};
                         html! {
-                          <TextButton class={button_class}
+                          <TextButton class={if selected_targets.current().iter().any(|t| t.id == target.id) { "active" } else {""}}
                             name={target_name.clone()} title={target_name} icon={"UpdateChecked"}
                              onclick={move |_| handle_click.emit(target.clone())}/>
                         }

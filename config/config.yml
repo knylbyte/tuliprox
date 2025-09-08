@@ -22,9 +22,6 @@ log:
   log_active_user: true
   log_level: debug
 
-reverse_proxy:
-  remove_x_header: true
-
 update_on_boot: false # best not to hammer upstream during testing
 
 web_ui:

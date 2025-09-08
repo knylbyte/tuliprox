@@ -30,7 +30,7 @@
 
     .tp__icon-button.active {
         color: var(--tag-active-color);
-        fill: currentColor;
+        fill: var(--tag-active-color);
     }
   }
   label {
