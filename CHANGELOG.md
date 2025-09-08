@@ -1,7 +1,7 @@
 # Changelog
 # 3.1.7 (2025-09-xx)
 - Added Dark / Bright theme switch
-- Resource proxy retries failed requests up to three times and honors the `Retry-After` header (or waits 100 ms as a fallback) to reduce transient HTTP 4XX errors observed by clients.
+- Resource proxy retries failed requests up to three times and honors the `Retry-After` header (or waits 100 ms as a fallback) to reduce transient HTTP 400, 408, 425, 429 and all 5xx statuses errors observed by clients.
 
 # 3.1.6 (2025-09-01)
 - EPG Config View added
