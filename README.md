@@ -297,6 +297,15 @@ reverse_proxy:
   disable_referer_header: false
 ```
 
+#### 1.6.6 `remove_x_header`
+If set to `true`, request headers starting with `x` are removed before forwarding.
+Default value is `true`.
+
+```yaml
+reverse_proxy:
+  remove_x_header: true
+```
+
 ### 1.7 `backup_dir`
 is the directory where the backup configuration files written, when saved from the ui.
 
