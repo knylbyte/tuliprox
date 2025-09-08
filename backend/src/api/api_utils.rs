@@ -24,7 +24,11 @@ use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, log_enabled, trace};
-use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission, XtreamCluster};
+use reqwest::header::RETRY_AFTER;
+use shared::model::{
+    Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType,
+    UserConnectionPermission, XtreamCluster,
+};
 use shared::utils::{default_grace_period_millis, human_readable_byte_size, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
@@ -34,6 +38,7 @@ use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -738,9 +743,11 @@ pub async fn force_provider_stream_response(
             .map(|(h, sc, url)| (h.clone(), *sc, url.clone()));
         app_state
             .active_users
-            .update_session_addr(&user.username, &user_session.token, addr).await;
+            .update_session_addr(&user.username, &user_session.token, addr)
+            .await;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr).await;
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr)
+                .await;
 
         let (status_code, header_map) =
             get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
@@ -838,7 +845,8 @@ pub async fn stream_response(
             None
         };
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr).await;
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr)
+                .await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
                 "Streaming shared stream request from {}",
@@ -857,7 +865,9 @@ pub async fn stream_response(
                 shared_headers,
                 stream_options.buffer_size,
                 provider_guard,
-            ).await {
+            )
+            .await
+            {
                 let (status_code, header_map) =
                     get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
                 let mut response = axum::response::Response::builder().status(status_code);
@@ -906,15 +916,18 @@ pub async fn stream_response(
                         | PlaylistItemType::Series
                         | PlaylistItemType::Catchup
                 ) {
-                    let _ = app_state.active_users.create_user_session(
-                        user,
-                        session_token,
-                        virtual_id,
-                        &provider,
-                        &session_url,
-                        addr,
-                        connection_permission,
-                    ).await;
+                    let _ = app_state
+                        .active_users
+                        .create_user_session(
+                            user,
+                            session_token,
+                            virtual_id,
+                            &provider,
+                            &session_url,
+                            addr,
+                            connection_permission,
+                        )
+                        .await;
                 }
             }
 
@@ -950,11 +963,14 @@ async fn shared_stream_response(
     if let Some(stream) =
         SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)).await
     {
-        debug_if_enabled!("Using shared stream {}", sanitize_sensitive_info(stream_url)
+        debug_if_enabled!(
+            "Using shared stream {}",
+            sanitize_sensitive_info(stream_url)
         );
         if let Some(headers) = app_state
             .shared_stream_manager
-            .get_shared_state_headers(stream_url).await
+            .get_shared_state_headers(stream_url)
+            .await
         {
             let (status_code, header_map) = get_stream_response_with_headers(Some((
                 headers.clone(),
@@ -962,7 +978,9 @@ async fn shared_stream_response(
             )));
             let stream_details = StreamDetails::from_stream(stream);
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr).await.boxed();
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr)
+                    .await
+                    .boxed();
             let mut response = axum::response::Response::builder().status(status_code);
             for (key, value) in &header_map {
                 response = response.header(key, value);
@@ -1014,6 +1032,93 @@ fn get_add_cache_content(
     add_cache_content
 }
 
+async fn build_stream_response(
+    app_state: &AppState,
+    resource_url: &str,
+    response: reqwest::Response,
+) -> axum::response::Response {
+    let mut response_builder =
+        axum::response::Response::builder().status(axum::http::StatusCode::OK);
+    for (key, value) in response.headers() {
+        response_builder = response_builder.header(key, value);
+    }
+    let byte_stream = response
+        .bytes_stream()
+        .map_err(|err| StreamError::reqwest(&err));
+    let cache_resource_path = if let Some(cache) = app_state.cache.load().as_ref() {
+        Some(cache.lock().await.store_path(resource_url))
+    } else {
+        None
+    };
+    if let Some(resource_path) = cache_resource_path {
+        if let Ok(file) = create_new_file_for_write(&resource_path) {
+            let writer = BufWriter::new(file);
+            let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
+            let stream = PersistPipeStream::new(byte_stream, writer, add_cache_content);
+            return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(
+                stream
+            )));
+        }
+    }
+    try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(byte_stream)))
+}
+
+async fn fetch_resource_with_retry(
+    app_state: &AppState,
+    url: &Url,
+    resource_url: &str,
+    req_headers: &HashMap<String, Vec<u8>>,
+    input: Option<&ConfigInput>,
+) -> Option<axum::response::Response> {
+    for attempt in 0..3 {
+        let client = request::get_client_request(
+            &app_state.http_client.load(),
+            input.map_or(InputFetchMethod::GET, |i| i.method),
+            input.map(|i| &i.headers),
+            url,
+            Some(req_headers),
+        );
+        match client.send().await {
+            Ok(response) => {
+                let status = response.status();
+                if status.is_success() {
+                    return Some(
+                        build_stream_response(app_state, resource_url, response).await,
+                    );
+                }
+                if attempt < 2 && status.is_client_error() {
+                    let wait_dur = response
+                        .headers()
+                        .get(RETRY_AFTER)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .map_or(Duration::from_millis(100), Duration::from_secs);
+                    tokio::time::sleep(wait_dur).await;
+                    continue;
+                }
+                debug_if_enabled!(
+                    "Failed to open resource got status {} for {}",
+                    status,
+                    sanitize_sensitive_info(resource_url)
+                );
+            }
+            Err(err) => {
+                if attempt < 2 {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+                error!(
+                    "Received failure from server {}:  {}",
+                    sanitize_sensitive_info(resource_url),
+                    err
+                );
+            }
+        }
+        break;
+    }
+    None
+}
+
 /// # Panics
 pub async fn resource_response(
     app_state: &AppState,
@@ -1045,62 +1150,10 @@ pub async fn resource_response(
         sanitize_sensitive_info(resource_url)
     );
     if let Ok(url) = Url::parse(resource_url) {
-        let client = request::get_client_request(
-            &app_state.http_client.load(),
-            input.map_or(InputFetchMethod::GET, |i| i.method),
-            input.map(|i| &i.headers),
-            &url,
-            Some(&req_headers),
-        );
-        match client.send().await {
-            Ok(response) => {
-                let status = response.status();
-                if status.is_success() {
-                    let mut response_builder =
-                        axum::response::Response::builder().status(axum::http::StatusCode::OK);
-                    for (key, value) in response.headers() {
-                        response_builder = response_builder.header(key, value);
-                    }
-
-                    let byte_stream = response
-                        .bytes_stream()
-                        .map_err(|err| StreamError::reqwest(&err));
-                    let cache_resource_path = {
-                        if let Some(cache) = app_state.cache.load().as_ref() {
-                            Some(cache.lock().await.store_path(resource_url))
-                        } else {
-                            None
-                        }
-                    };
-                    if let Some(resource_path) = cache_resource_path {
-                        if let Ok(file) = create_new_file_for_write(&resource_path) {
-                            let writer = BufWriter::new(file);
-                            let add_cache_content =
-                                get_add_cache_content(resource_url, &app_state.cache);
-                            let stream =
-                                PersistPipeStream::new(byte_stream, writer, add_cache_content);
-                            return try_unwrap_body!(
-                                response_builder.body(axum::body::Body::from_stream(stream))
-                            );
-                        }
-                    }
-                    return try_unwrap_body!(
-                        response_builder.body(axum::body::Body::from_stream(byte_stream))
-                    );
-                }
-                debug_if_enabled!(
-                    "Failed to open resource got status {} for {}",
-                    status,
-                    sanitize_sensitive_info(resource_url)
-                );
-            }
-            Err(err) => {
-                error!(
-                    "Received failure from server {}:  {}",
-                    sanitize_sensitive_info(resource_url),
-                    err
-                );
-            }
+        if let Some(resp) =
+            fetch_resource_with_retry(app_state, &url, resource_url, &req_headers, input).await
+        {
+            return resp;
         }
     } else {
         error!("Url is malformed {}", sanitize_sensitive_info(resource_url));

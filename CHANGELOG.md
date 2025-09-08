@@ -1,6 +1,7 @@
 # Changelog
 # 3.1.7 (2025-09-xx)
 - Added Dark / Bright theme switch
+- Resource proxy retries failed requests up to three times and honors `Retry-After` header or wait 100ms to prevent HTTP 4XX status codes on client side
 
 # 3.1.6 (2025-09-01)
 - EPG Config View added
