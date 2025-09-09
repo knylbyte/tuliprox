@@ -3,7 +3,7 @@ name: Rust Bump trunk & wasm-bindgen-cli
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */4 * * *"
+    - cron: "0 4 * * *"
 permissions:
   contents: write
 jobs:
