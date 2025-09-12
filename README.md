@@ -1,5 +1,7 @@
 # IMPORTANT INFO
 This branch is only for sync with upstream repo!
+The relevant branches are master und develop.
+
 
 # <img src="https://github.com/user-attachments/assets/8ef9ea79-62ff-4298-978f-22326c5c3d02" height="24" /> **tuliprox** - A Powerful IPTV Proxy & Playlist Processor
 
