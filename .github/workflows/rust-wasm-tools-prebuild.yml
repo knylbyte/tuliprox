@@ -62,9 +62,6 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ matrix.tag }}
-          build-args: |
-            TRUNK_VER=${{ github.event.inputs.trunk_ver }}
-            BINDGEN_VER=${{ github.event.inputs.bindgen_ver }}
           cache-from: type=gha,scope=tools-${{ matrix.tag }}
           cache-to:   type=gha,mode=max,scope=tools-${{ matrix.tag }}
 
