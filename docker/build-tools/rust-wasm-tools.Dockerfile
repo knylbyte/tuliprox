@@ -7,12 +7,19 @@
 # This prebuild Image will be autoupdated by the CI/CD pipeline on new versions of the tools.
 
 ############################################
+# Global args and settings
+############################################
+
+ARG RUST_DISTRO=bookworm
+
+############################################
 # Builder runs on the BUILDPLATFORM (no QEMU)
 ############################################
-FROM --platform=$BUILDPLATFORM rust:bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:${RUST_DISTRO} AS builder
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
+ARG RUST_DISTRO
 ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.101
 
@@ -52,7 +59,6 @@ RUN --mount=type=cache,id=apt-builder-cache,target=/var/cache/apt,sharing=locked
     esac; \
     rm -rf /var/lib/apt/lists/*
 
-
 # Add std for wasm32 and the native target triple we compile for
 RUN rustup target add wasm32-unknown-unknown $(cat /rust-target)
 
@@ -84,8 +90,9 @@ RUN case "$(cat /rust-target)" in \
 ############################################
 # Final image runs on the TARGETPLATFORM
 ############################################
-FROM --platform=$TARGETPLATFORM rust:bookworm
+FROM rust:${RUST_DISTRO}
 
+ARG RUST_DISTRO
 ARG TRUNK_VER
 ARG BINDGEN_VER
 

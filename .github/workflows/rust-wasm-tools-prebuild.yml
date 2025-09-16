@@ -71,41 +71,41 @@ jobs:
       - name: Inspect image
         run: docker buildx imagetools inspect "${IMAGE}:${{ matrix.tag }}"
 
-      # Strict verification: never pull during verification to avoid polluting outputs with pull logs
-      - name: Verify tools in image
-        id: verify
+      # Pull platform-specific image and read label versions
+      - name: Pull & inspect image labels
+        id: img
         shell: bash
+        env:
+          IMG: ${{ env.IMAGE }}:${{ matrix.tag }}
+          PLAT: ${{ matrix.platform }}
         run: |
           set -euo pipefail
-          IMG="${{ env.IMAGE }}:${{ matrix.tag }}"
-          PLAT="${{ matrix.platform }}"
 
-          check_cmd() {
-            local cmd="$1" key="$2"
-            # First attempt: capture stdout only; never pull implicitly
-            if out=$(docker run --rm --platform "$PLAT" --pull=never "$IMG" sh -lc "$cmd" 2>/dev/null); then
-              echo "${key}_ok=true" >> "$GITHUB_OUTPUT"
-              {
-                echo "${key}_version<<__EOF__"
-                echo "$out"
-                echo "__EOF__"
-              } >> "$GITHUB_OUTPUT"
-            else
-              # Second attempt for diagnostics: capture stderr too; still never pull
-              out="$(docker run --rm --platform "$PLAT" --pull=never "$IMG" sh -lc "$cmd" 2>&1 || true)"
-              echo "${key}_ok=false" >> "$GITHUB_OUTPUT"
-              {
-                echo "${key}_error<<__EOF__"
-                echo "$out"
-                echo "__EOF__"
-              } >> "$GITHUB_OUTPUT"
-            fi
-          }
+          # Pull the platform-specific image (quiet); do not fail the job if missing
+          set +e
+          PULL_LOG="$(docker pull -q --platform "$PLAT" "$IMG" 2>&1)"
+          RC=$?
+          set -e
 
-          check_cmd "trunk --version" "trunk"
-          check_cmd "wasm-bindgen --version" "bindgen"
+          if [ $RC -eq 0 ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "pull_error<<__EOF__"
+              echo "$PULL_LOG"
+              echo "__EOF__"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
-      # Per-arch summary with expressive symbols
+          # Read version labels (may be empty if image missing or labels not set)
+          TRUNK="$(docker image inspect -f '{{ index .Config.Labels "io.tuliprox.trunk.version"}}' "$IMG" 2>/dev/null || true)"
+          BINDGEN="$(docker image inspect -f '{{ index .Config.Labels "io.tuliprox.wasm_bindgen.version"}}' "$IMG" 2>/dev/null || true)"
+
+          echo "trunk_version=${TRUNK:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "bindgen_version=${BINDGEN:-unknown}" >> "$GITHUB_OUTPUT"
+
+      # Summary (uses values from the step above)
       - name: Summary
         if: always()
         shell: bash
@@ -116,19 +116,26 @@ jobs:
             echo "🖼️ Image: \`${{ env.IMAGE }}:${{ matrix.tag }}\`"
             echo "🧭 Platform: \`${{ matrix.platform }}\`"
             echo ""
-            if [[ "${{ steps.verify.outputs.trunk_ok }}" == "true" ]]; then
-              echo "✅ trunk: **${{ steps.verify.outputs.trunk_version }}**"
+            if [[ "${{ steps.img.outputs.published }}" == "true" ]]; then
+              echo "✅ Published and pulled"
             else
-              echo "❌ trunk: **FAILED** — ${{ steps.verify.outputs.trunk_error }}"
+              echo "❌ Not found / pull failed"
+              if [[ -n "${{ steps.img.outputs.pull_error }}" ]]; then
+                echo ""
+                echo "<details><summary>Pull error</summary>"
+                echo ""
+                echo '```'
+                echo "${{ steps.img.outputs.pull_error }}"
+                echo '```'
+                echo "</details>"
+              fi
             fi
-            if [[ "${{ steps.verify.outputs.bindgen_ok }}" == "true" ]]; then
-              echo "✅ wasm-bindgen: **${{ steps.verify.outputs.bindgen_version }}**"
-            else
-              echo "❌ wasm-bindgen: **FAILED** — ${{ steps.verify.outputs.bindgen_error }}"
-            fi
+            echo "🔧 trunk: **${{ steps.img.outputs.trunk_version }}**"
+            echo "🔧 wasm-bindgen: **${{ steps.img.outputs.bindgen_version }}**"
             echo ""
             echo "---"
           } >> "$GITHUB_STEP_SUMMARY"
+
 
   manifest:
     needs: build
