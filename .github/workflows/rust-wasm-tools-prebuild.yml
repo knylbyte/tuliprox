@@ -1,45 +1,22 @@
-name: Rust Build rust-wasm-tools
+name: Build & Push rust-wasm-tools (prebuild)
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - docker/build-tools/rust-wasm-tools.Dockerfile
-      - .github/workflows/rust-wasm-tools-prebuild.yml
-  workflow_run:
-    workflows:
-      - Rust Bump trunk & wasm-bindgen-cli
-    types: [completed]
-
-permissions:
-  contents: read
-  packages: write
+    inputs:
+      trunk_ver:
+        description: "trunk version"
+        required: false
+        default: "0.21.14"
+      bindgen_ver:
+        description: "wasm-bindgen-cli version"
+        required: false
+        default: "0.2.101"
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository }}/rust-wasm-tools
+  IMAGE: ghcr.io/${{ github.repository }}/rust-wasm-tools
 
 jobs:
-  precheck:
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.diff.outputs.should_run }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
-          fetch-depth: 2
-      - id: diff
-        run: |
-          set -e
-          if git diff --name-only HEAD^ HEAD | grep -q '^docker/build-tools/rust-wasm-tools\.Dockerfile$'; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-          fi
-
   build:
-    needs: precheck
-    if: needs.precheck.outputs.should_run == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     strategy:
       fail-fast: false
       matrix:
@@ -55,46 +32,142 @@ jobs:
             tag: linux-armv7
 
     runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
 
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # QEMU is not strictly required on native runners; keeping it helps arm/v7.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-  
-      - name: Build & push ${{ matrix.platform }}
+
+      # Build and push a single-arch tools image (tagged per architecture).
+      - name: Build & Push (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/build-tools/rust-wasm-tools.Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ env.IMAGE_NAME }}:${{ matrix.tag }}
-          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-${{ matrix.tag }}
-          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-${{ matrix.tag }},mode=max
+          tags: |
+            ${{ env.IMAGE }}:${{ matrix.tag }}
+          build-args: |
+            TRUNK_VER=${{ github.event.inputs.trunk_ver }}
+            BINDGEN_VER=${{ github.event.inputs.bindgen_ver }}
+          cache-from: type=gha,scope=tools-${{ matrix.tag }}
+          cache-to: type=gha,mode=max,scope=tools-${{ matrix.tag }}
+
+      - name: Inspect image
+        run: docker buildx imagetools inspect "${IMAGE}:${{ matrix.tag }}"
+
+      # Verify that trunk and wasm-bindgen are usable inside the image, capture versions.
+      - name: Verify tools in image
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMG="${{ env.IMAGE }}:${{ matrix.tag }}"
+          
+          # trunk
+          if out=$(docker run --rm --platform "${{ matrix.platform }}" "$IMG" sh -lc 'trunk --version' 2>&1); then
+            echo "trunk_ok=true" >> "$GITHUB_OUTPUT"
+            echo "trunk_version=$out" >> "$GITHUB_OUTPUT"
+          else
+            echo "trunk_ok=false" >> "$GITHUB_OUTPUT"
+            echo "trunk_error=$out" >> "$GITHUB_OUTPUT"
+          fi
+
+          # wasm-bindgen
+          if out=$(docker run --rm --platform "${{ matrix.platform }}" "$IMG" sh -lc 'wasm-bindgen --version' 2>&1); then
+            echo "bindgen_ok=true" >> "$GITHUB_OUTPUT"
+            echo "bindgen_version=$out" >> "$GITHUB_OUTPUT"
+          else
+            echo "bindgen_ok=false" >> "$GITHUB_OUTPUT"
+            echo "bindgen_error=$out" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Per-arch summary with expressive symbols
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## rust-wasm-tools \`${{ matrix.tag }}\`"
+            echo ""
+            echo "🖼️ Image: \`${{ env.IMAGE }}:${{ matrix.tag }}\`"
+            echo "🧭 Platform: \`${{ matrix.platform }}\`"
+            echo ""
+            if [[ "${{ steps.verify.outputs.trunk_ok }}" == "true" ]]; then
+              echo "✅ trunk: **${{ steps.verify.outputs.trunk_version }}**"
+            else
+              echo "❌ trunk: **FAILED** — ${{ steps.verify.outputs.trunk_error }}"
+            fi
+            if [[ "${{ steps.verify.outputs.bindgen_ok }}" == "true" ]]; then
+              echo "✅ wasm-bindgen: **${{ steps.verify.outputs.bindgen_version }}**"
+            else
+              echo "❌ wasm-bindgen: **FAILED** — ${{ steps.verify.outputs.bindgen_error }}"
+            fi
+            echo ""
+            echo "---"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   manifest:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+
     steps:
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - name: Set up Buildx (required for imagetools)
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create and push multi-arch manifest :latest
+
+      - name: Create multi-arch :latest manifest
+        id: create
         run: |
-          IMAGE=${{ env.IMAGE_NAME }}
-          docker buildx imagetools create -t ${IMAGE}:latest \
-            ${IMAGE}:linux-amd64 \
-            ${IMAGE}:linux-arm64 \
-            ${IMAGE}:linux-armv7
-      - name: Inspect manifest
-        run: docker buildx imagetools inspect ${{ env.IMAGE_NAME }}:latest
+          IMAGE="${{ env.IMAGE }}"
+          docker buildx imagetools create \
+            -t "${IMAGE}:latest" \
+            "${IMAGE}:linux-amd64" \
+            "${IMAGE}:linux-arm64" \
+            "${IMAGE}:linux-armv7"
+
+      - name: Inspect :latest manifest
+        run: docker buildx imagetools inspect "${{ env.IMAGE }}:latest"
+
+      # Final summary for the manifest
+      - name: Summary (:latest)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## rust-wasm-tools \`:latest\` manifest"
+            if [[ "${{ steps.create.outcome }}" == "success" ]]; then
+              echo "✅ Multi-arch manifest created:"
+              echo "- linux-amd64"
+              echo "- linux-arm64"
+              echo "- linux-armv7"
+              echo ""
+              echo "📦 Tag: \`${{ env.IMAGE }}:latest\`"
+            else
+              echo "❌ Failed to create multi-arch \`:latest\` manifest."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
