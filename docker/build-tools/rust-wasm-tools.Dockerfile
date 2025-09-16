@@ -19,9 +19,6 @@ ARG BINDGEN_VER=0.2.101
 ############################################
 FROM --platform=$BUILDPLATFORM rust:${RUST_DISTRO} AS builder
 
-ARG TARGETPLATFORM
-ARG BUILDPLATFORM
-ARG RUST_DISTRO
 ARG TRUNK_VER
 ARG BINDGEN_VER
 
@@ -94,7 +91,6 @@ RUN case "$(cat /rust-target)" in \
 ############################################
 FROM rust:${RUST_DISTRO}
 
-ARG RUST_DISTRO
 ARG TRUNK_VER
 ARG BINDGEN_VER
 
