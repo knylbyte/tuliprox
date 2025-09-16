@@ -90,7 +90,7 @@ RUN case "$(cat /rust-target)" in \
 ############################################
 # Final image runs on the TARGETPLATFORM
 ############################################
-FROM rust:${RUST_DISTRO}
+FROM --platform=$TARGETPLATFORM rust:${RUST_DISTRO}
 
 ARG RUST_DISTRO
 ARG TRUNK_VER
