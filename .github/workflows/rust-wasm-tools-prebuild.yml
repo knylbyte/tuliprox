@@ -74,7 +74,7 @@ jobs:
       - name: Inspect image
         run: docker buildx imagetools inspect "${IMAGE}:${{ matrix.tag }}"
 
-      - name: Verify tools in image
+      - name: Verify tools in image (no implicit pulls)
         id: verify
         shell: bash
         run: |
@@ -82,23 +82,29 @@ jobs:
           IMG="${{ env.IMAGE }}:${{ matrix.tag }}"
           PLAT="${{ matrix.platform }}"
 
-          # Ensure the image is present locally (quiet pull); avoid pull logs in captured output
-          docker pull -q --platform "$PLAT" "$IMG" >/dev/null 2>&1 || true
+          # Optional: seed local image quietly to avoid pull logs later.
+          # Comment this out if you want STRICT "never pull" behavior (and accept failure if not present).
+          docker image inspect "$IMG" >/dev/null 2>&1 || docker pull -q --platform "$PLAT" "$IMG" >/dev/null 2>&1
+
+          # Use --pull=never if the docker version supports it
+          RUN_PULL_FLAG=""
+          if docker run --help | grep -q -- '--pull'; then
+            RUN_PULL_FLAG="--pull=never"
+          fi
 
           check_cmd() {
             local cmd="$1" key="$2"
-            # run once capturing stdout only (to avoid noisy logs)
-            if out=$(docker run --rm --platform "$PLAT" "$IMG" sh -lc "$cmd" 2>/dev/null); then
+            # Capture stdout only (avoid noisy stderr)
+            if out=$(docker run --rm --platform "$PLAT" $RUN_PULL_FLAG "$IMG" sh -lc "$cmd" 2>/dev/null); then
               echo "${key}_ok=true" >> "$GITHUB_OUTPUT"
               {
-                # use a heredoc for safe multiline output
                 echo "${key}_version<<__EOF__"
                 echo "$out"
                 echo "__EOF__"
               } >> "$GITHUB_OUTPUT"
             else
-              # run again capturing stderr for an informative error message
-              out="$(docker run --rm --platform "$PLAT" "$IMG" sh -lc "$cmd" 2>&1 || true)"
+              # Re-run capturing stderr for an informative message
+              out="$(docker run --rm --platform "$PLAT" $RUN_PULL_FLAG "$IMG" sh -lc "$cmd" 2>&1 || true)"
               echo "${key}_ok=false" >> "$GITHUB_OUTPUT"
               {
                 echo "${key}_error<<__EOF__"
@@ -108,10 +114,8 @@ jobs:
             fi
           }
 
-          # Check both tools
           check_cmd "trunk --version" "trunk"
           check_cmd "wasm-bindgen --version" "bindgen"
-
 
       # Per-arch summary with expressive symbols
       - name: Summary
