@@ -74,31 +74,44 @@ jobs:
       - name: Inspect image
         run: docker buildx imagetools inspect "${IMAGE}:${{ matrix.tag }}"
 
-      # Verify that trunk and wasm-bindgen are usable inside the image, capture versions.
       - name: Verify tools in image
         id: verify
         shell: bash
         run: |
           set -euo pipefail
           IMG="${{ env.IMAGE }}:${{ matrix.tag }}"
-          
-          # trunk
-          if out=$(docker run --rm --platform "${{ matrix.platform }}" "$IMG" sh -lc 'trunk --version' 2>&1); then
-            echo "trunk_ok=true" >> "$GITHUB_OUTPUT"
-            echo "trunk_version=$out" >> "$GITHUB_OUTPUT"
-          else
-            echo "trunk_ok=false" >> "$GITHUB_OUTPUT"
-            echo "trunk_error=$out" >> "$GITHUB_OUTPUT"
-          fi
+          PLAT="${{ matrix.platform }}"
 
-          # wasm-bindgen
-          if out=$(docker run --rm --platform "${{ matrix.platform }}" "$IMG" sh -lc 'wasm-bindgen --version' 2>&1); then
-            echo "bindgen_ok=true" >> "$GITHUB_OUTPUT"
-            echo "bindgen_version=$out" >> "$GITHUB_OUTPUT"
-          else
-            echo "bindgen_ok=false" >> "$GITHUB_OUTPUT"
-            echo "bindgen_error=$out" >> "$GITHUB_OUTPUT"
-          fi
+          # Ensure the image is present locally (quiet pull); avoid pull logs in captured output
+          docker pull -q --platform "$PLAT" "$IMG" >/dev/null 2>&1 || true
+
+          check_cmd() {
+            local cmd="$1" key="$2"
+            # run once capturing stdout only (to avoid noisy logs)
+            if out=$(docker run --rm --platform "$PLAT" "$IMG" sh -lc "$cmd" 2>/dev/null); then
+              echo "${key}_ok=true" >> "$GITHUB_OUTPUT"
+              {
+                # use a heredoc for safe multiline output
+                echo "${key}_version<<__EOF__"
+                echo "$out"
+                echo "__EOF__"
+              } >> "$GITHUB_OUTPUT"
+            else
+              # run again capturing stderr for an informative error message
+              out="$(docker run --rm --platform "$PLAT" "$IMG" sh -lc "$cmd" 2>&1 || true)"
+              echo "${key}_ok=false" >> "$GITHUB_OUTPUT"
+              {
+                echo "${key}_error<<__EOF__"
+                echo "$out"
+                echo "__EOF__"
+              } >> "$GITHUB_OUTPUT"
+            fi
+          }
+
+          # Check both tools
+          check_cmd "trunk --version" "trunk"
+          check_cmd "wasm-bindgen --version" "bindgen"
+
 
       # Per-arch summary with expressive symbols
       - name: Summary
