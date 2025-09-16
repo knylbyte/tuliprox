@@ -85,10 +85,24 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/usr/local/cargo/bin:$PATH
 
 # System dependencies required by Trunk/wasm + Binaryen/Clang
-RUN --mount=type=cache,id=apt-final-cache,target=/var/cache/apt \
-    --mount=type=cache,id=apt-final-lib,target=/var/lib/apt \
-    apt-get update && apt-get install -y --no-install-recommends \
-      pkg-config libssl-dev curl ca-certificates libclang-dev binaryen && \
+# Builder stage (runs on BUILDPLATFORM)
+RUN --mount=type=cache,id=apt-builder-cache,target=/var/cache/apt \
+    --mount=type=cache,id=apt-builder-lib,target=/var/lib/apt \
+    set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      curl ca-certificates pkg-config \
+      gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
+      gcc-aarch64-linux-gnu    binutils-aarch64-linux-gnu; \
+    case "$(cat /rust-target)" in \
+      armv7-unknown-linux-gnueabihf) \
+        apt-get install -y --no-install-recommends \
+          libc6-dev-armhf-cross linux-libc-dev-armhf-cross ;; \
+      aarch64-unknown-linux-gnu) \
+        apt-get install -y --no-install-recommends \
+          libc6-dev-arm64-cross linux-libc-dev-arm64-cross ;; \
+      *) : ;; \
+    esac; \
     rm -rf /var/lib/apt/lists/*
 
 # Add the wasm target (used by downstream builds)
