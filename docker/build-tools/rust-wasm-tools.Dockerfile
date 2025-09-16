@@ -11,6 +11,8 @@
 ############################################
 
 ARG RUST_DISTRO=bookworm
+ARG TRUNK_VER=0.21.14
+ARG BINDGEN_VER=0.2.101
 
 ############################################
 # Builder runs on the BUILDPLATFORM (no QEMU)
@@ -20,8 +22,8 @@ FROM --platform=$BUILDPLATFORM rust:${RUST_DISTRO} AS builder
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 ARG RUST_DISTRO
-ARG TRUNK_VER=0.21.14
-ARG BINDGEN_VER=0.2.101
+ARG TRUNK_VER
+ARG BINDGEN_VER
 
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/usr/local/cargo \
@@ -90,7 +92,7 @@ RUN case "$(cat /rust-target)" in \
 ############################################
 # Final image runs on the TARGETPLATFORM
 ############################################
-FROM --platform=$TARGETPLATFORM rust:${RUST_DISTRO}
+FROM rust:${RUST_DISTRO}
 
 ARG RUST_DISTRO
 ARG TRUNK_VER
