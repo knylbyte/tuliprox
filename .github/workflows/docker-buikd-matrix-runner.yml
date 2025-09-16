@@ -63,6 +63,7 @@ jobs:
           # Arch-spezifische Tags
           echo "ARCH_TAG=${{ env.IMAGE }}:${{ matrix.tag_suffix }}" >> "$GITHUB_OUTPUT"
           echo "REF_ARCH_TAG=${{ env.IMAGE }}:${REF}-${{ matrix.tag_suffix }}" >> "$GITHUB_OUTPUT"
+          
           # Tools-Image (für trunk-build) arch-spezifisch
           echo "TOOLS_IMAGE=ghcr.io/${{ github.repository }}/rust-wasm-tools:${{ matrix.tag_suffix }}" >> "$GITHUB_OUTPUT"
 
@@ -80,10 +81,8 @@ jobs:
             RUST_TARGET=${{ matrix.rust_target }}
             GHCR_IMAGE=ghcr.io/${{ github.repository }}
             GHCR_TAG_SUFFIX=${{ matrix.tag_suffix }}
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.tag_suffix }}
-          cache-to: |
-            type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.tag_suffix }},mode=max
+          cache-from: type=gha,scope=epg-${{ matrix.tag_suffix }}
+          cache-to:   type=gha,mode=max,scope=tuliprox-${{ matrix.tag_suffix }}
 
   manifest:
     needs: build
@@ -120,10 +119,12 @@ jobs:
         run: |
           IMAGE="${{ env.IMAGE }}"
           TAG="${{ steps.ref.outputs.TARGET_TAG }}"
-          docker buildx imagetools create -t "${IMAGE}:${TAG}" \
-            "${IMAGE}:linux-amd64" \
-            "${IMAGE}:linux-arm64" \
-            "${IMAGE}:linux-armv7"
+          docker buildx imagetools create \
+            -t "${IMAGE}:${TAG}" \
+            -t "{IMAGE}:latest"
+              "${IMAGE}:linux-amd64" \
+              "${IMAGE}:linux-arm64" \
+              "${IMAGE}:linux-armv7"
 
       - name: Create/Update manifest :latest (only on tags v*)
         if: steps.ref.outputs.CREATE_LATEST == 'true'
