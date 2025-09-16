@@ -32,8 +32,8 @@ RUN case "$TARGETPLATFORM" in \
 
 # Minimal toolchains to cross-compile Rust binaries
 # (armv7/arm64 linkers; amd64 uses native strip)
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
+RUN --mount=type=cache,id=apt-builder-cache,target=/var/cache/apt \
+    --mount=type=cache,id=apt-builder-lib,target=/var/lib/apt \
     apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates pkg-config \
       gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
@@ -85,8 +85,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/usr/local/cargo/bin:$PATH
 
 # System dependencies required by Trunk/wasm + Binaryen/Clang
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
+RUN --mount=type=cache,id=apt-final-cache,target=/var/cache/apt \
+    --mount=type=cache,id=apt-final-lib,target=/var/lib/apt \
     apt-get update && apt-get install -y --no-install-recommends \
       pkg-config libssl-dev curl ca-certificates libclang-dev binaryen && \
     rm -rf /var/lib/apt/lists/*
