@@ -1,11 +1,11 @@
 name: Docker Build & Push
 
 on:
-  workflow_dispatch:
-  push:
-    branches: 
-      - master
-      - develop
+  # workflow_dispatch:
+  # push:
+  #   branches: 
+  #     - master
+  #     - develop
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}

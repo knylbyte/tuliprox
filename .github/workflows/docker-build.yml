@@ -1,11 +1,11 @@
 name: Docker Build and Push
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - master
-      - develop
+  # workflow_dispatch:
+  # push:
+  #   branches:
+  #     - master
+  #     - develop
 
 jobs:
   docker-build:
