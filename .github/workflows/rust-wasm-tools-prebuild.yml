@@ -27,7 +27,7 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
             tag: linux-arm64
-          - platform: linux/arm/v7
+          - platform: linux/arm/v7         # build armv7 on arm64 runner (fast cross-compile)
             runner: ubuntu-24.04-arm
             tag: linux-armv7
 
@@ -37,7 +37,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # QEMU is not strictly required on native runners; keeping it helps arm/v7.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
@@ -55,12 +54,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build and push a single-arch tools image (tagged per architecture).
+      # Build and push single-arch image; Dockerfile cross-compiles in the builder stage
       - name: Build & Push (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/build-tools/rust-wasm-tools.Dockerfile
+          file: docker/build-tools/rust-wasm-tools.cross.Dockerfile
           platforms: ${{ matrix.platform }}
           push: true
           tags: |
@@ -69,12 +68,13 @@ jobs:
             TRUNK_VER=${{ github.event.inputs.trunk_ver }}
             BINDGEN_VER=${{ github.event.inputs.bindgen_ver }}
           cache-from: type=gha,scope=tools-${{ matrix.tag }}
-          cache-to: type=gha,mode=max,scope=tools-${{ matrix.tag }}
+          cache-to:   type=gha,mode=max,scope=tools-${{ matrix.tag }}
 
       - name: Inspect image
         run: docker buildx imagetools inspect "${IMAGE}:${{ matrix.tag }}"
 
-      - name: Verify tools in image (no implicit pulls)
+      # Strict verification: never pull during verification to avoid polluting outputs with pull logs
+      - name: Verify tools in image
         id: verify
         shell: bash
         run: |
@@ -82,20 +82,10 @@ jobs:
           IMG="${{ env.IMAGE }}:${{ matrix.tag }}"
           PLAT="${{ matrix.platform }}"
 
-          # Optional: seed local image quietly to avoid pull logs later.
-          # Comment this out if you want STRICT "never pull" behavior (and accept failure if not present).
-          docker image inspect "$IMG" >/dev/null 2>&1 || docker pull -q --platform "$PLAT" "$IMG" >/dev/null 2>&1
-
-          # Use --pull=never if the docker version supports it
-          RUN_PULL_FLAG=""
-          if docker run --help | grep -q -- '--pull'; then
-            RUN_PULL_FLAG="--pull=never"
-          fi
-
           check_cmd() {
             local cmd="$1" key="$2"
-            # Capture stdout only (avoid noisy stderr)
-            if out=$(docker run --rm --platform "$PLAT" $RUN_PULL_FLAG "$IMG" sh -lc "$cmd" 2>/dev/null); then
+            # First attempt: capture stdout only; never pull implicitly
+            if out=$(docker run --rm --platform "$PLAT" --pull=never "$IMG" sh -lc "$cmd" 2>/dev/null); then
               echo "${key}_ok=true" >> "$GITHUB_OUTPUT"
               {
                 echo "${key}_version<<__EOF__"
@@ -103,8 +93,8 @@ jobs:
                 echo "__EOF__"
               } >> "$GITHUB_OUTPUT"
             else
-              # Re-run capturing stderr for an informative message
-              out="$(docker run --rm --platform "$PLAT" $RUN_PULL_FLAG "$IMG" sh -lc "$cmd" 2>&1 || true)"
+              # Second attempt for diagnostics: capture stderr too; still never pull
+              out="$(docker run --rm --platform "$PLAT" --pull=never "$IMG" sh -lc "$cmd" 2>&1 || true)"
               echo "${key}_ok=false" >> "$GITHUB_OUTPUT"
               {
                 echo "${key}_error<<__EOF__"
