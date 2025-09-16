@@ -19,6 +19,7 @@ ARG BINDGEN_VER=0.2.101
 ############################################
 FROM --platform=$BUILDPLATFORM rust:${RUST_DISTRO} AS builder
 
+ARG TARGETPLATFORM
 ARG TRUNK_VER
 ARG BINDGEN_VER
 
