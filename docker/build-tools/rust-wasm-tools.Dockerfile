@@ -10,7 +10,7 @@
 # Global args and settings
 ############################################
 
-ARG RUST_DISTRO=1.89-bookworm
+ARG RUST_DISTRO=1.89.0-bookworm
 ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.103
 
