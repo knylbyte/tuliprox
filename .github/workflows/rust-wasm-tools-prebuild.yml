@@ -62,8 +62,11 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ matrix.tag }}
-          cache-from: type=gha,scope=tools-${{ matrix.tag }}
-          cache-to:   type=gha,mode=max,scope=tools-${{ matrix.tag }}
+          cache-from: |
+            type=gha,scope=tools-${{ matrix.tag }}
+            type=registry,ref=${{ env.IMAGE }}:${{ matrix.tag }}
+          cache-to: |
+            type=gha,mode=max,scope=tools-${{ matrix.tag }}
 
       - name: Inspect image
         run: docker buildx imagetools inspect "${IMAGE}:${{ matrix.tag }}"
