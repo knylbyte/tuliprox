@@ -4,7 +4,7 @@ name: Rust Bump trunk & wasm-bindgen-cli
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 4 * * *"
+    - cron: "0 0 * * *"
 
 permissions:
   contents: write
@@ -13,27 +13,35 @@ permissions:
 jobs:
   check-and-bump:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target_branch: [ master, develop ]
     env:
       FILE: docker/build-tools/rust-wasm-tools.Dockerfile
       UA: "tuliprox-bump-bot/1.0 (+https://github.com/${{ github.repository_owner }}/tuliprox)"
-      PREBUILD_WORKFLOW_FILE: rust-wasm-tools-prebuild.yml
+      PREBUILD_WORKFLOW_FILE: rust-wasm-tools.yml
     steps:
-      - name: Checkout
+      - name: Checkout ${{ matrix.target_branch }}
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ matrix.target_branch }}
           fetch-depth: 0
 
       - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
 
       - name: Get current versions from Dockerfile
         id: current
         shell: bash
         run: |
           set -euo pipefail
+
           trunk_current="$(grep -Eo 'ARG TRUNK_VER=([0-9]+\.[0-9]+\.[0-9]+)' "$FILE" | cut -d= -f2)"
           bindgen_current="$(grep -Eo 'ARG BINDGEN_VER=([0-9]+\.[0-9]+\.[0-9]+)' "$FILE" | cut -d= -f2)"
+
           echo "trunk_current=$trunk_current" >> "$GITHUB_OUTPUT"
           echo "bindgen_current=$bindgen_current" >> "$GITHUB_OUTPUT"
 
@@ -42,7 +50,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           # Query crates.io for the max stable versions
           get_latest_from_api () {
             local crate="$1"
@@ -62,6 +69,7 @@ jobs:
             echo "Failed to resolve latest trunk version" >&2
             exit 1
           fi
+
           if [[ -z "${bindgen_latest:-}" || "${bindgen_latest}" == "null" ]]; then
             echo "Failed to resolve latest wasm-bindgen-cli version" >&2
             exit 1
@@ -104,30 +112,32 @@ jobs:
             echo "Nothing to update."
           fi
 
-      - name: Commit & push
+      - name: Commit & push (${{ matrix.target_branch }})
         if: steps.update.outputs.updated == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          branch="${{ github.event.repository.default_branch }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$FILE"
           git commit -m "chore(build-tools): bump trunk to ${{ steps.latest.outputs.trunk_latest }} and wasm-bindgen-cli to ${{ steps.latest.outputs.bindgen_latest }}"
-          git push origin "HEAD:${branch}"
+          git push origin "HEAD:${{ matrix.target_branch }}"
 
-      - name: Trigger prebuild workflow (build tools image)
+      # Trigger tools prebuild only once (on master) to avoid duplicate runs
+      - name: Trigger prebuild workflow (master only)
         id: trigger
-        if: steps.update.outputs.updated == 'true'
+        if: steps.update.outputs.updated == 'true' && matrix.target_branch == 'master'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+
           # Trigger the prebuild workflow by filename and pass the new versions as inputs
           gh workflow run "${PREBUILD_WORKFLOW_FILE}" \
             -f trunk_ver="${{ steps.latest.outputs.trunk_latest }}" \
             -f bindgen_ver="${{ steps.latest.outputs.bindgen_latest }}"
+
           echo "triggered=true" >> "$GITHUB_OUTPUT"
 
       - name: Summary
@@ -135,28 +145,18 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## 🦀 Rust tools bump report"
+            echo "## 🦀 Rust tools bump — branch \`${{ matrix.target_branch }}\`"
             echo ""
             echo "### 📊 Versions"
-            echo "- trunk:    **${{ steps.current.outputs.trunk_current }} ➜ ${{ steps.latest.outputs.trunk_latest }}** $([[ \"${{ steps.update.outputs.trunk_changed }}\" == \"true\" ]] && echo '⬆️' || echo '↔️')"
+            echo "- trunk: **${{ steps.current.outputs.trunk_current }} ➜ ${{ steps.latest.outputs.trunk_latest }}** $([[ \"${{ steps.update.outputs.trunk_changed }}\" == \"true\" ]] && echo '⬆️' || echo '↔️')"
             echo "- wasm-bindgen-cli: **${{ steps.current.outputs.bindgen_current }} ➜ ${{ steps.latest.outputs.bindgen_latest }}** $([[ \"${{ steps.update.outputs.bindgen_changed }}\" == \"true\" ]] && echo '⬆️' || echo '↔️')"
             echo ""
             if [[ "${{ steps.update.outputs.updated }}" == "true" ]]; then
-              echo "### ✅ Update"
-              echo "- Dockerfile updated and committed."
-              echo "- Commit message: \`chore(build-tools): bump trunk to ${{ steps.latest.outputs.trunk_latest }} and wasm-bindgen-cli to ${{ steps.latest.outputs.bindgen_latest }}\`"
-              if [[ "${{ steps.trigger.outputs.triggered || '' }}" == "true" ]]; then
-                echo "- 🚀 Prebuild workflow **triggered**: \`${{ env.PREBUILD_WORKFLOW_FILE }}\`"
-              else
-                echo "- ⏭️ Prebuild workflow **not triggered** (no changes)."
+              echo "✅ Dockerfile updated and committed."
+              if [[ "${{ steps.trigger.outputs.triggered || '' }}" == "true" && "${{ matrix.target_branch }}" == "master" ]]; then
+                echo "🚀 Prebuild workflow triggered."
               fi
             else
-              echo "### ℹ️ No changes"
-              echo "- Already up-to-date. Nothing to commit or build."
+              echo "ℹ️ No update required."
             fi
-            echo ""
-            echo "### 🧰 Diagnostics"
-            echo "- UA: \`${{ env.UA }}\`"
-            echo "- File: \`${{ env.FILE }}\`"
-            echo "- Branch: \`${{ github.event.repository.default_branch }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
