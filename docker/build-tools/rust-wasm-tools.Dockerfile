@@ -11,8 +11,8 @@
 ############################################
 
 ARG RUST_DISTRO=1.89-bookworm
-ARG TRUNK_VER=0.21.14
-ARG BINDGEN_VER=0.2.102
+ARG TRUNK_VER=0.21.13
+ARG BINDGEN_VER=0.2.101
 
 ############################################
 # Builder runs on the BUILDPLATFORM (no QEMU)
