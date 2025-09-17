@@ -59,6 +59,8 @@ jobs:
           context: .
           file: docker/build-tools/rust-wasm-tools.Dockerfile
           platforms: ${{ matrix.platform }}
+          build-args:
+            BUILDKIT_INLINE_CACHE=1
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ matrix.tag }}
