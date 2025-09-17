@@ -1,11 +1,15 @@
+---
 name: Rust Bump trunk & wasm-bindgen-cli
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 4 * * *"
+
 permissions:
   contents: write
+  actions: write
+
 jobs:
   check-and-bump:
     runs-on: ubuntu-latest
@@ -70,16 +74,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          updated=0
+          updated=false
 
           if [ "${{ steps.latest.outputs.trunk_latest }}" != "${{ steps.current.outputs.trunk_current }}" ]; then
             sed -i -E "s/^(ARG TRUNK_VER=).*/\1${{ steps.latest.outputs.trunk_latest }}/" "$FILE"
-            updated=1
+            updated=true
           fi
 
           if [ "${{ steps.latest.outputs.bindgen_latest }}" != "${{ steps.current.outputs.bindgen_current }}" ]; then
             sed -i -E "s/^(ARG BINDGEN_VER=).*/\1${{ steps.latest.outputs.bindgen_latest }}/" "$FILE"
-            updated=1
+            updated=true
           fi
 
           echo "updated=$updated" >> "$GITHUB_OUTPUT"
@@ -89,7 +93,7 @@ jobs:
           fi
 
       - name: Commit & push
-        if: steps.update.outputs.updated == '1'
+        if: steps.update.outputs.updated == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -99,3 +103,10 @@ jobs:
           git add "$FILE"
           git commit -m "chore(build-tools): bump trunk to ${{ steps.latest.outputs.trunk_latest }} and wasm-bindgen-cli to ${{ steps.latest.outputs.bindgen_latest }}"
           git push origin "HEAD:${branch}"
+
+      - name: Build new Rust Wasm Prebuild Image
+        if: steps.update.outputs.updated == 'true'
+        env: 
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run rust-wasm-tools-prebuild.yml
