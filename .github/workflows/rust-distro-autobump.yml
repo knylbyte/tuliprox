@@ -1,8 +1,9 @@
-name: Rust Distro Bump (update ARG RUST_DISTRO)
+---
+name: Rust Distro Bump
 
 on:
   schedule:
-    - cron: "30 0 * * *"
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 permissions:
@@ -52,9 +53,41 @@ jobs:
             done
           }
 
+          # Resolve rust:latest digest first
+          latest_page="$(curl -fsSL \
+            -H "User-Agent: $UA" \
+            -H "Accept: application/json" \
+            --retry 3 --retry-delay 2 --retry-connrefused \
+            "https://registry.hub.docker.com/v2/repositories/library/rust/tags/latest")"
+          latest_digest="$(echo "$latest_page" | jq -r '.digest')"
+          if [[ -z "${latest_digest:-}" || "${latest_digest}" == "null" ]]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "Failed to determine rust:latest digest" >&2
+            exit 1
+          fi
+
+          # Build a full name<tab>digest list from all tag pages
+          all_pairs="$(
+            url="https://registry.hub.docker.com/v2/repositories/library/rust/tags?page_size=100"
+            while [ -n "$url" ]; do
+              page="$(curl -fsSL \
+                -H "User-Agent: $UA" \
+                -H "Accept: application/json" \
+                --retry 3 --retry-delay 2 --retry-connrefused \
+                "$url")"
+              echo "$page" | jq -r '.results[] | [.name, .digest] | @tsv'
+              url="$(echo "$page" | jq -r '.next')"
+              [ "$url" = "null" ] && url=""
+            done
+          )"
+
+          names_matching_digest="$(
+            printf '%s\n' "$all_pairs" | awk -v d="$latest_digest" -F'\t' '$2==d {print $1}'
+          )"
+
           # Keep only tags like "<semver>-<suffix>"; drop alpine/slim variants
           candidates="$(
-            fetch_tags \
+            printf '%s\n' "$names_matching_digest" \
             | grep -E '^[0-9]+(\.[0-9]+){1,2}-[a-z0-9]+$' \
             | grep -Ev '(alpine|slim)'
           )"
