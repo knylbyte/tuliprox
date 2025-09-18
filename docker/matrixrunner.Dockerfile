@@ -7,13 +7,15 @@
 #
 # =================================================================
 
-ARG GHCR_IMAGE
-ARG RUST_VERSION
+ARG BUILDPLATFORM=latest
+ARG GHCR_IMAGE=ghcr.io/euzu/tuliprox
+ARG RUST_DISTRO=3.19-trixie
+
 
 # -----------------------------------------------------------------
 # Stage 1: Build the Rust binary for production
 # -----------------------------------------------------------------
-FROM rust:bookworm AS rust-build
+FROM rust:${RUST_DISTRO} AS rust-build
 
 # Get target architecture
 ARG RUST_TARGET
