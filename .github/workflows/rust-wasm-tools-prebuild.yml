@@ -1,6 +1,5 @@
 ---
-name: Build & Push rust-wasm-tools (prebuild)
-
+name: Docker Build & Push rust-wasm-tools (prebuild)
 
 on:
   workflow_dispatch:
