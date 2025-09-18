@@ -64,7 +64,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args:
             BUILDKIT_INLINE_CACHE=1
-            ALPINE_VERSION=${{ github.event.inputs.alpine_ver }}
+            ALPINE_VERSION=${{ github.event.inputs.alpine_ver || '3.18' }}
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ matrix.tag }}
@@ -123,7 +123,7 @@ jobs:
           if check_file "$USER_EXPIRED"; then echo "user_account_expired=ok" >> "$GITHUB_OUTPUT"; else echo "user_account_expired=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
 
           echo "resources_ok=$ALL_OK" >> "$GITHUB_OUTPUT"
-          echo "alpine_version=${{ github.event.inputs.alpine_ver }}" >> "$GITHUB_OUTPUT"
+          echo "alpine_version=${{ github.event.inputs.alpine_ver || '3.18' }}" >> "$GITHUB_OUTPUT"
 
       # Summary (uses values from the step above)
       - name: Summary
