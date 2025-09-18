@@ -1,6 +1,6 @@
 ARG ALPINE_VERSION=3.18
 
-FROM alpine:${ALPINE_VERSION:-3.18} AS resource-build
+FROM alpine:${ALPINE_VERSION}
 
 RUN apk add --no-cache ffmpeg
 WORKDIR /src
