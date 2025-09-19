@@ -37,6 +37,8 @@ pub struct ConfigDto {
     #[serde(default)]
     pub config_hot_reload: bool,
     #[serde(default)]
+    pub accept_unsecure_ssl_certificates: bool,
+    #[serde(default)]
     pub web_ui: Option<WebUiConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub messaging: Option<MessagingConfigDto>,
@@ -75,6 +77,8 @@ pub struct MainConfigDto {
     pub update_on_boot: bool,
     #[serde(default)]
     pub config_hot_reload: bool,
+    #[serde(default)]
+    pub accept_unsecure_ssl_certificates: bool,
 }
 
 impl Default for MainConfigDto {
@@ -91,6 +95,7 @@ impl Default for MainConfigDto {
             sleep_timer_mins: None,
             update_on_boot: false,
             config_hot_reload: false,
+            accept_unsecure_ssl_certificates: false,
         }
     }
 }
@@ -109,6 +114,7 @@ impl From<&ConfigDto> for MainConfigDto {
             sleep_timer_mins: config.sleep_timer_mins,
             update_on_boot: config.update_on_boot,
             config_hot_reload: config.config_hot_reload,
+            accept_unsecure_ssl_certificates: config.accept_unsecure_ssl_certificates,
         }
     }
 }
@@ -242,5 +248,7 @@ impl ConfigDto {
         self.sleep_timer_mins = main_config.sleep_timer_mins;
         self.update_on_boot = main_config.update_on_boot;
         self.config_hot_reload = main_config.config_hot_reload;
+        self.accept_unsecure_ssl_certificates = main_config.accept_unsecure_ssl_certificates;
+
     }
 }

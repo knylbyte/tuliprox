@@ -395,12 +395,13 @@ pub async fn get_input_json_content(client: Arc<reqwest::Client>, input: &InputS
 
 
 pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
+    let config = cfg.config.load();
     let mut client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .pool_idle_timeout(Duration::from_secs(30))
-        .pool_max_idle_per_host(10);
+        .pool_max_idle_per_host(10)
+        .danger_accept_invalid_certs(config.accept_unsecure_ssl_certificates);
 
-    let config = cfg.config.load();
 
     if let Some(proxy_cfg) = config.proxy.as_ref() {
         match Url::parse(&proxy_cfg.url) {

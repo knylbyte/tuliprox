@@ -49,8 +49,8 @@ pub fn parse_xtream_series_info(info: &Value, group_title: &str, series_name: &s
                     (episode.clone(),
                      PlaylistItem {
                          header: PlaylistItemHeader {
-                             id: episode.id.clone(),
-                             uuid: generate_playlist_uuid(&input.name, &episode.id, PlaylistItemType::Series, &episode_url),
+                             id: episode.id.to_string(),
+                             uuid: generate_playlist_uuid(&input.name, &episode.id.to_string(), PlaylistItemType::Series, &episode_url),
                              name: series_name.to_string(),
                              logo: episode.info.as_ref().map_or_else(String::new, |info| info.movie_image.clone()),
                              group: group_title.to_string(),
@@ -187,5 +187,56 @@ pub fn parse_xtream(input: &ConfigInput,
             }
         }
         Err(err) => Err(err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+    use std::fs;
+    use reqwest::blocking::{Client, get, ClientBuilder};
+    use crate::model::XtreamSeriesInfo;
+
+    #[test]
+    fn test_read_json_file_into_struct() {
+        let file_content = fs::read_to_string("series-info.json").expect("Unable to read file");
+        let _info: XtreamSeriesInfo = serde_json::from_str(&file_content).expect("JSON was not well-formatted");
+
+    }
+
+    fn fetch_image(url: &str) -> Result<(), reqwest::Error> {
+        let client = ClientBuilder::new().danger_accept_invalid_certs(true).build()?;
+
+        let result = client.get(url)
+            .header(reqwest::header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+            .send();
+        if let Err(e) = result {
+            let mut err: &dyn Error = &e;
+            while let Some(src) = err.source() {
+                let _ = println!("\n\nCaused by: {}", src);
+                err = src;
+            }
+            return Err(e);
+        }
+
+        if let Ok(response) = result {
+            if response.status().is_success() {
+                println!("Erfolgreich abgerufen!");
+            } else {
+                println!("Fehler: {}", response.status());
+            }
+
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_image() {
+
+        let url = "https://www.mxgp.com/sites/default/files/news/image/Screenshot%202025-02-27%20at%2011.41.53.png";
+        if let Err(e) = fetch_image(url) {
+            println!("Fehler beim Abrufen: {}", e);
+        }
     }
 }
