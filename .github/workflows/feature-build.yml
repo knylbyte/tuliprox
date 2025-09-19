@@ -1,0 +1,43 @@
+name: Feature Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract branch name
+        id: extract_branch
+        shell: bash
+        run: echo "feature=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          build-args: |
+            RUST_TARGET=x86_64-unknown-linux-musl
+          target: scratch-final
+          tags: ghcr.io/${{ github.actor }}/tuliprox:${{ steps.extract_branch.outputs.feature }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
