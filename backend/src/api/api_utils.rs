@@ -1037,29 +1037,48 @@ async fn build_stream_response(
     resource_url: &str,
     response: reqwest::Response,
 ) -> axum::response::Response {
+    let status = response.status();
     let mut response_builder =
-        axum::response::Response::builder().status(response.status());
+        axum::response::Response::builder().status(status);
+    let has_content_range = !response.headers().contains_key(axum::http::header::CONTENT_RANGE);
     for (key, value) in response.headers() {
-        response_builder = response_builder.header(key, value);
+        let name = key.as_str();
+        let is_hop_by_hop = matches!(
+            name.to_ascii_lowercase().as_str(),
+            "connection"
+                | "keep-alive"
+                | "proxy-authenticate"
+                | "proxy-authorization"
+                | "te"
+                | "trailer"
+                | "transfer-encoding"
+                | "upgrade"
+        );
+        if !is_hop_by_hop {
+            response_builder = response_builder.header(key, value);
+        }
     }
     let byte_stream = response
         .bytes_stream()
         .map_err(|err| StreamError::reqwest(&err));
-    let cache_resource_path = if let Some(cache) = app_state.cache.load().as_ref() {
-        Some(cache.lock().await.store_path(resource_url))
-    } else {
-        None
-    };
-    if let Some(resource_path) = cache_resource_path {
-        if let Ok(file) = create_new_file_for_write(&resource_path) {
-            let writer = BufWriter::new(file);
-            let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
-            let stream = PersistPipeStream::new(byte_stream, writer, add_cache_content);
-            return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(
-                stream
-            )));
+    // Cache only complete responses (200 OK without Content-Range)
+    let can_cache = status == axum::http::StatusCode::OK && !has_content_range;
+    if can_cache {
+        let cache_resource_path = if let Some(cache) = app_state.cache.load().as_ref() {
+            Some(cache.lock().await.store_path(resource_url))
+        } else {
+            None
+        };
+        if let Some(resource_path) = cache_resource_path {
+            if let Ok(file) = create_new_file_for_write(&resource_path) {
+                let writer = BufWriter::new(file);
+                let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
+                let stream = PersistPipeStream::new(byte_stream, writer, add_cache_content);
+                return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(stream)));
+            }
         }
     }
+
     try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(byte_stream)))
 }
 
@@ -1072,6 +1091,7 @@ async fn fetch_resource_with_retry(
 ) -> Option<axum::response::Response> {
     // TODO: add max_attempts to config
     let max_attempts: u32 = 3; //&app_state.app_config.config.load().max_attempts;
+    let backoff_ms: u64 = 250;
     for attempt in 0..max_attempts {
         let client = request::get_client_request(
             &app_state.http_client.load(),
@@ -1104,7 +1124,7 @@ async fn fetch_resource_with_retry(
                         .get(RETRY_AFTER)
                         .and_then(|h| h.to_str().ok())
                         .and_then(|s| s.parse::<u64>().ok())
-                        .map_or(Duration::from_millis(100), Duration::from_secs);
+                        .map_or(Duration::from_millis(backoff_ms), Duration::from_secs);
                     tokio::time::sleep(wait_dur).await;
                     continue;
                 }
@@ -1127,8 +1147,8 @@ async fn fetch_resource_with_retry(
             }
             Err(err) => {
                 if attempt < max_attempts - 1 {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                    continue;
+                   tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                   continue;
                 }
                 error!("Received failure from server {}:  {err}", sanitize_sensitive_info(resource_url));
             }
@@ -1170,13 +1190,13 @@ pub async fn resource_response(
     );
     if let Ok(url) = Url::parse(resource_url) {
         if let Some(resp) =
-            fetch_resource_with_retry(app_state, &url, resource_url, &req_headers, input).await
-        {
+            fetch_resource_with_retry(app_state, &url, resource_url, &req_headers, input).await {
             return resp;
         }
-    } else {
-        error!("Url is malformed {}", sanitize_sensitive_info(resource_url));
+        // Upstream failure after retries
+        return axum::http::StatusCode::BAD_GATEWAY.into_response();
     }
+    error!("Url is malformed {}", sanitize_sensitive_info(resource_url));
     axum::http::StatusCode::BAD_REQUEST.into_response()
 }
 
