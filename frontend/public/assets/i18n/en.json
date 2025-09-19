@@ -206,6 +206,7 @@
     "SLEEP_TIMER_MINS": "Sleep Timer (mins)",
     "CONNECT_TIMEOUT_SECS": "Connect Timeout (secs)",
     "CONFIG_HOT_RELOAD": "Config Hot Reload",
+    "ACCEPT_UNSECURE_SSL_CERTIFICATES": "Accept Unsecure SSL Certificates",
     "CUSTOM_STREAM_RESPONSE_PATH": "Custom Stream Response dir",
     "REVERSE_PROXY": "Reverse Proxy",
     "WEB_SEARCH": "Web Search",

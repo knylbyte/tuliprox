@@ -49,8 +49,8 @@ pub fn parse_xtream_series_info(info: &Value, group_title: &str, series_name: &s
                     (episode.clone(),
                      PlaylistItem {
                          header: PlaylistItemHeader {
-                             id: episode.id.clone(),
-                             uuid: generate_playlist_uuid(&input.name, &episode.id, PlaylistItemType::Series, &episode_url),
+                             id: episode.id.to_string(),
+                             uuid: generate_playlist_uuid(&input.name, &episode.id.to_string(), PlaylistItemType::Series, &episode_url),
                              name: series_name.to_string(),
                              logo: episode.info.as_ref().map_or_else(String::new, |info| info.movie_image.clone()),
                              group: group_title.to_string(),
@@ -188,4 +188,18 @@ pub fn parse_xtream(input: &ConfigInput,
         }
         Err(err) => Err(err)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use crate::model::XtreamSeriesInfo;
+
+    #[test]
+    fn test_read_json_file_into_struct() {
+        let file_content = fs::read_to_string("series-info.json").expect("Unable to read file");
+        let _info: XtreamSeriesInfo = serde_json::from_str(&file_content).expect("JSON was not well-formatted");
+
+    }
+
 }

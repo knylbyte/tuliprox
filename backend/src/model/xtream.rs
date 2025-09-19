@@ -277,8 +277,8 @@ pub struct XtreamSeriesInfoEpisodeInfo {
 // Used for serde_json deserialization, can not be used with bincode
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XtreamSeriesInfoEpisode {
-    #[serde(default, deserialize_with = "string_default_on_null")]
-    pub id: String,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub id: u32,
     #[serde(default, deserialize_with = "string_or_number_u32")]
     pub episode_num: u32,
     #[serde(default, deserialize_with = "string_default_on_null")]
@@ -299,7 +299,7 @@ pub struct XtreamSeriesInfoEpisode {
 
 impl XtreamSeriesInfoEpisode {
     pub fn get_id(&self) -> u32 {
-        self.id.parse::<u32>().unwrap_or(0)
+        self.id
     }
 }
 

@@ -90,6 +90,7 @@ Top level entries in the config files are:
 * `ipcheck` _optional_
 * `config_hot_reload` _optional_, default false.
 * `sleep_timer_mins` _optional_, used for closing stream after the given minutes.
+* `accept_unsecure_ssl_certificates` _optional_, default false.
 
 ### 1.1. `threads`
 If you are running on a cpu which has multiple cores, you can set for example `threads: 2` to run two threads.

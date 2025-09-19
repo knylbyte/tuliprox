@@ -934,6 +934,9 @@ mod tests {
         }
     }
 
+    fn dummy_callback(_: &str, _: usize) {}
+
+
     // Test acquiring with an alias
     #[test]
     fn test_provider_with_alias() {
@@ -943,10 +946,10 @@ mod tests {
         // Adding alias to the provider
         input.aliases = Some(vec![alias]);
 
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
         // Create MultiProviderLineup with the provider and alias
-        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_tx);
+        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Test that the alias provider is available
@@ -968,9 +971,9 @@ mod tests {
         let alias = create_config_input_alias(2, "http://alias.com", 0, 2);
         // Adding alias with different priority
         input.aliases = Some(vec![alias]);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_tx);
+        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_callback);
         // The alias has a higher priority, so the alias should be acquired first
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
@@ -990,9 +993,9 @@ mod tests {
 
         // Adding multiple aliases
         input.aliases = Some(vec![alias1, alias2]);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_tx);
+        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // The alias with priority 0 should be acquired first (higher priority)
@@ -1021,9 +1024,9 @@ mod tests {
 
         // Adding alias
         input.aliases = Some(vec![alias1, alias2]);
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_tx);
+        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Acquire connection from alias2
@@ -1049,10 +1052,9 @@ mod tests {
     #[test]
     fn test_acquire_when_capacity_available() {
         let cfg = create_config_input(1, "provider5_1", 1, 2);
-        let on_connection_change = move |_name, _connections| {};
-        let change_tx = Arc::new(on_connection_change);
+        let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_tx);
+        let lineup = SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // First acquire attempt should succeed
@@ -1071,11 +1073,10 @@ mod tests {
     #[test]
     fn test_release_connection() {
         let cfg = create_config_input(1, "provider7_1", 1, 2);
-        let on_connection_change = move |_name, _connections| {};
-        let change_tx = Arc::new(on_connection_change);
+        let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
 
-        let lineup = SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_tx);
+        let lineup = SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Acquire two connections
@@ -1103,9 +1104,9 @@ mod tests {
         cfg1.aliases = Some(vec![alias]);
 
         // Create MultiProviderLineup with the provider and alias
-        let (change_tx, _) = tokio::sync::mpsc::channel::<(String, usize)>(1);
+        let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = MultiProviderLineup::new(&cfg1,  Some(dummy_get_connection), &change_tx);
+        let lineup = MultiProviderLineup::new(&cfg1,  Some(dummy_get_connection), &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Test acquiring the first provider
@@ -1136,10 +1137,9 @@ mod tests {
     #[test]
     fn test_concurrent_acquire() {
         let cfg = create_config_input(1, "provider9_1", 1, 2);
-        let on_connection_change = move |_name, _connections| {};
-        let change_tx = Arc::new(on_connection_change);
+        let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = Arc::new(SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_tx));
+        let lineup = Arc::new(SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_callback));
 
         let available_count = Arc::new(AtomicU16::new(2));
         let grace_period_count = Arc::new(AtomicU16::new(1));
