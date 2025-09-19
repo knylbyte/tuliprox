@@ -192,9 +192,7 @@ pub fn parse_xtream(input: &ConfigInput,
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
     use std::fs;
-    use reqwest::blocking::{Client, get, ClientBuilder};
     use crate::model::XtreamSeriesInfo;
 
     #[test]
@@ -204,39 +202,4 @@ mod tests {
 
     }
 
-    fn fetch_image(url: &str) -> Result<(), reqwest::Error> {
-        let client = ClientBuilder::new().danger_accept_invalid_certs(true).build()?;
-
-        let result = client.get(url)
-            .header(reqwest::header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-            .send();
-        if let Err(e) = result {
-            let mut err: &dyn Error = &e;
-            while let Some(src) = err.source() {
-                let _ = println!("\n\nCaused by: {}", src);
-                err = src;
-            }
-            return Err(e);
-        }
-
-        if let Ok(response) = result {
-            if response.status().is_success() {
-                println!("Erfolgreich abgerufen!");
-            } else {
-                println!("Fehler: {}", response.status());
-            }
-
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_image() {
-
-        let url = "https://www.mxgp.com/sites/default/files/news/image/Screenshot%202025-02-27%20at%2011.41.53.png";
-        if let Err(e) = fetch_image(url) {
-            println!("Fehler beim Abrufen: {}", e);
-        }
-    }
 }
