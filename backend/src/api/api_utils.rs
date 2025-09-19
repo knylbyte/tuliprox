@@ -1070,7 +1070,9 @@ async fn fetch_resource_with_retry(
     req_headers: &HashMap<String, Vec<u8>>,
     input: Option<&ConfigInput>,
 ) -> Option<axum::response::Response> {
-    for attempt in 0..3 {
+    // TODO: add max_attempts to config
+    let max_attempts: u32 = 3; //&app_state.app_config.config.load().max_attempts;
+    for attempt in 0..max_attempts {
         let client = request::get_client_request(
             &app_state.http_client.load(),
             input.map_or(InputFetchMethod::GET, |i| i.method),
@@ -1096,7 +1098,7 @@ async fn fetch_resource_with_retry(
                             | reqwest::StatusCode::TOO_MANY_REQUESTS
                     );
 
-                if attempt < 2 && should_retry {
+                if attempt < max_attempts -   1 && should_retry {
                     let wait_dur = response
                         .headers()
                         .get(RETRY_AFTER)
@@ -1109,8 +1111,7 @@ async fn fetch_resource_with_retry(
 
                 // For non-retriable statuses or when attempts are exhausted, return upstream response including body
                 debug_if_enabled!(
-                    "Failed to open resource got status {} for {}",
-                    status,
+                    "Failed to open resource got status {status} for {}",
                     sanitize_sensitive_info(resource_url)
                 );
                 let mut response_builder = axum::response::Response::builder().status(status);
@@ -1125,15 +1126,11 @@ async fn fetch_resource_with_retry(
                 ));
             }
             Err(err) => {
-                if attempt < 2 {
+                if attempt < max_attempts - 1 {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
-                error!(
-                    "Received failure from server {}:  {}",
-                    sanitize_sensitive_info(resource_url),
-                    err
-                );
+                error!("Received failure from server {}:  {err}", sanitize_sensitive_info(resource_url));
             }
         }
         break;
