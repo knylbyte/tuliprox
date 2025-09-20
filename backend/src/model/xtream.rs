@@ -141,7 +141,6 @@ macro_rules! add_to_doc_str_property_if_not_exists {
     }
 }
 
-
 impl XtreamStream {
     pub fn get_stream_id(&self) -> u32 {
         self.stream_id.unwrap_or_else(|| self.series_id.unwrap_or(0))
@@ -241,6 +240,10 @@ pub struct XtreamSeriesInfoInfo {
     episode_run_time: String,
     #[serde(default, deserialize_with = "string_or_number_u32")]
     category_id: u32,
+    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    pub tmdb_id: Option<u32>,
+    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    pub tmdb: Option<u32>,
 }
 
 #[allow(non_snake_case)]
@@ -248,6 +251,8 @@ pub struct XtreamSeriesInfoInfo {
 pub struct XtreamSeriesInfoEpisodeInfo {
     #[serde(default, deserialize_with = "opt_string_or_number_u32")]
     pub tmdb_id: Option<u32>,
+    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    pub tmdb: Option<u32>,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub release_date: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
@@ -327,7 +332,7 @@ impl XtreamSeriesEpisode {
             custom_sid: info_episode.custom_sid.clone(),
             added: info_episode.added.clone(),
             season: info_episode.season,
-            tmdb_id: info_episode.info.as_ref().and_then(|info| info.tmdb_id).unwrap_or(0),
+            tmdb_id: info_episode.info.as_ref().and_then(|info| info.tmdb.or(info.tmdb_id)).unwrap_or(0),
             direct_source: info_episode.direct_source.clone(),
         }
     }
@@ -368,7 +373,8 @@ impl XtreamSeriesInfoEpisode {
         add_str_property_if_exists!(result, self.title, "title");
         add_i64_property_if_exists!(result, self.season, "season");
         add_i64_property_if_exists!(result, self.episode_num, "episode");
-        add_opt_i64_property_if_exists!(result, self.info.as_ref().and_then(|info| info.tmdb_id), "tmdb_id");
+        let series_tmdb_id = info.and_then(|i| i.tmdb_id.or(i.tmdb));
+        add_opt_i64_property_if_exists!(result, self.info.as_ref().and_then(|info| info.tmdb_id.or(info.tmdb.or(series_tmdb_id))), "tmdb_id");
         if result.is_empty() { None } else { Some(Value::Object(result)) }
     }
 }

@@ -46,7 +46,18 @@ pub fn parse_xtream_series_info(info: &Value, group_title: &str, series_name: &s
             if let Some(episodes) = &series_info.episodes {
                 let result: Vec<(XtreamSeriesInfoEpisode, PlaylistItem)> = episodes.values().flatten().map(|episode| {
                     let episode_url = create_xtream_series_episode_url(url, username, password, episode);
-                    (episode.clone(),
+                    let mut new_episode = episode.clone();
+
+                    // We need to set the tmdb_id and tmdb from the series info if it is not set.
+                    if let Some(episode_info) = &mut new_episode.info {
+                        if episode_info.tmdb_id.is_none_or(|id| id == 0) && episode_info.tmdb.is_none_or(|id| id == 0) {
+                            let series_tmdb_id = series_info.info.as_ref().and_then(|i| i.tmdb_id.or(i.tmdb));
+                            episode_info.tmdb_id = series_tmdb_id;
+                            episode_info.tmdb = series_tmdb_id;
+                        }
+                    }
+
+                    (new_episode,
                      PlaylistItem {
                          header: PlaylistItemHeader {
                              id: episode.id.to_string(),

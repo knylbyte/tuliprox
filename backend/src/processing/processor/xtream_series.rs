@@ -16,7 +16,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::sync::Arc;
 use std::time::Instant;
-use log::{error, info, log_enabled, Level};
+use log::{error, info, log_enabled, warn, Level};
 use crate::model::{XtreamSeriesEpisode, XtreamSeriesInfoEpisode};
 use crate::utils;
 use crate::processing::processor::xtream::normalize_json_content;
@@ -167,6 +167,10 @@ async fn process_series_info(
         {
             let Some(provider_id) = pli.header.get_provider_id() else { continue; };
             let Ok(content) = info_reader.get(&provider_id)  else { continue; };
+            if content.is_empty() {
+                warn!("Series info content is empty, skipping series with provider id: {provider_id}");
+                continue;
+            }
             match serde_json::from_str::<serde_json::Value>(&content) {
                 Ok(series_content) => {
                     let (group, series_name) = {

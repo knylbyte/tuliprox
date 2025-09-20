@@ -58,7 +58,10 @@ fn sanitize_for_filename(text: &str, underscore_whitespace: bool) -> String {
         sanitized.remove(0);
     }
 
-    // 4. Final check: If sanitization resulted in an empty string, return a default.
+    // 4. Remove empty paaren
+    sanitized = CONSTANTS.export_style_config.paaren.replace_all(sanitized.as_str(), "").trim().to_string();
+
+    // 5. Final check: If sanitization resulted in an empty string, return a default.
     if sanitized.is_empty() {
         EMPTY_FILENAME_REPLACEMENT.to_string()
     } else {
@@ -139,7 +142,6 @@ fn style_rename_year<'a>(
         }
     }
     new_name.push_str(&name[last_index..]);
-
     let smallest_year = years.into_iter().min();
     if smallest_year.is_none() {
         if let Some(rel_date) = release_date {
@@ -257,6 +259,7 @@ struct StrmItemInfo {
     season: Option<String>,
     episode: Option<String>,
     added: Option<u64>,
+    tmdb_id: Option<u32>,
 }
 
 impl StrmItemInfo {
@@ -274,7 +277,7 @@ fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
     let virtual_id = header.virtual_id;
     let input_name = header.input_name.clone();
     let url = header.url.clone();
-    let (series_name, release_date, added, season, episode) = match header.item_type {
+    let (series_name, release_date, added, season, episode, tmdb_id) = match header.item_type {
         PlaylistItemType::Series => {
             let series_name = match header.get_field("name") {
                 Some(name) if !name.is_empty() => Some(name.to_string()),
@@ -286,15 +289,23 @@ fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
             let season = header.get_additional_property_as_str("season");
             let episode = header.get_additional_property_as_str("episode");
             let added = header.get_additional_property_as_u64("added");
-            (series_name, release_date, added, season, episode)
+            let tmdb_id = header
+                .get_additional_property_as_u32("tmdb_id")
+                .filter(|&id| id != 0)
+                .or_else(|| header.get_additional_property_as_u32("tmdb"));
+            (series_name, release_date, added, season, episode, tmdb_id)
         }
         PlaylistItemType::Video => {
             let name = header.get_field("name").map(|v| v.to_string());
             let release_date = header.get_additional_property_as_str("release_date");
             let added = header.get_additional_property_as_u64("added");
-            (name, release_date, added, None, None)
+            let tmdb_id = header
+                .get_additional_property_as_u32("tmdb_id")
+                .filter(|&id| id != 0)
+                .or_else(|| header.get_additional_property_as_u32("tmdb"));
+            (name, release_date, added, None, None, tmdb_id)
         }
-        _ => (None, None, None, None, None),
+        _ => (None, None, None, None, None, None),
     };
     StrmItemInfo {
         group,
@@ -309,6 +320,7 @@ fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
         season,
         episode,
         added,
+        tmdb_id,
     }
 }
 
@@ -685,7 +697,7 @@ async fn style_based_rename(
         strm_item_info.item_type,
     ).await;
 
-    let tmdb_id = tmdb_id_val.map_or(0, |v| match v {
+    let tmdb_id = tmdb_id_val.map_or_else(|| strm_item_info.tmdb_id.unwrap_or(0), |v| match v {
         InputTmdbIndexValue::Video(r) => r.tmdb_id,
         InputTmdbIndexValue::Series(e) => e.tmdb_id,
     });
