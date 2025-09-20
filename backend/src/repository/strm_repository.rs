@@ -853,7 +853,7 @@ pub async fn write_strm_playlist(
     for strm_file in strm_files {
         // file paths
         let output_path = truncate_filename(&root_path.join(&strm_file.dir_path), 255);
-        let file_path =  &output_path.join(format!("{}.strm", truncate_string(&strm_file.file_name, 252)));
+        let file_path =  &output_path.join(format!("{}.strm", truncate_string(&strm_file.file_name, 250)));
         let file_exists = file_path.exists();
         let relative_file_path = get_relative_path_str(file_path, &root_path);
 
@@ -1049,12 +1049,12 @@ fn get_strm_url(
 // /////////////////////////////////////////////
 // - Cleanup -
 // We first build a Directory Tree to
-// identifiy the deletable files and directories
+//  identify the deletable files and directories
 // /////////////////////////////////////////////
 #[derive(Debug, Clone)]
 struct DirNode {
     path: PathBuf,
-    is_root: bool, // is root -> not delete!
+    is_root: bool, // is root -> do not delete!
     has_files: bool, //  has content -> do not delete!
     children: HashSet<PathBuf>,
     parent: Option<PathBuf>,
