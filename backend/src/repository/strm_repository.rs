@@ -7,8 +7,8 @@ use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage::{ensure_target_storage_path, get_input_storage_path};
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::{xtream_get_record_file_path, InputVodInfoRecord};
-use shared::utils::{extract_extension_from_url, hash_bytes, ExportStyleConfig, CONSTANTS};
-use crate::utils::FileReadGuard;
+use shared::utils::{extract_extension_from_url, hash_bytes, truncate_string, ExportStyleConfig, CONSTANTS};
+use crate::utils::{truncate_filename, FileReadGuard};
 use chrono::Datelike;
 use filetime::{set_file_times, FileTime};
 use log::{error, trace};
@@ -852,10 +852,10 @@ pub async fn write_strm_playlist(
     ).await;
     for strm_file in strm_files {
         // file paths
-        let output_path = root_path.join(&strm_file.dir_path);
-        let file_path = output_path.join(format!("{}.strm", strm_file.file_name));
+        let output_path = truncate_filename(&root_path.join(&strm_file.dir_path), 255);
+        let file_path =  &output_path.join(format!("{}.strm", truncate_string(&strm_file.file_name, 252)));
         let file_exists = file_path.exists();
-        let relative_file_path = get_relative_path_str(&file_path, &root_path);
+        let relative_file_path = get_relative_path_str(file_path, &root_path);
 
         // create content
         let url = get_strm_url(target_force_redirect, user_and_server_info.as_ref(), &strm_file.strm_info);
@@ -866,7 +866,7 @@ pub async fn write_strm_playlist(
         let content_hash = hash_bytes(content_as_bytes);
 
         // check if file exists and has same hash
-        if file_exists && has_strm_file_same_hash(&file_path, content_hash).await {
+        if file_exists && has_strm_file_same_hash(file_path, content_hash).await {
             processed_strm.insert(relative_file_path);
             continue; // skip creation
         }
@@ -877,7 +877,7 @@ pub async fn write_strm_playlist(
         }
 
         match write_strm_file(
-            &file_path,
+            file_path,
             content_as_bytes,
             strm_file.strm_info.get_file_ts(),
         ).await

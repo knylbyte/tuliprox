@@ -15,7 +15,7 @@ fn value_to_string(v: &Value) -> Option<String> {
     }
 }
 
-pub fn deserialize_as_option_rc_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+pub fn deserialize_as_option_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -28,7 +28,7 @@ where
     }
 }
 
-pub fn deserialize_as_rc_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub fn deserialize_as_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -52,8 +52,7 @@ where
     })
 }
 
-
-pub fn deserialize_number_from_string<'de, D, T: DeserializeOwned>(
+pub fn deserialize_number_from_string<'de, D, T: DeserializeOwned  + std::str::FromStr>(
     deserializer: D,
 ) -> Result<Option<T>, D::Error>
 where
@@ -78,8 +77,17 @@ where
         MaybeNumber::Value(value) => Ok(value),
 
         // (if it is any other string)
-        MaybeNumber::NumberString(string) => {
-            serde_json::from_str::<T>(string.as_str()).map_or_else(|_| Ok(None), |val| Ok(Some(val)))
+        MaybeNumber::NumberString(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return Ok(None);
+            }
+            // parse string to number, if fails return None
+            if let Ok(num) = s.parse::<T>() {
+                return Ok(Some(num));
+            }
+
+            serde_json::from_str::<T>(s).map_or_else(|_| Ok(None), |val| Ok(Some(val)))
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, XtreamTargetOutput};
 use shared::model::{xtream_const, PlaylistItem,XtreamPlaylistItem};
-use shared::utils::{deserialize_as_option_rc_string, deserialize_as_rc_string, deserialize_as_string_array, deserialize_number_from_string,
+use shared::utils::{deserialize_as_option_string, deserialize_as_string, deserialize_as_string_array, deserialize_number_from_string,
                     opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32, get_non_empty_str};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -11,9 +11,9 @@ use shared::model::{ClusterFlags, PlaylistEntry, XtreamCluster};
 
 #[derive(Deserialize, Default)]
 pub struct XtreamCategory {
-    #[serde(deserialize_with = "deserialize_as_rc_string")]
+    #[serde(deserialize_with = "deserialize_as_string")]
     pub category_id: String,
-    #[serde(deserialize_with = "deserialize_as_rc_string")]
+    #[serde(deserialize_with = "deserialize_as_string")]
     pub category_name: String,
     //pub parent_id: i32,
     #[serde(default)]
@@ -28,66 +28,68 @@ impl XtreamCategory {
 
 #[derive(Serialize, Deserialize)]
 pub struct XtreamStream {
-    #[serde(default, deserialize_with = "deserialize_as_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_string")]
     pub name: String,
-    #[serde(default, deserialize_with = "deserialize_as_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_string")]
     pub category_id: String,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub stream_id: Option<u32>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub series_id: Option<u32>,
-    #[serde(default, deserialize_with = "deserialize_as_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_string")]
     pub stream_icon: String,
-    #[serde(default, deserialize_with = "deserialize_as_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_string")]
     pub direct_source: String,
 
     // optional attributes
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub custom_sid: Option<String>,
     #[serde(default, deserialize_with = "deserialize_as_string_array")]
     pub backdrop_path: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub added: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub cast: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub container_extension: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub cover: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub director: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub episode_run_time: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub genre: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub last_modified: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub plot: Option<String>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub rating: Option<f64>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub rating_5based: Option<f64>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub release_date: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub stream_type: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub title: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub year: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub trailer: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub youtube_trailer: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub epg_channel_id: Option<String>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub tv_archive: Option<i32>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub tv_archive_duration: Option<i32>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
-    pub tmdb: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub tmdb: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub tmdb_id: Option<u32>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub is_adult: Option<i32>,
 
@@ -153,7 +155,8 @@ impl XtreamStream {
                 result.insert(String::from(xtream_const::XC_PROP_BACKDROP_PATH), Value::Array(Vec::from([Value::String(String::from(bdpath.first()?))])));
             }
         }
-        add_rc_str_property_if_exists!(result, self.tmdb, "tmdb");
+
+        add_rc_str_property_if_exists!(result, self.tmdb_id.or(self.tmdb), "tmdb");
         add_rc_str_property_if_exists!(result, self.added, "added");
         add_rc_str_property_if_exists!(result, self.cast, "cast");
         add_rc_str_property_if_exists!(result, self.container_extension, "container_extension");
@@ -332,7 +335,7 @@ impl XtreamSeriesEpisode {
             custom_sid: info_episode.custom_sid.clone(),
             added: info_episode.added.clone(),
             season: info_episode.season,
-            tmdb_id: info_episode.info.as_ref().and_then(|info| info.tmdb.or(info.tmdb_id)).unwrap_or(0),
+            tmdb_id: info_episode.info.as_ref().and_then(|info| info.tmdb_id.or(info.tmdb)).unwrap_or(0),
             direct_source: info_episode.direct_source.clone(),
         }
     }
