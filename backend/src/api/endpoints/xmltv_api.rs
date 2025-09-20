@@ -130,13 +130,13 @@ fn serve_epg_with_timeshift(
         match xml_reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) if e.name().as_ref() == b"programme" => {
                 // Modify the attributes
-                let mut elem = BytesStart::from(e.name());
+                let mut elem = BytesStart::new("programme");
                 for attr in e.attributes() {
                     match attr {
                         Ok(attr) if attr.key.as_ref() == b"start" => {
                             let start_value = attr
                                 .decode_and_unescape_value(xml_reader.decoder())
-                                .expect("Failed to decode start attribute");
+                                .expect("Failed to decode the start attribute");
                             // Modify the start attribute value as needed
                             elem.push_attribute((
                                 "start",
@@ -146,7 +146,7 @@ fn serve_epg_with_timeshift(
                         Ok(attr) if attr.key.as_ref() == b"stop" => {
                             let stop_value = attr
                                 .decode_and_unescape_value(xml_reader.decoder())
-                                .expect("Failed to decode stop attribute");
+                                .expect("Failed to decode the stop attribute");
                             // Modify the stop attribute value as needed
                             elem.push_attribute((
                                 "stop",

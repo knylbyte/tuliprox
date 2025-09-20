@@ -1,6 +1,6 @@
 use crate::model::Config;
 use crate::model::{ApiProxyConfig, AppConfig, SourcesConfig};
-use crate::{print_info, utils};
+use crate::{utils};
 use crate::utils::file_reader;
 use crate::utils::sys_utils::exit;
 use crate::utils::{open_file, read_mappings_file, EnvResolvingReader, FileLockManager};
@@ -239,7 +239,7 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
         encrypt_secret: Default::default(),
     };
     app_config.prepare(include_computed)?;
-    print_info(&app_config);
+    //print_info(&app_config);
 
     if let Some(mappings_file) = &paths.mapping_file_path {
         match utils::read_mappings(mappings_file.as_str(), resolve_env) {

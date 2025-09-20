@@ -91,6 +91,14 @@ impl Substring for String {
 }
 
 
+pub fn truncate_string(s: &str, max_len: usize) -> String {
+    if s.chars().count() <= max_len {
+        s.to_string()
+    } else {
+        s.chars().take(max_len).collect()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
