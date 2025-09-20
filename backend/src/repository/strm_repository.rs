@@ -697,10 +697,11 @@ async fn style_based_rename(
         strm_item_info.item_type,
     ).await;
 
-    let tmdb_id = tmdb_id_val.map_or_else(|| strm_item_info.tmdb_id.unwrap_or(0), |v| match v {
-        InputTmdbIndexValue::Video(r) => r.tmdb_id,
-        InputTmdbIndexValue::Series(e) => e.tmdb_id,
-    });
+    let tmdb_id = match tmdb_id_val {
+        Some(InputTmdbIndexValue::Video(r)) if r.tmdb_id != 0 => r.tmdb_id,
+        Some(InputTmdbIndexValue::Series(e)) if e.tmdb_id != 0 => e.tmdb_id,
+        _ => strm_item_info.tmdb_id.unwrap_or(0),
+    };
 
     // Dispatch the call to the responsible function based on the style.
     match style {
@@ -853,9 +854,10 @@ pub async fn write_strm_playlist(
     for strm_file in strm_files {
         // file paths
         let output_path = truncate_filename(&root_path.join(&strm_file.dir_path), 255);
-        let file_path =  &output_path.join(format!("{}.strm", truncate_string(&strm_file.file_name, 250)));
+        let file_path =  output_path.join(format!("{}.strm", truncate_string(&strm_file.file_name, 250)));
+
         let file_exists = file_path.exists();
-        let relative_file_path = get_relative_path_str(file_path, &root_path);
+        let relative_file_path = get_relative_path_str(&file_path, &root_path);
 
         // create content
         let url = get_strm_url(target_force_redirect, user_and_server_info.as_ref(), &strm_file.strm_info);
@@ -866,7 +868,7 @@ pub async fn write_strm_playlist(
         let content_hash = hash_bytes(content_as_bytes);
 
         // check if file exists and has same hash
-        if file_exists && has_strm_file_same_hash(file_path, content_hash).await {
+        if file_exists && has_strm_file_same_hash(&file_path, content_hash).await {
             processed_strm.insert(relative_file_path);
             continue; // skip creation
         }
@@ -877,7 +879,7 @@ pub async fn write_strm_playlist(
         }
 
         match write_strm_file(
-            file_path,
+            &file_path,
             content_as_bytes,
             strm_file.strm_info.get_file_ts(),
         ).await

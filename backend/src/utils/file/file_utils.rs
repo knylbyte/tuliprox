@@ -338,19 +338,23 @@ pub fn truncate_filename(path: &Path, max_len: usize) -> PathBuf {
         .and_then(|s| s.to_str())
         .unwrap_or_default();
 
-    let truncated_name = if file_name.len() > max_len {
+    let truncated_name = if file_name.chars().count() > max_len {
         // If a filename extension exists, keep it
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             let ext_len = ext.len() + 1; // +1 for the dot
             if max_len > ext_len {
                 let name_len = max_len - ext_len;
-                format!("{}.{ext}", &file_name[..name_len])
+                let name_without_ext = path.file_stem()
+                                        .and_then(|s| s.to_str())
+                                        .unwrap_or_default();
+                let truncated = name_without_ext.chars().take(name_len).collect::<String>();
+                format!("{truncated}.{ext}")
             } else {
                 // it is not enoguh for the extension, so just truncate the filename
-                file_name[..max_len].to_string()
+                file_name.chars().take(max_len).collect()
             }
         } else {
-            file_name[..max_len].to_string()
+            file_name.chars().take(max_len).collect()
         }
     } else {
         file_name.to_string()
