@@ -6,6 +6,11 @@
 # Rust and JavaScript. The image can be extended with Node.js and Yarn if needed for frontend development.
 # This prebuild Image will be autoupdated by the CI/CD pipeline on new versions of the tools.
 
+# Preinstall tools for both:
+# - Stage 1 (native Rust binary; musl on amd64/arm64, gnu for armv7)
+# - Stage 2 (WASM via trunk + wasm-bindgen)
+# No OpenSSL dev packages needed (we use rustls in the app).
+
 ############################################
 # Global args and settings
 ############################################
@@ -15,7 +20,7 @@ ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.103
 
 ############################################
-# Builder runs on the BUILDPLATFORM (no QEMU)
+# Builder (runs on BUILDPLATFORM; no QEMU)
 ############################################
 FROM --platform=$BUILDPLATFORM rust:${RUST_DISTRO} AS builder
 
@@ -28,8 +33,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:$PATH
 
-# Map Docker TARGETPLATFORM -> Rust target triple
-# Extend if you add more platforms later
+# Map Docker TARGETPLATFORM -> Rust target triple for tool binaries
 RUN case "$TARGETPLATFORM" in \
       "linux/arm/v7")  echo armv7-unknown-linux-gnueabihf  > /rust-target ;; \
       "linux/arm64")   echo aarch64-unknown-linux-gnu      > /rust-target ;; \
@@ -37,9 +41,7 @@ RUN case "$TARGETPLATFORM" in \
       *) echo "Unsupported TARGETPLATFORM: $TARGETPLATFORM" && exit 1 ;; \
     esac
 
-# Minimal toolchains to cross-compile Rust binaries
-# (armv7/arm64 linkers; amd64 uses native strip)
-# Builder stage (runs on BUILDPLATFORM)
+# Cross toolchains (for building tool binaries only)
 RUN --mount=type=cache,id=apt-builder-cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,id=apt-builder-lib,target=/var/lib/apt,sharing=locked \
     set -eux; \
@@ -59,20 +61,20 @@ RUN --mount=type=cache,id=apt-builder-cache,target=/var/cache/apt,sharing=locked
     esac; \
     rm -rf /var/lib/apt/lists/*
 
-# Add std for wasm32 and the native target triple we compile for
+# Targets for building the tool binaries we ship
 RUN rustup target add wasm32-unknown-unknown $(cat /rust-target)
 
-# Tell cargo which linker to use for cross targets
+# Linkers for cross tool builds
 ENV CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc \
     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
 
-# Speed up builds for tool binaries (they're not perf-critical)
+# Faster (non-critical) tool builds
 ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=64 \
     CARGO_PROFILE_RELEASE_LTO=off \
     CARGO_PROFILE_RELEASE_DEBUG=false \
     CARGO_PROFILE_RELEASE_OPT_LEVEL=2
 
-# Build tool binaries for the target platform (no QEMU)
+# Build trunk & wasm-bindgen for the target platform
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo install --locked trunk --version ${TRUNK_VER} \
@@ -80,7 +82,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install --locked wasm-bindgen-cli --version ${BINDGEN_VER} \
       --target "$(cat /rust-target)" --root /out
 
-# Strip binaries to reduce size (best-effort)
+# Strip (best-effort)
 RUN case "$(cat /rust-target)" in \
       armv7-unknown-linux-gnueabihf)  arm-linux-gnueabihf-strip /out/bin/trunk /out/bin/wasm-bindgen || true ;; \
       aarch64-unknown-linux-gnu)      aarch64-linux-gnu-strip   /out/bin/trunk /out/bin/wasm-bindgen || true ;; \
@@ -88,7 +90,7 @@ RUN case "$(cat /rust-target)" in \
     esac
 
 ############################################
-# Final image runs on the TARGETPLATFORM
+# Final (runs on TARGETPLATFORM)
 ############################################
 FROM rust:${RUST_DISTRO}
 
@@ -103,17 +105,32 @@ ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:$PATH
 
-# System dependencies required by Trunk/wasm + Binaryen/Clang
-RUN --mount=type=cache,id=apt-final-cache,target=/var/cache/apt \
-    --mount=type=cache,id=apt-final-lib,target=/var/lib/apt \
-    apt-get update && apt-get install -y --no-install-recommends \
-      pkg-config libssl-dev curl ca-certificates libclang-dev binaryen && \
+# System deps for both app stages (no OpenSSL, rustls in app):
+RUN --mount=type=cache,id=apt-final-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=apt-final-lib,target=/var/lib/apt,sharing=locked \
+    set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      pkg-config musl-tools \
+      curl ca-certificates \
+      libclang-dev binaryen; \
     rm -rf /var/lib/apt/lists/*
 
-# Add the wasm target (used by downstream builds)
-RUN rustup target add wasm32-unknown-unknown
+# Targets commonly used by the app:
+# - wasm (frontend)
+# - musl (static server on amd64/arm64)
+# - armv7 gnu (server on 32-bit ARM; built on arm64 runner)
+RUN rustup target add \
+      wasm32-unknown-unknown \
+      x86_64-unknown-linux-musl \
+      aarch64-unknown-linux-musl \
+      armv7-unknown-linux-gnueabihf
 
-# Copy the prebuilt tool binaries from builder
+# Linkers for musl targets (override in CI if needed)
+ENV CC_x86_64_unknown_linux_musl=musl-gcc \
+    CC_aarch64_unknown_linux_musl=musl-gcc
+
+# Ship tool binaries
 COPY --from=builder /out/bin/trunk /usr/local/cargo/bin/trunk
 COPY --from=builder /out/bin/wasm-bindgen /usr/local/cargo/bin/wasm-bindgen
 
