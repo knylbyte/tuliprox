@@ -284,7 +284,7 @@ jobs:
             echo "is_new=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Build final (scratch or alpine) with CACHE
+      # --- Build final (scratch or alpine) with CACHE ---
       - name: Step 2.8 - Build final (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
@@ -294,8 +294,7 @@ jobs:
           push: true
           build-args: |
             GHCR_NS=${{ env.GHCR_NS }}
-            PREBUILD_TOOLS_TAG=${{ matrix.arch_tag }}
-            RESOURCES_TAG=${{ matrix.arch_tag }}
+            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
           target: ${{ steps.plan.outputs.target == 'both-dev' && 'final-scratch' || steps.plan.outputs.target }}
           tags: |
             ${{ env.IMAGE }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
@@ -316,8 +315,7 @@ jobs:
           push: true
           build-args: |
             GHCR_NS=${{ env.GHCR_NS }}
-            PREBUILD_TOOLS_TAG=${{ matrix.arch_tag }}
-            RESOURCES_TAG=${{ matrix.arch_tag }}
+            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
           target: final-alpine
           tags: |
             ${{ env.IMAGE }}:temp-dev-alpine-${{ matrix.arch_tag }}
