@@ -1,26 +1,18 @@
-# For fastser builds we precompile the tools we need for building Rust WASM projects.
-# This Dockerfile is used to create a base image with the necessary tools installed.
-# It installs the Rust toolchain, the `trunk` build tool, and the `wasm-bindgen-cli` tool.
-# The image is based on the official Rust image and uses Debian Bookworm as the base OS.
-# The `trunk` tool is used for building and serving Rust WASM applications, while `wasm-bindgen-cli` is used for generating bindings between
-# Rust and JavaScript. The image can be extended with Node.js and Yarn if needed for frontend development.
-# This prebuild Image will be autoupdated by the CI/CD pipeline on new versions of the tools.
-
-# Preinstall tools for both:
-# - Stage 1 (native Rust binary; musl on amd64/arm64, gnu for armv7)
+# Preinstall all tools needed to speed up both:
+# - Stage 1 (native Rust binary; musl on amd64/arm64/armv7)
 # - Stage 2 (WASM via trunk + wasm-bindgen)
-# No OpenSSL dev packages needed (we use rustls in the app).
+# No OpenSSL dev packages are needed (the app uses rustls).
 
 ############################################
-# Global args and settings
+# Global args and versions
 ############################################
-
 ARG RUST_DISTRO=1.90.0-trixie
 ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.103
 
 ############################################
-# Builder (runs on BUILDPLATFORM; no QEMU)
+# Builder runs on the BUILDPLATFORM (no QEMU)
+# -> builds the tool binaries (trunk/wasm-bindgen) for TARGETPLATFORM
 ############################################
 FROM --platform=$BUILDPLATFORM rust:${RUST_DISTRO} AS builder
 
@@ -33,7 +25,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:$PATH
 
-# Map Docker TARGETPLATFORM -> Rust target triple for tool binaries
+# Map Docker TARGETPLATFORM -> Rust target triple for *tool binaries*.
+# Tools must run inside the final image for that platform (gnu is fine here).
 RUN case "$TARGETPLATFORM" in \
       "linux/arm/v7")  echo armv7-unknown-linux-gnueabihf  > /rust-target ;; \
       "linux/arm64")   echo aarch64-unknown-linux-gnu      > /rust-target ;; \
@@ -41,7 +34,7 @@ RUN case "$TARGETPLATFORM" in \
       *) echo "Unsupported TARGETPLATFORM: $TARGETPLATFORM" && exit 1 ;; \
     esac
 
-# Cross toolchains (for building tool binaries only)
+# Cross toolchains so we can produce tool binaries for the platform above
 RUN --mount=type=cache,id=apt-builder-cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,id=apt-builder-lib,target=/var/lib/apt,sharing=locked \
     set -eux; \
@@ -61,20 +54,20 @@ RUN --mount=type=cache,id=apt-builder-cache,target=/var/cache/apt,sharing=locked
     esac; \
     rm -rf /var/lib/apt/lists/*
 
-# Targets for building the tool binaries we ship
+# Targets required for tool builds
 RUN rustup target add wasm32-unknown-unknown $(cat /rust-target)
 
 # Linkers for cross tool builds
 ENV CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc \
     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
 
-# Faster (non-critical) tool builds
+# Speed up (tools are not perf-critical)
 ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=64 \
     CARGO_PROFILE_RELEASE_LTO=off \
     CARGO_PROFILE_RELEASE_DEBUG=false \
     CARGO_PROFILE_RELEASE_OPT_LEVEL=2
 
-# Build trunk & wasm-bindgen for the target platform
+# Build trunk & wasm-bindgen for the platform-specific tool image
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo install --locked trunk --version ${TRUNK_VER} \
@@ -90,7 +83,8 @@ RUN case "$(cat /rust-target)" in \
     esac
 
 ############################################
-# Final (runs on TARGETPLATFORM)
+# Final image runs on the TARGETPLATFORM
+# -> contains all build deps + rust targets for your app
 ############################################
 FROM rust:${RUST_DISTRO}
 
@@ -105,7 +99,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:$PATH
 
-# System deps for both app stages (no OpenSSL, rustls in app):
+# System deps for both stages of the app:
+# - Stage 1 (native binary): musl-tools (for musl static builds)
+# - Stage 2 (WASM): libclang-dev, binaryen
+# Keep it lean; no OpenSSL dev packages (we use rustls).
 RUN --mount=type=cache,id=apt-final-cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,id=apt-final-lib,target=/var/lib/apt,sharing=locked \
     set -eux; \
@@ -116,24 +113,28 @@ RUN --mount=type=cache,id=apt-final-cache,target=/var/cache/apt,sharing=locked \
       libclang-dev binaryen; \
     rm -rf /var/lib/apt/lists/*
 
-# Targets commonly used by the app:
-# - wasm (frontend)
-# - musl (static server on amd64/arm64)
-# - armv7 gnu (server on 32-bit ARM; built on arm64 runner)
+# Add rust targets used by the application:
+# - wasm32 (frontend)
+# - musl on amd64/arm64/armv7 (static)
 RUN rustup target add \
       wasm32-unknown-unknown \
       x86_64-unknown-linux-musl \
       aarch64-unknown-linux-musl \
-      armv7-unknown-linux-gnueabihf
+      armv7-unknown-linux-musleabihf
 
-# Linkers for musl targets (override in CI if needed)
+# Tell cargo which C compiler/linker to use for musl targets
+# (when building *inside* the platform-native tool image)
 ENV CC_x86_64_unknown_linux_musl=musl-gcc \
-    CC_aarch64_unknown_linux_musl=musl-gcc
+    CC_aarch64_unknown_linux_musl=musl-gcc \
+    CC_armv7_unknown_linux_musleabihf=musl-gcc \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
+    CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=musl-gcc
 
-# Ship tool binaries
+# Ship tool binaries built in the builder stage
 COPY --from=builder /out/bin/trunk /usr/local/cargo/bin/trunk
 COPY --from=builder /out/bin/wasm-bindgen /usr/local/cargo/bin/wasm-bindgen
 
-# Quick sanity check
+# Quick sanity
 RUN chmod +x /usr/local/cargo/bin/trunk /usr/local/cargo/bin/wasm-bindgen \
  && trunk --version && wasm-bindgen --version
