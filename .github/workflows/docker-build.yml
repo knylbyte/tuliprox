@@ -16,6 +16,10 @@ on:
       - 'bugfix/**'
       - 'hotfix/**'
 
+concurrency:
+  group: build-and-pusch-tuliprox
+  cancel-in-progress: true
+
 permissions:
   contents: write
   packages: write
