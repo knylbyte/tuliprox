@@ -1,4 +1,5 @@
-name: Build & Release (final images)
+---
+name: Docker Build & Release
 
 on:
   workflow_dispatch:
@@ -29,27 +30,28 @@ jobs:
   prebuilds:
     name: Ensure prebuilds exist
     runs-on: ubuntu-24.04
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Step 1.1 - Checkout
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Login to GHCR
+      - name: Step 1.2 - Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set arch list
+      - name: Step 1.3 - Set arch list
         id: arch
         shell: bash
         run: |
           set -euo pipefail
           echo "archs=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
 
-      - name: Check prebuild availability (all archs)
+      - name: Step 1.4 - Check prebuild availability (all archs)
         id: check
         shell: bash
         env:
@@ -70,7 +72,7 @@ jobs:
           echo "need_tools=$need_tools" >> "$GITHUB_OUTPUT"
           echo "need_res=$need_res"     >> "$GITHUB_OUTPUT"
 
-      - name: Trigger missing prebuilds & wait
+      - name: Step 1.5 - Trigger missing prebuilds & wait
         if: steps.check.outputs.need_tools == 'true' || steps.check.outputs.need_res == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,6 +85,7 @@ jobs:
             echo "⏳ Triggering workflow: $wf"
             gh workflow run "$wf"
             sleep 3
+
             # Find the latest run id for that workflow
             local run_id
             run_id="$(gh run list --workflow "$wf" --limit 1 --json databaseId -q '.[0].databaseId')"
@@ -101,7 +104,7 @@ jobs:
             trigger_and_wait "resources-prebuild.yml"
           fi
 
-      - name: Verify prebuild tags (poll until present)
+      - name: Step 1.6 - Verify prebuild tags (poll until present)
         if: steps.check.outputs.need_tools == 'true' || steps.check.outputs.need_res == 'true'
         shell: bash
         env:
@@ -109,6 +112,7 @@ jobs:
           RES_IMAGE: ${{ env.GHCR_NS }}/resources
         run: |
           set -euo pipefail
+
           # Poll for up to ~10 minutes
           for i in $(seq 1 60); do
             missing=0
@@ -123,22 +127,23 @@ jobs:
             echo "… waiting for prebuild tags to appear (try $i/60)"
             sleep 10
           done
+
           echo "❌ Timeout waiting for prebuild images" >&2
           exit 1
 
-      - name: Summary (prebuilds)
+      - name: Step 1.7 - Summary (prebuilds)
         if: always()
         shell: bash
         run: |
           {
             echo "## 🧩 Prebuilds"
             if [[ "${{ steps.check.outputs.need_tools }}" == "true" || "${{ steps.check.outputs.need_res }}" == "true" ]]; then
-              echo "✅ Ensured required prebuild images exist (triggered & waited)."
+              echo "✅ Missing prebuilds were triggered and completed."
             else
-              echo "✅ Prebuild images already present for all archs."
+              echo "✅ All required prebuilds already present."
             fi
             echo ""
-            echo "### 📦 Checked tags"
+            echo "### 📦 Tags checked"
             for a in ${{ steps.arch.outputs.archs }}; do
               echo "- \`${{ env.GHCR_NS }}/rust-wasm-tools:${a}\`"
               echo "- \`${{ env.GHCR_NS }}/resources:${a}\`"
@@ -162,23 +167,24 @@ jobs:
           - platform: linux/arm/v7
             runner: ubuntu-24.04-arm
             arch_tag: linux-armv7
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Step 2.1 - Checkout
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Set up QEMU
+      - name: Step 2.2 - Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: ${{ matrix.platform }}
 
-      - name: Set up Buildx
+      - name: Step 2.3 - Set up Buildx
         uses: docker/setup-buildx-action@v3
         with:
           platforms: ${{ matrix.platform }}
 
-      - name: Login to GHCR
+      - name: Step 2.4 - Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -186,7 +192,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # --- Read version from CHANGELOG.md ---
-      - name: Read version from CHANGELOG.md
+      - name: Step 2.5 - Read version
         id: version
         shell: bash
         run: |
@@ -199,13 +205,12 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
       # --- Decide plan and tags ---
-      - name: Decide build plan
+      - name: Step 2.6 - Decide plan
         id: plan
         shell: bash
         run: |
           set -euo pipefail
           ref="${GITHUB_REF_NAME}"
-
           target="${{ github.event.inputs.target || '' }}"
           [[ -z "$target" ]] && target=""
 
@@ -255,14 +260,13 @@ jobs:
                 ;;
             esac
           fi
-
           printf "%s\n" "${tags[@]}" > /tmp/tags.txt
           echo "plan=$plan" >> "$GITHUB_OUTPUT"
           echo "target=$target" >> "$GITHUB_OUTPUT"
           echo "tags_file=/tmp/tags.txt" >> "$GITHUB_OUTPUT"
 
-      # --- New version detection & release (master only) ---
-      - name: Detect new version (master only)
+      # --- Detect new version (only to decide Release later; tagging happens after build) ---
+      - name: Step 2.7 - Detect new version (master only)
         id: newver
         if: steps.plan.outputs.plan == 'master'
         shell: bash
@@ -276,61 +280,8 @@ jobs:
             echo "is_new=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Extract release notes (master only, new version)
-        id: notes
-        if: steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ver="${{ steps.version.outputs.version }}"
-          awk -v ver="$ver" '
-            BEGIN{print_header=0}
-            $0 ~ "^# "ver" " {print_header=1; print; next}
-            print_header && $0 ~ "^# [0-9]+\\.[0-9]+\\.[0-9]+" {exit}
-            print_header {print}
-          ' CHANGELOG.md > release_notes.md
-          echo "notes_file=$PWD/release_notes.md" >> "$GITHUB_OUTPUT"
-
-      - name: Bump Cargo.toml + tag + push (master only, new version)
-        if: steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          ver="${{ steps.version.outputs.version }}"
-          update_file() {
-            local f="$1"
-            awk -v newv="$ver" '
-              BEGIN{in_pkg=0}
-              /^\[package\]/{in_pkg=1; print; next}
-              /^\[/{in_pkg=0; print; next}
-              in_pkg && /^version *= *"/{
-                sub(/^version *= *".*"$/, "version = \"" newv "\""); print; next
-              }
-              {print}
-            ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-          }
-          for f in Cargo.toml backend/Cargo.toml frontend/Cargo.toml shared/Cargo.toml; do
-            [[ -f "$f" ]] && update_file "$f"
-          done
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml backend/Cargo.toml frontend/Cargo.toml shared/Cargo.toml || true
-          git commit -m "chore(release): bump to v${ver} [skip ci]" || true
-          git tag -a "v${ver}" -m "v${ver}"
-          git push origin "HEAD:${GITHUB_REF_NAME}" --tags
-
-      - name: Create GitHub Release (master only, new version)
-        if: steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ver="${{ steps.version.outputs.version }}"
-          gh release create "v${ver}" --title "v${ver}" --notes-file "${{ steps.notes.outputs.notes_file }}"
-
-      # --- Build final images (scratch by default; dev builds alpine additionally) ---
-      - name: Build final (${{ matrix.platform }})
+      # Build final (scratch or alpine) with CACHE
+      - name: Step 2.8 - Build final (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -344,8 +295,14 @@ jobs:
           target: ${{ steps.plan.outputs.target == 'both-dev' && 'final-scratch' || steps.plan.outputs.target }}
           tags: |
             ${{ env.IMAGE }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
+          cache-from: |
+            type=gha,scope=final-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
+            type=registry,ref=${{ env.IMAGE }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
+          cache-to: |
+            type=gha,mode=max,scope=final-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
 
-      - name: Build dev alpine (${{ matrix.platform }})
+      # --- Dev: also build alpine variant with CACHE ---
+      - name: Step 2.9 - Build dev alpine (${{ matrix.platform }})
         if: steps.plan.outputs.plan == 'dev'
         uses: docker/build-push-action@v6
         with:
@@ -360,9 +317,14 @@ jobs:
           target: final-alpine
           tags: |
             ${{ env.IMAGE }}:temp-dev-alpine-${{ matrix.arch_tag }}
+          cache-from: |
+            type=gha,scope=final-dev-alpine-${{ matrix.arch_tag }}
+            type=registry,ref=${{ env.IMAGE }}:temp-dev-alpine-${{ matrix.arch_tag }}
+          cache-to: |
+            type=gha,mode=max,scope=final-dev-alpine-${{ matrix.arch_tag }}
 
       # --- Create multi-arch manifests for final tags ---
-      - name: Create manifests
+      - name: Step 2.10 - Create manifests
         env:
           IMAGE: ${{ env.IMAGE }}
         shell: bash
@@ -375,15 +337,12 @@ jobs:
             local src=()
             case "$tag" in
               dev-slim* )
-                # dev-slim → scratch builds
                 src=( "${IMAGE}:temp-dev-linux-amd64" "${IMAGE}:temp-dev-linux-arm64" "${IMAGE}:temp-dev-linux-armv7" )
                 ;;
               dev* )
-                # dev (no '-slim') → alpine builds
                 src=( "${IMAGE}:temp-dev-alpine-linux-amd64" "${IMAGE}:temp-dev-alpine-linux-arm64" "${IMAGE}:temp-dev-alpine-linux-armv7" )
                 ;;
               * )
-                # default (dispatch/master/feature/bugfix/hotfix) → use main temp set
                 src=( "${IMAGE}:temp-${{ steps.plan.outputs.plan }}-linux-amd64" "${IMAGE}:temp-${{ steps.plan.outputs.plan }}-linux-arm64" "${IMAGE}:temp-${{ steps.plan.outputs.plan }}-linux-armv7" )
                 ;;
             esac
@@ -391,21 +350,63 @@ jobs:
             docker buildx imagetools create -t "${IMAGE}:${tag}" "${src[@]}"
           }
 
-          if [[ "${#TAGS[@]}" -eq 0 ]]; then
-            echo "No final tags to publish; skipping."
-            exit 0
-          fi
+          [[ -s "${{ steps.plan.outputs.tags_file }}" ]] || { echo "No tags to publish"; exit 0; }
+          for t in "${TAGS[@]}"; do make_manifest "$t"; done
+          printf '%s\n' "${TAGS[@]}" | grep -qx 'latest' && docker buildx imagetools inspect "${IMAGE}:latest" || true
 
-          for t in "${TAGS[@]}"; do
-            make_manifest "$t"
+      # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
+      - name: Step 2.11 - Extract release notes (master only, new version)
+        id: notes
+        if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="${{ steps.version.outputs.version }}"
+          awk -v ver="$ver" '
+            BEGIN{print_header=0}
+            $0 ~ "^# "ver" " {print_header=1; print; next}
+            print_header && $0 ~ "^# [0-9]+\\.[0-9]+\\.[0-9]+" {exit}
+            print_header {print}
+          ' CHANGELOG.md > release_notes.md
+          echo "notes_file=$PWD/release_notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Step 2.12 - Bump Cargo.toml + tag + release (master only, new version)
+        if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="${{ steps.version.outputs.version }}"
+
+          update_file() {
+            local f="$1"
+            awk -v newv="$ver" '
+              BEGIN{in_pkg=0}
+              /^\[package\]/{in_pkg=1; print; next}
+              /^\[/{in_pkg=0; print; next}
+              in_pkg && /^version *= *"/{
+                sub(/^version *= *".*"$/, "version = \"" newv "\""); print; next
+              }
+              {print}
+            ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          }
+
+          for f in Cargo.toml backend/Cargo.toml frontend/Cargo.toml shared/Cargo.toml; do
+            [[ -f "$f" ]] && update_file "$f"
           done
 
-          if printf '%s\n' "${TAGS[@]}" | grep -qx 'latest'; then
-            docker buildx imagetools inspect "${IMAGE}:latest" || true
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml backend/Cargo.toml frontend/Cargo.toml shared/Cargo.toml || true
+          git commit -m "chore(release): bump to v${ver} [skip ci]" || true
+          git tag -a "v${ver}" -m "v${ver}"
+          git push origin "HEAD:${GITHUB_REF_NAME}" --tags
+
+          gh release create "v${ver}" --title "v${ver}" --notes-file "${{ steps.notes.outputs.notes_file }}"
 
       # --- Summary ---
-      - name: Summary
+      - name: Step 2.13 - Summary
         if: always()
         shell: bash
         run: |
@@ -421,8 +422,12 @@ jobs:
             echo "- Target: **${{ steps.plan.outputs.target }}**"
             echo ""
             echo "### 🧩 Prebuilds"
-            echo "- Used namespace: \`${{ env.GHCR_NS }}\`"
-            echo "- Tags per-arch: \`linux-amd64\`, \`linux-arm64\`, \`linux-armv7\`"
+            echo "- Namespace: \`${{ env.GHCR_NS }}\`"
+            echo "- Checked arch tags: linux-amd64 • linux-arm64 • linux-armv7"
+            echo ""
+            echo "### 🧷 Cache"
+            echo "- GHA cache scopes per-arch/plan"
+            echo "- Registry cache-from: temp per-arch images"
             echo ""
             echo "### 🏷️ Final tags"
             if [[ -s "${{ steps.plan.outputs.tags_file }}" ]]; then
@@ -431,6 +436,16 @@ jobs:
               done < "${{ steps.plan.outputs.tags_file }}"
             else
               echo "↔️ No final tags."
+            fi
+            echo ""
+            if [[ "${{ steps.plan.outputs.plan }}" == "master" ]]; then
+              if [[ "${{ steps.newver.outputs.is_new }}" == "true" ]]; then
+                echo "### 🚀 Release"
+                echo "✨ Performed Cargo.toml bump, git tag and GitHub Release after successful build."
+              else
+                echo "### 🚀 Release"
+                echo "↔️ No new version (tag exists)."
+              fi
             fi
             echo ""
             echo "### 🧭 Platforms"
