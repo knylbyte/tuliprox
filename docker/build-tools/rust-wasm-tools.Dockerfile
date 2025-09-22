@@ -84,7 +84,7 @@ RUN case "$(cat /rust-target)" in \
 
 ############################################
 # Final image runs on the TARGETPLATFORM
-# -> contains all build deps + rust targets for your app
+# -> contains all build deps + rust targets for tuliprox app
 ############################################
 FROM rust:${RUST_DISTRO}
 
