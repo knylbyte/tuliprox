@@ -11,15 +11,15 @@
 # Global configuration (override with --build-arg ...)
 # -----------------------------------------------------------------
 ARG GHCR_NS=ghcr.io/euzu/tuliprox
-ARG PREBUILD_TOOLS_TAG=latest
-ARG RESOURCES_TAG=latest
+ARG BUILDPLATFORM_TAG=latest
 ARG ALPINE_VERSION=3.18
+ARG RUST_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
 
 # -----------------------------------------------------------------
 # Stage 1: Rust backend build (uses prebuild)
 # -----------------------------------------------------------------
-FROM ${GHCR_NS}/rust-wasm-tools:${PREBUILD_TOOLS_TAG} AS rust-build
+FROM ${GHCR_NS}/rust-wasm-tools:${BUILDPLATFORM_TAG} AS rust-build
 
 ARG RUST_TARGET
 ARG TARGETPLATFORM
@@ -72,7 +72,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # -----------------------------------------------------------------
 # Stage 2: Build the rust frontend (uses prebuild)
 # -----------------------------------------------------------------
-FROM ${GHCR_NS}/rust-wasm-tools:${PREBUILD_TOOLS_TAG} AS trunk-build
+FROM ${GHCR_NS}/rust-wasm-tools:${BUILDPLATFORM_TAG} AS trunk-build
 
 # Default WASM target used by trunk/cargo
 ARG RUST_TARGET=wasm32-unknown-unknown
@@ -124,7 +124,7 @@ RUN set -eux; \
 # -----------------------------------------------------------------
 # Stage 4: Resources (prebuilt ffmpeg outputs)
 # -----------------------------------------------------------------
-FROM ${GHCR_NS}/resources:${RESOURCES_TAG} AS resources
+FROM ${GHCR_NS}/resources:${BUILDPLATFORM_TAG} AS resources
 # Expected: /src/resources/*.ts
 
 # =================================================================
@@ -204,7 +204,6 @@ CMD ["-s", "-p", "/opt/tuliprox/data"]
 # Final Image #3: Debugging Environment (Alpine-based)
 # -----------------------------------------------------------------
 # Allow overriding the rust image tag used for debug (e.g. "1.90-alpine3.20").
-ARG RUST_ALPINE_TAG=alpine
 FROM rust:${RUST_ALPINE_TAG} AS debug
 
 # For Alpine, the correct target architecture typically uses 'musl'
