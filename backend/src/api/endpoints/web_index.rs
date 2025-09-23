@@ -5,8 +5,6 @@ use crate::auth::{create_jwt_admin, create_jwt_user, is_admin, verify_password, 
 use axum::body::Body;
 use axum::http::Request;
 use axum::response::IntoResponse;
-use axum::{routing::get, Json, Router};
-use base64::engine::general_purpose::STANDARD as B64_STD;
 use base64::Engine;
 use lol_html::{element, RewriteStrSettings};
 use log::error;
@@ -16,11 +14,12 @@ use shared::utils::{concat_path_leading_slash, CONSTANTS};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tower::ServiceExt;
+use tower::Service;
 use tower_http::services::ServeFile;
 
 // RNG (OS CSPRNG)
 use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::TryRngCore;
 
 fn no_web_auth_token() -> impl axum::response::IntoResponse + Send {
     axum::Json(TokenResponse {
@@ -172,7 +171,8 @@ async fn index(
 
             // ContentSecurityPolicy nonce (use OS CSPRNG instead of OpenSSL)
             let mut rnd = [0u8; 32];
-            if let Err(e) = OsRng.try_fill_bytes(&mut rnd) {
+            let mut os_rng = OsRng;
+            if let Err(e) = os_rng.try_fill_bytes(&mut rnd) {
                 error!("Failed to generate random bytes for nonce: {e}");
                 // Fallback: without further manipulation back
                 return try_unwrap_body!(axum::response::Response::builder()
