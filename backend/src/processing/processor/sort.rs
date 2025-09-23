@@ -115,7 +115,7 @@ fn playlistitem_comparator(
     playlist_comparator(channel_sort.sequence.as_ref(), channel_sort.order, &value_a, &value_b)
 }
 
-pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new_playlist: &mut [PlaylistGroup]) {
+pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new_playlist: &mut [PlaylistGroup]) -> bool {
     if let Some(sort) = &target.sort {
         let match_as_ascii = sort.match_as_ascii;
         if let Some(group_sort) = &sort.groups {
@@ -132,6 +132,9 @@ pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new
                 }
             }
         }
+        true
+    } else {
+        false
     }
 }
 

@@ -253,10 +253,10 @@ impl TraktCategoriesProcessor {
         playlist: &[PlaylistGroup],
         target: &ConfigTarget,
         trakt_config: &TraktConfig,
-    ) -> Result<Vec<PlaylistGroup>, Vec<TuliproxError>> {
+    ) -> Result<Option<Vec<PlaylistGroup>>, Vec<TuliproxError>> {
         if trakt_config.lists.is_empty() {
             debug!("No Trakt lists configured for target {}", target.name);
-            return Ok(vec![]);
+            return Ok(None);
         }
 
         info!("Processing {} Trakt lists for target {}", trakt_config.lists.len(), target.name);
@@ -288,17 +288,17 @@ impl TraktCategoriesProcessor {
         info!("Trakt processing complete: created {} categories with {total_matches} total matches",
              new_categories.len());
 
-        Ok(new_categories)
+        Ok(Some(new_categories))
     }
 }
 pub async fn process_trakt_categories_for_target(
     http_client: Arc<reqwest::Client>,
     playlist: &[PlaylistGroup],
     target: &ConfigTarget,
-) -> Result<Vec<PlaylistGroup>, Vec<TuliproxError>> {
+) -> Result<Option<Vec<PlaylistGroup>>, Vec<TuliproxError>> {
     let Some(trakt_config) = target.get_xtream_output().and_then(|output| output.trakt.as_ref()) else {
         debug!("No Trakt configuration found for target {}", target.name);
-        return Ok(vec![]);
+        return Ok(None);
     };
 
     let processor = TraktCategoriesProcessor::new(http_client, trakt_config);

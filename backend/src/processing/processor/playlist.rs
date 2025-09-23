@@ -507,43 +507,49 @@ async fn process_playlist_for_target(app_config: &AppConfig,
         info!("Playlist is empty: {}", &target.name);
         Ok(())
     } else {
-
         // Process Trakt categories
-        trakt_playlist(&client, target, errors, &mut new_playlist).await;
-        step.tick("trakt categories");
+        if trakt_playlist(&client, target, errors, &mut new_playlist).await {
+            step.tick("trakt categories");
+        }
 
         let mut flat_new_playlist = flatten_groups(new_playlist);
         step.tick("playlist merge");
 
-        sort_playlist(target, &mut flat_new_playlist);
-        step.tick("playlist sort");
+        if sort_playlist(target, &mut flat_new_playlist)  {
+            step.tick("playlist sort");
+        }
         assign_channel_no_playlist(&mut flat_new_playlist);
         step.tick("assigning channel numbers");
         map_playlist_counter(target, &mut flat_new_playlist);
         step.tick("assigning channel counter");
 
         let config = app_config.config.load();
-        process_watch(&config, &client, target, &flat_new_playlist);
-        step.tick("group watches");
+        if process_watch(&config, &client, target, &flat_new_playlist) {
+            step.tick("group watches");
+        }
         let result = persist_playlist(app_config, &mut flat_new_playlist, flatten_tvguide(&new_epg).as_ref(), target).await;
         step.stop("Persisting playlists");
         result
     }
 }
 
-async fn trakt_playlist(client: &Arc<Client>, target: &ConfigTarget, errors: &mut Vec<TuliproxError>, playlist: &mut Vec<PlaylistGroup>) {
+async fn trakt_playlist(client: &Arc<Client>, target: &ConfigTarget, errors: &mut Vec<TuliproxError>, playlist: &mut Vec<PlaylistGroup>) -> bool {
     match process_trakt_categories_for_target(Arc::clone(client), playlist, target).await {
-        Ok(trakt_categories) => {
+        Ok(Some(trakt_categories)) => {
             if !trakt_categories.is_empty() {
                 info!("Adding {} Trakt categories to playlist", trakt_categories.len());
                 playlist.extend(trakt_categories);
             }
+        }
+        Ok(None) => {
+            return false;
         }
         Err(trakt_errors) => {
             warn!("Trakt processing failed with {} errors", trakt_errors.len());
             errors.extend(trakt_errors);
         }
     }
+    true
 }
 
 fn process_epg(processed_fetched_playlists: &mut Vec<FetchedPlaylist>) -> (Vec<Epg>, Vec<PlaylistGroup>) {
@@ -559,7 +565,7 @@ fn process_epg(processed_fetched_playlists: &mut Vec<FetchedPlaylist>) -> (Vec<E
     (new_epg, new_playlist)
 }
 
-fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &ConfigTarget, new_playlist: &Vec<PlaylistGroup>) {
+fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &ConfigTarget, new_playlist: &Vec<PlaylistGroup>) -> bool {
     if let Some(watches)  = &target.watch {
         if default_as_default().eq_ignore_ascii_case(&target.name) {
             error!("cant watch a target with no unique name");
@@ -570,6 +576,9 @@ fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &ConfigTar
                 }
             }
         }
+        true
+    } else {
+        false
     }
 }
 
