@@ -8,125 +8,124 @@
 # =================================================================
 
 # -----------------------------------------------------------------
-# Stage 1: Build the Rust binary for production
+# Global configuration (override with --build-arg ...)
 # -----------------------------------------------------------------
-FROM rust:bookworm AS rust-build
+ARG GHCR_NS=ghcr.io/euzu/tuliprox
+ARG BUILDPLATFORM_TAG=latest
+ARG ALPINE_VERSION=3.22.1
+ARG RUST_ALPINE_TAG=alpine
+ARG DEFAULT_TZ=UTC
 
-# Get target architecture
+# -----------------------------------------------------------------
+# Stage 1: Rust backend build (uses prebuild)
+# -----------------------------------------------------------------
+FROM ${GHCR_NS}/rust-wasm-tools:${BUILDPLATFORM_TAG} AS rust-build
+
 ARG RUST_TARGET
-
-RUN apt-get update && apt-get install -y --no-install-recommends pkg-config musl-tools libssl-dev
-
-# Update Rust toolchain and add necessary target
-RUN rustup update && rustup target add $RUST_TARGET
-
-# Set Rust compiler flags for better optimization and reproducibility
-ENV RUSTFLAGS='--remap-path-prefix $HOME=~ -C target-feature=+crt-static'
-
-# Copy dependency files first for better layer caching
+ARG TARGETPLATFORM
 WORKDIR /src
+
+# Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
+# - amd64  -> x86_64-unknown-linux-musl
+# - arm64  -> aarch64-unknown-linux-musl
+# - arm/v7 -> armv7-unknown-linux-musleabihf
+RUN set -eux; \
+    if [ -z "${RUST_TARGET:-}" ]; then \
+      case "$TARGETPLATFORM" in \
+        "linux/amd64")  echo x86_64-unknown-linux-musl        > /rust-target ;; \
+        "linux/arm64")  echo aarch64-unknown-linux-musl       > /rust-target ;; \
+        "linux/arm/v7") echo armv7-unknown-linux-musleabihf   > /rust-target ;; \
+        *) echo "Unsupported TARGETPLATFORM: $TARGETPLATFORM" >&2; exit 1 ;; \
+      esac; \
+    else \
+      echo "${RUST_TARGET}" > /rust-target; \
+    fi; \
+    printf "Using RUST_TARGET=%s\n" "$(cat /rust-target)"
+
+# Prime cargo cache (manifests only)
 COPY Cargo.toml Cargo.lock ./
 COPY backend/Cargo.toml ./backend/
 COPY frontend/Cargo.toml ./frontend/
-COPY shared/Cargo.toml ./shared/
+COPY shared/Cargo.toml   ./shared/
 
-# Create dummy source files to build dependencies only
-RUN mkdir -p src backend/src frontend/src shared/src && \
-    echo "fn main() {}" > src/main.rs && \
-    echo "fn main() {}" > backend/src/main.rs && \
-    echo "fn main() {}" > frontend/src/main.rs && \
+# Dummy sources (dependency build only)
+RUN set -eux; \
+    mkdir -p backend/src frontend/src shared/src && \
+    echo "fn main() {}"      > backend/src/main.rs && \
+    echo "fn main() {}"      > frontend/src/main.rs && \
     echo "pub fn dummy() {}" > shared/src/lib.rs
 
-# Build dependencies (this layer will be cached unless dependencies change)
-RUN cargo build -p tuliprox --target $RUST_TARGET --release || true
-RUN cargo build -p shared --target $RUST_TARGET --release || true
+# Build deps (cached)
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    set -eux; \
+    cargo build -p tuliprox --target "$(cat /rust-target)" --release || true
 
-# Now copy the actual source code and build the project
+# Real sources + release build (ensure static for musl)
 COPY . .
-
-RUN cargo build -p tuliprox --target $RUST_TARGET --release
+ENV RUSTFLAGS='--remap-path-prefix $HOME=~ -C target-feature=+crt-static'
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    set -eux; \
+    cargo build -p tuliprox --target "$(cat /rust-target)" --release
 
 # -----------------------------------------------------------------
-# Stage 2: Build the rust frontend
+# Stage 2: Build the rust frontend (uses prebuild)
 # -----------------------------------------------------------------
-FROM rust:bookworm AS trunk-build
+FROM ${GHCR_NS}/rust-wasm-tools:${BUILDPLATFORM_TAG} AS trunk-build
 
+# Default WASM target used by trunk/cargo
 ARG RUST_TARGET=wasm32-unknown-unknown
 
-# Set working directory
+# Work in workspace root
 WORKDIR /src
 
-# Install dependencies for Trunk and WebAssembly
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  pkg-config libssl-dev curl libclang-dev binaryen
-
-# Add wasm target & install trunk
-RUN rustup target add wasm32-unknown-unknown
-RUN cargo install --locked trunk wasm-bindgen-cli
-
-# Copy dependency files first for better layer caching
+# Prime cargo cache for WASM deps (copy manifests only)
+# This allows compiling dependencies without copying the whole source tree.
 COPY Cargo.toml Cargo.lock ./
-COPY frontend/Cargo.toml frontend/Trunk.toml ./frontend/
-COPY shared/Cargo.toml ./shared/
+COPY frontend/Cargo.toml ./frontend/
+COPY shared/Cargo.toml   ./shared/
 
-# Create dummy source files
-RUN mkdir -p frontend/src shared/src && \
-    echo "fn main() {}" > frontend/src/main.rs && \
+# Create dummy sources so cargo can build dependency graph only
+# (no need to compile your actual app code yet)
+RUN set -eux; \
+    mkdir -p frontend/src shared/src && \
+    echo "fn main() {}"      > frontend/src/main.rs && \
+    echo "pub fn dummy() {}" > frontend/src/lib.rs  && \
     echo "pub fn dummy() {}" > shared/src/lib.rs
 
-# Pre-build dependencies
-WORKDIR /src/frontend
-RUN cargo build --target wasm32-unknown-unknown --release || true
+# Build only dependencies for the frontend crate on the WASM target
+# Result: registry/git caches + compiled deps kept in image layers.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    set -eux; \
+    cargo build --manifest-path frontend/Cargo.toml \
+                --target ${RUST_TARGET} \
+                --release || true
 
-# Now copy the actual source code and build the project
-WORKDIR /src
+# Now copy the real sources and perform the actual trunk build
 COPY . .
-
 WORKDIR /src/frontend
 
-# Run Trunk build
-RUN trunk build --release
+# Trunk will reuse the warmed cargo caches from the steps above.
+RUN set -eux; \
+    trunk build --release
+# dist -> /src/frontend/dist
 
 # -----------------------------------------------------------------
-# Stage 3: Build video resources with ffmpeg
+# Stage 3: tzdata/zoneinfo supplier (shared)
 # -----------------------------------------------------------------
-FROM linuxserver/ffmpeg:latest AS resource-build
-
-WORKDIR /src
-COPY resources ./resources
-
-# Combine ffmpeg commands into a single layer to reduce image size
-RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/channel_unavailable.ts && \
-  ffmpeg -loop 1 -i ./resources/user_connections_exhausted.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/user_connections_exhausted.ts && \
-  ffmpeg -loop 1 -i ./resources/provider_connections_exhausted.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/provider_connections_exhausted.ts && \
-   ffmpeg -loop 1 -i ./resources/user_account_expired.jpg -t 10 -r 1 -an \
-     -vf "scale=1920:1080" \
-     -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-     ./resources/user_account_expired.ts
+FROM alpine:${ALPINE_VERSION} AS tzdata
+RUN set -eux; \
+    apk add --no-cache tzdata ca-certificates; \
+    update-ca-certificates; \
+    test -d /usr/share/zoneinfo
 
 # -----------------------------------------------------------------
-# Stage 4: Prepare timezone data
+# Stage 4: Resources (prebuilt ffmpeg outputs)
 # -----------------------------------------------------------------
-FROM alpine:latest AS tz-prep
-
-ARG TZ=UTC
-ENV TZ=${TZ}
-
-RUN apk add --no-cache tzdata \
-  && mkdir -p /output/etc \
-  && mkdir -p /output/usr/share \
-  && cp -r /usr/share/zoneinfo /output/usr/share/zoneinfo \
-  && ln -sf /usr/share/zoneinfo/${TZ} /output/etc/localtime
-
+FROM ${GHCR_NS}/resources:${BUILDPLATFORM_TAG} AS resources
+# Expected: /src/resources/*.ts
 
 # =================================================================
 #
@@ -138,89 +137,111 @@ RUN apk add --no-cache tzdata \
 # =================================================================
 
 # -----------------------------------------------------------------
-# Final Image #1: Debugging Environment (Alpine-based)
+# Final Image #1: Final runtime (FROM scratch) -> all musl targets
 # -----------------------------------------------------------------
-FROM rust:alpine AS debug
+FROM scratch AS final-scratch
 
-# For Alpine, the correct target architecture uses 'musl'
+ARG DEFAULT_TZ=UTC
+ENV TZ=${DEFAULT_TZ}
+
+# Put runtime data under /opt/tuliprox/data (default landing dir)
+WORKDIR /opt/tuliprox/data
+
+# Copy zoneinfo + CA store for TLS & timezones
+COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=tzdata /etc/ssl/certs      /etc/ssl/certs
+
+# Copy binary & assets into /opt tree
+COPY --from=rust-build  /src/target/*/release/tuliprox /opt/tuliprox/bin/tuliprox
+COPY --from=trunk-build /src/frontend/dist             /opt/tuliprox/web/dist
+COPY --from=resources   /src/resources                 /opt/tuliprox/resources
+
+# In scratch we cannot create symlinks (no shell); duplicate to PATH location
+COPY --from=rust-build  /src/target/*/release/tuliprox /usr/local/bin/tuliprox
+
+EXPOSE 8901
+ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
+CMD ["-s", "-p", "/opt/tuliprox/data"]
+
+# -----------------------------------------------------------------
+# Final Image #2: Final runtime (FROM Alpine) -> dev-friendly
+# -----------------------------------------------------------------
+FROM alpine:${ALPINE_VERSION} AS final-alpine
+
+ARG DEFAULT_TZ=UTC
+ENV TZ=${DEFAULT_TZ}
+
+# Dev tooling: bash, curl, tshark
+# (tshark may require --cap-add NET_ADMIN --cap-add NET_RAW and often --network host)
+RUN set -eux; \
+    apk add --no-cache ca-certificates bash curl tshark; \
+    update-ca-certificates || true
+
+# Layout under /opt (root-owned)
+RUN set -eux; \
+    mkdir -p /opt/tuliprox/bin /opt/tuliprox/data /opt/tuliprox/web /opt/tuliprox/resources
+
+# Copy zoneinfo & CA store
+COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=tzdata /etc/ssl/certs      /etc/ssl/certs
+
+# Copy binary & assets
+COPY --from=rust-build  /src/target/*/release/tuliprox /opt/tuliprox/bin/tuliprox
+COPY --from=trunk-build /src/frontend/dist             /opt/tuliprox/web/dist
+COPY --from=resources   /src/resources                 /opt/tuliprox/resources
+
+# PATH convenience symlink
+RUN ln -s /opt/tuliprox/bin/tuliprox /usr/local/bin/tuliprox
+
+# Land in /opt/tuliprox/data on attach
+WORKDIR /opt/tuliprox/data
+
+EXPOSE 8901
+ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
+CMD ["-s", "-p", "/opt/tuliprox/data"]
+
+# -----------------------------------------------------------------
+# Final Image #3: Debugging Environment (Alpine-based)
+# -----------------------------------------------------------------
+# Allow overriding the rust image tag used for debug (e.g. "1.90-alpine3.20").
+FROM rust:${RUST_ALPINE_TAG} AS debug
+
+# For Alpine, the correct target architecture typically uses 'musl'
 ARG RUST_TARGET=x86_64-unknown-linux-musl
 ARG TZ=UTC
 
-# Make the build-time argument available as a run-time environment variable
+# Make the build-time arguments available as run-time env vars
 ENV RUST_TARGET=${RUST_TARGET}
 ENV TZ=${TZ}
 
-# Install build dependencies and the lldb debugger for Alpine
-# Added 'perl' which is required to build the native OpenSSL library.
-RUN apk add --no-cache bash build-base openssl-dev lldb gdb perl
+# Install debugging/tooling. No OpenSSL needed (app uses rustls).
+# tzdata + ca-certificates for proper time/TLS behavior.
+RUN apk add --no-cache \
+      bash \
+      build-base \
+      lldb \
+      gdb \
+      curl \
+      tzdata \
+      ca-certificates \
+ && update-ca-certificates || true
 
-# Update Rust toolchain and add the necessary target
-RUN rustup update && rustup target add $RUST_TARGET
+# Ensure the requested Rust target is available (musl for scratch-like behavior)
+RUN rustup target add "${RUST_TARGET}"
 
-# Create the final application layout to mimic production
-WORKDIR /app
-COPY --from=trunk-build /src/frontend/dist ./web
-COPY --from=resource-build /src/resources ./resources
+# Create production-like layout under /opt (matches our final images)
+WORKDIR /opt/tuliprox
+COPY --from=trunk-build /src/frontend/dist ./web/dist
+COPY --from=resources   /src/resources     ./resources
 
-# Create a separate directory for the source code
+# Keep full source tree for debugging in /usr/src/tuliprox
 WORKDIR /usr/src/tuliprox
 COPY . .
 
-# Copy the entrypoint script and set it as the entrypoint for the container.
+# Entrypoint helper (kept from original workflow)
 COPY ./docker/debug/debug-entrypoint.sh /usr/local/bin/entrypoint.sh
-# Ensure the script is executable
 RUN chmod +x /usr/local/bin/entrypoint.sh
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # The CMD will be passed as arguments to the entrypoint script.
 CMD ["tail", "-f", "/dev/null"]
-
-# -----------------------------------------------------------------
-# Final Image #2: Production image based on scratch
-# -----------------------------------------------------------------
-FROM scratch AS scratch-final
-
-ARG RUST_TARGET
-
-# Copy timezone data and localtime from tz-prep
-COPY --from=tz-prep /output/usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=tz-prep /output/etc/localtime /etc/localtime
-
-# Certificates
-COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-# RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
-
-# App
-WORKDIR /app
-COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
-COPY --from=trunk-build /src/frontend/dist ./web
-COPY --from=resource-build /src/resources ./resources
-
-ENTRYPOINT ["/app/tuliprox"]
-CMD ["-s", "-p", "/app/config"]
-
-# -----------------------------------------------------------------
-# Final Image #3: Production image based on Alpine
-# -----------------------------------------------------------------
-FROM alpine:latest AS alpine-final
-
-ARG RUST_TARGET
-ARG TZ=UTC
-ENV TZ=${TZ}
-
-RUN apk add --no-cache bash curl ca-certificates tini
-
-COPY --from=rust-build /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-# Default timezone fallback
-RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
-
-WORKDIR /app
-COPY --from=rust-build /src/target/${RUST_TARGET}/release/tuliprox ./tuliprox
-COPY --from=trunk-build /src/frontend/dist ./web
-COPY --from=resource-build /src/resources ./resources
-
-ENTRYPOINT ["/sbin/tini", "--", "/app/tuliprox"]
-CMD ["-s", "-p", "/app/config"]
