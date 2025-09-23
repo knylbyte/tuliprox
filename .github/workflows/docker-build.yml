@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Final target (final-scratch or final-alpine)"
+        description: "Final target (scratch-final or alpine-final)"
         required: false
-        default: "final-scratch"
+        default: "scratch-final"
   push:
     branches:
       - master
@@ -222,37 +222,37 @@ jobs:
           plan=""
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            [[ -z "$target" ]] && target="final-scratch"
+            [[ -z "$target" ]] && target="scratch-final"
             tags+=("${{ steps.version.outputs.version }}")
             plan="dispatch"
           else
             case "$ref" in
               master)
-                target="final-scratch"
+                target="scratch-final"
                 tags+=("latest" "${{ steps.version.outputs.version }}")
                 plan="master"
                 ;;
-              dev)
+              develop)
                 target="both-dev"  # handled later: scratch + alpine
                 tags+=("dev" "dev@${{ steps.version.outputs.version }}" "dev-slim" "dev-slim@${{ steps.version.outputs.version }}")
                 plan="dev"
                 ;;
               feature/*)
-                target="final-alpine"
+                target="alpine-final"
                 name="${ref#feature/}"
                 safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
                 tags+=("feat@${safe}")
                 plan="feature"
                 ;;
               bugfix/*)
-                target="final-alpine"
+                target="alpine-final"
                 name="${ref#bugfix/}"
                 safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
                 tags+=("bug@${safe}")
                 plan="bugfix"
                 ;;
               hotfix/*)
-                target="final-alpine"
+                target="alpine-final"
                 name="${ref#hotfix/}"
                 safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
                 tags+=("hot@${safe}")
@@ -295,7 +295,7 @@ jobs:
           build-args: |
             GHCR_NS=${{ env.GHCR_NS }}
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-          target: ${{ steps.plan.outputs.target == 'both-dev' && 'final-scratch' || steps.plan.outputs.target }}
+          target: ${{ steps.plan.outputs.target == 'both-dev' && 'scratch-final' || steps.plan.outputs.target }}
           tags: |
             ${{ env.IMAGE }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
           cache-from: |
@@ -316,7 +316,7 @@ jobs:
           build-args: |
             GHCR_NS=${{ env.GHCR_NS }}
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-          target: final-alpine
+          target: alpine-final
           tags: |
             ${{ env.IMAGE }}:temp-dev-alpine-${{ matrix.arch_tag }}
           cache-from: |
