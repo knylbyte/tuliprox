@@ -139,7 +139,7 @@ FROM ${GHCR_NS}/resources:${BUILDPLATFORM_TAG} AS resources
 # -----------------------------------------------------------------
 # Final Image #1: Final runtime (FROM scratch) -> all musl targets
 # -----------------------------------------------------------------
-FROM scratch AS final-scratch
+FROM scratch AS scratch-final
 
 ARG DEFAULT_TZ=UTC
 ENV TZ=${DEFAULT_TZ}
@@ -166,7 +166,7 @@ CMD ["-s", "-p", "/opt/tuliprox/data"]
 # -----------------------------------------------------------------
 # Final Image #2: Final runtime (FROM Alpine) -> dev-friendly
 # -----------------------------------------------------------------
-FROM alpine:${ALPINE_VERSION} AS final-alpine
+FROM alpine:${ALPINE_VERSION} AS alpine-final
 
 ARG DEFAULT_TZ=UTC
 ENV TZ=${DEFAULT_TZ}
