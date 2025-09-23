@@ -2,7 +2,11 @@
 # 3.1.7 (2025-09-xx)
 - Added Dark / Bright theme switch
 - Resource proxy retries failed requests up to three times and honors the `Retry-After` header (or waits 100 ms as a fallback) to reduce transient HTTP 400, 408, 425, 429 and all 5xx statuses errors observed by clients.
-- Added `accept_unsecure_ssl_certificate` to `config.yml`
+- Added `accept_unsecure_ssl_certificate` to `config.yml`. Necessary if pictures are served over https without valid ssl cert.
+- Using tmdbid for VOD from get_vod_streams if available, which makes using resolve_vod for STRM generation not necessary.
+- File length problem with strm generation fixed.
+- Series name empty paren problem fixed.
+- Default sort removed 
 
 # 3.1.6 (2025-09-01)
 - EPG Config View added
