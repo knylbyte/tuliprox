@@ -3,11 +3,10 @@ name: Docker Build & Push resources (prebuild)
 
 on:
   workflow_dispatch:
-    inputs:
-      alpine_ver:
-        description: "alpine base version"
-        required: false
-        default: "3.18"
+  push:
+    paths:
+      - resources/**
+      - docker/build-tools/resources.Dockerfile
 
 concurrency:
   group: update-resources-prebuild-image

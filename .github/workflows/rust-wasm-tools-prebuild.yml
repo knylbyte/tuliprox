@@ -10,6 +10,9 @@ on:
       bindgen_ver:
           description: "wasm-bindgen-cli version"
           required: false
+  push:
+    paths:
+      - docker/build-tools/rust-wasm-tools.Dockerfile
 
 concurrency:
   group: update-rust-wasm-prebuild-image
