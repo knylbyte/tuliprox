@@ -1,5 +1,5 @@
 ---
-name: Docker Build & Release
+name: Docker Build & Push
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
   push:
     branches:
       - master
-      - dev
+      - develop
       - 'feature/**'
       - 'bugfix/**'
       - 'hotfix/**'
