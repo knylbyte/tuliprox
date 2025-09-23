@@ -5,6 +5,8 @@ use crate::auth::{create_jwt_admin, create_jwt_user, is_admin, verify_password, 
 use axum::body::Body;
 use axum::http::Request;
 use axum::response::IntoResponse;
+use axum::{routing::get, Json, Router};
+use base64::engine::general_purpose::STANDARD as B64_STD;
 use base64::Engine;
 use lol_html::{element, RewriteStrSettings};
 use log::error;
