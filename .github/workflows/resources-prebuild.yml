@@ -1,0 +1,217 @@
+---
+name: Docker Build & Push resources (prebuild)
+
+on:
+  workflow_dispatch:
+    inputs:
+      alpine_ver:
+        description: "alpine base version"
+        required: false
+        default: "3.18"
+
+concurrency:
+  group: update-resources-prebuild-image
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/resources
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            tag: linux-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            tag: linux-arm64
+          - platform: linux/arm/v7         # build armv7 on arm64 runner (fast cross-compile)
+            runner: ubuntu-24.04-arm
+            tag: linux-armv7
+
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build and push single-arch image; Dockerfile generates resources at build time
+      - name: Build & Push (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/build-tools/resources.Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args:
+            BUILDKIT_INLINE_CACHE=1
+            ALPINE_VERSION=${{ github.event.inputs.alpine_ver || '3.18' }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ matrix.tag }}
+          cache-from: |
+            type=gha,scope=resources-${{ matrix.tag }}
+            type=registry,ref=${{ env.IMAGE }}:${{ matrix.tag }}
+          cache-to: |
+            type=gha,mode=max,scope=resources-${{ matrix.tag }}
+
+      - name: Inspect image
+        run: docker buildx imagetools inspect "${IMAGE}:${{ matrix.tag }}"
+
+      # Pull platform-specific image and verify resource files exist
+      - name: Pull & verify resource files
+        id: img
+        shell: bash
+        env:
+          IMG: ${{ env.IMAGE }}:${{ matrix.tag }}
+          PLAT: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+
+          # Pull the platform-specific image (quiet); do not fail the job if missing
+          set +e
+          PULL_LOG="$(docker pull -q --platform "$PLAT" "$IMG" 2>&1)"
+          RC=$?
+          set -e
+
+          if [ $RC -eq 0 ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "pull_error<<__EOF__"
+              echo "$PULL_LOG"
+              echo "__EOF__"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+          # Verify that expected .ts files exist in the image
+          check_file () {
+            docker run --rm --platform "$PLAT" "$IMG" sh -lc "test -f \"$1\"" >/dev/null 2>&1
+          }
+
+          RES_DIR="/src/resources"
+          CHANNEL="${RES_DIR}/channel_unavailable.ts"
+          USER_CONN="${RES_DIR}/user_connections_exhausted.ts"
+          PROVIDER_CONN="${RES_DIR}/provider_connections_exhausted.ts"
+          USER_EXPIRED="${RES_DIR}/user_account_expired.ts"
+
+          ALL_OK=true
+
+          if check_file "$CHANNEL"; then echo "channel_unavailable=ok" >> "$GITHUB_OUTPUT"; else echo "channel_unavailable=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+          if check_file "$USER_CONN"; then echo "user_connections_exhausted=ok" >> "$GITHUB_OUTPUT"; else echo "user_connections_exhausted=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+          if check_file "$PROVIDER_CONN"; then echo "provider_connections_exhausted=ok" >> "$GITHUB_OUTPUT"; else echo "provider_connections_exhausted=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+          if check_file "$USER_EXPIRED"; then echo "user_account_expired=ok" >> "$GITHUB_OUTPUT"; else echo "user_account_expired=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+
+          echo "resources_ok=$ALL_OK" >> "$GITHUB_OUTPUT"
+          echo "alpine_version=${{ github.event.inputs.alpine_ver || '3.18' }}" >> "$GITHUB_OUTPUT"
+
+      # Summary (uses values from the step above)
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## resources \`${{ matrix.tag }}\`"
+            echo ""
+            echo "🖼️ Image: \`${{ env.IMAGE }}:${{ matrix.tag }}\`"
+            echo "🧭 Platform: \`${{ matrix.platform }}\`"
+            echo ""
+            if [[ "${{ steps.img.outputs.published }}" == "true" ]]; then
+              echo "✅ Published and pulled"
+            else
+              echo "❌ Not found / pull failed"
+              if [[ -n "${{ steps.img.outputs.pull_error }}" ]]; then
+                echo ""
+                echo "<details><summary>Pull error</summary>"
+                echo ""
+                echo '```'
+                echo "${{ steps.img.outputs.pull_error }}"
+                echo '```'
+                echo "</details>"
+              fi
+            fi
+            echo ""
+            echo "📦 Alpine: **${{ steps.img.outputs.alpine_version }}**"
+            echo ""
+            echo "🗂️ Files"
+            echo "- channel_unavailable.ts: $([[ '${{ steps.img.outputs.channel_unavailable }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo "- user_connections_exhausted.ts: $([[ '${{ steps.img.outputs.user_connections_exhausted }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo "- provider_connections_exhausted.ts: $([[ '${{ steps.img.outputs.provider_connections_exhausted }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo "- user_account_expired.ts: $([[ '${{ steps.img.outputs.user_account_expired }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo ""
+            if [[ "${{ steps.img.outputs.resources_ok }}" == "true" && "${{ steps.img.outputs.published }}" == "true" ]]; then
+              echo "🎉 All resource files present."
+            else
+              echo "⚠️ One or more resource files are missing."
+            fi
+            echo ""
+            echo "---"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Set up Buildx (required for imagetools)
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create multi-arch :latest manifest
+        id: create
+        run: |
+          IMAGE="${{ env.IMAGE }}"
+          docker buildx imagetools create \
+            -t "${IMAGE}:latest" \
+            "${IMAGE}:linux-amd64" \
+            "${IMAGE}:linux-arm64" \
+            "${IMAGE}:linux-armv7"
+
+      - name: Inspect :latest manifest
+        run: docker buildx imagetools inspect "${{ env.IMAGE }}:latest"
+
+      # Final summary for the manifest
+      - name: Summary (:latest)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## resources \`:latest\` manifest"
+            if [[ "${{ steps.create.outcome }}" == "success" ]]; then
+              echo "✅ Multi-arch manifest created:"
+              echo "- linux-amd64"
+              echo "- linux-arm64"
+              echo "- linux-armv7"
+              echo ""
+              echo "📦 Tag: \`${{ env.IMAGE }}:latest\`"
+            else
+              echo "❌ Failed to create multi-arch \`:latest\` manifest."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
