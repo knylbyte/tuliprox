@@ -342,7 +342,7 @@ fn add_rate_limiter(
             .burst_size(rate_limit_cfg.burst_size)
             .finish();
         if let Some(config) = governor_conf {
-            router.layer(tower_governor::GovernorLayer::new(Arc::new(config)))
+            router.layer(tower_governor::GovernorLayer { config: Arc::new(config) })
         } else {
             error!("Failed to initialize rate limiter");
             router

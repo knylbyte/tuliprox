@@ -384,7 +384,7 @@ where
 
 fn handle_text_tag(stack: &mut [XmlTag], e: &BytesText) {
     if !stack.is_empty() {
-        if let Ok(text) = e.decode() {
+        if let Ok(text) = e.unescape() {
             let t = text.trim();
             if !t.is_empty() {
                 if let Some(tag) = stack.last_mut() {
