@@ -10,7 +10,7 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::TryRngCore;
 
 use shared::error::{TuliproxError, TuliproxErrorKind};
 
@@ -20,8 +20,8 @@ use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 
 // ----- Legacy CBC (fallback-only) -----
 use aes::Aes128;
-use cbc::cipher::{block_padding::Pkcs7, KeyIvInit};
-use cbc::{Decryptor, Encryptor};
+use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use cbc::Decryptor;
 
 // HKDF to expand 16-byte app secret to 32-byte AEAD key
 use hkdf::Hkdf;
@@ -66,7 +66,10 @@ pub fn encrypt_text(secret: &[u8; 16], text: &str) -> Result<String, TuliproxErr
 
     // 24-byte nonce
     let mut nonce = [0u8; 24];
-    OsRng.fill_bytes(&mut nonce);
+    let mut os_rng = OsRng;
+    os_rng
+        .try_fill_bytes(&mut nonce)
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, e.to_string()))?;
 
     let ct = cipher
         .encrypt(XNonce::from_slice(&nonce), text.as_bytes())
@@ -124,11 +127,13 @@ pub fn decrypt_text(secret: &[u8; 16], encrypted_text: &str) -> Result<String, T
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cbc::Encryptor;
 
     #[test]
     fn v2_roundtrip() {
         let mut s = [0u8; 16];
-        OsRng.fill_bytes(&mut s);
+        let mut os_rng = OsRng;
+        os_rng.try_fill_bytes(&mut s).expect("os rng failure");
         let msg = "hello chacha";
         let enc = encrypt_text(&s, msg).unwrap();
         assert!(enc.starts_with("v2:"));
@@ -140,10 +145,11 @@ mod tests {
     fn legacy_roundtrip() {
         // Simulate legacy encryption (AES-128-CBC + PKCS7)
         let mut s = [0u8; 16];
-        OsRng.fill_bytes(&mut s);
+        let mut os_rng = OsRng;
+        os_rng.try_fill_bytes(&mut s).expect("os rng failure");
 
         let mut iv = [0u8; 16];
-        OsRng.fill_bytes(&mut iv);
+        os_rng.try_fill_bytes(&mut iv).expect("os rng failure");
         let enc = {
             let e = Encryptor::<Aes128>::new(s.into(), iv.into());
             let ct = e.encrypt_padded_vec_mut::<Pkcs7>(b"legacy");

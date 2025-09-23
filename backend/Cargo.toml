@@ -36,12 +36,18 @@ deunicode = "1.6.2"
 mime = "0.3"
 log = "0.4"
 env_logger = "0.11"
-rustelebot = "0.3"
+teloxide = { version = "0.12", default-features = false, features = ["rustls"] }
 bincode = { version = "2.0",  features = ["std", "serde"] }
 
 # Randomness / encoding
 rand = "0.9"
 base64 = "0.22"
+
+flate2 = "1.1"
+blake3 = "1.8"
+sha2 = "0.10"
+rpassword = "7.4"
+
 
 # New: AEAD (preferred) + HKDF; keep AES/CBC/PKCS7 for legacy fallback
 aead = "0.5"
