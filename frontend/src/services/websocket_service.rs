@@ -11,6 +11,8 @@ use shared::utils::{concat_path_leading_slash};
 use crate::model::EventMessage;
 use crate::services::{get_base_href, get_token, EventService, StatusService};
 
+const WS_RECONNECT_MS:i32 = 2000;
+
 pub struct WebSocketService {
     connected: Rc<AtomicBool>,
     ws: Rc<RefCell<Option<WebSocket>>>,
@@ -28,6 +30,16 @@ impl WebSocketService {
             status_service,
             event_service,
             ws_path: concat_path_leading_slash(&base_href, "ws"),
+        }
+    }
+    /// Helper function to allow cloning the service into JS closures for reconnect
+    fn clone_for_reconnect(&self) -> Self {
+        Self {
+            connected: self.connected.clone(),
+            ws: self.ws.clone(),
+            status_service: self.status_service.clone(),
+            event_service: self.event_service.clone(),
+            ws_path: self.ws_path.clone(),
         }
     }
 
@@ -102,31 +114,67 @@ impl WebSocketService {
 
                 let ws_open_clone = Rc::clone(&ws_clone);
                 let connected_clone = self.connected.clone();
+                let event_service_clone = Rc::clone(&self.event_service);
                 // onopen
                 let onopen_callback = Closure::<dyn FnMut(_)>::wrap(Box::new(move |_event: Event| {
                     trace!("WebSocket connection opened.");
                     connected_clone.store(true, Ordering::SeqCst);
                     Self::try_send_message(ws_open_clone.borrow().as_ref(), ProtocolMessage::Version(PROTOCOL_VERSION));
+                    event_service_clone.broadcast(EventMessage::WebSocketStatus(true));
                 }));
                 socket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
                 onopen_callback.forget();
 
                 let ws_close_rc = self.ws.clone();
                 let connected_clone = self.connected.clone();
+                let ws_service_reconnect = Rc::new(self.clone_for_reconnect());
+                let event_service_clone = Rc::clone(&self.event_service);
                 let onclose_callback = Closure::<dyn FnMut(_)>::wrap(Box::new(move |e: CloseEvent| {
                     debug!("Websocket closed, Code: {}, Reason: {}, WasClean: {}", e.code(), e.reason(), e.was_clean());
                     *ws_close_rc.borrow_mut() = None;
                     connected_clone.store(false, Ordering::SeqCst);
+                    event_service_clone.broadcast(EventMessage::WebSocketStatus(false));
+
+                    // schedule reconnect after 3 seconds
+                    let ws_service_inner = ws_service_reconnect.clone();
+                    let timeout_cb = Closure::once_into_js(Box::new(move || {
+                        ws_service_inner.connect_ws();
+                    }) as Box<dyn FnOnce()>);
+
+                    web_sys::window()
+                        .unwrap()
+                        .set_timeout_with_callback_and_timeout_and_arguments_0(
+                            timeout_cb.as_ref().unchecked_ref(),
+                            WS_RECONNECT_MS,
+                        )
+                        .unwrap();
                 }));
                 socket.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
                 onclose_callback.forget();
 
                 let connected_clone = self.connected.clone();
+                let ws_service_reconnect = Rc::new(self.clone_for_reconnect());
+                let event_service_clone = Rc::clone(&self.event_service);
                 // onerror
                 let onerror_callback = Closure::<dyn FnMut(_)>::wrap(Box::new(move |e: ErrorEvent| {
                     error!("WebSocket error");
                     connected_clone.store(false, Ordering::SeqCst);
+                    event_service_clone.broadcast(EventMessage::WebSocketStatus(false));
                     web_sys::console::error_1(&e);
+
+                    // schedule reconnect after 3 seconds
+                    let ws_service_inner = ws_service_reconnect.clone();
+                    let timeout_cb = Closure::once_into_js(Box::new(move || {
+                        ws_service_inner.connect_ws();
+                    }) as Box<dyn FnOnce()>);
+
+                    web_sys::window()
+                        .unwrap()
+                        .set_timeout_with_callback_and_timeout_and_arguments_0(
+                            timeout_cb.as_ref().unchecked_ref(),
+                            WS_RECONNECT_MS,
+                        )
+                        .unwrap();
                 }));
                 socket.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
                 onerror_callback.forget();

@@ -1,5 +1,4 @@
-use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView,
-                             PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView};
+use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView, WebsocketStatus};
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
@@ -160,6 +159,7 @@ pub fn Home() -> Html {
                         }
                         </div>
                         <div class={"tp__app-header-toolbar"}>
+                            <WebsocketStatus/>
                             <IconButton name="Theme" icon={if *theme == Theme::Bright {"Moon"} else {"Sun"}} onclick={handle_theme_switch} />
                             <IconButton name="Logout" icon="Logout" onclick={handle_logout} />
                         </div>

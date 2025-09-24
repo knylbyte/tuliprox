@@ -1,6 +1,6 @@
 use yew::{function_component, html, Callback, Html};
 use crate::app::components::loading_indicator::BusyIndicator;
-use crate::app::components::{AppIcon, IconButton, ToastrView};
+use crate::app::components::{AppIcon, IconButton, ToastrView, WebsocketStatus};
 use crate::app::components::theme::Theme;
 use crate::hooks::use_service_context;
 use crate::provider::DialogProvider;
@@ -44,6 +44,7 @@ pub fn ApiUserView() -> Html {
                         }
                         </div>
                         <div class={"tp__app-header-toolbar"}>
+                            <WebsocketStatus/>
                             <IconButton name="Theme" icon={if *theme == Theme::Bright {"Moon"} else {"Sun"}} onclick={handle_theme_switch} />
                             <IconButton name="Logout" icon="Logout" onclick={handle_logout} />
                         </div>
