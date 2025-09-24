@@ -90,7 +90,7 @@ COPY backend/Cargo.toml  ./backend/
 # Create dummy sources so cargo can build dependency graph only
 # (no need to compile your actual app code yet)
 RUN set -eux; \
-    mkdir -p frontend/src shared/src && \
+    mkdir -p backend/src frontend/src shared/src && \
     echo 'fn main() {}'      > backend/src/main.rs && \
     echo "fn main() {}"      > frontend/src/main.rs && \
     echo "pub fn dummy() {}" > frontend/src/lib.rs  && \
