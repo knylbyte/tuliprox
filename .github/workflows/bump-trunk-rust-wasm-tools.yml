@@ -1,5 +1,5 @@
 ---
-name: Rust Bump trunk & wasm-bindgen-cli
+name: Bump Trunk & Wasm-Bindgen-CLI
 
 on:
   workflow_dispatch:

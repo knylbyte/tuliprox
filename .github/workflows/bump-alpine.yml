@@ -1,4 +1,5 @@
-name: Alpine Bump
+---
+name: Bump Alpine
 
 on:
   workflow_dispatch:

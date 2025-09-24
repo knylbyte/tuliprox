@@ -1,5 +1,5 @@
 ---
-name: Docker Build & Push rust-wasm-tools (prebuild)
+name: Docker Build & Push Trunk and Rust-Wasm-Tools (prebuild)
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ on:
           required: false
   push:
     paths:
-      - docker/build-tools/rust-wasm-tools.Dockerfile
+      - docker/build-tools/docker-build-trunk-rust-wasm-tools.Dockerfile
 
 concurrency:
   group: update-rust-wasm-prebuild-image

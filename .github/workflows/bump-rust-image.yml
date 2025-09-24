@@ -1,5 +1,5 @@
 ---
-name: Rust Distro Bump
+name: Bump Rust Image
 
 on:
   workflow_dispatch:
