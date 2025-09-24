@@ -144,7 +144,7 @@ impl WebSocketService {
                     web_sys::window()
                         .unwrap()
                         .set_timeout_with_callback_and_timeout_and_arguments_0(
-                            timeout_cb.as_ref().unchecked_ref(),
+                            timeout_cb.unchecked_ref(),
                             WS_RECONNECT_MS,
                         )
                         .unwrap();
@@ -171,7 +171,7 @@ impl WebSocketService {
                     web_sys::window()
                         .unwrap()
                         .set_timeout_with_callback_and_timeout_and_arguments_0(
-                            timeout_cb.as_ref().unchecked_ref(),
+                            timeout_cb.unchecked_ref(),
                             WS_RECONNECT_MS,
                         )
                         .unwrap();
