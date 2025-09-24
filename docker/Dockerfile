@@ -85,6 +85,7 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY frontend/Cargo.toml ./frontend/
 COPY shared/Cargo.toml   ./shared/
+COPY backend/Cargo.toml  ./backend/
 
 # Create dummy sources so cargo can build dependency graph only
 # (no need to compile your actual app code yet)
