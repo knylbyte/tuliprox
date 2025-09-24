@@ -1,5 +1,5 @@
 ---
-name: Docker Build & Push trunk & rust-wasm-tools (prebuild)
+name: Docker Build & Push trunk & rust-build-tools (prebuild)
 
 on:
   workflow_dispatch:
@@ -16,15 +16,15 @@ on:
 
   push:
     paths:
-      - .github/workflows/docker-build-trunk-rust-wasm-tools.yml
-      - docker/build-tools/trunk-rust-wasm-tools.Dockerfile
+      - .github/workflows/docker-build-rust-build-tools.yml
+      - docker/build-tools/rust-build-tools.Dockerfile
 
 concurrency:
   group: update-rust-wasm-prebuild-image
   cancel-in-progress: true
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}/rust-wasm-tools
+  IMAGE: ghcr.io/${{ github.repository }}/rust-build-tools
 
 jobs:
   build:
@@ -70,7 +70,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/build-tools/trunk-rust-wasm-tools.Dockerfile
+          file: docker/build-tools/rust-build-tools.Dockerfile
           platforms: ${{ matrix.platform }}
           build-args:
             BUILDKIT_INLINE_CACHE=1
@@ -141,7 +141,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## rust-wasm-tools \`${{ matrix.tag }}\`"
+            echo "## rust-build-tools \`${{ matrix.tag }}\`"
             echo ""
             echo "🖼️ Image: \`${{ env.IMAGE }}:${{ matrix.tag }}\`"
             echo "🧭 Platform: \`${{ matrix.platform }}\`"
@@ -201,7 +201,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## rust-wasm-tools \`:latest\` manifest"
+            echo "## rust-build-tools \`:latest\` manifest"
             if [[ "${{ steps.create.outcome }}" == "success" ]]; then
               echo "✅ Multi-arch manifest created:"
               echo "- linux-amd64"
