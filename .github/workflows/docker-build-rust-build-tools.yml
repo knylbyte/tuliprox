@@ -1,5 +1,5 @@
 ---
-name: Docker Build & Push trunk & rust-build-tools (prebuild)
+name: Docker Build & Push rust-build-tools (prebuild)
 
 on:
   workflow_dispatch:
