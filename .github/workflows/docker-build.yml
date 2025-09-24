@@ -461,8 +461,6 @@ jobs:
     name: Manifests
     needs: build
     runs-on: ubuntu-24.04
-    env:
-      IMAGE: ${{ env.IMAGE }}
 
     steps:
       # Keep login/buildx setup minimal and explicit
