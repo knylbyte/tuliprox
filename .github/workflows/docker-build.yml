@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "archs=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
+          echo "archs=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
 
       - name: Step 1.4 - Check prebuild availability (all archs)
         id: check
@@ -168,9 +168,6 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
             arch_tag: linux-arm64
-          - platform: linux/arm/v7
-            runner: ubuntu-24.04-arm
-            arch_tag: linux-armv7
 
     steps:
       - name: Step 2.1 - Checkout
@@ -357,7 +354,7 @@ jobs:
           echo "plan=${PLAN}" >> "$GITHUB_OUTPUT"
 
           # Emit ARCHES used for manifests (keep in sync with your matrix)
-          echo "arches=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
+          echo "arches=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
 
       # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
       - name: Step 2.11 - Extract release notes (master only, new version)
@@ -428,7 +425,7 @@ jobs:
             echo ""
             echo "### 🧩 Prebuilds"
             echo "- Namespace: \`${{ env.GHCR_NS }}\`"
-            echo "- Checked arch tags: linux-amd64 • linux-arm64 • linux-armv7"
+            echo "- Checked arch tags: linux-amd64 • linux-arm64"
             echo ""
             echo "### 🧷 Cache"
             echo "- GHA cache scopes per-arch/plan"
@@ -454,7 +451,7 @@ jobs:
             fi
             echo ""
             echo "### 🧭 Platforms"
-            echo "- linux/amd64 • linux/arm64 • linux/arm/v7"
+            echo "- linux/amd64 • linux/arm64"
           } >> "$GITHUB_STEP_SUMMARY"
 
   manifests:
