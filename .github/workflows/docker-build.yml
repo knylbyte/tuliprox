@@ -325,36 +325,39 @@ jobs:
           cache-to: |
             type=gha,mode=max,scope=final-dev-alpine-${{ matrix.arch_tag }}
 
-      # --- Create multi-arch manifests for final tags ---
-      - name: Step 2.10 - Create manifests
-        env:
-          IMAGE: ${{ env.IMAGE }}
+
+      # --- Export PLAN/TAGS for manifests ---
+      - name: Step 2.10 - Export PLAN/TAGS for manifests
+        id: export
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t TAGS < ${{ steps.plan.outputs.tags_file }}
 
-          make_manifest () {
-            local tag="$1"
-            local src=()
-            case "$tag" in
-              dev-slim* )
-                src=( "${IMAGE}:temp-dev-linux-amd64" "${IMAGE}:temp-dev-linux-arm64" "${IMAGE}:temp-dev-linux-armv7" )
-                ;;
-              dev* )
-                src=( "${IMAGE}:temp-dev-alpine-linux-amd64" "${IMAGE}:temp-dev-alpine-linux-arm64" "${IMAGE}:temp-dev-alpine-linux-armv7" )
-                ;;
-              * )
-                src=( "${IMAGE}:temp-${{ steps.plan.outputs.plan }}-linux-amd64" "${IMAGE}:temp-${{ steps.plan.outputs.plan }}-linux-arm64" "${IMAGE}:temp-${{ steps.plan.outputs.plan }}-linux-armv7" )
-                ;;
-            esac
-            echo "⛏️  Creating manifest ${IMAGE}:${tag}"
-            docker buildx imagetools create -t "${IMAGE}:${tag}" "${src[@]}"
-          }
+          # Read from existing plan step outputs
+          PLAN="${{ steps.plan.outputs.plan }}"
+          TAGS_FILE="${{ steps.plan.outputs.tags_file }}"
 
-          [[ -s "${{ steps.plan.outputs.tags_file }}" ]] || { echo "No tags to publish"; exit 0; }
-          for t in "${TAGS[@]}"; do make_manifest "$t"; done
-          printf '%s\n' "${TAGS[@]}" | grep -qx 'latest' && docker buildx imagetools inspect "${IMAGE}:latest" || true
+          if [[ -z "${PLAN}" ]]; then
+            echo "PLAN is empty"; exit 1
+          fi
+
+          # Emit multi-line TAGS output directly (keeps your tag list logic)
+          if [[ -n "${TAGS_FILE}" && -s "${TAGS_FILE}" ]]; then
+            {
+              echo "tags<<EOF"
+              cat "${TAGS_FILE}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            # No tags computed -> empty (downstream job will no-op)
+            echo "tags=" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Emit PLAN (single-line)
+          echo "plan=${PLAN}" >> "$GITHUB_OUTPUT"
+
+          # Emit ARCHES used for manifests (keep in sync with your matrix)
+          echo "arches=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
 
       # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
       - name: Step 2.11 - Extract release notes (master only, new version)
@@ -452,4 +455,113 @@ jobs:
             echo ""
             echo "### 🧭 Platforms"
             echo "- linux/amd64 • linux/arm64 • linux/arm/v7"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  manifests:
+    name: Manifests
+    needs: build
+    runs-on: ubuntu-24.04
+    env:
+      IMAGE: ${{ env.IMAGE }}
+
+    steps:
+      # Keep login/buildx setup minimal and explicit
+      - name: Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: GHCR Login
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Create manifests ---
+      - name: Step 3.1 - Create manifests
+        id: create
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PLAN='${{ needs.build.outputs.plan }}'
+          TAGS_INPUT='${{ needs.build.outputs.tags }}'
+          ARCHES_INPUT='${{ needs.build.outputs.arches }}'
+
+          # Parse multi-line list of tags and space-separated arches
+          readarray -t TAGS <<< "$TAGS_INPUT"
+          read -r -a ARCHES <<< "$ARCHES_INPUT"
+
+          # No tags -> nothing to do
+          if [[ ${#TAGS[@]} -eq 0 || -z "${TAGS[0]// }" ]]; then
+            echo "No tags to publish"; exit 0
+          fi
+
+          make_manifest () {
+            local tag="$1"
+            local src=()
+
+            # Build source list per architecture
+            for arch in "${ARCHES[@]}"; do
+              case "$tag" in
+                dev-slim* )
+                  # temp-dev-<arch>
+                  src+=( "${IMAGE}:temp-dev-${arch}" )
+                  ;;
+                dev* )
+                  # temp-dev-alpine-<arch>
+                  src+=( "${IMAGE}:temp-dev-alpine-${arch}" )
+                  ;;
+                * )
+                  # temp-<plan>-<arch>
+                  src+=( "${IMAGE}:temp-${PLAN}-${arch}" )
+                  ;;
+              esac
+            done
+
+            echo "⛏️  Creating manifest ${IMAGE}:${tag}"
+            docker buildx imagetools create -t "${IMAGE}:${tag}" "${src[@]}"
+          }
+
+          for t in "${TAGS[@]}"; do
+            # Skip blank lines safely
+            [[ -n "${t// }" ]] || continue
+            make_manifest "$t"
+          done
+
+      # --- Final summary for the manifests ---
+      - name: Summary (manifests)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 📚 Multi-arch manifests"
+            echo ""
+            if [[ "${{ steps.create.outcome }}" == "success" ]]; then
+              echo "✅ All requested manifests were created."
+            else
+              echo "❌ Manifest creation encountered an error."
+            fi
+            echo ""
+
+            echo "### 🏷️ Tags"
+            # Reuse outputs for a user-friendly list
+            TAGS_INPUT='${{ needs.build.outputs.tags }}'
+            if [[ -n "$TAGS_INPUT" ]]; then
+              while IFS= read -r line; do
+                [[ -n "${line// }" ]] || continue
+                echo "- \`${{ env.IMAGE }}:${line}\`"
+              done <<< "$TAGS_INPUT"
+            else
+              echo "- (none)"
+            fi
+
+            echo ""
+            echo "### 🧩 Architectures"
+            for a in ${{ needs.build.outputs.arches }}; do
+              echo "- ${a}"
+            done
+
+            echo ""
+            echo "### 📦 Registry"
+            echo "- ghcr.io"
           } >> "$GITHUB_STEP_SUMMARY"
