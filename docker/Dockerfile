@@ -56,10 +56,11 @@ RUN set -eux; \
     echo "pub fn dummy() {}" > shared/src/lib.rs
 
 # Build deps (cached)
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-rust,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,     id=cargo-git-rust,     sharing=locked \
     set -eux; \
-    cargo build -p tuliprox --target "$(cat /rust-target)" --release || true
+    cargo build -p tuliprox --target "$(cat /rust-target)" --release
+
 
 # Real sources + release build (ensure static for musl)
 COPY . .
@@ -98,8 +99,8 @@ RUN set -eux; \
 
 # Build only dependencies for the frontend crate on the WASM target
 # Result: registry/git caches + compiled deps kept in image layers.
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-trunk,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,     id=cargo-git-trunk,     sharing=locked \
     set -eux; \
     cargo build --manifest-path frontend/Cargo.toml \
                 --target ${RUST_TARGET} \
