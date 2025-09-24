@@ -63,7 +63,6 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args:
             BUILDKIT_INLINE_CACHE=1
-            ALPINE_VERSION=${{ github.event.inputs.alpine_ver || '3.18' }}
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ matrix.tag }}
