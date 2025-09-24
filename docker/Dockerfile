@@ -55,6 +55,9 @@ RUN set -eux; \
     echo "fn main() {}"      > frontend/src/main.rs && \
     echo "pub fn dummy() {}" > shared/src/lib.rs
 
+# Use sparse protocol for crates.io registry to reduce data transfer
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+
 # Build deps (cached)
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-rust,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,     id=cargo-git-rust,     sharing=locked \
@@ -96,6 +99,9 @@ RUN set -eux; \
     echo "fn main() {}"      > frontend/src/main.rs && \
     echo "pub fn dummy() {}" > frontend/src/lib.rs  && \
     echo "pub fn dummy() {}" > shared/src/lib.rs
+
+# Use sparse protocol for crates.io registry to reduce data transfer
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
 # Build only dependencies for the frontend crate on the WASM target
 # Result: registry/git caches + compiled deps kept in image layers.
