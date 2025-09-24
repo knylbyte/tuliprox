@@ -12,7 +12,7 @@ on:
           required: false
   push:
     paths:
-      - docker/build-tools/docker-build-trunk-rust-wasm-tools.Dockerfile
+      - docker/build-tools/trunk-rust-wasm-tools.Dockerfile
 
 concurrency:
   group: update-rust-wasm-prebuild-image
