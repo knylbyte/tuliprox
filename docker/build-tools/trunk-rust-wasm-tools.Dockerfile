@@ -9,6 +9,7 @@
 ARG RUST_DISTRO=1.90.0-trixie
 ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.103
+ARG CARGO_CHEF_VER=0.1.72
 
 ############################################
 # Builder runs on the BUILDPLATFORM (no QEMU)
@@ -20,6 +21,7 @@ ARG TARGETPLATFORM
 ARG TRUNK_VER
 ARG BINDGEN_VER
 
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
@@ -73,13 +75,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install --locked trunk --version ${TRUNK_VER} \
       --target "$(cat /rust-target)" --root /out && \
     cargo install --locked wasm-bindgen-cli --version ${BINDGEN_VER} \
+      --target "$(cat /rust-target)" --root /out && \
+    cargo install --locked cargo-chef --version ${CARGO_CHEF_VER} \
       --target "$(cat /rust-target)" --root /out
 
 # Strip (best-effort)
 RUN case "$(cat /rust-target)" in \
-      armv7-unknown-linux-gnueabihf)  arm-linux-gnueabihf-strip /out/bin/trunk /out/bin/wasm-bindgen || true ;; \
-      aarch64-unknown-linux-gnu)      aarch64-linux-gnu-strip   /out/bin/trunk /out/bin/wasm-bindgen || true ;; \
-      x86_64-unknown-linux-gnu)       strip                     /out/bin/trunk /out/bin/wasm-bindgen || true ;; \
+      armv7-unknown-linux-gnueabihf)  arm-linux-gnueabihf-strip /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef || true ;; \
+      aarch64-unknown-linux-gnu)      aarch64-linux-gnu-strip   /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef || true ;; \
+      x86_64-unknown-linux-gnu)       strip                     /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef || true ;; \
     esac
 
 ############################################
@@ -90,10 +94,13 @@ FROM rust:${RUST_DISTRO}
 
 ARG TRUNK_VER
 ARG BINDGEN_VER
+ARG CARGO_CHEF_VER
 
 LABEL io.tuliprox.trunk.version="${TRUNK_VER}" \
-      io.tuliprox.wasm_bindgen.version="${BINDGEN_VER}"
+      io.tuliprox.wasm_bindgen.version="${BINDGEN_VER}" \
+      io.tuliprox.cargo_chef.version="${CARGO_CHEF_VER}"
 
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
@@ -134,7 +141,13 @@ ENV CC_x86_64_unknown_linux_musl=musl-gcc \
 # Ship tool binaries built in the builder stage
 COPY --from=builder /out/bin/trunk /usr/local/cargo/bin/trunk
 COPY --from=builder /out/bin/wasm-bindgen /usr/local/cargo/bin/wasm-bindgen
+COPY --from=builder /out/bin/cargo-chef /usr/local/cargo/bin/cargo-chef
 
 # Quick sanity
-RUN chmod +x /usr/local/cargo/bin/trunk /usr/local/cargo/bin/wasm-bindgen \
- && trunk --version && wasm-bindgen --version
+RUN chmod +x  /usr/local/cargo/bin/trunk \
+              /usr/local/cargo/bin/wasm-bindgen \
+              /usr/local/cargo/bin/cargo-chef
+RUN trunk --version \
+ && wasm-bindgen --version \
+ && cargo-chef --version
+
