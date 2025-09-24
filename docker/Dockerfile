@@ -91,6 +91,7 @@ COPY backend/Cargo.toml  ./backend/
 # (no need to compile your actual app code yet)
 RUN set -eux; \
     mkdir -p frontend/src shared/src && \
+    echo 'fn main() {}'      > backend/src/main.rs && \
     echo "fn main() {}"      > frontend/src/main.rs && \
     echo "pub fn dummy() {}" > frontend/src/lib.rs  && \
     echo "pub fn dummy() {}" > shared/src/lib.rs
@@ -180,7 +181,11 @@ RUN set -eux; \
 
 # Layout under /opt (root-owned)
 RUN set -eux; \
-    mkdir -p /opt/tuliprox/bin /opt/tuliprox/data /opt/tuliprox/web /opt/tuliprox/resources
+    mkdir -p \
+    /opt/tuliprox/bin \
+    /opt/tuliprox/data \
+    /opt/tuliprox/web \
+    /opt/tuliprox/resources
 
 # Copy zoneinfo & CA store
 COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
