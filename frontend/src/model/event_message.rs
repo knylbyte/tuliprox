@@ -13,4 +13,5 @@ pub enum EventMessage {
     Busy(BusyStatus),
     PlaylistUpdate(PlaylistUpdateState),
     PlaylistUpdateProgress(String, String),
+    WebSocketStatus(bool),
 }

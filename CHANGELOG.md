@@ -6,7 +6,8 @@
 - Using tmdbid for VOD from get_vod_streams if available, which makes using resolve_vod for STRM generation not necessary.
 - File length problem with strm generation fixed.
 - Series name empty paren problem fixed.
-- Default sort removed 
+- Default sort removed
+- Reconnect on WebSocket disconnect, WebSocket connection status icon in WEB-UI
 
 # 3.1.6 (2025-09-01)
 - EPG Config View added
