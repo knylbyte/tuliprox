@@ -70,7 +70,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/build-tools/rust-wasm-tools.Dockerfile
+          file: docker/build-tools/trunk-rust-wasm-tools.Dockerfile
           platforms: ${{ matrix.platform }}
           build-args:
             BUILDKIT_INLINE_CACHE=1
