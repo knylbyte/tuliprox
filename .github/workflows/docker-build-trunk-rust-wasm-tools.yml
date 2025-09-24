@@ -1,5 +1,5 @@
 ---
-name: Docker Build & Push Trunk and Rust-Wasm-Tools (prebuild)
+name: Docker Build & Push trunk & rust-wasm-tools (prebuild)
 
 on:
   workflow_dispatch:

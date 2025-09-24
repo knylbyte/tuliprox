@@ -1,5 +1,5 @@
 ---
-name: Docker Build & Push
+name: Docker Build & Push tuliprox
 
 on:
   workflow_dispatch:
