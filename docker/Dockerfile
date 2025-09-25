@@ -171,18 +171,6 @@ COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 RUN set -eux; \
     cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
-# Recreate minimal workspace and add real sources for the build step
-# (we re-create it here since this is a new stage)
-RUN set -eux; \
-    printf '%s\n' \
-      '[workspace]' \
-      'members=["frontend","shared"]' \
-      'resolver="2"' \
-      '' \
-      '[workspace.package]' \
-      'edition="2021"' \
-      > /src/Cargo.toml
-
 COPY frontend ./frontend
 COPY shared   ./shared
 
