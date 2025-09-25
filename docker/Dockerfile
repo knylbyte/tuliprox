@@ -54,7 +54,7 @@ RUN rustup target add "$(cat /rust-target)" || true
 #  - Builds ONLY dependencies as cacheable Docker layers
 #  - No cache-mounts here → proper cross-run caching via buildx
 # =============================================================================
-FROM chef as backend-planer
+FROM chef AS backend-planer
 
 WORKDIR /src
 
@@ -72,7 +72,7 @@ RUN set -eux; \
 #  - Builds dependencies as cacheable Docker layers
 #  - Builds backend binary statically (musl)
 # =============================================================================
-FROM chef as backend-builder
+FROM chef AS backend-builder
 
 ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 
