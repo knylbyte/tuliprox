@@ -17,7 +17,7 @@ ARG ALPINE_VERSION=3.22.1
 # Build stage to produce ffmpeg resources
 # -> contains prebuilt .ts files from .jpg
 ############################################
-FROM alpine:${ALPINE_VERSION} as resources
+FROM alpine:${ALPINE_VERSION} AS resources
 
 RUN apk add --no-cache ffmpeg
 WORKDIR /src
