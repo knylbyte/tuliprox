@@ -8,7 +8,7 @@
 ############################################
 ARG RUST_DISTRO=1.90.0-trixie
 ARG TRUNK_VER=0.21.14
-ARG BINDGEN_VER=0.2.103
+ARG BINDGEN_VER=0.2.104
 
 ############################################
 # Builder runs on the BUILDPLATFORM (no QEMU)
