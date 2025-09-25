@@ -62,22 +62,22 @@ FROM chef AS backend-planer
 WORKDIR /src
 
 # Synthetic minimal workspace (backend + shared only) to keep frontend out
-RUN set -eux; printf '%s\n' \
-  '[workspace]' \
-  'members=["backend","shared"]' \
-  'resolver="2"' \
-  '' \
-  '[workspace.package]' \
-  'edition="2021"' \
-  '' \
-  '[profile.release]' \
-  'debug = false' \
-  'opt-level = \'z\'   # Optimize for size.' \
-  'lto = true          # Enable Link Time Optimization' \
-  'codegen-units = 1   # Reduce number of codegen units to increase optimizations.' \
-  'panic = \'abort\'   # Abort on panic' \
-  'strip = true' \
-  > /src/Cargo.toml
+RUN set -eux; cat > /src/Cargo.toml <<'TOML'
+[workspace]
+members = ["backend","shared"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+
+[profile.release]
+debug = false
+opt-level = "z"        # Optimize for size
+lto = true             # Link Time Optimization
+codegen-units = 1      # Fewer codegen units -> better opts
+panic = "abort"        # Abort on panic
+strip = true
+TOML
 
 # Copy manifests only (no sources yet)
 COPY backend/Cargo.toml  ./backend/
@@ -126,22 +126,22 @@ FROM chef AS frontend-planer
 WORKDIR /src
 
 # Synthetic minimal workspace (frontend + shared only) to keep backend out
-RUN set -eux; printf '%s\n' \
-  '[workspace]' \
-  'members=["frontend","shared"]' \
-  'resolver="2"' \
-  '' \
-  '[workspace.package]' \
-  'edition="2021"' \
-  '' \
-  '[profile.release]' \
-  'debug = false' \
-  'opt-level = \'z\'   # Optimize for size.' \
-  'lto = true          # Enable Link Time Optimization' \
-  'codegen-units = 1   # Reduce number of codegen units to increase optimizations.' \
-  'panic = \'abort\'   # Abort on panic' \
-  'strip = true' \
-  > /src/Cargo.toml
+RUN set -eux; cat > /src/Cargo.toml <<'TOML'
+[workspace]
+members = ["frontend","shared"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+
+[profile.release]
+debug = false
+opt-level = "z"        # Optimize for size
+lto = true             # Link Time Optimization
+codegen-units = 1      # Fewer codegen units -> better opts
+panic = "abort"        # Abort on panic
+strip = true
+TOML
 
 # Copy only manifests for the WASM part
 COPY frontend/Cargo.toml ./frontend/
