@@ -13,11 +13,15 @@ on:
       cargo_chef_ver:
         description: "cargo-chef version"
         required: false
+      alpine_ver:
+        description: "Alpine version for resources stage"
+        required: false
 
   push:
     paths:
       - .github/workflows/docker-build-tuliprox-build-tools.yml
       - docker/build-tools/tuliprox-build-tools.Dockerfile
+      - resources/**
 
 concurrency:
   group: update-rust-wasm-prebuild-image
@@ -58,6 +62,34 @@ jobs:
         with:
           platforms: ${{ matrix.platform }}
 
+      - name: Prepare build args
+        id: build-args
+        shell: bash
+        env:
+          TRUNK_INPUT: ${{ github.event.inputs.trunk_ver }}
+          BINDGEN_INPUT: ${{ github.event.inputs.bindgen_ver }}
+          CHEF_INPUT: ${{ github.event.inputs.cargo_chef_ver }}
+          ALPINE_INPUT: ${{ github.event.inputs.alpine_ver }}
+        run: |
+          set -euo pipefail
+          {
+            echo "value<<EOF"
+            echo "BUILDKIT_INLINE_CACHE=1"
+            if [ -n "${TRUNK_INPUT}" ]; then
+              echo "TRUNK_VER=${TRUNK_INPUT}"
+            fi
+            if [ -n "${BINDGEN_INPUT}" ]; then
+              echo "BINDGEN_VER=${BINDGEN_INPUT}"
+            fi
+            if [ -n "${CHEF_INPUT}" ]; then
+              echo "CARGO_CHEF_VER=${CHEF_INPUT}"
+            fi
+            if [ -n "${ALPINE_INPUT}" ]; then
+              echo "ALPINE_VERSION=${ALPINE_INPUT}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -72,8 +104,7 @@ jobs:
           context: .
           file: docker/build-tools/tuliprox-build-tools.Dockerfile
           platforms: ${{ matrix.platform }}
-          build-args:
-            BUILDKIT_INLINE_CACHE=1
+          build-args: ${{ steps.build-args.outputs.value }}
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ matrix.tag }}
@@ -130,6 +161,26 @@ jobs:
             fi
           fi
 
+          check_file () {
+            docker run --rm --platform "$PLAT" "$IMG" sh -lc "test -f \"$1\"" >/dev/null 2>&1
+          }
+
+          RES_DIR="/src/resources"
+          CHANNEL="${RES_DIR}/channel_unavailable.ts"
+          USER_CONN="${RES_DIR}/user_connections_exhausted.ts"
+          PROVIDER_CONN="${RES_DIR}/provider_connections_exhausted.ts"
+          USER_EXPIRED="${RES_DIR}/user_account_expired.ts"
+
+          ALL_OK=true
+
+          if check_file "$CHANNEL"; then echo "channel_unavailable=ok" >> "$GITHUB_OUTPUT"; else echo "channel_unavailable=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+          if check_file "$USER_CONN"; then echo "user_connections_exhausted=ok" >> "$GITHUB_OUTPUT"; else echo "user_connections_exhausted=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+          if check_file "$PROVIDER_CONN"; then echo "provider_connections_exhausted=ok" >> "$GITHUB_OUTPUT"; else echo "provider_connections_exhausted=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+          if check_file "$USER_EXPIRED"; then echo "user_account_expired=ok" >> "$GITHUB_OUTPUT"; else echo "user_account_expired=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+
+          echo "resources_ok=$ALL_OK" >> "$GITHUB_OUTPUT"
+          echo "alpine_version=${{ github.event.inputs.alpine_ver || '3.22.1' }}" >> "$GITHUB_OUTPUT"
+
           echo "trunk_version=${TRUNK:-unknown}"   >> "$GITHUB_OUTPUT"
           echo "bindgen_version=${BINDGEN:-unknown}" >> "$GITHUB_OUTPUT"
           echo "chef_version=${CHEF:-unknown}"       >> "$GITHUB_OUTPUT"
@@ -163,6 +214,20 @@ jobs:
             echo "🔧 trunk: **${{ steps.img.outputs.trunk_version }}**"
             echo "🔧 wasm-bindgen: **${{ steps.img.outputs.bindgen_version }}**"
             echo "🔧 cargo-chef: **${{ steps.img.outputs.chef_version }}**"
+            echo ""
+            echo "🗂️ Resources"
+            echo "- channel_unavailable.ts: $([[ '${{ steps.img.outputs.channel_unavailable }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo "- user_connections_exhausted.ts: $([[ '${{ steps.img.outputs.user_connections_exhausted }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo "- provider_connections_exhausted.ts: $([[ '${{ steps.img.outputs.provider_connections_exhausted }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo "- user_account_expired.ts: $([[ '${{ steps.img.outputs.user_account_expired }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo ""
+            echo "📦 Alpine: **${{ steps.img.outputs.alpine_version }}**"
+            echo ""
+            if [[ "${{ steps.img.outputs.resources_ok }}" == "true" && "${{ steps.img.outputs.published }}" == "true" ]]; then
+              echo "🎉 All resource files present."
+            else
+              echo "⚠️ One or more resource files are missing."
+            fi
             echo ""
             echo "---"
           } >> "$GITHUB_STEP_SUMMARY"
