@@ -61,17 +61,38 @@ FROM chef AS backend-planer
 
 WORKDIR /src
 
+# Synthetic minimal workspace (backend + shared only) to keep frontend out
+RUN set -eux; printf '%s\n' \
+  '[workspace]' \
+  'members=["backend","shared"]' \
+  'resolver="2"' \
+  '' \
+  '[workspace.package]' \
+  'edition="2021"' \
+  '' \
+  '[profile.release]' \
+  'debug = false' \
+  'opt-level = \'z\'   # Optimize for size.' \
+  'lto = true          # Enable Link Time Optimization' \
+  'codegen-units = 1   # Reduce number of codegen units to increase optimizations.' \
+  'panic = \'abort\'   # Abort on panic' \
+  'strip = true' \
+  > /src/Cargo.toml
+
 # Copy manifests only (no sources yet)
-COPY Cargo.toml Cargo.lock ./
 COPY backend/Cargo.toml  ./backend/
 COPY shared/Cargo.toml   ./shared/
+
+# Ensure we have a lockfile (in case none was present)
+RUN set -eux; \
+    [ -f /src/Cargo.lock ] || cargo generate-lockfile
 
 # Cargo (and cargo-chef) require at least one target per workspace member.
 # We do not copy real sources here (to keep deps layer stable), so create minimal dummies.
 RUN set -eux; \
-    mkdir -p backend/src shared/src && \
-    echo 'fn main() {}'      > backend/src/main.rs && \
-    echo 'pub fn dummy() {}' > shared/src/lib.rs && \
+    # mkdir -p backend/src shared/src && \
+    # echo 'fn main() {}'      > backend/src/main.rs && \
+    # echo 'pub fn dummy() {}' > shared/src/lib.rs && \
     cargo chef prepare --recipe-path backend-recipe.json
 
 # =============================================================================
@@ -104,22 +125,27 @@ RUN cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 FROM chef AS frontend-planer
 WORKDIR /src
 
-# Synthetic minimal workspace to keep cargo from scanning backend
+# Synthetic minimal workspace (frontend + shared only) to keep backend out
 RUN set -eux; printf '%s\n' \
   '[workspace]' \
   'members=["frontend","shared"]' \
   'resolver="2"' \
   '' \
   '[workspace.package]' \
-  'edition="2021"' > /src/Cargo.toml
+  'edition="2021"' \
+  '' \
+  '[profile.release]' \
+  'debug = false' \
+  'opt-level = \'z\'   # Optimize for size.' \
+  'lto = true          # Enable Link Time Optimization' \
+  'codegen-units = 1   # Reduce number of codegen units to increase optimizations.' \
+  'panic = \'abort\'   # Abort on panic' \
+  'strip = true' \
+  > /src/Cargo.toml
 
 # Copy only manifests for the WASM part
 COPY frontend/Cargo.toml ./frontend/
 COPY shared/Cargo.toml   ./shared/
-
-# Prefer to align versions with the backend lockfile if it exists
-# (keeps crate versions coherent across backend/frontend)
-COPY --from=backend-planer /src/Cargo.lock /src/Cargo.lock
 
 # Ensure we have a lockfile (in case none was present)
 RUN set -eux; \
@@ -127,9 +153,9 @@ RUN set -eux; \
 
 # Produce the dependency recipe for WASM
 RUN set -eux; \
-    mkdir -p frontend/src shared/src && \
-    echo 'fn main() {}'      > frontend/src/main.rs && \
-    echo 'pub fn dummy() {}' > shared/src/lib.rs \
+    # mkdir -p frontend/src shared/src && \
+    # echo 'fn main() {}'      > frontend/src/main.rs && \
+    # echo 'pub fn dummy() {}' > shared/src/lib.rs \
     cargo chef prepare --recipe-path frontend-recipe.json
 
 # =============================================================================
