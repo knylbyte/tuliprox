@@ -431,7 +431,7 @@ jobs:
           echo "plan=${PLAN}" >> "$GITHUB_OUTPUT"
 
           # Emit ARCHES used for manifests (keep in sync with your matrix)
-          echo "arches=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
+          echo "arches=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
 
       # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
       - name: Step 2.11 - Extract release notes (master only, new version)
