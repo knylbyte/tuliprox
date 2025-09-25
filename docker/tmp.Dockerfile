@@ -5,7 +5,7 @@
 # These stages are used as building blocks for the final images.
 # They prepare the Rust binary, the Node.js frontend, and other resources.
 #
-# - Uses the prebuild image: ${GHCR_NS}/rust-build-tools:${BUILDPLATFORM_TAG}
+# - Uses the prebuild image: ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG}
 # - Deterministic dep caching via cargo-chef (deps as Docker layers)
 # - Sparse index for crates.io
 #

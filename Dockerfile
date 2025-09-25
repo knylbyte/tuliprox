@@ -5,7 +5,7 @@
 # These stages are used as building blocks for the final images.
 # They prepare the Rust binary, the Node.js frontend, and other resources.
 #
-# - Uses the prebuild image: ${GHCR_NS}/rust-build-tools:${BUILDPLATFORM_TAG}
+# - Uses the prebuild image: ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG}
 # - Deterministic dep caching via cargo-chef (deps as Docker layers)
 # - Sparse index for crates.io
 #
@@ -25,7 +25,7 @@ ARG DEFAULT_TZ=UTC
 #  - Generates a recipe.json that represents all Rust dependencies
 #  - Computes /rust-target from TARGETPLATFORM if RUST_TARGET not set
 # =============================================================================
-FROM ${GHCR_NS}/rust-build-tools:${BUILDPLATFORM_TAG} AS chef
+FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS chef
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
@@ -57,7 +57,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 #  - Builds ONLY dependencies as cacheable Docker layers
 #  - No cache-mounts here → proper cross-run caching via buildx
 # =============================================================================
-FROM ${GHCR_NS}/rust-build-tools:${BUILDPLATFORM_TAG} AS deps
+FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS deps
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 WORKDIR /src
@@ -74,7 +74,7 @@ RUN set -eux; \
 #  - Reuses compiled deps from Stage 1
 #  - Builds backend binary statically (musl)
 # =============================================================================
-FROM ${GHCR_NS}/rust-build-tools:${BUILDPLATFORM_TAG} AS rust-build
+FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS rust-build
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
     RUSTFLAGS='--remap-path-prefix $HOME=~ -C target-feature=+crt-static'
@@ -100,7 +100,7 @@ RUN set -eux; \
 # -----------------------------------------------------------------
 # Stage 2: Build the rust frontend (uses prebuild)
 # -----------------------------------------------------------------
-FROM ${GHCR_NS}/rust-build-tools:${BUILDPLATFORM_TAG} AS trunk-build
+FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS trunk-build
 
 # Default WASM target used by trunk/cargo
 ARG RUST_TARGET=wasm32-unknown-unknown
