@@ -83,16 +83,14 @@ TOML
 COPY backend/Cargo.toml  ./backend/
 COPY shared/Cargo.toml   ./shared/
 
-# Ensure we have a lockfile (in case none was present)
-RUN set -eux; \
-    [ -f /src/Cargo.lock ] || cargo generate-lockfile
-
 # Cargo (and cargo-chef) require at least one target per workspace member.
+# Ensure we have a lockfile (in case none was present)
 # We do not copy real sources here (to keep deps layer stable), so create minimal dummies.
 RUN set -eux; \
     mkdir -p backend/src shared/src && \
     echo 'fn main() {}'      > backend/src/main.rs && \
     echo 'pub fn dummy() {}' > shared/src/lib.rs && \
+    [ -f /src/Cargo.lock ] || cargo generate-lockfile \
     cargo chef prepare --recipe-path backend-recipe.json
 
 # =============================================================================
@@ -147,15 +145,15 @@ TOML
 COPY frontend/Cargo.toml ./frontend/
 COPY shared/Cargo.toml   ./shared/
 
-# Ensure we have a lockfile (in case none was present)
-RUN set -eux; \
-    [ -f /src/Cargo.lock ] || cargo generate-lockfile
-
 # Produce the dependency recipe for WASM
+# Cargo (and cargo-chef) require at least one target per workspace member.
+# Ensure we have a lockfile (in case none was present)
+# We do not copy real sources here (to keep deps layer stable), so create minimal dummies.
 RUN set -eux; \
     mkdir -p frontend/src shared/src && \
     echo 'fn main() {}'      > frontend/src/main.rs && \
     echo 'pub fn dummy() {}' > shared/src/lib.rs \
+    [ -f /src/Cargo.lock ] || cargo generate-lockfile \
     cargo chef prepare --recipe-path frontend-recipe.json
 
 # =============================================================================
