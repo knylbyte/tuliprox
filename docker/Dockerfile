@@ -90,7 +90,7 @@ RUN set -eux; \
     mkdir -p backend/src shared/src && \
     echo 'fn main() {}'      > backend/src/main.rs && \
     echo 'pub fn dummy() {}' > shared/src/lib.rs && \
-    [ -f /src/Cargo.lock ] || cargo generate-lockfile \
+    [ -f /src/Cargo.lock ] || cargo generate-lockfile && \
     cargo chef prepare --recipe-path backend-recipe.json
 
 # =============================================================================
@@ -152,7 +152,7 @@ COPY shared/Cargo.toml   ./shared/
 RUN set -eux; \
     mkdir -p frontend/src shared/src && \
     echo 'fn main() {}'      > frontend/src/main.rs && \
-    echo 'pub fn dummy() {}' > shared/src/lib.rs \
+    echo 'pub fn dummy() {}' > shared/src/lib.rs && \
     [ -f /src/Cargo.lock ] || cargo generate-lockfile \
     cargo chef prepare --recipe-path frontend-recipe.json
 
