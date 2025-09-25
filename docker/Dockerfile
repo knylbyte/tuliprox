@@ -53,11 +53,11 @@ RUN set -eux; \
 RUN rustup target add "$(cat /rust-target)" || true
 
 # =============================================================================
-# Stage 2: backend-planer (cargo-chef prepare)
+# Stage 2: backend-planner (cargo-chef prepare)
 #  - Builds ONLY dependencies as cacheable Docker layers
 #  - No cache-mounts here → proper cross-run caching via buildx
 # =============================================================================
-FROM chef AS backend-planer
+FROM chef AS backend-planner
 
 WORKDIR /src
 
@@ -90,9 +90,9 @@ RUN set -eux; \
 # Cargo (and cargo-chef) require at least one target per workspace member.
 # We do not copy real sources here (to keep deps layer stable), so create minimal dummies.
 RUN set -eux; \
-    # mkdir -p backend/src shared/src && \
-    # echo 'fn main() {}'      > backend/src/main.rs && \
-    # echo 'pub fn dummy() {}' > shared/src/lib.rs && \
+    mkdir -p backend/src shared/src && \
+    echo 'fn main() {}'      > backend/src/main.rs && \
+    echo 'pub fn dummy() {}' > shared/src/lib.rs && \
     cargo chef prepare --recipe-path backend-recipe.json
 
 # =============================================================================
@@ -107,7 +107,7 @@ ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 WORKDIR /src
 
 # Cook: compile only dependencies (cacheable layer)
-COPY --from=backend-planer /src/backend-recipe.json ./backend-recipe.json
+COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 
 RUN set -eux; \
     cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json
@@ -118,11 +118,11 @@ COPY . .
 RUN cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 
 # =============================================================================
-# Stage 4: frontend-planer (cargo-chef prepare for WASM)
+# Stage 4: frontend-planner (cargo-chef prepare for WASM)
 #  - Minimal synthetic workspace (frontend + shared only) to avoid pulling in backend
 #  - Generates a recipe that describes all Rust deps for the WASM target
 # =============================================================================
-FROM chef AS frontend-planer
+FROM chef AS frontend-planner
 WORKDIR /src
 
 # Synthetic minimal workspace (frontend + shared only) to keep backend out
@@ -153,9 +153,9 @@ RUN set -eux; \
 
 # Produce the dependency recipe for WASM
 RUN set -eux; \
-    # mkdir -p frontend/src shared/src && \
-    # echo 'fn main() {}'      > frontend/src/main.rs && \
-    # echo 'pub fn dummy() {}' > shared/src/lib.rs \
+    mkdir -p frontend/src shared/src && \
+    echo 'fn main() {}'      > frontend/src/main.rs && \
+    echo 'pub fn dummy() {}' > shared/src/lib.rs \
     cargo chef prepare --recipe-path frontend-recipe.json
 
 # =============================================================================
@@ -168,7 +168,7 @@ FROM chef AS frontend-builder
 WORKDIR /src
 
 # Cook: compile only dependencies (cacheable layer)
-COPY --from=frontend-planer /src/frontend-recipe.json ./frontend-recipe.json
+COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 
 RUN set -eux; \
     cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
