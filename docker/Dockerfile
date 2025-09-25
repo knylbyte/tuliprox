@@ -27,6 +27,9 @@ ARG DEFAULT_TZ=UTC
 # =============================================================================
 FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS chef
 
+ARG TARGETPLATFORM
+ARG RUST_TARGET
+
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
