@@ -129,7 +129,7 @@ RUN set -eux; \
 RUN set -eux; \
     mkdir -p frontend/src shared/src && \
     echo 'fn main() {}'      > frontend/src/main.rs && \
-    echo 'pub fn dummy() {}' > shared/src/lib.rs
+    echo 'pub fn dummy() {}' > shared/src/lib.rs \
     cargo chef prepare --recipe-path frontend-recipe.json
 
 # =============================================================================
