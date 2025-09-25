@@ -153,7 +153,7 @@ RUN set -eux; \
     mkdir -p frontend/src shared/src && \
     echo 'fn main() {}'      > frontend/src/main.rs && \
     echo 'pub fn dummy() {}' > shared/src/lib.rs && \
-    [ -f /src/Cargo.lock ] || cargo generate-lockfile \
+    [ -f /src/Cargo.lock ] || cargo generate-lockfile && \
     cargo chef prepare --recipe-path frontend-recipe.json
 
 # =============================================================================
