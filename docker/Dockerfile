@@ -66,8 +66,12 @@ COPY Cargo.toml Cargo.lock ./
 COPY backend/Cargo.toml  ./backend/
 COPY shared/Cargo.toml   ./shared/
 
-# Produce the dependency recipe for rust build
+# Cargo (and cargo-chef) require at least one target per workspace member.
+# We do not copy real sources here (to keep deps layer stable), so create minimal dummies.
 RUN set -eux; \
+    mkdir -p backend/src shared/src && \
+    echo 'fn main() {}'      > backend/src/main.rs && \
+    echo 'pub fn dummy() {}' > shared/src/lib.rs && \
     cargo chef prepare --recipe-path backend-recipe.json
 
 # =============================================================================
@@ -123,6 +127,9 @@ RUN set -eux; \
 
 # Produce the dependency recipe for WASM
 RUN set -eux; \
+    mkdir -p frontend/src shared/src && \
+    echo 'fn main() {}'      > frontend/src/main.rs && \
+    echo 'pub fn dummy() {}' > shared/src/lib.rs
     cargo chef prepare --recipe-path frontend-recipe.json
 
 # =============================================================================
