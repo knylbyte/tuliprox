@@ -181,6 +181,7 @@ COPY --from=resources /src/resources /src/resources
 RUN chmod +x  /usr/local/cargo/bin/trunk \
               /usr/local/cargo/bin/wasm-bindgen \
               /usr/local/cargo/bin/cargo-chef
+
 RUN trunk --version \
  && wasm-bindgen --version \
  && cargo-chef --version
