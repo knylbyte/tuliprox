@@ -99,18 +99,33 @@ jobs:
   build-tools-prebuild:
     name: Build tuliprox-build-tools (if needed)
     needs: prebuilds
-    if: needs.prebuilds.outputs.need_build_tools == 'true'
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Step 2.1 - Login to GHCR
+      - name: Step 2.1 - Evaluate requirement
+        id: requirement
+        shell: bash
+        env:
+          NEED_BUILD_TOOLS: ${{ needs.prebuilds.outputs.need_build_tools }}
+        run: |
+          set -euo pipefail
+          if [[ "${NEED_BUILD_TOOLS}" == "true" ]]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ tuliprox-build-tools images already present." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Step 2.2 - Login to GHCR
+        if: steps.requirement.outputs.required == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Step 2.2 - Ensure prebuild workflow is running
+      - name: Step 2.3 - Ensure prebuild workflow is running
+        if: steps.requirement.outputs.required == 'true'
         id: ensure
         env:
           GH_TOKEN: ${{ github.token }}
@@ -140,7 +155,8 @@ jobs:
           echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
           echo "triggered=true" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.3 - Wait for prebuild workflow
+      - name: Step 2.4 - Wait for prebuild workflow
+        if: steps.requirement.outputs.required == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -154,7 +170,8 @@ jobs:
           echo "🔎 Waiting for run #${run_id} to finish" >&2
           gh run watch "$run_id" --exit-status
 
-      - name: Step 2.4 - Verify tuliprox-build-tools tags
+      - name: Step 2.5 - Verify tuliprox-build-tools tags
+        if: steps.requirement.outputs.required == 'true'
         shell: bash
         env:
           BUILD_TOOLS_IMAGE: ${{ env.GHCR_NS }}/tuliprox-build-tools
@@ -178,24 +195,33 @@ jobs:
           echo "❌ Timeout waiting for prebuild images" >&2
           exit 1
 
-      - name: Step 2.5 - Summary (tuliprox-build-tools)
+      - name: Step 2.6 - Summary (tuliprox-build-tools)
         if: always()
         shell: bash
+        env:
+          REQUIRED: ${{ steps.requirement.outputs.required }}
+          RUN_ID: ${{ steps.ensure.outputs.run_id }}
+          TRIGGERED: ${{ steps.ensure.outputs.triggered }}
+          ARCHS: ${{ needs.prebuilds.outputs.archs }}
         run: |
-          archs="${{ needs.prebuilds.outputs.archs }}"
+          archs="${ARCHS}"
           {
             echo "## 🛠️ tuliprox-build-tools"
             echo ""
-            if [[ "${{ steps.ensure.outputs.triggered }}" == "true" ]]; then
-              echo "✅ Triggered workflow run #${{ steps.ensure.outputs.run_id }} to build missing images."
+            if [[ "${REQUIRED}" == "true" ]]; then
+              if [[ "${TRIGGERED}" == "true" ]]; then
+                echo "✅ Triggered workflow run #${RUN_ID} to build missing images."
+              else
+                echo "🔁 Reused existing workflow run #${RUN_ID} and waited for completion."
+              fi
+              echo ""
+              echo "### 📦 Tags confirmed"
+              for a in $archs; do
+                echo "- \`${{ env.GHCR_NS }}/tuliprox-build-tools:${a}\`"
+              done
             else
-              echo "🔁 Reused existing workflow run #${{ steps.ensure.outputs.run_id }} and waited for completion."
+              echo "✅ No rebuild required; all expected tags already present."
             fi
-            echo ""
-            echo "### 📦 Tags confirmed"
-            for a in $archs; do
-              echo "- \`${{ env.GHCR_NS }}/tuliprox-build-tools:${a}\`"
-            done
           } >> "$GITHUB_STEP_SUMMARY"
 
   build:
