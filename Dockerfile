@@ -48,9 +48,6 @@ RUN set -eux; \
     fi; \
     printf "Using RUST_TARGET=%s\n" "$(cat /rust-target)"
 
-# Ensure the target is available in the toolchain (prebuild already has rustup)
-RUN rustup target add "$(cat /rust-target)" || true
-
 # Prepare dependency recipe (reacts to Cargo.toml/Cargo.lock changes)
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
