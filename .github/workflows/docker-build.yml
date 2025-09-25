@@ -5,9 +5,14 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Final target (scratch-final or alpine-final)"
+        description: "Final target stage (scratch-final, alpine-final, or debug)"
         required: false
-        default: "scratch-final"
+        default: scratch-final
+        type: choice
+        options:
+          - scratch-final
+          - alpine-final
+          - debug
   push:
     branches:
       - master
@@ -26,7 +31,6 @@ permissions:
   actions: write
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}
   GHCR_NS: ghcr.io/${{ github.repository }}
   DOCKERFILE: docker/Dockerfile
 
@@ -61,10 +65,12 @@ jobs:
         env:
           TOOLS_IMAGE: ${{ env.GHCR_NS }}/rust-wasm-tools
           RES_IMAGE: ${{ env.GHCR_NS }}/resources
+          BUILD_TOOLS_IMAGE: ${{ env.GHCR_NS }}/tuliprox-build-tools
         run: |
           set -euo pipefail
           need_tools=false
           need_res=false
+          need_build_tools=false
           for a in ${{ steps.arch.outputs.archs }}; do
             if ! docker buildx imagetools inspect "${TOOLS_IMAGE}:${a}" >/dev/null 2>&1; then
               need_tools=true
@@ -72,48 +78,85 @@ jobs:
             if ! docker buildx imagetools inspect "${RES_IMAGE}:${a}" >/dev/null 2>&1; then
               need_res=true
             fi
+            if ! docker buildx imagetools inspect "${BUILD_TOOLS_IMAGE}:${a}" >/dev/null 2>&1; then
+              need_build_tools=true
+            fi
           done
           echo "need_tools=$need_tools" >> "$GITHUB_OUTPUT"
           echo "need_res=$need_res"     >> "$GITHUB_OUTPUT"
+          echo "need_build_tools=$need_build_tools" >> "$GITHUB_OUTPUT"
 
       - name: Step 1.5 - Trigger missing prebuilds & wait
-        if: steps.check.outputs.need_tools == 'true' || steps.check.outputs.need_res == 'true'
+        if: steps.check.outputs.need_tools == 'true' || steps.check.outputs.need_res == 'true' || steps.check.outputs.need_build_tools == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
 
-          trigger_and_wait () {
+          trigger_workflow () {
             local wf="$1"
-            echo "⏳ Triggering workflow: $wf"
+            echo "⏳ Triggering workflow: $wf" >&2
             gh workflow run "$wf"
             sleep 3
 
-            # Find the latest run id for that workflow
             local run_id
             run_id="$(gh run list --workflow "$wf" --limit 1 --json databaseId -q '.[0].databaseId')"
             if [[ -z "${run_id:-}" || "${run_id}" == "null" ]]; then
               echo "Failed to detect run for $wf" >&2
               exit 1
             fi
-            echo "🔎 Waiting for run #$run_id to finish"
+            echo "$run_id"
+          }
+
+          wait_for_run () {
+            local wf="$1"
+            local run_id="$2"
+            echo "🔎 Waiting for run #$run_id to finish ($wf)" >&2
             gh run watch "$run_id" --exit-status
           }
 
+          ensure_run () {
+            local wf="$1"
+            local existing
+            existing="$(gh run list --workflow "$wf" --limit 10 --json databaseId,status -q 'map(select(.status == "in_progress" or .status == "queued")) | .[0].databaseId')"
+            if [[ -n "${existing:-}" && "${existing}" != "null" ]]; then
+              echo "🔁 Found existing run #${existing} for $wf (queued/in progress)" >&2
+              echo "$existing"
+              return 0
+            fi
+
+            trigger_workflow "$wf"
+          }
+
+          handle_workflow () {
+            local wf="$1"
+            local run_id
+            run_id="$(ensure_run "$wf")"
+            if [[ -z "${run_id:-}" || "${run_id}" == "null" ]]; then
+              echo "Failed to obtain run id for $wf" >&2
+              exit 1
+            fi
+            wait_for_run "$wf" "$run_id"
+          }
+
           if [[ "${{ steps.check.outputs.need_tools }}" == "true" ]]; then
-            trigger_and_wait "rust-wasm-tools-prebuild.yml"
+            handle_workflow "rust-wasm-tools-prebuild.yml"
           fi
           if [[ "${{ steps.check.outputs.need_res }}" == "true" ]]; then
-            trigger_and_wait "resources-prebuild.yml"
+            handle_workflow "resources-prebuild.yml"
+          fi
+          if [[ "${{ steps.check.outputs.need_build_tools }}" == "true" ]]; then
+            handle_workflow "docker-build-tuliprox-build-tools.yml"
           fi
 
       - name: Step 1.6 - Verify prebuild tags (poll until present)
-        if: steps.check.outputs.need_tools == 'true' || steps.check.outputs.need_res == 'true'
+        if: steps.check.outputs.need_tools == 'true' || steps.check.outputs.need_res == 'true' || steps.check.outputs.need_build_tools == 'true'
         shell: bash
         env:
           TOOLS_IMAGE: ${{ env.GHCR_NS }}/rust-wasm-tools
           RES_IMAGE: ${{ env.GHCR_NS }}/resources
+          BUILD_TOOLS_IMAGE: ${{ env.GHCR_NS }}/tuliprox-build-tools
         run: |
           set -euo pipefail
 
@@ -123,6 +166,7 @@ jobs:
             for a in ${{ steps.arch.outputs.archs }}; do
               docker buildx imagetools inspect "${TOOLS_IMAGE}:${a}" >/dev/null 2>&1 || missing=1
               docker buildx imagetools inspect "${RES_IMAGE}:${a}"   >/dev/null 2>&1 || missing=1
+              docker buildx imagetools inspect "${BUILD_TOOLS_IMAGE}:${a}" >/dev/null 2>&1 || missing=1
             done
             if [[ $missing -eq 0 ]]; then
               echo "✅ All prebuild tags are available."
@@ -141,7 +185,7 @@ jobs:
         run: |
           {
             echo "## 🧩 Prebuilds"
-            if [[ "${{ steps.check.outputs.need_tools }}" == "true" || "${{ steps.check.outputs.need_res }}" == "true" ]]; then
+            if [[ "${{ steps.check.outputs.need_tools }}" == "true" || "${{ steps.check.outputs.need_res }}" == "true" || "${{ steps.check.outputs.need_build_tools }}" == "true" ]]; then
               echo "✅ Missing prebuilds were triggered and completed."
             else
               echo "✅ All required prebuilds already present."
@@ -151,7 +195,13 @@ jobs:
             for a in ${{ steps.arch.outputs.archs }}; do
               echo "- \`${{ env.GHCR_NS }}/rust-wasm-tools:${a}\`"
               echo "- \`${{ env.GHCR_NS }}/resources:${a}\`"
+              echo "- \`${{ env.GHCR_NS }}/tuliprox-build-tools:${a}\`"
             done
+            if [[ "${{ steps.check.outputs.need_build_tools }}" == "true" ]]; then
+              echo ""
+              echo "### 🛠️ Build tools"
+              echo "- Ensured \`${{ env.GHCR_NS }}/tuliprox-build-tools\` images were built before continuing."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   build:
@@ -212,59 +262,64 @@ jobs:
         run: |
           set -euo pipefail
           ref="${GITHUB_REF_NAME}"
-          target="${{ github.event.inputs.target || '' }}"
-          [[ -z "$target" ]] && target=""
+
+          target_input="${{ github.event.inputs.target || '' }}"
+          [[ -z "$target_input" ]] && target_input=""
 
           declare -a tags=()
           plan=""
 
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            [[ -z "$target" ]] && target="scratch-final"
-            tags+=("${{ steps.version.outputs.version }}")
-            plan="dispatch"
-          else
-            case "$ref" in
-              master)
-                target="scratch-final"
-                tags+=("latest" "${{ steps.version.outputs.version }}")
-                plan="master"
-                ;;
-              develop)
-                target="both-dev"  # handled later: scratch + alpine
-                tags+=("dev" "dev@${{ steps.version.outputs.version }}" "dev-slim" "dev-slim@${{ steps.version.outputs.version }}")
-                plan="dev"
-                ;;
-              feature/*)
-                target="alpine-final"
-                name="${ref#feature/}"
-                safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
-                tags+=("feat@${safe}")
-                plan="feature"
-                ;;
-              bugfix/*)
-                target="alpine-final"
-                name="${ref#bugfix/}"
-                safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
-                tags+=("bug@${safe}")
-                plan="bugfix"
-                ;;
-              hotfix/*)
-                target="alpine-final"
-                name="${ref#hotfix/}"
-                safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
-                tags+=("hot@${safe}")
-                plan="hotfix"
-                ;;
-              *)
-                echo "Unsupported branch '$ref'." >&2
-                exit 1
-                ;;
-            esac
+          case "$ref" in
+            master)
+              target="scratch-final"
+              tags+=("latest" "${{ steps.version.outputs.version }}")
+              plan="master"
+              ;;
+            develop)
+              target="both-dev"  # handled later: scratch + alpine
+              tags+=("dev" "dev@${{ steps.version.outputs.version }}" "dev-slim" "dev-slim@${{ steps.version.outputs.version }}")
+              plan="dev"
+              ;;
+            feature/*)
+              target="alpine-final"
+              name="${ref#feature/}"
+              safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
+              tags+=("feat@${safe}")
+              plan="feature"
+              ;;
+            bugfix/*)
+              target="alpine-final"
+              name="${ref#bugfix/}"
+              safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
+              tags+=("bug@${safe}")
+              plan="bugfix"
+              ;;
+            hotfix/*)
+              target="alpine-final"
+              name="${ref#hotfix/}"
+              safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
+              tags+=("hot@${safe}")
+              plan="hotfix"
+              ;;
+            *)
+              echo "Unsupported branch '$ref'." >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ -n "$target_input" ]]; then
+            target="$target_input"
           fi
           printf "%s\n" "${tags[@]}" > /tmp/tags.txt
           echo "plan=$plan" >> "$GITHUB_OUTPUT"
           echo "target=$target" >> "$GITHUB_OUTPUT"
           echo "tags_file=/tmp/tags.txt" >> "$GITHUB_OUTPUT"
+          echo "resolved_branch=$ref" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "dispatch_simulated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dispatch_simulated=false" >> "$GITHUB_OUTPUT"
+          fi
 
       # --- Detect new version (only to decide Release later; tagging happens after build) ---
       - name: Step 2.7 - Detect new version (master only)
@@ -294,10 +349,10 @@ jobs:
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
           target: ${{ steps.plan.outputs.target == 'both-dev' && 'scratch-final' || steps.plan.outputs.target }}
           tags: |
-            ${{ env.IMAGE }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
+            ${{ env.GHCR_NS }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
           cache-from: |
             type=gha,scope=final-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
-            type=registry,ref=${{ env.IMAGE }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
+            type=registry,ref=${{ env.GHCR_NS }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
           cache-to: |
             type=gha,mode=max,scope=final-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
 
@@ -315,10 +370,10 @@ jobs:
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
           target: alpine-final
           tags: |
-            ${{ env.IMAGE }}:temp-dev-alpine-${{ matrix.arch_tag }}
+            ${{ env.GHCR_NS }}:temp-dev-alpine-${{ matrix.arch_tag }}
           cache-from: |
             type=gha,scope=final-dev-alpine-${{ matrix.arch_tag }}
-            type=registry,ref=${{ env.IMAGE }}:temp-dev-alpine-${{ matrix.arch_tag }}
+            type=registry,ref=${{ env.GHCR_NS }}:temp-dev-alpine-${{ matrix.arch_tag }}
           cache-to: |
             type=gha,mode=max,scope=final-dev-alpine-${{ matrix.arch_tag }}
 
@@ -420,7 +475,10 @@ jobs:
             echo ""
             echo "### 🌿 Plan"
             echo "- Event: **${{ github.event_name }}**"
-            echo "- Branch: **${{ github.ref_name }}**"
+            echo "- Branch: **${{ steps.plan.outputs.resolved_branch || github.ref_name }}**"
+            if [[ "${{ steps.plan.outputs.dispatch_simulated }}" == "true" ]]; then
+              echo "- Workflow dispatch simulated branch execution for: **${{ steps.plan.outputs.resolved_branch }}**"
+            fi
             echo "- Target: **${{ steps.plan.outputs.target }}**"
             echo ""
             echo "### 🧩 Prebuilds"
@@ -434,7 +492,7 @@ jobs:
             echo "### 🏷️ Final tags"
             if [[ -s "${{ steps.plan.outputs.tags_file }}" ]]; then
               while IFS= read -r t; do
-                echo "- \`${{ env.IMAGE }}:${t}\`"
+                echo "- \`${{ env.GHCR_NS }}:${t}\`"
               done < "${{ steps.plan.outputs.tags_file }}"
             else
               echo "↔️ No final tags."
@@ -500,21 +558,21 @@ jobs:
               case "$tag" in
                 dev-slim* )
                   # temp-dev-<arch>
-                  src+=( "${IMAGE}:temp-dev-${arch}" )
+                  src+=( "${GHCR_NS}:temp-dev-${arch}" )
                   ;;
                 dev* )
                   # temp-dev-alpine-<arch>
-                  src+=( "${IMAGE}:temp-dev-alpine-${arch}" )
+                  src+=( "${GHCR_NS}:temp-dev-alpine-${arch}" )
                   ;;
                 * )
                   # temp-<plan>-<arch>
-                  src+=( "${IMAGE}:temp-${PLAN}-${arch}" )
+                  src+=( "${GHCR_NS}:temp-${PLAN}-${arch}" )
                   ;;
               esac
             done
 
-            echo "⛏️  Creating manifest ${IMAGE}:${tag}"
-            docker buildx imagetools create -t "${IMAGE}:${tag}" "${src[@]}"
+            echo "⛏️  Creating manifest ${GHCR_NS}:${tag}"
+            docker buildx imagetools create -t "${GHCR_NS}:${tag}" "${src[@]}"
           }
 
           for t in "${TAGS[@]}"; do
@@ -544,7 +602,7 @@ jobs:
             if [[ -n "$TAGS_INPUT" ]]; then
               while IFS= read -r line; do
                 [[ -n "${line// }" ]] || continue
-                echo "- \`${{ env.IMAGE }}:${line}\`"
+                echo "- \`${{ env.GHCR_NS }}:${line}\`"
               done <<< "$TAGS_INPUT"
             else
               echo "- (none)"
