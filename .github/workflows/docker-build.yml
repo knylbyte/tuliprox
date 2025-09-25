@@ -38,6 +38,9 @@ jobs:
   prebuilds:
     name: Ensure prebuilds exist
     runs-on: ubuntu-24.04
+    outputs:
+      need_build_tools: ${{ steps.check.outputs.need_build_tools }}
+      archs: ${{ steps.arch.outputs.archs }}
 
     steps:
       - name: Step 1.1 - Checkout
@@ -57,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "archs=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
+          echo "archs=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
 
       - name: Step 1.4 - Check prebuild availability (all archs)
         id: check
@@ -74,76 +77,94 @@ jobs:
           done
           echo "need_build_tools=$need_build_tools" >> "$GITHUB_OUTPUT"
 
-      - name: Step 1.5 - Trigger missing prebuilds & wait
-        if: steps.check.outputs.need_build_tools == 'true'
+      - name: Step 1.5 - Summary (prebuild check)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 🧩 Prebuilds"
+            if [[ "${{ steps.check.outputs.need_build_tools }}" == "true" ]]; then
+              echo "⚠️ tuliprox-build-tools images missing for at least one architecture."
+              echo "- A dedicated build job will run before the Docker build."
+            else
+              echo "✅ All required prebuilds already present."
+            fi
+            echo ""
+            echo "### 📦 Tags checked"
+            for a in ${{ steps.arch.outputs.archs }}; do
+              echo "- \`${{ env.GHCR_NS }}/tuliprox-build-tools:${a}\`"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build-tools-prebuild:
+    name: Build tuliprox-build-tools (if needed)
+    needs: prebuilds
+    if: needs.prebuilds.outputs.need_build_tools == 'true'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Step 2.1 - Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Step 2.2 - Ensure prebuild workflow is running
+        id: ensure
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+          wf="docker-build-tuliprox-build-tools.yml"
 
-          trigger_workflow () {
-            local wf="$1"
-            echo "⏳ Triggering workflow: $wf" >&2
-            gh workflow run "$wf"
-            sleep 3
-
-            local run_id
-            run_id="$(gh run list --workflow "$wf" --limit 1 --json databaseId -q '.[0].databaseId')"
-            if [[ -z "${run_id:-}" || "${run_id}" == "null" ]]; then
-              echo "Failed to detect run for $wf" >&2
-              exit 1
-            fi
-            echo "$run_id"
-          }
-
-          wait_for_run () {
-            local wf="$1"
-            local run_id="$2"
-            echo "🔎 Waiting for run #$run_id to finish ($wf)" >&2
-            gh run watch "$run_id" --exit-status
-          }
-
-          ensure_run () {
-            local wf="$1"
-            local existing
-            existing="$(gh run list --workflow "$wf" --limit 10 --json databaseId,status -q 'map(select(.status == "in_progress" or .status == "queued")) | .[0].databaseId')"
-            if [[ -n "${existing:-}" && "${existing}" != "null" ]]; then
-              echo "🔁 Found existing run #${existing} for $wf (queued/in progress)" >&2
-              echo "$existing"
-              return 0
-            fi
-
-            trigger_workflow "$wf"
-          }
-
-          handle_workflow () {
-            local wf="$1"
-            local run_id
-            run_id="$(ensure_run "$wf")"
-            if [[ -z "${run_id:-}" || "${run_id}" == "null" ]]; then
-              echo "Failed to obtain run id for $wf" >&2
-              exit 1
-            fi
-            wait_for_run "$wf" "$run_id"
-          }
-
-          if [[ "${{ steps.check.outputs.need_build_tools }}" == "true" ]]; then
-            handle_workflow "docker-build-tuliprox-build-tools.yml"
+          existing="$(gh run list --workflow "$wf" --limit 10 --json databaseId,status -q 'map(select(.status == "in_progress" or .status == "queued")) | .[0].databaseId')"
+          if [[ -n "${existing:-}" && "${existing}" != "null" ]]; then
+            echo "🔁 Found existing run #${existing} for $wf" >&2
+            echo "run_id=${existing}" >> "$GITHUB_OUTPUT"
+            echo "triggered=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-      - name: Step 1.6 - Verify prebuild tags (poll until present)
-        if: steps.check.outputs.need_build_tools == 'true'
+          echo "⏳ Triggering workflow: $wf" >&2
+          gh workflow run "$wf"
+          sleep 3
+
+          run_id="$(gh run list --workflow "$wf" --limit 1 --json databaseId -q '.[0].databaseId')"
+          if [[ -z "${run_id:-}" || "${run_id}" == "null" ]]; then
+            echo "Failed to detect run for $wf" >&2
+            exit 1
+          fi
+
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "triggered=true" >> "$GITHUB_OUTPUT"
+
+      - name: Step 2.3 - Wait for prebuild workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="${{ steps.ensure.outputs.run_id }}"
+          if [[ -z "${run_id:-}" ]]; then
+            echo "No workflow run id returned" >&2
+            exit 1
+          fi
+          echo "🔎 Waiting for run #${run_id} to finish" >&2
+          gh run watch "$run_id" --exit-status
+
+      - name: Step 2.4 - Verify tuliprox-build-tools tags
         shell: bash
         env:
           BUILD_TOOLS_IMAGE: ${{ env.GHCR_NS }}/tuliprox-build-tools
         run: |
           set -euo pipefail
+          archs="${{ needs.prebuilds.outputs.archs }}"
 
-          # Poll for up to ~10 minutes
           for i in $(seq 1 60); do
             missing=0
-            for a in ${{ steps.arch.outputs.archs }}; do
+            for a in $archs; do
               docker buildx imagetools inspect "${BUILD_TOOLS_IMAGE}:${a}" >/dev/null 2>&1 || missing=1
             done
             if [[ $missing -eq 0 ]]; then
@@ -157,32 +178,31 @@ jobs:
           echo "❌ Timeout waiting for prebuild images" >&2
           exit 1
 
-      - name: Step 1.7 - Summary (prebuilds)
+      - name: Step 2.5 - Summary (tuliprox-build-tools)
         if: always()
         shell: bash
         run: |
+          archs="${{ needs.prebuilds.outputs.archs }}"
           {
-            echo "## 🧩 Prebuilds"
-            if [[ "${{ steps.check.outputs.need_build_tools }}" == "true" ]]; then
-              echo "✅ Missing prebuilds were triggered and completed."
+            echo "## 🛠️ tuliprox-build-tools"
+            echo ""
+            if [[ "${{ steps.ensure.outputs.triggered }}" == "true" ]]; then
+              echo "✅ Triggered workflow run #${{ steps.ensure.outputs.run_id }} to build missing images."
             else
-              echo "✅ All required prebuilds already present."
+              echo "🔁 Reused existing workflow run #${{ steps.ensure.outputs.run_id }} and waited for completion."
             fi
             echo ""
-            echo "### 📦 Tags checked"
-            for a in ${{ steps.arch.outputs.archs }}; do
+            echo "### 📦 Tags confirmed"
+            for a in $archs; do
               echo "- \`${{ env.GHCR_NS }}/tuliprox-build-tools:${a}\`"
             done
-            if [[ "${{ steps.check.outputs.need_build_tools }}" == "true" ]]; then
-              echo ""
-              echo "### 🛠️ Build tools"
-              echo "- Ensured \`${{ env.GHCR_NS }}/tuliprox-build-tools\` images were built before continuing."
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   build:
     name: Build & Publish
-    needs: prebuilds
+    needs:
+      - prebuilds
+      - build-tools-prebuild
     runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
