@@ -60,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "archs=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
+          echo "archs=linux-amd64 linux-arm64" linux-armv7>> "$GITHUB_OUTPUT"
 
       - name: Step 1.4 - Check prebuild availability (all archs)
         id: check
@@ -240,10 +240,6 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
             arch_tag: linux-arm64
-    outputs:
-      plan: ${{ steps.export.outputs.plan }}
-      tags: ${{ steps.export.outputs.tags }}
-      arches: ${{ steps.export.outputs.arches }}
 
     steps:
       - name: Step 2.1 - Checkout
@@ -328,123 +324,47 @@ jobs:
             printf '%s' "${value//[^[:alnum:]._-]/-}"
           }
 
-          derive_cache_tag() {
-            local plan="$1"
-            local variant="$2"
-
-            case "$plan" in
-              master)
-                if [[ "$variant" == "scratch" ]]; then
-                  printf '%s' "latest"
-                else
-                  printf '%s' ""
-                fi
-                ;;
-              dev)
-                if [[ "$variant" == "alpine" ]]; then
-                  printf '%s' "dev"
-                elif [[ "$variant" == "scratch" ]]; then
-                  printf '%s' "dev-slim"
-                else
-                  printf '%s' ""
-                fi
-                ;;
-              *)
-                printf '%s' ""
-                ;;
-            esac
-          }
-
-          write_list_file() {
-            local -n arr_ref=$1
-            if [[ ${#arr_ref[@]} -eq 0 ]]; then
-              printf '%s' ""
-              return 0
-            fi
-            local path
-            path="$(mktemp)"
-            : > "$path"
-            for item in "${arr_ref[@]}"; do
-              printf '%s\n' "$item" >> "$path"
-            done
-            printf '%s' "$path"
-          }
-
-          declare -a primary_tags=()
-          declare -a secondary_tags=()
-          declare -a manifest_tags=()
-
+          declare -a tags=()
           plan=""
-          target=""
           cache_base_branch=""
           cache_base_plan=""
-          primary_variant=""
-          primary_stage=""
-          primary_cache_tag=""
-          secondary_variant=""
-          secondary_stage=""
-          secondary_cache_tag=""
 
           case "$ref" in
             master)
-              primary_variant="scratch"
-              primary_stage="scratch-final"
-              primary_tags+=("latest" "$ver")
-              manifest_tags+=("latest" "$ver")
-              primary_cache_tag="latest"
-              target="$primary_stage"
+              target="scratch-final"
+              tags+=("latest" "$ver")
               plan="master"
               cache_base_branch="develop"
               cache_base_plan="dev"
               ;;
             develop)
-              primary_variant="scratch"
-              primary_stage="scratch-final"
-              primary_tags+=("dev-slim" "dev-slim@$ver")
-              secondary_variant="alpine"
-              secondary_stage="alpine-final"
-              secondary_tags+=("dev" "dev@$ver")
-              manifest_tags+=("dev-slim" "dev-slim@$ver" "dev" "dev@$ver")
-              primary_cache_tag="dev-slim"
-              secondary_cache_tag="dev"
-              target="both-dev"
+              target="both-dev"  # handled later: scratch + alpine
+              tags+=("dev-slim" "dev-slim@${ver}" "dev" "dev@${ver}")
               plan="dev"
               cache_base_branch="develop"
               cache_base_plan="dev"
               ;;
             feature/*)
+              target="alpine-final"
               name="${ref#feature/}"
               safe="$(sanitize_tag "$name")"
-              primary_variant="alpine"
-              primary_stage="alpine-final"
-              primary_tags+=("feature-$safe")
-              manifest_tags+=("feature-$safe")
-              primary_cache_tag="feature-$safe"
-              target="$primary_stage"
+              tags+=("feature-${safe}")
               plan="feature"
               cache_base_branch="$(detect_parent_branch)"
               ;;
             bugfix/*)
+              target="alpine-final"
               name="${ref#bugfix/}"
               safe="$(sanitize_tag "$name")"
-              primary_variant="alpine"
-              primary_stage="alpine-final"
-              primary_tags+=("bugfix-$safe")
-              manifest_tags+=("bugfix-$safe")
-              primary_cache_tag="bugfix-$safe"
-              target="$primary_stage"
+              tags+=("bugfix-${safe}")
               plan="bugfix"
               cache_base_branch="$(detect_parent_branch)"
               ;;
             hotfix/*)
+              target="alpine-final"
               name="${ref#hotfix/}"
               safe="$(sanitize_tag "$name")"
-              primary_variant="alpine"
-              primary_stage="alpine-final"
-              primary_tags+=("hotfix-$safe")
-              manifest_tags+=("hotfix-$safe")
-              primary_cache_tag="hotfix-$safe"
-              target="$primary_stage"
+              tags+=("hotfix-${safe}")
               plan="hotfix"
               cache_base_branch="$(detect_parent_branch)"
               ;;
@@ -453,23 +373,6 @@ jobs:
               exit 1
               ;;
           esac
-
-          if [[ ${#manifest_tags[@]} -eq 0 ]]; then
-            for item in "${primary_tags[@]}"; do
-              manifest_tags+=("$item")
-            done
-            for item in "${secondary_tags[@]}"; do
-              manifest_tags+=("$item")
-            done
-          fi
-
-          if [[ -z "$primary_cache_tag" && ${#primary_tags[@]} -gt 0 ]]; then
-            primary_cache_tag="${primary_tags[0]}"
-          fi
-
-          if [[ -z "$secondary_cache_tag" && ${#secondary_tags[@]} -gt 0 ]]; then
-            secondary_cache_tag="${secondary_tags[0]}"
-          fi
 
           if [[ -z "$cache_base_plan" && -n "$cache_base_branch" ]]; then
             case "$cache_base_branch" in
@@ -486,35 +389,13 @@ jobs:
             target="$target_input"
           fi
 
-          primary_file="$(write_list_file primary_tags)"
-          secondary_file="$(write_list_file secondary_tags)"
-          manifest_file="$(write_list_file manifest_tags)"
-
-          cache_base_primary_tag=""
-          cache_base_secondary_tag=""
-
-          if [[ -n "$cache_base_plan" && -n "$primary_variant" ]]; then
-            cache_base_primary_tag="$(derive_cache_tag "$cache_base_plan" "$primary_variant")"
-          fi
-
-          if [[ -n "$cache_base_plan" && -n "$secondary_variant" ]]; then
-            cache_base_secondary_tag="$(derive_cache_tag "$cache_base_plan" "$secondary_variant")"
-          fi
-
+          printf '%s\n' "${tags[@]}" > /tmp/tags.txt
           echo "plan=$plan" >> "$GITHUB_OUTPUT"
           echo "target=$target" >> "$GITHUB_OUTPUT"
-          echo "tags_file=$manifest_file" >> "$GITHUB_OUTPUT"
-          echo "primary_stage=$primary_stage" >> "$GITHUB_OUTPUT"
-          echo "primary_tags_file=$primary_file" >> "$GITHUB_OUTPUT"
-          echo "primary_cache_tag=$primary_cache_tag" >> "$GITHUB_OUTPUT"
-          echo "secondary_stage=$secondary_stage" >> "$GITHUB_OUTPUT"
-          echo "secondary_tags_file=$secondary_file" >> "$GITHUB_OUTPUT"
-          echo "secondary_cache_tag=$secondary_cache_tag" >> "$GITHUB_OUTPUT"
+          echo "tags_file=/tmp/tags.txt" >> "$GITHUB_OUTPUT"
           echo "resolved_branch=$ref" >> "$GITHUB_OUTPUT"
           echo "cache_base_branch=$cache_base_branch" >> "$GITHUB_OUTPUT"
           echo "cache_base_plan=$cache_base_plan" >> "$GITHUB_OUTPUT"
-          echo "cache_base_primary_tag=$cache_base_primary_tag" >> "$GITHUB_OUTPUT"
-          echo "cache_base_secondary_tag=$cache_base_secondary_tag" >> "$GITHUB_OUTPUT"
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "dispatch_simulated=true" >> "$GITHUB_OUTPUT"
           else
@@ -536,66 +417,8 @@ jobs:
             echo "is_new=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # --- Prepare metadata for primary image ---
-      - name: Step 2.8 - Prepare primary image metadata (${{ matrix.platform }})
-        id: primary_meta
-        shell: bash
-        env:
-          TAGS_FILE: ${{ steps.plan.outputs.primary_tags_file }}
-          CACHE_TAG: ${{ steps.plan.outputs.primary_cache_tag }}
-          CACHE_BASE_TAG: ${{ steps.plan.outputs.cache_base_primary_tag }}
-          ARCH: ${{ matrix.arch_tag }}
-          NS: ${{ env.GHCR_NS }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${CACHE_TAG}" ]]; then
-            echo "Primary cache tag is empty" >&2
-            exit 1
-          fi
-
-          tags_tmp="$(mktemp)"
-          : > "$tags_tmp"
-
-          if [[ -n "${TAGS_FILE}" && -s "${TAGS_FILE}" ]]; then
-            while IFS= read -r tag; do
-              [[ -n "${tag// }" ]] || continue
-              printf '%s:%s-%s\n' "$NS" "$tag" "$ARCH"
-            done < "${TAGS_FILE}" > "$tags_tmp"
-          fi
-
-          if [[ ! -s "$tags_tmp" ]]; then
-            echo "No primary tags computed" >&2
-            exit 1
-          fi
-
-          {
-            echo "tags<<EOF"
-            cat "$tags_tmp"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-          {
-            echo "cache_from<<EOF"
-            if [[ -n "${CACHE_BASE_TAG}" ]]; then
-              echo "type=gha,scope=image-${CACHE_BASE_TAG}-${ARCH}"
-            fi
-            echo "type=gha,scope=image-${CACHE_TAG}-${ARCH}"
-            if [[ -n "${CACHE_BASE_TAG}" ]]; then
-              echo "type=registry,ref=${NS}:${CACHE_BASE_TAG}-${ARCH}"
-            fi
-            echo "type=registry,ref=${NS}:${CACHE_TAG}-${ARCH}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-          {
-            echo "cache_to<<EOF"
-            echo "type=gha,mode=max,scope=image-${CACHE_TAG}-${ARCH}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      # --- Build primary variant ---
-      - name: Step 2.9 - Build primary image (${{ matrix.platform }})
+      # --- Build final (scratch or alpine) with CACHE ---
+      - name: Step 2.8 - Build final (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -605,74 +428,20 @@ jobs:
           build-args: |
             GHCR_NS=${{ env.GHCR_NS }}
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-          target: ${{ steps.plan.outputs.primary_stage }}
-          tags: ${{ steps.primary_meta.outputs.tags }}
-        # cache-from/to defined below to avoid blank lines when base cache missing
-          cache-from: ${{ steps.primary_meta.outputs.cache_from }}
-          cache-to: ${{ steps.primary_meta.outputs.cache_to }}
+          target: ${{ steps.plan.outputs.target == 'both-dev' && 'scratch-final' || steps.plan.outputs.target }}
+          tags: |
+            ${{ env.GHCR_NS }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
+          cache-from: |
+            ${{ steps.plan.outputs.cache_base_plan && format('type=gha,scope=final-{0}-{1}', steps.plan.outputs.cache_base_plan, matrix.arch_tag) }}
+            type=gha,scope=final-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
+            ${{ steps.plan.outputs.cache_base_plan && format('type=registry,ref={0}:temp-{1}-{2}', env.GHCR_NS, steps.plan.outputs.cache_base_plan, matrix.arch_tag) }}
+            type=registry,ref=${{ env.GHCR_NS }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
+          cache-to: |
+            type=gha,mode=max,scope=final-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
 
-      # --- Prepare metadata for secondary image (if any) ---
-      - name: Step 2.10 - Prepare secondary image metadata (${{ matrix.platform }})
-        if: steps.plan.outputs.secondary_stage != ''
-        id: secondary_meta
-        shell: bash
-        env:
-          TAGS_FILE: ${{ steps.plan.outputs.secondary_tags_file }}
-          CACHE_TAG: ${{ steps.plan.outputs.secondary_cache_tag }}
-          CACHE_BASE_TAG: ${{ steps.plan.outputs.cache_base_secondary_tag }}
-          ARCH: ${{ matrix.arch_tag }}
-          NS: ${{ env.GHCR_NS }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${CACHE_TAG}" ]]; then
-            echo "Secondary cache tag is empty" >&2
-            exit 1
-          fi
-
-          tags_tmp="$(mktemp)"
-          : > "$tags_tmp"
-
-          if [[ -n "${TAGS_FILE}" && -s "${TAGS_FILE}" ]]; then
-            while IFS= read -r tag; do
-              [[ -n "${tag// }" ]] || continue
-              printf '%s:%s-%s\n' "$NS" "$tag" "$ARCH"
-            done < "${TAGS_FILE}" > "$tags_tmp"
-          fi
-
-          if [[ ! -s "$tags_tmp" ]]; then
-            echo "No secondary tags computed" >&2
-            exit 1
-          fi
-
-          {
-            echo "tags<<EOF"
-            cat "$tags_tmp"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-          {
-            echo "cache_from<<EOF"
-            if [[ -n "${CACHE_BASE_TAG}" ]]; then
-              echo "type=gha,scope=image-${CACHE_BASE_TAG}-${ARCH}"
-            fi
-            echo "type=gha,scope=image-${CACHE_TAG}-${ARCH}"
-            if [[ -n "${CACHE_BASE_TAG}" ]]; then
-              echo "type=registry,ref=${NS}:${CACHE_BASE_TAG}-${ARCH}"
-            fi
-            echo "type=registry,ref=${NS}:${CACHE_TAG}-${ARCH}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-          {
-            echo "cache_to<<EOF"
-            echo "type=gha,mode=max,scope=image-${CACHE_TAG}-${ARCH}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      # --- Build secondary variant ---
-      - name: Step 2.11 - Build secondary image (${{ matrix.platform }})
-        if: steps.plan.outputs.secondary_stage != ''
+      # --- Dev: also build alpine variant with CACHE ---
+      - name: Step 2.9 - Build dev alpine (${{ matrix.platform }})
+        if: steps.plan.outputs.plan == 'dev'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -682,14 +451,20 @@ jobs:
           build-args: |
             GHCR_NS=${{ env.GHCR_NS }}
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-          target: ${{ steps.plan.outputs.secondary_stage }}
-          tags: ${{ steps.secondary_meta.outputs.tags }}
-          cache-from: ${{ steps.secondary_meta.outputs.cache_from }}
-          cache-to: ${{ steps.secondary_meta.outputs.cache_to }}
+          target: alpine-final
+          tags: |
+            ${{ env.GHCR_NS }}:temp-dev-alpine-${{ matrix.arch_tag }}
+          cache-from: |
+            ${{ steps.plan.outputs.cache_base_plan && format('type=gha,scope=final-{0}-alpine-{1}', steps.plan.outputs.cache_base_plan, matrix.arch_tag) }}
+            type=gha,scope=final-dev-alpine-${{ matrix.arch_tag }}
+            ${{ steps.plan.outputs.cache_base_plan && format('type=registry,ref={0}:temp-{1}-alpine-{2}', env.GHCR_NS, steps.plan.outputs.cache_base_plan, matrix.arch_tag) }}
+            type=registry,ref=${{ env.GHCR_NS }}:temp-dev-alpine-${{ matrix.arch_tag }}
+          cache-to: |
+            type=gha,mode=max,scope=final-dev-alpine-${{ matrix.arch_tag }}
 
 
       # --- Export PLAN/TAGS for manifests ---
-      - name: Step 2.12 - Export PLAN/TAGS for manifests
+      - name: Step 2.10 - Export PLAN/TAGS for manifests
         id: export
         shell: bash
         run: |
@@ -718,11 +493,11 @@ jobs:
           # Emit PLAN (single-line)
           echo "plan=${PLAN}" >> "$GITHUB_OUTPUT"
 
-          # Emit ARCHES used for manifests (keep in sync with build matrix)
-          echo "arches=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
+          # Emit ARCHES used for manifests (keep in sync with your matrix)
+          echo "arches=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
 
       # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
-      - name: Step 2.13 - Extract release notes (master only, new version)
+      - name: Step 2.11 - Extract release notes (master only, new version)
         id: notes
         if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
         shell: bash
@@ -737,7 +512,7 @@ jobs:
           ' CHANGELOG.md > release_notes.md
           echo "notes_file=$PWD/release_notes.md" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.14 - Bump Cargo.toml + tag + release (master only, new version)
+      - name: Step 2.12 - Bump Cargo.toml + tag + release (master only, new version)
         if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -773,16 +548,12 @@ jobs:
           gh release create "v${ver}" --title "v${ver}" --notes-file "${{ steps.notes.outputs.notes_file }}"
 
       # --- Summary ---
-      - name: Step 2.15 - Summary
+      - name: Step 2.13 - Summary
         if: always()
         shell: bash
         env:
           SUMMARY_TAGS: ${{ steps.export.outputs.tags }}
           CACHE_BASE_BRANCH: ${{ steps.plan.outputs.cache_base_branch }}
-          PRIMARY_CACHE_TAG: ${{ steps.plan.outputs.primary_cache_tag }}
-          SECONDARY_CACHE_TAG: ${{ steps.plan.outputs.secondary_cache_tag }}
-          CACHE_BASE_PRIMARY_TAG: ${{ steps.plan.outputs.cache_base_primary_tag }}
-          CACHE_BASE_SECONDARY_TAG: ${{ steps.plan.outputs.cache_base_secondary_tag }}
         run: |
           {
             echo "## 🧱 Build & Release Summary"
@@ -803,27 +574,10 @@ jobs:
             echo "- Checked arch tags: linux-amd64 • linux-arm64"
             echo ""
             echo "### 🧷 Cache"
-            echo "- GHA cache scopes:" 
-            echo "  - \`image-${PRIMARY_CACHE_TAG}-<arch>\`"
-            if [[ -n "${SECONDARY_CACHE_TAG// }" ]]; then
-              echo "  - \`image-${SECONDARY_CACHE_TAG}-<arch>\`"
-            fi
-            echo "- Registry cache sources:"
-            echo "  - \`${GHCR_NS}:${PRIMARY_CACHE_TAG}-<arch>\`"
-            if [[ -n "${SECONDARY_CACHE_TAG// }" ]]; then
-              echo "  - \`${GHCR_NS}:${SECONDARY_CACHE_TAG}-<arch>\`"
-            fi
+            echo "- GHA cache scopes per-arch/plan"
+            echo "- Registry cache-from: temp per-arch images"
             if [[ -n "${CACHE_BASE_BRANCH:-}" ]]; then
               echo "- Base branch for cache reuse: **${CACHE_BASE_BRANCH}**"
-            fi
-            if [[ -n "${CACHE_BASE_PRIMARY_TAG// }" || -n "${CACHE_BASE_SECONDARY_TAG// }" ]]; then
-              echo "- Reusing base cache tags:" 
-              if [[ -n "${CACHE_BASE_PRIMARY_TAG// }" ]]; then
-                echo "  - \`${GHCR_NS}:${CACHE_BASE_PRIMARY_TAG}-<arch>\`"
-              fi
-              if [[ -n "${CACHE_BASE_SECONDARY_TAG// }" ]]; then
-                echo "  - \`${GHCR_NS}:${CACHE_BASE_SECONDARY_TAG}-<arch>\`"
-              fi
             fi
             echo ""
             echo "### 🏷️ Final tags"
@@ -891,8 +645,22 @@ jobs:
             local tag="$1"
             local src=()
 
+            # Build source list per architecture
             for arch in "${ARCHES[@]}"; do
-              src+=( "${GHCR_NS}:${tag}-${arch}" )
+              case "$tag" in
+                dev-slim* )
+                  # temp-dev-<arch>
+                  src+=( "${GHCR_NS}:temp-dev-${arch}" )
+                  ;;
+                dev* )
+                  # temp-dev-alpine-<arch>
+                  src+=( "${GHCR_NS}:temp-dev-alpine-${arch}" )
+                  ;;
+                * )
+                  # temp-<plan>-<arch>
+                  src+=( "${GHCR_NS}:temp-${PLAN}-${arch}" )
+                  ;;
+              esac
             done
 
             echo "⛏️  Creating manifest ${GHCR_NS}:${tag}"
