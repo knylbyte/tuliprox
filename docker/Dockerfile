@@ -80,16 +80,19 @@ strip = true
 TOML
 
 # Copy manifests only (no sources yet)
-COPY backend/Cargo.toml  ./backend/
-COPY shared/Cargo.toml   ./shared/
+# COPY backend/Cargo.toml  ./backend/
+# COPY shared/Cargo.toml   ./shared/
+
+COPY backend ./backend
+COPY shared   ./shared
 
 # Cargo (and cargo-chef) require at least one target per workspace member.
 # Ensure we have a lockfile (in case none was present)
 # We do not copy real sources here (to keep deps layer stable), so create minimal dummies.
 RUN set -eux; \
-    mkdir -p backend/src shared/src && \
-    echo 'fn main() {}'      > backend/src/main.rs && \
-    echo 'pub fn dummy() {}' > shared/src/lib.rs && \
+    # mkdir -p backend/src shared/src && \
+    # echo 'fn main() {}'      > backend/src/main.rs && \
+    # echo 'pub fn dummy() {}' > shared/src/lib.rs && \
     [ -f /src/Cargo.lock ] || cargo generate-lockfile && \
     cargo chef prepare --recipe-path backend-recipe.json
 
@@ -100,9 +103,9 @@ RUN set -eux; \
 # =============================================================================
 FROM chef AS backend-builder
 
-ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
-
 WORKDIR /src
+
+ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
@@ -121,6 +124,7 @@ RUN cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 #  - Generates a recipe that describes all Rust deps for the WASM target
 # =============================================================================
 FROM chef AS frontend-planner
+
 WORKDIR /src
 
 # Synthetic minimal workspace (frontend + shared only) to keep backend out
@@ -142,17 +146,20 @@ strip = true
 TOML
 
 # Copy only manifests for the WASM part
-COPY frontend/Cargo.toml ./frontend/
-COPY shared/Cargo.toml   ./shared/
+# COPY frontend/Cargo.toml ./frontend/
+# COPY shared/Cargo.toml   ./shared/
+
+COPY frontend ./frontend
+COPY shared   ./shared
 
 # Produce the dependency recipe for WASM
 # Cargo (and cargo-chef) require at least one target per workspace member.
 # Ensure we have a lockfile (in case none was present)
 # We do not copy real sources here (to keep deps layer stable), so create minimal dummies.
 RUN set -eux; \
-    mkdir -p frontend/src shared/src && \
-    echo 'fn main() {}'      > frontend/src/main.rs && \
-    echo 'pub fn dummy() {}' > shared/src/lib.rs && \
+    # mkdir -p frontend/src shared/src && \
+    # echo 'fn main() {}'      > frontend/src/main.rs && \
+    # echo 'pub fn dummy() {}' > shared/src/lib.rs && \
     [ -f /src/Cargo.lock ] || cargo generate-lockfile && \
     cargo chef prepare --recipe-path frontend-recipe.json
 
