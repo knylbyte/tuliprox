@@ -54,8 +54,8 @@ RUN rustup target add "$(cat /rust-target)" || true
 
 # =============================================================================
 # Stage 2: backend-planner (cargo-chef prepare)
-#  - Builds ONLY dependencies as cacheable Docker layers
-#  - No cache-mounts here → proper cross-run caching via buildx
+#  - Minimal synthetic workspace (backend + shared only) to avoid pulling in frontend
+#  - Generates a recipe that describes all Rust deps for the specified target
 # =============================================================================
 FROM chef AS backend-planner
 
@@ -79,20 +79,14 @@ panic = "abort"        # Abort on panic
 strip = true
 TOML
 
-# Copy manifests only (no sources yet)
-# COPY backend/Cargo.toml  ./backend/
-# COPY shared/Cargo.toml   ./shared/
-
+# Copy manifests only
 COPY backend ./backend
 COPY shared   ./shared
 
 # Cargo (and cargo-chef) require at least one target per workspace member.
 # Ensure we have a lockfile (in case none was present)
-# We do not copy real sources here (to keep deps layer stable), so create minimal dummies.
+# We copy real sources here (to keep deps layer stable).
 RUN set -eux; \
-    # mkdir -p backend/src shared/src && \
-    # echo 'fn main() {}'      > backend/src/main.rs && \
-    # echo 'pub fn dummy() {}' > shared/src/lib.rs && \
     [ -f /src/Cargo.lock ] || cargo generate-lockfile && \
     cargo chef prepare --recipe-path backend-recipe.json
 
@@ -146,20 +140,14 @@ strip = true
 TOML
 
 # Copy only manifests for the WASM part
-# COPY frontend/Cargo.toml ./frontend/
-# COPY shared/Cargo.toml   ./shared/
-
 COPY frontend ./frontend
 COPY shared   ./shared
 
 # Produce the dependency recipe for WASM
 # Cargo (and cargo-chef) require at least one target per workspace member.
 # Ensure we have a lockfile (in case none was present)
-# We do not copy real sources here (to keep deps layer stable), so create minimal dummies.
+# We copy real sources here (to keep deps layer stable).
 RUN set -eux; \
-    # mkdir -p frontend/src shared/src && \
-    # echo 'fn main() {}'      > frontend/src/main.rs && \
-    # echo 'pub fn dummy() {}' > shared/src/lib.rs && \
     [ -f /src/Cargo.lock ] || cargo generate-lockfile && \
     cargo chef prepare --recipe-path frontend-recipe.json
 
