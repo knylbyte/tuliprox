@@ -281,47 +281,92 @@ jobs:
       - name: Step 2.6 - Decide plan
         id: plan
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target || '' }}
         run: |
           set -euo pipefail
-          ref="${GITHUB_REF_NAME}"
 
-          target_input="${{ github.event.inputs.target || '' }}"
-          [[ -z "$target_input" ]] && target_input=""
+          ref="${GITHUB_REF_NAME}"
+          ver="${VERSION}"
+          target_input="${TARGET_INPUT:-}"
+
+          detect_parent_branch() {
+            local best_branch=""
+            local best_ts=-1
+
+            for candidate in develop master; do
+              if ! git show-ref --verify --quiet "refs/remotes/origin/${candidate}"; then
+                continue
+              fi
+              if ! mb=$(git merge-base HEAD "origin/${candidate}"); then
+                continue
+              fi
+              if ! ts=$(git show -s --format=%ct "$mb" 2>/dev/null); then
+                continue
+              fi
+              if (( ts > best_ts )); then
+                best_branch="$candidate"
+                best_ts=$ts
+              fi
+            done
+
+            if [[ -z "$best_branch" ]]; then
+              best_branch="develop"
+            fi
+
+            printf '%s' "$best_branch"
+          }
+
+          sanitize_tag() {
+            local value="$1"
+            value="${value// /-}"
+            printf '%s' "${value//[^[:alnum:]._-]/-}"
+          }
 
           declare -a tags=()
           plan=""
+          cache_base_branch=""
+          cache_base_plan=""
 
           case "$ref" in
             master)
               target="scratch-final"
-              tags+=("latest" "${{ steps.version.outputs.version }}")
+              tags+=("latest" "$ver")
               plan="master"
+              cache_base_branch="develop"
+              cache_base_plan="dev"
               ;;
             develop)
               target="both-dev"  # handled later: scratch + alpine
-              tags+=("dev" "dev@${{ steps.version.outputs.version }}" "dev-slim" "dev-slim@${{ steps.version.outputs.version }}")
+              tags+=("dev-slim" "dev-slim@${ver}" "dev" "dev@${ver}")
               plan="dev"
+              cache_base_branch="develop"
+              cache_base_plan="dev"
               ;;
             feature/*)
               target="alpine-final"
               name="${ref#feature/}"
-              safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
-              tags+=("feat@${safe}")
+              safe="$(sanitize_tag "$name")"
+              tags+=("feature-${safe}")
               plan="feature"
+              cache_base_branch="$(detect_parent_branch)"
               ;;
             bugfix/*)
               target="alpine-final"
               name="${ref#bugfix/}"
-              safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
-              tags+=("bug@${safe}")
+              safe="$(sanitize_tag "$name")"
+              tags+=("bugfix-${safe}")
               plan="bugfix"
+              cache_base_branch="$(detect_parent_branch)"
               ;;
             hotfix/*)
               target="alpine-final"
               name="${ref#hotfix/}"
-              safe="$(echo "$name" | tr ' ' '-' | tr -cd '[:alnum:]._-' )"
-              tags+=("hot@${safe}")
+              safe="$(sanitize_tag "$name")"
+              tags+=("hotfix-${safe}")
               plan="hotfix"
+              cache_base_branch="$(detect_parent_branch)"
               ;;
             *)
               echo "Unsupported branch '$ref'." >&2
@@ -329,14 +374,28 @@ jobs:
               ;;
           esac
 
+          if [[ -z "$cache_base_plan" && -n "$cache_base_branch" ]]; then
+            case "$cache_base_branch" in
+              master) cache_base_plan="master" ;;
+              develop) cache_base_plan="dev" ;;
+            esac
+          fi
+
+          if [[ "$cache_base_plan" == "$plan" ]]; then
+            cache_base_plan=""
+          fi
+
           if [[ -n "$target_input" ]]; then
             target="$target_input"
           fi
-          printf "%s\n" "${tags[@]}" > /tmp/tags.txt
+
+          printf '%s\n' "${tags[@]}" > /tmp/tags.txt
           echo "plan=$plan" >> "$GITHUB_OUTPUT"
           echo "target=$target" >> "$GITHUB_OUTPUT"
           echo "tags_file=/tmp/tags.txt" >> "$GITHUB_OUTPUT"
           echo "resolved_branch=$ref" >> "$GITHUB_OUTPUT"
+          echo "cache_base_branch=$cache_base_branch" >> "$GITHUB_OUTPUT"
+          echo "cache_base_plan=$cache_base_plan" >> "$GITHUB_OUTPUT"
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "dispatch_simulated=true" >> "$GITHUB_OUTPUT"
           else
@@ -373,7 +432,9 @@ jobs:
           tags: |
             ${{ env.GHCR_NS }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
           cache-from: |
+            ${{ steps.plan.outputs.cache_base_plan && format('type=gha,scope=final-{0}-{1}', steps.plan.outputs.cache_base_plan, matrix.arch_tag) }}
             type=gha,scope=final-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
+            ${{ steps.plan.outputs.cache_base_plan && format('type=registry,ref={0}:temp-{1}-{2}', env.GHCR_NS, steps.plan.outputs.cache_base_plan, matrix.arch_tag) }}
             type=registry,ref=${{ env.GHCR_NS }}:temp-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
           cache-to: |
             type=gha,mode=max,scope=final-${{ steps.plan.outputs.plan }}-${{ matrix.arch_tag }}
@@ -394,7 +455,9 @@ jobs:
           tags: |
             ${{ env.GHCR_NS }}:temp-dev-alpine-${{ matrix.arch_tag }}
           cache-from: |
+            ${{ steps.plan.outputs.cache_base_plan && format('type=gha,scope=final-{0}-alpine-{1}', steps.plan.outputs.cache_base_plan, matrix.arch_tag) }}
             type=gha,scope=final-dev-alpine-${{ matrix.arch_tag }}
+            ${{ steps.plan.outputs.cache_base_plan && format('type=registry,ref={0}:temp-{1}-alpine-{2}', env.GHCR_NS, steps.plan.outputs.cache_base_plan, matrix.arch_tag) }}
             type=registry,ref=${{ env.GHCR_NS }}:temp-dev-alpine-${{ matrix.arch_tag }}
           cache-to: |
             type=gha,mode=max,scope=final-dev-alpine-${{ matrix.arch_tag }}
@@ -488,6 +551,9 @@ jobs:
       - name: Step 2.13 - Summary
         if: always()
         shell: bash
+        env:
+          SUMMARY_TAGS: ${{ steps.export.outputs.tags }}
+          CACHE_BASE_BRANCH: ${{ steps.plan.outputs.cache_base_branch }}
         run: |
           {
             echo "## 🧱 Build & Release Summary"
@@ -504,18 +570,22 @@ jobs:
             echo "- Target: **${{ steps.plan.outputs.target }}**"
             echo ""
             echo "### 🧩 Prebuilds"
-            echo "- Namespace: \`${{ env.GHCR_NS }}\`"
+            printf -- '- Namespace: `%s`\n' "$GHCR_NS"
             echo "- Checked arch tags: linux-amd64 • linux-arm64"
             echo ""
             echo "### 🧷 Cache"
             echo "- GHA cache scopes per-arch/plan"
             echo "- Registry cache-from: temp per-arch images"
+            if [[ -n "${CACHE_BASE_BRANCH:-}" ]]; then
+              echo "- Base branch for cache reuse: **${CACHE_BASE_BRANCH}**"
+            fi
             echo ""
             echo "### 🏷️ Final tags"
-            if [[ -s "${{ steps.plan.outputs.tags_file }}" ]]; then
+            if [[ -n "${SUMMARY_TAGS// }" ]]; then
               while IFS= read -r t; do
-                echo "- \`${{ env.GHCR_NS }}:${t}\`"
-              done < "${{ steps.plan.outputs.tags_file }}"
+                [[ -n "${t// }" ]] || continue
+                printf -- '- `%s:%s`\n' "$GHCR_NS" "$t"
+              done <<< "${SUMMARY_TAGS}"
             else
               echo "↔️ No final tags."
             fi
