@@ -58,7 +58,7 @@ fn get_epg_path_for_target_of_type(target_name: &str, epg_path: PathBuf) -> Opti
     None
 }
 
-fn get_epg_path_for_target(config: &Config, target: &ConfigTarget) -> Option<PathBuf> {
+pub (in crate::api) fn get_epg_path_for_target(config: &Config, target: &ConfigTarget) -> Option<PathBuf> {
     // TODO if we have multiple targets, first one serves, this can be problematic when
     // we use m3u playlist but serve xtream target epg
 

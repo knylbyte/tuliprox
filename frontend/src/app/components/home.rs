@@ -1,4 +1,4 @@
-use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView, WebsocketStatus};
+use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView, WebsocketStatus};
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
@@ -185,6 +185,9 @@ pub fn Home() -> Html {
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::PlaylistExplorer.to_string()} active={view_visible.to_string()}>
                         <PlaylistExplorerView/>
+                       </Panel>
+                       <Panel class="tp__full-width" value={ViewType::PlaylistEpg.to_string()} active={view_visible.to_string()}>
+                        <EpgView/>
                        </Panel>
                     </div>
               </div>

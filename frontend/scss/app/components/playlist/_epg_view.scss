@@ -1,0 +1,103 @@
+.tp__epg {
+  display: flex;
+  flex-flow: column;
+  overflow: hidden;
+  width: 100%;
+
+  &__header {
+    display: flex;
+    flex-flow: row;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  &__body {
+    display: flex;
+    flex-flow: row;
+    overflow-x: auto;
+    overflow-y: auto;
+  }
+
+  &__timeline {
+    display: flex;
+    flex-flow: row;
+
+    &-block {
+      box-sizing: border-box;
+      width: var(--epg-time-block-width);
+      min-width: var(--epg-time-block-width);
+      max-width: var(--epg-time-block-width);
+      border-left: 1px solid var(--text-color);
+      padding-left: 4px;
+    }
+  }
+
+  &__channels {
+    display: flex;
+    flex-flow: column;
+    gap: var(--gap-default);
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background-color: var(--background-color);
+  }
+
+  &__channels, &__channels-header {
+    box-sizing: border-box;
+    width: var(--epg-channels-width);
+    min-width: var(--epg-channels-width);
+    max-width: var(--epg-channels-width);
+  }
+
+  &__programs {
+    display: flex;
+    flex-flow: column;
+    gap: var(--gap-default);
+    position: relative;
+    min-width: 100%;
+  }
+
+  &__channel {
+    display: flex;
+    flex-flow: row;
+    align-items: center;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  &__channel-programs {
+    display: flex;
+    flex-flow: row nowrap;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  &__header,
+  &__channel,
+  &__channel-programs {
+    box-sizing: border-box;
+    max-height: var(--epg-row-height);
+    min-height: var(--epg-row-height);
+    height: var(--epg-row-height);
+  }
+
+  &__program {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    border-right: var(--gap-default) solid var(--background-color);
+    padding-left: var(--padding-small);
+    background-color: var(--epg-program-background-color);
+    color: var(--epg-program-color);
+    overflow: hidden;
+    white-space: nowrap;
+
+    &-active {
+      background-color: var(--epg-program-active-background-color);
+      color: var(--epg-program-active-color);
+    }
+  }
+}
