@@ -5,8 +5,9 @@ use std::collections::{HashMap};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use chrono::{Datelike, TimeZone, Utc};
 use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::model::{EpgChannel, EpgProgramme, EpgTv};
+use shared::model::{parse_xmltv_time, EpgChannel, EpgProgramme, EpgTv};
 use crate::model::xmltv::XmlTagIcon::Undefined;
 
 pub const EPG_TAG_TV: &str = "tv";
@@ -147,6 +148,18 @@ fn filter_channels_and_programmes(
     channels.retain(|c| !c.programmes.is_empty());
 }
 
+fn get_epg_interval(channels: &Vec<EpgChannel>) -> (i64, i64) {
+    let mut epg_start = i64::MAX;
+    let mut epg_stop = i64::MIN;
+    for channel in channels {
+        for programme in &channel.programmes {
+            epg_start = min(epg_start, programme.start);
+            epg_stop = max(epg_stop, programme.stop);
+        }
+    }
+    (epg_start, epg_stop)
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
     let file = File::open(path).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;
@@ -161,6 +174,12 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
     let mut current_programme: Option<EpgProgramme> = None;
 
     let mut current_tag = String::new();
+
+    // only 1 day old epg
+    let now = Utc::now();
+    let yesterday_start = Utc.with_ymd_and_hms(now.year(), now.month(), now.day(),0, 0 , 0).unwrap()
+        - chrono::Duration::days(1);
+    let threshold_ts = yesterday_start.timestamp();
 
     let get_attr_value = |attr: &quick_xml::events::attributes::Attribute| {
         if let Ok(value) = attr.unescape_value() {
@@ -188,6 +207,8 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
                         }
                         if let Some(cid) = id {
                             current_channel = Some(EpgChannel::new(cid));
+                        } else {
+                            current_channel = None;
                         }
                     }
                     EPG_TAG_PROGRAMME => {
@@ -203,8 +224,15 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
                             }
                         }
                         if let (Some(pstart), Some(pstop), Some(pchannel)) = (start, stop, channel) {
-                            let epg_programme = EpgProgramme::new(pstart, pstop, pchannel);
-                            current_programme = Some(epg_programme);
+                            let time = parse_xmltv_time(&pstop);
+                            if time >= threshold_ts {
+                                let epg_programme = EpgProgramme::new(pstart, pstop, pchannel);
+                                current_programme = Some(epg_programme);
+                            } else {
+                                current_programme = None;
+                            }
+                        } else {
+                            current_programme = None;
                         }
                     }
                     _ => {}
@@ -262,16 +290,4 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
         stop: epg_stop,
         channels,
     })
-}
-
-fn get_epg_interval(channels: &Vec<EpgChannel>) -> (i64, i64) {
-    let mut epg_start = i64::MAX;
-    let mut epg_stop = i64::MIN;
-    for channel in channels {
-        for programme in &channel.programmes {
-            epg_start = min(epg_start, programme.start);
-            epg_stop = max(epg_stop, programme.stop);
-        }
-    }
-    (epg_start, epg_stop)
 }

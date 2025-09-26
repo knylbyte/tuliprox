@@ -30,9 +30,9 @@
   --margin-small: 0.75rem;
   --margin-default: 1rem;
 
-  --epg-row-height: 2rem;
+  --epg-row-height: 4rem;
+  --epg-header-height: 2rem;
   --epg-channels-width: 200px;
-  --epg-time-block-width: 200px;
 
 }
 
@@ -296,10 +296,12 @@
 
   --toolbar-bg-color: #161b25;
 
-  --epg-program-background-color: #31597a;
+  --epg-program-background-color: #57317a; //#31597a;
   --epg-program-color: #ffffff;
   --epg-program-active-background-color: #65a181;
   --epg-program-active-color: #ffffff;
+  --epg-program-time-color: #acbcdd;
+  --epg-program-active-time-color: #000000;
 }
 
 body[data-theme="bright"] {

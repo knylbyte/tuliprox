@@ -16,6 +16,14 @@ pub struct EpgTv {
     pub channels: Vec<EpgChannel>,
 }
 
+impl PartialEq for EpgTv {
+    fn eq(&self, other: &Self) -> bool {
+            self.start == other.start
+            && self.stop == other.stop
+        // Note: self.channels is skipped
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EpgChannel {
     pub id: String,
