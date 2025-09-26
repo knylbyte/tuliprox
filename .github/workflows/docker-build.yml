@@ -60,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "archs=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
+          echo "archs=linux-amd64 linux-arm64" linux-armv7>> "$GITHUB_OUTPUT"
 
       - name: Step 1.4 - Check prebuild availability (all archs)
         id: check
