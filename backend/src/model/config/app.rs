@@ -159,7 +159,7 @@ impl AppConfig {
             None => None
         }
     }
-
+    
     pub fn get_inputs_for_target(&self, target_name: &str) -> Option<Vec<Arc<ConfigInput>>> {
         let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
         for source in &sources.sources {

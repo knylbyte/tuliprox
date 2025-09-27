@@ -9,6 +9,7 @@ const CONFIG: &str = "config";
 const PLAYLIST_UPDATE: &str = "playlist_update";
 const PLAYLIST_EDITOR: &str = "playlist_editor";
 const PLAYLIST_EXPLORER: &str = "playlist_explorer";
+const PLAYLIST_EPG: &str = "playlist_epg";
 
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -19,7 +20,8 @@ pub enum ViewType {
     Config,
     PlaylistUpdate,
     PlaylistEditor,
-    PlaylistExplorer
+    PlaylistExplorer,
+    PlaylistEpg
 }
 
 impl FromStr for ViewType {
@@ -34,6 +36,7 @@ impl FromStr for ViewType {
             PLAYLIST_UPDATE => Ok(ViewType::PlaylistUpdate),
             PLAYLIST_EDITOR => Ok(ViewType::PlaylistEditor),
             PLAYLIST_EXPLORER => Ok(ViewType::PlaylistExplorer),
+            PLAYLIST_EPG => Ok(ViewType::PlaylistEpg),
             _ => Err(info_err!(format!("Unknown view type: {s}"))),
         }
     }
@@ -49,6 +52,7 @@ impl fmt::Display for ViewType {
             ViewType::PlaylistUpdate => PLAYLIST_UPDATE,
             ViewType::PlaylistEditor => PLAYLIST_EDITOR,
             ViewType::PlaylistExplorer => PLAYLIST_EXPLORER,
+            ViewType::PlaylistEpg => PLAYLIST_EPG,
         };
         write!(f, "{s}")
     }

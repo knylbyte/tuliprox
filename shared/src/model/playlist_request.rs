@@ -182,3 +182,8 @@ impl UiPlaylistCategories {
         }
     }
 }
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct PlaylistEpgRequest {
+  pub target_id: u16,
+}

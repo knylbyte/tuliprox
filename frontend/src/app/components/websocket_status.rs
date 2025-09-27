@@ -8,7 +8,7 @@ pub struct WebsocketStatusProps {
 }
 
 #[function_component]
-pub fn WebsocketStatus(props: &WebsocketStatusProps) -> Html {
+pub fn WebsocketStatus(_props: &WebsocketStatusProps) -> Html {
     let status = use_state(|| true);
     let services = use_service_context();
 
