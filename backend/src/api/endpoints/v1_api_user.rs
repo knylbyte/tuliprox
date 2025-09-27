@@ -104,8 +104,6 @@ async fn delete_config_api_proxy_user(
         }
         if modified {
             let new_api_proxy = Arc::new(api_proxy);
-            app_state.app_config.api_proxy.store(Some(Arc::clone(&new_api_proxy)));
-
             if new_api_proxy.use_user_db {
                 if let Err(err) = store_api_user(&app_state.app_config, &new_api_proxy.user) {
                     return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
@@ -118,6 +116,7 @@ async fn delete_config_api_proxy_user(
                     return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
                 }
             }
+            app_state.app_config.api_proxy.store(Some(Arc::clone(&new_api_proxy)));
         } else {
             return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": format!("User not found {username} in target {target_name}")}))).into_response();
         }

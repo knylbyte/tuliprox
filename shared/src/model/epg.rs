@@ -1,12 +1,15 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-pub fn parse_xmltv_time(t: &str) -> i64 {
+pub fn parse_xmltv_time(t: &str) -> Option<i64> {
     let fmt = "%Y%m%d%H%M%S %z";
-    DateTime::parse_from_str(t, fmt)
-        .unwrap()
-        .with_timezone(&Utc)
-        .timestamp()
+    if let Ok(result) = DateTime::parse_from_str(t, fmt) {
+            Some(result
+            .with_timezone(&Utc)
+            .timestamp())
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -50,10 +53,10 @@ pub struct EpgProgramme {
 }
 
 impl EpgProgramme {
-    pub fn new(start: String, stop: String, channel: String) -> Self {
+    pub fn new(start: i64, stop: i64, channel: String) -> Self {
         Self {
-            start: parse_xmltv_time(&start),
-            stop: parse_xmltv_time(&stop),
+            start,
+            stop,
             channel,
             title: String::new(),
         }

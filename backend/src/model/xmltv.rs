@@ -1,14 +1,14 @@
-use std::cmp::{max, min};
+use crate::model::xmltv::XmlTagIcon::Undefined;
+use chrono::{Datelike, TimeZone, Utc};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Error, Reader, Writer};
-use std::collections::{HashMap};
+use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::model::{parse_xmltv_time, EpgChannel, EpgProgramme, EpgTv};
+use std::cmp::{max, min};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use chrono::{Datelike, TimeZone, Utc};
-use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::model::{parse_xmltv_time, EpgChannel, EpgProgramme, EpgTv};
-use crate::model::xmltv::XmlTagIcon::Undefined;
 
 pub const EPG_TAG_TV: &str = "tv";
 pub const EPG_TAG_PROGRAMME: &str = "programme";
@@ -21,7 +21,7 @@ pub const EPG_TAG_ICON: &str = "icon";
 // https://github.com/XMLTV/xmltv/blob/master/xmltv.dtd
 
 
-#[derive(Debug, Clone, Eq, PartialEq,Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub enum XmlTagIcon {
     #[default]
     Undefined,
@@ -60,7 +60,7 @@ impl XmlTag {
 
         // empty icon not processed
         if self.icon == Undefined && self.name.eq(EPG_TAG_ICON) {
-           return Ok(());
+            return Ok(());
         }
 
         if let Some(attribs) = self.attributes.as_ref() {
@@ -177,7 +177,7 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
 
     // only 1 day old epg
     let now = Utc::now();
-    let yesterday_start = Utc.with_ymd_and_hms(now.year(), now.month(), now.day(),0, 0 , 0).unwrap()
+    let yesterday_start = Utc.with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0).unwrap()
         - chrono::Duration::days(1);
     let threshold_ts = yesterday_start.timestamp();
 
@@ -215,6 +215,7 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
                         let mut start = None;
                         let mut stop = None;
                         let mut channel = None;
+                        current_programme = None;
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"start" => start = get_attr_value(&attr),
@@ -224,15 +225,12 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
                             }
                         }
                         if let (Some(pstart), Some(pstop), Some(pchannel)) = (start, stop, channel) {
-                            let time = parse_xmltv_time(&pstop);
-                            if time >= threshold_ts {
-                                let epg_programme = EpgProgramme::new(pstart, pstop, pchannel);
-                                current_programme = Some(epg_programme);
-                            } else {
-                                current_programme = None;
+                            if let (Some(start_time), Some(stop_time)) = (parse_xmltv_time(&pstart), parse_xmltv_time(&pstop)) {
+                                if stop_time >= threshold_ts {
+                                    let epg_programme = EpgProgramme::new(start_time, stop_time, pchannel);
+                                    current_programme = Some(epg_programme);
+                                }
                             }
-                        } else {
-                            current_programme = None;
                         }
                     }
                     _ => {}
@@ -282,6 +280,14 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
     }
 
     filter_channels_and_programmes(&mut channels, &mut programmes);
+
+    if channels.is_empty() {
+        return Ok(EpgTv {
+            start: 0,
+            stop: 0,
+            channels,
+        })
+    }
 
     let (epg_start, epg_stop) = get_epg_interval(&channels);
 

@@ -10,6 +10,7 @@ use crate::api::model::AppState;
 use crate::auth::create_access_token;
 use crate::model::{parse_xmltv_for_web_ui, ConfigInput, ConfigInputOptions};
 use crate::processing::processor::playlist;
+use url::Url;
 
 fn create_config_input_for_m3u(url: &str) -> ConfigInput {
     ConfigInput {
@@ -92,16 +93,30 @@ async fn playlist_content(
         }
         PlaylistRequestType::Xtream => {
             if let (Some(url), Some(username), Some(password)) = (playlist_req.url.as_ref(), playlist_req.username.as_ref(), playlist_req.password.as_ref()) {
-                let input = create_config_input_for_xtream(username, password, url);
-                get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config).await.into_response()
+              match Url::parse(url) {
+                  Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => {
+                      let input = create_config_input_for_xtream(username, password, url);
+                      get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config).await.into_response()
+                  }
+                  _ => {
+                      (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url scheme; only http/https are allowed"}))).into_response()
+                  }
+              }
             } else {
                 (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url"}))).into_response()
             }
         }
         PlaylistRequestType::M3U => {
             if let Some(url) = playlist_req.url.as_ref() {
-                let input = create_config_input_for_m3u(url);
-                get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config).await.into_response()
+                match Url::parse(url) {
+                    Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => {
+                        let input = create_config_input_for_m3u(url);
+                        get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config).await.into_response()
+                    }
+                    _ => {
+                        (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url scheme; only http/https are allowed"}))).into_response()
+                    }
+                }
             } else {
                 (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url"}))).into_response()
             }

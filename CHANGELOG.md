@@ -8,6 +8,10 @@
 - Series name empty paren problem fixed.
 - Default sort removed
 - Reconnect on WebSocket disconnect, WebSocket connection status icon in WEB-UI
+- Added a Playlist EPG view with timeline, channels, active “now” line, and program details.
+- New sidebar entry and icon for quick access to EPG.
+- EPG data can be fetched from selected targets.
+
 
 # 3.1.6 (2025-09-01)
 - EPG Config View added
