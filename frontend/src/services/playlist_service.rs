@@ -1,6 +1,6 @@
 use crate::services::{get_base_href, request_post};
 use log::error;
-use shared::model::{CommonPlaylistItem, PlaylistCategoriesResponse, PlaylistRequest, UiPlaylistCategories, WebplayerUrlRequest};
+use shared::model::{CommonPlaylistItem, EpgTv, PlaylistCategoriesResponse, PlaylistEpgRequest, PlaylistRequest, UiPlaylistCategories, WebplayerUrlRequest};
 use std::rc::Rc;
 use shared::utils::{concat_path_leading_slash};
 
@@ -8,6 +8,7 @@ pub struct PlaylistService {
     target_update_api_path: String,
     playlist_api_path: String,
     playlist_api_webplayer_url_path: String,
+    playlist_api_epg_path: String,
 }
 impl Default for PlaylistService {
     fn default() -> Self {
@@ -22,6 +23,7 @@ impl PlaylistService {
             target_update_api_path: concat_path_leading_slash(&base_href, "api/v1/playlist/update"),
             playlist_api_path: concat_path_leading_slash(&base_href, "api/v1/playlist"),
             playlist_api_webplayer_url_path: concat_path_leading_slash(&base_href, "api/v1/playlist/webplayer"),
+            playlist_api_epg_path: concat_path_leading_slash(&base_href, "api/v1/playlist/epg"),
         }
     }
     pub async fn update_targets(&self, targets: &[&str]) -> bool {
@@ -45,6 +47,19 @@ impl PlaylistService {
             cluster: dto.xtream_cluster.unwrap_or_default(),
         };
         match request_post::<&WebplayerUrlRequest, String>(&self.playlist_api_webplayer_url_path, &request, None, Some("text/plain".to_string())).await {
+            Ok(content) => Some(content),
+            Err(err) => {
+                error!("{err}");
+                None
+            }
+        }
+    }
+
+    pub async fn get_playlist_epg(&self, target_id: u16) -> Option<EpgTv> {
+        let request = PlaylistEpgRequest {
+            target_id,
+        };
+        match request_post::<&PlaylistEpgRequest, EpgTv>(&self.playlist_api_epg_path, &request, None, None).await {
             Ok(content) => Some(content),
             Err(err) => {
                 error!("{err}");
