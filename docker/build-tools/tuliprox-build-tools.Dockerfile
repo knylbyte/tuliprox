@@ -7,7 +7,7 @@
 ############################################
 # Global args and versions
 ############################################
-ARG RUST_DISTRO=1.80.0-trixie
+ARG RUST_DISTRO=1.80.0-bookworm
 ARG TRUNK_VER=0.21.13
 ARG BINDGEN_VER=0.2.103
 ARG CARGO_CHEF_VER=0.1.71
