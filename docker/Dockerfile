@@ -16,7 +16,7 @@
 # -----------------------------------------------------------------
 ARG GHCR_NS=ghcr.io/euzu/tuliprox
 ARG BUILDPLATFORM_TAG=latest
-ARG ALPINE_VERSION=3.22.1
+ARG ALPINE_VER=3.22.0
 ARG RUST_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
 
@@ -179,7 +179,7 @@ RUN set -eux; \
 # -----------------------------------------------------------------
 # Stage 6: tzdata/zoneinfo supplier (shared)
 # -----------------------------------------------------------------
-FROM alpine:${ALPINE_VERSION} AS tzdata
+FROM alpine:${ALPINE_VER} AS tzdata
 RUN set -eux; \
     apk add --no-cache tzdata ca-certificates; \
     update-ca-certificates; \
@@ -230,7 +230,7 @@ CMD ["-s", "-p", "/opt/tuliprox/data"]
 # -----------------------------------------------------------------
 # Final Image #2: Final runtime (FROM Alpine) -> dev-friendly
 # -----------------------------------------------------------------
-FROM alpine:${ALPINE_VERSION} AS alpine-final
+FROM alpine:${ALPINE_VER} AS alpine-final
 
 ARG DEFAULT_TZ=UTC
 ENV TZ=${DEFAULT_TZ}

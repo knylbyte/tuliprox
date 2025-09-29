@@ -171,7 +171,7 @@ jobs:
             --arg chef "$chef_latest" \
             '{
               RUST_DISTRO: {latest: $rust, semver: $rust_semver, distro: $rust_distro, display: "RUST_DISTRO"},
-              ALPINE_VERSION: {latest: $alpine, display: "ALPINE_VER"},
+              ALPINE_VER: {latest: $alpine, display: "ALPINE_VER"},
               CARGO_CHEF_VER: {latest: $chef, display: "CARGO_CHEF_VER"},
               TRUNK_VER: {latest: $trunk, display: "TRUNK_VER"},
               BINDGEN_VER: {latest: $wasm, display: "WASM_VER"}
@@ -205,7 +205,7 @@ jobs:
 
           deps = {
             "RUST_DISTRO": {"display": "RUST_DISTRO", "aliases": ["RUST_DISTRO"]},
-            "ALPINE_VERSION": {"display": "ALPINE_VER", "aliases": ["ALPINE_VERSION", "ALPINE_VER"]},
+            "ALPINE_VER": {"display": "ALPINE_VER", "aliases": ["ALPINE_VER"]},
             "CARGO_CHEF_VER": {"display": "CARGO_CHEF_VER", "aliases": ["CARGO_CHEF_VER"]},
             "TRUNK_VER": {"display": "TRUNK_VER", "aliases": ["TRUNK_VER"]},
             "BINDGEN_VER": {"display": "WASM_VER", "aliases": ["BINDGEN_VER", "WASM_VER"]},
@@ -462,7 +462,7 @@ jobs:
             sections.append("- Unable to resolve rust metadata ❌")
 
           sections.append("\n### 📦 Dependency updates")
-          dependency_order = ["RUST_DISTRO", "ALPINE_VERSION", "CARGO_CHEF_VER", "TRUNK_VER", "BINDGEN_VER"]
+          dependency_order = ["RUST_DISTRO", "ALPINE_VER", "CARGO_CHEF_VER", "TRUNK_VER", "BINDGEN_VER"]
 
           file_entries = {}
           file_order = []

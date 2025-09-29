@@ -85,7 +85,7 @@ jobs:
               echo "CARGO_CHEF_VER=${CHEF_INPUT}"
             fi
             if [ -n "${ALPINE_INPUT}" ]; then
-              echo "ALPINE_VERSION=${ALPINE_INPUT}"
+              echo "ALPINE_VER=${ALPINE_INPUT}"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -179,7 +179,7 @@ jobs:
           if check_file "$USER_EXPIRED"; then echo "user_account_expired=ok" >> "$GITHUB_OUTPUT"; else echo "user_account_expired=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
 
           echo "resources_ok=$ALL_OK" >> "$GITHUB_OUTPUT"
-          echo "alpine_version=${{ github.event.inputs.alpine_ver || '3.22.1' }}" >> "$GITHUB_OUTPUT"
+          echo "ALPINE_VER=${{ github.event.inputs.alpine_ver || '3.22.1' }}" >> "$GITHUB_OUTPUT"
 
           echo "trunk_version=${TRUNK:-unknown}"   >> "$GITHUB_OUTPUT"
           echo "bindgen_version=${BINDGEN:-unknown}" >> "$GITHUB_OUTPUT"
@@ -221,7 +221,7 @@ jobs:
             echo "- provider_connections_exhausted.ts: $([[ '${{ steps.img.outputs.provider_connections_exhausted }}' == 'ok' ]] && echo '✅' || echo '❌')"
             echo "- user_account_expired.ts: $([[ '${{ steps.img.outputs.user_account_expired }}' == 'ok' ]] && echo '✅' || echo '❌')"
             echo ""
-            echo "📦 Alpine: **${{ steps.img.outputs.alpine_version }}**"
+            echo "📦 Alpine: **${{ steps.img.outputs.ALPINE_VER }}**"
             echo ""
             if [[ "${{ steps.img.outputs.resources_ok }}" == "true" && "${{ steps.img.outputs.published }}" == "true" ]]; then
               echo "🎉 All resource files present."
