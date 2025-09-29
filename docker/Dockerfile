@@ -16,7 +16,7 @@
 # -----------------------------------------------------------------
 ARG GHCR_NS=ghcr.io/euzu/tuliprox
 ARG BUILDPLATFORM_TAG=latest
-ARG ALPINE_VER=3.22.0
+ARG ALPINE_VER=3.22.1
 ARG RUST_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
 

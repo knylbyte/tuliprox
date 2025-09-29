@@ -7,11 +7,11 @@
 ############################################
 # Global args and versions
 ############################################
-ARG RUST_DISTRO=1.80.0-bookworm
-ARG TRUNK_VER=0.21.13
-ARG BINDGEN_VER=0.2.103
-ARG CARGO_CHEF_VER=0.1.71
-ARG ALPINE_VER=3.22.0
+ARG RUST_DISTRO=1.90.0-trixie
+ARG TRUNK_VER=0.21.14
+ARG BINDGEN_VER=0.2.104
+ARG CARGO_CHEF_VER=0.1.72
+ARG ALPINE_VER=3.22.1
 
 ############################################
 # Build stage to produce ffmpeg resources
