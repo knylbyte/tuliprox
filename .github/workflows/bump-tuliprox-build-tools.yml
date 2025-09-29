@@ -244,7 +244,7 @@ jobs:
               found_alias = None
               found_values = []
               for alias in meta["aliases"]:
-                pattern = re.compile(rf"^ARG\s+{alias}=([^\\s]+)$", re.MULTILINE)
+                pattern = re.compile(rf"^ARG\s+{alias}=(\S+)$", re.MULTILINE)
                 matches = list(pattern.finditer(content))
                 if matches:
                   found_alias = alias
@@ -265,6 +265,7 @@ jobs:
               missing_entries.extend([{"file": path, "reason": "arg not found"} for path in missing_arg_candidates])
 
             updated_files = []
+            file_update_tracker = {}
             if latest_value and occurrences:
               needs_update = any(occ["value"] != latest_value for occ in occurrences)
               if needs_update:
@@ -279,6 +280,24 @@ jobs:
                     file_texts[path] = new_content
                     modified_files.add(path)
                     updated_files.append(path)
+                    file_update_tracker[path] = latest_value
+
+            details = []
+            seen_detail_files = set()
+            for occ in occurrences:
+              path = occ["file"]
+              if path in seen_detail_files:
+                continue
+              seen_detail_files.add(path)
+              previous = occ["value"]
+              new_value = file_update_tracker.get(path, previous)
+              details.append({
+                "file": path,
+                "arg": occ["arg"],
+                "previous": previous,
+                "new": new_value,
+                "updated": previous != new_value,
+              })
 
             changes[dep] = {
               "display": display,
@@ -287,6 +306,7 @@ jobs:
               "updated": bool(updated_files),
               "files": sorted({occ["file"] for occ in occurrences}),
               "updated_files": sorted(set(updated_files)),
+              "details": details,
               "missing": missing_entries,
             }
 
@@ -442,19 +462,56 @@ jobs:
             sections.append("- Unable to resolve rust metadata ❌")
 
           sections.append("\n### 📦 Dependency updates")
-          for key in ["RUST_DISTRO", "ALPINE_VERSION", "CARGO_CHEF_VER", "TRUNK_VER", "BINDGEN_VER"]:
+          dependency_order = ["RUST_DISTRO", "ALPINE_VERSION", "CARGO_CHEF_VER", "TRUNK_VER", "BINDGEN_VER"]
+
+          file_entries = {}
+          file_order = []
+
+          def ensure_file(path: str):
+            if path not in file_entries:
+              file_entries[path] = []
+              file_order.append(path)
+
+          for key in dependency_order:
             info = changes.get(key)
             if not info:
               continue
-            icon = "⬆️" if info.get("updated") else "↔️"
+
             display = info.get("display", key)
-            current = info.get("current") or "n/a"
             latest_val = info.get("latest") or "n/a"
-            sections.append(f"- {icon} {display}: `{current}` → `{latest_val}`")
-            missing = info.get("missing") or []
-            if missing:
-              warn_lines = [f"    - ⚠️ {entry['file']}: {entry['reason']}" for entry in missing]
-              sections.extend(warn_lines)
+
+            for detail in info.get("details") or []:
+              file_path = detail.get("file", "unknown")
+              ensure_file(file_path)
+              previous = detail.get("previous") or "n/a"
+              new_value = detail.get("new") or latest_val
+              is_updated = bool(detail.get("updated"))
+              icon = "🆙" if is_updated else "✅"
+              file_entries[file_path].append(
+                {
+                  "text": f"- {icon} {display}: `{previous}` -> `{new_value}`",
+                  "order": dependency_order.index(key) if key in dependency_order else len(dependency_order),
+                }
+              )
+
+            for missing in info.get("missing") or []:
+              file_path = missing.get("file", "unknown")
+              ensure_file(file_path)
+              reason = missing.get("reason", "not found")
+              file_entries[file_path].append(
+                {
+                  "text": f"- ❌ {display}: {reason} (expected `{latest_val}`)",
+                  "order": dependency_order.index(key) if key in dependency_order else len(dependency_order),
+                }
+              )
+
+          if not file_entries:
+            sections.append("- ❔ No dependency ARG entries found in tracked files.")
+          else:
+            for file_path in file_order:
+              sections.append(f"#### {file_path}")
+              for entry in sorted(file_entries[file_path], key=lambda item: item["order"]):
+                sections.append(entry["text"])
 
           build_outcome = os.environ.get("BUILD_STATUS", "${{ steps.build.outcome }}")
           if build_outcome == "failure":
