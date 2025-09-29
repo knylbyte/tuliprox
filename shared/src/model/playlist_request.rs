@@ -1,25 +1,26 @@
-use std::rc::Rc;
+use crate::model::{PlaylistItemType, SearchRequest, XtreamCluster};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use crate::model::{PlaylistItemType, SearchRequest, XtreamCluster};
+use std::rc::Rc;
 
-#[derive(Debug, Copy, Clone, Eq, Hash, PartialEq, Serialize, Deserialize, Default)]
-pub enum PlaylistRequestType {
-    #[default]
-    Input,
-    Target,
-    Xtream,
-    M3U
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct PlaylistRequestXtream {
+    pub username: String,
+    pub password: String,
+    pub url: String,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
-pub struct PlaylistRequest {
-    pub rtype: PlaylistRequestType,
-    pub username: Option<String>,
-    pub password: Option<String>,
-    pub url: Option<String>,
-    pub source_id: Option<u16>,
-    pub source_name: Option<String>,
+pub struct PlaylistRequestM3u {
+    pub url: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub enum PlaylistRequest {
+    Target(u16),
+    Input(u16),
+    CustomXtream(PlaylistRequestXtream),
+    CustomM3u(PlaylistRequestM3u)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -107,7 +108,7 @@ impl From<PlaylistCategoriesResponse> for UiPlaylistCategories {
     }
 }
 
-fn filter_channels(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, text: &str) -> Option<Vec<Rc<CommonPlaylistItem>>>{
+fn filter_channels(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, text: &str) -> Option<Vec<Rc<CommonPlaylistItem>>> {
     groups.as_ref().map(|gs| {
         gs.iter()
             .flat_map(|group| &group.channels)
@@ -118,7 +119,7 @@ fn filter_channels(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, text: &str) -> Opt
     })
 }
 
-fn filter_channels_re(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) -> Option<Vec<Rc<CommonPlaylistItem>>>{
+fn filter_channels_re(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) -> Option<Vec<Rc<CommonPlaylistItem>>> {
     groups.as_ref().map(|gs| {
         gs.iter()
             .flat_map(|group| &group.channels)
@@ -134,7 +135,7 @@ fn build_result(live: Option<Vec<Rc<CommonPlaylistItem>>>,
     if live.is_none() && video.is_none() && series.is_none() {
         None
     } else {
-        let build_group  = |xtream_cluster: XtreamCluster, channels: Vec<Rc<CommonPlaylistItem>>, id: u32| {
+        let build_group = |xtream_cluster: XtreamCluster, channels: Vec<Rc<CommonPlaylistItem>>, id: u32| {
             if channels.is_empty() {
                 None
             } else {
@@ -153,7 +154,7 @@ fn build_result(live: Option<Vec<Rc<CommonPlaylistItem>>>,
         Some(UiPlaylistCategories {
             live,
             vod,
-            series
+            series,
         })
     }
 }
@@ -181,9 +182,4 @@ impl UiPlaylistCategories {
             }
         }
     }
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
-pub struct PlaylistEpgRequest {
-  pub target_id: u16,
 }

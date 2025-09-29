@@ -239,15 +239,12 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
                         if let Some(channel) = &mut current_channel {
                             if channel.icon.is_none() {
                                 for attr in e.attributes().flatten() {
-                                    match attr.key.as_ref() {
-                                        b"src" => {
-                                          if let Some(icon) = get_attr_value(&attr) {
-                                              if !icon.is_empty() {
-                                                  channel.icon = Some(icon);
-                                              }
+                                    if attr.key.as_ref() == b"src" {
+                                      if let Some(icon) = get_attr_value(&attr) {
+                                          if !icon.is_empty() {
+                                              channel.icon = Some(icon);
                                           }
-                                        }
-                                        _ => {}
+                                      }
                                     }
                                 }
                             }

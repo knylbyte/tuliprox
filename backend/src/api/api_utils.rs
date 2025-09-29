@@ -1288,7 +1288,7 @@ pub fn json_response<T: Serialize>(data: &T) -> impl IntoResponse + Send {
 }
 
 pub fn json_or_cbor_response<T: Serialize>(accept: Option<&String>, data: &T) -> impl IntoResponse + Send {
-    if accept.as_deref().is_some_and(|a| a.contains("application/cbor")) {
+    if accept.is_some_and(|a| a.contains("application/cbor")) {
         return cbor_response(data).into_response();
     }
     json_response(data).into_response()

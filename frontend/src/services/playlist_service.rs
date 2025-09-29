@@ -55,10 +55,7 @@ impl PlaylistService {
         }
     }
 
-    pub async fn get_playlist_epg(&self, target_id: u16) -> Option<EpgTv> {
-        let request = PlaylistEpgRequest {
-            target_id,
-        };
+    pub async fn get_playlist_epg(&self, request: PlaylistEpgRequest) -> Option<EpgTv> {
         match request_post::<&PlaylistEpgRequest, EpgTv>(&self.playlist_api_epg_path, &request, None, Some(ACCEPT_PREFER_CBOR.to_string())).await {
             Ok(content) => Some(content),
             Err(err) => {

@@ -64,12 +64,10 @@ where
                         .unwrap_or(r_type.to_string());
                     let is_json = content_type.contains(CONTENT_TYPE_JSON);
                     let is_cbor = !is_json && content_type.contains(CONTENT_TYPE_CBOR);
-                    if is_json || is_cbor {
-                        if std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
-                            // `T = ()` valid
-                            let _ = response.binary().await;
-                            return serde_json::from_str("null").map_err(|_| Error::DeserializeError);
-                        }
+                    if (is_json || is_cbor) && std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
+                        // `T = ()` valid
+                        let _ = response.binary().await;
+                        return serde_json::from_str("null").map_err(|_| Error::DeserializeError);
                     }
 
                     if is_cbor {

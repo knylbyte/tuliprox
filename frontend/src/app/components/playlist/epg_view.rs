@@ -2,12 +2,12 @@ use std::rc::Rc;
 use chrono::{Datelike, Local, TimeZone, Utc};
 use gloo_timers::callback::Interval;
 use web_sys::HtmlElement;
-use crate::app::components::{Breadcrumbs, NoContent, PlaylistSourceSelector};
+use crate::app::components::{Breadcrumbs, NoContent, EpgSourceSelector};
 use crate::hooks::use_service_context;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::{EpgTv, PlaylistRequest, PlaylistRequestType};
+use shared::model::{EpgTv, PlaylistEpgRequest};
 use crate::model::{BusyStatus, EventMessage, ExplorerSourceType};
 
 const TIME_BLOCK_WIDTH: f64 = 210.0;
@@ -32,21 +32,17 @@ pub fn EpgView() -> Html {
     let handle_select_source = {
         let service_ctx = services.clone();
         let epg_set = epg.clone();
-        Some(Callback::from(move |req: PlaylistRequest| {
+        Callback::from(move |req: PlaylistEpgRequest| {
             epg_set.set(None);
-            if req.rtype == PlaylistRequestType::Target {
-                if let Some(target_id) = req.source_id {
-                    let service_ctx = service_ctx.clone();
-                    let epg_set = epg_set.clone();
-                    service_ctx.event.broadcast(EventMessage::Busy(BusyStatus::Show));
-                    spawn_local(async move {
-                        let playlist_epg = service_ctx.playlist.get_playlist_epg(target_id).await;
-                        epg_set.set(playlist_epg);
-                        service_ctx.event.broadcast(EventMessage::Busy(BusyStatus::Hide));
-                    });
-                }
-            }
-        }))
+            let service_ctx = service_ctx.clone();
+            let epg_set = epg_set.clone();
+            service_ctx.event.broadcast(EventMessage::Busy(BusyStatus::Show));
+            spawn_local(async move {
+                let playlist_epg = service_ctx.playlist.get_playlist_epg(req).await;
+                epg_set.set(playlist_epg);
+                service_ctx.event.broadcast(EventMessage::Busy(BusyStatus::Hide));
+            });
+        })
     };
 
     {
@@ -88,7 +84,7 @@ pub fn EpgView() -> Html {
             <div class="tp__epg__header">
                 <h1>{translate.t("LABEL.PLAYLIST_EPG")}</h1>
             </div>
-            <PlaylistSourceSelector hide_title={true} source_types={Some(vec![ExplorerSourceType::Hosted])} on_select={handle_select_source} />
+            <EpgSourceSelector source_types={Some(vec![ExplorerSourceType::Hosted])} on_select={handle_select_source} />
             <div class="tp__epg__body" ref={container_ref} >
                 {
                     if epg.is_none() {
