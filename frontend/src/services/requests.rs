@@ -1,20 +1,22 @@
 use crate::error::{Error, ErrorInfo, ErrorSetInfo};
 use gloo_storage::{LocalStorage, Storage};
-use log::error;
+use log::{error};
 use reqwasm::http::Request;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use web_sys::window;
 
+const CONTENT_TYPE_CBOR: &str = "application/cbor";
+const CONTENT_TYPE_JSON: &str = "application/json";
+pub const ACCEPT_PREFER_CBOR: &str = "application/cbor, application/json;q=0.9";
+
 enum RequestMethod {
     Get,
     Post,
     Put,
-    // PATCH,
+    // Patch,
     Delete,
 }
-
-//const API_ROOT: &str = "/api/v1";
 
 const TOKEN_KEY: &str = "tuliprox.token";
 pub fn get_token() -> Option<String> {
@@ -30,39 +32,62 @@ pub fn set_token(token: Option<&str>) {
 }
 
 /// build all kinds of http request: post/get/delete etc.
-async fn request<B, T>(method: RequestMethod, url: &str, body: B, content_type: Option<String>, response_type: Option<String>) -> Result<T, Error>
+async fn request<B, T>(method: RequestMethod, url: &str, body: B, content_type: Option<String>,
+                       response_type: Option<String>) -> Result<T, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
     B: Serialize + std::fmt::Debug,
 {
-    let c_type = content_type.as_ref().map_or("application/json", |c| c.as_str());
-    let r_type = response_type.as_ref().map_or("application/json", |c| c.as_str());
+    let c_type = content_type.as_ref().map_or(CONTENT_TYPE_JSON, |c| c.as_str());
+    let r_type = response_type.as_ref().map_or(CONTENT_TYPE_JSON, |c| c.as_str());
     let mut request = match method {
         RequestMethod::Get => Request::get(url),
-        RequestMethod::Post => Request::post(url).body(serde_json::to_string(&body).unwrap()),
-        RequestMethod::Put => Request::put(url).body(serde_json::to_string(&body).unwrap()),
+        RequestMethod::Post => Request::post(url).body(serde_json::to_string(&body).unwrap()).header("Content-Type", c_type),
+        RequestMethod::Put => Request::put(url).body(serde_json::to_string(&body).unwrap()).header("Content-Type", c_type),
         // RequestMethod::PATCH =>  Request::patch(&url).body(serde_json::to_string(&body).unwrap()),
         RequestMethod::Delete => Request::delete(url),
-    }.header("Content-Type", c_type);
+    };
     if let Some(token) = get_token() {
         request = request.header("Authorization", format!("Bearer {token}").as_str());
+    }
+
+    if r_type.contains(CONTENT_TYPE_CBOR) {
+        request = request.header("Accept", CONTENT_TYPE_CBOR);
     }
     match request.send().await {
         Ok(response) => {
             match response.status() {
                 200 => {
-                    if r_type.eq("application/json") {
+                    let content_type = response
+                        .headers()
+                        .get("content-type")
+                        .unwrap_or(r_type.to_string());
+                    let is_json = content_type.contains(CONTENT_TYPE_JSON);
+                    let is_cbor = !is_json && content_type.contains(CONTENT_TYPE_CBOR);
+                    if is_json || is_cbor {
                         if std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
                             // `T = ()` valid
-                            let _ = response.text().await;
-                            serde_json::from_str("null").map_err(|_| Error::DeserializeError)
-                        } else {
-                            let data: Result<T, _> = response.json::<T>().await;
-                            if let Ok(data) = data {
-                                Ok(data)
-                            } else {
-                                Err(Error::DeserializeError)
+                            let _ = response.binary().await;
+                            return serde_json::from_str("null").map_err(|_| Error::DeserializeError);
+                        }
+                    }
+
+                    if is_cbor {
+                        match response.binary().await {
+                            Ok(bytes) => {
+                                match serde_cbor::from_slice::<T>(&bytes) {
+                                    Ok(data) => Ok(data),
+                                    Err(_) => Err(Error::DeserializeError),
+                                }
                             }
+                            Err(_) => Err(Error::DeserializeError),
+                        }
+                    } else if is_json {
+                        let data: Result<T, _> = response.json::<T>().await;
+                        if let Ok(data) = data {
+                            Ok(data)
+                        } else {
+                            Err(Error::DeserializeError)
                         }
                     } else {
                         match response.text().await {
@@ -76,14 +101,14 @@ where
                         }
                     }
                 }
-                400 =>  {
+                400 => {
                     let data: Result<ErrorInfo, _> = response.json::<ErrorInfo>().await;
                     if let Ok(data) = data {
                         Err(Error::BadRequest(data.error))
                     } else {
                         Err(Error::BadRequest("400".to_string()))
                     }
-                },
+                }
                 401 => Err(Error::Unauthorized),
                 403 => Err(Error::Forbidden),
                 404 => Err(Error::NotFound),

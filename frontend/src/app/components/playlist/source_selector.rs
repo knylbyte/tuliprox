@@ -107,18 +107,25 @@ pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
         let url_ref = url_ref.clone();
         Callback::from(move |_| {
             let is_xtream = matches!(*set_custom_provider, InputType::Xtream);
-            let url_input: HtmlInputElement = url_ref.cast::<HtmlInputElement>().unwrap();
-            let url = url_input.value();
+            let url = match url_ref.cast::<HtmlInputElement>() {
+                 Some(input) => input.value(),
+                 None => {
+                     services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.URL_MANDATORY"));
+                     return;
+                 }
+             };
+
             let mut valid = true;
             if url.is_empty() {
                 services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.URL_MANDATORY"));
                 valid = false;
             }
             let (username, password) = if is_xtream {
-                let username_input: HtmlInputElement = u_ref.cast::<HtmlInputElement>().unwrap();
-                let password_input: HtmlInputElement = p_ref.cast::<HtmlInputElement>().unwrap();
-                let username = username_input.value().trim().to_owned();
-                let password = password_input.value();
+                let (username, password) = match (u_ref.cast::<HtmlInputElement>(), p_ref.cast::<HtmlInputElement>()) {
+                     (Some(u), Some(p)) => (u.value().trim().to_owned(), p.value()),
+                     _ => (String::new(), String::new())
+                 };
+
                 if username.is_empty() || password.is_empty() {
                     services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.USERNAME_PASSWORD_MANDATORY"));
                     valid = false;

@@ -68,7 +68,7 @@ impl ApiProxyServerInfo {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ApiProxyConfig {
     pub server: Vec<ApiProxyServerInfo>,
     pub user: Vec<TargetUser>,

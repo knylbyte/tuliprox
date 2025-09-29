@@ -28,7 +28,6 @@ pub fn get_empty_epg_response() -> impl axum::response::IntoResponse + Send {
 }
 
 fn time_correct(date_time: &str, correction: &TimeDelta) -> String {
-    // Split the dateTime string into date and time parts
     let date_time_split: Vec<&str> = date_time.split(' ').collect();
     if date_time_split.len() != 2 {
         return date_time.to_string();
@@ -87,7 +86,7 @@ pub (in crate::api) fn get_epg_path_for_target(config: &Config, target: &ConfigT
     None
 }
 
-// `-2:30`(-2h30m), `1:45` (1h45m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m), `2:` (3h)
+// `-2:30`(-2h30m), `1:45` (1h45m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m), `2:` (2h)
 fn parse_timeshift(time_shift: Option<&String>) -> Option<i32> {
     time_shift.and_then(|offset| {
         let sign_factor = if offset.starts_with('-') { -1 } else { 1 };
@@ -187,7 +186,7 @@ fn serve_epg_with_timeshift(
         Ok(compressed_data) => try_unwrap_body!(axum::response::Response::builder()
             .header(
                 axum::http::header::CONTENT_TYPE,
-                mime::APPLICATION_OCTET_STREAM.to_string()
+                mime::TEXT_XML.to_string()
             )
             .header(axum::http::header::CONTENT_ENCODING, "gzip") // Set Content-Encoding header
             .body(axum::body::Body::from(compressed_data))),
@@ -272,11 +271,5 @@ mod tests {
         assert_eq!(parse_timeshift(Some(&String::from("+abc"))), None);
         assert_eq!(parse_timeshift(Some(&String::new())), None);
         assert_eq!(parse_timeshift(None), None);
-    }
-
-    #[test]
-    fn test_deserialize_() {
-        let reader = BufReader::new(File::open(Path::new("/home/euzuner/Schreibtisch/pl.json")).unwrap());
-        let cat: PlaylistCategoriesResponse = serde_json::from_reader(reader).unwrap();
     }
 }

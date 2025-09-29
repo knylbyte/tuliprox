@@ -39,6 +39,7 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use serde::Serialize;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -1269,4 +1270,26 @@ pub async fn is_seek_request(cluster: XtreamCluster, req_headers: &HeaderMap) ->
         }
     }
     false
+}
+
+pub fn cbor_response<T: Serialize>(data: &T) -> impl IntoResponse + Send {
+    match serde_cbor::to_vec(data) {
+        Ok(body) => (
+            [(axum::http::header::CONTENT_TYPE, "application/cbor")],
+            body,
+        )
+            .into_response(),
+        Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub fn json_response<T: Serialize>(data: &T) -> impl IntoResponse + Send {
+    (axum::http::StatusCode::OK, axum::Json(data)).into_response()
+}
+
+pub fn json_or_cbor_response<T: Serialize>(accept: Option<&String>, data: &T) -> impl IntoResponse + Send {
+    if accept.as_deref().is_some_and(|a| a.contains("application/cbor")) {
+        return cbor_response(data).into_response();
+    }
+    json_response(data).into_response()
 }

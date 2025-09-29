@@ -67,7 +67,9 @@ impl XmlTag {
             for (k, v) in attribs { elem.push_attribute((k.as_str(), v.as_str())); }
         }
         writer.write_event(Event::Start(elem))?;
-        self.value.as_ref().map(|text| writer.write_event(Event::Text(BytesText::new(text.as_str()))));
+        if let Some(text) = self.value.as_ref() {
+            writer.write_event(Event::Text(BytesText::new(text.as_str())))?;
+        }
         if let Some(children) = &self.children {
             for child in children {
                 child.write_to(writer)?;
@@ -229,6 +231,24 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
                                 if stop_time >= threshold_ts {
                                     let epg_programme = EpgProgramme::new(start_time, stop_time, pchannel);
                                     current_programme = Some(epg_programme);
+                                }
+                            }
+                        }
+                    }
+                    EPG_TAG_ICON => {
+                        if let Some(channel) = &mut current_channel {
+                            if channel.icon.is_none() {
+                                for attr in e.attributes().flatten() {
+                                    match attr.key.as_ref() {
+                                        b"src" => {
+                                          if let Some(icon) = get_attr_value(&attr) {
+                                              if !icon.is_empty() {
+                                                  channel.icon = Some(icon);
+                                              }
+                                          }
+                                        }
+                                        _ => {}
+                                    }
                                 }
                             }
                         }

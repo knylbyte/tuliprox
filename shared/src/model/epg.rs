@@ -31,6 +31,7 @@ impl PartialEq for EpgTv {
 pub struct EpgChannel {
     pub id: String,
     pub title: String,
+    pub icon: Option<String>,
     pub programmes: Vec<EpgProgramme>,
 }
 
@@ -39,6 +40,7 @@ impl EpgChannel {
         Self {
             id,
             title: String::new(),
+            icon: None,
             programmes: Vec::new(),
         }
     }

@@ -11,6 +11,8 @@ use crate::auth::create_access_token;
 use crate::model::{parse_xmltv_for_web_ui, ConfigInput, ConfigInputOptions};
 use crate::processing::processor::playlist;
 use url::Url;
+use crate::api::api_utils::{json_or_cbor_response};
+use crate::api::endpoints::extract_accept_header::ExtractAcceptHeader;
 
 fn create_config_input_for_m3u(url: &str) -> ConfigInput {
     ConfigInput {
@@ -61,7 +63,7 @@ async fn playlist_update(
             let app_config = Arc::clone(&app_state.app_config);
             let event_manager = Arc::clone(&app_state.event_manager);
             tokio::spawn(playlist::exec_processing(Arc::clone(&app_state.http_client.load()), app_config, Arc::new(valid_targets), Some(event_manager)));
-            axum::http::StatusCode::OK.into_response()
+            axum::http::StatusCode::ACCEPTED.into_response()
         }
         Err(err) => {
             error!("Failed playlist update {}", sanitize_sensitive_info(err.to_string().as_str()));
@@ -72,6 +74,7 @@ async fn playlist_update(
 
 
 async fn playlist_content(
+    ExtractAcceptHeader(accept): ExtractAcceptHeader,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::extract::Json(playlist_req): axum::extract::Json<PlaylistRequest>,
 ) -> impl IntoResponse + Send {
@@ -79,14 +82,14 @@ async fn playlist_content(
     match playlist_req.rtype {
         PlaylistRequestType::Input => {
             if let Some(source_id) = playlist_req.source_id {
-                get_playlist(Arc::clone(&app_state.http_client.load()), app_state.app_config.get_input_by_id(source_id).as_deref(), &config).await.into_response()
+                get_playlist(Arc::clone(&app_state.http_client.load()), app_state.app_config.get_input_by_id(source_id).as_deref(), &config, accept.as_ref()).await.into_response()
             } else {
                 (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid input"}))).into_response()
             }
         }
         PlaylistRequestType::Target => {
             if let Some(source_id) = playlist_req.source_id {
-                get_playlist_for_target(app_state.app_config.get_target_by_id(source_id).as_deref(), &app_state.app_config).await.into_response()
+                get_playlist_for_target(app_state.app_config.get_target_by_id(source_id).as_deref(), &app_state.app_config, accept.as_ref()).await.into_response()
             } else {
                 (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid target"}))).into_response()
             }
@@ -96,7 +99,7 @@ async fn playlist_content(
               match Url::parse(url) {
                   Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => {
                       let input = create_config_input_for_xtream(username, password, url);
-                      get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config).await.into_response()
+                      get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config, accept.as_ref()).await.into_response()
                   }
                   _ => {
                       (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url scheme; only http/https are allowed"}))).into_response()
@@ -111,7 +114,7 @@ async fn playlist_content(
                 match Url::parse(url) {
                     Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => {
                         let input = create_config_input_for_m3u(url);
-                        get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config).await.into_response()
+                        get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config, accept.as_ref()).await.into_response()
                     }
                     _ => {
                         (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url scheme; only http/https are allowed"}))).into_response()
@@ -137,6 +140,7 @@ async fn playlist_webplayer(
 }
 
 async fn playlist_epg(
+    ExtractAcceptHeader(accept): ExtractAcceptHeader,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::extract::Json(playlist_epg_req): axum::extract::Json<PlaylistEpgRequest>,
 ) -> impl IntoResponse + Send {
@@ -144,7 +148,7 @@ async fn playlist_epg(
         let config = &app_state.app_config.config.load();
         if let Some(epg_path) = crate::api::endpoints::xmltv_api::get_epg_path_for_target(config, &target)  {
            if let Ok(epg) = parse_xmltv_for_web_ui(&epg_path) {
-               return (axum::http::StatusCode::OK, axum::Json(epg)).into_response();
+               return json_or_cbor_response(accept.as_ref(), &epg).into_response();
            }
         }
     }
