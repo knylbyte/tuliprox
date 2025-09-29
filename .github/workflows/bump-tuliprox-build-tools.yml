@@ -244,7 +244,7 @@ jobs:
               found_alias = None
               found_values = []
               for alias in meta["aliases"]:
-                pattern = re.compile(rf"^ARG\\s+{alias}=([^\\s]+)$", re.MULTILINE)
+                pattern = re.compile(rf"^ARG\s+{alias}=([^\\s]+)$", re.MULTILINE)
                 matches = list(pattern.finditer(content))
                 if matches:
                   found_alias = alias
@@ -272,7 +272,7 @@ jobs:
                   path = occ["file"]
                   alias = occ["arg"]
                   content = file_texts[path]
-                  pattern = re.compile(rf"^ARG\\s+{alias}=.*$", re.MULTILINE)
+                  pattern = re.compile(rf"^ARG\s+{alias}=.*$", re.MULTILINE)
                   new_line = f"ARG {alias}={latest_value}"
                   new_content, count = pattern.subn(new_line, content)
                   if count > 0 and new_content != content:
