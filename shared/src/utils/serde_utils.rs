@@ -107,5 +107,5 @@ pub fn bin_deserialize<T>(value: &[u8]) -> io::Result<T>
 where
     T: for<'a> serde::Deserialize<'a>,
 {
-    minicbor_serde::from_slice(&value).map_err(to_io_error)
+    minicbor_serde::from_slice(value).map_err(to_io_error)
 }

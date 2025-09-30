@@ -43,7 +43,7 @@ use serde::Serialize;
 use tokio::sync::Mutex;
 use url::Url;
 
-const CONTENT_TYPE_BIN: &str = "application/bin";
+const CONTENT_TYPE_BIN: &str = "application/cbor";
 
 #[macro_export]
 macro_rules! try_option_bad_request {

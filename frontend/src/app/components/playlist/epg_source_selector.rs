@@ -1,13 +1,14 @@
+use crate::app::components::input::Input;
 use crate::app::components::{Card, CollapsePanel, InputRow, Panel, PlaylistContext, RadioButtonGroup, TextButton};
 use crate::hooks::use_service_context;
-use crate::model::{ExplorerSourceType};
-use shared::model::{PlaylistEpgRequest};
+use crate::model::ExplorerSourceType;
+use shared::model::PlaylistEpgRequest;
 use std::rc::Rc;
 use std::str::FromStr;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::app::components::input::Input;
+use crate::html_if;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct EpgSourceSelectorProps {
@@ -56,12 +57,12 @@ pub fn EpgSourceSelector(props: &EpgSourceSelectorProps) -> Html {
         let url_ref = url_ref.clone();
         Callback::from(move |_| {
             let url = match url_ref.cast::<HtmlInputElement>() {
-                 Some(input) => input.value().trim().to_owned(),
-                 None => {
-                     services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.URL_MANDATORY"));
-                     return;
-                 }
-             };
+                Some(input) => input.value().trim().to_owned(),
+                None => {
+                    services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.URL_MANDATORY"));
+                    return;
+                }
+            };
 
             let mut valid = true;
             if url.is_empty() {
@@ -185,15 +186,21 @@ pub fn EpgSourceSelector(props: &EpgSourceSelectorProps) -> Html {
                                   on_select={handle_source_select} />
                 </div>
                 <div class="tp__playlist-source-selector__source-picker__body">
-                    <Panel value={ExplorerSourceType::Hosted.to_string()} active={active_source.to_string()}>
-                        { render_hosted() }
-                    </Panel>
-                    <Panel value={ExplorerSourceType::Provider.to_string()} active={active_source.to_string()}>
-                        { render_provider() }
-                    </Panel>
-                    <Panel value={ExplorerSourceType::Custom.to_string()} active={active_source.to_string()}>
-                        { render_custom() }
-                    </Panel>
+                    { html_if!(source_types.contains(&ExplorerSourceType::Hosted.to_string()), {
+                        <Panel value={ExplorerSourceType::Hosted.to_string()} active={active_source.to_string()}>
+                            { render_hosted() }
+                        </Panel>
+                    })}
+                    { html_if!(source_types.contains(&ExplorerSourceType::Provider.to_string()), {
+                        <Panel value={ExplorerSourceType::Provider.to_string()} active={active_source.to_string()}>
+                            { render_provider() }
+                        </Panel>
+                    })}
+                    { html_if!(source_types.contains(&ExplorerSourceType::Custom.to_string()), {
+                        <Panel value={ExplorerSourceType::Custom.to_string()} active={active_source.to_string()}>
+                            { render_custom() }
+                        </Panel>
+                    })}
                 </div>
               </Card>
             </CollapsePanel>

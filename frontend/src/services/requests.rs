@@ -7,9 +7,9 @@ use serde_json::Value;
 use web_sys::window;
 use shared::utils::bin_deserialize;
 
-const CONTENT_TYPE_BIN: &str = "application/bin";
+const CONTENT_TYPE_BIN: &str = "application/cbor";
 const CONTENT_TYPE_JSON: &str = "application/json";
-pub const ACCEPT_PREFER_BIN: &str = "application/bin, application/json;q=0.9";
+pub const ACCEPT_PREFER_BIN: &str = "application/cbor, application/json;q=0.9";
 
 enum RequestMethod {
     Get,
