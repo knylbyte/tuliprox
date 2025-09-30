@@ -3,25 +3,22 @@ name = "tuliprox"
 version = "3.1.6"
 edition = "2021"
 
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
 [dependencies]
 lol_html = "1.2"
 shared = { version = "3", path = "../shared" }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_yaml = "0.9"
 serde_json = { version = "1", features = ["arbitrary_precision"] }
-quick-xml = { version = "0.38", features = ["async-tokio"] }
+quick-xml = "0.37"
 regex = "1.11"
 clap = { version = "4", features = ["derive"] }
 url = "2.5"
-
-# HTTP client/server stack (rustls only)
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "stream", "rustls-tls", "socks"] }
-hyper = "1.6"
-hyper-util = "0.1"
-
+reqwest = { version = "0", features = ["blocking", "json", "stream", "rustls-tls", "socks"] }
 chrono = "0.4"
 cron = "0.15"
-axum = { version = "0.8" , features = ["macros", "default", "ws"] }
+axum = { version = "0.8" , features = ["macros", "default", "ws"]}
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "auth", "fs", "compression-full", "trace"] }
 tower_governor = { version = "0.7", features = ["axum"] }
@@ -32,34 +29,24 @@ path-clean = "1.0"
 pest = "2.8"
 pest_derive = "2.8"
 enum-iterator = "2"
+openssl = { version = "*", features = ["vendored"] } #https://docs.rs/openssl/0.10.34/openssl/#vendored
 deunicode = "1.6.2"
 mime = "0.3"
 log = "0.4"
 env_logger = "0.11"
-teloxide = { version = "0.12", default-features = false, features = ["rustls"] }
+rustelebot = "0.3"
 bincode = { version = "2.0",  features = ["std", "serde"] }
-
-# Randomness / encoding
 rand = "0.9"
-base64 = "0.22"
-
+rpassword = "7.4"
 flate2 = "1.1"
 blake3 = "1.8"
-sha2 = "0.10"
-rpassword = "7.4"
-
-
-# New: AEAD (preferred) + HKDF; keep AES/CBC/PKCS7 for legacy fallback
-aead = "0.5"
-chacha20poly1305 = "0.10"
-hkdf = "0.12"
-aes = "0.8"
-cbc = { version = "0.1", features = ["alloc"] }
-pkcs7 = "0.3"
-
 bytes = "1.10"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio = { version = "1.46", features = ["rt-multi-thread", "parking_lot", "fs"] }
+#tokio = { version = "1.46", features = ["rt-multi-thread", "parking_lot", "fs", "tracing"] }
+#console-subscriber = "0"
+#tracing = "0.1"
+#tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tokio-util = "0.7"
 tempfile = "3.20"
 ruzstd = "0.8"
@@ -67,15 +54,21 @@ filetime = "0.2"
 strsim = "0.11"
 rphonetic = "3.0"
 rayon = "1.10"
+base64 = "0.22"
 paste = "1.0"
 indexmap = "2"
 notify = "8.1"
 arc-swap = "1.7"
 dashmap = "6.1"
+hyper = "1.6"
+hyper-util = "0.1"
 socket2 = { version = "0.6", features = ["all"] }
-async-compression = "0"
+#[cfg(target_os = "macos")]
 libc = "0.2"
+#[cfg(target_os = "windows")]
 winapi = { version = "0.3", features = ["psapi", "minwindef", "processthreadsapi"] }
+# [target.'cfg(not(target_env = "msvc"))'.dependencies]
+# tikv-jemallocator =  { version = "*", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 
 [build-dependencies]
 vergen = { version = "9.0", features = ["build"] }

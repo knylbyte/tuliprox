@@ -27,10 +27,9 @@ ARG DEFAULT_TZ=UTC
 # =============================================================================
 FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS chef
 
-ARG TARGETPLATFORM
-ARG RUST_TARGET
-
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+
+WORKDIR /src
 
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
 # - amd64  -> x86_64-unknown-linux-musl
@@ -49,135 +48,108 @@ RUN set -eux; \
     fi; \
     printf "Using RUST_TARGET=%s\n" "$(cat /rust-target)"
 
-# Ensure the target is available in the toolchain (prebuild already has rustup)
-RUN rustup target add "$(cat /rust-target)" || true
+# Prepare dependency recipe (reacts to Cargo.toml/Cargo.lock changes)
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
 # =============================================================================
-# Stage 2: backend-planner (cargo-chef prepare)
-#  - Minimal synthetic workspace (backend + shared only) to avoid pulling in frontend
-#  - Generates a recipe that describes all Rust deps for the specified target
+# Stage 1: deps (cargo-chef cook)
+#  - Builds ONLY dependencies as cacheable Docker layers
+#  - No cache-mounts here → proper cross-run caching via buildx
 # =============================================================================
-FROM chef AS backend-planner
+FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS deps
 
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 WORKDIR /src
 
-# Synthetic minimal workspace (backend + shared only) to keep frontend out
-RUN set -eux; cat > /src/Cargo.toml <<'TOML'
-[workspace]
-members = ["backend","shared"]
-resolver = "2"
+COPY --from=chef /rust-target   /rust-target
+COPY --from=chef /src/recipe.json /src/recipe.json
 
-[workspace.package]
-edition = "2021"
-
-[profile.release]
-debug = false
-opt-level = "z"        # Optimize for size
-lto = true             # Link Time Optimization
-codegen-units = 1      # Fewer codegen units -> better opts
-panic = "abort"        # Abort on panic
-strip = true
-TOML
-
-# Copy manifests only
-COPY backend ./backend
-COPY shared   ./shared
-
-# Cargo (and cargo-chef) require at least one target per workspace member.
-# Ensure we have a lockfile (in case none was present)
-# We copy real sources here (to keep deps layer stable).
+RUN rustup target add "$(cat /rust-target)" || true
 RUN set -eux; \
-    [ -f /src/Cargo.lock ] || cargo generate-lockfile && \
-    cargo chef prepare --recipe-path backend-recipe.json
+    cargo chef cook --release --target "$(cat /rust-target)" --recipe-path recipe.json
 
 # =============================================================================
-# Stage 3: backend-build (cargo-chef cook && build application code)
-#  - Builds dependencies as cacheable Docker layers
+# Stage 2: rust-build (application code)
+#  - Reuses compiled deps from Stage 1
 #  - Builds backend binary statically (musl)
 # =============================================================================
-FROM chef AS backend-builder
+FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS rust-build
+
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
+    RUSTFLAGS='--remap-path-prefix $HOME=~ -C target-feature=+crt-static'
 
 WORKDIR /src
 
-ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
+# Reuse dependency artifacts from deps stage
+COPY --from=deps /usr/local/cargo /usr/local/cargo
+COPY --from=deps /usr/local/rustup /usr/local/rustup
+COPY --from=deps /src/target       /src/target
+COPY --from=chef /rust-target      /rust-target
 
-# Cook: compile only dependencies (cacheable layer)
-COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
-
-RUN set -eux; \
-    cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json
-
-# Build the actual backend (cargo will leverage the cooked deps)
+# Actual app sources
 COPY . .
 
-RUN cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
+# Ensure target available (no-op if already present)
+RUN rustup target add "$(cat /rust-target)" || true
 
-# =============================================================================
-# Stage 4: frontend-planner (cargo-chef prepare for WASM)
-#  - Minimal synthetic workspace (frontend + shared only) to avoid pulling in backend
-#  - Generates a recipe that describes all Rust deps for the WASM target
-# =============================================================================
-FROM chef AS frontend-planner
+# Build the backend (assuming package name is 'tuliprox')
+RUN set -eux; \
+    cargo build -p tuliprox --target "$(cat /rust-target)" --release --locked
 
+# -----------------------------------------------------------------
+# Stage 2: Build the rust frontend (uses prebuild)
+# -----------------------------------------------------------------
+FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS trunk-build
+
+# Default WASM target used by trunk/cargo
+ARG RUST_TARGET=wasm32-unknown-unknown
+
+# 
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+
+# Work in workspace root
 WORKDIR /src
 
-# Synthetic minimal workspace (frontend + shared only) to keep backend out
-RUN set -eux; cat > /src/Cargo.toml <<'TOML'
-[workspace]
-members = ["frontend","shared"]
-resolver = "2"
+# Prime cargo cache for WASM deps (copy manifests only)
+# This allows compiling dependencies without copying the whole source tree.
+COPY Cargo.toml Cargo.lock ./
+COPY frontend/Cargo.toml ./frontend/
+COPY shared/Cargo.toml   ./shared/
+COPY backend/Cargo.toml  ./backend/
 
-[workspace.package]
-edition = "2021"
-
-[profile.release]
-debug = false
-opt-level = "z"        # Optimize for size
-lto = true             # Link Time Optimization
-codegen-units = 1      # Fewer codegen units -> better opts
-panic = "abort"        # Abort on panic
-strip = true
-TOML
-
-# Copy only manifests for the WASM part
-COPY frontend ./frontend
-COPY shared   ./shared
-
-# Produce the dependency recipe for WASM
-# Cargo (and cargo-chef) require at least one target per workspace member.
-# Ensure we have a lockfile (in case none was present)
-# We copy real sources here (to keep deps layer stable).
+# Create dummy sources so cargo can build dependency graph only
+# (no need to compile your actual app code yet)
 RUN set -eux; \
-    [ -f /src/Cargo.lock ] || cargo generate-lockfile && \
-    cargo chef prepare --recipe-path frontend-recipe.json
+    mkdir -p backend/src frontend/src shared/src && \
+    echo 'fn main() {}'      > backend/src/main.rs && \
+    echo "fn main() {}"      > frontend/src/main.rs && \
+    echo "pub fn dummy() {}" > frontend/src/lib.rs  && \
+    echo "pub fn dummy() {}" > shared/src/lib.rs
 
-# =============================================================================
-# Stage 5: frontend-builder (cook + trunk build)
-#  - Builds WASM dependencies as cacheable layers
-#  - Builds the actual frontend with Trunk using the cached deps
-# =============================================================================
-FROM chef AS frontend-builder
+# Use sparse protocol for crates.io registry to reduce data transfer
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
-WORKDIR /src
+# Build only dependencies for the frontend crate on the WASM target
+# Result: registry/git caches + compiled deps kept in image layers.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-trunk,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-trunk,sharing=locked \
+    set -eux; \
+    cargo build --manifest-path frontend/Cargo.toml \
+                --target ${RUST_TARGET} \
+                --release || true
 
-# Cook: compile only dependencies (cacheable layer)
-COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
-
-RUN set -eux; \
-    cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
-
-COPY frontend ./frontend
-COPY shared   ./shared
-
-# Build the actual frontend (Trunk will leverage the cooked deps)
+# Now copy the real sources and perform the actual trunk build
+COPY . .
 WORKDIR /src/frontend
-RUN set -eux; \
-    trunk build --release 
 
+# Trunk will reuse the warmed cargo caches from the steps above.
+RUN set -eux; \
+    trunk build --release
 # dist -> /src/frontend/dist
 
 # -----------------------------------------------------------------
-# Stage 6: tzdata/zoneinfo supplier (shared)
+# Stage 3: tzdata/zoneinfo supplier (shared)
 # -----------------------------------------------------------------
 FROM alpine:${ALPINE_VER} AS tzdata
 RUN set -eux; \
@@ -186,9 +158,9 @@ RUN set -eux; \
     test -d /usr/share/zoneinfo
 
 # -----------------------------------------------------------------
-# Stage 7: Resources (prebuilt ffmpeg outputs)
+# Stage 4: Resources (prebuilt ffmpeg outputs)
 # -----------------------------------------------------------------
-FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS resources
+FROM ${GHCR_NS}/resources:${BUILDPLATFORM_TAG} AS resources
 # Expected: /src/resources/*.ts
 
 # =================================================================
@@ -216,12 +188,12 @@ COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=tzdata /etc/ssl/certs      /etc/ssl/certs
 
 # Copy binary & assets into /opt tree
-COPY --from=backend-builder   /src/target/*/release/tuliprox /opt/tuliprox/bin/tuliprox
-COPY --from=frontend-builder  /src/frontend/dist             /opt/tuliprox/web/dist
-COPY --from=resources         /src/resources                 /opt/tuliprox/resources
+COPY --from=rust-build  /src/target/*/release/tuliprox /opt/tuliprox/bin/tuliprox
+COPY --from=trunk-build /src/frontend/dist             /opt/tuliprox/web/dist
+COPY --from=resources   /src/resources                 /opt/tuliprox/resources
 
 # In scratch we cannot create symlinks (no shell); duplicate to PATH location
-COPY --from=backend-builder  /src/target/*/release/tuliprox /usr/local/bin/tuliprox
+COPY --from=rust-build  /src/target/*/release/tuliprox /usr/local/bin/tuliprox
 
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
@@ -239,7 +211,7 @@ ENV TZ=${DEFAULT_TZ}
 # (tshark may require --cap-add NET_ADMIN --cap-add NET_RAW and often --network host)
 RUN set -eux; \
     apk add --no-cache ca-certificates bash curl tshark; \
-    update-ca-certificates
+    update-ca-certificates || true
 
 # Layout under /opt (root-owned)
 RUN set -eux; \
@@ -253,10 +225,10 @@ RUN set -eux; \
 COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=tzdata /etc/ssl/certs      /etc/ssl/certs
 
-# Copy binary & assets into /opt tree
-COPY --from=backend-builder   /src/target/*/release/tuliprox /opt/tuliprox/bin/tuliprox
-COPY --from=frontend-builder  /src/frontend/dist             /opt/tuliprox/web/dist
-COPY --from=resources         /src/resources                 /opt/tuliprox/resources
+# Copy binary & assets
+COPY --from=rust-build  /src/target/*/release/tuliprox /opt/tuliprox/bin/tuliprox
+COPY --from=trunk-build /src/frontend/dist             /opt/tuliprox/web/dist
+COPY --from=resources   /src/resources                 /opt/tuliprox/resources
 
 # PATH convenience symlink
 RUN ln -s /opt/tuliprox/bin/tuliprox /usr/local/bin/tuliprox
@@ -298,8 +270,9 @@ RUN apk add --no-cache \
 RUN rustup target add "${RUST_TARGET}"
 
 # Create production-like layout under /opt (matches our final images)
-COPY --from=frontend-builder  /src/frontend/dist             /opt/tuliprox/web/dist
-COPY --from=resources         /src/resources                 /opt/tuliprox/resources
+WORKDIR /opt/tuliprox
+COPY --from=trunk-build /src/frontend/dist ./web/dist
+COPY --from=resources   /src/resources     ./resources
 
 # Keep full source tree for debugging in /usr/src/tuliprox
 WORKDIR /usr/src/tuliprox

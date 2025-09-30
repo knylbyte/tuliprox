@@ -1,4 +1,12 @@
 # Changelog
+
+## Tuliprox build tools
+
+- RUST_DISTRO: `1.80.0-bookworm` ➜ `1.90.0-trixie`
+- ALPINE_VER: `3.22.0` ➜ `3.22.1`
+- CARGO_CHEF_VER: `0.1.71` ➜ `0.1.72`
+- TRUNK_VER: `0.21.13` ➜ `0.21.14`
+- WASM_VER: `0.2.103` ➜ `0.2.104`
 # 3.1.7 (2025-09-xx)
 - Added Dark / Bright theme switch
 - Resource proxy retries failed requests up to three times and honors the `Retry-After` header (or waits 100 ms as a fallback) to reduce transient HTTP 400, 408, 425, 429 and all 5xx statuses errors observed by clients.
