@@ -99,7 +99,9 @@ pub fn bin_serialize<T>(value: &T) -> io::Result<Vec<u8>>
 where
     T: serde::Serialize,
 {
-    minicbor_serde::to_vec(value).map_err(to_io_error)
+    let mut buf = Vec::new();
+    ciborium::ser::into_writer(value, &mut buf).map_err(to_io_error)?;
+    Ok(buf)
 }
 
 #[inline]
@@ -107,5 +109,5 @@ pub fn bin_deserialize<T>(value: &[u8]) -> io::Result<T>
 where
     T: for<'a> serde::Deserialize<'a>,
 {
-    minicbor_serde::from_slice(value).map_err(to_io_error)
+    ciborium::de::from_reader(value).map_err(to_io_error)
 }

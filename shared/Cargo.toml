@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 bitflags = "2"
 serde = { version = "1.0", features = ["derive"] }
-minicbor-serde = { version = "0.6", features = ["alloc"] }
 regex = "1"
 enum-iterator = "2"
 log = "0"
@@ -22,3 +21,4 @@ fastrand = { version = "2", features = ["js"] }
 zeroize = "1"
 chrono = "0.4.42"
 bytes = "1"
+ciborium = "0.2.2"
