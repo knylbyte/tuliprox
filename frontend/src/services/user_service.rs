@@ -22,7 +22,7 @@ impl UserService {
     pub async fn create_user(&self, target: String, user: ProxyUserCredentialsDto) -> Result<(), Error> {
         let path = concat_path(&self.user_path, &target);
         match request_post::<ProxyUserCredentialsDto, ()>(&path, user, None, None).await {
-            Ok(()) => { Ok(()) },
+            Ok(_) => { Ok(()) },
             Err(err) => {
                 error!("{err}");
                 Err(err)
@@ -34,7 +34,7 @@ impl UserService {
         let path = concat_path(&self.user_path, &target);
         self.event_service.set_config_change_message_blocked(true);
         match request_put::<ProxyUserCredentialsDto, ()>(&path, user, None, None).await {
-            Ok(()) => {
+            Ok(_) => {
                 self.event_service.set_config_change_message_blocked(false);
                 Ok(())
             },
@@ -50,7 +50,7 @@ impl UserService {
         let path = concat_path(&concat_path(&self.user_path, &target), &username);
         self.event_service.set_config_change_message_blocked(true);
         match request_delete::<()>(&path, None, None).await {
-            Ok(()) => {
+            Ok(_) => {
                 self.event_service.set_config_change_message_blocked(false);
                 Ok(())
             },

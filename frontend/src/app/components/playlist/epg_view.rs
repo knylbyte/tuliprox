@@ -8,7 +8,7 @@ use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{EpgTv, PlaylistEpgRequest};
-use crate::model::{BusyStatus, EventMessage, ExplorerSourceType};
+use crate::model::{BusyStatus, EventMessage};
 
 const TIME_BLOCK_WIDTH: f64 = 210.0;
 const TIME_BLOCK_MINS: i64 = 30;
@@ -84,7 +84,7 @@ pub fn EpgView() -> Html {
             <div class="tp__epg__header">
                 <h1>{translate.t("LABEL.PLAYLIST_EPG")}</h1>
             </div>
-            <EpgSourceSelector source_types={Some(vec![ExplorerSourceType::Hosted])} on_select={handle_select_source} />
+            <EpgSourceSelector on_select={handle_select_source} />
             <div class="tp__epg__body" ref={container_ref} >
                 {
                     if epg.is_none() {
@@ -157,7 +157,7 @@ pub fn EpgView() -> Html {
                                         let is_active = now >= p.start && now < p.stop;
                                         let left = get_pos(p.start, start_window);
                                         let right = get_pos(p.stop, start_window);
-                                        let width = right - left;
+                                        let width = (right - left).max(0);
                                        if let (Some(pstart_time), Some(pend_time)) = (
                                                 Utc.timestamp_opt(p.start, 0).single(),
                                                 Utc.timestamp_opt(p.stop, 0).single()) {

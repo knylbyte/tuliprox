@@ -58,7 +58,7 @@ impl ConfigService {
             return;
         }
         let result = match request_get::<AppConfigDto>(&self.config_path, None, None).await {
-            Ok(mut app_config) => {
+            Ok(Some(mut app_config)) => {
                 let templates = {
                     if let Some(templ) = app_config.sources.templates.as_mut() {
                         prepare_templates(templ).ok()
@@ -88,6 +88,7 @@ impl ConfigService {
 
                 Some(Rc::new(app_config))
             },
+            Ok(None) => Some(Rc::new(AppConfigDto::default())),
             Err(err) => {
                 error!("{err}");
                 None
@@ -99,32 +100,26 @@ impl ConfigService {
     }
 
     pub async fn get_ip_info(&self) -> Option<IpCheckDto> {
-        match request_get::<IpCheckDto>(&self.ip_check_path, None, None).await {
-            Ok(cfg) => Some(cfg),
-            Err(err) => {
-                error!("{err}");
-                None
-            }
-        }
+        request_get::<IpCheckDto>(&self.ip_check_path, None, None).await.unwrap_or_else(|err| {
+            error!("{err}");
+            None
+        })
     }
 
     pub async fn get_batch_input_content(&self, input: &ConfigInputDto) -> Option<String> {
         let id = input.id.to_string();
         let path = concat_path(&self.batch_input_content_path, &id);
-        match request_get::<String>(&path, None, Some("text/plain".to_owned())).await {
-            Ok(cfg) => Some(cfg),
-            Err(err) => {
-                error!("{err}");
-                None
-            }
-        }
+        request_get::<String>(&path, None, Some("text/plain".to_owned())).await.unwrap_or_else(|err| {
+            error!("{err}");
+            None
+        })
     }
 
     pub async fn save_config(&self, dto: ConfigDto) -> Result<(), Error> {
         let path = concat_path(&self.config_path, "main");
         self.event_service.set_config_change_message_blocked(true);
         match request_post::<ConfigDto, ()>(&path, dto, None, None).await {
-            Ok(()) => {
+            Ok(_) => {
                 self.event_service.set_config_change_message_blocked(false);
                 Ok(())
             },

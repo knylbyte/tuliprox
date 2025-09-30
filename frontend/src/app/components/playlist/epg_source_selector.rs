@@ -56,7 +56,7 @@ pub fn EpgSourceSelector(props: &EpgSourceSelectorProps) -> Html {
         let url_ref = url_ref.clone();
         Callback::from(move |_| {
             let url = match url_ref.cast::<HtmlInputElement>() {
-                 Some(input) => input.value(),
+                 Some(input) => input.value().trim().to_owned(),
                  None => {
                      services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.URL_MANDATORY"));
                      return;

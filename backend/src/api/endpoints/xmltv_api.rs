@@ -133,24 +133,21 @@ fn serve_epg_with_timeshift(
                 for attr in e.attributes() {
                     match attr {
                         Ok(attr) if attr.key.as_ref() == b"start" => {
-                            let start_value = attr
-                                .decode_and_unescape_value(xml_reader.decoder())
-                                .expect("Failed to decode the start attribute");
-                            // Modify the start attribute value as needed
-                            elem.push_attribute((
-                                "start",
-                                time_correct(&start_value, &duration).as_str(),
-                            ));
+                            if let Ok(start_value) = attr.decode_and_unescape_value(xml_reader.decoder()) {
+                                // Modify the start attribute value as needed
+                              elem.push_attribute(("start", time_correct(&start_value, &duration).as_str()));
+                            } else {
+                                // keep original attribute unchanged ?
+                                elem.push_attribute(attr);
+                            }
                         }
                         Ok(attr) if attr.key.as_ref() == b"stop" => {
-                            let stop_value = attr
-                                .decode_and_unescape_value(xml_reader.decoder())
-                                .expect("Failed to decode the stop attribute");
-                            // Modify the stop attribute value as needed
-                            elem.push_attribute((
-                                "stop",
-                                time_correct(&stop_value, &duration).as_str(),
-                            ));
+                            if let Ok(stop_value) = attr.decode_and_unescape_value(xml_reader.decoder()) {
+                                // Modify the stop attribute value as needed
+                                elem.push_attribute(("stop", time_correct(&stop_value, &duration).as_str()));
+                            } else {
+                                elem.push_attribute(attr);
+                            }
                         }
                         Ok(attr) => {
                             // Copy any other attributes as they are

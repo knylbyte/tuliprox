@@ -8,10 +8,10 @@ use shared::utils::sanitize_sensitive_info;
 use crate::api::endpoints::api_playlist_utils::{get_playlist, get_playlist_for_target};
 use crate::api::model::AppState;
 use crate::auth::create_access_token;
-use crate::model::{parse_xmltv_for_web_ui, ConfigInput, ConfigInputOptions};
+use crate::model::{parse_xmltv_for_web_ui_from_file, parse_xmltv_for_web_ui_from_url, ConfigInput, ConfigInputOptions};
 use crate::processing::processor::playlist;
 use url::Url;
-use crate::api::api_utils::{json_or_cbor_response};
+use crate::api::api_utils::{json_or_bin_response};
 use crate::api::endpoints::extract_accept_header::ExtractAcceptHeader;
 
 fn create_config_input_for_m3u(url: &str) -> ConfigInput {
@@ -133,8 +133,8 @@ async fn playlist_epg(
             if let Some(target) = app_state.app_config.get_target_by_id(target_id) {
                 let config = &app_state.app_config.config.load();
                 if let Some(epg_path) = crate::api::endpoints::xmltv_api::get_epg_path_for_target(config, &target)  {
-                    if let Ok(epg) = parse_xmltv_for_web_ui(&epg_path) {
-                        return json_or_cbor_response(accept.as_ref(), &epg).into_response();
+                    if let Ok(epg) = parse_xmltv_for_web_ui_from_file(&epg_path).await {
+                        return json_or_bin_response(accept.as_ref(), &epg).into_response();
                     }
                 }
             }
@@ -145,13 +145,16 @@ async fn playlist_epg(
         //         let config = &app_state.app_config.config.load();
         //         if let Some(epg_path) = crate::api::endpoints::xmltv_api::get_epg_path_for_input(config, &target)  {
         //             if let Ok(epg) = parse_xmltv_for_web_ui(&epg_path) {
-        //                 return json_or_cbor_response(accept.as_ref(), &epg).into_response();
+        //                 return json_or_bin_response(accept.as_ref(), &epg).into_response();
         //             }
         //         }
         //     }
         }
-        // TODO: implement epg for  custom
-        PlaylistEpgRequest::Custom(_url) => {}
+        PlaylistEpgRequest::Custom(url) => {
+            if let Ok(epg) = parse_xmltv_for_web_ui_from_url(&app_state, &url).await {
+                return json_or_bin_response(accept.as_ref(), &epg).into_response();
+            }
+        }
     }
     axum::http::StatusCode::NO_CONTENT.into_response()
 }

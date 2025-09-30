@@ -5,10 +5,11 @@ use reqwasm::http::Request;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use web_sys::window;
+use shared::utils::bin_deserialize;
 
-const CONTENT_TYPE_CBOR: &str = "application/cbor";
+const CONTENT_TYPE_BIN: &str = "application/bin";
 const CONTENT_TYPE_JSON: &str = "application/json";
-pub const ACCEPT_PREFER_CBOR: &str = "application/cbor, application/json;q=0.9";
+pub const ACCEPT_PREFER_BIN: &str = "application/bin, application/json;q=0.9";
 
 enum RequestMethod {
     Get,
@@ -33,7 +34,7 @@ pub fn set_token(token: Option<&str>) {
 
 /// build all kinds of http request: post/get/delete etc.
 async fn request<B, T>(method: RequestMethod, url: &str, body: B, content_type: Option<String>,
-                       response_type: Option<String>) -> Result<T, Error>
+                       response_type: Option<String>) -> Result<Option<T>, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
     B: Serialize + std::fmt::Debug,
@@ -42,8 +43,14 @@ where
     let r_type = response_type.as_ref().map_or(CONTENT_TYPE_JSON, |c| c.as_str());
     let mut request = match method {
         RequestMethod::Get => Request::get(url),
-        RequestMethod::Post => Request::post(url).body(serde_json::to_string(&body).unwrap()).header("Content-Type", c_type),
-        RequestMethod::Put => Request::put(url).body(serde_json::to_string(&body).unwrap()).header("Content-Type", c_type),
+        RequestMethod::Post =>  {
+            let json = serde_json::to_string(&body).map_err(|_| Error::RequestError)?;
+            Request::post(url).body(json).header("Content-Type", c_type)
+        },
+        RequestMethod::Put => {
+            let json = serde_json::to_string(&body).map_err(|_| Error::RequestError)?;
+            Request::put(url).body(json).header("Content-Type", c_type)
+        },
         // RequestMethod::PATCH =>  Request::patch(&url).body(serde_json::to_string(&body).unwrap()),
         RequestMethod::Delete => Request::delete(url),
     };
@@ -51,39 +58,45 @@ where
         request = request.header("Authorization", format!("Bearer {token}").as_str());
     }
 
-    if r_type.contains(CONTENT_TYPE_CBOR) {
-        request = request.header("Accept", CONTENT_TYPE_CBOR);
+    if r_type.contains(CONTENT_TYPE_BIN) {
+        request = request.header("Accept", CONTENT_TYPE_BIN);
     }
     match request.send().await {
         Ok(response) => {
             match response.status() {
-                200 => {
+                200 | 205 | 206 => {
                     let content_type = response
                         .headers()
                         .get("content-type")
                         .unwrap_or(r_type.to_string());
                     let is_json = content_type.contains(CONTENT_TYPE_JSON);
-                    let is_cbor = !is_json && content_type.contains(CONTENT_TYPE_CBOR);
-                    if (is_json || is_cbor) && std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
+                    let is_bin = !is_json && content_type.contains(CONTENT_TYPE_BIN);
+                    if (is_json || is_bin) && std::any::TypeId::of::<T>() == std::any::TypeId::of::<()>() {
                         // `T = ()` valid
                         let _ = response.binary().await;
-                        return serde_json::from_str("null").map_err(|_| Error::DeserializeError);
+                        return Ok(None);
                     }
 
-                    if is_cbor {
+                    if is_bin {
                         match response.binary().await {
                             Ok(bytes) => {
-                                match serde_cbor::from_slice::<T>(&bytes) {
-                                    Ok(data) => Ok(data),
-                                    Err(_) => Err(Error::DeserializeError),
+                                match bin_deserialize::<T>(&bytes) {
+                                    Ok(data) => Ok(Some(data)),
+                                    Err(err) => {
+                                        error!("Failed to deserialize {err}");
+                                        Err(Error::DeserializeError)
+                                    },
                                 }
                             }
-                            Err(_) => Err(Error::DeserializeError),
+                            Err(err) => {
+                                error!("Failed to deserialize {err}");
+                                Err(Error::DeserializeError)
+                            }
                         }
                     } else if is_json {
                         let data: Result<T, _> = response.json::<T>().await;
                         if let Ok(data) = data {
-                            Ok(data)
+                            Ok(Some(data))
                         } else {
                             Err(Error::DeserializeError)
                         }
@@ -91,7 +104,7 @@ where
                         match response.text().await {
                             Ok(content) => {
                                 match serde_json::from_value::<T>(Value::String(content)) {
-                                    Ok(parsed) => Ok(parsed),
+                                    Ok(parsed) => Ok(Some(parsed)),
                                     Err(_err) => Err(Error::DeserializeError)
                                 }
                             }
@@ -99,8 +112,20 @@ where
                         }
                     }
                 }
+                201 | 202 | 204 => Ok(None),
                 400 => {
-                    let data: Result<ErrorInfo, _> = response.json::<ErrorInfo>().await;
+                    let ct = response.headers().get("content-type").unwrap_or_default();
+                    let is_json = ct.contains(CONTENT_TYPE_JSON);
+                    let is_bin = !is_json && ct.contains(CONTENT_TYPE_BIN);
+                    let data: Result<ErrorInfo, _> = if is_bin {
+                        match response.binary().await {
+                            Ok(bytes) => bin_deserialize::<ErrorInfo>(&bytes).map_err(|_| Error::DeserializeError),
+                            Err(_) => Err(Error::DeserializeError)
+                        }
+                    } else {
+                        response.json::<ErrorInfo>().await.map_err(|_| Error::DeserializeError)
+                    };
+
                     if let Ok(data) = data {
                         Err(Error::BadRequest(data.error))
                     } else {
@@ -112,7 +137,18 @@ where
                 404 => Err(Error::NotFound),
                 500 => Err(Error::InternalServerError),
                 422 => {
-                    let data: Result<ErrorSetInfo, _> = response.json::<ErrorSetInfo>().await;
+                    let ct = response.headers().get("content-type").unwrap_or_default();
+                    let is_json = ct.contains(CONTENT_TYPE_JSON);
+                    let is_bin = !is_json && ct.contains(CONTENT_TYPE_BIN);
+                    let data: Result<ErrorSetInfo, _> = if is_bin {
+                        match response.binary().await {
+                            Ok(bytes) => bin_deserialize::<ErrorSetInfo>(&bytes).map_err(|_| Error::DeserializeError),
+                            Err(_) => Err(Error::DeserializeError)
+                        }
+                    } else {
+                        response.json::<ErrorSetInfo>().await.map_err(|_| Error::DeserializeError)
+                    };
+
                     if let Ok(data) = data {
                         Err(Error::UnprocessableEntity(data))
                     } else {
@@ -130,7 +166,7 @@ where
 }
 
 /// Delete request
-pub async fn request_delete<T>(url: &str, content_type: Option<String>, response_type: Option<String>) -> Result<T, Error>
+pub async fn request_delete<T>(url: &str, content_type: Option<String>, response_type: Option<String>) -> Result<Option<T>, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
 {
@@ -138,7 +174,7 @@ where
 }
 
 /// Get request
-pub async fn request_get<T>(url: &str, content_type: Option<String>, response_type: Option<String>) -> Result<T, Error>
+pub async fn request_get<T>(url: &str, content_type: Option<String>, response_type: Option<String>) -> Result<Option<T>, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
 {
@@ -153,7 +189,7 @@ where
 // }
 
 /// Post request with a body
-pub async fn request_post<B, T>(url: &str, body: B, content_type: Option<String>, response_type: Option<String>) -> Result<T, Error>
+pub async fn request_post<B, T>(url: &str, body: B, content_type: Option<String>, response_type: Option<String>) -> Result<Option<T>, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
     B: Serialize + std::fmt::Debug,
@@ -162,7 +198,7 @@ where
 }
 
 /// Put request with a body
-pub async fn request_put<B, T>(url: &str, body: B, content_type: Option<String>, response_type: Option<String>) -> Result<T, Error>
+pub async fn request_put<B, T>(url: &str, body: B, content_type: Option<String>, response_type: Option<String>) -> Result<Option<T>, Error>
 where
     T: DeserializeOwned + 'static + std::fmt::Debug,
     B: Serialize + std::fmt::Debug,

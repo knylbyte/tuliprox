@@ -108,11 +108,11 @@ pub fn PlaylistExplorer() -> Html {
         });
     }
 
-    let copy_to_clipboard ={
+    let copy_to_clipboard: Callback<String> = {
         let clipboard = clipboard.clone();
-        move |text: String| {
+        Callback::from(move |text: String| {
             clipboard.write_text(text);
-        }
+        })
     };
 
     let handle_menu_click = {
@@ -121,12 +121,13 @@ pub fn PlaylistExplorer() -> Html {
         let selected_channel = selected_channel.clone();
         let playlist_ctx = context.clone();
         let translate_clone = translate.clone();
+        let copy_to_clipboard = copy_to_clipboard.clone();
         Callback::from(move |(name, _): (String, _)| {
             if let Ok(action) = ExplorerAction::from_str(&name) {
                 match action {
                     ExplorerAction::CopyLinkTuliproxVirtualId => {
                         if let Some(dto) = &*selected_channel {
-                            copy_to_clipboard(dto.virtual_id.to_string());
+                            copy_to_clipboard.emit(dto.virtual_id.to_string());
                         }
                     }
                     ExplorerAction::CopyLinkTuliproxWebPlayerUrl => {
@@ -141,7 +142,7 @@ pub fn PlaylistExplorer() -> Html {
                                         let target_id = *target_id;
                                         spawn_local(async move {
                                             if let Some(url) = services.playlist.get_playlist_webplayer_url(target_id, &dto).await {
-                                                copy_to_clipboard(url);
+                                                copy_to_clipboard.emit(url);
                                                 services.toastr.success(translate_clone.t("MESSAGES.PLAYLIST.WEBPLAYER_URL_COPY_TO_CLIPBOARD"));
                                             }
                                         });
@@ -155,7 +156,7 @@ pub fn PlaylistExplorer() -> Html {
                     }
                     ExplorerAction::CopyLinkProviderUrl => {
                         if let Some(dto) = &*selected_channel {
-                            copy_to_clipboard(dto.url.clone());
+                            copy_to_clipboard.emit(dto.url.clone());
                         }
                     }
                 }

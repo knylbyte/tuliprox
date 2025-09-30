@@ -3,14 +3,15 @@ use std::fs;
 use std::fs::File;
 use std::io::{BufWriter, Error, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-use flate2::read::{GzDecoder, ZlibDecoder};
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, log_enabled, trace, Level};
 use reqwest::header::CONTENT_ENCODING;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
+use tokio_util::io::StreamReader;
 use url::Url;
 
 use shared::error::create_tuliprox_error_result;
@@ -145,11 +146,12 @@ pub async fn get_input_text_content(client: Arc<reqwest::Client>, input: &InputS
     }
 }
 
-pub fn get_client_request<S: ::std::hash::BuildHasher + Default>(client: &Arc<reqwest::Client>,
-                                                                 method: InputFetchMethod,
-                                                                 headers: Option<&HashMap<String, String, S>>,
-                                                                 url: &Url,
-                                                                 custom_headers: Option<&HashMap<String, Vec<u8>, S>>) -> reqwest::RequestBuilder {
+pub fn get_client_request<S: ::std::hash::BuildHasher + Default>
+        (client: &Arc<reqwest::Client>,
+         method: InputFetchMethod,
+         headers: Option<&HashMap<String, String, S>>,
+         url: &Url,
+         custom_headers: Option<&HashMap<String, Vec<u8>, S>>) -> reqwest::RequestBuilder {
     let request = match method {
         InputFetchMethod::GET => client.get(url.clone()),
         InputFetchMethod::POST => {
@@ -207,7 +209,7 @@ pub fn get_local_file_content(file_path: &PathBuf) -> Result<String, Error> {
     if file_path.exists() && file_path.is_file() {
         if let Ok(content) = fs::read(file_path) {
             if content.len() >= 2 && is_gzip(&content[0..2]) {
-                let mut decoder = GzDecoder::new(&content[..]);
+                let mut decoder = flate2::read::GzDecoder::new(&content[..]);
                 let mut decode_buffer = String::new();
                 return match decoder.read_to_string(&mut decode_buffer) {
                     Ok(_) => Ok(decode_buffer),
@@ -255,74 +257,59 @@ async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &Config
     }
 }
 
+type DynReader = Pin<Box<dyn AsyncRead + Send>>;
+
+#[allow(clippy::implicit_hasher)]
+pub async fn get_remote_content_as_stream(
+    client: Arc<reqwest::Client>,
+    url: &Url,
+    method: InputFetchMethod,
+    headers: Option<&HashMap<String, String>>
+) -> Result<(DynReader, String), Error> {
+    let request = get_client_request(&client, method, headers, url, None);
+    let response = request.send().await.map_err(std::io::Error::other)?;
+
+    if !response.status().is_success() {
+        return Err(str_to_io_error(&format!("Request failed with status {} {}", response.status(), sanitize_sensitive_info(url.as_str()))));
+    }
+
+    let response_url = response.url().to_string();
+    let headers = response.headers();
+    debug!("{headers:?}");
+    let header_value = headers.get(CONTENT_ENCODING);
+    let mut encoding = header_value.and_then(|encoding_header| encoding_header.to_str().map_or(None, |value| Some(value.to_string())));
+    let stream_reader = StreamReader::new(
+        response.bytes_stream().map_err(std::io::Error::other),
+    );
+    let mut buf_reader = BufReader::new(stream_reader);
+    let peek = buf_reader.fill_buf().await?;
+
+    if peek.len() >= 2 {
+        if is_gzip(&peek[0..2]) {
+            encoding = Some(ENCODING_GZIP.to_string());
+        } else if is_deflate(&peek[0..2]) {
+            encoding = Some(ENCODING_DEFLATE.to_string());
+        }
+    }
+
+    let reader: DynReader = if encoding.as_ref().is_some_and(|e| e.eq_ignore_ascii_case(ENCODING_GZIP)) {
+        Box::pin(async_compression::tokio::bufread::GzipDecoder::new(buf_reader))
+    } else if encoding.as_ref().is_some_and(|e| e.eq_ignore_ascii_case(ENCODING_DEFLATE)) {
+        Box::pin(async_compression::tokio::bufread::ZlibDecoder::new(buf_reader))
+    } else {
+        Box::pin(buf_reader)
+    };
+
+    Ok((reader, response_url))
+}
+
 async fn get_remote_content(client: Arc<reqwest::Client>, input: &InputSource, url: &Url) -> Result<(String, String), Error> {
     let start_time = Instant::now();
-    let request = get_client_request(&client, input.method, Some(&input.headers), url, None);
-    match request.send().await {
-        Ok(response) => {
-            let is_success = response.status().is_success();
-            if is_success {
-                let response_url = response.url().to_string();
-                let headers = response.headers();
-                debug!("{headers:?}");
-                let header_value = headers.get(CONTENT_ENCODING);
-                let mut encoding = header_value.and_then(|encoding_header| encoding_header.to_str().map_or(None, |value| Some(value.to_string())));
-                match response.bytes().await {
-                    Ok(bytes) => {
-                        if bytes.len() >= 2 {
-                            if is_gzip(&bytes[0..2]) {
-                                encoding = Some(ENCODING_GZIP.to_string());
-                            } else if is_deflate(&bytes[0..2]) {
-                                encoding = Some(ENCODING_DEFLATE.to_string());
-                            }
-                        }
-
-                        let mut decode_buffer = String::new();
-                        if let Some(encoding_type) = encoding {
-                            match encoding_type.as_str() {
-                                ENCODING_GZIP => {
-                                    let mut decoder = GzDecoder::new(&bytes[..]);
-                                    match decoder.read_to_string(&mut decode_buffer) {
-                                        Ok(_) => {}
-                                        Err(err) => return Err(str_to_io_error(&format!("failed to decode gzip content {err}")))
-                                    }
-                                }
-                                ENCODING_DEFLATE => {
-                                    let mut decoder = ZlibDecoder::new(&bytes[..]);
-                                    match decoder.read_to_string(&mut decode_buffer) {
-                                        Ok(_) => {}
-                                        Err(err) => return Err(str_to_io_error(&format!("failed to decode zlib content {err}")))
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        if decode_buffer.is_empty() {
-                            let content_bytes = bytes.to_vec();
-                            match String::from_utf8(content_bytes) {
-                                Ok(decoded_content) => {
-                                    debug_if_enabled!("Request took:{} {}", format_elapsed_time(start_time.elapsed().as_secs()), sanitize_sensitive_info(url.as_str()));
-                                    Ok((decoded_content, response_url))
-                                }
-                                Err(err) => {
-                                    println!("{err:?}");
-                                    Err(str_to_io_error(&format!("failed to plain text content {err}")))
-                                }
-                            }
-                        } else {
-                            debug_if_enabled!("Request took:{},  {}", format_elapsed_time(start_time.elapsed().as_secs()), sanitize_sensitive_info(url.as_str()));
-                            Ok((decode_buffer, response_url))
-                        }
-                    }
-                    Err(err) => Err(str_to_io_error(&format!("failed to read response {} {err}", sanitize_sensitive_info(url.as_str()))))
-                }
-            } else {
-                Err(str_to_io_error(&format!("Request failed with status {} {}", response.status(), sanitize_sensitive_info(url.as_str()))))
-            }
-        }
-        Err(err) => Err(str_to_io_error(&format!("Request failed {} {err}", sanitize_sensitive_info(url.as_str()))))
-    }
+    let (mut stream, response_url) = get_remote_content_as_stream(client.clone(), url, input.method, Some(&input.headers)).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
+    let mut content = String::new();
+    stream.read_to_string(&mut content).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
+    debug_if_enabled!("Request took:{} {}", format_elapsed_time(start_time.elapsed().as_secs()), sanitize_sensitive_info(url.as_str()));
+    Ok((content, response_url))
 }
 
 async fn download_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, url_str: &str, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, Error> {

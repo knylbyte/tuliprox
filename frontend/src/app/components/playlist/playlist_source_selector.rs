@@ -93,7 +93,7 @@ pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
         Callback::from(move |_| {
             let is_xtream = matches!(*set_custom_provider, InputType::Xtream);
             let url = match url_ref.cast::<HtmlInputElement>() {
-                 Some(input) => input.value(),
+                 Some(input) => input.value().trim().to_owned(),
                  None => {
                      services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.URL_MANDATORY"));
                      return;
@@ -107,7 +107,7 @@ pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
             }
             let (username, password) = if is_xtream {
                 let (username, password) = match (u_ref.cast::<HtmlInputElement>(), p_ref.cast::<HtmlInputElement>()) {
-                     (Some(u), Some(p)) => (u.value().trim().to_owned(), p.value()),
+                     (Some(u), Some(p)) => (u.value().trim().to_owned(), p.value().trim().to_owned()),
                      _ => (String::new(), String::new())
                  };
 

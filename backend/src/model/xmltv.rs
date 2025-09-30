@@ -1,14 +1,19 @@
 use crate::model::xmltv::XmlTagIcon::Undefined;
 use chrono::{Datelike, TimeZone, Utc};
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
-use quick_xml::{Error, Reader, Writer};
+use quick_xml::{Error, Writer};
 use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::model::{parse_xmltv_time, EpgChannel, EpgProgramme, EpgTv};
+use shared::model::{parse_xmltv_time, EpgChannel, EpgProgramme, EpgTv, InputFetchMethod};
 use std::cmp::{max, min};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use futures::TryFutureExt;
+use tokio::io::AsyncRead;
+use url::Url;
+use shared::utils::sanitize_sensitive_info;
+use crate::api::model::AppState;
+use crate::utils::request::{get_remote_content_as_stream};
 
 pub const EPG_TAG_TV: &str = "tv";
 pub const EPG_TAG_PROGRAMME: &str = "programme";
@@ -162,11 +167,34 @@ fn get_epg_interval(channels: &Vec<EpgChannel>) -> (i64, i64) {
     (epg_start, epg_stop)
 }
 
-#[allow(clippy::too_many_lines)]
-pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
-    let file = File::open(path).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;
-    let mut reader = Reader::from_reader(BufReader::new(file));
+pub async fn parse_xmltv_for_web_ui_from_file(path: &Path) -> Result<EpgTv, TuliproxError> {
+    let file = tokio::fs::File::open(path).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string())).await?;
+    parse_xmltv_for_web_ui(file).await
+}
 
+pub async fn parse_xmltv_for_web_ui_from_url(app_state: &Arc<AppState>, url: &str) -> Result<EpgTv, TuliproxError> {
+    if let Ok(request_url) = Url::parse(url) {
+       match get_remote_content_as_stream(
+            Arc::clone(&app_state.http_client.load()),
+            &request_url,
+            InputFetchMethod::GET,
+            None,
+        ).await {
+           Ok((stream, _url)) => {
+               parse_xmltv_for_web_ui(stream).await
+           }
+           Err(err) => Err(TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to download: {} {err}", sanitize_sensitive_info(url))))
+       }
+
+    } else {
+        Err(TuliproxError::new(TuliproxErrorKind::Info, format!("Invalid url: {}", sanitize_sensitive_info(url))))
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Result<EpgTv, TuliproxError> {
+
+    let mut reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(reader));
     let mut buf = Vec::new();
 
     let mut channels = Vec::new();
@@ -191,7 +219,7 @@ pub fn parse_xmltv_for_web_ui(path: &Path) -> Result<EpgTv, TuliproxError> {
     };
 
     loop {
-        match reader.read_event_into(&mut buf) {
+        match reader.read_event_into_async(&mut buf).await {
             Ok(Event::Start(e)) => {
                 let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 current_tag.clone_from(&tag);

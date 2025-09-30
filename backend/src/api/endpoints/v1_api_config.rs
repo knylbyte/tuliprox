@@ -63,20 +63,27 @@ async fn save_config_api_proxy_config(
     }
 
     // TODO if hot reload is on, it is loaded twice, avoid this
-    let mut api_proxy =  if let Some(old_api_proxy) = app_state.app_config.api_proxy.load().clone() {
-        (*old_api_proxy).clone()
-    } else {
-       ApiProxyConfig::default()
+    // Build the updated config without mutating global state yet
+    let base = app_state.app_config.api_proxy.load()
+        .as_deref().cloned().unwrap_or_default();
+    let updated_api_proxy = ApiProxyConfig {
+        server: req_api_proxy.iter().map(Into::into).collect(),
+        ..base
     };
-    api_proxy.server = req_api_proxy.iter().map(Into::into).collect();
-    let new_api_proxy = Arc::new(api_proxy);
-    app_state.app_config.api_proxy.store(Some(Arc::clone(&new_api_proxy)));
+
     let config = app_state.app_config.config.load();
     let backup_dir = config.get_backup_dir();
     let paths = app_state.app_config.paths.load();
-    if let Some(err) = intern_save_config_api_proxy(backup_dir.as_ref(), &ApiProxyConfigDto::from(new_api_proxy.as_ref()), paths.api_proxy_file_path.as_str()) {
+
+    if let Some(err) = intern_save_config_api_proxy(backup_dir.as_ref(), &ApiProxyConfigDto::from(&updated_api_proxy), paths.api_proxy_file_path.as_str()) {
         return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
     }
+    // Persist succeeded — now update in‑memory state
+    app_state
+        .app_config
+        .api_proxy
+        .store(Some(Arc::new(updated_api_proxy)));
+
     axum::http::StatusCode::OK.into_response()
 }
 

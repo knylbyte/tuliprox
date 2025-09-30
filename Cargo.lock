@@ -1007,7 +1007,6 @@ dependencies = [
  "regex",
  "reqwasm",
  "serde",
- "serde_cbor",
  "serde_json",
  "shared",
  "thiserror 2.0.14",
@@ -1693,12 +1692,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "half"
-version = "1.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b43ede17f21864e81be2fa654110bf1e793774238d86ef8555c37e6519c0403"
-
-[[package]]
 name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2369,6 +2362,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "minicbor"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f182275033b808ede9427884caa8e05fa7db930801759524ca7925bd8aa7a82"
+dependencies = [
+ "minicbor-derive",
+]
+
+[[package]]
+name = "minicbor-derive"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b17290c95158a760027059fe3f511970d6857e47ff5008f9e09bffe3d3e1c6af"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
+name = "minicbor-serde"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "546cc904f35809921fa57016a84c97e68d9d27c012e87b9dadc28c233705f783"
+dependencies = [
+ "minicbor",
+ "serde",
+]
+
+[[package]]
 name = "minicov"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2973,6 +2996,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42a232e7487fc2ef313d96dde7948e7a3c05101870d8985e4fd8d26aedd27b89"
 dependencies = [
  "memchr",
+ "tokio",
 ]
 
 [[package]]
@@ -3473,16 +3497,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_cbor"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bef2ebfde456fb76bbcf9f59315333decc4fda0b2b44b420243c11e0f5ec1f5"
-dependencies = [
- "half",
- "serde",
-]
-
-[[package]]
 name = "serde_derive"
 version = "1.0.219"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3584,6 +3598,7 @@ dependencies = [
  "fastrand 2.3.0",
  "indexmap",
  "log",
+ "minicbor-serde",
  "path-clean",
  "pest",
  "pest_derive",
@@ -4125,6 +4140,7 @@ name = "tuliprox"
 version = "3.1.6"
 dependencies = [
  "arc-swap",
+ "async-compression",
  "axum",
  "base64",
  "bincode 2.0.1",
@@ -4165,7 +4181,6 @@ dependencies = [
  "rustelebot",
  "ruzstd",
  "serde",
- "serde_cbor",
  "serde_json",
  "serde_yaml",
  "shared",
