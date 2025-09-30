@@ -17,6 +17,7 @@ mod playlist_categories;
 mod search_request;
 mod webplayer_url_request;
 mod epg;
+mod epg_request;
 
 pub use self::cluster_flags::*;
 pub use self::playlist::*;
@@ -36,3 +37,4 @@ pub use self::playlist_categories::*;
 pub use self::search_request::*;
 pub use self::webplayer_url_request::*;
 pub use self::epg::*;
+pub use self::epg_request::*;

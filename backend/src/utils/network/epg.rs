@@ -8,12 +8,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use shared::utils::{sanitize_sensitive_info, short_hash};
 
+fn get_input_raw_epg_file_path(url: &str, input: &ConfigInput, working_dir: &str) -> Option<PathBuf> {
+    let file_prefix = short_hash(url);
+    prepare_file_path(input.persist.as_deref(), working_dir, "")
+        .map(|path| add_prefix_to_filename(&path, format!("{file_prefix}_epg_").as_str(), Some("xml")))
+}
+
 async fn download_epg_file(url: &str, client: &Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str) -> Result<PathBuf, TuliproxError> {
     debug!("Getting epg file path for url: {}", sanitize_sensitive_info(url));
-    let file_prefix = short_hash(url);
-    let persist_file_path = prepare_file_path(input.persist.as_deref(), working_dir, "")
-        .map(|path| add_prefix_to_filename(&path, format!("{file_prefix}_epg_").as_str(), Some("xml")));
-
+    let persist_file_path = get_input_raw_epg_file_path(url, input, working_dir);
     request::get_input_epg_content_as_file(Arc::clone(client), input, working_dir, url, persist_file_path).await
 }
 

@@ -3,7 +3,7 @@ use crate::app::context::PlaylistExplorerContext;
 use crate::hooks::use_service_context;
 use crate::html_if;
 use crate::model::{BusyStatus, EventMessage, ExplorerSourceType};
-use shared::model::{InputType, PlaylistRequest, PlaylistRequestType};
+use shared::model::{InputType, PlaylistRequest, PlaylistRequestM3u, PlaylistRequestXtream};
 use std::rc::Rc;
 use std::str::FromStr;
 use web_sys::HtmlInputElement;
@@ -82,21 +82,6 @@ pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
         }
     };
 
-    let handle_defined_source = {
-        let handle_source_download = handle_source_download.clone();
-        Callback::from(move |(rtype, source_id, source_name): (PlaylistRequestType, u16, String)| {
-            let request = PlaylistRequest {
-                rtype,
-                username: None,
-                password: None,
-                url: None,
-                source_id: Some(source_id),
-                source_name: Some(source_name),
-            };
-            handle_source_download.emit(request);
-        })
-    };
-
     let handle_custom_source = {
         let services = services_ctx.clone();
         let translate = translate.clone();
@@ -107,18 +92,25 @@ pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
         let url_ref = url_ref.clone();
         Callback::from(move |_| {
             let is_xtream = matches!(*set_custom_provider, InputType::Xtream);
-            let url_input: HtmlInputElement = url_ref.cast::<HtmlInputElement>().unwrap();
-            let url = url_input.value();
+            let url = match url_ref.cast::<HtmlInputElement>() {
+                 Some(input) => input.value().trim().to_owned(),
+                 None => {
+                     services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.URL_MANDATORY"));
+                     return;
+                 }
+             };
+
             let mut valid = true;
             if url.is_empty() {
                 services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.URL_MANDATORY"));
                 valid = false;
             }
             let (username, password) = if is_xtream {
-                let username_input: HtmlInputElement = u_ref.cast::<HtmlInputElement>().unwrap();
-                let password_input: HtmlInputElement = p_ref.cast::<HtmlInputElement>().unwrap();
-                let username = username_input.value().trim().to_owned();
-                let password = password_input.value();
+                let (username, password) = match (u_ref.cast::<HtmlInputElement>(), p_ref.cast::<HtmlInputElement>()) {
+                     (Some(u), Some(p)) => (u.value().trim().to_owned(), p.value().trim().to_owned()),
+                     _ => (String::new(), String::new())
+                 };
+
                 if username.is_empty() || password.is_empty() {
                     services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.USERNAME_PASSWORD_MANDATORY"));
                     valid = false;
@@ -129,13 +121,16 @@ pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
             };
 
             if valid {
-                let request = PlaylistRequest {
-                    rtype: if is_xtream { PlaylistRequestType::Xtream } else { PlaylistRequestType::M3U },
-                    username,
-                    password,
-                    url: Some(url),
-                    source_id: None,
-                    source_name: None,
+                let request = if is_xtream {
+                    PlaylistRequest::CustomXtream(PlaylistRequestXtream {
+                        username: username.unwrap_or_default(),
+                        password: password.unwrap_or_default(),
+                        url,
+                    })
+                } else {
+                    PlaylistRequest::CustomM3u(PlaylistRequestM3u {
+                        url,
+                    })
                 };
                 handle_source_download.emit(request);
             }
@@ -153,7 +148,7 @@ pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
 
     let render_hosted = {
         let playlist_ctx_clone = playlist_ctx.clone();
-        let handle_defined_source = handle_defined_source.clone();
+        let handle_defined_source = handle_source_download.clone();
         move || {
             html! {
         <>
@@ -167,7 +162,7 @@ pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
                                 let handle_click = handle_defined_source.clone();
                                 html! {
                                 <TextButton name={target.name.clone()} title={target.name.clone()} icon={"Download"}
-                                onclick={move |_| handle_click.emit((PlaylistRequestType::Target, target.id, target.name.clone()))}/>
+                                onclick={move |_| handle_click.emit(PlaylistRequest::Target(target.id))}/>
                                 }
                         })}
                     </div>
@@ -183,7 +178,7 @@ pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
 
     let render_provider = {
         let playlist_ctx_clone = playlist_ctx.clone();
-        let handle_defined_source = handle_defined_source.clone();
+        let handle_defined_source = handle_source_download.clone();
         move || {
             html! {
         <>
@@ -210,7 +205,7 @@ pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
                                 if let Some((name, id)) = result {
                                     html! {
                                     <TextButton name={name.clone()} title={name.clone()} icon={"CloudDownload"}
-                                    onclick={move |_| handle_click.emit((PlaylistRequestType::Input, id, name.clone()))}/>
+                                    onclick={move |_| handle_click.emit(PlaylistRequest::Input(id))}/>
                                     }
                                 } else {
                                     html!{}

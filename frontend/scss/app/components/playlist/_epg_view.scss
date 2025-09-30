@@ -1,3 +1,4 @@
+$epg-border-size: 4px;
 .tp__epg {
   display: flex;
   flex-flow: column;
@@ -17,6 +18,7 @@
     overflow-x: auto;
     overflow-y: auto;
     position: relative;
+    min-height: 0;
   }
 
   &__channels-header,
@@ -36,7 +38,7 @@
       flex-flow: column;
       box-sizing: border-box;
       border-left: 1px solid var(--text-color);
-      padding-left: 4px;
+      padding-left: $epg-border-size;
       background-color: var(--background-color);
 
       &-time, &-date {
@@ -51,12 +53,11 @@
   &__channels {
     display: flex;
     flex-flow: column;
-    //gap: var(--gap-default);
     position: sticky;
     left: 0;
     z-index: 12;
     background-color: var(--background-color);
-    border-right: 4px solid var(--background-color);
+    border-right: $epg-border-size solid var(--background-color);
     height: fit-content;
   }
 
@@ -70,7 +71,6 @@
   &__programs {
     display: flex;
     flex-flow: column;
-    //gap: var(--gap-default);
     min-width: 100%;
     height: fit-content;
     position: relative;
@@ -79,11 +79,19 @@
   &__channel {
     display: flex;
     flex-flow: row;
+    gap: var(--gap-small);
     align-items: center;
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
-    border-bottom: 1px solid var(--border-color);
+    background-color: var(--card-background-color);
+    border-bottom: $epg-border-size solid var(--background-color);
+    border-top: $epg-border-size solid var(--background-color);
+    &-icon {
+       img {
+         width: 2.5rem;
+       }
+    }
   }
 
   &__channel-programs {
@@ -145,8 +153,9 @@
     top: 0;
     bottom: 0;
     height: 100%;
-    width: 2px; /* line thickness */
+    width: 2px;
     background-color: red;
     z-index: 11; /* above programs */
+    pointer-events: none;
   }
 }

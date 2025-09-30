@@ -29,7 +29,7 @@ use shared::model::{
     Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType,
     UserConnectionPermission, XtreamCluster,
 };
-use shared::utils::{default_grace_period_millis, human_readable_byte_size, trim_slash};
+use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_byte_size, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
@@ -39,8 +39,11 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use serde::Serialize;
 use tokio::sync::Mutex;
 use url::Url;
+
+const CONTENT_TYPE_BIN: &str = "application/cbor";
 
 #[macro_export]
 macro_rules! try_option_bad_request {
@@ -1269,4 +1272,25 @@ pub async fn is_seek_request(cluster: XtreamCluster, req_headers: &HeaderMap) ->
         }
     }
     false
+}
+
+pub fn bin_response<T: Serialize>(data: &T) -> impl IntoResponse + Send {
+    match bin_serialize(data) {
+        Ok(body) => (
+            [(axum::http::header::CONTENT_TYPE, CONTENT_TYPE_BIN)],
+            body,
+        ).into_response(),
+        Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub fn json_response<T: Serialize>(data: &T) -> impl IntoResponse + Send {
+    (axum::http::StatusCode::OK, axum::Json(data)).into_response()
+}
+
+pub fn json_or_bin_response<T: Serialize>(accept: Option<&String>, data: &T) -> impl IntoResponse + Send {
+    if accept.is_some_and(|a| a.contains(CONTENT_TYPE_BIN)) {
+        return bin_response(data).into_response();
+    }
+    json_response(data).into_response()
 }
