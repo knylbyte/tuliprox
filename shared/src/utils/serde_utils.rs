@@ -1,6 +1,8 @@
+use std::io;
 use serde::{Deserialize, Deserializer,};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use crate::error::to_io_error;
 
 fn value_to_string_array(value: &[Value]) -> Vec<String> {
     value.iter().filter_map(value_to_string).collect()
@@ -90,4 +92,20 @@ where
             serde_json::from_str::<T>(s).map_or_else(|_| Ok(None), |val| Ok(Some(val)))
         }
     }
+}
+
+#[inline]
+pub fn bin_serialize<T>(value: &T) -> io::Result<Vec<u8>>
+where
+    T: serde::Serialize,
+{
+    minicbor_serde::to_vec(value).map_err(to_io_error)
+}
+
+#[inline]
+pub fn bin_deserialize<T>(value: &[u8]) -> io::Result<T>
+where
+    T: for<'a> serde::Deserialize<'a>,
+{
+    minicbor_serde::from_slice(value).map_err(to_io_error)
 }

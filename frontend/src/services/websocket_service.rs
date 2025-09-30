@@ -206,8 +206,11 @@ impl WebSocketService {
             }
         } else {
             match self.status_service.get_server_status().await {
-                Ok(status) => {
+                Ok(Some(status)) => {
                     self.event_service.broadcast(EventMessage::ServerStatus(status));
+                }
+                Ok(None) => {
+                    // ignore
                 }
                 Err(err) => {error!("Failed to get server status: {err:?}");}
             }

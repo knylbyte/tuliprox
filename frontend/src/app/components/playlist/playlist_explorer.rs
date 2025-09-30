@@ -9,7 +9,7 @@ use yew_hooks::use_clipboard;
 use yew_i18n::use_translation;
 use shared::create_tuliprox_error_result;
 use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::model::{CommonPlaylistItem, PlaylistRequestType, SearchRequest, UiPlaylistGroup, XtreamCluster};
+use shared::model::{CommonPlaylistItem, PlaylistRequest, SearchRequest, UiPlaylistGroup, XtreamCluster};
 use crate::app::components::{AppIcon, IconButton, NoContent, Search};
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
@@ -108,11 +108,11 @@ pub fn PlaylistExplorer() -> Html {
         });
     }
 
-    let copy_to_clipboard ={
+    let copy_to_clipboard: Callback<String> = {
         let clipboard = clipboard.clone();
-        move |text: String| {
+        Callback::from(move |text: String| {
             clipboard.write_text(text);
-        }
+        })
     };
 
     let handle_menu_click = {
@@ -121,35 +121,42 @@ pub fn PlaylistExplorer() -> Html {
         let selected_channel = selected_channel.clone();
         let playlist_ctx = context.clone();
         let translate_clone = translate.clone();
+        let copy_to_clipboard = copy_to_clipboard.clone();
         Callback::from(move |(name, _): (String, _)| {
             if let Ok(action) = ExplorerAction::from_str(&name) {
                 match action {
                     ExplorerAction::CopyLinkTuliproxVirtualId => {
                         if let Some(dto) = &*selected_channel {
-                            copy_to_clipboard(dto.virtual_id.to_string());
+                            copy_to_clipboard.emit(dto.virtual_id.to_string());
                         }
                     }
                     ExplorerAction::CopyLinkTuliproxWebPlayerUrl => {
                         if let Some(playlist_request)= playlist_ctx.playlist_request.as_ref() {
-                            if let Some(target_id) = playlist_request.source_id {
-                                if let Some(dto) = &*selected_channel {
-                                    let copy_to_clipboard = copy_to_clipboard.clone();
-                                    let services = services.clone();
-                                    let dto = dto.clone();
-                                    let translate_clone = translate_clone.clone();
-                                    spawn_local(async move {
-                                        if let Some(url) = services.playlist.get_playlist_webplayer_url(target_id, &dto).await {
-                                            copy_to_clipboard(url);
-                                            services.toastr.success(translate_clone.t("MESSAGES.PLAYLIST.WEBPLAYER_URL_COPY_TO_CLIPBOARD"));
-                                        }
-                                    });
+                            match playlist_request {
+                                PlaylistRequest::Target(target_id) => {
+                                    if let Some(dto) = &*selected_channel {
+                                        let copy_to_clipboard = copy_to_clipboard.clone();
+                                        let services = services.clone();
+                                        let dto = dto.clone();
+                                        let translate_clone = translate_clone.clone();
+                                        let target_id = *target_id;
+                                        spawn_local(async move {
+                                            if let Some(url) = services.playlist.get_playlist_webplayer_url(target_id, &dto).await {
+                                                copy_to_clipboard.emit(url);
+                                                services.toastr.success(translate_clone.t("MESSAGES.PLAYLIST.WEBPLAYER_URL_COPY_TO_CLIPBOARD"));
+                                            }
+                                        });
+                                    }
                                 }
+                                PlaylistRequest::Input(_) => {}
+                                PlaylistRequest::CustomXtream(_) => {}
+                                PlaylistRequest::CustomM3u(_) => {}
                             }
                         }
                     }
                     ExplorerAction::CopyLinkProviderUrl => {
                         if let Some(dto) = &*selected_channel {
-                            copy_to_clipboard(dto.url.clone());
+                            copy_to_clipboard.emit(dto.url.clone());
                         }
                     }
                 }
@@ -324,7 +331,7 @@ pub fn PlaylistExplorer() -> Html {
         </div>
 
         <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
-            { html_if!((context.playlist_request.as_ref().map(|r| r.rtype)).as_ref() == Some(&PlaylistRequestType::Target), {
+            { html_if!(context.playlist_request.as_ref().is_some_and(|r| matches!(r, PlaylistRequest::Target(_))), {
                 <>
                  <MenuItem icon="Clipboard" name={ExplorerAction::CopyLinkTuliproxVirtualId.to_string()} label={translate.t("LABEL.COPY_LINK_TULIPROX_VIRTUAL_ID")} onclick={&handle_menu_click}></MenuItem>
                  <MenuItem icon="Clipboard" name={ExplorerAction::CopyLinkTuliproxWebPlayerUrl.to_string()} label={translate.t("LABEL.COPY_LINK_TULIPROX_WEBPLAYER_URL")} onclick={&handle_menu_click}></MenuItem>
