@@ -11,6 +11,7 @@ ARG RUST_DISTRO=1.90.0-trixie
 ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.104
 ARG CARGO_CHEF_VER=0.1.72
+ARG SCCACHE_VER=0.7.5
 ARG ALPINE_VER=3.22.1
 
 ############################################
@@ -51,12 +52,14 @@ ARG TARGETPLATFORM
 ARG TRUNK_VER
 ARG BINDGEN_VER
 ARG CARGO_CHEF_VER
+ARG SCCACHE_VER
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
-    PATH=/usr/local/cargo/bin:$PATH
+    PATH=/usr/local/cargo/bin:$PATH \
+    SCCACHE_DIR=/var/cache/sccache
 
 # Map Docker TARGETPLATFORM -> Rust target triple for *tool binaries*.
 # Tools must run inside the final image for that platform (gnu is fine here).
@@ -108,13 +111,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install --locked wasm-bindgen-cli --version ${BINDGEN_VER} \
       --target "$(cat /rust-target)" --root /out && \
     cargo install --locked cargo-chef --version ${CARGO_CHEF_VER} \
+      --target "$(cat /rust-target)" --root /out && \
+    cargo install --locked sccache --version ${SCCACHE_VER} \
       --target "$(cat /rust-target)" --root /out
 
 # Strip (best-effort)
 RUN case "$(cat /rust-target)" in \
-      armv7-unknown-linux-gnueabihf)  arm-linux-gnueabihf-strip /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef || true ;; \
-      aarch64-unknown-linux-gnu)      aarch64-linux-gnu-strip   /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef || true ;; \
-      x86_64-unknown-linux-gnu)       strip                     /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef || true ;; \
+      armv7-unknown-linux-gnueabihf)  arm-linux-gnueabihf-strip /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/sccache || true ;; \
+      aarch64-unknown-linux-gnu)      aarch64-linux-gnu-strip   /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/sccache || true ;; \
+      x86_64-unknown-linux-gnu)       strip                     /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/sccache || true ;; \
     esac
 
 ############################################
@@ -126,16 +131,20 @@ FROM rust:${RUST_DISTRO}
 ARG TRUNK_VER
 ARG BINDGEN_VER
 ARG CARGO_CHEF_VER
+ARG SCCACHE_VER
 
 LABEL io.tuliprox.trunk.version="${TRUNK_VER}" \
       io.tuliprox.wasm_bindgen.version="${BINDGEN_VER}" \
-      io.tuliprox.cargo_chef.version="${CARGO_CHEF_VER}"
+      io.tuliprox.cargo_chef.version="${CARGO_CHEF_VER}" \
+      io.tuliprox.sccache.version="${SCCACHE_VER}"
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
-    PATH=/usr/local/cargo/bin:$PATH
+    PATH=/usr/local/cargo/bin:$PATH \
+    SCCACHE_DIR=/var/cache/sccache \
+    RUSTC_WRAPPER=/usr/local/cargo/bin/sccache
 
 # System deps for both stages of the app:
 # - Stage 1 (native binary): musl-tools (for musl static builds)
@@ -173,16 +182,22 @@ ENV CC_x86_64_unknown_linux_musl=musl-gcc \
 COPY --from=builder /out/bin/trunk /usr/local/cargo/bin/trunk
 COPY --from=builder /out/bin/wasm-bindgen /usr/local/cargo/bin/wasm-bindgen
 COPY --from=builder /out/bin/cargo-chef /usr/local/cargo/bin/cargo-chef
+COPY --from=builder /out/bin/sccache /usr/local/cargo/bin/sccache
 
 # Copy precompiled .ts resources from resources stage
 COPY --from=resources /src/resources /src/resources
 
+RUN mkdir -p ${SCCACHE_DIR} \
+ && chmod 777 ${SCCACHE_DIR}
+
 # Quick sanity
 RUN chmod +x  /usr/local/cargo/bin/trunk \
               /usr/local/cargo/bin/wasm-bindgen \
-              /usr/local/cargo/bin/cargo-chef
+              /usr/local/cargo/bin/cargo-chef \
+              /usr/local/cargo/bin/sccache
 
 RUN trunk --version \
  && wasm-bindgen --version \
- && cargo-chef --version
+ && cargo-chef --version \
+ && sccache --version
 

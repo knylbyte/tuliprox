@@ -31,6 +31,7 @@ ARG TARGETPLATFORM
 ARG RUST_TARGET
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+ENV SCCACHE_DIR=/var/cache/sccache
 
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
 # - amd64  -> x86_64-unknown-linux-musl
@@ -99,18 +100,25 @@ FROM chef AS backend-builder
 
 WORKDIR /src
 
+ENV SCCACHE_DIR=/var/cache/sccache
 ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 
-RUN set -eux; \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=${SCCACHE_DIR},sharing=locked \
+    set -eux; \
     cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json
 
 # Build the actual backend (cargo will leverage the cooked deps)
 COPY . .
 
-RUN cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=${SCCACHE_DIR},sharing=locked \
+    cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 
 # =============================================================================
 # Stage 4: frontend-planner (cargo-chef prepare for WASM)
@@ -158,12 +166,17 @@ RUN set -eux; \
 # =============================================================================
 FROM chef AS frontend-builder
 
+ENV SCCACHE_DIR=/var/cache/sccache
+
 WORKDIR /src
 
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 
-RUN set -eux; \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=${SCCACHE_DIR},sharing=locked \
+    set -eux; \
     cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
 COPY frontend ./frontend
@@ -171,8 +184,12 @@ COPY shared   ./shared
 
 # Build the actual frontend (Trunk will leverage the cooked deps)
 WORKDIR /src/frontend
-RUN set -eux; \
-    trunk build --release 
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=${SCCACHE_DIR},sharing=locked \
+    set -eux; \
+    trunk build --release
 
 # dist -> /src/frontend/dist
 
