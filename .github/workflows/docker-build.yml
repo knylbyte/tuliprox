@@ -98,7 +98,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   build-tools-prebuild:
-    name: Build tuliprox-build-tools (if needed)
+    name: Build tuliprox-build-tools
     needs: prebuilds
     runs-on: ubuntu-24.04
 
@@ -241,6 +241,10 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
             arch_tag: linux-arm64
+          # temporarily disabled because of long build times
+          # - platform: linux/arm/v7
+          #   runner: ubuntu-24.04-arm
+          #   arch_tag: linux-armv7
     outputs:
       plan: ${{ steps.export.outputs.plan }}
       tags: ${{ steps.export.outputs.tags }}
