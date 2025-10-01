@@ -447,7 +447,7 @@ fn collect_tag_attributes(e: &BytesStart, is_channel: bool, is_program: bool) ->
                 if value.is_empty() {
                     None
                 } else if (is_channel && key == EPG_ATTRIB_ID) || (is_program && key == EPG_ATTRIB_CHANNEL) {
-                    Some((key, value.to_lowercase().clone()))
+                    Some((key, value.to_lowercase()))
                 } else {
                     Some((key, value.to_string()))
                 }
