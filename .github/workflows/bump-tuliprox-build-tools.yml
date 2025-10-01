@@ -21,7 +21,6 @@ jobs:
       FILES: |
         docker/ci.Dockerfile
         docker/build-tools/tuliprox-build-tools.Dockerfile
-      CHANGELOG: CHANGELOG.md
       UA: "tuliprox-bot/1.0 (+https://github.com/${{ github.repository_owner }}/tuliprox)"
       PREBUILD_WORKFLOW_FILE: docker-build-tuliprox-build-tools.yml
     steps:
@@ -142,6 +141,7 @@ jobs:
           trunk_latest="$(get_crate_version trunk)"
           wasm_latest="$(get_crate_version wasm-bindgen-cli)"
           chef_latest="$(get_crate_version cargo-chef)"
+          sccache_latest="$(get_crate_version sccache)"
 
           if [[ -z "${trunk_latest:-}" || "$trunk_latest" == "null" ]]; then
             echo "ok=false" >> "$GITHUB_OUTPUT"
@@ -161,6 +161,12 @@ jobs:
             exit 1
           fi
 
+          if [[ -z "${sccache_latest:-}" || "$sccache_latest" == "null" ]]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "Failed to resolve latest sccache version" >&2
+            exit 1
+          fi
+
           latest_json="$(jq -cn \
             --arg rust "$latest_tag" \
             --arg rust_semver "$latest_semver" \
@@ -169,12 +175,14 @@ jobs:
             --arg trunk "$trunk_latest" \
             --arg wasm "$wasm_latest" \
             --arg chef "$chef_latest" \
+            --arg sccache "$sccache_latest" \
             '{
               RUST_DISTRO: {latest: $rust, semver: $rust_semver, distro: $rust_distro, display: "RUST_DISTRO"},
               ALPINE_VER: {latest: $alpine, display: "ALPINE_VER"},
               CARGO_CHEF_VER: {latest: $chef, display: "CARGO_CHEF_VER"},
               TRUNK_VER: {latest: $trunk, display: "TRUNK_VER"},
-              BINDGEN_VER: {latest: $wasm, display: "WASM_VER"}
+              BINDGEN_VER: {latest: $wasm, display: "WASM_VER"},
+              SCCACHE_VER: {latest: $sccache, display: "SCCACHE_VER"}
             }'
           )"
 
@@ -184,11 +192,12 @@ jobs:
           echo "rust_distro=$latest_distro" >> "$GITHUB_OUTPUT"
           echo "alpine=$alpine_ver" >> "$GITHUB_OUTPUT"
           echo "chef=$chef_latest" >> "$GITHUB_OUTPUT"
+          echo "sccache=$sccache_latest" >> "$GITHUB_OUTPUT"
           echo "trunk=$trunk_latest" >> "$GITHUB_OUTPUT"
           echo "wasm=$wasm_latest" >> "$GITHUB_OUTPUT"
           echo "latest_json=$latest_json" >> "$GITHUB_OUTPUT"
 
-      - name: Update build files and changelog
+      - name: Update build files
         id: update
         env:
           LATEST_JSON: ${{ steps.resolve.outputs.latest_json }}
@@ -200,7 +209,6 @@ jobs:
           from pathlib import Path
 
           files = [line.strip() for line in os.environ.get("FILES", "").splitlines() if line.strip()]
-          changelog_path = Path(os.environ.get("CHANGELOG", "CHANGELOG.md"))
           latest = json.loads(os.environ["LATEST_JSON"])
 
           deps = {
@@ -209,6 +217,7 @@ jobs:
             "CARGO_CHEF_VER": {"display": "CARGO_CHEF_VER", "aliases": ["CARGO_CHEF_VER"]},
             "TRUNK_VER": {"display": "TRUNK_VER", "aliases": ["TRUNK_VER"]},
             "BINDGEN_VER": {"display": "WASM_VER", "aliases": ["BINDGEN_VER", "WASM_VER"]},
+            "SCCACHE_VER": {"display": "SCCACHE_VER", "aliases": ["SCCACHE_VER"]},
           }
 
           file_texts = {}
@@ -316,74 +325,19 @@ jobs:
           for path in modified_files:
             Path(path).write_text(file_texts[path])
 
-          changelog_updated = False
-          order = [deps_key for deps_key in deps.keys()]
-          if any(changes[dep]["updated"] for dep in order):
-            if changelog_path.exists():
-              changelog_lines = changelog_path.read_text().splitlines()
-            else:
-              changelog_lines = []
-
-            header = "## Tuliprox build tools"
-            if header not in changelog_lines:
-              # Ensure header exists near top (after existing title if present)
-              if changelog_lines and changelog_lines[0].startswith("# "):
-                insert_idx = 1
-                changelog_lines.insert(insert_idx, "")
-                changelog_lines.insert(insert_idx + 1, header)
-                changelog_lines.insert(insert_idx + 2, "")
-              else:
-                changelog_lines.extend([header, ""])
-            else:
-              # Guarantee a blank line after the header for readability
-              idx = changelog_lines.index(header)
-              if idx + 1 >= len(changelog_lines) or changelog_lines[idx + 1].strip():
-                changelog_lines.insert(idx + 1, "")
-
-            header_idx = changelog_lines.index(header)
-            section_end = header_idx + 1
-            while section_end < len(changelog_lines) and not changelog_lines[section_end].startswith("## ") and not changelog_lines[section_end].startswith("# "):
-              section_end += 1
-
-            entry_indices = {}
-            for idx in range(header_idx + 1, section_end):
-              line = changelog_lines[idx]
-              match = re.match(r"-\s+([A-Z0-9_]+):", line)
-              if match:
-                entry_indices[match.group(1)] = idx
-
-            for dep in order:
-              if not changes[dep]["updated"]:
-                continue
-              display = changes[dep]["display"]
-              old = changes[dep]["current"] or "n/a"
-              new = changes[dep]["latest"] or "n/a"
-              entry = f"- {display}: `{old}` ➜ `{new}`"
-              if display in entry_indices:
-                changelog_lines[entry_indices[display]] = entry
-              else:
-                changelog_lines.insert(section_end, entry)
-                section_end += 1
-              changelog_updated = True
-
-            if changelog_updated:
-              changelog_path.write_text("\n".join(changelog_lines).rstrip("\n") + "\n")
-              modified_files.add(str(changelog_path))
-
           outputs = {
             "any_updated": any(changes[dep]["updated"] for dep in changes),
             "changes": changes,
-            "changelog_updated": changelog_updated,
             "modified_files": sorted(modified_files),
             "missing_detected": missing_detected,
           }
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
             fh.write(f"any_updated={'true' if outputs['any_updated'] else 'false'}\n")
-            fh.write(f"changelog_updated={'true' if outputs['changelog_updated'] else 'false'}\n")
             fh.write(f"missing_detected={'true' if outputs['missing_detected'] else 'false'}\n")
-            fh.write("changes_json=" + json.dumps(outputs["changes"], separators=(",", ":")) + "\n")
-            fh.write("modified_files_json=" + json.dumps(outputs["modified_files"], separators=(",", ":")) + "\n")
+            fh.write("changes_json=" + json.dumps(outputs["changes"], separators=(',', ':')) + "\n")
+            fh.write("modified_files_json=" + json.dumps(outputs["modified_files"], separators=(',', ':')) + "\n")
+
 
       - name: Build tuliprox build tools image
         id: build
@@ -402,7 +356,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git checkout -- $FILES "$CHANGELOG"
+          git checkout -- $FILES
           echo "reverted=true" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push changes
@@ -412,7 +366,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add $FILES "$CHANGELOG"
+          git add $FILES
           git commit -m "chore(build-tools): refresh tuliprox build tool versions"
           git push origin "HEAD:${{ matrix.target_branch }}"
 
@@ -462,7 +416,7 @@ jobs:
             sections.append("- Unable to resolve rust metadata ❌")
 
           sections.append("\n### 📦 Dependency updates")
-          dependency_order = ["RUST_DISTRO", "ALPINE_VER", "CARGO_CHEF_VER", "TRUNK_VER", "BINDGEN_VER"]
+          dependency_order = ["RUST_DISTRO", "ALPINE_VER", "CARGO_CHEF_VER", "SCCACHE_VER", "TRUNK_VER", "BINDGEN_VER"]
 
           file_entries = {}
           file_order = []
