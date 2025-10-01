@@ -19,7 +19,7 @@ jobs:
         target_branch: [ develop ]
     env:
       FILES: |
-        docker/Dockerfile
+        docker/ci.Dockerfile
         docker/build-tools/tuliprox-build-tools.Dockerfile
       CHANGELOG: CHANGELOG.md
       UA: "tuliprox-bot/1.0 (+https://github.com/${{ github.repository_owner }}/tuliprox)"
