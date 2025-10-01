@@ -32,7 +32,7 @@ permissions:
 
 env:
   GHCR_NS: ghcr.io/${{ github.repository }}
-  DOCKERFILE: docker/Dockerfile
+  DOCKERFILE: docker/ci.Dockerfile
 
 jobs:
   prebuilds:
