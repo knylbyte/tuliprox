@@ -1,17 +1,20 @@
 # Changelog
 # 3.1.7 (2025-09-xx)
-- Added Dark / Bright theme switch
-- Resource proxy retries failed requests up to three times and honors the `Retry-After` header (or waits 100 ms as a fallback) to reduce transient HTTP 400, 408, 425, 429 and all 5xx statuses errors observed by clients.
-- Added `accept_unsecure_ssl_certificate` to `config.yml`. Necessary if pictures are served over https without valid ssl cert.
-- Using tmdbid for VOD from get_vod_streams if available, which makes using resolve_vod for STRM generation not necessary.
-- File length problem with strm generation fixed.
-- Series name empty paren problem fixed.
-- Default sort removed
-- Reconnect on WebSocket disconnect, WebSocket connection status icon in WEB-UI
-- Added a Playlist EPG view with timeline, channels, active “now” line, and program details.
-- New sidebar entry and icon for quick access to EPG.
-- EPG data can be fetched from selected targets.
-
+- Added Dark/Bright theme switch
+- Resource proxy retries failed requests up to three times and respects the `Retry-After` header (falls back to 100 ms wait)
+to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
+- Added `accept_insecure_ssl_certificates` option in `config.yml` (for serving images over HTTPS without a valid SSL certificate)
+- VOD streams now use tmdbid from `get_vod_streams` if available, removing the need for `resolve_vod` in STRM generation
+- Fixed file length issue in STRM generation
+- Fixed empty parentheses issue in series names
+- Removed default sorting
+- WebSocket now reconnects on disconnect; added WebSocket connection status icon in Web UI
+- Added Playlist EPG view with timeline, channels, `now` line, and program details
+- EPG data can now be fetched from selected targets and custom URLs
+- Faster, more reliable EPG loading via streaming and asynchronous processing, with reduced memory usage and better support for large or compressed guides.
+- Invalid EPG text data fix
+- Added new sidebar entry and icon for quick EPG access
+- Added CBOR (binary JSON) support for large API data
 
 # 3.1.6 (2025-09-01)
 - EPG Config View added

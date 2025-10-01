@@ -387,7 +387,7 @@ pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
         .redirect(reqwest::redirect::Policy::limited(10))
         .pool_idle_timeout(Duration::from_secs(30))
         .pool_max_idle_per_host(10)
-        .danger_accept_invalid_certs(config.accept_unsecure_ssl_certificates);
+        .danger_accept_invalid_certs(config.accept_insecure_ssl_certificates);
 
 
     if let Some(proxy_cfg) = config.proxy.as_ref() {
