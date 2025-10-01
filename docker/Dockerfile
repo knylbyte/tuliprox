@@ -10,7 +10,7 @@
 # -----------------------------------------------------------------
 # Stage 1: Build the Rust binary for production
 # -----------------------------------------------------------------
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main AS rust-build
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5 AS rust-build
 
 # Get target architecture
 ARG RUST_TARGET
@@ -49,7 +49,7 @@ RUN cargo build -p tuliprox --target $RUST_TARGET --release
 # -----------------------------------------------------------------
 # Stage 2: Build the rust frontend
 # -----------------------------------------------------------------
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main AS trunk-build
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5 AS trunk-build
 
 ARG RUST_TARGET=wasm32-unknown-unknown
 
