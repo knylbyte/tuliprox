@@ -499,7 +499,7 @@ async fn process_playlist_for_target(app_config: &AppConfig,
         processed_fetched_playlists.push(processed_fpl);
     }
     step.tick("filter rename map");
-    let (new_epg, mut new_playlist) = process_epg(&mut processed_fetched_playlists);
+    let (new_epg, mut new_playlist) = process_epg(&mut processed_fetched_playlists).await;
     step.tick("epg");
 
     if new_playlist.is_empty() {
@@ -552,14 +552,14 @@ async fn trakt_playlist(client: &Arc<Client>, target: &ConfigTarget, errors: &mu
     true
 }
 
-fn process_epg(processed_fetched_playlists: &mut Vec<FetchedPlaylist>) -> (Vec<Epg>, Vec<PlaylistGroup>) {
+async fn process_epg(processed_fetched_playlists: &mut Vec<FetchedPlaylist<'_>>) -> (Vec<Epg>, Vec<PlaylistGroup>) {
     let mut new_playlist = vec![];
     let mut new_epg = vec![];
 
     // each fetched playlist can have its own epgl url.
     // we need to process each input epg.
     for fp in processed_fetched_playlists {
-        process_playlist_epg(fp, &mut new_epg);
+        process_playlist_epg(fp, &mut new_epg).await;
         new_playlist.append(&mut fp.playlistgroups);
     }
     (new_epg, new_playlist)

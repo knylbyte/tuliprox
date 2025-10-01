@@ -22,7 +22,7 @@ axum = { version = "0.8" , features = ["macros", "default", "ws"]}
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "auth", "fs", "compression-full", "trace"] }
 tower_governor = { version = "0.8", features = ["axum"] }
-jsonwebtoken = "9.3"
+jsonwebtoken = { version = "10.0", features = ["rust_crypto"] }
 rust-argon2 = "3"
 futures = "0.3"
 path-clean = "1.0"
@@ -48,7 +48,7 @@ tokio = { version = "1.47", features = ["rt-multi-thread", "parking_lot", "fs"] 
 #tracing = "0.1"
 #tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tokio-util = "0.7"
-tempfile = "3.22"
+tempfile = "3.23"
 ruzstd = "0.8"
 filetime = "0.2"
 strsim = "0.11"
@@ -63,7 +63,7 @@ dashmap = "6.1"
 hyper = "1.7"
 hyper-util = "0.1"
 socket2 = { version = "0.6", features = ["all"] }
-async-compression = "0"
+async-compression = { version = "0.4", features = ["tokio"] }
 #[cfg(target_os = "macos")]
 libc = "0.2"
 #[cfg(target_os = "windows")]

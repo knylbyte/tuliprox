@@ -1,11 +1,9 @@
 use crate::model::{Epg, TVGuide, XmlTag, XmlTagIcon, EPG_ATTRIB_CHANNEL, EPG_ATTRIB_ID, EPG_TAG_CHANNEL, EPG_TAG_DISPLAY_NAME, EPG_TAG_ICON, EPG_TAG_PROGRAMME, EPG_TAG_TV};
 use crate::model::{EpgSmartMatchConfig, PersistedEpgSource};
 use crate::processing::processor::epg::EpgIdCache;
-use crate::utils::compressed_file_reader::CompressedFileReader;
 use dashmap::DashMap;
 use deunicode::deunicode;
 use quick_xml::events::{BytesStart, BytesText, Event};
-use quick_xml::Reader;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use shared::model::EpgNamePrefix;
 use shared::utils::CONSTANTS;
@@ -14,6 +12,8 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::mem;
 use std::sync::{Mutex};
+use tokio::io::AsyncRead;
+use crate::utils::compressed_file_reader_async::CompressedFileReaderAsync;
 
 /// Splits a string at the first delimiter if the prefix matches a known country code.
 ///
@@ -63,7 +63,7 @@ fn name_prefix<'a>(name: &'a str, smart_config: &EpgSmartMatchConfig) -> (&'a st
 fn combine(join: &str, left: &str, right: &str) -> String {
     let mut combined = String::with_capacity(left.len() + join.len() + right.len());
     combined.push_str(left);
-    combined.push('.');
+    combined.push_str(join);
     combined.push_str(right);
     combined
 }
@@ -254,8 +254,8 @@ impl TVGuide {
     ///     assert!(!epg.children.is_empty());
     /// }
     /// ```
-    fn process_epg_file(id_cache: &mut EpgIdCache, epg_source: &PersistedEpgSource) -> Option<Epg> {
-        match CompressedFileReader::new(&epg_source.file_path) {
+    async fn process_epg_file(id_cache: &mut EpgIdCache<'_>, epg_source: &PersistedEpgSource) -> Option<Epg> {
+        match CompressedFileReaderAsync::new(&epg_source.file_path).await {
             Ok(mut reader) => {
                 let mut children: Vec<XmlTag> = vec![];
                 let mut tv_attributes: Option<HashMap<String, String>> = None;
@@ -298,7 +298,7 @@ impl TVGuide {
                     }
                 };
 
-                parse_tvguide(&mut reader, &mut filter_tags);
+                parse_tvguide(&mut reader, &mut filter_tags).await;
 
                 if children.is_empty() {
                     return None;
@@ -315,13 +315,16 @@ impl TVGuide {
         }
     }
 
-    pub fn filter(&self, id_cache: &mut EpgIdCache) -> Option<Vec<Epg>> {
+    pub async fn filter(&self, id_cache: &mut EpgIdCache<'_>) -> Option<Vec<Epg>> {
         if id_cache.channel_epg_id.is_empty() && id_cache.normalized.is_empty() {
             return None;
         }
-        let mut epg_sources: Vec<Epg> = self.get_epg_sources().iter()
-            .filter_map(|epg_source| Self::process_epg_file(id_cache, epg_source))
-            .collect();
+        let mut epg_sources: Vec<Epg> = vec![];
+        for epg_source in self.get_epg_sources() {
+            if let Some(epg) = Self::process_epg_file(id_cache, epg_source).await {
+                epg_sources.push(epg);
+            }
+        }
         epg_sources.sort_by(|a, b| a.priority.cmp(&b.priority));
         Some(epg_sources)
     }
@@ -383,28 +386,36 @@ where
 }
 
 fn handle_text_tag(stack: &mut [XmlTag], e: &BytesText) {
-    if !stack.is_empty() {
+    if let Some(tag) = stack.last_mut() {
         if let Ok(text) = e.decode() {
             let t = text.trim();
             if !t.is_empty() {
-                if let Some(tag) = stack.last_mut() {
-                    tag.value = Some(t.to_string());
-                }
+                let t_fixed: Cow<str> = if t.ends_with('\\') {
+                    let mut owned = t.to_string();
+                    owned.pop();
+                    owned.push('\'');
+                    Cow::Owned(owned)
+                } else {
+                    Cow::Borrowed(t)
+                };
+
+                let old = tag.value.get_or_insert_with(String::new);
+                old.push_str(&t_fixed);
             }
         }
     }
 }
 
-pub fn parse_tvguide<R, F>(content: R, callback: &mut F)
+pub async fn parse_tvguide<R, F>(content: R, callback: &mut F)
 where
-    R: std::io::BufRead,
+    R: AsyncRead + Unpin,
     F: FnMut(XmlTag),
 {
     let mut stack: Vec<XmlTag> = vec![];
-    let mut reader = Reader::from_reader(content);
+    let mut xml_reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(content));
     let mut buf = Vec::<u8>::new();
     loop {
-        match reader.read_event_into(&mut buf) {
+        match xml_reader.read_event_into_async(&mut buf).await {
             Ok(Event::Eof) => break,
             Ok(Event::Start(e)) => handle_tag_start(callback, &mut stack, &e),
             Ok(Event::Empty(e)) => {
@@ -436,7 +447,7 @@ fn collect_tag_attributes(e: &BytesStart, is_channel: bool, is_program: bool) ->
                 if value.is_empty() {
                     None
                 } else if (is_channel && key == EPG_ATTRIB_ID) || (is_program && key == EPG_ATTRIB_CHANNEL) {
-                    Some((key, value.to_lowercase().clone()))
+                    Some((key, value.to_lowercase()))
                 } else {
                     Some((key, value.to_string()))
                 }
@@ -518,7 +529,11 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::EpgSmartMatchConfig;
+    use std::borrow::Cow;
+    use std::collections::{HashSet};
+    use std::io;
+    use std::path::PathBuf;
+    use crate::model::{EpgSmartMatchConfig, PersistedEpgSource, TVGuide};
     use crate::processing::parser::xmltv::normalize_channel_name;
 
     #[test]
@@ -537,24 +552,30 @@ mod tests {
     }
 
 
-    // #[test]
-    // fn parse_test() -> io::Result<()> {
-    //     let file_path = PathBuf::from("/tmp/epg.xml.gz");
-    //
-    //     if file_path.exists() {
-    //         let tv_guide = TVGuide { file: file_path };
-    //
-    //         let mut channel_ids = HashSet::from(["channel.1".to_string(), "channel.2".to_string(), "channel.3".to_string()]);
-    //         let mut nomalized = HashMap::new();
-    //         match tv_guide.filter(&mut channel_ids, &mut nomalized) {
-    //             None => assert!(false, "No epg filtered"),
-    //             Some(epg) => {
-    //                 assert_eq!(epg.children.len(), channel_ids.len() * 2, "Epg size does not match")
-    //             }
-    //         }
-    //     }
-    //     Ok(())
-    // }
+    #[test]
+    fn parse_test() -> io::Result<()> {
+        //let file_path = PathBuf::from("/tmp/epg.xml.gz");
+        let file_path = PathBuf::from("/tmp/invalid_epg.xml");
+
+        if file_path.exists() {
+            let tv_guide = TVGuide::new(vec![PersistedEpgSource { file_path, priority: 0, logo_override: false }]);
+
+            let mut id_cache = EpgIdCache::new(None);
+            id_cache.channel_epg_id.insert(Cow::Owned("342".to_string()));
+            //id_cache.collect_epg_id(fp);
+
+            let channel_ids = HashSet::from(["342".to_string()]);
+            match tv_guide.filter(&mut id_cache) {
+                None => assert!(false, "No epg filtered"),
+                Some(epgs) => {
+                    for epg in epgs {
+                        assert_eq!(epg.children.len(), channel_ids.len() * 2, "Epg size does not match")
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     /// Tests normalization of channel names with various prefixes, suffixes, and special characters using a configured `EpgSmartMatchConfig`.
@@ -580,6 +601,7 @@ mod tests {
 
     use rphonetic::{Encoder, Metaphone};
     use shared::model::{EpgNamePrefix, EpgSmartMatchConfigDto};
+    use crate::processing::processor::epg::EpgIdCache;
 
     #[test]
     /// Demonstrates phonetic encoding (Metaphone) of normalized channel names with various prefixes and suffixes.
@@ -612,4 +634,5 @@ mod tests {
         println!("{}", metaphone.encode(&normalize_channel_name("BU | ODISEA ᵁᴴᴰ ³⁸⁴⁰ᴾ", &epg_smart_cfg)));
         println!("{}", metaphone.encode(&normalize_channel_name("BG | ODISEA ᵁᴴᴰ ³⁸⁴⁰ᴾ", &epg_smart_cfg)));
     }
+
 }
