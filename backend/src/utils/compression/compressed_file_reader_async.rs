@@ -45,6 +45,7 @@ impl AsyncRead for CompressedFileReaderAsync {
         Pin::new(&mut self.reader).poll_read(cx, buf)
     }
 }
+
 //
 // impl AsyncBufRead for CompressedFileReaderAsync {
 //     fn poll_fill_buf(

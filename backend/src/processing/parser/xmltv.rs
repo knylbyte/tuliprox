@@ -63,7 +63,7 @@ fn name_prefix<'a>(name: &'a str, smart_config: &EpgSmartMatchConfig) -> (&'a st
 fn combine(join: &str, left: &str, right: &str) -> String {
     let mut combined = String::with_capacity(left.len() + join.len() + right.len());
     combined.push_str(left);
-    combined.push('.');
+    combined.push_str(join);
     combined.push_str(right);
     combined
 }

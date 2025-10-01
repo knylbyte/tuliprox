@@ -159,16 +159,18 @@ fn serve_epg_with_timeshift(
                     }
 
                     // Write the modified start event
-                    xml_writer
-                        .write_event_async(Event::Start(elem)).await
-                        .expect("Failed to write event");
+                    if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
+                        error!("Failed to write Start event: {e}");
+                        break;
+                    }
                 }
                 Ok(Event::Eof) => break, // End of file
                 Ok(event) => {
                     // Write any other event as is
-                    xml_writer
-                        .write_event_async(event).await
-                        .expect("Failed to write event");
+                    if let Err(e) = xml_writer.write_event_async(event).await {
+                        error!("Failed to write event: {e}");
+                        break;
+                    }
                 }
                 Err(e) => {
                     error!("Error: {e}");
