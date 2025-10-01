@@ -1,0 +1,538 @@
+---
+name: Bump tuliprox build tools
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target_branch: [ develop ]
+    env:
+      FILES: |
+        docker/Dockerfile
+        docker/build-tools/tuliprox-build-tools.Dockerfile
+      CHANGELOG: CHANGELOG.md
+      UA: "tuliprox-bot/1.0 (+https://github.com/${{ github.repository_owner }}/tuliprox)"
+      PREBUILD_WORKFLOW_FILE: docker-build-tuliprox-build-tools.yml
+    steps:
+      - name: Checkout ${{ matrix.target_branch }}
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.target_branch }}
+          fetch-depth: 0
+
+      - name: Install jq, curl, and Docker tooling helpers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Resolve latest dependency versions
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Fetch all tags from Docker Hub (paginated) with retries and headers
+          fetch_tags() {
+            local url="https://registry.hub.docker.com/v2/repositories/library/rust/tags?page_size=100"
+            while [ -n "$url" ]; do
+              local page
+              page="$(curl -fsSL \
+                -H "User-Agent: $UA" \
+                -H "Accept: application/json" \
+                --retry 3 --retry-delay 2 --retry-connrefused \
+                "$url")"
+              echo "$page" | jq -r '.results[] | [.name, .digest] | @tsv'
+              url="$(echo "$page" | jq -r '.next')"
+              [ "$url" = "null" ] && url=""
+            done
+          }
+
+          latest_page="$(curl -fsSL \
+            -H "User-Agent: $UA" \
+            -H "Accept: application/json" \
+            --retry 3 --retry-delay 2 --retry-connrefused \
+            "https://registry.hub.docker.com/v2/repositories/library/rust/tags/latest")"
+          latest_digest="$(echo "$latest_page" | jq -r '.digest')"
+          if [[ -z "${latest_digest:-}" || "$latest_digest" == "null" ]]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "Failed to resolve rust:latest digest" >&2
+            exit 1
+          fi
+
+          mapfile -t candidates < <(
+            fetch_tags \
+            | awk -F"\t" -v d="$latest_digest" '$2==d {print $1}' \
+            | grep -E '^[0-9]+(\.[0-9]+){1,2}-[a-z0-9]+$' \
+            | grep -Ev '(alpine|slim)' || true
+          )
+
+          if (( ${#candidates[@]} == 0 )); then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "No rust tags found for digest $latest_digest" >&2
+            exit 1
+          fi
+
+          latest_line="$(
+            printf '%s\n' "${candidates[@]}" \
+            | awk -F- '{print $1 "|" $0}' \
+            | sort -t"|" -k1,1Vr -k2,2 \
+            | head -n1
+          )"
+
+          latest_tag="${latest_line#*|}"
+          latest_semver="${latest_line%%|*}"
+          latest_distro="${latest_tag#${latest_semver}-}"
+
+          if [[ -z "${latest_tag:-}" ]]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "Failed to determine latest rust semver/distro pair" >&2
+            exit 1
+          fi
+
+          # Fetch all tags from Docker Hub (paginated) with retries and headers
+          fetch_tags_alpine() {
+            local url="https://registry.hub.docker.com/v2/repositories/library/alpine/tags?page_size=100"
+            while [ -n "$url" ]; do
+              local page
+              page="$(curl -fsSL \
+                -H "User-Agent: $UA" \
+                -H "Accept: application/json" \
+                --retry 3 --retry-delay 2 --retry-connrefused \
+                "$url")"
+              echo "$page" | jq -r '.results[].name'
+              url="$(echo "$page" | jq -r '.next')"
+              [ "$url" = "null" ] && url=""
+            done
+          }
+
+          alpine_ver="$(
+            fetch_tags_alpine \
+            | grep -E '^[0-9]+(\.[0-9]+){1,2}$' \
+            | sort -Vr \
+            | head -n1 || true
+          )"
+
+          if [[ -z "${alpine_ver:-}" ]]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "Failed to resolve latest alpine version" >&2
+            exit 1
+          fi
+
+          get_crate_version() {
+            local crate="$1"
+            curl -fsSL \
+              -H "User-Agent: $UA" \
+              -H "Accept: application/json" \
+              --retry 3 --retry-delay 2 --retry-connrefused \
+              "https://crates.io/api/v1/crates/${crate}" \
+            | jq -r '.crate.max_stable_version'
+          }
+
+          trunk_latest="$(get_crate_version trunk)"
+          wasm_latest="$(get_crate_version wasm-bindgen-cli)"
+          chef_latest="$(get_crate_version cargo-chef)"
+
+          if [[ -z "${trunk_latest:-}" || "$trunk_latest" == "null" ]]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "Failed to resolve latest trunk version" >&2
+            exit 1
+          fi
+
+          if [[ -z "${wasm_latest:-}" || "$wasm_latest" == "null" ]]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "Failed to resolve latest wasm-bindgen-cli version" >&2
+            exit 1
+          fi
+
+          if [[ -z "${chef_latest:-}" || "$chef_latest" == "null" ]]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "Failed to resolve latest cargo-chef version" >&2
+            exit 1
+          fi
+
+          latest_json="$(jq -cn \
+            --arg rust "$latest_tag" \
+            --arg rust_semver "$latest_semver" \
+            --arg rust_distro "$latest_distro" \
+            --arg alpine "$alpine_ver" \
+            --arg trunk "$trunk_latest" \
+            --arg wasm "$wasm_latest" \
+            --arg chef "$chef_latest" \
+            '{
+              RUST_DISTRO: {latest: $rust, semver: $rust_semver, distro: $rust_distro, display: "RUST_DISTRO"},
+              ALPINE_VER: {latest: $alpine, display: "ALPINE_VER"},
+              CARGO_CHEF_VER: {latest: $chef, display: "CARGO_CHEF_VER"},
+              TRUNK_VER: {latest: $trunk, display: "TRUNK_VER"},
+              BINDGEN_VER: {latest: $wasm, display: "WASM_VER"}
+            }'
+          )"
+
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+          echo "rust_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+          echo "rust_semver=$latest_semver" >> "$GITHUB_OUTPUT"
+          echo "rust_distro=$latest_distro" >> "$GITHUB_OUTPUT"
+          echo "alpine=$alpine_ver" >> "$GITHUB_OUTPUT"
+          echo "chef=$chef_latest" >> "$GITHUB_OUTPUT"
+          echo "trunk=$trunk_latest" >> "$GITHUB_OUTPUT"
+          echo "wasm=$wasm_latest" >> "$GITHUB_OUTPUT"
+          echo "latest_json=$latest_json" >> "$GITHUB_OUTPUT"
+
+      - name: Update build files and changelog
+        id: update
+        env:
+          LATEST_JSON: ${{ steps.resolve.outputs.latest_json }}
+        shell: python
+        run: |
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          files = [line.strip() for line in os.environ.get("FILES", "").splitlines() if line.strip()]
+          changelog_path = Path(os.environ.get("CHANGELOG", "CHANGELOG.md"))
+          latest = json.loads(os.environ["LATEST_JSON"])
+
+          deps = {
+            "RUST_DISTRO": {"display": "RUST_DISTRO", "aliases": ["RUST_DISTRO"]},
+            "ALPINE_VER": {"display": "ALPINE_VER", "aliases": ["ALPINE_VER"]},
+            "CARGO_CHEF_VER": {"display": "CARGO_CHEF_VER", "aliases": ["CARGO_CHEF_VER"]},
+            "TRUNK_VER": {"display": "TRUNK_VER", "aliases": ["TRUNK_VER"]},
+            "BINDGEN_VER": {"display": "WASM_VER", "aliases": ["BINDGEN_VER", "WASM_VER"]},
+          }
+
+          file_texts = {}
+          file_exists = {}
+          for path in files:
+            p = Path(path)
+            if p.exists():
+              file_texts[path] = p.read_text()
+              file_exists[path] = True
+            else:
+              file_texts[path] = None
+              file_exists[path] = False
+
+          changes = {}
+          modified_files = set()
+          missing_detected = False
+
+          for dep, meta in deps.items():
+            display = meta["display"]
+            latest_info = latest.get(dep, {})
+            latest_value = (latest_info.get("latest") or "").strip()
+            current_value = None
+            occurrences = []
+            missing_entries = []
+            missing_arg_candidates = []
+
+            for path in files:
+              if not file_exists[path]:
+                missing_entries.append({"file": path, "reason": "file missing"})
+                continue
+
+              content = file_texts[path]
+              found_alias = None
+              found_values = []
+              for alias in meta["aliases"]:
+                pattern = re.compile(rf"^ARG\s+{alias}=(\S+)$", re.MULTILINE)
+                matches = list(pattern.finditer(content))
+                if matches:
+                  found_alias = alias
+                  for match in matches:
+                    value = match.group(1).strip()
+                    found_values.append(value)
+                    occurrences.append({"file": path, "arg": alias, "value": value})
+                  break
+
+              if found_alias is None:
+                missing_arg_candidates.append(path)
+                continue
+
+              if found_values:
+                current_value = current_value or found_values[0]
+
+            if not occurrences and missing_arg_candidates:
+              missing_entries.extend([{"file": path, "reason": "arg not found"} for path in missing_arg_candidates])
+
+            updated_files = []
+            file_update_tracker = {}
+            if latest_value and occurrences:
+              needs_update = any(occ["value"] != latest_value for occ in occurrences)
+              if needs_update:
+                for occ in occurrences:
+                  path = occ["file"]
+                  alias = occ["arg"]
+                  content = file_texts[path]
+                  pattern = re.compile(rf"^ARG\s+{alias}=.*$", re.MULTILINE)
+                  new_line = f"ARG {alias}={latest_value}"
+                  new_content, count = pattern.subn(new_line, content)
+                  if count > 0 and new_content != content:
+                    file_texts[path] = new_content
+                    modified_files.add(path)
+                    updated_files.append(path)
+                    file_update_tracker[path] = latest_value
+
+            details = []
+            seen_detail_files = set()
+            for occ in occurrences:
+              path = occ["file"]
+              if path in seen_detail_files:
+                continue
+              seen_detail_files.add(path)
+              previous = occ["value"]
+              new_value = file_update_tracker.get(path, previous)
+              details.append({
+                "file": path,
+                "arg": occ["arg"],
+                "previous": previous,
+                "new": new_value,
+                "updated": previous != new_value,
+              })
+
+            changes[dep] = {
+              "display": display,
+              "latest": latest_value,
+              "current": current_value or "",
+              "updated": bool(updated_files),
+              "files": sorted({occ["file"] for occ in occurrences}),
+              "updated_files": sorted(set(updated_files)),
+              "details": details,
+              "missing": missing_entries,
+            }
+
+            if missing_entries:
+              missing_detected = True
+
+          for path in modified_files:
+            Path(path).write_text(file_texts[path])
+
+          changelog_updated = False
+          order = [deps_key for deps_key in deps.keys()]
+          if any(changes[dep]["updated"] for dep in order):
+            if changelog_path.exists():
+              changelog_lines = changelog_path.read_text().splitlines()
+            else:
+              changelog_lines = []
+
+            header = "## Tuliprox build tools"
+            if header not in changelog_lines:
+              # Ensure header exists near top (after existing title if present)
+              if changelog_lines and changelog_lines[0].startswith("# "):
+                insert_idx = 1
+                changelog_lines.insert(insert_idx, "")
+                changelog_lines.insert(insert_idx + 1, header)
+                changelog_lines.insert(insert_idx + 2, "")
+              else:
+                changelog_lines.extend([header, ""])
+            else:
+              # Guarantee a blank line after the header for readability
+              idx = changelog_lines.index(header)
+              if idx + 1 >= len(changelog_lines) or changelog_lines[idx + 1].strip():
+                changelog_lines.insert(idx + 1, "")
+
+            header_idx = changelog_lines.index(header)
+            section_end = header_idx + 1
+            while section_end < len(changelog_lines) and not changelog_lines[section_end].startswith("## ") and not changelog_lines[section_end].startswith("# "):
+              section_end += 1
+
+            entry_indices = {}
+            for idx in range(header_idx + 1, section_end):
+              line = changelog_lines[idx]
+              match = re.match(r"-\s+([A-Z0-9_]+):", line)
+              if match:
+                entry_indices[match.group(1)] = idx
+
+            for dep in order:
+              if not changes[dep]["updated"]:
+                continue
+              display = changes[dep]["display"]
+              old = changes[dep]["current"] or "n/a"
+              new = changes[dep]["latest"] or "n/a"
+              entry = f"- {display}: `{old}` ➜ `{new}`"
+              if display in entry_indices:
+                changelog_lines[entry_indices[display]] = entry
+              else:
+                changelog_lines.insert(section_end, entry)
+                section_end += 1
+              changelog_updated = True
+
+            if changelog_updated:
+              changelog_path.write_text("\n".join(changelog_lines).rstrip("\n") + "\n")
+              modified_files.add(str(changelog_path))
+
+          outputs = {
+            "any_updated": any(changes[dep]["updated"] for dep in changes),
+            "changes": changes,
+            "changelog_updated": changelog_updated,
+            "modified_files": sorted(modified_files),
+            "missing_detected": missing_detected,
+          }
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+            fh.write(f"any_updated={'true' if outputs['any_updated'] else 'false'}\n")
+            fh.write(f"changelog_updated={'true' if outputs['changelog_updated'] else 'false'}\n")
+            fh.write(f"missing_detected={'true' if outputs['missing_detected'] else 'false'}\n")
+            fh.write("changes_json=" + json.dumps(outputs["changes"], separators=(",", ":")) + "\n")
+            fh.write("modified_files_json=" + json.dumps(outputs["modified_files"], separators=(",", ":")) + "\n")
+
+      - name: Build tuliprox build tools image
+        id: build
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          docker build \
+            --progress plain \
+            -f docker/build-tools/tuliprox-build-tools.Dockerfile \
+            .
+
+      - name: Revert changes after failed build
+        id: revert
+        if: steps.build.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout -- $FILES "$CHANGELOG"
+          echo "reverted=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push changes
+        if: steps.update.outputs.any_updated == 'true' && steps.build.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add $FILES "$CHANGELOG"
+          git commit -m "chore(build-tools): refresh tuliprox build tool versions"
+          git push origin "HEAD:${{ matrix.target_branch }}"
+
+      - name: Trigger tuliprox build tools workflow
+        id: trigger
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh workflow run "${PREBUILD_WORKFLOW_FILE}" -r "${{ matrix.target_branch }}"; then
+            echo "triggered=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚠️ Failed to trigger ${PREBUILD_WORKFLOW_FILE}" >&2
+            echo "triggered=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          LATEST_JSON: ${{ steps.resolve.outputs.latest_json }}
+          CHANGES_JSON: ${{ steps.update.outputs.changes_json }}
+          BUILD_STATUS: ${{ steps.build.outcome }}
+          TRIGGER_STATUS: ${{ steps.trigger.outputs.triggered }}
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          latest = json.loads(os.environ.get("LATEST_JSON", "{}"))
+          changes = json.loads(os.environ.get("CHANGES_JSON", "{}"))
+
+          branch = os.environ.get("MATRIX_TARGET_BRANCH", "${{ matrix.target_branch }}")
+
+          sections = []
+          sections.append(f"## 🧰 Tuliprox build tools bump — branch `{branch}`")
+
+          rust = latest.get("RUST_DISTRO", {})
+          sections.append("### 🦀 Rust distribution")
+          if rust:
+            sections.append(f"- Latest tag: `{rust.get('latest', 'n/a')}`")
+            sections.append(f"  - Semver: `{rust.get('semver', 'n/a')}`")
+            sections.append(f"  - Distro: `{rust.get('distro', 'n/a')}`")
+          else:
+            sections.append("- Unable to resolve rust metadata ❌")
+
+          sections.append("\n### 📦 Dependency updates")
+          dependency_order = ["RUST_DISTRO", "ALPINE_VER", "CARGO_CHEF_VER", "TRUNK_VER", "BINDGEN_VER"]
+
+          file_entries = {}
+          file_order = []
+
+          def ensure_file(path: str):
+            if path not in file_entries:
+              file_entries[path] = []
+              file_order.append(path)
+
+          for key in dependency_order:
+            info = changes.get(key)
+            if not info:
+              continue
+
+            display = info.get("display", key)
+            latest_val = info.get("latest") or "n/a"
+
+            for detail in info.get("details") or []:
+              file_path = detail.get("file", "unknown")
+              ensure_file(file_path)
+              previous = detail.get("previous") or "n/a"
+              new_value = detail.get("new") or latest_val
+              is_updated = bool(detail.get("updated"))
+              icon = "🆙" if is_updated else "✅"
+              file_entries[file_path].append(
+                {
+                  "text": f"- {icon} {display}: `{previous}` -> `{new_value}`",
+                  "order": dependency_order.index(key) if key in dependency_order else len(dependency_order),
+                }
+              )
+
+            for missing in info.get("missing") or []:
+              file_path = missing.get("file", "unknown")
+              ensure_file(file_path)
+              reason = missing.get("reason", "not found")
+              file_entries[file_path].append(
+                {
+                  "text": f"- ❌ {display}: {reason} (expected `{latest_val}`)",
+                  "order": dependency_order.index(key) if key in dependency_order else len(dependency_order),
+                }
+              )
+
+          if not file_entries:
+            sections.append("- ❔ No dependency ARG entries found in tracked files.")
+          else:
+            for file_path in file_order:
+              sections.append(f"#### {file_path}")
+              for entry in sorted(file_entries[file_path], key=lambda item: item["order"]):
+                sections.append(entry["text"])
+
+          build_outcome = os.environ.get("BUILD_STATUS", "${{ steps.build.outcome }}")
+          if build_outcome == "failure":
+            sections.append("\n### 🛑 Build status")
+            sections.append("- ❌ `docker build` failed — reverted to previous versions.")
+          else:
+            sections.append("\n### 🧪 Build status")
+            sections.append("- ✅ `docker build` completed successfully.")
+
+          triggered = os.environ.get("TRIGGER_STATUS", "${{ steps.trigger.outputs.triggered || 'false' }}")
+          sections.append("\n### 🔄 Follow-up workflow")
+          if triggered == "true":
+            sections.append(f"- 🚀 Triggered `{os.environ.get('PREBUILD_WORKFLOW_FILE', 'docker-build-tuliprox-build-tools.yml')}`")
+          else:
+            sections.append(f"- ⚠️ Failed to trigger `{os.environ.get('PREBUILD_WORKFLOW_FILE', 'docker-build-tuliprox-build-tools.yml')}`")
+
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          summary_path.write_text("\n".join(sections) + "\n")
+
+      - name: Fail workflow when build fails
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "Prebuild image build failed; restored previous versions." >&2
+          exit 1
