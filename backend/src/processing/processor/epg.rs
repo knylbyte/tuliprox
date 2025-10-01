@@ -153,11 +153,11 @@ impl EpgIdCache<'_> {
 /// let mut id_cache = EpgIdCache::new(None);
 /// assign_channel_epg(&mut new_epg, &mut playlist, &mut id_cache);
 /// ```
-fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache: &mut EpgIdCache) {
+async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>, id_cache: &mut EpgIdCache<'_>) {
     //id_cache.normalized.retain(|_, v| v.is_some());
     if let Some(tv_guide) = &fp.epg {
         let mut processed_epgs = vec![];
-        if let Some(epg_sources) = tv_guide.filter(id_cache) {
+        if let Some(epg_sources) = tv_guide.filter(id_cache).await {
             let mut icon_assigned = HashSet::new();
             for epg_source in epg_sources {
                 // icon tags
@@ -236,7 +236,7 @@ fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist, id_cache
 /// let mut epg_data = Vec::new();
 /// process_playlist_epg(&mut playlist, &mut epg_data);
 /// ```
-pub fn process_playlist_epg(fp: &mut FetchedPlaylist, epg: &mut Vec<Epg>) {
+pub async fn process_playlist_epg(fp: &mut FetchedPlaylist<'_>, epg: &mut Vec<Epg>) {
     // collect all epg_channel ids
     let mut id_cache = EpgIdCache::new(fp.input.epg.as_ref());
     id_cache.collect_epg_id(fp);
@@ -244,7 +244,7 @@ pub fn process_playlist_epg(fp: &mut FetchedPlaylist, epg: &mut Vec<Epg>) {
     if id_cache.is_empty() && !id_cache.smart_match_enabled {
         debug!("No epg ids found");
     } else {
-        assign_channel_epg(epg, fp, &mut id_cache);
+        assign_channel_epg(epg, fp, &mut id_cache).await;
     }
 }
 

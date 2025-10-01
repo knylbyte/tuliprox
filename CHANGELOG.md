@@ -11,6 +11,7 @@ to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
 - WebSocket now reconnects on disconnect; added WebSocket connection status icon in Web UI
 - Added Playlist EPG view with timeline, channels, `now` line, and program details
 - EPG data can now be fetched from selected targets and custom URLs
+- Invalid EPG text data fix
 - Added new sidebar entry and icon for quick EPG access
 - Added CBOR (binary JSON) support for large API data
 

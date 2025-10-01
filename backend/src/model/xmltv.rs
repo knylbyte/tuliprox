@@ -191,6 +191,18 @@ pub async fn parse_xmltv_for_web_ui_from_url(app_state: &Arc<AppState>, url: &st
     }
 }
 
+fn concat_text(t1: &String, t2: &str) -> String {
+    if t1.is_empty() {
+        t2.to_string()
+    } else if t1.ends_with('\\') {
+        let mut t = t1.to_string();
+        t.pop();
+        format!("{t}'{t2}")
+    } else {
+        format!("{t1}{t2}")
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Result<EpgTv, TuliproxError> {
 
@@ -286,14 +298,14 @@ async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Resul
                     let text = decoded.trim();
                     if !text.is_empty() {
                         if let Some(channel) = &mut current_channel {
-                            if current_tag == EPG_TAG_DISPLAY_NAME && channel.title.is_empty() {
-                                channel.title = text.to_string();
+                            if current_tag == EPG_TAG_DISPLAY_NAME {
+                                channel.title = concat_text(&channel.title, text);
                             }
                         }
 
                         if let Some(program) = &mut current_programme {
-                            if current_tag == "title" && program.title.is_empty() {
-                                program.title = text.to_string();
+                            if current_tag == "title" {
+                                program.title = concat_text(&program.title, text);
                             }
                         }
                     }
