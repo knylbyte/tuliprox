@@ -1,0 +1,280 @@
+---
+name: Docker Build & Push tuliprox-build-tools (prebuild)
+
+on:
+  workflow_dispatch:
+    inputs:
+      trunk_ver:
+        description: "trunk version"
+        required: false
+      bindgen_ver:
+        description: "wasm-bindgen-cli version"
+        required: false
+      cargo_chef_ver:
+        description: "cargo-chef version"
+        required: false
+      alpine_ver:
+        description: "Alpine version for resources stage"
+        required: false
+
+  push:
+    paths:
+      - .github/workflows/docker-build-tuliprox-build-tools.yml
+      - docker/build-tools/tuliprox-build-tools.Dockerfile
+      - resources/**
+
+concurrency:
+  group: update-rust-wasm-prebuild-image
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/tuliprox-build-tools
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            tag: linux-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            tag: linux-arm64
+          - platform: linux/arm/v7         # build armv7 on arm64 runner (fast cross-compile)
+            runner: ubuntu-24.04-arm
+            tag: linux-armv7
+
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Prepare build args
+        id: build-args
+        shell: bash
+        env:
+          TRUNK_INPUT: ${{ github.event.inputs.trunk_ver }}
+          BINDGEN_INPUT: ${{ github.event.inputs.bindgen_ver }}
+          CHEF_INPUT: ${{ github.event.inputs.cargo_chef_ver }}
+          ALPINE_INPUT: ${{ github.event.inputs.alpine_ver }}
+        run: |
+          set -euo pipefail
+          {
+            echo "value<<EOF"
+            echo "BUILDKIT_INLINE_CACHE=1"
+            if [ -n "${TRUNK_INPUT}" ]; then
+              echo "TRUNK_VER=${TRUNK_INPUT}"
+            fi
+            if [ -n "${BINDGEN_INPUT}" ]; then
+              echo "BINDGEN_VER=${BINDGEN_INPUT}"
+            fi
+            if [ -n "${CHEF_INPUT}" ]; then
+              echo "CARGO_CHEF_VER=${CHEF_INPUT}"
+            fi
+            if [ -n "${ALPINE_INPUT}" ]; then
+              echo "ALPINE_VER=${ALPINE_INPUT}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build and push single-arch image; Dockerfile cross-compiles in the builder stage
+      - name: Build & Push (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/build-tools/tuliprox-build-tools.Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: ${{ steps.build-args.outputs.value }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ matrix.tag }}
+          cache-from: |
+            type=gha,scope=tools-${{ matrix.tag }}
+            type=registry,ref=${{ env.IMAGE }}:${{ matrix.tag }}
+          cache-to: |
+            type=gha,mode=max,scope=tools-${{ matrix.tag }}
+
+      - name: Inspect image
+        run: docker buildx imagetools inspect "${IMAGE}:${{ matrix.tag }}"
+
+      # Pull platform-specific image and read label versions
+      - name: Pull & inspect image labels
+        id: img
+        shell: bash
+        env:
+          IMG: ${{ env.IMAGE }}:${{ matrix.tag }}
+          PLAT: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+
+          # Pull platform-specific image (quiet)
+          set +e
+          PULL_LOG="$(docker pull -q --platform "$PLAT" "$IMG" 2>&1)"
+          RC=$?
+          set -e
+
+          if [ $RC -eq 0 ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "pull_error<<__EOF__"
+              echo "$PULL_LOG"
+              echo "__EOF__"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+          # Read version labels (may be empty)
+          TRUNK="$(docker image inspect -f '{{ index .Config.Labels "io.tuliprox.trunk.version"}}' "$IMG" 2>/dev/null || true)"
+          BINDGEN="$(docker image inspect -f '{{ index .Config.Labels "io.tuliprox.wasm_bindgen.version"}}' "$IMG" 2>/dev/null || true)"
+          CHEF="$(docker image inspect -f '{{ index .Config.Labels "io.tuliprox.cargo_chef.version"}}' "$IMG" 2>/dev/null || true)"
+
+          # Fallback: run inside the image to get cargo-chef version when no label is present
+          if [[ -z "$CHEF" ]]; then
+            set +e
+            OUT="$(docker run --rm --platform "$PLAT" "$IMG" cargo chef --version 2>/dev/null)"
+            RC=$?
+            set -e
+            if [ $RC -eq 0 ] && [[ -n "$OUT" ]]; then
+              # typical format: "cargo-chef 0.1.68"
+              CHEF="$(echo "$OUT" | awk '{print $2}')"
+            fi
+          fi
+
+          check_file () {
+            docker run --rm --platform "$PLAT" "$IMG" sh -lc "test -f \"$1\"" >/dev/null 2>&1
+          }
+
+          RES_DIR="/src/resources"
+          CHANNEL="${RES_DIR}/channel_unavailable.ts"
+          USER_CONN="${RES_DIR}/user_connections_exhausted.ts"
+          PROVIDER_CONN="${RES_DIR}/provider_connections_exhausted.ts"
+          USER_EXPIRED="${RES_DIR}/user_account_expired.ts"
+
+          ALL_OK=true
+
+          if check_file "$CHANNEL"; then echo "channel_unavailable=ok" >> "$GITHUB_OUTPUT"; else echo "channel_unavailable=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+          if check_file "$USER_CONN"; then echo "user_connections_exhausted=ok" >> "$GITHUB_OUTPUT"; else echo "user_connections_exhausted=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+          if check_file "$PROVIDER_CONN"; then echo "provider_connections_exhausted=ok" >> "$GITHUB_OUTPUT"; else echo "provider_connections_exhausted=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+          if check_file "$USER_EXPIRED"; then echo "user_account_expired=ok" >> "$GITHUB_OUTPUT"; else echo "user_account_expired=missing" >> "$GITHUB_OUTPUT"; ALL_OK=false; fi
+
+          echo "resources_ok=$ALL_OK" >> "$GITHUB_OUTPUT"
+          echo "ALPINE_VER=${{ github.event.inputs.alpine_ver || '3.22.1' }}" >> "$GITHUB_OUTPUT"
+
+          echo "trunk_version=${TRUNK:-unknown}"   >> "$GITHUB_OUTPUT"
+          echo "bindgen_version=${BINDGEN:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "chef_version=${CHEF:-unknown}"       >> "$GITHUB_OUTPUT"
+
+
+      # Summary
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## tuliprox-build-tools \`${{ matrix.tag }}\`"
+            echo ""
+            echo "🖼️ Image: \`${{ env.IMAGE }}:${{ matrix.tag }}\`"
+            echo "🧭 Platform: \`${{ matrix.platform }}\`"
+            echo ""
+            if [[ "${{ steps.img.outputs.published }}" == "true" ]]; then
+              echo "✅ Published and pulled"
+            else
+              echo "❌ Not found / pull failed"
+              if [[ -n "${{ steps.img.outputs.pull_error }}" ]]; then
+                echo ""
+                echo "<details><summary>Pull error</summary>"
+                echo ""
+                echo '```'
+                echo "${{ steps.img.outputs.pull_error }}"
+                echo '```'
+                echo "</details>"
+              fi
+            fi
+            echo "🔧 trunk: **${{ steps.img.outputs.trunk_version }}**"
+            echo "🔧 wasm-bindgen: **${{ steps.img.outputs.bindgen_version }}**"
+            echo "🔧 cargo-chef: **${{ steps.img.outputs.chef_version }}**"
+            echo ""
+            echo "🗂️ Resources"
+            echo "- channel_unavailable.ts: $([[ '${{ steps.img.outputs.channel_unavailable }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo "- user_connections_exhausted.ts: $([[ '${{ steps.img.outputs.user_connections_exhausted }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo "- provider_connections_exhausted.ts: $([[ '${{ steps.img.outputs.provider_connections_exhausted }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo "- user_account_expired.ts: $([[ '${{ steps.img.outputs.user_account_expired }}' == 'ok' ]] && echo '✅' || echo '❌')"
+            echo ""
+            echo "📦 Alpine: **${{ steps.img.outputs.ALPINE_VER }}**"
+            echo ""
+            if [[ "${{ steps.img.outputs.resources_ok }}" == "true" && "${{ steps.img.outputs.published }}" == "true" ]]; then
+              echo "🎉 All resource files present."
+            else
+              echo "⚠️ One or more resource files are missing."
+            fi
+            echo ""
+            echo "---"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Set up Buildx (required for imagetools)
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create multi-arch :latest manifest
+        id: create
+        run: |
+          IMAGE="${{ env.IMAGE }}"
+          docker buildx imagetools create \
+            -t "${IMAGE}:latest" \
+            "${IMAGE}:linux-amd64" \
+            "${IMAGE}:linux-arm64" \
+            "${IMAGE}:linux-armv7"
+
+      - name: Inspect :latest manifest
+        run: docker buildx imagetools inspect "${{ env.IMAGE }}:latest"
+
+      # Final summary for the manifest
+      - name: Summary (:latest)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## tuliprox-build-tools \`:latest\` manifest"
+            if [[ "${{ steps.create.outcome }}" == "success" ]]; then
+              echo "✅ Multi-arch manifest created:"
+              echo "- linux-amd64"
+              echo "- linux-arm64"
+              echo "- linux-armv7"
+              echo ""
+              echo "📦 Tag: \`${{ env.IMAGE }}:latest\`"
+            else
+              echo "❌ Failed to create multi-arch \`:latest\` manifest."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

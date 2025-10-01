@@ -1,153 +1,1133 @@
-name: Docker Build and Push
+---
+name: Docker Build & Push tuliprox
 
 on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Final target stage (scratch-final, alpine-final, or debug)"
+        required: false
+        default: scratch-final
+        type: choice
+        options:
+          - scratch-final
+          - alpine-final
+          - debug
   push:
     branches:
       - master
       - develop
+      - 'feature/**'
+      - 'bugfix/**'
+      - 'hotfix/**'
+
+concurrency:
+  group: build-and-pusch-tuliprox
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+  actions: write
+
+env:
+  GHCR_NS: ghcr.io/${{ github.repository }}
+  DOCKERFILE: docker/Dockerfile
 
 jobs:
-  docker-build:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop'
-    
+  prebuilds:
+    name: Ensure prebuilds exist
+    runs-on: ubuntu-24.04
+    outputs:
+      need_build_tools: ${{ steps.check.outputs.need_build_tools }}
+      archs: ${{ steps.arch.outputs.archs }}
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        
-      - name: Set up QEMU
+      - name: Step 1.1 - Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Step 1.2 - Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Step 1.3 - Set arch list
+        id: arch
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "archs=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
+
+      - name: Step 1.4 - Check prebuild availability (all archs)
+        id: check
+        shell: bash
+        env:
+          BUILD_TOOLS_IMAGE: ${{ env.GHCR_NS }}/tuliprox-build-tools
+        run: |
+          set -euo pipefail
+          need_build_tools=false
+          for a in ${{ steps.arch.outputs.archs }}; do
+            if ! docker buildx imagetools inspect "${BUILD_TOOLS_IMAGE}:${a}" >/dev/null 2>&1; then
+              need_build_tools=true
+            fi
+          done
+          echo "need_build_tools=$need_build_tools" >> "$GITHUB_OUTPUT"
+
+      - name: Step 1.5 - Summary (prebuild check)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 🧩 Prebuilds"
+            if [[ "${{ steps.check.outputs.need_build_tools }}" == "true" ]]; then
+              echo "⚠️ tuliprox-build-tools images missing for at least one architecture."
+              echo "- A dedicated build job will run before the Docker build."
+            else
+              echo "✅ All required prebuilds already present."
+            fi
+            echo ""
+            echo "### 📦 Tags checked"
+            for a in ${{ steps.arch.outputs.archs }}; do
+              echo "- \`${{ env.GHCR_NS }}/tuliprox-build-tools:${a}\`"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build-tools-prebuild:
+    name: Build tuliprox-build-tools (if needed)
+    needs: prebuilds
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Step 2.1 - Evaluate requirement
+        id: requirement
+        shell: bash
+        env:
+          NEED_BUILD_TOOLS: ${{ needs.prebuilds.outputs.need_build_tools }}
+        run: |
+          set -euo pipefail
+          if [[ "${NEED_BUILD_TOOLS}" == "true" ]]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ tuliprox-build-tools images already present." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Step 2.2 - Login to GHCR
+        if: steps.requirement.outputs.required == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Step 2.3 - Ensure prebuild workflow is running
+        if: steps.requirement.outputs.required == 'true'
+        id: ensure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          wf="docker-build-tuliprox-build-tools.yml"
+
+          existing="$(gh run list --workflow "$wf" --limit 10 --json databaseId,status -q 'map(select(.status == "in_progress" or .status == "queued")) | .[0].databaseId')"
+          if [[ -n "${existing:-}" && "${existing}" != "null" ]]; then
+            echo "🔁 Found existing run #${existing} for $wf" >&2
+            echo "run_id=${existing}" >> "$GITHUB_OUTPUT"
+            echo "triggered=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "⏳ Triggering workflow: $wf" >&2
+          gh workflow run "$wf"
+          sleep 3
+
+          run_id="$(gh run list --workflow "$wf" --limit 1 --json databaseId -q '.[0].databaseId')"
+          if [[ -z "${run_id:-}" || "${run_id}" == "null" ]]; then
+            echo "Failed to detect run for $wf" >&2
+            exit 1
+          fi
+
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "triggered=true" >> "$GITHUB_OUTPUT"
+
+      - name: Step 2.4 - Wait for prebuild workflow
+        if: steps.requirement.outputs.required == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="${{ steps.ensure.outputs.run_id }}"
+          if [[ -z "${run_id:-}" ]]; then
+            echo "No workflow run id returned" >&2
+            exit 1
+          fi
+          echo "🔎 Waiting for run #${run_id} to finish" >&2
+          gh run watch "$run_id" --exit-status
+
+      - name: Step 2.5 - Verify tuliprox-build-tools tags
+        if: steps.requirement.outputs.required == 'true'
+        shell: bash
+        env:
+          BUILD_TOOLS_IMAGE: ${{ env.GHCR_NS }}/tuliprox-build-tools
+        run: |
+          set -euo pipefail
+          archs="${{ needs.prebuilds.outputs.archs }}"
+
+          for i in $(seq 1 60); do
+            missing=0
+            for a in $archs; do
+              docker buildx imagetools inspect "${BUILD_TOOLS_IMAGE}:${a}" >/dev/null 2>&1 || missing=1
+            done
+            if [[ $missing -eq 0 ]]; then
+              echo "✅ All prebuild tags are available."
+              exit 0
+            fi
+            echo "… waiting for prebuild tags to appear (try $i/60)"
+            sleep 10
+          done
+
+          echo "❌ Timeout waiting for prebuild images" >&2
+          exit 1
+
+      - name: Step 2.6 - Summary (tuliprox-build-tools)
+        if: always()
+        shell: bash
+        env:
+          REQUIRED: ${{ steps.requirement.outputs.required }}
+          RUN_ID: ${{ steps.ensure.outputs.run_id }}
+          TRIGGERED: ${{ steps.ensure.outputs.triggered }}
+          ARCHS: ${{ needs.prebuilds.outputs.archs }}
+        run: |
+          archs="${ARCHS}"
+          {
+            echo "## 🛠️ tuliprox-build-tools"
+            echo ""
+            if [[ "${REQUIRED}" == "true" ]]; then
+              if [[ "${TRIGGERED}" == "true" ]]; then
+                echo "✅ Triggered workflow run #${RUN_ID} to build missing images."
+              else
+                echo "🔁 Reused existing workflow run #${RUN_ID} and waited for completion."
+              fi
+              echo ""
+              echo "### 📦 Tags confirmed"
+              for a in $archs; do
+                echo "- \`${{ env.GHCR_NS }}/tuliprox-build-tools:${a}\`"
+              done
+            else
+              echo "✅ No rebuild required; all expected tags already present."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build & Publish
+    needs:
+      - prebuilds
+      - build-tools-prebuild
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch_tag: linux-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch_tag: linux-arm64
+    outputs:
+      plan: ${{ steps.export.outputs.plan }}
+      tags: ${{ steps.export.outputs.tags }}
+      arches: ${{ steps.export.outputs.arches }}
+      display_tags: ${{ steps.export.outputs.display_tags }}
+      tag_aliases: ${{ steps.export.outputs.tag_aliases }}
+
+    steps:
+      - name: Step 2.1 - Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Step 2.2 - Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: linux/amd64,linux/arm64
-      
-      - name: Set up Docker Buildx
+          platforms: ${{ matrix.platform }}
+
+      - name: Step 2.3 - Set up Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          platforms: linux/amd64,linux/arm64
-          
-      - name: Create and use multi-platform builder
-        run: |
-          docker buildx create --name multiarch --use --bootstrap
-          docker buildx inspect multiarch
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,wasm32-unknown-unknown
-          
-      - name: Cache cargo tools
-        id: cache-tools
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-tools-v1
-          restore-keys: |
-            ${{ runner.os }}-cargo-tools-
+          platforms: ${{ matrix.platform }}
 
-      - name: Install cross
-        run: |
-          if ! command -v cross &> /dev/null; then
-            cargo install cross --git https://github.com/cross-rs/cross
-          fi
+      - name: Step 2.4 - Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install trunk
-        run: |
-          if ! command -v trunk &> /dev/null; then
-            cargo install trunk
-          fi
-
-      - name: Install wasm-bindgen-cli
-        run: |
-          if ! command -v wasm-bindgen &> /dev/null; then
-            cargo install wasm-bindgen-cli
-          fi
-
-      - name: Cache cargo registry and dependencies
-        id: cache-cargo-deps
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
-            backend/target
-            frontend/target
-            shared/target
-          key: ${{ runner.os }}-cargo-deps-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-deps-${{ hashFiles('**/Cargo.lock') }}-
-            ${{ runner.os }}-cargo-deps-
-      
-      - name: Cache Docker buildx
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-      
-      - name: Cache frontend dist
-        id: cache-frontend
-        uses: actions/cache@v4
-        with:
-          path: frontend/dist
-          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/**/*', 'shared/**/*') }}-${{ hashFiles('frontend/Cargo.toml', 'frontend/Trunk.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-frontend-
-      
-      - name: Cache cross-compilation tools
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cross
-            ~/.rustup/toolchains/*/lib/rustlib/x86_64-unknown-linux-musl
-            ~/.rustup/toolchains/*/lib/rustlib/aarch64-unknown-linux-musl
-          key: ${{ runner.os }}-cross-${{ hashFiles('**/Cargo.lock') }}-v2
-          restore-keys: |
-            ${{ runner.os }}-cross-
-      
-      - name: Cache built resources
-        id: cache-resources
-        uses: actions/cache@v4
-        with:
-          path: |
-            resources/*.ts
-          key: ${{ runner.os }}-resources-${{ hashFiles('resources/*.jpg') }}-v1
-          restore-keys: |
-            ${{ runner.os }}-resources-
-      
-      - name: Install ffmpeg (only if resources not cached)
-        if: steps.cache-resources.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-      
-      - name: Extract branch name
+      # --- Read version from CHANGELOG.md ---
+      - name: Step 2.5 - Read version
+        id: version
         shell: bash
-        run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
-        id: extract_branch
-      
-      - name: Create GHCR token file
         run: |
-          mkdir -p $HOME
-          echo "GHCR_IO_TOKEN=${{ secrets.GHCR_IO_TOKEN }}" > $HOME/.ghcr.io
-      
-      - name: Make build script executable
-        run: chmod +x ./bin/build_docker.sh
-      
-      - name: Build and push Docker images
+          set -euo pipefail
+          ver="$(grep -Eom1 '^# [0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | awk '{print $2}')"
+          if [[ -z "${ver:-}" ]]; then
+            echo "Failed to parse version from CHANGELOG.md" >&2
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      # --- Decide plan and tags ---
+      - name: Step 2.6 - Decide plan
+        id: plan
+        shell: bash
         env:
-          FRONTEND_CACHE_HIT: ${{ steps.cache-frontend.outputs.cache-hit }}
-          CARGO_DEPS_CACHE_HIT: ${{ steps.cache-cargo-deps.outputs.cache-hit }}
-          BUILDX_CACHE_FROM: type=local,src=/tmp/.buildx-cache
-          BUILDX_CACHE_TO: type=local,dest=/tmp/.buildx-cache-new,mode=max
-        run: ./bin/build_docker.sh ${{ steps.extract_branch.outputs.branch }}
-      
-      - name: Move buildx cache
+          VERSION: ${{ steps.version.outputs.version }}
+          TARGET_INPUT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target || '' }}
         run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
+          set -euo pipefail
+
+          ref="${GITHUB_REF_NAME}"
+          ver="${VERSION}"
+          target_input="${TARGET_INPUT:-}"
+
+          detect_parent_branch() {
+            local best_branch=""
+            local best_ts=-1
+
+            for candidate in develop master; do
+              if ! git show-ref --verify --quiet "refs/remotes/origin/${candidate}"; then
+                continue
+              fi
+              if ! mb=$(git merge-base HEAD "origin/${candidate}"); then
+                continue
+              fi
+              if ! ts=$(git show -s --format=%ct "$mb" 2>/dev/null); then
+                continue
+              fi
+              if (( ts > best_ts )); then
+                best_branch="$candidate"
+                best_ts=$ts
+              fi
+            done
+
+            if [[ -z "$best_branch" ]]; then
+              best_branch="develop"
+            fi
+
+            printf '%s' "$best_branch"
+          }
+
+          sanitize_tag() {
+            local value="$1"
+            value="${value// /-}"
+            printf '%s' "${value//[^[:alnum:]._-]/-}"
+          }
+
+          derive_cache_tag() {
+            local plan="$1"
+            local variant="$2"
+
+            case "$plan" in
+              master)
+                if [[ "$variant" == "scratch" ]]; then
+                  printf '%s' "latest"
+                else
+                  printf '%s' ""
+                fi
+                ;;
+              dev)
+                if [[ "$variant" == "alpine" ]]; then
+                  printf '%s' "dev"
+                elif [[ "$variant" == "scratch" ]]; then
+                  printf '%s' "dev-slim"
+                else
+                  printf '%s' ""
+                fi
+                ;;
+              *)
+                printf '%s' ""
+                ;;
+            esac
+          }
+
+          write_list_file() {
+            local -n arr_ref=$1
+            if [[ ${#arr_ref[@]} -eq 0 ]]; then
+              printf '%s' ""
+              return 0
+            fi
+            local path
+            path="$(mktemp)"
+            : > "$path"
+            for item in "${arr_ref[@]}"; do
+              printf '%s\n' "$item" >> "$path"
+            done
+            printf '%s' "$path"
+          }
+
+          declare -a primary_tags=()
+          declare -a secondary_tags=()
+          declare -a manifest_tags=()
+
+          plan=""
+          target=""
+          cache_base_branch=""
+          cache_base_plan=""
+          primary_variant=""
+          primary_stage=""
+          primary_cache_tag=""
+          secondary_variant=""
+          secondary_stage=""
+          secondary_cache_tag=""
+
+          case "$ref" in
+            master)
+              primary_variant="scratch"
+              primary_stage="scratch-final"
+              primary_tags+=("latest" "$ver")
+              manifest_tags+=("latest" "$ver")
+              primary_cache_tag="latest"
+              target="$primary_stage"
+              plan="master"
+              cache_base_branch="develop"
+              cache_base_plan="dev"
+              ;;
+            develop)
+              primary_variant="scratch"
+              primary_stage="scratch-final"
+              primary_tags+=("dev-slim" "dev-slim@$ver")
+              secondary_variant="alpine"
+              secondary_stage="alpine-final"
+              secondary_tags+=("dev" "dev@$ver")
+              manifest_tags+=("dev-slim" "dev-slim@$ver" "dev" "dev@$ver")
+              primary_cache_tag="dev-slim"
+              secondary_cache_tag="dev"
+              target="both-dev"
+              plan="dev"
+              cache_base_branch="develop"
+              cache_base_plan="dev"
+              ;;
+            feature/*)
+              name="${ref#feature/}"
+              safe="$(sanitize_tag "$name")"
+              primary_variant="alpine"
+              primary_stage="alpine-final"
+              primary_tags+=("feature-$safe")
+              manifest_tags+=("feature-$safe")
+              primary_cache_tag="feature-$safe"
+              target="$primary_stage"
+              plan="feature"
+              cache_base_branch="$(detect_parent_branch)"
+              ;;
+            bugfix/*)
+              name="${ref#bugfix/}"
+              safe="$(sanitize_tag "$name")"
+              primary_variant="alpine"
+              primary_stage="alpine-final"
+              primary_tags+=("bugfix-$safe")
+              manifest_tags+=("bugfix-$safe")
+              primary_cache_tag="bugfix-$safe"
+              target="$primary_stage"
+              plan="bugfix"
+              cache_base_branch="$(detect_parent_branch)"
+              ;;
+            hotfix/*)
+              name="${ref#hotfix/}"
+              safe="$(sanitize_tag "$name")"
+              primary_variant="alpine"
+              primary_stage="alpine-final"
+              primary_tags+=("hotfix-$safe")
+              manifest_tags+=("hotfix-$safe")
+              primary_cache_tag="hotfix-$safe"
+              target="$primary_stage"
+              plan="hotfix"
+              cache_base_branch="$(detect_parent_branch)"
+              ;;
+            *)
+              echo "Unsupported branch '$ref'." >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ ${#manifest_tags[@]} -eq 0 ]]; then
+            for item in "${primary_tags[@]}"; do
+              manifest_tags+=("$item")
+            done
+            for item in "${secondary_tags[@]}"; do
+              manifest_tags+=("$item")
+            done
+          fi
+
+          if [[ -z "$primary_cache_tag" && ${#primary_tags[@]} -gt 0 ]]; then
+            primary_cache_tag="${primary_tags[0]}"
+          fi
+
+          if [[ -z "$secondary_cache_tag" && ${#secondary_tags[@]} -gt 0 ]]; then
+            secondary_cache_tag="${secondary_tags[0]}"
+          fi
+
+          if [[ -z "$cache_base_plan" && -n "$cache_base_branch" ]]; then
+            case "$cache_base_branch" in
+              master) cache_base_plan="master" ;;
+              develop) cache_base_plan="dev" ;;
+            esac
+          fi
+
+          if [[ "$cache_base_plan" == "$plan" ]]; then
+            cache_base_plan=""
+          fi
+
+          if [[ -n "$target_input" ]]; then
+            target="$target_input"
+          fi
+
+          primary_file="$(write_list_file primary_tags)"
+          secondary_file="$(write_list_file secondary_tags)"
+          manifest_file="$(write_list_file manifest_tags)"
+
+          cache_base_primary_tag=""
+          cache_base_secondary_tag=""
+
+          if [[ -n "$cache_base_plan" && -n "$primary_variant" ]]; then
+            cache_base_primary_tag="$(derive_cache_tag "$cache_base_plan" "$primary_variant")"
+          fi
+
+          if [[ -n "$cache_base_plan" && -n "$secondary_variant" ]]; then
+            cache_base_secondary_tag="$(derive_cache_tag "$cache_base_plan" "$secondary_variant")"
+          fi
+
+          echo "plan=$plan" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "tags_file=$manifest_file" >> "$GITHUB_OUTPUT"
+          echo "primary_stage=$primary_stage" >> "$GITHUB_OUTPUT"
+          echo "primary_tags_file=$primary_file" >> "$GITHUB_OUTPUT"
+          echo "primary_cache_tag=$primary_cache_tag" >> "$GITHUB_OUTPUT"
+          echo "secondary_stage=$secondary_stage" >> "$GITHUB_OUTPUT"
+          echo "secondary_tags_file=$secondary_file" >> "$GITHUB_OUTPUT"
+          echo "secondary_cache_tag=$secondary_cache_tag" >> "$GITHUB_OUTPUT"
+          echo "resolved_branch=$ref" >> "$GITHUB_OUTPUT"
+          echo "cache_base_branch=$cache_base_branch" >> "$GITHUB_OUTPUT"
+          echo "cache_base_plan=$cache_base_plan" >> "$GITHUB_OUTPUT"
+          echo "cache_base_primary_tag=$cache_base_primary_tag" >> "$GITHUB_OUTPUT"
+          echo "cache_base_secondary_tag=$cache_base_secondary_tag" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "dispatch_simulated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dispatch_simulated=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --- Detect new version (only to decide Release later; tagging happens after build) ---
+      - name: Step 2.7 - Detect new version (master only)
+        id: newver
+        if: steps.plan.outputs.plan == 'master'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="${{ steps.version.outputs.version }}"
+          git fetch --tags --quiet
+          if git rev-parse -q --verify "refs/tags/v${ver}" >/dev/null; then
+            echo "is_new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --- Prepare metadata for primary image ---
+      - name: Step 2.8 - Prepare primary image metadata (${{ matrix.platform }})
+        id: primary_meta
+        shell: bash
+        env:
+          TAGS_FILE: ${{ steps.plan.outputs.primary_tags_file }}
+          CACHE_TAG: ${{ steps.plan.outputs.primary_cache_tag }}
+          CACHE_BASE_TAG: ${{ steps.plan.outputs.cache_base_primary_tag }}
+          ARCH: ${{ matrix.arch_tag }}
+          NS: ${{ env.GHCR_NS }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CACHE_TAG}" ]]; then
+            echo "Primary cache tag is empty" >&2
+            exit 1
+          fi
+
+          tags_tmp="$(mktemp)"
+          : > "$tags_tmp"
+
+          sanitize_segment() {
+            local value="$1"
+            value="${value// /-}"
+            printf '%s' "${value//[^[:alnum:]._-]/-}"
+          }
+
+          add_tag() {
+            local raw="$1"
+            raw="${raw// }"
+            [[ -n "$raw" ]] || return 0
+
+            local base="$raw"
+            local version=""
+
+            if [[ "$raw" == *@* ]]; then
+              base="${raw%%@*}"
+              version="${raw#*@}"
+            fi
+
+            base="$(sanitize_segment "$base")"
+            [[ -n "$base" ]] || return 0
+
+            printf '%s:%s-%s\n' "$NS" "$base" "$ARCH" >> "$tags_tmp"
+
+            if [[ -n "${version}" ]]; then
+              version="$(sanitize_segment "$version")"
+              [[ -n "$version" ]] || return 0
+              printf '%s:%s-%s-%s\n' "$NS" "$base" "$version" "$ARCH" >> "$tags_tmp"
+            fi
+          }
+
+          if [[ -n "${TAGS_FILE}" && -s "${TAGS_FILE}" ]]; then
+            while IFS= read -r tag; do
+              add_tag "$tag"
+            done < "${TAGS_FILE}"
+          fi
+
+          if [[ ! -s "$tags_tmp" ]]; then
+            echo "No primary tags computed" >&2
+            exit 1
+          fi
+
+          sort -u "$tags_tmp" -o "$tags_tmp"
+
+          {
+            echo "tags<<EOF"
+            cat "$tags_tmp"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "cache_from<<EOF"
+            if [[ -n "${CACHE_BASE_TAG}" ]]; then
+              echo "type=gha,scope=image-${CACHE_BASE_TAG}-${ARCH}"
+            fi
+            echo "type=gha,scope=image-${CACHE_TAG}-${ARCH}"
+            if [[ -n "${CACHE_BASE_TAG}" ]]; then
+              echo "type=registry,ref=${NS}:${CACHE_BASE_TAG}-${ARCH}"
+            fi
+            echo "type=registry,ref=${NS}:${CACHE_TAG}-${ARCH}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "cache_to<<EOF"
+            echo "type=gha,mode=max,scope=image-${CACHE_TAG}-${ARCH}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # --- Build primary variant ---
+      - name: Step 2.9 - Build primary image (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          platforms: ${{ matrix.platform }}
+          push: true
+          build-args: |
+            GHCR_NS=${{ env.GHCR_NS }}
+            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
+          target: ${{ steps.plan.outputs.primary_stage }}
+          tags: ${{ steps.primary_meta.outputs.tags }}
+        # cache-from/to defined below to avoid blank lines when base cache missing
+          cache-from: ${{ steps.primary_meta.outputs.cache_from }}
+          cache-to: ${{ steps.primary_meta.outputs.cache_to }}
+
+      # --- Prepare metadata for secondary image (if any) ---
+      - name: Step 2.10 - Prepare secondary image metadata (${{ matrix.platform }})
+        if: steps.plan.outputs.secondary_stage != ''
+        id: secondary_meta
+        shell: bash
+        env:
+          TAGS_FILE: ${{ steps.plan.outputs.secondary_tags_file }}
+          CACHE_TAG: ${{ steps.plan.outputs.secondary_cache_tag }}
+          CACHE_BASE_TAG: ${{ steps.plan.outputs.cache_base_secondary_tag }}
+          ARCH: ${{ matrix.arch_tag }}
+          NS: ${{ env.GHCR_NS }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CACHE_TAG}" ]]; then
+            echo "Secondary cache tag is empty" >&2
+            exit 1
+          fi
+
+          tags_tmp="$(mktemp)"
+          : > "$tags_tmp"
+
+          sanitize_segment() {
+            local value="$1"
+            value="${value// /-}"
+            printf '%s' "${value//[^[:alnum:]._-]/-}"
+          }
+
+          add_tag() {
+            local raw="$1"
+            raw="${raw// }"
+            [[ -n "$raw" ]] || return 0
+
+            local base="$raw"
+            local version=""
+
+            if [[ "$raw" == *@* ]]; then
+              base="${raw%%@*}"
+              version="${raw#*@}"
+            fi
+
+            base="$(sanitize_segment "$base")"
+            [[ -n "$base" ]] || return 0
+
+            printf '%s:%s-%s\n' "$NS" "$base" "$ARCH" >> "$tags_tmp"
+
+            if [[ -n "${version}" ]]; then
+              version="$(sanitize_segment "$version")"
+              [[ -n "$version" ]] || return 0
+              printf '%s:%s-%s-%s\n' "$NS" "$base" "$version" "$ARCH" >> "$tags_tmp"
+            fi
+          }
+
+          if [[ -n "${TAGS_FILE}" && -s "${TAGS_FILE}" ]]; then
+            while IFS= read -r tag; do
+              add_tag "$tag"
+            done < "${TAGS_FILE}"
+          fi
+
+          if [[ ! -s "$tags_tmp" ]]; then
+            echo "No secondary tags computed" >&2
+            exit 1
+          fi
+
+          sort -u "$tags_tmp" -o "$tags_tmp"
+
+          {
+            echo "tags<<EOF"
+            cat "$tags_tmp"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "cache_from<<EOF"
+            if [[ -n "${CACHE_BASE_TAG}" ]]; then
+              echo "type=gha,scope=image-${CACHE_BASE_TAG}-${ARCH}"
+            fi
+            echo "type=gha,scope=image-${CACHE_TAG}-${ARCH}"
+            if [[ -n "${CACHE_BASE_TAG}" ]]; then
+              echo "type=registry,ref=${NS}:${CACHE_BASE_TAG}-${ARCH}"
+            fi
+            echo "type=registry,ref=${NS}:${CACHE_TAG}-${ARCH}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "cache_to<<EOF"
+            echo "type=gha,mode=max,scope=image-${CACHE_TAG}-${ARCH}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # --- Build secondary variant ---
+      - name: Step 2.11 - Build secondary image (${{ matrix.platform }})
+        if: steps.plan.outputs.secondary_stage != ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          platforms: ${{ matrix.platform }}
+          push: true
+          build-args: |
+            GHCR_NS=${{ env.GHCR_NS }}
+            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
+          target: ${{ steps.plan.outputs.secondary_stage }}
+          tags: ${{ steps.secondary_meta.outputs.tags }}
+          cache-from: ${{ steps.secondary_meta.outputs.cache_from }}
+          cache-to: ${{ steps.secondary_meta.outputs.cache_to }}
+
+
+      # --- Export PLAN/TAGS for manifests ---
+      - name: Step 2.12 - Export PLAN/TAGS for manifests
+        id: export
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Read from existing plan step outputs
+          PLAN="${{ steps.plan.outputs.plan }}"
+          TAGS_FILE="${{ steps.plan.outputs.tags_file }}"
+
+          if [[ -z "${PLAN}" ]]; then
+            echo "PLAN is empty"; exit 1
+          fi
+
+          sanitize_segment() {
+            local value="$1"
+            value="${value// /-}"
+            printf '%s' "${value//[^[:alnum:]._-]/-}"
+          }
+
+          declare -a sanitized_list=()
+          declare -a friendly_list=()
+          declare -a alias_list=()
+          declare -A seen_sanitized=()
+          declare -A seen_friendly=()
+          declare -A seen_alias=()
+
+          add_sanitized() {
+            local value="$1"
+            [[ -n "$value" ]] || return 0
+            if [[ -z "${seen_sanitized[$value]:-}" ]]; then
+              sanitized_list+=("$value")
+              seen_sanitized[$value]=1
+            fi
+          }
+
+          add_friendly() {
+            local value="$1"
+            [[ -n "$value" ]] || return 0
+            if [[ -z "${seen_friendly[$value]:-}" ]]; then
+              friendly_list+=("$value")
+              seen_friendly[$value]=1
+            fi
+          }
+
+          add_alias() {
+            local actual="$1"
+            local friendly="$2"
+            [[ -n "$actual" && -n "$friendly" ]] || return 0
+            local key="$actual|$friendly"
+            if [[ -z "${seen_alias[$key]:-}" ]]; then
+              alias_list+=("$actual|$friendly")
+              seen_alias[$key]=1
+            fi
+          }
+
+          if [[ -n "${TAGS_FILE}" && -s "${TAGS_FILE}" ]]; then
+            while IFS= read -r tag; do
+              trimmed="${tag// }"
+              [[ -n "$trimmed" ]] || continue
+
+              add_friendly "$tag"
+
+              base="$tag"
+              version=""
+              if [[ "$tag" == *@* ]]; then
+                base="${tag%%@*}"
+                version="${tag#*@}"
+              fi
+
+              base="$(sanitize_segment "$base")"
+              [[ -n "$base" ]] || continue
+
+              add_sanitized "$base"
+
+              if [[ -n "$version" ]]; then
+                version="$(sanitize_segment "$version")"
+                [[ -n "$version" ]] || continue
+                actual="${base}-${version}"
+                add_sanitized "$actual"
+                add_alias "$actual" "$tag"
+              fi
+            done < "$TAGS_FILE"
+          fi
+
+          if [[ ${#sanitized_list[@]} -gt 0 ]]; then
+            {
+              echo "tags<<EOF"
+              printf '%s\n' "${sanitized_list[@]}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ ${#friendly_list[@]} -gt 0 ]]; then
+            {
+              echo "display_tags<<EOF"
+              printf '%s\n' "${friendly_list[@]}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "display_tags=" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ ${#alias_list[@]} -gt 0 ]]; then
+            {
+              echo "tag_aliases<<EOF"
+              printf '%s\n' "${alias_list[@]}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_aliases=" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Emit PLAN (single-line)
+          echo "plan=${PLAN}" >> "$GITHUB_OUTPUT"
+
+          # Emit ARCHES used for manifests (keep in sync with build matrix)
+          echo "arches=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
+
+      # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
+      - name: Step 2.13 - Extract release notes (master only, new version)
+        id: notes
+        if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="${{ steps.version.outputs.version }}"
+          awk -v ver="$ver" '
+            BEGIN{print_header=0}
+            $0 ~ "^# "ver" " {print_header=1; print; next}
+            print_header && $0 ~ "^# [0-9]+\\.[0-9]+\\.[0-9]+" {exit}
+            print_header {print}
+          ' CHANGELOG.md > release_notes.md
+          echo "notes_file=$PWD/release_notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Step 2.14 - Bump Cargo.toml + tag + release (master only, new version)
+        if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="${{ steps.version.outputs.version }}"
+
+          update_file() {
+            local f="$1"
+            awk -v newv="$ver" '
+              BEGIN{in_pkg=0}
+              /^\[package\]/{in_pkg=1; print; next}
+              /^\[/{in_pkg=0; print; next}
+              in_pkg && /^version *= *"/{
+                sub(/^version *= *".*"$/, "version = \"" newv "\""); print; next
+              }
+              {print}
+            ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          }
+
+          for f in Cargo.toml backend/Cargo.toml frontend/Cargo.toml shared/Cargo.toml; do
+            [[ -f "$f" ]] && update_file "$f"
+          done
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml backend/Cargo.toml frontend/Cargo.toml shared/Cargo.toml || true
+          git commit -m "chore(release): bump to v${ver} [skip ci]" || true
+          git tag -a "v${ver}" -m "v${ver}"
+          git push origin "HEAD:${GITHUB_REF_NAME}" --tags
+
+          gh release create "v${ver}" --title "v${ver}" --notes-file "${{ steps.notes.outputs.notes_file }}"
+
+      # --- Summary ---
+      - name: Step 2.15 - Summary
+        if: always()
+        shell: bash
+        env:
+          SUMMARY_TAGS: ${{ steps.export.outputs.tags }}
+          SUMMARY_TAGS_FRIENDLY: ${{ steps.export.outputs.display_tags }}
+          SUMMARY_TAG_ALIASES: ${{ steps.export.outputs.tag_aliases }}
+          CACHE_BASE_BRANCH: ${{ steps.plan.outputs.cache_base_branch }}
+          PRIMARY_CACHE_TAG: ${{ steps.plan.outputs.primary_cache_tag }}
+          SECONDARY_CACHE_TAG: ${{ steps.plan.outputs.secondary_cache_tag }}
+          CACHE_BASE_PRIMARY_TAG: ${{ steps.plan.outputs.cache_base_primary_tag }}
+          CACHE_BASE_SECONDARY_TAG: ${{ steps.plan.outputs.cache_base_secondary_tag }}
+        run: |
+          {
+            echo "## 🧱 Build & Release Summary"
+            echo ""
+            echo "### 🔖 Version"
+            echo "- From CHANGELOG: **${{ steps.version.outputs.version }}**"
+            echo ""
+            echo "### 🌿 Plan"
+            echo "- Event: **${{ github.event_name }}**"
+            echo "- Branch: **${{ steps.plan.outputs.resolved_branch || github.ref_name }}**"
+            if [[ "${{ steps.plan.outputs.dispatch_simulated }}" == "true" ]]; then
+              echo "- Workflow dispatch simulated branch execution for: **${{ steps.plan.outputs.resolved_branch }}**"
+            fi
+            echo "- Target: **${{ steps.plan.outputs.target }}**"
+            echo ""
+            echo "### 🧩 Prebuilds"
+            printf -- '- Namespace: `%s`\n' "$GHCR_NS"
+            echo "- Checked arch tags: linux-amd64 • linux-arm64 • linux-armv7"
+            echo ""
+            echo "### 🧷 Cache"
+            echo "- GHA cache scopes:" 
+            echo "  - \`image-${PRIMARY_CACHE_TAG}-<arch>\`"
+            if [[ -n "${SECONDARY_CACHE_TAG// }" ]]; then
+              echo "  - \`image-${SECONDARY_CACHE_TAG}-<arch>\`"
+            fi
+            echo "- Registry cache sources:"
+            echo "  - \`${GHCR_NS}:${PRIMARY_CACHE_TAG}-<arch>\`"
+            if [[ -n "${SECONDARY_CACHE_TAG// }" ]]; then
+              echo "  - \`${GHCR_NS}:${SECONDARY_CACHE_TAG}-<arch>\`"
+            fi
+            if [[ -n "${CACHE_BASE_BRANCH:-}" ]]; then
+              echo "- Base branch for cache reuse: **${CACHE_BASE_BRANCH}**"
+            fi
+            if [[ -n "${CACHE_BASE_PRIMARY_TAG// }" || -n "${CACHE_BASE_SECONDARY_TAG// }" ]]; then
+              echo "- Reusing base cache tags:" 
+              if [[ -n "${CACHE_BASE_PRIMARY_TAG// }" ]]; then
+                echo "  - \`${GHCR_NS}:${CACHE_BASE_PRIMARY_TAG}-<arch>\`"
+              fi
+              if [[ -n "${CACHE_BASE_SECONDARY_TAG// }" ]]; then
+                echo "  - \`${GHCR_NS}:${CACHE_BASE_SECONDARY_TAG}-<arch>\`"
+              fi
+            fi
+            echo ""
+            echo "### 🏷️ Final tags"
+            declare -A alias_map=()
+            if [[ -n "${SUMMARY_TAG_ALIASES// }" ]]; then
+              while IFS= read -r pair; do
+                [[ -n "${pair// }" ]] || continue
+                actual="${pair%%|*}"
+                friendly="${pair#*|}"
+                alias_map["$actual"]="$friendly"
+              done <<< "${SUMMARY_TAG_ALIASES}"
+            fi
+
+            if [[ -n "${SUMMARY_TAGS// }" ]]; then
+              while IFS= read -r t; do
+                [[ -n "${t// }" ]] || continue
+                friendly="${alias_map[$t]:-}"
+                if [[ -n "$friendly" && "$friendly" != "$t" ]]; then
+                  printf -- '- `%s:%s` (alias: `%s`)\n' "$GHCR_NS" "$t" "$friendly"
+                else
+                  printf -- '- `%s:%s`\n' "$GHCR_NS" "$t"
+                fi
+              done <<< "${SUMMARY_TAGS}"
+            else
+              echo "↔️ No final tags."
+            fi
+            echo ""
+            if [[ "${{ steps.plan.outputs.plan }}" == "master" ]]; then
+              if [[ "${{ steps.newver.outputs.is_new }}" == "true" ]]; then
+                echo "### 🚀 Release"
+                echo "✨ Performed Cargo.toml bump, git tag and GitHub Release after successful build."
+              else
+                echo "### 🚀 Release"
+                echo "↔️ No new version (tag exists)."
+              fi
+            fi
+            echo ""
+            echo "### 🧭 Platforms"
+            echo "- linux/amd64 • linux/arm64"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  manifests:
+    name: Manifests
+    needs: build
+    runs-on: ubuntu-24.04
+
+    steps:
+      # Keep login/buildx setup minimal and explicit
+      - name: Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: GHCR Login
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Create manifests ---
+      - name: Step 3.1 - Create manifests
+        id: create
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PLAN='${{ needs.build.outputs.plan }}'
+          TAGS_INPUT='${{ needs.build.outputs.tags }}'
+          ARCHES_INPUT='${{ needs.build.outputs.arches }}'
+
+          # Parse multi-line list of tags and space-separated arches
+          readarray -t TAGS <<< "$TAGS_INPUT"
+          read -r -a ARCHES <<< "$ARCHES_INPUT"
+
+          # No tags -> nothing to do
+          if [[ ${#TAGS[@]} -eq 0 || -z "${TAGS[0]// }" ]]; then
+            echo "No tags to publish"; exit 0
+          fi
+
+          make_manifest () {
+            local tag="$1"
+            local src=()
+
+            for arch in "${ARCHES[@]}"; do
+              src+=( "${GHCR_NS}:${tag}-${arch}" )
+            done
+
+            echo "⛏️  Creating manifest ${GHCR_NS}:${tag}"
+            docker buildx imagetools create -t "${GHCR_NS}:${tag}" "${src[@]}"
+          }
+
+          for t in "${TAGS[@]}"; do
+            # Skip blank lines safely
+            [[ -n "${t// }" ]] || continue
+            make_manifest "$t"
+          done
+
+      # --- Final summary for the manifests ---
+      - name: Summary (manifests)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 📚 Multi-arch manifests"
+            echo ""
+            if [[ "${{ steps.create.outcome }}" == "success" ]]; then
+              echo "✅ All requested manifests were created."
+            else
+              echo "❌ Manifest creation encountered an error."
+            fi
+            echo ""
+
+            echo "### 🏷️ Tags"
+            # Reuse outputs for a user-friendly list
+            TAGS_INPUT='${{ needs.build.outputs.tags }}'
+            ALIASES_INPUT='${{ needs.build.outputs.tag_aliases }}'
+
+            declare -A alias_map=()
+            if [[ -n "$ALIASES_INPUT" ]]; then
+              while IFS= read -r pair; do
+                [[ -n "${pair// }" ]] || continue
+                actual="${pair%%|*}"
+                friendly="${pair#*|}"
+                alias_map["$actual"]="$friendly"
+              done <<< "$ALIASES_INPUT"
+            fi
+
+            if [[ -n "$TAGS_INPUT" ]]; then
+              while IFS= read -r line; do
+                [[ -n "${line// }" ]] || continue
+                friendly="${alias_map[$line]:-}"
+                if [[ -n "$friendly" && "$friendly" != "$line" ]]; then
+                  echo "- \`${{ env.GHCR_NS }}:${line}\` (alias: \`$friendly\`)"
+                else
+                  echo "- \`${{ env.GHCR_NS }}:${line}\`"
+                fi
+              done <<< "$TAGS_INPUT"
+            else
+              echo "- (none)"
+            fi
+
+            echo ""
+            echo "### 🧩 Architectures"
+            for a in ${{ needs.build.outputs.arches }}; do
+              echo "- ${a}"
+            done
+
+            echo ""
+            echo "### 📦 Registry"
+            echo "- ghcr.io"
+          } >> "$GITHUB_STEP_SUMMARY"
