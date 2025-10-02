@@ -149,7 +149,8 @@ ARG CARGO_CHEF_VER
 ARG SCCACHE_VER
 ARG SCCACHE_FEATURES
 
-LABEL io.tuliprox.trunk.version="${TRUNK_VER}" \
+LABEL io.tuliprox.rust.version="${RUST_DISTRO%%-*}" \
+      io.tuliprox.trunk.version="${TRUNK_VER}" \
       io.tuliprox.wasm_bindgen.version="${BINDGEN_VER}" \
       io.tuliprox.cargo_chef.version="${CARGO_CHEF_VER}" \
       io.tuliprox.sccache.version="${SCCACHE_VER}"
