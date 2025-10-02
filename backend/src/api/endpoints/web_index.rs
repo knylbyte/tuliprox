@@ -1,23 +1,24 @@
-use crate::api::api_utils::serve_file;
-use crate::api::api_utils::try_unwrap_body;
+// Serve web UI with CSP nonce injection using OS CSPRNG (no OpenSSL).
+use crate::api::api_utils::{serve_file, try_unwrap_body};
 use crate::api::model::AppState;
 use crate::auth::{create_jwt_admin, create_jwt_user, is_admin, verify_password, verify_token, AuthBearer};
+use axum::body::Body;
+use axum::http::Request;
 use axum::response::IntoResponse;
+use base64::Engine;
 use log::error;
 use serde_json::json;
 use shared::model::{TokenResponse, UserCredential, TOKEN_NO_AUTH};
 use shared::utils::{concat_path_leading_slash, CONSTANTS};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use axum::body::Body;
-use axum::http::Request;
-use base64::Engine;
-//use base64::engine::general_purpose;
-use openssl::rand::rand_bytes;
-//use openssl::sha::{sha256};
-use tower::{Service, ServiceExt};
+use tower::ServiceExt;
+use tower::Service;
 use tower_http::services::ServeFile;
 use lol_html::{element, RewriteStrSettings};
+
+use rand::rngs::OsRng;
+use rand::TryRngCore;
 
 fn no_web_auth_token() -> impl axum::response::IntoResponse + Send {
     axum::Json(TokenResponse {
@@ -167,9 +168,10 @@ async fn index(
                 }
             };
 
-            // ContentSecurityPolicy nonce
+            // ContentSecurityPolicy nonce (use OS CSPRNG instead of OpenSSL)
             let mut rnd = [0u8; 32];
-            if let Err(e) = rand_bytes(&mut rnd) {
+            let mut os_rng = OsRng;
+            if let Err(e) = os_rng.try_fill_bytes(&mut rnd) {
                 error!("Failed to generate random bytes for nonce: {e}");
                 // Fallback: without further manipulation back
                 return try_unwrap_body!(axum::response::Response::builder()
@@ -177,16 +179,6 @@ async fn index(
                     .body(new_content));
             }
             let nonce_b64 = base64::engine::general_purpose::STANDARD.encode(rnd);
-
-            // let hash = sha256(&rnd);
-            // let nonce_b64 = general_purpose::STANDARD_NO_PAD.encode(hash);
-
-            // Insert calculated nonce
-            // let script_tag = r#"<script type="module">"#;
-            // if new_content.contains(script_tag) {
-            //     let new_tag = format!(r#"<script type="module" nonce="{nonce_b64}">"#);
-            //     new_content = new_content.replacen(script_tag, &new_tag, 1);
-            // }
 
             new_content = inject_nonce_with_parser(new_content, &nonce_b64);
 

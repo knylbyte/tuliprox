@@ -14,7 +14,7 @@ serde_json = { version = "1", features = ["arbitrary_precision"] }
 quick-xml = { version = "0.38", features = ["async-tokio"] }
 regex = "1.12"
 clap = { version = "4", features = ["derive"] }
-reqwest = { version = "0", features = ["blocking", "json", "stream", "rustls-tls", "socks"] }
+reqwest = { version = "0", default-features = false, features = ["blocking", "json", "stream", "rustls-tls", "socks"] } # openssl dependencie
 url = "2.5.7"
 chrono = "0.4"
 cron = "0.15"
@@ -29,12 +29,13 @@ path-clean = "1.0"
 pest = "2.8"
 pest_derive = "2.8"
 enum-iterator = "2"
-openssl = { version = "*", features = ["vendored"] } #https://docs.rs/openssl/0.10.34/openssl/#vendored
+# openssl = { version = "*", features = ["vendored"] } # openssl dependencie
 deunicode = "1.6.2"
 mime = "0.3"
 log = "0.4"
 env_logger = "0.11"
-rustelebot = "0.3"
+teloxide = { version = "0.12", default-features = false, features = ["rustls"] }
+# rustelebot = "0.3" # openssl dependencie
 bincode = { version = "2.0",  features = ["std", "serde"] }
 rand = "0.9"
 rpassword = "7.4"
@@ -60,6 +61,13 @@ indexmap = "2"
 notify = "8.2"
 arc-swap = "1.7"
 dashmap = "6.1"
+sha2 = "0.10"
+aead = "0.5"
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+pkcs7 = "0.3"
 hyper = "1.7"
 hyper-util = "0.1"
 socket2 = { version = "0.6", features = ["all"] }

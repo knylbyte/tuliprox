@@ -15,7 +15,7 @@ FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main AS rust-build
 # Get target architecture
 ARG RUST_TARGET
 
-RUN apt-get update && apt-get install -y --no-install-recommends pkg-config musl-tools libssl-dev
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config musl-tools
 
 # Update Rust toolchain and add necessary target
 RUN rustup update && rustup target add $RUST_TARGET
@@ -58,7 +58,7 @@ WORKDIR /src
 
 # Install dependencies for Trunk and WebAssembly
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  pkg-config libssl-dev curl libclang-dev binaryen
+  pkg-config curl libclang-dev binaryen
 
 # Add wasm target & install trunk
 RUN rustup target add wasm32-unknown-unknown
@@ -150,9 +150,8 @@ ARG TZ=UTC
 ENV RUST_TARGET=${RUST_TARGET}
 ENV TZ=${TZ}
 
-# Install build dependencies and the lldb debugger for Alpine
-# Added 'perl' which is required to build the native OpenSSL library.
-RUN apk add --no-cache bash build-base openssl-dev lldb gdb perl
+# Install build dependencies and the lldb debugger for Alpine.
+RUN apk add --no-cache bash build-base lldb gdb perl
 
 # Update Rust toolchain and add the necessary target
 RUN rustup update && rustup target add $RUST_TARGET
