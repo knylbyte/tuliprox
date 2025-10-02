@@ -143,6 +143,7 @@ RUN case "$(cat /rust-target)" in \
 ############################################
 FROM rust:${RUST_DISTRO}
 
+ARG RUST_DISTRO
 ARG TRUNK_VER
 ARG BINDGEN_VER
 ARG CARGO_CHEF_VER

@@ -210,17 +210,17 @@ jobs:
             echo "- cargo-chef: **${{ steps.img.outputs.chef_version }}**"
             echo "- sccache: **${{ steps.img.outputs.sccache_version }}**"
             echo ""
+            if [[ "${{ steps.img.outputs.resources_ok }}" == "true" && "${{ steps.img.outputs.published }}" == "true" ]]; then
+              echo "✅ All resource files present."
+            else
+              echo "❌ One or more resource files are missing."
+            fi
+            echo ""
             echo "🗂️ Resources:"
             echo "- channel_unavailable.ts: $([[ '${{ steps.img.outputs.channel_unavailable }}' == 'ok' ]] && echo '✅' || echo '❌')"
             echo "- user_connections_exhausted.ts: $([[ '${{ steps.img.outputs.user_connections_exhausted }}' == 'ok' ]] && echo '✅' || echo '❌')"
             echo "- provider_connections_exhausted.ts: $([[ '${{ steps.img.outputs.provider_connections_exhausted }}' == 'ok' ]] && echo '✅' || echo '❌')"
             echo "- user_account_expired.ts: $([[ '${{ steps.img.outputs.user_account_expired }}' == 'ok' ]] && echo '✅' || echo '❌')"
-            echo ""
-            if [[ "${{ steps.img.outputs.resources_ok }}" == "true" && "${{ steps.img.outputs.published }}" == "true" ]]; then
-              echo "🎉 All resource files present."
-            else
-              echo "⚠️ One or more resource files are missing."
-            fi
             echo ""
             echo "---"
           } >> "$GITHUB_STEP_SUMMARY"
