@@ -12,6 +12,7 @@ ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.104
 ARG CARGO_CHEF_VER=0.1.72
 ARG SCCACHE_VER=0.10.0
+ARG SCCACHE_FEATURES=dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss
 ARG ALPINE_VER=3.22.1
 
 ############################################
@@ -53,6 +54,7 @@ ARG TRUNK_VER
 ARG BINDGEN_VER
 ARG CARGO_CHEF_VER
 ARG SCCACHE_VER
+ARG SCCACHE_FEATURES
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -112,8 +114,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
       --target "$(cat /rust-target)" --root /out && \
     cargo install --locked cargo-chef --version ${CARGO_CHEF_VER} \
       --target "$(cat /rust-target)" --root /out && \
-    cargo install --locked sccache --version ${SCCACHE_VER} \
-      --target "$(cat /rust-target)" --root /out
+    cargo install --locked \
+      --no-default-features \
+      --features "${SCCACHE_FEATURES}" \
+      --target "$(cat /rust-target)" \
+      --root /out \
+      --version ${SCCACHE_VER} \
+      sccache
 
 # Strip (best-effort)
 RUN case "$(cat /rust-target)" in \
@@ -132,6 +139,7 @@ ARG TRUNK_VER
 ARG BINDGEN_VER
 ARG CARGO_CHEF_VER
 ARG SCCACHE_VER
+ARG SCCACHE_FEATURES
 
 LABEL io.tuliprox.trunk.version="${TRUNK_VER}" \
       io.tuliprox.wasm_bindgen.version="${BINDGEN_VER}" \
