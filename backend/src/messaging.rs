@@ -1,8 +1,12 @@
 use std::sync::Arc;
 use crate::model::{MessagingConfig};
 use log::{debug, error};
-use reqwest::{header};
+use reqwest::header;
 use shared::model::MsgKind;
+use teloxide::{
+    prelude::*,
+    types::{ChatId, Recipient},
+};
 
 fn is_enabled(kind: MsgKind, cfg: &MessagingConfig) -> bool {
     cfg.notify_on.contains(&kind)
@@ -29,14 +33,24 @@ fn send_http_post_request(client: &Arc<reqwest::Client>, msg: &str, messaging: &
 }
 
 fn send_telegram_message(msg: &str, messaging: &MessagingConfig) {
-    // TODO use proxy settings
     if let Some(telegram) = &messaging.telegram {
+        let bot = teloxide::Bot::new(&telegram.bot_token);
         for chat_id in &telegram.chat_ids {
-            let bot = rustelebot::create_instance(&telegram.bot_token, chat_id);
-            match rustelebot::send_message(&bot, msg, None) {
-                Ok(()) => debug!("Text message sent successfully to {chat_id}"),
-                Err(e) => error!("Text message wasn't sent to {chat_id} because of: {e}")
-            }
+            let chat_id_for_log = chat_id.clone();
+            let message = msg.to_owned();
+            let recipient = match chat_id.parse::<i64>() {
+                Ok(id) => Recipient::Id(ChatId(id)),
+                Err(_) => Recipient::from(chat_id.clone()),
+            };
+            let bot_instance = bot.clone();
+            tokio::spawn(async move {
+                match bot_instance.send_message(recipient, message).await {
+                    Ok(_) => debug!("Text message sent successfully to {chat_id_for_log}"),
+                    Err(e) => error!(
+                        "Text message wasn't sent to {chat_id_for_log} because of: {e}"
+                    ),
+                }
+            });
         }
     }
 }
