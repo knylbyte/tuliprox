@@ -123,12 +123,9 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
         cargo clean || true
     fi
 
-    CROSS_IMAGE="ghcr.io/cross-rs/${ARCHITECTURE}:0.2.5"
-
     # Use incremental compilation and enable cache-friendly flags
     env RUSTFLAGS="--remap-path-prefix $HOME=~ -C incremental=/tmp/rust-incremental-${ARCHITECTURE}" \
         CARGO_INCREMENTAL=1 \
-        CROSS_CUSTOM_IMAGE="$CROSS_IMAGE" \
         cross build -p tuliprox --release --target "$ARCHITECTURE"
     
     BINARY_PATH="${WORKING_DIR}/target/${ARCHITECTURE}/release/tuliprox"
