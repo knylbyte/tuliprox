@@ -50,8 +50,7 @@ jobs:
       - name: Install cross
         run: |
           if ! command -v cross &> /dev/null; then
-            # cargo install cross --git https://github.com/cross-rs/cross
-            cargo install cross --version 0.2.5
+            cargo install cross --git https://github.com/cross-rs/cross
           fi
 
       - name: Install trunk
@@ -105,8 +104,8 @@ jobs:
         with:
           path: |
             ~/.cross
-            ~/.rustup/toolchains/*/lib/rustlib/x86_64-unknown-linux-musl:0.2.5
-            ~/.rustup/toolchains/*/lib/rustlib/aarch64-unknown-linux-musl:0.2.5
+            ~/.rustup/toolchains/*/lib/rustlib/x86_64-unknown-linux-musl
+            ~/.rustup/toolchains/*/lib/rustlib/aarch64-unknown-linux-musl
           key: ${{ runner.os }}-cross-${{ hashFiles('**/Cargo.lock') }}-v2
           restore-keys: |
             ${{ runner.os }}-cross-
