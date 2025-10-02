@@ -3,7 +3,7 @@
 # Part 1: Prerequisite Build Stages
 #
 # These stages are used as building blocks for the final images.
-# They prepare the Rust binary, the Node.js frontend, and other resources.
+# They prepare the Rust binary and other resources.
 #
 # =================================================================
 
