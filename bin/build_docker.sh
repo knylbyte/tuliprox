@@ -117,12 +117,12 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     ARCHITECTURE=${ARCHITECTURES[$PLATFORM]}
     
     echo "🔨 Building binary for architecture: $ARCHITECTURE"
-    
+
     # Don't clean if we have cached dependencies
     if [ -z "${CARGO_DEPS_CACHE_HIT:-}" ]; then
         cargo clean || true
     fi
-    
+
     # Use incremental compilation and enable cache-friendly flags
     env RUSTFLAGS="--remap-path-prefix $HOME=~ -C incremental=/tmp/rust-incremental-${ARCHITECTURE}" \
         CARGO_INCREMENTAL=1 \

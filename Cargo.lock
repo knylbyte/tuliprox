@@ -4026,7 +4026,6 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
- "zerofrom-derive",
  "zeroize",
 ]
 
@@ -4633,7 +4632,6 @@ dependencies = [
  "url",
  "vergen",
  "winapi",
- "zerofrom-derive",
 ]
 
 [[package]]

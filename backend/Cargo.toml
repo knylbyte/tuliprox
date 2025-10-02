@@ -14,9 +14,8 @@ serde_json = { version = "1", features = ["arbitrary_precision"] }
 quick-xml = { version = "0.38", features = ["async-tokio"] }
 regex = "1.11"
 clap = { version = "4", features = ["derive"] }
-url = "2.5.7"
-zerofrom-derive =  "0.1.6"
 reqwest = { version = "0", features = ["blocking", "json", "stream", "rustls-tls", "socks"] }
+url = "2.5.7"
 chrono = "0.4"
 cron = "0.15"
 axum = { version = "0.8" , features = ["macros", "default", "ws"]}
