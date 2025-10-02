@@ -406,15 +406,6 @@ jobs:
           sections = []
           sections.append(f"## 🧰 Tuliprox build tools bump — branch `{branch}`")
 
-          rust = latest.get("RUST_DISTRO", {})
-          sections.append("### 🦀 Rust distribution")
-          if rust:
-            sections.append(f"- Latest tag: `{rust.get('latest', 'n/a')}`")
-            sections.append(f"  - Semver: `{rust.get('semver', 'n/a')}`")
-            sections.append(f"  - Distro: `{rust.get('distro', 'n/a')}`")
-          else:
-            sections.append("- Unable to resolve rust metadata ❌")
-
           sections.append("\n### 📦 Dependency updates")
           dependency_order = ["RUST_DISTRO", "ALPINE_VER", "CARGO_CHEF_VER", "SCCACHE_VER", "TRUNK_VER", "BINDGEN_VER"]
 
