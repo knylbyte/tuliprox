@@ -50,7 +50,8 @@ jobs:
       - name: Install cross
         run: |
           if ! command -v cross &> /dev/null; then
-            cargo install cross --git https://github.com/cross-rs/cross
+            # cargo install cross --git https://github.com/cross-rs/cross
+            cargo install cross --version 0.2.5
           fi
 
       - name: Install trunk
