@@ -1,6 +1,7 @@
 [package]
 name = "frontend"
 version = "3.1.6"
+edition = "2021"
 
 [dependencies]
 shared = { version = "3.1.6", path = "../shared" }
