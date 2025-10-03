@@ -10,6 +10,7 @@ use shared::model::{ProtocolMessage, PROTOCOL_VERSION};
 use shared::utils::{concat_path_leading_slash};
 use crate::model::EventMessage;
 use crate::services::{get_base_href, get_token, EventService, StatusService};
+use crate::utils::set_timeout;
 
 const WS_RECONNECT_MS:i32 = 2000;
 
@@ -137,17 +138,7 @@ impl WebSocketService {
 
                     // schedule reconnect after 3 seconds
                     let ws_service_inner = ws_service_reconnect.clone();
-                    let timeout_cb = Closure::once_into_js(Box::new(move || {
-                        ws_service_inner.connect_ws();
-                    }) as Box<dyn FnOnce()>);
-
-                    web_sys::window()
-                        .unwrap()
-                        .set_timeout_with_callback_and_timeout_and_arguments_0(
-                            timeout_cb.unchecked_ref(),
-                            WS_RECONNECT_MS,
-                        )
-                        .unwrap();
+                    set_timeout(move || { ws_service_inner.connect_ws(); }, WS_RECONNECT_MS);
                 }));
                 socket.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
                 onclose_callback.forget();
@@ -164,17 +155,7 @@ impl WebSocketService {
 
                     // schedule reconnect after 3 seconds
                     let ws_service_inner = ws_service_reconnect.clone();
-                    let timeout_cb = Closure::once_into_js(Box::new(move || {
-                        ws_service_inner.connect_ws();
-                    }) as Box<dyn FnOnce()>);
-
-                    web_sys::window()
-                        .unwrap()
-                        .set_timeout_with_callback_and_timeout_and_arguments_0(
-                            timeout_cb.unchecked_ref(),
-                            WS_RECONNECT_MS,
-                        )
-                        .unwrap();
+                    set_timeout(move || { ws_service_inner.connect_ws(); }, WS_RECONNECT_MS);
                 }));
                 socket.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
                 onerror_callback.forget();
