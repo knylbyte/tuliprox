@@ -15,9 +15,8 @@
   }
 
   &__body {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-
+    display: flex;
+    flex-flow: row wrap;
     gap: var(--gap-default);
     box-sizing: border-box;
     overflow-y: auto;
