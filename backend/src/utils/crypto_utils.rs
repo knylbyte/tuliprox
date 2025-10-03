@@ -1,18 +1,29 @@
-// Crypto utilities without OpenSSL: prefer XChaCha20-Poly1305 with legacy AES fallback.
-// Format v2: "v2:" + base64url(no_pad, nonce(24) || ciphertext+tag).
-// Public API stays the same to avoid touching call sites.
+// Crypto utilities without OpenSSL.
+// New default: XChaCha20-Poly1305 AEAD (v2 format), with auto-decrypt fallback
+// to legacy AES-128-CBC+PKCS#7 (for old data).
+//
+// Format v2: "v2:" + base64url(no_pad, nonce(24) || ciphertext+tag)
+//
+// NOTE:
+// - Public API keeps the same function names/signatures to avoid changing call sites.
+// - Keys for v2 are derived from the provided 16-byte secret via HKDF-SHA256 to 32 bytes.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use rand::rngs::OsRng;
 use rand::TryRngCore;
+
 use shared::error::{TuliproxError, TuliproxErrorKind};
 
+// ----- AEAD (preferred) -----
 use aead::{Aead, KeyInit};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 
+// ----- Legacy CBC (fallback-only) -----
 use aes::Aes128;
-use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
-use cbc::{Decryptor, Encryptor};
+use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use cbc::Decryptor;
+
+// HKDF to expand 16-byte app secret to 32-byte AEAD key
 use hkdf::Hkdf;
 use sha2::Sha256;
 
@@ -21,7 +32,8 @@ fn encode_b64(data: &[u8]) -> String {
 }
 
 fn decode_b64(s: &str) -> Result<Vec<u8>, TuliproxError> {
-    B64.decode(s).map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, e.to_string()))
+    B64.decode(s)
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, e.to_string()))
 }
 
 pub fn xor_bytes(secret: &[u8], data: &[u8]) -> Vec<u8> {
@@ -36,10 +48,15 @@ pub fn obfuscate_text(secret: &[u8], text: &str) -> Result<String, String> {
 }
 
 pub fn deobfuscate_text(secret: &[u8], text: &str) -> Result<String, String> {
-    let data = xor_bytes(secret, &B64.decode(text).unwrap_or_else(|_| text.as_bytes().to_vec()));
+    let data = xor_bytes(
+        secret,
+        &B64.decode(text)
+            .unwrap_or_else(|_| text.as_bytes().to_vec()),
+    );
     String::from_utf8(data).map_err(|_| text.to_string())
 }
 
+// --- Key derivation: 16-byte app secret -> 32-byte AEAD key via HKDF-SHA256
 fn derive_aead_key_from_secret(secret16: &[u8; 16]) -> [u8; 32] {
     let hk = Hkdf::<Sha256>::new(Some(b"tuliprox-aead-v2"), secret16);
     let mut okm = [0u8; 32];
@@ -48,10 +65,12 @@ fn derive_aead_key_from_secret(secret16: &[u8; 16]) -> [u8; 32] {
     okm
 }
 
+// --- New encryption (v2: XChaCha20-Poly1305) ---
 pub fn encrypt_text(secret: &[u8; 16], text: &str) -> Result<String, TuliproxError> {
     let aead_key = derive_aead_key_from_secret(secret);
     let cipher = XChaCha20Poly1305::new(Key::from_slice(&aead_key));
 
+    // 24-byte nonce
     let mut nonce = [0u8; 24];
     let mut os_rng = OsRng;
     os_rng
@@ -69,8 +88,10 @@ pub fn encrypt_text(secret: &[u8; 16], text: &str) -> Result<String, TuliproxErr
     Ok(format!("v2:{}", encode_b64(&blob)))
 }
 
+// --- Auto-decrypt: v2 → AEAD, else → legacy CBC ---
 pub fn decrypt_text(secret: &[u8; 16], encrypted_text: &str) -> Result<String, TuliproxError> {
     if let Some(rest) = encrypted_text.strip_prefix("v2:") {
+        // AEAD path
         let data = decode_b64(rest)?;
         if data.len() < 24 {
             return Err(TuliproxError::new(
@@ -91,6 +112,7 @@ pub fn decrypt_text(secret: &[u8; 16], encrypted_text: &str) -> Result<String, T
             .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, e.to_string()));
     }
 
+    // Legacy CBC fallback: base64( IV(16) || CIPHERTEXT )
     let data = decode_b64(encrypted_text)?;
     if data.len() < 16 {
         return Err(TuliproxError::new(
@@ -100,7 +122,8 @@ pub fn decrypt_text(secret: &[u8; 16], encrypted_text: &str) -> Result<String, T
     }
     let (iv, ct) = data.split_at(16);
 
-    let decryptor = Decryptor::<Aes128>::new(secret.into(), iv.into());
+    let decryptor = Decryptor::<Aes128>::new_from_slices(secret, iv)
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, e.to_string()))?;
     let pt = decryptor
         .decrypt_padded_vec_mut::<Pkcs7>(ct)
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, e.to_string()))?;
@@ -111,6 +134,8 @@ pub fn decrypt_text(secret: &[u8; 16], encrypted_text: &str) -> Result<String, T
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cbc::cipher::BlockEncryptMut;
+    use cbc::Encryptor;
 
     #[test]
     fn v2_roundtrip() {
@@ -126,6 +151,7 @@ mod tests {
 
     #[test]
     fn legacy_roundtrip() {
+        // Simulate legacy encryption (AES-128-CBC + PKCS7)
         let mut s = [0u8; 16];
         let mut os_rng = OsRng;
         os_rng.try_fill_bytes(&mut s).expect("os rng failure");
@@ -133,7 +159,7 @@ mod tests {
         let mut iv = [0u8; 16];
         os_rng.try_fill_bytes(&mut iv).expect("os rng failure");
         let enc = {
-            let e = Encryptor::<Aes128>::new(s.into(), iv.into());
+            let e = Encryptor::<Aes128>::new_from_slices(&s, &iv).expect("invalid legacy key");
             let ct = e.encrypt_padded_vec_mut::<Pkcs7>(b"legacy");
             let mut blob = iv.to_vec();
             blob.extend_from_slice(&ct);
@@ -142,4 +168,3 @@ mod tests {
         assert_eq!(decrypt_text(&s, &enc).unwrap(), "legacy");
     }
 }
-

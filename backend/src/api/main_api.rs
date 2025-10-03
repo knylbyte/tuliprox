@@ -25,6 +25,7 @@ use crate::VERSION;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use axum::Router;
 use log::{error, info};
+use shared::utils::concat_path_leading_slash;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::{Arc};
@@ -78,7 +79,7 @@ fn create_shared_data(
         &active_provider,
         active_user_change_tx,
     ));
-    let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx, ));
+    let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx));
     let client = create_http_client(app_config);
 
     AppState {
