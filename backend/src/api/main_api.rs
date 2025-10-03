@@ -25,12 +25,12 @@ use crate::VERSION;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use axum::Router;
 use log::{error, info};
+use shared::utils::concat_path_leading_slash;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
-use shared::utils::{concat_path_leading_slash};
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -76,7 +76,7 @@ fn create_shared_data(
         &active_provider,
         active_user_change_tx,
     ));
-    let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx, ));
+    let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx));
     let client = create_http_client(app_config);
 
     AppState {
@@ -106,9 +106,9 @@ fn exec_update_on_boot(
     if update_on_boot {
         let app_state_clone = Arc::clone(&app_state.app_config);
         let targets_clone = Arc::clone(targets);
-        tokio::spawn(
-            async move { playlist::exec_processing(client, app_state_clone, targets_clone, None).await },
-        );
+        tokio::spawn(async move {
+            playlist::exec_processing(client, app_state_clone, targets_clone, None).await
+        });
     }
 }
 

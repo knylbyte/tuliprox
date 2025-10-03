@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use crate::model::{MessagingConfig};
+use crate::model::MessagingConfig;
 use log::{debug, error};
 use reqwest::header;
 use shared::model::MsgKind;
+use std::sync::Arc;
 use teloxide::{
     prelude::*,
     types::{ChatId, Recipient},
@@ -33,6 +33,7 @@ fn send_http_post_request(client: &Arc<reqwest::Client>, msg: &str, messaging: &
 }
 
 fn send_telegram_message(msg: &str, messaging: &MessagingConfig) {
+    // TODO use proxy settings
     if let Some(telegram) = &messaging.telegram {
         let bot = teloxide::Bot::new(&telegram.bot_token);
         for chat_id in &telegram.chat_ids {
@@ -46,9 +47,9 @@ fn send_telegram_message(msg: &str, messaging: &MessagingConfig) {
             tokio::spawn(async move {
                 match bot_instance.send_message(recipient, message).await {
                     Ok(_) => debug!("Text message sent successfully to {chat_id_for_log}"),
-                    Err(e) => error!(
-                        "Text message wasn't sent to {chat_id_for_log} because of: {e}"
-                    ),
+                    Err(e) => {
+                        error!("Text message wasn't sent to {chat_id_for_log} because of: {e}")
+                    }
                 }
             });
         }
@@ -67,25 +68,39 @@ fn send_pushover_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &M
         tokio::spawn(async move {
             match the_client
                 .post(pushover_url)
-                .header(header::CONTENT_TYPE, mime::APPLICATION_WWW_FORM_URLENCODED.to_string())
+                .header(
+                    header::CONTENT_TYPE,
+                    mime::APPLICATION_WWW_FORM_URLENCODED.to_string(),
+                )
                 .body(encoded_message)
                 .send()
                 .await
             {
                 Ok(response) => {
                     if response.status().is_success() {
-                        debug!("Text message sent successfully to PUSHOVER, status code {}", response.status());
+                        debug!(
+                            "Text message sent successfully to PUSHOVER, status code {}",
+                            response.status()
+                        );
                     } else {
-                        error!("Failed to send text message to PUSHOVER, status code {}", response.status());
+                        error!(
+                            "Failed to send text message to PUSHOVER, status code {}",
+                            response.status()
+                        );
                     }
-                },
+                }
                 Err(e) => error!("Text message wasn't sent to PUSHOVER api because of: {e}"),
             }
         });
     }
 }
 
-pub fn send_message(client: &Arc<reqwest::Client>, kind: &MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
+pub fn send_message(
+    client: &Arc<reqwest::Client>,
+    kind: &MsgKind,
+    cfg: Option<&MessagingConfig>,
+    msg: &str,
+) {
     if let Some(messaging) = cfg {
         if is_enabled(*kind, messaging) {
             send_telegram_message(msg, messaging);
