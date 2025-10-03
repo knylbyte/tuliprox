@@ -461,6 +461,28 @@ jobs:
               ;;
           esac
 
+          if [[ -n "$target_input" ]]; then
+            if [[ "$target_input" == "$primary_stage" ]]; then
+              target="$target_input"
+              secondary_variant=""
+              secondary_stage=""
+              secondary_tags=()
+              secondary_cache_tag=""
+              manifest_tags=()
+            elif [[ -n "$secondary_stage" && "$target_input" == "$secondary_stage" ]]; then
+              target="$target_input"
+              primary_variant="$secondary_variant"
+              primary_stage="$secondary_stage"
+              primary_tags=("${secondary_tags[@]}")
+              primary_cache_tag="$secondary_cache_tag"
+              secondary_variant=""
+              secondary_stage=""
+              secondary_tags=()
+              secondary_cache_tag=""
+              manifest_tags=()
+            fi
+          fi
+
           if [[ ${#manifest_tags[@]} -eq 0 ]]; then
             for item in "${primary_tags[@]}"; do
               manifest_tags+=("$item")
