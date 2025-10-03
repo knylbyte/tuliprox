@@ -106,18 +106,18 @@ ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=${SCCACHE_DIR},sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
     cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json
 
 # Build the actual backend (cargo will leverage the cooked deps)
 COPY . .
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=${SCCACHE_DIR},sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 
 # =============================================================================
@@ -173,9 +173,9 @@ WORKDIR /src
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=${SCCACHE_DIR},sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
     cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
@@ -185,9 +185,9 @@ COPY shared   ./shared
 # Build the actual frontend (Trunk will leverage the cooked deps)
 WORKDIR /src/frontend
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=${SCCACHE_DIR},sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
     trunk build --release
 
