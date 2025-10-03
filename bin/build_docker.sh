@@ -175,8 +175,8 @@ for IMAGE_NAME in "${!MULTI_PLATFORM_IMAGES[@]}"; do
     
     # Build and push multi-platform image directly with cache
     BUILDX_CACHE_ARGS=()
-    [ -n "$BUILDX_CACHE_FROM" ] && BUILDX_CACHE_ARGS+=(--cache-from "$BUILDX_CACHE_FROM")
-    [ -n "$BUILDX_CACHE_TO" ] && BUILDX_CACHE_ARGS+=(--cache-to "$BUILDX_CACHE_TO")
+    [ -n "${BUILDX_CACHE_FROM:-}" ] && BUILDX_CACHE_ARGS+=(--cache-from "${BUILDX_CACHE_FROM}")
+    [ -n "${BUILDX_CACHE_TO:-}" ] && BUILDX_CACHE_ARGS+=(--cache-to "${BUILDX_CACHE_TO}")
 
     # If you build on local, you need to activate buildx multiarch builds
     # >  docker buildx create --name multiarch --driver docker-container --use --bootstrap

@@ -174,7 +174,7 @@ pub fn EpgView() -> Html {
                             <div style={format!("height:{}px", start_index * channel_row_height)}></div>
                             { for tv.channels.iter().enumerate().skip(start_index).take(end_index - start_index).map(|(_i, ch)| {
                                 html! {
-                                    <div class="tp__epg__channel" style={format!("max-height:{channel_row_height}px;min-height={channel_row_height};height:{channel_row_height}px")}>
+                                    <div class="tp__epg__channel" style={format!("max-height:{channel_row_height}px;min-height={channel_row_height}px;height:{channel_row_height}px")}>
                                         <div class="tp__epg__channel-icon">
                                             { if let Some(icon) = &ch.icon {
                                                 html! { <img src={icon.clone()} alt={ch.title.clone()} /> }
@@ -213,7 +213,7 @@ pub fn EpgView() -> Html {
                             <div style={format!("height:{}px", start_index * channel_row_height)}></div>
                             { for tv.channels.iter().enumerate().skip(start_index).take(end_index - start_index).map(|(_i, ch)| {
                                 html! {
-                                  <div class="tp__epg__channel-programs" style={format!("max-height:{channel_row_height}px;min-height={channel_row_height};height:{channel_row_height}px")}>
+                                  <div class="tp__epg__channel-programs" style={format!("max-height:{channel_row_height}px;min-height={channel_row_height}px;height:{channel_row_height}px")}>
                                     { for ch.programmes.iter().map(|p| {
                                         let is_active = now >= p.start && now < p.stop;
                                         let left = get_pos(p.start, start_window);
