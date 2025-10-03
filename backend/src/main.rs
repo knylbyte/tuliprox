@@ -83,6 +83,8 @@ const BUILD_TIMESTAMP: &str = env!("VERGEN_BUILD_TIMESTAMP");
 // pub static malloc_conf: &[u8] = b"lg_prof_interval:25,prof:true,prof_leak:true,prof_active:true,prof_prefix:/tmp/jeprof\0";
 
 fn main() {
+    println!("Starting tuliprox...");
+    
     let args = Args::parse();
 
     if args.genpwd {
