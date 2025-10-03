@@ -12,6 +12,7 @@ dist
 /dataSources/
 /dataSources.local.xml
 
+docker/binaries
 .DS_Store
 
 *.m3u
