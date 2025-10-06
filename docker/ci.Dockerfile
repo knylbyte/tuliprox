@@ -8,6 +8,7 @@
 # - Uses the prebuild image: ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG}
 # - Deterministic dep caching via cargo-chef (deps as Docker layers)
 # - Sparse index for crates.io
+# - sccache for Rust compilation caching -> https://crates.io/crates/sccache/0.3.3
 #
 # =================================================================
 
@@ -19,6 +20,10 @@ ARG BUILDPLATFORM_TAG=latest
 ARG ALPINE_VER=3.22.1
 ARG RUST_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
+ARG SCCACHE_GHA_ENABLED=off
+ARG SCCACHE_GHA_CACHE_SIZE=10G
+ARG SCCACHE_GHA_VERSION=1
+ARG SCCACHE_DIR=/var/cache/sccache
 
 # =============================================================================
 # Stage 0: chef  (cargo-chef prepare)
@@ -29,9 +34,15 @@ FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS chef
 
 ARG TARGETPLATFORM
 ARG RUST_TARGET
+ARG SCCACHE_GHA_ENABLED
+ARG SCCACHE_GHA_CACHE_SIZE
+ARG SCCACHE_GHA_VERSION
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-ENV SCCACHE_DIR=/var/cache/sccache
+ENV SCCACHE_DIR=${SCCACHE_DIR}
+ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
+ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
+ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
 # - amd64  -> x86_64-unknown-linux-musl
@@ -63,32 +74,20 @@ FROM chef AS backend-planner
 WORKDIR /src
 
 # Synthetic minimal workspace (backend + shared only) to keep frontend out
-RUN set -eux; cat > /src/Cargo.toml <<'TOML'
-[workspace]
-members = ["backend","shared"]
-resolver = "2"
+COPY Cargo.toml ./Cargo.toml
 
-[workspace.package]
-edition = "2021"
-
-[profile.release]
-debug = false
-opt-level = "z"        # Optimize for size
-lto = true             # Link Time Optimization
-codegen-units = 1      # Fewer codegen units -> better opts
-panic = "abort"        # Abort on panic
-strip = true
-TOML
-
-# Copy manifests only
-COPY backend ./backend
-COPY shared   ./shared
-
-# Cargo (and cargo-chef) require at least one target per workspace member.
-# Ensure we have a lockfile (in case none was present)
-# We copy real sources here (to keep deps layer stable).
 RUN set -eux; \
-    [ -f /src/Cargo.lock ] || cargo generate-lockfile && \
+    sed -i 's/members = ["backend", "frontend", "shared"]/members = ["backend", "shared"]/' Cargo.toml
+
+# Copy only the manifests/build scripts required to resolve dependencies.
+# This keeps the recipe layer stable when only source files change.
+COPY Cargo.lock ./Cargo.lock
+COPY backend/Cargo.toml ./backend/Cargo.toml
+COPY backend/build.rs ./backend/build.rs
+COPY shared/Cargo.toml ./shared/Cargo.toml
+
+# Produce the dependency recipe using the existing lockfile.
+RUN set -eux; \
     cargo chef prepare --recipe-path backend-recipe.json
 
 # =============================================================================
@@ -98,10 +97,25 @@ RUN set -eux; \
 # =============================================================================
 FROM chef AS backend-builder
 
+ARG SCCACHE_DIR
+
 WORKDIR /src
 
-ENV SCCACHE_DIR=/var/cache/sccache
+ENV SCCACHE_DIR=${SCCACHE_DIR}
 ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
+
+# Recreate the minimal workspace layout so the recipe matches even when
+# unrelated files (e.g. README) change in the repo root.
+COPY Cargo.toml ./Cargo.toml
+
+RUN set -eux; \
+    sed -i 's/members = ["backend", "frontend", "shared"]/members = ["backend", "shared"]/' Cargo.toml
+
+# Copy only the manifests/build scripts required to resolve dependencies.
+COPY Cargo.lock ./Cargo.lock
+COPY backend/Cargo.toml ./backend/Cargo.toml
+COPY backend/build.rs ./backend/build.rs
+COPY shared/Cargo.toml ./shared/Cargo.toml
 
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
@@ -109,15 +123,20 @@ COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+    --mount=type=secret,id=gha_results_url,env=ACTIONS_RESULTS_URL,required=false \
+    --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
     set -eux; \
     cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json
 
 # Build the actual backend (cargo will leverage the cooked deps)
-COPY . .
+COPY backend ./backend
+COPY shared   ./shared
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+    --mount=type=secret,id=gha_results_url,env=ACTIONS_RESULTS_URL,required=false \
+    --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
     cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 
 # =============================================================================
@@ -130,33 +149,18 @@ FROM chef AS frontend-planner
 WORKDIR /src
 
 # Synthetic minimal workspace (frontend + shared only) to keep backend out
-RUN set -eux; cat > /src/Cargo.toml <<'TOML'
-[workspace]
-members = ["frontend","shared"]
-resolver = "2"
+COPY Cargo.toml ./Cargo.toml
 
-[workspace.package]
-edition = "2021"
-
-[profile.release]
-debug = false
-opt-level = "z"        # Optimize for size
-lto = true             # Link Time Optimization
-codegen-units = 1      # Fewer codegen units -> better opts
-panic = "abort"        # Abort on panic
-strip = true
-TOML
-
-# Copy only manifests for the WASM part
-COPY frontend ./frontend
-COPY shared   ./shared
-
-# Produce the dependency recipe for WASM
-# Cargo (and cargo-chef) require at least one target per workspace member.
-# Ensure we have a lockfile (in case none was present)
-# We copy real sources here (to keep deps layer stable).
 RUN set -eux; \
-    [ -f /src/Cargo.lock ] || cargo generate-lockfile && \
+    sed -i 's/members = ["backend", "frontend", "shared"]/members = ["frontend", "shared"]/' Cargo.toml
+
+# Copy only the manifests required for dependency resolution.
+COPY Cargo.lock ./Cargo.lock
+COPY frontend/Cargo.toml ./frontend/Cargo.toml
+COPY shared/Cargo.toml   ./shared/Cargo.toml
+
+# Produce the dependency recipe for WASM using the existing lockfile.
+RUN set -eux; \
     cargo chef prepare --recipe-path frontend-recipe.json
 
 # =============================================================================
@@ -166,9 +170,21 @@ RUN set -eux; \
 # =============================================================================
 FROM chef AS frontend-builder
 
-ENV SCCACHE_DIR=/var/cache/sccache
+ARG SCCACHE_DIR
+ENV SCCACHE_DIR=${SCCACHE_DIR}
 
 WORKDIR /src
+
+# Recreate the minimal workspace layout for reproducible dependency caches.
+COPY Cargo.toml ./Cargo.toml
+
+RUN set -eux; \
+    sed -i 's/members = ["backend", "frontend", "shared"]/members = ["frontend", "shared"]/' Cargo.toml
+
+# Copy only the manifests required for dependency resolution.
+COPY Cargo.lock ./Cargo.lock
+COPY frontend/Cargo.toml ./frontend/Cargo.toml
+COPY shared/Cargo.toml   ./shared/Cargo.toml
 
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
@@ -176,6 +192,8 @@ COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+    --mount=type=secret,id=gha_results_url,env=ACTIONS_RESULTS_URL,required=false \
+    --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
     set -eux; \
     cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
@@ -188,6 +206,8 @@ WORKDIR /src/frontend
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+    --mount=type=secret,id=gha_results_url,env=ACTIONS_RESULTS_URL,required=false \
+    --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
     set -eux; \
     trunk build --release
 
@@ -329,3 +349,5 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # The CMD will be passed as arguments to the entrypoint script.
 CMD ["tail", "-f", "/dev/null"]
+
+

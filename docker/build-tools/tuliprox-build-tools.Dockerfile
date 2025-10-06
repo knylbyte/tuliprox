@@ -4,7 +4,8 @@
 # - Stage 3 (WASM via trunk + wasm-bindgen)
 # No OpenSSL dev packages are needed (the app uses rustls).
 # sccache possible features: dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss
-# To prevent long build times because of openssl dependencies we dont use this features here.
+# The `gha` backend relies on reqwest+rustls, so no OpenSSL dev packages (e.g. libssl-dev)
+# are required for the build-tools image.
 # The sccache cache dir is /var/cache/sccache.
 
 ############################################
@@ -64,13 +65,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:$PATH \
-    SCCACHE_DIR=/var/cache/sccache \
-    SCCACHE_FEATURE_FLAGS=""
-
-# Optional sccache features
-RUN if [ -n "${SCCACHE_FEATURES}" ]; then \
-      SCCACHE_FEATURE_FLAGS="--features ${SCCACHE_FEATURES}"; \
-    fi;
+    SCCACHE_DIR=/var/cache/sccache
 
 # Map Docker TARGETPLATFORM -> Rust target triple for *tool binaries*.
 # Tools must run inside the final image for that platform (gnu is fine here).
@@ -118,13 +113,18 @@ ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=64 \
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     set -eux; \
+    if [ -n "${SCCACHE_FEATURES}" ]; then \
+      SCCACHE_INSTALL_FLAGS="--no-default-features --features ${SCCACHE_FEATURES}"; \
+    else \
+      SCCACHE_INSTALL_FLAGS="--no-default-features"; \
+    fi; \
     cargo install --locked trunk --version ${TRUNK_VER} \
       --target "$(cat /rust-target)" --root /out; \
     cargo install --locked wasm-bindgen-cli --version ${BINDGEN_VER} \
       --target "$(cat /rust-target)" --root /out; \
     cargo install --locked cargo-chef --version ${CARGO_CHEF_VER} \
       --target "$(cat /rust-target)" --root /out; \
-    cargo install --locked --no-default-features ${SCCACHE_FEATURE_FLAGS} \
+    cargo install --locked ${SCCACHE_INSTALL_FLAGS} \
       --target "$(cat /rust-target)" \
       --root /out \
       --version ${SCCACHE_VER} \
@@ -218,4 +218,5 @@ RUN trunk --version \
  && wasm-bindgen --version \
  && cargo-chef --version \
  && sccache --version
+
 
