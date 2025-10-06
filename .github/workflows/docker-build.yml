@@ -251,6 +251,9 @@ jobs:
       arches: ${{ steps.export.outputs.arches }}
       display_tags: ${{ steps.export.outputs.display_tags }}
       tag_aliases: ${{ steps.export.outputs.tag_aliases }}
+    env:
+      ACTIONS_RESULTS_URL: ''
+      ACTIONS_RUNTIME_TOKEN: ''
 
     steps:
       - name: Step 3.1 - Checkout
@@ -655,8 +658,15 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Step 3.9 - Configure sccache
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
       # --- Build primary variant ---
-      - name: Step 3.9 - Build primary image (${{ matrix.platform }})
+      - name: Step 3.10 - Build primary image (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -664,16 +674,23 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           build-args: |
+            BUILDKIT_INLINE_CACHE=1
             GHCR_NS=${{ env.GHCR_NS }}
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
+            SCCACHE_GHA_ENABLED=on
+            SCCACHE_GHA_CACHE_SIZE=10G
+            SCCACHE_GHA_VERSION=1
           target: ${{ steps.plan.outputs.primary_stage }}
           tags: ${{ steps.primary_meta.outputs.tags }}
         # cache-from/to defined below to avoid blank lines when base cache missing
           cache-from: ${{ steps.primary_meta.outputs.cache_from }}
           cache-to: ${{ steps.primary_meta.outputs.cache_to }}
+          secrets: |
+            gha_results_url=${{ env.ACTIONS_RESULTS_URL }}
+            gha_runtime_token=${{ env.ACTIONS_RUNTIME_TOKEN }}
 
       # --- Prepare metadata for secondary image (if any) ---
-      - name: Step 3.10 - Prepare secondary image metadata (${{ matrix.platform }})
+      - name: Step 3.11 - Prepare secondary image metadata (${{ matrix.platform }})
         if: steps.plan.outputs.secondary_stage != ''
         id: secondary_meta
         shell: bash
@@ -764,7 +781,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # --- Build secondary variant ---
-      - name: Step 3.11 - Build secondary image (${{ matrix.platform }})
+      - name: Step 3.12 - Build secondary image (${{ matrix.platform }})
         if: steps.plan.outputs.secondary_stage != ''
         uses: docker/build-push-action@v6
         with:
@@ -773,16 +790,23 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           build-args: |
+            BUILDKIT_INLINE_CACHE=1
             GHCR_NS=${{ env.GHCR_NS }}
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
+            SCCACHE_GHA_ENABLED=on
+            SCCACHE_GHA_CACHE_SIZE=10G
+            SCCACHE_GHA_VERSION=1
           target: ${{ steps.plan.outputs.secondary_stage }}
           tags: ${{ steps.secondary_meta.outputs.tags }}
           cache-from: ${{ steps.secondary_meta.outputs.cache_from }}
           cache-to: ${{ steps.secondary_meta.outputs.cache_to }}
+          secrets: |
+            gha_results_url=${{ env.ACTIONS_RESULTS_URL }}
+            gha_runtime_token=${{ env.ACTIONS_RUNTIME_TOKEN }}
 
 
       # --- Export PLAN/TAGS for manifests ---
-      - name: Step 3.12 - Export PLAN/TAGS for manifests
+      - name: Step 3.13 - Export PLAN/TAGS for manifests
         id: export
         shell: bash
         run: |
@@ -904,7 +928,7 @@ jobs:
           echo "arches=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
 
       # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
-      - name: Step 3.13 - Extract release notes (master only, new version)
+      - name: Step 3.14 - Extract release notes (master only, new version)
         id: notes
         if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
         shell: bash
@@ -919,7 +943,7 @@ jobs:
           ' CHANGELOG.md > release_notes.md
           echo "notes_file=$PWD/release_notes.md" >> "$GITHUB_OUTPUT"
 
-      - name: Step 3.14 - Bump Cargo.toml + tag + release (master only, new version)
+      - name: Step 3.15 - Bump Cargo.toml + tag + release (master only, new version)
         if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -955,7 +979,7 @@ jobs:
           gh release create "v${ver}" --title "v${ver}" --notes-file "${{ steps.notes.outputs.notes_file }}"
 
       # --- Summary ---
-      - name: Step 3.15 - Summary
+      - name: Step 3.16 - Summary
         if: always()
         shell: bash
         env:
@@ -1158,3 +1182,5 @@ jobs:
             echo "### 📦 Registry"
             echo "- ghcr.io"
           } >> "$GITHUB_STEP_SUMMARY"
+
+

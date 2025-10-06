@@ -16,7 +16,10 @@ on:
       alpine_ver:
         description: "Alpine version for resources stage"
         required: false
-
+      sccache_features:
+        description: "Optional sccache features for sccache build"
+        required: false
+        default: "gha"
   push:
     paths:
       - .github/workflows/docker-build-tuliprox-build-tools.yml
@@ -70,11 +73,15 @@ jobs:
           BINDGEN_INPUT: ${{ github.event.inputs.bindgen_ver }}
           CHEF_INPUT: ${{ github.event.inputs.cargo_chef_ver }}
           ALPINE_INPUT: ${{ github.event.inputs.alpine_ver }}
+          SCCACHE_FEATURES_INPUT: ${{ github.event.inputs.sccache_features }}
         run: |
           set -euo pipefail
           {
             echo "value<<EOF"
             echo "BUILDKIT_INLINE_CACHE=1"
+            if [ -n "${SCCACHE_FEATURES_INPUT}" ]; then
+              echo "SCCACHE_FEATURES=${SCCACHE_FEATURES_INPUT}"
+            fi
             if [ -n "${TRUNK_INPUT}" ]; then
               echo "TRUNK_VER=${TRUNK_INPUT}"
             fi
@@ -271,3 +278,8 @@ jobs:
               echo "❌ Failed to create multi-arch \`:latest\` manifest."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+
+
+
+
