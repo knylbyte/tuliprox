@@ -81,15 +81,17 @@ RUN set -eux; \
 
 # Copy only the manifests/build scripts required to resolve dependencies.
 # This keeps the recipe layer stable when only source files change.
-COPY Cargo.lock ./Cargo.lock
-COPY backend/Cargo.toml ./backend/Cargo.toml
 COPY backend/build.rs ./backend/build.rs
+COPY backend/Cargo.toml ./backend/Cargo.toml
 COPY shared/Cargo.toml ./shared/Cargo.toml
 
 RUN set -eux; \
     mkdir -p backend/src shared/src; \
     printf 'fn main() {}\n' > backend/src/main.rs; \
     : > shared/src/lib.rs
+
+RUN set -eux; \
+    cargo generate-lockfile --offline || cargo generate-lockfile
 
 # Produce the dependency recipe using the existing lockfile.
 RUN set -eux; \
@@ -117,9 +119,8 @@ RUN set -eux; \
     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml
 
 # Copy only the manifests/build scripts required to resolve dependencies.
-COPY Cargo.lock ./Cargo.lock
-COPY backend/Cargo.toml ./backend/Cargo.toml
 COPY backend/build.rs ./backend/build.rs
+COPY backend/Cargo.toml ./backend/Cargo.toml
 COPY shared/Cargo.toml ./shared/Cargo.toml
 
 RUN set -eux; \
@@ -129,6 +130,7 @@ RUN set -eux; \
 
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
+COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
@@ -137,10 +139,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
     --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
     set -eux; \
     cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json
-
-COPY Cargo.lock ./Cargo.lock
-
+    
 # Build the actual backend (cargo will leverage the cooked deps)
+COPY Cargo.lock ./Cargo.lock
 COPY backend ./backend
 COPY shared   ./shared
 
@@ -167,7 +168,6 @@ RUN set -eux; \
     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
 
 # Copy only the manifests required for dependency resolution.
-COPY Cargo.lock ./Cargo.lock
 COPY frontend/Cargo.toml ./frontend/Cargo.toml
 COPY shared/Cargo.toml   ./shared/Cargo.toml
 
@@ -175,6 +175,9 @@ RUN set -eux; \
     mkdir -p frontend/src shared/src; \
     : > frontend/src/lib.rs; \
     : > shared/src/lib.rs
+
+RUN set -eux; \
+    cargo generate-lockfile --offline || cargo generate-lockfile
 
 # Produce the dependency recipe for WASM using the existing lockfile.
 RUN set -eux; \
@@ -199,7 +202,6 @@ RUN set -eux; \
     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
 
 # Copy only the manifests required for dependency resolution.
-COPY Cargo.lock ./Cargo.lock
 COPY frontend/Cargo.toml ./frontend/Cargo.toml
 COPY shared/Cargo.toml   ./shared/Cargo.toml
 
@@ -210,6 +212,7 @@ RUN set -eux; \
 
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
+COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
