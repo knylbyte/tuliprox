@@ -136,7 +136,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
     --mount=type=secret,id=gha_results_url,env=ACTIONS_RESULTS_URL,required=false \
     --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
     set -eux; \
-    cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json
+    cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json
+
+COPY Cargo.lock ./Cargo.lock
 
 # Build the actual backend (cargo will leverage the cooked deps)
 COPY backend ./backend
@@ -215,7 +217,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
     --mount=type=secret,id=gha_results_url,env=ACTIONS_RESULTS_URL,required=false \
     --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
     set -eux; \
-    cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
+    cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
+
+COPY Cargo.lock ./Cargo.lock
 
 COPY frontend ./frontend
 COPY shared   ./shared
