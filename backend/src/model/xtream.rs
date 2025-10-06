@@ -1,13 +1,12 @@
 use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, XtreamTargetOutput};
-use shared::model::{xtream_const, PlaylistItem,XtreamPlaylistItem};
-use shared::utils::{deserialize_as_option_string, deserialize_as_string, deserialize_as_string_array, deserialize_number_from_string,
-                    opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32, get_non_empty_str};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
-use std::iter::FromIterator;
+use shared::model::{xtream_const, PlaylistItem, XtreamPlaylistItem};
 use shared::model::{ClusterFlags, PlaylistEntry, XtreamCluster};
+use shared::utils::{deserialize_as_option_string, deserialize_as_string, deserialize_as_string_array, deserialize_number_from_string,
+                    get_non_empty_str, opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
+use std::iter::FromIterator;
 
 #[derive(Deserialize, Default)]
 pub struct XtreamCategory {
@@ -341,14 +340,60 @@ impl XtreamSeriesEpisode {
     }
 }
 
+fn deserialize_episodes<'de, D>(deserializer: D) -> Result<Option<Vec<XtreamSeriesInfoEpisode>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // read as generic value
+    let value = Value::deserialize(deserializer)?;
+    match value {
+        Value::Null => Ok(None),
+        Value::Array(array) => {
+            if array.is_empty() {
+                Ok(None)
+            } else {
+                let mut result = Vec::new();
+                for inner in array {
+                    if let Some(inner_array) = inner.as_array() {
+                        for item in inner_array {
+                            let ep: XtreamSeriesInfoEpisode = serde_json::from_value(item.clone())
+                                .map_err(serde::de::Error::custom)?;
+                            result.push(ep);
+                        }
+                    }
+                }
+                Ok(Some(result))
+            }
+        }
+        Value::Object(object) => {
+            if object.is_empty() {
+                Ok(None)
+            } else {
+                let mut result = Vec::new();
+                for (_key, val) in object {
+                    if let Some(inner_array) = val.as_array() {
+                        for item in inner_array {
+                            let ep: XtreamSeriesInfoEpisode = serde_json::from_value(item.clone())
+                                .map_err(serde::de::Error::custom)?;
+                            result.push(ep);
+                        }
+                    }
+                }
+                Ok(Some(result))
+            }
+        }
+        _ => Err(serde::de::Error::custom("Invalid format for episodes")),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XtreamSeriesInfo {
     #[serde(default)]
     pub seasons: Option<Vec<XtreamSeriesInfoSeason>>,
     #[serde(default)]
     pub info: Option<XtreamSeriesInfoInfo>,
-    #[serde(default)]
-    pub episodes: Option<HashMap<String, Vec<XtreamSeriesInfoEpisode>>>,
+    #[serde(default, deserialize_with = "deserialize_episodes")]
+    pub episodes: Option<Vec<XtreamSeriesInfoEpisode>>,
 }
 
 impl XtreamSeriesInfoEpisode {
@@ -408,7 +453,7 @@ pub fn normalize_release_date(document: &mut serde_json::Map<String, Value>) {
     let date_value = document.get("release_date")
         .or_else(|| document.get("releaseDate"))
         .or_else(|| document.get("releasedate"))
-        .filter(|v| v.as_str().is_some_and(|s| !s.is_empty())) 
+        .filter(|v| v.as_str().is_some_and(|s| !s.is_empty()))
         .cloned();
 
     // Remove unused keys (optional)

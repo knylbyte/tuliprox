@@ -194,8 +194,8 @@ http://hd.providerline.com/get.php?username=user4&password=user4&type=m3u_plus;i
 
     const XTREAM_BATCH: &str = r"
 #name;username;password;url;max_connections
-input_1;desanocra;eyCG8SN523KQ;http://provider_1.tv:80;1
-input_2;desanocra;eyCG8SN523KQ;http://provider_2.tv:8080;1
+input_1;de566567;de2345f43g5;http://provider_1.tv:80;1
+input_2;de566567;de2345f43g5;http://provider_2.tv:8080;1
 ";
 
     #[test]

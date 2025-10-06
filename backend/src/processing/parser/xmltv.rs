@@ -554,26 +554,31 @@ mod tests {
 
     #[test]
     fn parse_test() -> io::Result<()> {
-        //let file_path = PathBuf::from("/tmp/epg.xml.gz");
-        let file_path = PathBuf::from("/tmp/invalid_epg.xml");
+        let run_test = async move || {
+            //let file_path = PathBuf::from("/tmp/epg.xml.gz");
+            let file_path = PathBuf::from("/tmp/invalid_epg.xml");
 
-        if file_path.exists() {
-            let tv_guide = TVGuide::new(vec![PersistedEpgSource { file_path, priority: 0, logo_override: false }]);
+            if file_path.exists() {
+                let tv_guide = TVGuide::new(vec![PersistedEpgSource { file_path, priority: 0, logo_override: false }]);
 
-            let mut id_cache = EpgIdCache::new(None);
-            id_cache.channel_epg_id.insert(Cow::Owned("342".to_string()));
-            //id_cache.collect_epg_id(fp);
+                let mut id_cache = EpgIdCache::new(None);
+                id_cache.channel_epg_id.insert(Cow::Owned("342".to_string()));
+                //id_cache.collect_epg_id(fp);
 
-            let channel_ids = HashSet::from(["342".to_string()]);
-            match tv_guide.filter(&mut id_cache) {
-                None => assert!(false, "No epg filtered"),
-                Some(epgs) => {
-                    for epg in epgs {
-                        assert_eq!(epg.children.len(), channel_ids.len() * 2, "Epg size does not match")
+                let channel_ids = HashSet::from(["342".to_string()]);
+                match tv_guide.filter(&mut id_cache).await {
+                    None => assert!(false, "No epg filtered"),
+                    Some(epgs) => {
+                        for epg in epgs {
+                            assert_eq!(epg.children.len(), channel_ids.len() * 2, "Epg size does not match")
+                        }
                     }
                 }
             }
-        }
+        };
+        let _result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(run_test());
         Ok(())
     }
 
