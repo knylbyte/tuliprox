@@ -77,7 +77,7 @@ WORKDIR /src
 COPY Cargo.toml ./Cargo.toml
 
 RUN set -eux; \
-    sed -i 's/members = ["backend", "frontend", "shared"]/members = ["backend", "shared"]/' Cargo.toml
+    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml
 
 # Copy only the manifests/build scripts required to resolve dependencies.
 # This keeps the recipe layer stable when only source files change.
@@ -109,7 +109,7 @@ ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 COPY Cargo.toml ./Cargo.toml
 
 RUN set -eux; \
-    sed -i 's/members = ["backend", "frontend", "shared"]/members = ["backend", "shared"]/' Cargo.toml
+    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml
 
 # Copy only the manifests/build scripts required to resolve dependencies.
 COPY Cargo.lock ./Cargo.lock
@@ -152,7 +152,7 @@ WORKDIR /src
 COPY Cargo.toml ./Cargo.toml
 
 RUN set -eux; \
-    sed -i 's/members = ["backend", "frontend", "shared"]/members = ["frontend", "shared"]/' Cargo.toml
+    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
 
 # Copy only the manifests required for dependency resolution.
 COPY Cargo.lock ./Cargo.lock
@@ -179,7 +179,7 @@ WORKDIR /src
 COPY Cargo.toml ./Cargo.toml
 
 RUN set -eux; \
-    sed -i 's/members = ["backend", "frontend", "shared"]/members = ["frontend", "shared"]/' Cargo.toml
+    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
 
 # Copy only the manifests required for dependency resolution.
 COPY Cargo.lock ./Cargo.lock
@@ -349,5 +349,4 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # The CMD will be passed as arguments to the entrypoint script.
 CMD ["tail", "-f", "/dev/null"]
-
 
