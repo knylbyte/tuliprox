@@ -208,8 +208,13 @@ mod tests {
 
     #[test]
     fn test_read_json_file_into_struct() {
-        let file_content = fs::read_to_string("series-info.json").expect("Unable to read file");
-        let _info: XtreamSeriesInfo = serde_json::from_str(&file_content).expect("JSON was not well-formatted");
+        let file_content = fs::read_to_string("/tmp/series-info.json").expect("Unable to read file");
+        match  serde_json::from_str::<XtreamSeriesInfo>(&file_content) {
+            Ok(series_info) => {},
+            Err(err) => {
+                assert!(false, "Failed to parse json file: {err}");
+            }
+        }
 
     }
 
