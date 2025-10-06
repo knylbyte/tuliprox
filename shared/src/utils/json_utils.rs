@@ -67,6 +67,7 @@ where
     let value: Value = serde::Deserialize::deserialize(deserializer)?;
 
     match value {
+        Value::Null => Ok(0u32),
         Value::Number(num) => {
             if let Some(v) = num.as_u64() {
                 u32::try_from(v)
@@ -114,6 +115,7 @@ where
     let value: Value = serde::Deserialize::deserialize(deserializer)?;
 
     match value {
+        Value::Null => Ok(0f64),
         Value::Number(num) => num
             .as_f64()
             .ok_or_else(|| serde::de::Error::custom("Invalid number")),
