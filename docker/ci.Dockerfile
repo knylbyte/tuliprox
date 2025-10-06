@@ -86,6 +86,11 @@ COPY backend/Cargo.toml ./backend/Cargo.toml
 COPY backend/build.rs ./backend/build.rs
 COPY shared/Cargo.toml ./shared/Cargo.toml
 
+RUN set -eux; \
+    mkdir -p backend/src shared/src; \
+    printf 'fn main() {}\n' > backend/src/main.rs; \
+    : > shared/src/lib.rs
+
 # Produce the dependency recipe using the existing lockfile.
 RUN set -eux; \
     cargo chef prepare --recipe-path backend-recipe.json
@@ -116,6 +121,11 @@ COPY Cargo.lock ./Cargo.lock
 COPY backend/Cargo.toml ./backend/Cargo.toml
 COPY backend/build.rs ./backend/build.rs
 COPY shared/Cargo.toml ./shared/Cargo.toml
+
+RUN set -eux; \
+    mkdir -p backend/src shared/src; \
+    printf 'fn main() {}\n' > backend/src/main.rs; \
+    : > shared/src/lib.rs
 
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
@@ -159,6 +169,11 @@ COPY Cargo.lock ./Cargo.lock
 COPY frontend/Cargo.toml ./frontend/Cargo.toml
 COPY shared/Cargo.toml   ./shared/Cargo.toml
 
+RUN set -eux; \
+    mkdir -p frontend/src shared/src; \
+    : > frontend/src/lib.rs; \
+    : > shared/src/lib.rs
+
 # Produce the dependency recipe for WASM using the existing lockfile.
 RUN set -eux; \
     cargo chef prepare --recipe-path frontend-recipe.json
@@ -185,6 +200,11 @@ RUN set -eux; \
 COPY Cargo.lock ./Cargo.lock
 COPY frontend/Cargo.toml ./frontend/Cargo.toml
 COPY shared/Cargo.toml   ./shared/Cargo.toml
+
+RUN set -eux; \
+    mkdir -p frontend/src shared/src; \
+    : > frontend/src/lib.rs; \
+    : > shared/src/lib.rs
 
 # Cook: compile only dependencies (cacheable layer)
 COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
@@ -349,4 +369,3 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # The CMD will be passed as arguments to the entrypoint script.
 CMD ["tail", "-f", "/dev/null"]
-
