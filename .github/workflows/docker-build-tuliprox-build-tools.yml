@@ -73,14 +73,16 @@ jobs:
           BINDGEN_INPUT: ${{ github.event.inputs.bindgen_ver }}
           CHEF_INPUT: ${{ github.event.inputs.cargo_chef_ver }}
           ALPINE_INPUT: ${{ github.event.inputs.alpine_ver }}
-          SCCACHE_FEATURES_INPUT: ${{ github.event.inputs.sccache_features }}
+          SCCACHE_FEATURES_INPUT: ${{ (github.event_name == 'workflow_dispatch' && inputs.sccache_features) || '' }}
+          DEFAULT_SCCACHE_FEATURES: gha
         run: |
           set -euo pipefail
+          SCCACHE_FEATURES="${SCCACHE_FEATURES_INPUT:-$DEFAULT_SCCACHE_FEATURES}"
           {
             echo "value<<EOF"
             echo "BUILDKIT_INLINE_CACHE=1"
-            if [ -n "${SCCACHE_FEATURES_INPUT}" ]; then
-              echo "SCCACHE_FEATURES=${SCCACHE_FEATURES_INPUT}"
+            if [ -n "${SCCACHE_FEATURES}" ]; then
+              echo "SCCACHE_FEATURES=${SCCACHE_FEATURES}"
             fi
             if [ -n "${TRUNK_INPUT}" ]; then
               echo "TRUNK_VER=${TRUNK_INPUT}"
@@ -96,6 +98,7 @@ jobs:
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+          echo "features=${SCCACHE_FEATURES}" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -216,6 +219,7 @@ jobs:
             echo "- wasm-bindgen: **${{ steps.img.outputs.bindgen_version }}**"
             echo "- cargo-chef: **${{ steps.img.outputs.chef_version }}**"
             echo "- sccache: **${{ steps.img.outputs.sccache_version }}**"
+            echo "- sccache features: **${{ steps.build-args.outputs.features }}**"
             echo ""
             if [[ "${{ steps.img.outputs.resources_ok }}" == "true" && "${{ steps.img.outputs.published }}" == "true" ]]; then
               echo "✅ All resource files present."
