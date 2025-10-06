@@ -44,7 +44,7 @@ pub fn parse_xtream_series_info(info: &Value, group_title: &str, series_name: &s
     match serde_json::from_value::<XtreamSeriesInfo>(info.to_owned()) {
         Ok(series_info) => {
             if let Some(episodes) = &series_info.episodes {
-                let result: Vec<(XtreamSeriesInfoEpisode, PlaylistItem)> = episodes.values().flatten().map(|episode| {
+                let result: Vec<(XtreamSeriesInfoEpisode, PlaylistItem)> = episodes.iter().map(|episode| {
                     let episode_url = create_xtream_series_episode_url(url, username, password, episode);
                     let mut new_episode = episode.clone();
 
@@ -210,7 +210,10 @@ mod tests {
     fn test_read_json_file_into_struct() {
         let file_content = fs::read_to_string("/tmp/series-info.json").expect("Unable to read file");
         match  serde_json::from_str::<XtreamSeriesInfo>(&file_content) {
-            Ok(series_info) => {},
+            Ok(series_info) => {
+                println!("{:#?}", series_info);
+                assert!(true);
+            },
             Err(err) => {
                 assert!(false, "Failed to parse json file: {err}");
             }
