@@ -4,8 +4,9 @@
 # - Stage 3 (WASM via trunk + wasm-bindgen)
 # No OpenSSL dev packages are needed (the app uses rustls).
 # sccache possible features: dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss
-# The `gha` backend relies on reqwest+rustls, so no OpenSSL dev packages (e.g. libssl-dev)
-# are required for the build-tools image.
+# The `gha` backend relies on reqwest+rustls, and we force vendored OpenSSL when optional
+# cloud features are enabled. This avoids having to ship cross-compiled OpenSSL system
+# libraries in the build-tools image.
 # The sccache cache dir is /var/cache/sccache.
 
 ############################################
@@ -82,7 +83,7 @@ RUN --mount=type=cache,id=apt-builder-cache,target=/var/cache/apt,sharing=locked
     set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-      curl ca-certificates pkg-config \
+      curl ca-certificates pkg-config make perl \
       gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
       gcc-aarch64-linux-gnu    binutils-aarch64-linux-gnu; \
     case "$(cat /rust-target)" in \
@@ -114,7 +115,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     set -eux; \
     if [ -n "${SCCACHE_FEATURES}" ]; then \
-      SCCACHE_INSTALL_FLAGS="--no-default-features --features ${SCCACHE_FEATURES}"; \
+      SCCACHE_FEATURE_LIST="$(echo "${SCCACHE_FEATURES}" | tr ' ' ',')"; \
+      case ",${SCCACHE_FEATURE_LIST}," in \
+        *",vendored-openssl,"*) : ;; \
+        *) SCCACHE_FEATURE_LIST="${SCCACHE_FEATURE_LIST},vendored-openssl" ;; \
+      esac; \
+      SCCACHE_INSTALL_FLAGS="--no-default-features --features ${SCCACHE_FEATURE_LIST}"; \
     else \
       SCCACHE_INSTALL_FLAGS="--no-default-features"; \
     fi; \
