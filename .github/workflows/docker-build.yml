@@ -253,22 +253,22 @@ jobs:
       tag_aliases: ${{ steps.export.outputs.tag_aliases }}
 
     steps:
-      - name: Step 2.1 - Checkout
+      - name: Step 3.1 - Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Step 2.2 - Set up QEMU
+      - name: Step 3.2 - Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: ${{ matrix.platform }}
 
-      - name: Step 2.3 - Set up Buildx
+      - name: Step 3.3 - Set up Buildx
         uses: docker/setup-buildx-action@v3
         with:
           platforms: ${{ matrix.platform }}
 
-      - name: Step 2.4 - Login to GHCR
+      - name: Step 3.4 - Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -276,7 +276,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # --- Read version from CHANGELOG.md ---
-      - name: Step 2.5 - Read version
+      - name: Step 3.5 - Read version
         id: version
         shell: bash
         run: |
@@ -289,7 +289,7 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
       # --- Decide plan and tags ---
-      - name: Step 2.6 - Decide plan
+      - name: Step 3.6 - Decide plan
         id: plan
         shell: bash
         env:
@@ -551,7 +551,7 @@ jobs:
           fi
 
       # --- Detect new version (only to decide Release later; tagging happens after build) ---
-      - name: Step 2.7 - Detect new version (master only)
+      - name: Step 3.7 - Detect new version (master only)
         id: newver
         if: steps.plan.outputs.plan == 'master'
         shell: bash
@@ -566,7 +566,7 @@ jobs:
           fi
 
       # --- Prepare metadata for primary image ---
-      - name: Step 2.8 - Prepare primary image metadata (${{ matrix.platform }})
+      - name: Step 3.8 - Prepare primary image metadata (${{ matrix.platform }})
         id: primary_meta
         shell: bash
         env:
@@ -656,7 +656,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # --- Build primary variant ---
-      - name: Step 2.9 - Build primary image (${{ matrix.platform }})
+      - name: Step 3.9 - Build primary image (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -673,7 +673,7 @@ jobs:
           cache-to: ${{ steps.primary_meta.outputs.cache_to }}
 
       # --- Prepare metadata for secondary image (if any) ---
-      - name: Step 2.10 - Prepare secondary image metadata (${{ matrix.platform }})
+      - name: Step 3.10 - Prepare secondary image metadata (${{ matrix.platform }})
         if: steps.plan.outputs.secondary_stage != ''
         id: secondary_meta
         shell: bash
@@ -764,7 +764,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # --- Build secondary variant ---
-      - name: Step 2.11 - Build secondary image (${{ matrix.platform }})
+      - name: Step 3.11 - Build secondary image (${{ matrix.platform }})
         if: steps.plan.outputs.secondary_stage != ''
         uses: docker/build-push-action@v6
         with:
@@ -782,7 +782,7 @@ jobs:
 
 
       # --- Export PLAN/TAGS for manifests ---
-      - name: Step 2.12 - Export PLAN/TAGS for manifests
+      - name: Step 3.12 - Export PLAN/TAGS for manifests
         id: export
         shell: bash
         run: |
@@ -904,7 +904,7 @@ jobs:
           echo "arches=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
 
       # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
-      - name: Step 2.13 - Extract release notes (master only, new version)
+      - name: Step 3.13 - Extract release notes (master only, new version)
         id: notes
         if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
         shell: bash
@@ -919,7 +919,7 @@ jobs:
           ' CHANGELOG.md > release_notes.md
           echo "notes_file=$PWD/release_notes.md" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.14 - Bump Cargo.toml + tag + release (master only, new version)
+      - name: Step 3.14 - Bump Cargo.toml + tag + release (master only, new version)
         if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -955,7 +955,7 @@ jobs:
           gh release create "v${ver}" --title "v${ver}" --notes-file "${{ steps.notes.outputs.notes_file }}"
 
       # --- Summary ---
-      - name: Step 2.15 - Summary
+      - name: Step 3.15 - Summary
         if: always()
         shell: bash
         env:
@@ -1056,10 +1056,10 @@ jobs:
 
     steps:
       # Keep login/buildx setup minimal and explicit
-      - name: Docker Buildx
+      - name: 4.1 - Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: GHCR Login
+      - name: 4.2 - GHCR Login
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -1067,7 +1067,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # --- Create manifests ---
-      - name: Step 3.1 - Create manifests
+      - name: Step 4.3 - Create manifests
         id: create
         shell: bash
         run: |
@@ -1105,7 +1105,7 @@ jobs:
           done
 
       # --- Final summary for the manifests ---
-      - name: Summary (manifests)
+      - name: 4.4 - Summary (manifests)
         if: always()
         shell: bash
         run: |
