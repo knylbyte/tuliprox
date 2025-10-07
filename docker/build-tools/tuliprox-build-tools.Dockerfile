@@ -3,10 +3,9 @@
 # - Stage 2 (native Rust binary; musl on amd64/arm64/armv7)
 # - Stage 3 (WASM via trunk + wasm-bindgen)
 # No OpenSSL dev packages are needed (the app uses rustls).
-# sccache possible features: dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss
-# The `gha` backend relies on reqwest+rustls, and we force vendored OpenSSL when optional
-# cloud features are enabled. This avoids having to ship cross-compiled OpenSSL system
-# libraries in the build-tools image.
+# sccache is built with all upstream features enabled
+# (dist-client, redis, s3, memcached, gcs, azure, gha, webdav, oss) and vendored OpenSSL.
+# This avoids cross-compiling OpenSSL system libraries for the build-tools image.
 # The sccache cache dir is /var/cache/sccache.
 
 ############################################
@@ -17,7 +16,6 @@ ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.104
 ARG CARGO_CHEF_VER=0.1.73
 ARG SCCACHE_VER=0.10.0
-ARG SCCACHE_FEATURES=
 ARG ALPINE_VER=3.22.1
 
 ############################################
@@ -59,7 +57,6 @@ ARG TRUNK_VER
 ARG BINDGEN_VER
 ARG CARGO_CHEF_VER
 ARG SCCACHE_VER
-ARG SCCACHE_FEATURES
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -114,23 +111,14 @@ ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=64 \
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     set -eux; \
-    if [ -n "${SCCACHE_FEATURES}" ]; then \
-      SCCACHE_FEATURE_LIST="$(echo "${SCCACHE_FEATURES}" | tr ' ' ',')"; \
-      case ",${SCCACHE_FEATURE_LIST}," in \
-        *",vendored-openssl,"*) : ;; \
-        *) SCCACHE_FEATURE_LIST="${SCCACHE_FEATURE_LIST},vendored-openssl" ;; \
-      esac; \
-      SCCACHE_INSTALL_FLAGS="--no-default-features --features ${SCCACHE_FEATURE_LIST}"; \
-    else \
-      SCCACHE_INSTALL_FLAGS="--no-default-features"; \
-    fi; \
+    SCCACHE_FEATURE_LIST="dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl"; \
     cargo install --locked trunk --version ${TRUNK_VER} \
       --target "$(cat /rust-target)" --root /out; \
     cargo install --locked wasm-bindgen-cli --version ${BINDGEN_VER} \
       --target "$(cat /rust-target)" --root /out; \
     cargo install --locked cargo-chef --version ${CARGO_CHEF_VER} \
       --target "$(cat /rust-target)" --root /out; \
-    cargo install --locked ${SCCACHE_INSTALL_FLAGS} \
+    cargo install --locked --no-default-features --features "${SCCACHE_FEATURE_LIST}" \
       --target "$(cat /rust-target)" \
       --root /out \
       --version ${SCCACHE_VER} \
@@ -154,7 +142,6 @@ ARG TRUNK_VER
 ARG BINDGEN_VER
 ARG CARGO_CHEF_VER
 ARG SCCACHE_VER
-ARG SCCACHE_FEATURES
 
 LABEL io.tuliprox.rust.version="${RUST_DISTRO%%-*}" \
       io.tuliprox.trunk.version="${TRUNK_VER}" \
