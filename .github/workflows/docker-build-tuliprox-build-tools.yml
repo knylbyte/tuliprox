@@ -16,10 +16,6 @@ on:
       alpine_ver:
         description: "Alpine version for resources stage"
         required: false
-      sccache_features:
-        description: "Optional sccache features for sccache build"
-        required: false
-        default: "gha"
   push:
     paths:
       - .github/workflows/docker-build-tuliprox-build-tools.yml
@@ -73,17 +69,12 @@ jobs:
           BINDGEN_INPUT: ${{ github.event.inputs.bindgen_ver }}
           CHEF_INPUT: ${{ github.event.inputs.cargo_chef_ver }}
           ALPINE_INPUT: ${{ github.event.inputs.alpine_ver }}
-          SCCACHE_FEATURES_INPUT: ${{ (github.event_name == 'workflow_dispatch' && inputs.sccache_features) || '' }}
-          DEFAULT_SCCACHE_FEATURES: gha
         run: |
           set -euo pipefail
-          SCCACHE_FEATURES="${SCCACHE_FEATURES_INPUT:-$DEFAULT_SCCACHE_FEATURES}"
+          SCCACHE_FEATURES="dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl"
           {
             echo "value<<EOF"
             echo "BUILDKIT_INLINE_CACHE=1"
-            if [ -n "${SCCACHE_FEATURES}" ]; then
-              echo "SCCACHE_FEATURES=${SCCACHE_FEATURES}"
-            fi
             if [ -n "${TRUNK_INPUT}" ]; then
               echo "TRUNK_VER=${TRUNK_INPUT}"
             fi
