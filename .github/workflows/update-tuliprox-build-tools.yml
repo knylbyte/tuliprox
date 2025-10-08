@@ -1,5 +1,5 @@
 ---
-name: Bump tuliprox build tools
+name: Update tuliprox build tools
 
 on:
   workflow_dispatch:
@@ -201,7 +201,7 @@ jobs:
         id: update
         env:
           LATEST_JSON: ${{ steps.resolve.outputs.latest_json }}
-        shell: python
+        shell: python3
         run: |
           import json
           import os
