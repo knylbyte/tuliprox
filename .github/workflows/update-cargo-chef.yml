@@ -1,0 +1,139 @@
+---
+name: Update Cargo Chef manifests
+
+on:
+  workflow_run:
+    workflows:
+      - Docker Build & Push tuliprox-build-tools (prebuild)
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-cargo-chef
+  cancel-in-progress: true
+
+jobs:
+  update:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Step 1.1 - Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Step 1.2 - Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Step 1.3 - Update cargo-chef manifests and locks
+        id: update
+        run: |
+          set -euo pipefail
+          python3 scripts/update_cargo_chef.py --summary-path update-summary.json
+
+      - name: Step 1.4 - Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Step 1.5 - Detect changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git status --short
+          fi
+
+      - name: Step 1.6 - Resolve target branch
+        id: branch
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          WORKFLOW_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          branch="${WORKFLOW_BRANCH}"
+          
+          if [ -z "$branch" ]; then
+            branch="${GITHUB_REF_NAME}"
+          fi
+
+          if [ "$branch" == "main" ] || [ "$branch" == "master" ]; then
+            echo "Refusing to push to protected branch '$branch'"
+            exit 1
+          fi
+          
+          echo "Updating branch '$branch'"
+          echo "name=${branch}" >> "$GITHUB_OUTPUT"
+
+      - name: Step 1.7 - Append summary
+        if: always()
+        shell: python3
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          summary_file = Path('update-summary.json')
+          if summary_file.exists():
+              data = json.loads(summary_file.read_text())
+          else:
+              data = []
+
+          lines = ["## Cargo Chef dependency updates", ""]
+          if not data:
+              lines.append("No update data was produced.")
+          else:
+              for entry in data:
+                  target = entry.get('target', 'unknown')
+                  lines.append(f"### {target}")
+                  for kind in ("updated", "added", "removed"):
+                      changes = entry.get(kind, [])
+                      if not changes:
+                          continue
+                      lines.append(f"- {kind.capitalize()}:")
+                      for change in changes:
+                          name = change.get('name', 'unknown')
+                          source = change.get('source', '')
+                          src = f" ({source})" if source and source != 'path' else ""
+                          if change.get('change') == 'updated':
+                              lines.append(f"  - `{name}`{src}: {change.get('old')} -> {change.get('new')}")
+                          elif change.get('change') == 'added':
+                              lines.append(f"  - `{name}`{src}: added {change.get('new')}")
+                          elif change.get('change') == 'removed':
+                              lines.append(f"  - `{name}`{src}: removed {change.get('old')}")
+                  lines.append("")
+          if os.environ.get('GITHUB_STEP_SUMMARY'):
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
+                  handle.write("\n".join(lines).strip() + "\n")
+
+
+      - name: Step 1.8 - Clean up summary artifact
+        if: always()
+        run: rm -f update-summary.json
+
+      - name: Step 1.9 - Commit and push updates
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          TARGET_BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          set -euo pipefail
+          git add \
+            docker/build-tools/cargo-chef/backend/Cargo.toml \
+            docker/build-tools/cargo-chef/backend/Cargo.lock \
+            docker/build-tools/cargo-chef/frontend/Cargo.toml \
+            docker/build-tools/cargo-chef/frontend/Cargo.lock
+          if git diff --cached --quiet; then
+            echo "No staged changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: update cargo-chef manifests" || true
+          branch="${TARGET_BRANCH:-${GITHUB_REF_NAME}}"
+          git push origin "HEAD:${branch}"
