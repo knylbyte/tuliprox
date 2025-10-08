@@ -73,11 +73,9 @@ FROM chef AS backend-planner
 
 WORKDIR /src
 
-# Synthetic minimal workspace (backend + shared only) to keep frontend out
-COPY Cargo.toml ./Cargo.toml
-
-RUN set -eux; \
-    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml
+# Synthetic minimal workspace (backend + shared only) generated ahead of time
+COPY docker/build-tools/cargo-chef/backend/Cargo.toml ./Cargo.toml
+COPY docker/build-tools/cargo-chef/backend/Cargo.lock ./Cargo.lock
 
 # Copy only the manifests/build scripts required to resolve dependencies.
 # This keeps the recipe layer stable when only source files change.
@@ -89,9 +87,6 @@ RUN set -eux; \
     mkdir -p backend/src shared/src; \
     printf 'fn main() {}\n' > backend/src/main.rs; \
     : > shared/src/lib.rs
-
-RUN set -eux; \
-    cargo generate-lockfile --offline || cargo generate-lockfile
 
 # Produce the dependency recipe using the existing lockfile.
 RUN set -eux; \
@@ -111,12 +106,8 @@ WORKDIR /src
 ENV SCCACHE_DIR=${SCCACHE_DIR}
 ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 
-# Recreate the minimal workspace layout so the recipe matches even when
-# unrelated files (e.g. README) change in the repo root.
-COPY Cargo.toml ./Cargo.toml
-
-RUN set -eux; \
-    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml
+# Recreate the minimal workspace layout using the pre-generated manifest
+COPY docker/build-tools/cargo-chef/backend/Cargo.toml ./Cargo.toml
 
 # Copy only the manifests/build scripts required to resolve dependencies.
 COPY backend/build.rs ./backend/build.rs
@@ -162,11 +153,9 @@ FROM chef AS frontend-planner
 
 WORKDIR /src
 
-# Synthetic minimal workspace (frontend + shared only) to keep backend out
-COPY Cargo.toml ./Cargo.toml
-
-RUN set -eux; \
-    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
+# Synthetic minimal workspace (frontend + shared only) generated ahead of time
+COPY docker/build-tools/cargo-chef/frontend/Cargo.toml ./Cargo.toml
+COPY docker/build-tools/cargo-chef/frontend/Cargo.lock ./Cargo.lock
 
 # Copy only the manifests required for dependency resolution.
 COPY frontend/Cargo.toml ./frontend/Cargo.toml
@@ -176,9 +165,6 @@ RUN set -eux; \
     mkdir -p frontend/src shared/src; \
     : > frontend/src/lib.rs; \
     : > shared/src/lib.rs
-
-RUN set -eux; \
-    cargo generate-lockfile --offline || cargo generate-lockfile
 
 # Produce the dependency recipe for WASM using the existing lockfile.
 RUN set -eux; \
@@ -196,11 +182,8 @@ ENV SCCACHE_DIR=${SCCACHE_DIR}
 
 WORKDIR /src
 
-# Recreate the minimal workspace layout for reproducible dependency caches.
-COPY Cargo.toml ./Cargo.toml
-
-RUN set -eux; \
-    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
+# Recreate the minimal workspace layout using the pre-generated manifest
+COPY docker/build-tools/cargo-chef/frontend/Cargo.toml ./Cargo.toml
 
 # Copy only the manifests required for dependency resolution.
 COPY frontend/Cargo.toml ./frontend/Cargo.toml
