@@ -75,7 +75,7 @@ jobs:
 
       - name: Step 1.7 - Append summary
         if: always()
-        shell: python3
+        shell: python
         run: |
           import json
           import os
