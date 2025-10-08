@@ -201,7 +201,7 @@ jobs:
         id: update
         env:
           LATEST_JSON: ${{ steps.resolve.outputs.latest_json }}
-        shell: python3
+        shell: python
         run: |
           import json
           import os
