@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
+
+try:  # Python 3.11+
+    import tomllib  # type: ignore[attr-defined]
+except ModuleNotFoundError:  # pragma: no cover - fallback for older interpreters
+    import tomli as tomllib  # type: ignore[no-redef]
 
 ROOT = Path(__file__).resolve().parent.parent
 CHEF_DIR = ROOT / "docker" / "build-tools" / "cargo-chef"
-MEMBERS_TEMPLATE = 'members = ["backend", "frontend", "shared"]'
-
-
+CHECKSUM_PATH = CHEF_DIR / "checksums.json"
 @dataclass
 class PackageChange:
     name: str
@@ -58,18 +63,60 @@ class TargetSummary:
 
 
 TARGETS = {
-    "backend": ["backend", "shared"],
-    "frontend": ["frontend", "shared"],
+    "backend": "backend",
+    "frontend": "frontend",
 }
 
+CHECKSUM_TARGETS = [
+    Path("Cargo.toml"),
+    Path("backend/Cargo.toml"),
+    Path("frontend/Cargo.toml"),
+    Path("shared/Cargo.toml"),
+]
 
-def write_manifest(target: str, members: List[str]) -> str:
-    manifest_text = (ROOT / "Cargo.toml").read_text()
-    members_list = ', '.join(f'"{m}"' for m in members)
-    replacement = f"members = [{members_list}]"
-    if MEMBERS_TEMPLATE not in manifest_text:
-        raise RuntimeError(f"Cannot find workspace members template in root Cargo.toml for {target}")
-    manifest_text = manifest_text.replace(MEMBERS_TEMPLATE, replacement, 1)
+
+WORKSPACE_BLOCK_RE = re.compile(r"^\[workspace\].*?(?=^\[|\Z)", re.MULTILINE | re.DOTALL)
+WORKSPACE_MEMBERS_RE = re.compile(r"^(?P<indent>\s*)members\s*=\s*\[(?P<body>.*?)\](?P<tail>[^\n]*)", re.MULTILINE | re.DOTALL)
+
+
+def _format_members(indent: str, members: List[str], tail: str) -> str:
+    if members:
+        inner_indent = indent + "    "
+        body_lines = []
+        for index, member in enumerate(members):
+            suffix = "," if index < len(members) - 1 else ""
+            body_lines.append(f'{inner_indent}"{member}"{suffix}')
+        body = "\n".join(body_lines)
+        result = f"{indent}members = [\n{body}\n{indent}]"
+    else:
+        result = f"{indent}members = []"
+    if tail:
+        result += tail
+    return result
+
+
+def _update_workspace_members(manifest_text: str, members: List[str]) -> str:
+    block_match = WORKSPACE_BLOCK_RE.search(manifest_text)
+    if not block_match:
+        raise RuntimeError("Cannot locate [workspace] section in root Cargo.toml")
+    block = block_match.group(0)
+    member_match = WORKSPACE_MEMBERS_RE.search(block)
+    if not member_match:
+        raise RuntimeError("Cannot locate workspace members array in root Cargo.toml")
+    indent = member_match.group("indent")
+    tail = member_match.group("tail")
+    replacement = _format_members(indent, members, tail)
+    updated_block = WORKSPACE_MEMBERS_RE.sub(replacement, block, count=1)
+    return manifest_text[: block_match.start()] + updated_block + manifest_text[block_match.end():]
+
+
+def write_manifest(target: str, members: Iterable[str]) -> str:
+    manifest_path = ROOT / "Cargo.toml"
+    manifest_text = manifest_path.read_text()
+    member_list = list(members)
+    if not member_list:
+        member_list = []
+    manifest_text = _update_workspace_members(manifest_text, member_list)
     target_dir = CHEF_DIR / target
     target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / "Cargo.toml").write_text(manifest_text)
@@ -90,17 +137,86 @@ def copy_member_manifest(tmp_root: Path, member: str) -> None:
 
     src_dir = dest_dir / "src"
     src_dir.mkdir(parents=True, exist_ok=True)
+    manifest_data = tomllib.loads(src_manifest.read_text())
+
+    def write_file(path: Path, content: str) -> None:
+        if not path.exists():
+            path.write_text(content)
+
     if member == "backend":
-        (src_dir / "main.rs").write_text("fn main() {}\n")
+        write_file(src_dir / "main.rs", "fn main() {}\n")
+        write_file(src_dir / "lib.rs", "pub fn placeholder() {}\n")
+        return
+
     if member == "frontend":
-        # Provide both lib.rs and main.rs so cargo can satisfy either target type
-        (src_dir / "lib.rs").write_text("pub fn placeholder() {}\n")
-        (src_dir / "main.rs").write_text("fn main() {}\n")
+        write_file(src_dir / "lib.rs", "pub fn placeholder() {}\n")
+        write_file(src_dir / "main.rs", "fn main() {}\n")
+        return
+
     if member == "shared":
-        (src_dir / "lib.rs").write_text("pub fn placeholder() {}\n")
+        write_file(src_dir / "lib.rs", "pub fn placeholder() {}\n")
+        return
+
+    # Heuristic: default to library placeholder; add bin if crate declares explicit bins
+    write_file(src_dir / "lib.rs", "pub fn placeholder() {}\n")
+    bins = manifest_data.get("bin", [])
+    if bins:
+        write_file(src_dir / "main.rs", "fn main() {}\n")
 
 
-def generate_lockfile(target: str, manifest_text: str, members: List[str]) -> Tuple[Path, Path]:
+def find_path_dependencies(manifest_path: Path) -> Set[str]:
+    data = tomllib.loads(manifest_path.read_text())
+    sections = [
+        data.get("dependencies", {}),
+        data.get("dev-dependencies", {}),
+        data.get("build-dependencies", {}),
+    ]
+
+    targets = data.get("target", {})
+    for target_table in targets.values():
+        sections.append(target_table.get("dependencies", {}))
+        sections.append(target_table.get("dev-dependencies", {}))
+        sections.append(target_table.get("build-dependencies", {}))
+
+    discovered: Set[str] = set()
+    base_dir = manifest_path.parent
+
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        for value in section.values():
+            if isinstance(value, dict) and "path" in value:
+                candidate = (base_dir / value["path"]).resolve()
+                try:
+                    rel = candidate.relative_to(ROOT.resolve())
+                except ValueError:
+                    continue
+                discovered.add(rel.as_posix())
+    return discovered
+
+
+def resolve_members(initial: str) -> List[str]:
+    root_dir = ROOT.resolve()
+    stack = [initial]
+    visited: Set[str] = set()
+    ordered: List[str] = []
+
+    while stack:
+        member = stack.pop()
+        if member in visited:
+            continue
+        visited.add(member)
+        ordered.append(member)
+        manifest = root_dir / member / "Cargo.toml"
+        if not manifest.exists():
+            raise RuntimeError(f"Missing manifest at {manifest}")
+        deps = sorted(find_path_dependencies(manifest), reverse=True)
+        for dep in deps:
+            stack.append(dep)
+    return ordered
+
+
+def generate_lockfile(target: str, manifest_text: str, members: Iterable[str]) -> Tuple[Path, Path]:
     target_dir = CHEF_DIR / target
     lock_path = target_dir / "Cargo.lock"
     with tempfile.TemporaryDirectory(prefix=f"cargo-chef-{target}-") as tmp_dir:
@@ -190,6 +306,28 @@ def ensure_cargo_available() -> None:
         raise RuntimeError("cargo binary not found in PATH")
 
 
+def compute_sha256(path: Path) -> str:
+    if not path.exists():
+        raise RuntimeError(f"Cannot compute checksum; missing file: {path}")
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_checksums() -> Dict[str, str]:
+    data: Dict[str, str] = {}
+    for rel in CHECKSUM_TARGETS:
+        abs_path = ROOT / rel
+        data[str(rel)] = compute_sha256(abs_path)
+    CHECKSUM_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CHECKSUM_PATH.write_text(json.dumps(data, indent=2, sort_keys=True))
+    return data
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -203,7 +341,8 @@ def main() -> int:
     ensure_cargo_available()
 
     summaries: List[TargetSummary] = []
-    for target, members in TARGETS.items():
+    for target, root_member in TARGETS.items():
+        members = resolve_members(root_member)
         manifest_text = write_manifest(target, members)
         target_dir = CHEF_DIR / target
         old_snapshot = parse_packages(target_dir / "Cargo.lock")
@@ -214,6 +353,7 @@ def main() -> int:
     args.summary_path.write_text(
         json.dumps([summary.to_dict() for summary in summaries], indent=2, sort_keys=True)
     )
+    write_checksums()
     return 0
 
 

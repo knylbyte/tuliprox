@@ -36,8 +36,139 @@ env:
   DOCKERFILE: docker/ci.Dockerfile
 
 jobs:
+  cargo-chef-guard:
+    name: Validate cargo-chef inputs
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Step 0.1 - Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Step 0.2 - Compare manifest checksums
+        id: checksum
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          targets = [
+              "Cargo.toml",
+              "backend/Cargo.toml",
+              "frontend/Cargo.toml",
+              "shared/Cargo.toml",
+          ]
+
+          checksum_path = Path("docker/build-tools/cargo-chef/checksums.json")
+          if not checksum_path.exists():
+              print("::error::Missing cargo-chef checksum file. Run update-cargo-chef workflow.")
+              raise SystemExit(1)
+
+          recorded = json.loads(checksum_path.read_text())
+          mismatches = []
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      if not chunk:
+                          break
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          for rel in targets:
+              path = Path(rel)
+              if not path.exists():
+                  mismatches.append({
+                      "file": rel,
+                      "status": "missing",
+                      "expected": recorded.get(rel),
+                      "actual": None,
+                  })
+                  continue
+              actual = sha256(path)
+              expected = recorded.get(rel)
+              if expected != actual:
+                  mismatches.append({
+                      "file": rel,
+                      "status": "mismatch",
+                      "expected": expected,
+                      "actual": actual,
+                  })
+
+          report_path = Path("checksum-report.json")
+          report_path.write_text(json.dumps(mismatches, indent=2))
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"changed={'true' if mismatches else 'false'}\n")
+              handle.write(f"report={report_path.as_posix()}\n")
+
+      - name: Step 0.3 - Summary (checksum verification)
+        if: steps.checksum.outputs.changed == 'true'
+        env:
+          REPORT_PATH: ${{ steps.checksum.outputs.report }}
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+
+          report = Path(os.environ.get('REPORT_PATH', 'checksum-report.json'))
+          if not report.exists():
+              raise SystemExit(0)
+
+          data = json.loads(report.read_text())
+          if not data:
+              raise SystemExit(0)
+
+          lines = ["## Cargo manifest checksum drift detected", ""]
+          for entry in data:
+              file = entry.get('file')
+              status = entry.get('status')
+              expected = entry.get('expected')
+              actual = entry.get('actual')
+              if status == 'missing':
+                  lines.append(f"- `{file}` missing (expected checksum {expected})")
+              else:
+                  lines.append(f"- `{file}` changed")
+                  lines.append(f"  - expected: `{expected}`")
+                  lines.append(f"  - actual: `{actual}`")
+
+          summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary_path:
+              with open(summary_path, 'a', encoding='utf-8') as handle:
+                  handle.write("\n".join(lines).strip() + "\n")
+
+      - name: Step 0.4 - Trigger cargo-chef refresh workflow
+        if: steps.checksum.outputs.changed == 'true' && github.ref_name == 'develop'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_REF_NAME}"
+          echo "Dispatching update-cargo-chef workflow for branch ${ref}"
+          gh workflow run update-cargo-chef.yml --ref "${ref}" -f trigger=docker-build
+          echo "Dispatched; please wait for it to complete and push updated cargo-chef artifacts."
+
+      - name: Step 0.5 - Fail due to stale cargo manifests
+        if: steps.checksum.outputs.changed == 'true'
+        run: |
+          echo "Cargo manifest checksums changed."
+          if [ "${GITHUB_REF_NAME}" = "develop" ]; then
+            echo "update-cargo-chef workflow has been dispatched; wait for it to push fresh cargo-chef artifacts and rerun this workflow."
+          else
+            echo "update-cargo-chef workflow runs on branch 'develop'. Please sync your dependency changes via develop before retrying."
+          fi
+          exit 1
+
   prebuilds:
     name: Ensure prebuilds exist
+    needs: cargo-chef-guard
     runs-on: ubuntu-24.04
     outputs:
       need_build_tools: ${{ steps.check.outputs.need_build_tools }}
@@ -1182,5 +1313,3 @@ jobs:
             echo "### 📦 Registry"
             echo "- ghcr.io"
           } >> "$GITHUB_STEP_SUMMARY"
-
-
