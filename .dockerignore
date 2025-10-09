@@ -6,6 +6,8 @@ bin/
 docker/
 # ...but make an exception for the essential debug entrypoint script
 !docker/debug/debug-entrypoint.sh
+# ...and cargo-chef manifests required during CI builds
+!docker/build-tools/cargo-chef/**
 
 # Ignore frontend dependencies
 frontend/node_modules/
