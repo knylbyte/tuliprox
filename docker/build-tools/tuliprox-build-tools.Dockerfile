@@ -16,7 +16,7 @@ ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.104
 ARG CARGO_CHEF_VER=0.1.73
 ARG SCCACHE_VER=0.10.0
-ARG ALPINE_VER=3.22.1
+ARG ALPINE_VER=3.22.2
 
 ############################################
 # Build stage to produce ffmpeg resources
