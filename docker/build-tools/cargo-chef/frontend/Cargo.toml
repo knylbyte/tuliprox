@@ -1,5 +1,8 @@
 [workspace]
-members = ["frontend", "shared"]
+members = [
+    "frontend",
+    "shared"
+]
 resolver = "2"
 
 [profile.release]
