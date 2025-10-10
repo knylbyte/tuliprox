@@ -1,10 +1,10 @@
 [package]
 name = "frontend"
-version = "3.1.6"
+version = "3.1.7"
 edition = "2021"
 
 [dependencies]
-shared = { version = "3.1.6", path = "../shared" }
+shared = { version = "3.1.7", path = "../shared" }
 chrono = "0"
 yew = "0.21"
 yew-router = "0.18"
