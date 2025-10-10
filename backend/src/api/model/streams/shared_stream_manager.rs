@@ -107,6 +107,7 @@ impl SharedStreamState {
                                     debug!("Shared stream client send error: {address} {err}");
                                     break;
                                 }
+                                tokio::task::yield_now().await;
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                                 trace!("Client lagged behind. Skipped {skipped} messages. {address}");
