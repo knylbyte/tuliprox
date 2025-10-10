@@ -3,14 +3,14 @@
 # Part 1: Prerequisite Build Stages
 #
 # These stages are used as building blocks for the final images.
-# They prepare the Rust binary, the Node.js frontend, and other resources.
+# They prepare the Rust binary and other resources.
 #
 # =================================================================
 
 # -----------------------------------------------------------------
 # Stage 1: Build the Rust binary for production
 # -----------------------------------------------------------------
-FROM rust:bookworm AS rust-build
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main AS rust-build
 
 # Get target architecture
 ARG RUST_TARGET
@@ -49,7 +49,7 @@ RUN cargo build -p tuliprox --target $RUST_TARGET --release
 # -----------------------------------------------------------------
 # Stage 2: Build the rust frontend
 # -----------------------------------------------------------------
-FROM rust:bookworm AS trunk-build
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main AS trunk-build
 
 ARG RUST_TARGET=wasm32-unknown-unknown
 

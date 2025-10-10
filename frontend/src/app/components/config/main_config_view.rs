@@ -18,6 +18,7 @@ const LABEL_USER_CONFIG_DIR: &str = "LABEL.USER_CONFIG_DIR";
 const LABEL_SLEEP_TIMER_MINS: &str = "LABEL.SLEEP_TIMER_MINS";
 const LABEL_CONNECT_TIMEOUT_SECS: &str = "LABEL.CONNECT_TIMEOUT_SECS";
 const LABEL_CUSTOM_STREAM_RESPONSE_PATH: &str = "LABEL.CUSTOM_STREAM_RESPONSE_PATH";
+const LABEL_ACCEPT_INSECURE_SSL_CERTIFICATES: &str = "LABEL.ACCEPT_INSECURE_SSL_CERTIFICATES";
 
 generate_form_reducer!(
     state: MainConfigFormState { form: MainConfigDto },
@@ -26,6 +27,7 @@ generate_form_reducer!(
         UpdateOnBoot => update_on_boot: bool,
         ConfigHotReload => config_hot_reload: bool,
         UserAccessControl => user_access_control: bool,
+        AcceptInsecureSslCertificates => accept_insecure_ssl_certificates: bool,
         Threads => threads: u8,
         WorkingDir => working_dir: String,
         MappingPath => mapping_path: Option<String>,
@@ -75,6 +77,7 @@ pub fn MainConfigView() -> Html {
                 { config_field_bool!(form_state.form, translate.t(LABEL_UPDATE_ON_BOOT), update_on_boot) }
                 { config_field_bool!(form_state.form, translate.t(LABEL_CONFIG_HOT_RELOAD), config_hot_reload) }
                 { config_field_bool!(form_state.form, translate.t(LABEL_USER_ACCESS_CONTROL), user_access_control) }
+                { config_field_bool!(form_state.form, translate.t(LABEL_ACCEPT_INSECURE_SSL_CERTIFICATES), accept_insecure_ssl_certificates) }
                 { config_field!(form_state.form, translate.t(LABEL_THREADS), threads) }
                 { config_field!(form_state.form, translate.t(LABEL_WORKING_DIR), working_dir) }
                 { config_field_optional!(form_state.form, translate.t(LABEL_MAPPING_PATH), mapping_path) }
@@ -92,6 +95,7 @@ pub fn MainConfigView() -> Html {
             { edit_field_bool!(form_state, translate.t(LABEL_UPDATE_ON_BOOT), update_on_boot, MainConfigFormAction::UpdateOnBoot) }
             { edit_field_bool!(form_state, translate.t(LABEL_CONFIG_HOT_RELOAD), config_hot_reload, MainConfigFormAction::ConfigHotReload) }
             { edit_field_bool!(form_state, translate.t(LABEL_USER_ACCESS_CONTROL), user_access_control, MainConfigFormAction::UserAccessControl) }
+            { edit_field_bool!(form_state, translate.t(LABEL_ACCEPT_INSECURE_SSL_CERTIFICATES), user_access_control, MainConfigFormAction::AcceptInsecureSslCertificates) }
             { edit_field_number_u8!(form_state, translate.t(LABEL_THREADS), threads, MainConfigFormAction::Threads) }
             { edit_field_text!(form_state, translate.t(LABEL_WORKING_DIR), working_dir, MainConfigFormAction::WorkingDir) }
             { edit_field_text_option!(form_state, translate.t(LABEL_MAPPING_PATH), mapping_path, MainConfigFormAction::MappingPath) }

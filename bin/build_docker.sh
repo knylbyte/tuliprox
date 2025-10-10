@@ -117,12 +117,12 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     ARCHITECTURE=${ARCHITECTURES[$PLATFORM]}
     
     echo "🔨 Building binary for architecture: $ARCHITECTURE"
-    
+
     # Don't clean if we have cached dependencies
     if [ -z "${CARGO_DEPS_CACHE_HIT:-}" ]; then
         cargo clean || true
     fi
-    
+
     # Use incremental compilation and enable cache-friendly flags
     env RUSTFLAGS="--remap-path-prefix $HOME=~ -C incremental=/tmp/rust-incremental-${ARCHITECTURE}" \
         CARGO_INCREMENTAL=1 \
@@ -174,12 +174,19 @@ for IMAGE_NAME in "${!MULTI_PLATFORM_IMAGES[@]}"; do
     fi
     
     # Build and push multi-platform image directly with cache
+    BUILDX_CACHE_ARGS=()
+    [ -n "${BUILDX_CACHE_FROM:-}" ] && BUILDX_CACHE_ARGS+=(--cache-from "${BUILDX_CACHE_FROM}")
+    [ -n "${BUILDX_CACHE_TO:-}" ] && BUILDX_CACHE_ARGS+=(--cache-to "${BUILDX_CACHE_TO}")
+
+    # If you build on local, you need to activate buildx multiarch builds
+    # >  docker buildx create --name multiarch --driver docker-container --use --bootstrap
+    # > docker run --rm --privileged tonistiigi/binfmt:latest --install all
+
     docker buildx build -f Dockerfile-manual \
         ${DOCKER_TAGS} \
         --target "$BUILD_TARGET" \
         --platform "linux/amd64,linux/arm64" \
-        --cache-from "${BUILDX_CACHE_FROM:-}" \
-        --cache-to "${BUILDX_CACHE_TO:-}" \
+        "${BUILDX_CACHE_ARGS[@]}" \
         --push \
         .
 done

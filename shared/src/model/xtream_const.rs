@@ -35,6 +35,7 @@ pub const XC_TAG_EPISODES: &str = "episodes";
 pub const XC_TAG_VOD_INFO_INFO: &str = "info";
 pub const XC_TAG_VOD_INFO_MOVIE_DATA: &str = "movie_data";
 pub const XC_TAG_VOD_INFO_TMDB_ID: &str = "tmdb_id";
+pub const XC_TAG_VOD_INFO_TMDB: &str = "tmdb";
 pub const XC_TAG_VOD_INFO_STREAM_ID: &str = "stream_id";
 pub const XC_TAG_VOD_INFO_ADDED: &str = "added";
 pub const XC_TAG_VOD_INFO_RELEASEDATE: &str = "release_date";

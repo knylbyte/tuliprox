@@ -44,13 +44,24 @@ pub fn parse_xtream_series_info(info: &Value, group_title: &str, series_name: &s
     match serde_json::from_value::<XtreamSeriesInfo>(info.to_owned()) {
         Ok(series_info) => {
             if let Some(episodes) = &series_info.episodes {
-                let result: Vec<(XtreamSeriesInfoEpisode, PlaylistItem)> = episodes.values().flatten().map(|episode| {
+                let result: Vec<(XtreamSeriesInfoEpisode, PlaylistItem)> = episodes.iter().map(|episode| {
                     let episode_url = create_xtream_series_episode_url(url, username, password, episode);
-                    (episode.clone(),
+                    let mut new_episode = episode.clone();
+
+                    // We need to set the tmdb_id and tmdb from the series info if it is not set.
+                    if let Some(episode_info) = &mut new_episode.info {
+                        if episode_info.tmdb_id.is_none_or(|id| id == 0) && episode_info.tmdb.is_none_or(|id| id == 0) {
+                            let series_tmdb_id = series_info.info.as_ref().and_then(|i| i.tmdb_id.or(i.tmdb));
+                            episode_info.tmdb_id = series_tmdb_id;
+                            episode_info.tmdb = series_tmdb_id;
+                        }
+                    }
+
+                    (new_episode,
                      PlaylistItem {
                          header: PlaylistItemHeader {
-                             id: episode.id.clone(),
-                             uuid: generate_playlist_uuid(&input.name, &episode.id, PlaylistItemType::Series, &episode_url),
+                             id: episode.id.to_string(),
+                             uuid: generate_playlist_uuid(&input.name, &episode.id.to_string(), PlaylistItemType::Series, &episode_url),
                              name: series_name.to_string(),
                              logo: episode.info.as_ref().map_or_else(String::new, |info| info.movie_image.clone()),
                              group: group_title.to_string(),
@@ -188,4 +199,26 @@ pub fn parse_xtream(input: &ConfigInput,
         }
         Err(err) => Err(err)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use crate::model::XtreamSeriesInfo;
+
+    #[test]
+    fn test_read_json_file_into_struct() {
+        let file_content = fs::read_to_string("/tmp/series-info.json").expect("Unable to read file");
+        match  serde_json::from_str::<XtreamSeriesInfo>(&file_content) {
+            Ok(series_info) => {
+                println!("{:#?}", series_info);
+                assert!(true);
+            },
+            Err(err) => {
+                assert!(false, "Failed to parse json file: {err}");
+            }
+        }
+
+    }
+
 }

@@ -67,6 +67,7 @@ pub struct ExportStyleConfig {
     pub episode: Regex,
     pub whitespace: Regex,
     pub alphanumeric: Regex,
+    pub paaren: Regex,
 }
 
 pub struct Constants {
@@ -126,6 +127,7 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
             year: Regex::new(r"(\d{4})").unwrap(),
             whitespace: Regex::new(r"\s+").unwrap(),
             alphanumeric: Regex::new(r"[^\w\s]").unwrap(),
+            paaren: Regex::new(r"(\(\)|\[\]|\{\})").unwrap(),
         },
         allowed_output_formats: Vec::from(["m3u8".to_string(), "ts".to_string()]),
         country_codes: vec![

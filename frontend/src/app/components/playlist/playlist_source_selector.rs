@@ -3,7 +3,7 @@ use crate::app::context::PlaylistExplorerContext;
 use crate::hooks::use_service_context;
 use crate::html_if;
 use crate::model::{BusyStatus, EventMessage, ExplorerSourceType};
-use shared::model::{InputType, PlaylistRequest, PlaylistRequestType};
+use shared::model::{InputType, PlaylistRequest, PlaylistRequestM3u, PlaylistRequestXtream};
 use std::rc::Rc;
 use std::str::FromStr;
 use web_sys::HtmlInputElement;
@@ -12,19 +12,34 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 use crate::app::components::input::Input;
 
+#[derive(Properties, PartialEq, Clone)]
+pub struct PlaylistSourceSelectorProps {
+    #[prop_or_default]
+    pub hide_title: bool,
+    #[prop_or_default]
+    pub source_types: Option<Vec<ExplorerSourceType>>,
+    #[prop_or_default]
+    pub on_select: Option<Callback<PlaylistRequest>>,
+}
+
 #[function_component]
-pub fn PlaylistSourceSelector() -> Html {
+pub fn PlaylistSourceSelector(props: &PlaylistSourceSelectorProps) -> Html {
     let translate = use_translation();
     let services_ctx = use_service_context();
     let playlist_ctx = use_context::<PlaylistContext>().expect("Playlist context not found");
-    let playlist_explorer_ctx = use_context::<PlaylistExplorerContext>().expect("PlaylistExplorer context not found");
+    let playlist_explorer_ctx = use_context::<PlaylistExplorerContext>();
     let active_source = use_state(|| ExplorerSourceType::Hosted);
     let loading = use_state(|| false);
     let custom_provider = use_state(|| InputType::Xtream);
     let username_ref = use_node_ref();
     let password_ref = use_node_ref();
     let url_ref = use_node_ref();
-    let source_types = use_memo((), |_| vec![ExplorerSourceType::Hosted.to_string(), ExplorerSourceType::Provider.to_string(), ExplorerSourceType::Custom.to_string()]);
+    let source_types = use_memo(props.source_types.clone(), |st| {
+        let st = st.as_ref().map(|v| v.as_slice()).unwrap_or(&[
+            ExplorerSourceType::Hosted, ExplorerSourceType::Provider, ExplorerSourceType::Custom,
+        ]);
+        st.iter().map(ToString::to_string).collect::<Vec<String>>()
+    });
 
     let handle_source_select = {
         let active_source_clone = active_source.clone();
@@ -39,40 +54,32 @@ pub fn PlaylistSourceSelector() -> Html {
 
     let handle_source_download = {
         let services = services_ctx.clone();
-        let playlist_explorer_ctx_clone = playlist_explorer_ctx.clone();
         let set_loading = loading.clone();
-        Callback::from(move |request: PlaylistRequest| {
-            if !*set_loading {
-                let services = services.clone();
-                let playlist_explorer_ctx_clone = playlist_explorer_ctx_clone.clone();
-                set_loading.set(true);
-                services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
-                let set_loading = set_loading.clone();
-                let req = request;
-                spawn_local(async move {
-                    let playlist = services.playlist.get_playlist_categories(&req).await;
-                    playlist_explorer_ctx_clone.playlist.set(playlist);
-                    playlist_explorer_ctx_clone.playlist_request.set(Some(req));
-                    set_loading.set(false);
-                    services.event.broadcast(EventMessage::Busy(BusyStatus::Hide));
-                });
-            }
-        })
-    };
-
-    let handle_defined_source = {
-        let handle_source_download = handle_source_download.clone();
-        Callback::from(move |(rtype, source_id, source_name): (PlaylistRequestType, u16, String)| {
-            let request = PlaylistRequest {
-                rtype,
-                username: None,
-                password: None,
-                url: None,
-                source_id: Some(source_id),
-                source_name: Some(source_name),
-            };
-            handle_source_download.emit(request);
-        })
+        if let Some(on_select) = &props.on_select {
+            let on_select = on_select.clone();
+            Callback::from(move |request: PlaylistRequest| {
+                on_select.emit(request)
+            })
+        } else {
+            let playlist_explorer_ctx_clone = playlist_explorer_ctx.expect("PlaylistExplorer context not found").clone();
+            Callback::from(move |request: PlaylistRequest| {
+                if !*set_loading {
+                    let services = services.clone();
+                    let playlist_explorer_ctx_clone = playlist_explorer_ctx_clone.clone();
+                    set_loading.set(true);
+                    services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
+                    let set_loading = set_loading.clone();
+                    let req = request;
+                    spawn_local(async move {
+                        let playlist = services.playlist.get_playlist_categories(&req).await;
+                        playlist_explorer_ctx_clone.playlist.set(playlist);
+                        playlist_explorer_ctx_clone.playlist_request.set(Some(req));
+                        set_loading.set(false);
+                        services.event.broadcast(EventMessage::Busy(BusyStatus::Hide));
+                    });
+                }
+            })
+        }
     };
 
     let handle_custom_source = {
@@ -85,18 +92,25 @@ pub fn PlaylistSourceSelector() -> Html {
         let url_ref = url_ref.clone();
         Callback::from(move |_| {
             let is_xtream = matches!(*set_custom_provider, InputType::Xtream);
-            let url_input: HtmlInputElement = url_ref.cast::<HtmlInputElement>().unwrap();
-            let url = url_input.value();
+            let url = match url_ref.cast::<HtmlInputElement>() {
+                 Some(input) => input.value().trim().to_owned(),
+                 None => {
+                     services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.URL_MANDATORY"));
+                     return;
+                 }
+             };
+
             let mut valid = true;
             if url.is_empty() {
                 services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.URL_MANDATORY"));
                 valid = false;
             }
             let (username, password) = if is_xtream {
-                let username_input: HtmlInputElement = u_ref.cast::<HtmlInputElement>().unwrap();
-                let password_input: HtmlInputElement = p_ref.cast::<HtmlInputElement>().unwrap();
-                let username = username_input.value().trim().to_owned();
-                let password = password_input.value();
+                let (username, password) = match (u_ref.cast::<HtmlInputElement>(), p_ref.cast::<HtmlInputElement>()) {
+                     (Some(u), Some(p)) => (u.value().trim().to_owned(), p.value().trim().to_owned()),
+                     _ => (String::new(), String::new())
+                 };
+
                 if username.is_empty() || password.is_empty() {
                     services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.USERNAME_PASSWORD_MANDATORY"));
                     valid = false;
@@ -107,13 +121,16 @@ pub fn PlaylistSourceSelector() -> Html {
             };
 
             if valid {
-                let request = PlaylistRequest {
-                    rtype: if is_xtream { PlaylistRequestType::Xtream } else { PlaylistRequestType::M3U },
-                    username,
-                    password,
-                    url: Some(url),
-                    source_id: None,
-                    source_name: None,
+                let request = if is_xtream {
+                    PlaylistRequest::CustomXtream(PlaylistRequestXtream {
+                        username: username.unwrap_or_default(),
+                        password: password.unwrap_or_default(),
+                        url,
+                    })
+                } else {
+                    PlaylistRequest::CustomM3u(PlaylistRequestM3u {
+                        url,
+                    })
                 };
                 handle_source_download.emit(request);
             }
@@ -129,10 +146,9 @@ pub fn PlaylistSourceSelector() -> Html {
         })
     };
 
-
     let render_hosted = {
         let playlist_ctx_clone = playlist_ctx.clone();
-        let handle_defined_source = handle_defined_source.clone();
+        let handle_defined_source = handle_source_download.clone();
         move || {
             html! {
         <>
@@ -146,7 +162,7 @@ pub fn PlaylistSourceSelector() -> Html {
                                 let handle_click = handle_defined_source.clone();
                                 html! {
                                 <TextButton name={target.name.clone()} title={target.name.clone()} icon={"Download"}
-                                onclick={move |_| handle_click.emit((PlaylistRequestType::Target, target.id, target.name.clone()))}/>
+                                onclick={move |_| handle_click.emit(PlaylistRequest::Target(target.id))}/>
                                 }
                         })}
                     </div>
@@ -162,7 +178,7 @@ pub fn PlaylistSourceSelector() -> Html {
 
     let render_provider = {
         let playlist_ctx_clone = playlist_ctx.clone();
-        let handle_defined_source = handle_defined_source.clone();
+        let handle_defined_source = handle_source_download.clone();
         move || {
             html! {
         <>
@@ -189,7 +205,7 @@ pub fn PlaylistSourceSelector() -> Html {
                                 if let Some((name, id)) = result {
                                     html! {
                                     <TextButton name={name.clone()} title={name.clone()} icon={"CloudDownload"}
-                                    onclick={move |_| handle_click.emit((PlaylistRequestType::Input, id, name.clone()))}/>
+                                    onclick={move |_| handle_click.emit(PlaylistRequest::Input(id))}/>
                                     }
                                 } else {
                                     html!{}
@@ -240,9 +256,11 @@ pub fn PlaylistSourceSelector() -> Html {
 
     html! {
       <div class="tp__playlist-source-selector tp__list-list">
-        <div class="tp__playlist-source-selector__header tp__list-list__header">
-          <h1>{ translate.t("LABEL.SOURCES")}</h1>
-        </div>
+        { html_if!(!props.hide_title, {
+            <div class="tp__playlist-source-selector__header tp__list-list__header">
+              <h1>{ translate.t("LABEL.SOURCES")}</h1>
+            </div>
+        })}
         <div class="tp__playlist-source-selector__body tp__list-list__body">
             <CollapsePanel class="tp__playlist-source-selector__source-picker" expanded={true}
                title={translate.t("LABEL.SOURCE_PICKER")}>

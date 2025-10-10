@@ -43,12 +43,11 @@ fn extract_tmdb_id_from_playlist_item(item: &PlaylistItem) -> Option<u32> {
     if let Some(additional_props) = &item.header.additional_properties {
         if let Some(props_str) = additional_props.as_str() {
             if let Ok(props) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(props_str) {
-                if let Some(tmdb_value) = props.get("tmdb") {
-                    return get_u32_from_serde_value(tmdb_value);
-                }
-                if let Some(tmdb_id_value) = props.get("tmdb_id") {
-                    return get_u32_from_serde_value(tmdb_id_value);
-                }
+                return props
+                    .get("tmdb_id")
+                    .and_then(get_u32_from_serde_value)
+                    .filter(|&id| id != 0)
+                    .or_else(|| props.get("tmdb").and_then(get_u32_from_serde_value));
             }
         }
     }
@@ -254,10 +253,10 @@ impl TraktCategoriesProcessor {
         playlist: &[PlaylistGroup],
         target: &ConfigTarget,
         trakt_config: &TraktConfig,
-    ) -> Result<Vec<PlaylistGroup>, Vec<TuliproxError>> {
+    ) -> Result<Option<Vec<PlaylistGroup>>, Vec<TuliproxError>> {
         if trakt_config.lists.is_empty() {
             debug!("No Trakt lists configured for target {}", target.name);
-            return Ok(vec![]);
+            return Ok(None);
         }
 
         info!("Processing {} Trakt lists for target {}", trakt_config.lists.len(), target.name);
@@ -289,17 +288,17 @@ impl TraktCategoriesProcessor {
         info!("Trakt processing complete: created {} categories with {total_matches} total matches",
              new_categories.len());
 
-        Ok(new_categories)
+        Ok(Some(new_categories))
     }
 }
 pub async fn process_trakt_categories_for_target(
     http_client: Arc<reqwest::Client>,
     playlist: &[PlaylistGroup],
     target: &ConfigTarget,
-) -> Result<Vec<PlaylistGroup>, Vec<TuliproxError>> {
+) -> Result<Option<Vec<PlaylistGroup>>, Vec<TuliproxError>> {
     let Some(trakt_config) = target.get_xtream_output().and_then(|output| output.trakt.as_ref()) else {
         debug!("No Trakt configuration found for target {}", target.name);
-        return Ok(vec![]);
+        return Ok(None);
     };
 
     let processor = TraktCategoriesProcessor::new(http_client, trakt_config);

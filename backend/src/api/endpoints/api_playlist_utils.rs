@@ -9,7 +9,7 @@ use serde_json::{json};
 use shared::model::{CommonPlaylistItem, InputType, M3uPlaylistItem, PlaylistCategoriesResponse,
                     PlaylistGroup, PlaylistItemType, PlaylistResponseGroup, TargetType, XtreamCluster};
 use std::sync::Arc;
-
+use crate::api::api_utils::{json_or_bin_response};
 
 fn group_playlist_items<T>(
     cluster: XtreamCluster,
@@ -126,7 +126,7 @@ async fn grouped_channels(
         ))
 }
 
-pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Option<&ConfigTarget>, cfg: &AppConfig) -> impl axum::response::IntoResponse + Send {
+pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Option<&ConfigTarget>, cfg: &AppConfig, accept: Option<&String>) -> impl axum::response::IntoResponse + Send {
     if let Some(target) = cfg_target {
         if target.has_output(&TargetType::Xtream) {
             let live_channels = grouped_channels(cfg, target, XtreamCluster::Live).await;
@@ -139,7 +139,7 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
                 series: series_channels,
             };
 
-            return (axum::http::StatusCode::OK, axum::Json(response)).into_response();
+            return json_or_bin_response(accept, &response).into_response();
         } else if target.has_output(&TargetType::M3u) {
             let all_channels = m3u_repository::iter_raw_m3u_playlist(cfg, target).await;
             let (live_channels, vod_channels, series_channels) = group_playlist_items_by_cluster(all_channels);
@@ -149,13 +149,13 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
                 series: Some(group_playlist_items::<M3uPlaylistItem>(XtreamCluster::Series, series_channels.into_iter(), |item| item.group.clone())),
             };
 
-            return (axum::http::StatusCode::OK, axum::Json(response)).into_response();
+            return json_or_bin_response(accept, &response).into_response();
         }
     }
     (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid Arguments"}))).into_response()
 }
 
-pub(in crate::api::endpoints) async fn get_playlist(client: Arc<reqwest::Client>, cfg_input: Option<&ConfigInput>, cfg: &Config) -> impl IntoResponse + Send {
+pub(in crate::api::endpoints) async fn get_playlist(client: Arc<reqwest::Client>, cfg_input: Option<&ConfigInput>, cfg: &Config, accept: Option<&String>) -> impl IntoResponse + Send {
     match cfg_input {
         Some(input) => {
             let (result, errors) =
@@ -173,7 +173,7 @@ pub(in crate::api::endpoints) async fn get_playlist(client: Arc<reqwest::Client>
                     vod: Some(vod),
                     series: Some(series),
                 };
-                (axum::http::StatusCode::OK, axum::Json(response)).into_response()
+                json_or_bin_response(accept, &response).into_response()
             }
         }
         None => (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid Arguments"}))).into_response(),

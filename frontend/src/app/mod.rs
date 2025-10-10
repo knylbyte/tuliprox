@@ -80,7 +80,7 @@ pub fn App() -> Html {
             let futures = languages.iter()
                 .map(|lang| async move {
                     let url = format!("assets/i18n/{lang}.json");
-                    let result: Result<Value, Error> = request_get(&url, None, None).await;
+                    let result: Result<Option<Value>, Error> = request_get(&url, None, None).await;
                     (lang.to_string(), result)
                 })
                 .collect::<Vec<_>>();
@@ -89,7 +89,9 @@ pub fn App() -> Html {
             for (lang, result) in results {
                 if let Ok(i18n) = result {
                     let mut lang_translations = HashMap::<String, serde_json::Value>::new();
-                    flatten_json(&i18n, String::new(), &mut lang_translations);
+                    if let Some(i18n) = i18n {
+                        flatten_json(&i18n, String::new(), &mut lang_translations);
+                    }
                     let map: serde_json::Map<String, Value> = lang_translations.into_iter().collect();
                     translations.insert(lang, Value::Object(map));
                 }
@@ -103,7 +105,7 @@ pub fn App() -> Html {
         let config_state = configuration_state.clone();
         use_async_with_options::<_, (), Error>(async move {
             match request_get::<WebConfig>("config.json", None, None).await {
-                Ok(cfg) => {
+                Ok(Some(cfg)) => {
                     if let Some(tab_title) = cfg.tab_title.as_deref() {
                         if let Some(win) = window() {
                             if let Some(doc) = win.document() {
@@ -113,6 +115,7 @@ pub fn App() -> Html {
                     }
                     config_state.set(Some(cfg));
                 },
+                Ok(None) => config_state.set(Some(WebConfig::default())),
                 Err(err) => {
                     error!("Failed to load config {err}");
                    // Fallback: render app with defaults instead of spinning forever
@@ -128,7 +131,8 @@ pub fn App() -> Html {
         let icon_state = icon_state.clone();
         use_async_with_options::<_, (), Error>(async move {
             match request_get("assets/icons.json", None, None).await {
-                Ok(icons) => icon_state.set(Some(icons)),
+                Ok(Some(icons)) => icon_state.set(Some(icons)),
+                Ok(None) => icon_state.set(Some(Vec::new())),
                 Err(err) => {
                     // Fallback: proceed with an empty icon set
                     icon_state.set(Some(Vec::new()));

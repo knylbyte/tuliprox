@@ -1,19 +1,18 @@
 use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, XtreamTargetOutput};
-use shared::model::{xtream_const, PlaylistItem,XtreamPlaylistItem};
-use shared::utils::{deserialize_as_option_rc_string, deserialize_as_rc_string, deserialize_as_string_array, deserialize_number_from_string,
-                    opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32, get_non_empty_str};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
-use std::iter::FromIterator;
+use shared::model::{xtream_const, PlaylistItem, XtreamPlaylistItem};
 use shared::model::{ClusterFlags, PlaylistEntry, XtreamCluster};
+use shared::utils::{deserialize_as_option_string, deserialize_as_string, deserialize_as_string_array, deserialize_number_from_string,
+                    get_non_empty_str, opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
+use std::iter::FromIterator;
 
 #[derive(Deserialize, Default)]
 pub struct XtreamCategory {
-    #[serde(deserialize_with = "deserialize_as_rc_string")]
+    #[serde(deserialize_with = "deserialize_as_string")]
     pub category_id: String,
-    #[serde(deserialize_with = "deserialize_as_rc_string")]
+    #[serde(deserialize_with = "deserialize_as_string")]
     pub category_name: String,
     //pub parent_id: i32,
     #[serde(default)]
@@ -28,66 +27,68 @@ impl XtreamCategory {
 
 #[derive(Serialize, Deserialize)]
 pub struct XtreamStream {
-    #[serde(default, deserialize_with = "deserialize_as_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_string")]
     pub name: String,
-    #[serde(default, deserialize_with = "deserialize_as_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_string")]
     pub category_id: String,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub stream_id: Option<u32>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub series_id: Option<u32>,
-    #[serde(default, deserialize_with = "deserialize_as_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_string")]
     pub stream_icon: String,
-    #[serde(default, deserialize_with = "deserialize_as_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_string")]
     pub direct_source: String,
 
     // optional attributes
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub custom_sid: Option<String>,
     #[serde(default, deserialize_with = "deserialize_as_string_array")]
     pub backdrop_path: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub added: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub cast: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub container_extension: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub cover: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub director: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub episode_run_time: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub genre: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub last_modified: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub plot: Option<String>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub rating: Option<f64>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub rating_5based: Option<f64>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub release_date: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub stream_type: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub title: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub year: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub trailer: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub youtube_trailer: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub epg_channel_id: Option<String>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub tv_archive: Option<i32>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub tv_archive_duration: Option<i32>,
-    #[serde(default, deserialize_with = "deserialize_as_option_rc_string")]
-    pub tmdb: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub tmdb: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub tmdb_id: Option<u32>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub is_adult: Option<i32>,
 
@@ -141,7 +142,6 @@ macro_rules! add_to_doc_str_property_if_not_exists {
     }
 }
 
-
 impl XtreamStream {
     pub fn get_stream_id(&self) -> u32 {
         self.stream_id.unwrap_or_else(|| self.series_id.unwrap_or(0))
@@ -154,7 +154,8 @@ impl XtreamStream {
                 result.insert(String::from(xtream_const::XC_PROP_BACKDROP_PATH), Value::Array(Vec::from([Value::String(String::from(bdpath.first()?))])));
             }
         }
-        add_rc_str_property_if_exists!(result, self.tmdb, "tmdb");
+
+        add_rc_str_property_if_exists!(result, self.tmdb_id.or(self.tmdb), "tmdb");
         add_rc_str_property_if_exists!(result, self.added, "added");
         add_rc_str_property_if_exists!(result, self.cast, "cast");
         add_rc_str_property_if_exists!(result, self.container_extension, "container_extension");
@@ -241,6 +242,10 @@ pub struct XtreamSeriesInfoInfo {
     episode_run_time: String,
     #[serde(default, deserialize_with = "string_or_number_u32")]
     category_id: u32,
+    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    pub tmdb_id: Option<u32>,
+    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    pub tmdb: Option<u32>,
 }
 
 #[allow(non_snake_case)]
@@ -248,6 +253,8 @@ pub struct XtreamSeriesInfoInfo {
 pub struct XtreamSeriesInfoEpisodeInfo {
     #[serde(default, deserialize_with = "opt_string_or_number_u32")]
     pub tmdb_id: Option<u32>,
+    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    pub tmdb: Option<u32>,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub release_date: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
@@ -277,8 +284,8 @@ pub struct XtreamSeriesInfoEpisodeInfo {
 // Used for serde_json deserialization, can not be used with bincode
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XtreamSeriesInfoEpisode {
-    #[serde(default, deserialize_with = "string_default_on_null")]
-    pub id: String,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub id: u32,
     #[serde(default, deserialize_with = "string_or_number_u32")]
     pub episode_num: u32,
     #[serde(default, deserialize_with = "string_default_on_null")]
@@ -299,7 +306,7 @@ pub struct XtreamSeriesInfoEpisode {
 
 impl XtreamSeriesInfoEpisode {
     pub fn get_id(&self) -> u32 {
-        self.id.parse::<u32>().unwrap_or(0)
+        self.id
     }
 }
 
@@ -327,9 +334,55 @@ impl XtreamSeriesEpisode {
             custom_sid: info_episode.custom_sid.clone(),
             added: info_episode.added.clone(),
             season: info_episode.season,
-            tmdb_id: info_episode.info.as_ref().and_then(|info| info.tmdb_id).unwrap_or(0),
+            tmdb_id: info_episode.info.as_ref().and_then(|info| info.tmdb_id.or(info.tmdb)).unwrap_or(0),
             direct_source: info_episode.direct_source.clone(),
         }
+    }
+}
+
+fn deserialize_episodes<'de, D>(deserializer: D) -> Result<Option<Vec<XtreamSeriesInfoEpisode>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // read as generic value
+    let value = Value::deserialize(deserializer)?;
+    match value {
+        Value::Null => Ok(None),
+        Value::Array(array) => {
+            if array.is_empty() {
+                Ok(None)
+            } else {
+                let mut result = Vec::new();
+                for inner in array {
+                    if let Some(inner_array) = inner.as_array() {
+                        for item in inner_array {
+                            let ep: XtreamSeriesInfoEpisode = serde_json::from_value(item.clone())
+                                .map_err(serde::de::Error::custom)?;
+                            result.push(ep);
+                        }
+                    }
+                }
+                Ok(Some(result))
+            }
+        }
+        Value::Object(object) => {
+            if object.is_empty() {
+                Ok(None)
+            } else {
+                let mut result = Vec::new();
+                for (_key, val) in object {
+                    if let Some(inner_array) = val.as_array() {
+                        for item in inner_array {
+                            let ep: XtreamSeriesInfoEpisode = serde_json::from_value(item.clone())
+                                .map_err(serde::de::Error::custom)?;
+                            result.push(ep);
+                        }
+                    }
+                }
+                Ok(Some(result))
+            }
+        }
+        _ => Err(serde::de::Error::custom("Invalid format for episodes")),
     }
 }
 
@@ -339,8 +392,8 @@ pub struct XtreamSeriesInfo {
     pub seasons: Option<Vec<XtreamSeriesInfoSeason>>,
     #[serde(default)]
     pub info: Option<XtreamSeriesInfoInfo>,
-    #[serde(default)]
-    pub episodes: Option<HashMap<String, Vec<XtreamSeriesInfoEpisode>>>,
+    #[serde(default, deserialize_with = "deserialize_episodes")]
+    pub episodes: Option<Vec<XtreamSeriesInfoEpisode>>,
 }
 
 impl XtreamSeriesInfoEpisode {
@@ -368,7 +421,8 @@ impl XtreamSeriesInfoEpisode {
         add_str_property_if_exists!(result, self.title, "title");
         add_i64_property_if_exists!(result, self.season, "season");
         add_i64_property_if_exists!(result, self.episode_num, "episode");
-        add_opt_i64_property_if_exists!(result, self.info.as_ref().and_then(|info| info.tmdb_id), "tmdb_id");
+        let series_tmdb_id = info.and_then(|i| i.tmdb_id.or(i.tmdb));
+        add_opt_i64_property_if_exists!(result, self.info.as_ref().and_then(|info| info.tmdb_id.or(info.tmdb.or(series_tmdb_id))), "tmdb_id");
         if result.is_empty() { None } else { Some(Value::Object(result)) }
     }
 }
@@ -399,7 +453,7 @@ pub fn normalize_release_date(document: &mut serde_json::Map<String, Value>) {
     let date_value = document.get("release_date")
         .or_else(|| document.get("releaseDate"))
         .or_else(|| document.get("releasedate"))
-        .filter(|v| v.as_str().is_some_and(|s| !s.is_empty())) 
+        .filter(|v| v.as_str().is_some_and(|s| !s.is_empty()))
         .cloned();
 
     // Remove unused keys (optional)

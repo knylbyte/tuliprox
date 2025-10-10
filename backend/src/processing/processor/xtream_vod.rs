@@ -42,6 +42,12 @@ fn extract_info_record_from_vod_info(content: &str) -> Option<(u32, InputVodInfo
     let tmdb_id = info_section
         .get(crate::model::XC_TAG_VOD_INFO_TMDB_ID)
         .and_then(get_u32_from_serde_value)
+        .filter(|&id| id != 0)
+        .or_else(|| {
+            info_section
+                .get(crate::model::XC_TAG_VOD_INFO_TMDB)
+                .and_then(get_u32_from_serde_value)
+        })
         .unwrap_or(0);
 
     let release_date = info_section

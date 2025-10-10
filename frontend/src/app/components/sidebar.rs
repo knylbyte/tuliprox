@@ -143,6 +143,7 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
               <MenuItem class={if *active_menu == ViewType::PlaylistUpdate { "active" } else {""}} icon="Refresh" name={ViewType::PlaylistUpdate.to_string()} label={translate.t("LABEL.UPDATE")} onclick={&handle_menu_click}></MenuItem>
               <MenuItem class={if *active_menu == ViewType::PlaylistEditor { "active" } else {""}} icon="PlayArrowOutline" name={ViewType::PlaylistEditor.to_string()} label={translate.t("LABEL.PLAYLIST")} onclick={&handle_menu_click}></MenuItem>
               <MenuItem class={if *active_menu == ViewType::PlaylistExplorer { "active" } else {""}} icon="Live" name={ViewType::PlaylistExplorer.to_string()} label={translate.t("LABEL.PLAYLIST_VIEWER")} onclick={&handle_menu_click}></MenuItem>
+              <MenuItem class={if *active_menu == ViewType::PlaylistEpg { "active" } else {""}} icon="Epg" name={ViewType::PlaylistEpg.to_string()} label={translate.t("LABEL.PLAYLIST_EPG")} onclick={&handle_menu_click}></MenuItem>
             </CollapsePanel>
           </div>
         }
@@ -160,6 +161,7 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
             <IconButton class={if *active_menu == ViewType::PlaylistUpdate { "active" } else {""}} icon="Refresh" name={ViewType::PlaylistUpdate.to_string()} onclick={&handle_menu_click}></IconButton>
             <IconButton class={if *active_menu == ViewType::PlaylistEditor { "active" } else {""}} icon="PlayArrowOutline" name={ViewType::PlaylistEditor.to_string()} onclick={&handle_menu_click}></IconButton>
             <IconButton class={if *active_menu == ViewType::PlaylistExplorer { "active" } else {""}} icon="Live" name={ViewType::PlaylistExplorer.to_string()} onclick={&handle_menu_click}></IconButton>
+            <IconButton class={if *active_menu == ViewType::PlaylistEpg { "active" } else {""}} icon="Epg" name={ViewType::PlaylistEpg.to_string()} onclick={&handle_menu_click}></IconButton>
           </div>
         }
     };

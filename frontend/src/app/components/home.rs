@@ -1,4 +1,4 @@
-use crate::app::components::{AppIcon, DashboardView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView};
+use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView, WebsocketStatus};
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
@@ -12,6 +12,7 @@ use crate::app::components::config::ConfigView;
 use crate::app::components::loading_indicator::{BusyIndicator};
 use crate::provider::DialogProvider;
 use crate::services::{ToastCloseMode, ToastOptions};
+use crate::app::components::theme::Theme;
 
 #[function_component]
 pub fn Home() -> Html {
@@ -19,8 +20,17 @@ pub fn Home() -> Html {
     let translate = use_translation();
     let config = use_state(|| None::<Rc<AppConfigDto>>);
     let status = use_state(|| None::<Rc<StatusCheck>>);
-
     let view_visible = use_state(|| ViewType::Dashboard);
+    let theme = use_state(Theme::get_current_theme);
+
+    let handle_theme_switch = {
+        let set_theme = theme.clone();
+        Callback::from(move |_| {
+            let new_theme = if *set_theme == Theme::Dark { Theme::Bright } else { Theme::Dark };
+            new_theme.switch_theme();
+            set_theme.set(new_theme);
+        })
+    };
 
     let handle_logout = {
         let services_ctx = services.clone();
@@ -149,6 +159,8 @@ pub fn Home() -> Html {
                         }
                         </div>
                         <div class={"tp__app-header-toolbar"}>
+                            <WebsocketStatus/>
+                            <IconButton name="Theme" icon={if *theme == Theme::Bright {"Moon"} else {"Sun"}} onclick={handle_theme_switch} />
                             <IconButton name="Logout" icon="Logout" onclick={handle_logout} />
                         </div>
                     </div>
@@ -173,6 +185,9 @@ pub fn Home() -> Html {
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::PlaylistExplorer.to_string()} active={view_visible.to_string()}>
                         <PlaylistExplorerView/>
+                       </Panel>
+                       <Panel class="tp__full-width" value={ViewType::PlaylistEpg.to_string()} active={view_visible.to_string()}>
+                        <EpgView/>
                        </Panel>
                     </div>
               </div>

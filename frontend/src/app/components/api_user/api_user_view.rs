@@ -1,12 +1,25 @@
 use yew::{function_component, html, Callback, Html};
 use crate::app::components::loading_indicator::BusyIndicator;
-use crate::app::components::{AppIcon, IconButton, ToastrView};
+use crate::app::components::{AppIcon, IconButton, ToastrView, WebsocketStatus};
+use crate::app::components::theme::Theme;
 use crate::hooks::use_service_context;
 use crate::provider::DialogProvider;
+use yew::use_state;
+
 
 #[function_component]
 pub fn ApiUserView() -> Html {
     let services = use_service_context();
+    let theme = use_state(Theme::get_current_theme);
+
+    let handle_theme_switch = {
+        let set_theme = theme.clone();
+        Callback::from(move |_| {
+            let new_theme = if *set_theme == Theme::Dark { Theme::Bright } else { Theme::Dark };
+            new_theme.switch_theme();
+            set_theme.set(new_theme);
+        })
+    };
 
     let handle_logout = {
         let services_ctx = services.clone();
@@ -31,6 +44,8 @@ pub fn ApiUserView() -> Html {
                         }
                         </div>
                         <div class={"tp__app-header-toolbar"}>
+                            <WebsocketStatus/>
+                            <IconButton name="Theme" icon={if *theme == Theme::Bright {"Moon"} else {"Sun"}} onclick={handle_theme_switch} />
                             <IconButton name="Logout" icon="Logout" onclick={handle_logout} />
                         </div>
                     </div>

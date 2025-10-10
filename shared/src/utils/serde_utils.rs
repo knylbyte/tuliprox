@@ -1,6 +1,8 @@
+use std::io;
 use serde::{Deserialize, Deserializer,};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use crate::error::to_io_error;
 
 fn value_to_string_array(value: &[Value]) -> Vec<String> {
     value.iter().filter_map(value_to_string).collect()
@@ -15,7 +17,7 @@ fn value_to_string(v: &Value) -> Option<String> {
     }
 }
 
-pub fn deserialize_as_option_rc_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+pub fn deserialize_as_option_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -28,7 +30,7 @@ where
     }
 }
 
-pub fn deserialize_as_rc_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub fn deserialize_as_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -52,8 +54,7 @@ where
     })
 }
 
-
-pub fn deserialize_number_from_string<'de, D, T: DeserializeOwned>(
+pub fn deserialize_number_from_string<'de, D, T: DeserializeOwned  + std::str::FromStr>(
     deserializer: D,
 ) -> Result<Option<T>, D::Error>
 where
@@ -78,8 +79,35 @@ where
         MaybeNumber::Value(value) => Ok(value),
 
         // (if it is any other string)
-        MaybeNumber::NumberString(string) => {
-            serde_json::from_str::<T>(string.as_str()).map_or_else(|_| Ok(None), |val| Ok(Some(val)))
+        MaybeNumber::NumberString(s) => {
+            let s = s.trim();
+            if s.is_empty() {
+                return Ok(None);
+            }
+            // parse string to number, if fails return None
+            if let Ok(num) = s.parse::<T>() {
+                return Ok(Some(num));
+            }
+
+            serde_json::from_str::<T>(s).map_or_else(|_| Ok(None), |val| Ok(Some(val)))
         }
     }
+}
+
+#[inline]
+pub fn bin_serialize<T>(value: &T) -> io::Result<Vec<u8>>
+where
+    T: serde::Serialize,
+{
+    let mut buf = Vec::new();
+    ciborium::ser::into_writer(value, &mut buf).map_err(to_io_error)?;
+    Ok(buf)
+}
+
+#[inline]
+pub fn bin_deserialize<T>(value: &[u8]) -> io::Result<T>
+where
+    T: for<'a> serde::Deserialize<'a>,
+{
+    ciborium::de::from_reader(value).map_err(to_io_error)
 }

@@ -4,7 +4,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use crate::model::{ConfigTargetOptions, xtream_const, CommonPlaylistItem};
-use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id, get_string_from_serde_value, get_u64_from_serde_value};
+use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id, get_string_from_serde_value, get_u32_from_serde_value, get_u64_from_serde_value};
 
 // https://de.wikipedia.org/wiki/M3U
 // https://siptv.eu/howto/playlist.html
@@ -186,12 +186,14 @@ impl PlaylistItemHeader {
             _ => None,
         })
     }
-    // pub fn get_additional_property_as_u32(&self, field: &str) -> Option<u32> {
-    //     match self.get_additional_property(field) {
-    //         Some(value) => get_u32_from_serde_value(value),
-    //         None => None
-    //     }
-    // }
+
+    pub fn get_additional_property_as_u32(&self, field: &str) -> Option<u32> {
+        match self.get_additional_property(field) {
+            Some(value) => get_u32_from_serde_value(value),
+            None => None
+        }
+    }
+
     pub fn get_additional_property_as_u64(&self, field: &str) -> Option<u64> {
         match self.get_additional_property(field) {
             Some(value) => get_u64_from_serde_value(value),

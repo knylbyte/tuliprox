@@ -40,6 +40,7 @@ fn create_directories(cfg: &Config, temp_path: &Path) {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     pub threads: u8,
@@ -57,6 +58,7 @@ pub struct Config {
     pub sleep_timer_mins: Option<u32>,
     pub update_on_boot: bool,
     pub config_hot_reload: bool,
+    pub accept_insecure_ssl_certificates: bool,
     pub web_ui: Option<WebUiConfig>,
     pub messaging: Option<MessagingConfig>,
     pub reverse_proxy: Option<ReverseProxyConfig>,
@@ -137,6 +139,7 @@ impl From<&ConfigDto> for Config {
             sleep_timer_mins: dto.sleep_timer_mins,
             update_on_boot: dto.update_on_boot,
             config_hot_reload: dto.config_hot_reload,
+            accept_insecure_ssl_certificates: dto.accept_insecure_ssl_certificates,
             web_ui: dto.web_ui.as_ref().map(Into::into),
             messaging: dto.messaging.as_ref().map(Into::into),
             reverse_proxy: dto.reverse_proxy.as_ref().map(Into::into),

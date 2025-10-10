@@ -41,12 +41,12 @@
     .option-active {
       background-color: var(--tag-active-background-color);
       color: var(--tag-active-color);
-      fill: var(--tag-active-color);
+      fill: currentColor;
     }
     .option-invalid {
       background-color: var(--tag-status-banned-background-color);
       color: var(--tag-status-banned-color);
-      fill: var(--tag-status-banned-color);
+      fill: currentColor;
     }
   }
   label {
