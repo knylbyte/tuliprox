@@ -99,7 +99,7 @@ pub fn EpgView() -> Html {
             .unwrap_or_else(|_| String::new()); // fallback if not set
 
 
-        row_height.trim_end_matches("px").parse::<usize>().unwrap_or(60)
+        row_height.trim_end_matches("px").parse::<usize>().unwrap_or(60).max(1)
     });
 
     // Add scroll listener to calculate visible channels
@@ -108,12 +108,13 @@ pub fn EpgView() -> Html {
         let visible_range = visible_range.clone();
         let channel_row_height = *row_height;
         use_effect_with((), move |_| {
+            let debounce_handle: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
+            let onscroll_handle: Rc<RefCell<Option<Closure<dyn FnMut(_)>>>> = Rc::new(RefCell::new(None));
             if let Some(div) = container_ref.cast::<HtmlElement>() {
                 let visible_range = visible_range.clone();
-
                 // Store debounce timer in Rc<RefCell>
-                let debounce_handle: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
                 let debounce_handle_clone = debounce_handle.clone();
+                let onscroll_handle_clone = onscroll_handle.clone();
                 let onscroll = Closure::wrap(Box::new(move |_event: web_sys::Event| {
                     // Cancel previous scheduled update
                     if let Some(prev) = debounce_handle_clone.borrow_mut().take() {
@@ -128,7 +129,7 @@ pub fn EpgView() -> Html {
                             let client_height = div.client_height(); // Calculate which channel rows are visible
 
                             // render 10 + 10 more lines
-                            let start_index = (scroll_top / (channel_row_height as i32)  - 10).max(0);
+                            let start_index = (scroll_top / (channel_row_height as i32) - 10).max(0);
                             let end_index = ((scroll_top + client_height) / (channel_row_height as i32) + 10).max(0);
                             vr.set((start_index as usize, end_index as usize));
                         }
@@ -136,11 +137,17 @@ pub fn EpgView() -> Html {
 
                     *debounce_handle_clone.borrow_mut() = Some(handle);
                 }) as Box<dyn FnMut(_)>);
-
                 div.add_event_listener_with_callback("scroll", onscroll.as_ref().unchecked_ref()).unwrap();
-                onscroll.forget();
+                *onscroll_handle_clone.borrow_mut() = Some(onscroll);
             }
-            || {}
+            move || {
+                if let Some(prev) = debounce_handle.borrow_mut().take() {
+                    prev.cancel();
+                }
+                if let Some(onscroll) = onscroll_handle.borrow_mut().take() {
+                    drop(onscroll);
+                }
+            }
         });
     }
 
@@ -176,7 +183,7 @@ pub fn EpgView() -> Html {
                             <div style={format!("height:{}px", start_index * channel_row_height)}></div>
                             { for tv.channels.iter().enumerate().skip(start_index).take(end_index - start_index).map(|(_i, ch)| {
                                 html! {
-                                    <div class="tp__epg__channel" style={format!("max-height:{channel_row_height}px;min-height={channel_row_height}px;height:{channel_row_height}px")}>
+                                    <div class="tp__epg__channel" style={format!("max-height:{channel_row_height}px;min-height:{channel_row_height}px;height:{channel_row_height}px")}>
                                         <div class="tp__epg__channel-icon">
                                             { if let Some(icon) = &ch.icon {
                                                 html! { <img src={icon.clone()} alt={ch.title.clone()} /> }
@@ -215,7 +222,7 @@ pub fn EpgView() -> Html {
                             <div style={format!("height:{}px", start_index * channel_row_height)}></div>
                             { for tv.channels.iter().enumerate().skip(start_index).take(end_index - start_index).map(|(_i, ch)| {
                                 html! {
-                                  <div class="tp__epg__channel-programs" style={format!("max-height:{channel_row_height}px;min-height={channel_row_height}px;height:{channel_row_height}px")}>
+                                  <div class="tp__epg__channel-programs" style={format!("max-height:{channel_row_height}px;min-height:{channel_row_height}px;height:{channel_row_height}px")}>
                                     { for ch.programmes.iter().map(|p| {
                                         let is_active = now >= p.start && now < p.stop;
                                         let left = get_pos(p.start, start_window);
