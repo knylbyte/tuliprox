@@ -119,20 +119,22 @@ pub fn EpgView() -> Html {
                     if let Some(prev) = debounce_handle_clone.borrow_mut().take() {
                         prev.cancel();
                     }
-                    if let Some(div) = container_ref.cast::<HtmlElement>() {
-                        let scroll_top = div.scroll_top();
-                        let client_height = div.client_height(); // Calculate which channel rows are visible
-                        let vr = visible_range.clone();
+                    // Schedule a new update after X ms (debounce)
+                    let container_ref = container_ref.clone();
+                    let vr = visible_range.clone();
+                    let handle = Timeout::new(16, move || {
+                        if let Some(div) = container_ref.cast::<HtmlElement>() {
+                            let scroll_top = div.scroll_top();
+                            let client_height = div.client_height(); // Calculate which channel rows are visible
 
-                        // Schedule a new update after 80ms (debounce)
-                        let handle = Timeout::new(80, move || {
-                            let start_index = (scroll_top / (channel_row_height as i32)).max(0);
-                            let end_index = ((scroll_top + client_height) / (channel_row_height as i32) + 1).max(0);
+                            // render 10 + 10 more lines
+                            let start_index = (scroll_top / (channel_row_height as i32)  - 10).max(0);
+                            let end_index = ((scroll_top + client_height) / (channel_row_height as i32) + 10).max(0);
                             vr.set((start_index as usize, end_index as usize));
-                        });
+                        }
+                    });
 
-                        *debounce_handle_clone.borrow_mut() = Some(handle);
-                    }
+                    *debounce_handle_clone.borrow_mut() = Some(handle);
                 }) as Box<dyn FnMut(_)>);
 
                 div.add_event_listener_with_callback("scroll", onscroll.as_ref().unchecked_ref()).unwrap();
