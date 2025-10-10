@@ -1,5 +1,5 @@
 # Changelog
-# 3.1.7 (2025-09-xx)
+# 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch
 - Resource proxy retries failed requests up to three times and respects the `Retry-After` header (falls back to 100 ms wait)
 to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
