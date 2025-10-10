@@ -18,8 +18,9 @@ thiserror = "2"
 reqwasm = {version = "0.5", features = ["json"]}
 log = "0.4"
 wasm-logger = "0.2"
-gloo-storage = "0"
-gloo-utils = "0"
+gloo-storage = "0.3"
+gloo-utils = "0.2"
+gloo-render = "0.2"
 gloo-timers = { version = "0", features = ["futures"] }
 implicit-clone = "0"
 futures-signals = "0.3"

@@ -30,20 +30,20 @@ impl BufferedStream {
         mut stream: BoxedProviderStream,
         client_close_signal: Arc<AtomicOnceFlag>,
     ) {
-        loop {
-            if !client_close_signal.is_active() {
-                break;
-            }
+        while client_close_signal.is_active() {
             match stream.next().await {
                 Some(Ok(chunk)) => {
-                    match tx.reserve().await {
-                        Ok(permit) => permit.send(Ok(chunk)),
-                        Err(_err) => {
-                            // Receiver dropped, notify and exit
-                            client_close_signal.notify();
-                            break;
-                        }
+                  match tx.reserve().await {
+                    Ok(permit) => {
+                        permit.send(Ok(chunk));
+                        tokio::task::yield_now().await;
+                    },
+                    Err(_err) => {
+                        // Receiver dropped, notify and exit
+                        client_close_signal.notify();
+                        break;
                     }
+                  }
                 }
                 Some(Err(err)) => {
                     //trace!("Buffered Stream Error: {err:?}");

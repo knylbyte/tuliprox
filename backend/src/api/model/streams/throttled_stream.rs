@@ -56,7 +56,8 @@ where
         match Pin::new(&mut this.inner).poll_next(cx) {
             Poll::Ready(Some(Ok(bytes))) => {
                 let len = bytes.len() as f64;
-                let delay_duration = Duration::from_secs_f64(len / this.rate_bytes_per_sec);
+                let delay_secs = (len / this.rate_bytes_per_sec).max(0.001);
+                let delay_duration = Duration::from_secs_f64(delay_secs);
 
                 // Schedule the next delay
                 this.next_delay = Some(Box::pin(sleep(delay_duration)));
@@ -72,3 +73,5 @@ where
         }
     }
 }
+
+impl<S: Unpin> Unpin for ThrottledStream<S> {}
