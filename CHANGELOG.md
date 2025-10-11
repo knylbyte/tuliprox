@@ -1,6 +1,6 @@
 # Changelog
 # 3.1.8 (2025-10-xx)
-- Fixed hls streaming caused by session removal and wrong headers.
+- Fixed HLS streaming issues caused by session eviction and incorrect headers.
 
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch

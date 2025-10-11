@@ -21,9 +21,16 @@ pub type ActiveUserConnectionChangeReceiver = tokio::sync::mpsc::Receiver<(usize
 
 macro_rules! active_user_manager_shared_impl {
     () => {
-          #[inline]
+       #[inline]
         async fn get_active_connections(user: &Arc<RwLock<HashMap<String, UserConnectionData>>>) -> usize {
             user.read().await.iter().filter(|(_, c)| c.connections > 0).map(|(_, c)| c.connections as usize).sum()
+        }
+
+        #[inline]
+        fn drop_connection(&self, addr: &str) {
+             if let Err(e) = self.close_signal_tx.send(addr.to_string()) {
+                 debug!("No active receivers for close signal ({addr}): {e:?}");
+             }
         }
 
         async fn log_active_user(&self) {
@@ -56,6 +63,7 @@ macro_rules! active_user_manager_shared_impl {
                     }
                 }
             }
+            self.drop_connection(&addr);
             self.shared_stream_manager.release_connection(addr, true).await;
             self.provider_manager.release_connection(addr).await;
             self.log_active_user().await;
@@ -77,6 +85,7 @@ struct ConnectionGuardUserManager {
     shared_stream_manager: Arc<SharedStreamManager>,
     provider_manager: Arc<ActiveProviderManager>,
     connection_change_tx: ActiveUserConnectionChangeSender,
+    close_signal_tx: tokio::sync::broadcast::Sender<String>,
 }
 
 impl ConnectionGuardUserManager {
@@ -200,6 +209,7 @@ impl ActiveUserManager {
             shared_stream_manager: Arc::clone(&self.shared_stream_manager),
             provider_manager: Arc::clone(&self.provider_manager),
             connection_change_tx: self.connection_change_tx.clone(),
+            close_signal_tx:  self.close_signal_tx.clone(),
         }
     }
 
@@ -296,10 +306,6 @@ impl ActiveUserManager {
         self.log_active_user.load(Ordering::Relaxed)
     }
 
-    fn find_user_session<'a>(token: &'a str, sessions: &'a [UserSession]) -> Option<&'a UserSession> {
-        sessions.iter().find(|&session| session.token.eq(token))
-    }
-
     fn new_user_session(session_token: &str, virtual_id: u32, provider: &str, stream_url: &str, addr: &str,
                         connection_permission: UserConnectionPermission) -> UserSession {
         UserSession {
@@ -354,28 +360,18 @@ impl ActiveUserManager {
     }
 
     pub async fn update_session_addr(&self, username: &str, token: &str, addr: &str) {
-        let drop_addr = {
-            let mut user_map = self.user.write().await;
-            user_map.get_mut(username).and_then(|connection_data| {
-                connection_data.sessions.iter_mut().find_map(|session| {
-                    if session.token == token {
-                        let old_addr = session.addr.clone();
-                        addr.clone_into(&mut session.addr);
-                        Some(old_addr)
-                    } else {
-                        None
-                    }
-                })
+        let mut user_map = self.user.write().await;
+        user_map.get_mut(username).and_then(|connection_data| {
+            connection_data.sessions.iter_mut().find_map(|session| {
+                if session.token == token {
+                    let old_addr = session.addr.clone();
+                    addr.clone_into(&mut session.addr);
+                    Some(old_addr)
+                } else {
+                    None
+                }
             })
-        };
-
-        if let Some(session_addr) = drop_addr {
-            self.drop_connection(&session_addr);
-        }
-    }
-
-    fn drop_connection(&self, addr: &str) {
-        let _ = self.close_signal_tx.send(addr.to_string());
+        });
     }
 
     pub fn get_close_connection_channel(&self) -> tokio::sync::broadcast::Receiver<String> {
@@ -390,9 +386,6 @@ impl ActiveUserManager {
         let mut users = self.user.write().await;
         if let Some(connection_data) = users.get_mut(username) {
             connection_data.ts = current_time_secs();
-            if connection_data.max_connections == 0 {
-                return Self::find_user_session(token, &connection_data.sessions).cloned();
-            }
 
             // Search for index of session
             if let Some(index) = connection_data
@@ -400,7 +393,12 @@ impl ActiveUserManager {
                 .iter()
                 .position(|s| s.token == token)
             {
-                if connection_data.sessions[index].permission == UserConnectionPermission::GracePeriod {
+                // Refresh session last access
+                connection_data.sessions[index].ts = current_time_secs();
+                // Only re-evaluate permission for limited users during grace
+                if connection_data.max_connections > 0
+                   && connection_data.sessions[index].permission == UserConnectionPermission::GracePeriod
+                {
                     let new_permission = self.check_connection_permission(username, connection_data);
                     connection_data.sessions[index].permission = new_permission;
                 }
