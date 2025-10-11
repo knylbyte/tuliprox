@@ -24,6 +24,8 @@ fn get_pos(secs: i64, start_mins: i64) -> i64 {
     (rel_mins as f64 * PIXEL_PER_MIN).round() as i64
 }
 
+type OnScrollHandle = Rc<RefCell<Option<Closure<dyn FnMut(web_sys::Event)>>>>;
+
 #[function_component]
 pub fn EpgView() -> Html {
     let services = use_service_context();
@@ -109,7 +111,7 @@ pub fn EpgView() -> Html {
         let channel_row_height = *row_height;
         use_effect_with((), move |_| {
             let debounce_handle: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
-            let onscroll_handle: Rc<RefCell<Option<Closure<dyn FnMut(_)>>>> = Rc::new(RefCell::new(None));
+            let onscroll_handle: OnScrollHandle = Rc::new(RefCell::new(None));
             if let Some(div) = container_ref.cast::<HtmlElement>() {
                 let visible_range = visible_range.clone();
                 // Store debounce timer in Rc<RefCell>

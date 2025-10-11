@@ -1,5 +1,6 @@
 use axum::response::IntoResponse;
-use chrono::{Duration, NaiveDateTime, TimeDelta};
+use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Offset, TimeZone, Utc};
+use chrono_tz::Tz;
 use log::{error, trace};
 use quick_xml::events::{BytesStart, Event};
 use std::path::{Path, PathBuf};
@@ -19,28 +20,57 @@ use crate::utils;
 
 pub fn get_empty_epg_response() -> impl axum::response::IntoResponse + Send {
     try_unwrap_body!(axum::response::Response::builder()
-        .status(axum::http::StatusCode::OK) // Entspricht `HttpResponse::Ok()`
+        .status(axum::http::StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("text/xml"))
         .body(axum::body::Body::from(r#"<?xml version="1.0" encoding="utf-8" ?><!DOCTYPE tv SYSTEM "xmltv.dtd"><tv generator-info-name="Xtream Codes" generator-info-url=""></tv>"#)))
 }
 
-fn time_correct(date_time: &str, correction: &TimeDelta) -> String {
-    let date_time_split: Vec<&str> = date_time.split(' ').collect();
-    if date_time_split.len() != 2 {
-        return date_time.to_string();
-    }
+/// Applies an EPG timeshift to an XMLTV programme time, taking the existing timezone into account.
+/// @see `https://wiki.xmltv.org/index.php/XMLTVFormat`
+///
+/// # Arguments
+/// * `original` - original XMLTV datetime string, e.g. "20080715003000 -0600"
+/// * `shift` - timeshift in minutes as `chrono::Duration`
+///
+/// # Returns
+/// A new datetime string in the same format with the same timezone.
+fn time_correct(original: &str, shift: &Duration) -> String {
+    let (datetime_part, tz_part) = if let Some((dt, tz)) = original.trim().rsplit_once(' ') {
+        (dt, tz)
+    } else {
+        (original.trim(), "+0000")
+    };
 
-    // Parse the datetime string
-    NaiveDateTime::parse_from_str(date_time_split[0], "%Y%m%d%H%M%S").map_or_else(
-        |_| date_time.to_string(),
-        |native_dt| {
-            let corrected_dt = native_dt + *correction;
-            // Format the corrected datetime back to string
-            let formatted_dt = corrected_dt.format("%Y%m%d%H%M%S").to_string();
-            let result = format!("{} {}", formatted_dt, date_time_split[1]);
-            result
-        },
-    )
+    let Ok(naive_dt) = NaiveDateTime::parse_from_str(datetime_part, "%Y%m%d%H%M%S") else { return original.to_string() };
+
+    let tz_offset_minutes = if tz_part.len() == 5 {
+        let sign = if &tz_part[0..1] == "-" { -1 } else { 1 };
+        let hours: i32 = tz_part[1..3].parse().unwrap_or(0);
+        let mins: i32 = tz_part[3..5].parse().unwrap_or(0);
+        sign * (hours * 60 + mins)
+    } else {
+        0
+    };
+
+    let tz = FixedOffset::east_opt(tz_offset_minutes * 60).unwrap_or(FixedOffset::east_opt(0).unwrap());
+
+    // Use modern chrono API
+    let dt: DateTime<FixedOffset> = tz
+        .from_local_datetime(&naive_dt)
+        .single()
+        .unwrap_or_else(|| tz.from_utc_datetime(&naive_dt));
+
+    let shifted_dt = dt + *shift;
+
+    format!("{} {}",shifted_dt.format("%Y%m%d%H%M%S"), format_offset(tz_offset_minutes))
+}
+
+fn format_offset(offset_minutes: i32) -> String {
+    let sign = if offset_minutes < 0 { '-' } else { '+' };
+    let abs = offset_minutes.abs();
+    let hours = abs / 60;
+    let mins = abs % 60;
+    format!("{sign}{hours:02}{mins:02}")
 }
 
 fn get_epg_path_for_target_of_type(target_name: &str, epg_path: PathBuf) -> Option<PathBuf> {
@@ -83,9 +113,23 @@ pub (in crate::api) fn get_epg_path_for_target(config: &Config, target: &ConfigT
     None
 }
 
-// `-2:30`(-2h30m), `1:45` (1h45m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m), `2:` (2h)
+/// Parses user-defined EPG timeshift configuration.
+/// Supports either a numeric offset (e.g. "+2:30", "-1:15")
+/// or a timezone name (e.g. "`Europe/Berlin`", "`UTC`", "`America/New_York`").
+///
+/// Returns the total offset in minutes (i32).
 fn parse_timeshift(time_shift: Option<&String>) -> Option<i32> {
     time_shift.and_then(|offset| {
+        // Try to parse as timezone name first
+        if let Ok(tz) = offset.parse::<Tz>() {
+            // Determine the current UTC offset of that timezone (including DST)
+            let now = Utc::now();
+            let local_time = tz.from_utc_datetime(&now.naive_utc());
+            let offset_minutes = local_time.offset().fix().local_minus_utc() / 60;
+            return Some(offset_minutes);
+        }
+
+        // If not a timezone, try to parse as numeric offset
         let sign_factor = if offset.starts_with('-') { -1 } else { 1 };
         let offset = offset.trim_start_matches(&['-', '+'][..]);
 
@@ -265,5 +309,21 @@ mod tests {
         assert_eq!(parse_timeshift(Some(&String::from("+abc"))), None);
         assert_eq!(parse_timeshift(Some(&String::new())), None);
         assert_eq!(parse_timeshift(None), None);
+    }
+
+    #[test]
+    fn test_parse_timezone() {
+        // This will depend on current DST; we just check it’s within a valid range
+        let berlin = parse_timeshift(Some(&"Europe/Berlin".to_string())).unwrap();
+        assert!(berlin == 60 || berlin == 120, "Berlin offset should be 60 or 120, got {}", berlin);
+
+        let new_york = parse_timeshift(Some(&"America/New_York".to_string())).unwrap();
+        assert!(new_york == -300 || new_york == -240, "New York offset should be -300 or -240, got {}", new_york);
+
+        let tokyo = parse_timeshift(Some(&"Asia/Tokyo".to_string())).unwrap();
+        assert_eq!(tokyo, 540); // always UTC+9
+
+        let utc = parse_timeshift(Some(&"UTC".to_string())).unwrap();
+        assert_eq!(utc, 0);
     }
 }

@@ -1381,8 +1381,8 @@ Reverse Proxy mode for user can be a subset
   - `reverse[live,vod]` -> series redirect, others reverse
 
 `server` is _optional_. It should match one server definition, if not given the server with the name `default` is used or the first one.  
-`epg_timeshift` is _optional_. It is only applied when source has `epg_url` configured. `epg_timeshift: [-+]hh:mm`, example  
-`-2:30`(-2h30m), `1:45` (1h45m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m), `2:` (3h)
+`epg_timeshift` is _optional_. It is only applied when source has `epg_url` configured. `epg_timeshift: [-+]hh:mm or TimeZone`, example  
+`-2:30`(-2h30m), `1:45` (1h45m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m), `2:` (2h), `Europe/Paris`, `America/New_York` 
 - `max_connections` is _optional_
 - `status` is _optional_
 - `exp_date` is _optional_

@@ -21,6 +21,7 @@ const COPY_LINK_TULIPROX_VIRTUAL_ID: &str = "copy_link_tuliprox_virtual_id";
 const COPY_LINK_TULIPROX_WEBPLAYER_URL: &str = "copy_link_tuliprox_webplayer_url";
 const COPY_LINK_PROVIDER_URL: &str = "copy_link_provider_url";
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum ExplorerAction {
     CopyLinkTuliproxVirtualId,
