@@ -72,7 +72,7 @@ pub fn create_custom_video_stream_response(config: &AppConfig, video_response: C
 }
 pub fn get_header_filter_for_item_type(item_type: PlaylistItemType) -> HeaderFilter {
     match item_type {
-        PlaylistItemType::Live | PlaylistItemType::LiveHls | PlaylistItemType::LiveDash | PlaylistItemType::LiveUnknown => {
+        PlaylistItemType::Live /*| PlaylistItemType::LiveHls | PlaylistItemType::LiveDash */| PlaylistItemType::LiveUnknown => {
             Some(Box::new(|key| key != "accept-ranges" && key != "range" && key != "content-range"))
         }
         _ => None,
