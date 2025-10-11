@@ -1,4 +1,7 @@
 # Changelog
+# 3.1.8 (2025-10-xx)
+- Fixed HLS streaming issues caused by session eviction and incorrect headers.
+
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch
 - Resource proxy retries failed requests up to three times and respects the `Retry-After` header (falls back to 100 ms wait)

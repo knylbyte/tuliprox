@@ -68,7 +68,6 @@ pub async fn serve(listener: tokio::net::TcpListener,
     }
 }
 
-
 async fn handle_connection<M, S>(
     make_service: &mut M,
     signal_tx: &watch::Sender<()>,
@@ -83,7 +82,7 @@ where
     S::Future: Send,
 {
     let Ok(tcp_stream_std) = socket.into_std() else { return; };
-    tcp_stream_std.set_nonblocking(true).ok(); // this is not necessary
+    //tcp_stream_std.set_nonblocking(true).ok(); // this is not necessary
 
     // Configure keep alive with socket2
     let sock_ref = SockRef::from(&tcp_stream_std);
