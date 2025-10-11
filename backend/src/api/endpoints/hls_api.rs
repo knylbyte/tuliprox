@@ -162,7 +162,7 @@ async fn hls_api_stream(
     let user_session_token = format!("{fingerprint}{virtual_id}");
     let mut user_session = app_state
         .active_users
-        .get_user_session(&user.username, &user_session_token).await;
+        .get_and_update_user_session(&user.username, &user_session_token).await;
 
     if let Some(session) = &mut user_session {
         if session.permission == UserConnectionPermission::Exhausted {

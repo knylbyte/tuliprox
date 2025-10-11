@@ -197,7 +197,7 @@ fn prepare_client(
     let original_headers = stream_options.get_headers();
 
     if log_enabled!(log::Level::Debug) {
-        let message = format!("original_headers {original_headers:?}");
+        let message = format!("original headers {original_headers:?}");
         debug!("{}", sanitize_sensitive_info(&message));
     }
 

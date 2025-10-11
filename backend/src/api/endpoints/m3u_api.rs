@@ -129,7 +129,7 @@ async fn m3u_api_stream(
     let session_key = format!("{fingerprint}{virtual_id}");
     let user_session = app_state
         .active_users
-        .get_user_session(&user.username, &session_key).await;
+        .get_and_update_user_session(&user.username, &session_key).await;
 
     let session_url = if let Some(session) = &user_session {
         if session.permission == UserConnectionPermission::Exhausted {
