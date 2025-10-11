@@ -6,13 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lol_html = "2.6"
+lol_html = "2.7"
 shared = { version = "3", path = "../shared" }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_yaml = "0.9"
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 quick-xml = { version = "0.38", features = ["async-tokio"] }
-regex = "1.11"
+regex = "1.12"
 clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0", features = ["blocking", "json", "stream", "rustls-tls", "socks"] }
 url = "2.5.7"
@@ -68,6 +68,7 @@ async-compression = { version = "0.4", features = ["tokio"] }
 libc = "0.2"
 #[cfg(target_os = "windows")]
 winapi = { version = "0.3", features = ["psapi", "minwindef", "processthreadsapi"] }
+chrono-tz = "0.10.4"
 # [target.'cfg(not(target_env = "msvc"))'.dependencies]
 # tikv-jemallocator =  { version = "*", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 

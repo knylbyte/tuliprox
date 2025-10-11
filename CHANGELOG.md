@@ -1,6 +1,8 @@
 # Changelog
 # 3.1.8 (2025-10-xx)
 - Fixed HLS streaming issues caused by session eviction and incorrect headers.
+- Added TimeZone to `epg_timeshift: [-+]hh:mm or TimeZone`, example `Europe/Paris`, `America/New_York`, `-2:30`(-2h30m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m)
+If you use TimeZone the timeshift will change on Summer/Winter time if its applied in the TZ.
 
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch
