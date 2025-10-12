@@ -1,6 +1,6 @@
 {
   "Cargo.toml": "9afb3b373f53fd79fc498926afca06b1e619a90a16a305e855e4ee683ed908a6",
   "backend/Cargo.toml": "f10ff3ffd083f97d2a82be2c0e3f98ce0588c988c40fcb35658c20ef25b89d3a",
-  "frontend/Cargo.toml": "2db7f1a83edc76f75e21d8728cc64d46c78224fe839999c55ebb1b7dfc12db79",
+  "frontend/Cargo.toml": "ea05d3cc4577f8605d583e11feb0715a78c8438077321af56943e02be3ac373c",
   "shared/Cargo.toml": "50c03f530d6c53abf1d683c1a278789bc63df5410811f445387a97fabe70e270"
 }
