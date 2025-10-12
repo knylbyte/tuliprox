@@ -22,8 +22,8 @@ ARG RUST_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
 ARG SCCACHE_DIR=~/.cache/sccache
 ARG SCCACHE_GHA_ENABLED=off
-ARG SCCACHE_GHA_CACHE_SIZE=10G
-ARG SCCACHE_GHA_VERSION=1
+ARG SCCACHE_GHA_CACHE_SIZE
+ARG SCCACHE_GHA_VERSION
 
 # =============================================================================
 # Stage 0: chef  (cargo-chef prepare)
