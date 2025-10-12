@@ -73,8 +73,17 @@ RUN rustup target add "$(cat /rust-target)" || true
 # =============================================================================
 FROM chef AS planner
 
+ARG TARGETPLATFORM
 ARG SCCACHE_DIR
+ARG SCCACHE_GHA_ENABLED
+ARG SCCACHE_GHA_CACHE_SIZE
+ARG SCCACHE_GHA_VERSION
+
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV SCCACHE_DIR=${SCCACHE_DIR}
+ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
+ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
+ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 
 WORKDIR /src
 
@@ -112,8 +121,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
 # =============================================================================
 FROM chef AS backend-builder
 
+ARG TARGETPLATFORM
 ARG SCCACHE_DIR
+ARG SCCACHE_GHA_ENABLED
+ARG SCCACHE_GHA_CACHE_SIZE
+ARG SCCACHE_GHA_VERSION
+
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV SCCACHE_DIR=${SCCACHE_DIR}
+ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
+ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
+ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 
 WORKDIR /src
@@ -185,9 +203,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
 # =============================================================================
 FROM chef AS frontend-builder
 
+ARG TARGETPLATFORM
 ARG SCCACHE_DIR
-ENV SCCACHE_DIR=${SCCACHE_DIR}
+ARG SCCACHE_GHA_ENABLED
+ARG SCCACHE_GHA_CACHE_SIZE
+ARG SCCACHE_GHA_VERSION
 
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+ENV SCCACHE_DIR=${SCCACHE_DIR}
+ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
+ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
+ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 WORKDIR /src
 
 # # Recreate the minimal workspace layout using the pre-generated manifest
