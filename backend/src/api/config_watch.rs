@@ -23,7 +23,7 @@ enum ConfigFile {
 }
 
 impl ConfigFile {
-    fn load_mappping(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+    fn load_mapping(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
         let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&app_state.app_config.paths);
         if let Some(mapping_file_path) = paths.mapping_file_path.as_ref() {
             match utils::read_mappings(mapping_file_path, true) {
@@ -72,7 +72,7 @@ impl ConfigFile {
         info!("Loaded config file {config_file}");
         update_app_state_config(app_state, config).await?;
         if mapping_changed {
-            Self::load_mappping(app_state)?;
+            Self::load_mapping(app_state)?;
         }
         Ok(())
     }
@@ -87,7 +87,7 @@ impl ConfigFile {
         info!("Loaded sources file {sources_file}");
         update_app_state_sources(app_state, sources).await?;
         // mappings are not stored, so we need to reload and apply them if sources change.
-        Self::load_mappping(app_state)
+        Self::load_mapping(app_state)
     }
 
     async fn load_source_file(app_state: &Arc<AppState>, file: &Path) -> Result<(), TuliproxError> {
@@ -105,7 +105,7 @@ impl ConfigFile {
             }
             ConfigFile::Mapping => {
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Mapping));
-                ConfigFile::load_mappping(app_state)
+                ConfigFile::load_mapping(app_state)
             }
             ConfigFile::Config => {
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Config));
