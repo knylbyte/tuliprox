@@ -102,7 +102,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
-    RUN set -eux; \
+    set -eux; \
     cargo chef prepare --recipe-path recipe.json
 
 # =============================================================================
