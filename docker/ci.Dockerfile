@@ -20,10 +20,10 @@ ARG BUILDPLATFORM_TAG=latest
 ARG ALPINE_VER=3.22.2
 ARG RUST_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
+ARG SCCACHE_DIR=~/.cache/sccache
 ARG SCCACHE_GHA_ENABLED=off
 ARG SCCACHE_GHA_CACHE_SIZE=10G
 ARG SCCACHE_GHA_VERSION=1
-ARG SCCACHE_DIR=/var/cache/sccache
 
 # =============================================================================
 # Stage 0: chef  (cargo-chef prepare)
@@ -43,6 +43,8 @@ ENV SCCACHE_DIR=${SCCACHE_DIR}
 ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
 ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
 ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
+
+RUN echo "starting chef stage with sccache dir: ${SCCACHE_DIR}"
 
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
 # - amd64  -> x86_64-unknown-linux-musl
@@ -69,28 +71,39 @@ RUN rustup target add "$(cat /rust-target)" || true
 #  - Minimal synthetic workspace (backend + shared only) to avoid pulling in frontend
 #  - Generates a recipe that describes all Rust deps for the specified target
 # =============================================================================
-FROM chef AS backend-planner
+FROM chef AS planner
+
+ARG SCCACHE_DIR
+ENV SCCACHE_DIR=${SCCACHE_DIR}
 
 WORKDIR /src
 
-# Synthetic minimal workspace (backend + shared only) generated ahead of time
-COPY docker/build-tools/cargo-chef/backend/Cargo.toml ./Cargo.toml
-COPY docker/build-tools/cargo-chef/backend/Cargo.lock ./Cargo.lock
+# # Synthetic minimal workspace (backend + shared only) generated ahead of time
+# COPY docker/build-tools/cargo-chef/backend/Cargo.toml ./Cargo.toml
+# COPY docker/build-tools/cargo-chef/backend/Cargo.lock ./Cargo.lock
 
-# Copy only the manifests/build scripts required to resolve dependencies.
+# # Copy only the manifests/build scripts required to resolve dependencies.
 # This keeps the recipe layer stable when only source files change.
-COPY backend/build.rs ./backend/build.rs
-COPY backend/Cargo.toml ./backend/Cargo.toml
-COPY shared/Cargo.toml ./shared/Cargo.toml
+# COPY backend/build.rs ./backend/build.rs
+# COPY backend/Cargo.toml ./backend/Cargo.toml
+# COPY shared/Cargo.toml ./shared/Cargo.toml
 
-RUN set -eux; \
-    mkdir -p backend/src shared/src; \
-    printf 'fn main() {}\n' > backend/src/main.rs; \
-    : > shared/src/lib.rs
+# RUN set -eux; \
+#     mkdir -p backend/src shared/src; \
+#     printf 'fn main() {}\n' > backend/src/main.rs; \
+#     : > shared/src/lib.rs
 
-# Produce the dependency recipe using the existing lockfile.
-RUN set -eux; \
-    cargo chef prepare --recipe-path backend-recipe.json
+# # Produce the dependency recipe using the existing lockfile.
+# RUN set -eux; \
+#     cargo chef prepare --recipe-path backend-recipe.json
+
+COPY . .
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+    RUN set -eux; \
+    cargo chef prepare --recipe-path recipe.json
 
 # =============================================================================
 # Stage 3: backend-build (cargo-chef cook && build application code)
@@ -100,75 +113,70 @@ RUN set -eux; \
 FROM chef AS backend-builder
 
 ARG SCCACHE_DIR
-
-WORKDIR /src
-
 ENV SCCACHE_DIR=${SCCACHE_DIR}
 ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 
-# Recreate the minimal workspace layout using the pre-generated manifest
-COPY docker/build-tools/cargo-chef/backend/Cargo.toml ./Cargo.toml
+WORKDIR /src/backend
 
-# Copy only the manifests/build scripts required to resolve dependencies.
-COPY backend/build.rs ./backend/build.rs
-COPY backend/Cargo.toml ./backend/Cargo.toml
-COPY shared/Cargo.toml ./shared/Cargo.toml
+# # Recreate the minimal workspace layout using the pre-generated manifest
+# COPY docker/build-tools/cargo-chef/backend/Cargo.toml ./Cargo.toml
 
-RUN set -eux; \
-    mkdir -p backend/src shared/src; \
-    printf 'fn main() {}\n' > backend/src/main.rs; \
-    : > shared/src/lib.rs
+# # Copy only the manifests/build scripts required to resolve dependencies.
+# COPY backend/build.rs ./backend/build.rs
+# COPY backend/Cargo.toml ./backend/Cargo.toml
+# COPY shared/Cargo.toml ./shared/Cargo.toml
 
-# Cook: compile only dependencies (cacheable layer)
-COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
-COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
+# RUN set -eux; \
+#     mkdir -p backend/src shared/src; \
+#     printf 'fn main() {}\n' > backend/src/main.rs; \
+#     : > shared/src/lib.rs
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
-    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
+# # Cook: compile only dependencies (cacheable layer)
+# COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
+# COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
+
+COPY --from=planner /src/recipe.json ./recipe.json
+
+# Build dependencies - this is the caching Docker layer!
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
-    --mount=type=secret,id=gha_results_url,env=ACTIONS_RESULTS_URL,required=false \
-    --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
     set -eux; \
-    cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json
-    
-# Build the actual backend (cargo will leverage the cooked deps)
-# Reuse the lockfile generated by the planner to stay in sync with the edited workspace.
-COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
-COPY backend ./backend
-COPY shared   ./shared
+    cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path recipe.json  
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
-    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
+COPY . .
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
-    --mount=type=secret,id=gha_results_url,env=ACTIONS_RESULTS_URL,required=false \
-    --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
+    set -eux; \
     cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 
-# =============================================================================
-# Stage 4: frontend-planner (cargo-chef prepare for WASM)
-#  - Minimal synthetic workspace (frontend + shared only) to avoid pulling in backend
-#  - Generates a recipe that describes all Rust deps for the WASM target
-# =============================================================================
-FROM chef AS frontend-planner
+# # =============================================================================
+# # Stage 4: frontend-planner (cargo-chef prepare for WASM)
+# #  - Minimal synthetic workspace (frontend + shared only) to avoid pulling in backend
+# #  - Generates a recipe that describes all Rust deps for the WASM target
+# # =============================================================================
+# FROM chef AS frontend-planner
 
-WORKDIR /src
+# WORKDIR /src
 
-# Synthetic minimal workspace (frontend + shared only) generated ahead of time
-COPY docker/build-tools/cargo-chef/frontend/Cargo.toml ./Cargo.toml
-COPY docker/build-tools/cargo-chef/frontend/Cargo.lock ./Cargo.lock
+# # Synthetic minimal workspace (frontend + shared only) generated ahead of time
+# COPY docker/build-tools/cargo-chef/frontend/Cargo.toml ./Cargo.toml
+# COPY docker/build-tools/cargo-chef/frontend/Cargo.lock ./Cargo.lock
 
-# Copy only the manifests required for dependency resolution.
-COPY frontend/Cargo.toml ./frontend/Cargo.toml
-COPY shared/Cargo.toml   ./shared/Cargo.toml
+# # Copy only the manifests required for dependency resolution.
+# COPY frontend/Cargo.toml ./frontend/Cargo.toml
+# COPY shared/Cargo.toml   ./shared/Cargo.toml
 
-RUN set -eux; \
-    mkdir -p frontend/src shared/src; \
-    : > frontend/src/lib.rs; \
-    : > shared/src/lib.rs
+# RUN set -eux; \
+#     mkdir -p frontend/src shared/src; \
+#     : > frontend/src/lib.rs; \
+#     : > shared/src/lib.rs
 
-# Produce the dependency recipe for WASM using the existing lockfile.
-RUN set -eux; \
-    cargo chef prepare --recipe-path frontend-recipe.json
+# # Produce the dependency recipe for WASM using the existing lockfile.
+# RUN set -eux; \
+#     cargo chef prepare --recipe-path frontend-recipe.json
 
 # =============================================================================
 # Stage 5: frontend-builder (cook + trunk build)
@@ -180,46 +188,47 @@ FROM chef AS frontend-builder
 ARG SCCACHE_DIR
 ENV SCCACHE_DIR=${SCCACHE_DIR}
 
-WORKDIR /src
-
-# Recreate the minimal workspace layout using the pre-generated manifest
-COPY docker/build-tools/cargo-chef/frontend/Cargo.toml ./Cargo.toml
-
-# Copy only the manifests required for dependency resolution.
-COPY frontend/Cargo.toml ./frontend/Cargo.toml
-COPY shared/Cargo.toml   ./shared/Cargo.toml
-
-RUN set -eux; \
-    mkdir -p frontend/src shared/src; \
-    : > frontend/src/lib.rs; \
-    : > shared/src/lib.rs
-
-# Cook: compile only dependencies (cacheable layer)
-COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
-COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
-
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
-    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
-    --mount=type=secret,id=gha_results_url,env=ACTIONS_RESULTS_URL,required=false \
-    --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
-    set -eux; \
-    cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
-
-# Keep using the planner's lockfile so the trimmed workspace stays consistent.
-COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
-
-COPY frontend ./frontend
-COPY shared   ./shared
-
-# Build the actual frontend (Trunk will leverage the cooked deps)
 WORKDIR /src/frontend
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM} \
-    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM} \
+# # Recreate the minimal workspace layout using the pre-generated manifest
+# COPY docker/build-tools/cargo-chef/frontend/Cargo.toml ./Cargo.toml
+
+# # Copy only the manifests required for dependency resolution.
+# COPY frontend/Cargo.toml ./frontend/Cargo.toml
+# COPY shared/Cargo.toml   ./shared/Cargo.toml
+
+# RUN set -eux; \
+#     mkdir -p frontend/src shared/src; \
+#     : > frontend/src/lib.rs; \
+#     : > shared/src/lib.rs
+
+# # Cook: compile only dependencies (cacheable layer)
+# COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
+# COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
+
+COPY --from=planner /src/recipe.json ./recipe.json
+
+# Build dependencies - this is the caching Docker layer!
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
-    --mount=type=secret,id=gha_results_url,env=ACTIONS_RESULTS_URL,required=false \
-    --mount=type=secret,id=gha_runtime_token,env=ACTIONS_RUNTIME_TOKEN,required=false \
+    set -eux; \
+    cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path recipe.json
+
+# # Keep using the planner's lockfile so the trimmed workspace stays consistent.
+# COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
+
+# COPY frontend ./frontend
+# COPY shared   ./shared
+
+# # Build the actual frontend (Trunk will leverage the cooked deps)
+# WORKDIR /src/frontend
+
+COPY . .
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
     trunk build --release
 
@@ -265,12 +274,12 @@ COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=tzdata /etc/ssl/certs      /etc/ssl/certs
 
 # Copy binary & assets into /opt tree
-COPY --from=backend-builder   /src/target/*/release/tuliprox /opt/tuliprox/bin/tuliprox
-COPY --from=frontend-builder  /src/frontend/dist             /opt/tuliprox/web/dist
-COPY --from=resources         /src/resources                 /opt/tuliprox/resources
+COPY --from=backend-builder   /src/backend/target/*/release/tuliprox  /opt/tuliprox/bin/tuliprox
+COPY --from=frontend-builder  /src/frontend/dist                      /opt/tuliprox/web/dist
+COPY --from=resources         /src/resources                          /opt/tuliprox/resources
 
 # In scratch we cannot create symlinks (no shell); duplicate to PATH location
-COPY --from=backend-builder  /src/target/*/release/tuliprox /usr/local/bin/tuliprox
+COPY --from=backend-builder   /src/backend/target/*/release/tuliprox /usr/local/bin/tuliprox
 
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
@@ -303,9 +312,9 @@ COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=tzdata /etc/ssl/certs      /etc/ssl/certs
 
 # Copy binary & assets into /opt tree
-COPY --from=backend-builder   /src/target/*/release/tuliprox /opt/tuliprox/bin/tuliprox
-COPY --from=frontend-builder  /src/frontend/dist             /opt/tuliprox/web/dist
-COPY --from=resources         /src/resources                 /opt/tuliprox/resources
+COPY --from=backend-builder   /src/backend/target/*/release/tuliprox  /opt/tuliprox/bin/tuliprox
+COPY --from=frontend-builder  /src/frontend/dist                      /opt/tuliprox/web/dist
+COPY --from=resources         /src/resources                          /opt/tuliprox/resources
 
 # PATH convenience symlink
 RUN ln -s /opt/tuliprox/bin/tuliprox /usr/local/bin/tuliprox

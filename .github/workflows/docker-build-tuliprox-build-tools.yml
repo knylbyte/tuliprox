@@ -1,9 +1,13 @@
 ---
-name: Docker Build & Push tuliprox-build-tools (prebuild)
+name: Docker Build & Push tuliprox-build-tools
 
 on:
   workflow_dispatch:
     inputs:
+      trigger:
+        description: "Calling workflow identifier"
+        required: false
+        default: manual
       trunk_ver:
         description: "trunk version"
         required: false
@@ -274,6 +278,10 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Restart tuliprox build workflow
+        if: ${{ github.event.inputs.trigger == 'gh-actions' }}
+        run: |
+          gh workflow run docker-build.yml --ref ${{ github.ref }} --repo ${{ github.repository }}
 
 
 
