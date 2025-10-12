@@ -85,7 +85,9 @@ impl ConfigFile {
         prepare_sources_batch(&mut sources_dto, true)?;
         let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
         info!("Loaded sources file {sources_file}");
-        update_app_state_sources(app_state, sources).await
+        update_app_state_sources(app_state, sources).await?;
+        // mappings are not stored, so we need to reload and apply them if sources change.
+        Self::load_mappping(app_state)
     }
 
     async fn load_source_file(app_state: &Arc<AppState>, file: &Path) -> Result<(), TuliproxError> {
