@@ -116,7 +116,7 @@ ARG SCCACHE_DIR
 ENV SCCACHE_DIR=${SCCACHE_DIR}
 ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 
-WORKDIR /src/backend
+WORKDIR /src
 
 # # Recreate the minimal workspace layout using the pre-generated manifest
 # COPY docker/build-tools/cargo-chef/backend/Cargo.toml ./Cargo.toml
@@ -188,7 +188,7 @@ FROM chef AS frontend-builder
 ARG SCCACHE_DIR
 ENV SCCACHE_DIR=${SCCACHE_DIR}
 
-WORKDIR /src/frontend
+WORKDIR /src
 
 # # Recreate the minimal workspace layout using the pre-generated manifest
 # COPY docker/build-tools/cargo-chef/frontend/Cargo.toml ./Cargo.toml
@@ -274,12 +274,12 @@ COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=tzdata /etc/ssl/certs      /etc/ssl/certs
 
 # Copy binary & assets into /opt tree
-COPY --from=backend-builder   /src/backend/target/*/release/tuliprox  /opt/tuliprox/bin/tuliprox
-COPY --from=frontend-builder  /src/frontend/dist                      /opt/tuliprox/web/dist
-COPY --from=resources         /src/resources                          /opt/tuliprox/resources
+COPY --from=backend-builder   /src/target/*/release/tuliprox  /opt/tuliprox/bin/tuliprox
+COPY --from=frontend-builder  /src/frontend/dist              /opt/tuliprox/web/dist
+COPY --from=resources         /src/resources                  /opt/tuliprox/resources
 
 # In scratch we cannot create symlinks (no shell); duplicate to PATH location
-COPY --from=backend-builder   /src/backend/target/*/release/tuliprox /usr/local/bin/tuliprox
+COPY --from=backend-builder   /src/target/*/release/tuliprox /usr/local/bin/tuliprox
 
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
@@ -312,9 +312,9 @@ COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=tzdata /etc/ssl/certs      /etc/ssl/certs
 
 # Copy binary & assets into /opt tree
-COPY --from=backend-builder   /src/backend/target/*/release/tuliprox  /opt/tuliprox/bin/tuliprox
-COPY --from=frontend-builder  /src/frontend/dist                      /opt/tuliprox/web/dist
-COPY --from=resources         /src/resources                          /opt/tuliprox/resources
+COPY --from=backend-builder   /src/target/*/release/tuliprox  /opt/tuliprox/bin/tuliprox
+COPY --from=frontend-builder  /src/frontend/dist              /opt/tuliprox/web/dist
+COPY --from=resources         /src/resources                  /opt/tuliprox/resources
 
 # PATH convenience symlink
 RUN ln -s /opt/tuliprox/bin/tuliprox /usr/local/bin/tuliprox
