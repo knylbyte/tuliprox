@@ -245,18 +245,16 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
 # # Build the actual frontend (Trunk will leverage the cooked deps)
 # WORKDIR /src/frontend
 
-COPY --from=frontend-planner /src/Cargo.lock .
-COPY --from=frontend-planner /src/Cargo.toml .
-COPY --from=frontend-planner /src/frontend .
-COPY --from=frontend-planner /src/shared .
+COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
+COPY --from=frontend-planner /src/Cargo.toml ./Cargo.toml
+COPY --from=frontend-planner /src/frontend ./frontend
+COPY --from=frontend-planner /src/shared ./shared
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
-    trunk build --release
-
-COPY . ./frontend
+    trunk build --release --locked --config ./frontend/Trunk.toml --dist ./frontend/dist
 
 # dist -> /src/frontend/dist
 
