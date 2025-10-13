@@ -100,7 +100,11 @@ COPY ./shared ./shared
 
 RUN set -eux; \
     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml; \
-    cargo machete --with-metadata
+    cargo_machete_exit_code=0; \
+    cargo machete --with-metadata || cargo_machete_exit_code=$?; \
+    if [ "$cargo_machete_exit_code" -gt 1 ]; then \
+        exit "$cargo_machete_exit_code"; \
+    fi
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
@@ -185,7 +189,11 @@ COPY ./shared ./shared
 
 RUN set -eux; \
     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml; \
-    cargo machete --with-metadata
+    cargo_machete_exit_code=0; \
+    cargo machete --with-metadata || cargo_machete_exit_code=$?; \
+    if [ "$cargo_machete_exit_code" -gt 1 ]; then \
+        exit "$cargo_machete_exit_code"; \
+    fi
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
