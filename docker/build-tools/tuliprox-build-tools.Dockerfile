@@ -15,6 +15,7 @@ ARG RUST_DISTRO=1.90.0-trixie
 ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.104
 ARG CARGO_CHEF_VER=0.1.73
+ARG CARGO_MACHETE_VER=0.5.0
 ARG SCCACHE_VER=0.11.0
 ARG ALPINE_VER=3.22.2
 
@@ -118,11 +119,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
       --target "$(cat /rust-target)" --root /out; \
     cargo install --locked cargo-chef --version ${CARGO_CHEF_VER} \
       --target "$(cat /rust-target)" --root /out; \
-    cargo install --locked --no-default-features --features "${SCCACHE_FEATURE_LIST}" \
+    cargo install --locked cargo-machete --version ${CARGO_MACHETE_VER} \
+      --target "$(cat /rust-target)" --root /out; \
+    cargo install --locked sccache --no-default-features --features "${SCCACHE_FEATURE_LIST}" \
       --target "$(cat /rust-target)" \
       --root /out \
-      --version ${SCCACHE_VER} \
-      sccache
+      --version ${SCCACHE_VER}
 
 # Strip (best-effort)
 RUN case "$(cat /rust-target)" in \
@@ -141,12 +143,14 @@ ARG RUST_DISTRO
 ARG TRUNK_VER
 ARG BINDGEN_VER
 ARG CARGO_CHEF_VER
+ARG CARGO_MACHETE_VER
 ARG SCCACHE_VER
 
 LABEL io.tuliprox.rust.version="${RUST_DISTRO%%-*}" \
       io.tuliprox.trunk.version="${TRUNK_VER}" \
       io.tuliprox.wasm_bindgen.version="${BINDGEN_VER}" \
       io.tuliprox.cargo_chef.version="${CARGO_CHEF_VER}" \
+      io.tuliprox.cargo_machete.version="${CARGO_MACHETE_VER}" \
       io.tuliprox.sccache.version="${SCCACHE_VER}"
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
@@ -193,6 +197,7 @@ ENV CC_x86_64_unknown_linux_musl=musl-gcc \
 COPY --from=builder /out/bin/trunk /usr/local/cargo/bin/trunk
 COPY --from=builder /out/bin/wasm-bindgen /usr/local/cargo/bin/wasm-bindgen
 COPY --from=builder /out/bin/cargo-chef /usr/local/cargo/bin/cargo-chef
+COPY --from=builder /out/bin/cargo-machete /usr/local/cargo/bin/cargo-machete
 COPY --from=builder /out/bin/sccache /usr/local/cargo/bin/sccache
 
 # Copy precompiled .ts resources from resources stage
@@ -205,11 +210,13 @@ RUN mkdir -p ${SCCACHE_DIR} \
 RUN chmod +x  /usr/local/cargo/bin/trunk \
               /usr/local/cargo/bin/wasm-bindgen \
               /usr/local/cargo/bin/cargo-chef \
+              /usr/local/cargo/bin/cargo-machete \
               /usr/local/cargo/bin/sccache
 
 RUN trunk --version \
  && wasm-bindgen --version \
  && cargo-chef --version \
+ && cargo-machete --version \
  && sccache --version
 
 
