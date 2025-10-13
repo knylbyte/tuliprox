@@ -216,8 +216,8 @@ RUN chmod +x  /usr/local/cargo/bin/trunk \
 
 RUN trunk --version \
  && wasm-bindgen --version \
- && cargo-chef --version \
- && cargo-machete --version \
+ && cargo chef --version \
+ && cargo machete --version \
  && sccache --version
 
 
