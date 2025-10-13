@@ -95,10 +95,14 @@ WORKDIR /src
 # RUN set -eux; \
 #     cargo chef prepare --recipe-path backend-recipe.json
 
-COPY . .
+COPY ./Cargo.toml .
+COPY ./Cargo.lock .
+COPY ./backend ./backend
+COPY ./shared ./shared
 
 RUN set -eux; \
-    sed -i -E '/^\s*members\s*=\s*\[/ { s/(,\s*)?"frontend"(,\s*)?/\1/g; s/\[\s*,/\[/; s/,\s*\]/]/ }' Cargo.toml
+    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml; \
+    cargo machete 
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
@@ -143,7 +147,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
     set -eux; \
     cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json  
 
-COPY . .
+COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
+COPY --from=backend-planner /src/Cargo.toml ./Cargo.toml
+COPY --from=backend-planner /src/backend ./backend
+COPY --from=backend-planner /src/shared ./shared
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
@@ -173,7 +180,14 @@ WORKDIR /src
 #     : > frontend/src/lib.rs; \
 #     : > shared/src/lib.rs
 
-COPY . .
+COPY ./Cargo.toml .
+COPY ./Cargo.lock .
+COPY ./frontend ./frontend
+COPY ./shared ./shared
+
+RUN set -eux; \
+    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml; \
+    cargo machete 
 
 RUN set -eux; \
     sed -i -E '/^\s*members\s*=\s*\[/ { s/(,\s*)?"backend"(,\s*)?/\1/g; s/\[\s*,/\[/; s/,\s*\]/]/ }' Cargo.toml
@@ -228,7 +242,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
 # # Build the actual frontend (Trunk will leverage the cooked deps)
 # WORKDIR /src/frontend
 
-COPY . .
+COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
+COPY --from=frontend-planner /src/Cargo.toml ./Cargo.toml
+COPY --from=frontend-planner /src/frontend ./frontend
+COPY --from=frontend-planner /src/shared ./shared
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
