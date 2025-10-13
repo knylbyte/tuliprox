@@ -109,8 +109,8 @@ RUN set -eux; \
         exit "$cargo_machete_exit_code"; \
     fi
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
     cargo chef prepare --recipe-path backend-recipe.json
@@ -146,8 +146,8 @@ WORKDIR /src
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 
 # Build dependencies - this is the caching Docker layer!
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
     cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json  
@@ -157,8 +157,8 @@ COPY --from=backend-planner /src/Cargo.toml ./Cargo.toml
 COPY --from=backend-planner /src/backend ./backend
 COPY --from=backend-planner /src/shared ./shared
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
     cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
@@ -198,8 +198,8 @@ RUN set -eux; \
         exit "$cargo_machete_exit_code"; \
     fi
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
     cargo chef prepare --recipe-path frontend-recipe.json
@@ -233,8 +233,8 @@ WORKDIR /src
 COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 
 # Build dependencies - this is the caching Docker layer!
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
     cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
@@ -253,8 +253,8 @@ COPY --from=frontend-planner /src/Cargo.toml ./Cargo.toml
 COPY --from=frontend-planner /src/frontend ./frontend
 COPY --from=frontend-planner /src/shared ./shared
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
     mkdir -p ./frontend/dist; \
