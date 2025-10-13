@@ -45,24 +45,22 @@ ENV SCCACHE_DIR=${SCCACHE_DIR}
 # ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
 # ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 
-RUN echo "starting chef stage with sccache dir: ${SCCACHE_DIR}"
-
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
 # - amd64  -> x86_64-unknown-linux-musl
 # - arm64  -> aarch64-unknown-linux-musl
 # - arm/v7 -> armv7-unknown-linux-musleabihf
 RUN set -eux; \
-    if [ -z "${RUST_TARGET:-}" ]; then \
-      case "$TARGETPLATFORM" in \
-        "linux/amd64")  echo x86_64-unknown-linux-musl        > /rust-target ;; \
-        "linux/arm64")  echo aarch64-unknown-linux-musl       > /rust-target ;; \
-        "linux/arm/v7") echo armv7-unknown-linux-musleabihf   > /rust-target ;; \
-        *) echo "Unsupported TARGETPLATFORM: $TARGETPLATFORM" >&2; exit 1 ;; \
-      esac; \
-    else \
-      echo "${RUST_TARGET}" > /rust-target; \
-    fi; \
-    printf "Using RUST_TARGET=%s\n" "$(cat /rust-target)"
+if [ -z "${RUST_TARGET:-}" ]; then \
+case "$TARGETPLATFORM" in \
+"linux/amd64")  echo x86_64-unknown-linux-musl        > /rust-target ;; \
+"linux/arm64")  echo aarch64-unknown-linux-musl       > /rust-target ;; \
+"linux/arm/v7") echo armv7-unknown-linux-musleabihf   > /rust-target ;; \
+*) echo "Unsupported TARGETPLATFORM: $TARGETPLATFORM" >&2; exit 1 ;; \
+esac; \
+else \
+echo "${RUST_TARGET}" > /rust-target; \
+fi; \
+printf "Using RUST_TARGET=%s\n" "$(cat /rust-target)"
 
 # Ensure the target is available in the toolchain (prebuild already has rustup)
 RUN rustup target add "$(cat /rust-target)" || true
@@ -74,17 +72,7 @@ RUN rustup target add "$(cat /rust-target)" || true
 # =============================================================================
 FROM chef AS planner
 
-ARG TARGETPLATFORM
-ARG SCCACHE_DIR
-# ARG SCCACHE_GHA_ENABLED
-# ARG SCCACHE_GHA_CACHE_SIZE
-# ARG SCCACHE_GHA_VERSION
-
-ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-ENV SCCACHE_DIR=${SCCACHE_DIR}
-# ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
-# ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
-# ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
+RUN echo "starting planner stage with sccache dir: ${SCCACHE_DIR}"
 
 WORKDIR /src
 
@@ -122,17 +110,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
 # =============================================================================
 FROM chef AS backend-builder
 
-ARG TARGETPLATFORM
-ARG SCCACHE_DIR
-# ARG SCCACHE_GHA_ENABLED
-# ARG SCCACHE_GHA_CACHE_SIZE
-# ARG SCCACHE_GHA_VERSION
-
-ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-ENV SCCACHE_DIR=${SCCACHE_DIR}
-# ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
-# ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
-# ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 
 WORKDIR /src
@@ -204,17 +181,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
 # =============================================================================
 FROM chef AS frontend-builder
 
-ARG TARGETPLATFORM
-ARG SCCACHE_DIR
-# ARG SCCACHE_GHA_ENABLED
-# ARG SCCACHE_GHA_CACHE_SIZE
-# ARG SCCACHE_GHA_VERSION
-
-ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-ENV SCCACHE_DIR=${SCCACHE_DIR}
-# ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
-# ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
-# ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 WORKDIR /src
 
 # # Recreate the minimal workspace layout using the pre-generated manifest
