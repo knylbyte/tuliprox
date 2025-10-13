@@ -443,9 +443,9 @@ jobs:
             /usr/local/cargo/registry
             /usr/local/cargo/git
             /var/cache/sccache
-          key: ${{ runner.os }}-cargo-docker-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-docker-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-docker-
+            ${{ runner.os }}-cargo-docker-${{ matrix.arch_tag }}-
 
       # --- Read version from CHANGELOG.md ---
       - name: Step 4.6 - Read version
@@ -817,13 +817,19 @@ jobs:
             if [[ -n "${CACHE_BASE_TAG}" ]]; then
               echo "type=registry,ref=${NS}:${CACHE_BASE_TAG}-${ARCH}"
             fi
+            echo "type=local,src=/usr/local/cargo/registry"
+            echo "type=local,src=/usr/local/cargo/git"
+            echo "type=local,src=/var/cache/sccache"
             echo "type=registry,ref=${NS}:${CACHE_TAG}-${ARCH}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
           {
             echo "cache_to<<EOF"
-            echo "type=gha,mode=max,scope=image-${CACHE_TAG}-${ARCH}"
+            echo "type=local,dst=/usr/local/cargo/registry,mode=max"
+            echo "type=local,dst=/usr/local/cargo/git,mode=max"
+            echo "type=local,dst=/var/cache/sccache",mode=max
+            echo "type=gha,scope=image-${CACHE_TAG}-${ARCH},mode=max"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -927,12 +933,18 @@ jobs:
             if [[ -n "${CACHE_BASE_TAG}" ]]; then
               echo "type=registry,ref=${NS}:${CACHE_BASE_TAG}-${ARCH}"
             fi
+            echo "type=local,src=/usr/local/cargo/registry"
+            echo "type=local,src=/usr/local/cargo/git"
+            echo "type=local,src=/var/cache/sccache"
             echo "type=registry,ref=${NS}:${CACHE_TAG}-${ARCH}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
           {
             echo "cache_to<<EOF"
+            echo "type=local,dst=/usr/local/cargo/registry,mode=max"
+            echo "type=local,dst=/usr/local/cargo/git,mode=max"
+            echo "type=local,dst=/var/cache/sccache",mode=max
             echo "type=gha,mode=max,scope=image-${CACHE_TAG}-${ARCH}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
