@@ -826,9 +826,9 @@ jobs:
 
           {
             echo "cache_to<<EOF"
-            echo "type=local,dst=/usr/local/cargo/registry,mode=max"
-            echo "type=local,dst=/usr/local/cargo/git,mode=max"
-            echo "type=local,dst=/var/cache/sccache",mode=max
+            echo "type=local,dest=/usr/local/cargo/registry,mode=max"
+            echo "type=local,dest=/usr/local/cargo/git,mode=max"
+            echo "type=local,dest=/var/cache/sccache",mode=max
             echo "type=gha,scope=image-${CACHE_TAG}-${ARCH},mode=max"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -942,9 +942,9 @@ jobs:
 
           {
             echo "cache_to<<EOF"
-            echo "type=local,dst=/usr/local/cargo/registry,mode=max"
-            echo "type=local,dst=/usr/local/cargo/git,mode=max"
-            echo "type=local,dst=/var/cache/sccache",mode=max
+            echo "type=local,dest=/usr/local/cargo/registry,mode=max"
+            echo "type=local,dest=/usr/local/cargo/git,mode=max"
+            echo "type=local,dest=/var/cache/sccache",mode=max
             echo "type=gha,mode=max,scope=image-${CACHE_TAG}-${ARCH}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
