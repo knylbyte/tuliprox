@@ -72,8 +72,6 @@ RUN rustup target add "$(cat /rust-target)" || true
 # =============================================================================
 FROM chef AS backend-planner
 
-RUN echo "starting planner stage with sccache dir: ${SCCACHE_DIR}"
-
 WORKDIR /src
 
 # # Synthetic minimal workspace (backend + shared only) generated ahead of time
@@ -102,7 +100,7 @@ COPY ./shared ./shared
 
 RUN set -eux; \
     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml; \
-    cargo machete 
+    cargo machete --with-metadata
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
@@ -187,7 +185,7 @@ COPY ./shared ./shared
 
 RUN set -eux; \
     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml; \
-    cargo machete 
+    cargo machete --with-metadata
 
 RUN set -eux; \
     sed -i -E '/^\s*members\s*=\s*\[/ { s/(,\s*)?"backend"(,\s*)?/\1/g; s/\[\s*,/\[/; s/,\s*\]/]/ }' Cargo.toml
