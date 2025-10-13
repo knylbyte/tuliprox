@@ -15,7 +15,7 @@ ARG RUST_DISTRO=1.90.0-trixie
 ARG TRUNK_VER=0.21.14
 ARG BINDGEN_VER=0.2.104
 ARG CARGO_CHEF_VER=0.1.73
-ARG CARGO_MACHETE_VER=0.5.0
+ARG CARGO_MACHETE_VER=0.9.1
 ARG SCCACHE_VER=0.11.0
 ARG ALPINE_VER=3.22.2
 
@@ -216,8 +216,8 @@ RUN chmod +x  /usr/local/cargo/bin/trunk \
 
 RUN trunk --version \
  && wasm-bindgen --version \
- && cargo chef --version \
- && cargo machete --version \
+ && cargo-chef --version \
+ && cargo-machete --version \
  && sccache --version
 
 
