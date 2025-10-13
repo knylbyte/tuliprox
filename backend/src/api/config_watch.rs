@@ -28,7 +28,7 @@ impl ConfigFile {
         if let Some(mapping_file_path) = paths.mapping_file_path.as_ref() {
             match utils::read_mappings(mapping_file_path, true) {
                 Ok(Some(mappings_cfg)) => {
-                    app_state.app_config.set_mappings(&mappings_cfg);
+                    app_state.app_config.set_mappings(mapping_file_path, &mappings_cfg);
                     info!("Loaded mapping file {mapping_file_path}");
                 }
                 Ok(None) => {

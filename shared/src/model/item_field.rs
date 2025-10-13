@@ -1,10 +1,11 @@
 use std::fmt::Display;
 use std::str::FromStr;
 use enum_iterator::Sequence;
+use serde::{Deserialize, Deserializer};
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, serde::Serialize, Sequence, Eq, PartialEq)]
 pub enum ItemField {
     #[serde(rename = "group")]
     Group,
@@ -79,5 +80,15 @@ impl FromStr for ItemField {
         } else {
             create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for ItemField {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        ItemField::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
