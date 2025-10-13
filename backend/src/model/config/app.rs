@@ -59,7 +59,8 @@ impl AppConfig {
         self.check_target_user()
     }
 
-    pub fn set_mappings(&self, mappings_cfg: &Mappings) {
+    pub fn set_mappings(&self, mapping_path: &str, mappings_cfg: &Mappings) {
+        self.set_mapping_path(Some(&mapping_path.to_string()));
         let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
         for source in &sources.sources {
             for target in &source.targets {
@@ -304,19 +305,21 @@ impl AppConfig {
         Ok(())
     }
 
+    fn set_mapping_path(&self, mapping_path: Option<&String>) {
+        let paths = self.paths.load_full();
+        let mut new_paths = paths.as_ref().clone();
+        let old_mapping_file_path = new_paths.mapping_file_path.as_ref();
+        if old_mapping_file_path != mapping_path {
+            new_paths.mapping_file_path.clone_from(&mapping_path.cloned());
+            self.paths.store(Arc::new(new_paths));
+        }
+    }
+
     fn prepare_paths(&self) {
         {
             let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
-            let paths = self.paths.load_full();
-            let mut new_paths = paths.as_ref().clone();
-            let config_mapping_file_path = config.mapping_path.as_ref();
-            let old_mapping_file_path = new_paths.mapping_file_path.as_ref();
-            if old_mapping_file_path != config_mapping_file_path {
-                new_paths.mapping_file_path.clone_from(&config.mapping_path);
-                self.paths.store(Arc::new(new_paths));
-            }
+            self.set_mapping_path(config.mapping_path.as_ref());
         }
-
         self.prepare_custom_stream_response();
     }
 

@@ -243,7 +243,7 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
 
     if let Some(mappings_file) = &paths.mapping_file_path {
         match utils::read_mappings(mappings_file.as_str(), resolve_env) {
-            Ok(Some(mappings)) => app_config.set_mappings(&mappings),
+            Ok(Some(mappings)) => app_config.set_mappings(mappings_file, &mappings),
             Ok(None) => info!("Mapping file: not used"),
             Err(err) => exit!("{err}"),
         }
