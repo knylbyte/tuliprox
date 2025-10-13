@@ -440,9 +440,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            /usr/local/cargo/registry
-            /usr/local/cargo/git
-            /var/cache/sccache
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/sccache
           key: ${{ runner.os }}-cargo-docker-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-docker-${{ matrix.arch_tag }}-
@@ -817,18 +817,18 @@ jobs:
             if [[ -n "${CACHE_BASE_TAG}" ]]; then
               echo "type=registry,ref=${NS}:${CACHE_BASE_TAG}-${ARCH}"
             fi
-            echo "type=local,src=/usr/local/cargo/registry"
-            echo "type=local,src=/usr/local/cargo/git"
-            echo "type=local,src=/var/cache/sccache"
+            echo "type=local,src=~/.cargo/registry"
+            echo "type=local,src=~/.cargo/git"
+            echo "type=local,src=~/.cache/sccache"
             echo "type=registry,ref=${NS}:${CACHE_TAG}-${ARCH}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
           {
             echo "cache_to<<EOF"
-            echo "type=local,dest=/usr/local/cargo/registry,mode=max"
-            echo "type=local,dest=/usr/local/cargo/git,mode=max"
-            echo "type=local,dest=/var/cache/sccache",mode=max
+            echo "type=local,dest=~/.cargo/registry,mode=max"
+            echo "type=local,dest=~/.cargo/git,mode=max"
+            echo "type=local,dest=~/.cache/sccache",mode=max
             echo "type=gha,scope=image-${CACHE_TAG}-${ARCH},mode=max"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -845,7 +845,8 @@ jobs:
             BUILDKIT_INLINE_CACHE=1
             GHCR_NS=${{ env.GHCR_NS }}
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-            SCCACHE_DIR=/var/cache/sccache
+            CARGO_HOME=~/.cargo
+            SCCACHE_DIR=~/.cache/sccache
           target: ${{ steps.plan.outputs.primary_stage }}
           tags: ${{ steps.primary_meta.outputs.tags }}
         # cache-from/to defined below to avoid blank lines when base cache missing
@@ -933,18 +934,18 @@ jobs:
             if [[ -n "${CACHE_BASE_TAG}" ]]; then
               echo "type=registry,ref=${NS}:${CACHE_BASE_TAG}-${ARCH}"
             fi
-            echo "type=local,src=/usr/local/cargo/registry"
-            echo "type=local,src=/usr/local/cargo/git"
-            echo "type=local,src=/var/cache/sccache"
+            echo "type=local,src=~/.cargo/registry"
+            echo "type=local,src=~/.cargo/git"
+            echo "type=local,src=~/.cache/sccache"
             echo "type=registry,ref=${NS}:${CACHE_TAG}-${ARCH}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
           {
             echo "cache_to<<EOF"
-            echo "type=local,dest=/usr/local/cargo/registry,mode=max"
-            echo "type=local,dest=/usr/local/cargo/git,mode=max"
-            echo "type=local,dest=/var/cache/sccache",mode=max
+            echo "type=local,dest=~/.cargo/registry,mode=max"
+            echo "type=local,dest=~/.cargo/git,mode=max"
+            echo "type=local,dest=~/.cache/sccache",mode=max
             echo "type=gha,mode=max,scope=image-${CACHE_TAG}-${ARCH}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -962,7 +963,8 @@ jobs:
             BUILDKIT_INLINE_CACHE=1
             GHCR_NS=${{ env.GHCR_NS }}
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-            SCCACHE_DIR=/var/cache/sccache
+            CARGO_HOME=~/.cargo
+            SCCACHE_DIR=~/.cache/sccache
           target: ${{ steps.plan.outputs.secondary_stage }}
           tags: ${{ steps.secondary_meta.outputs.tags }}
           cache-from: ${{ steps.secondary_meta.outputs.cache_from }}
