@@ -70,7 +70,7 @@ RUN rustup target add "$(cat /rust-target)" || true
 #  - Minimal synthetic workspace (backend + shared only) to avoid pulling in frontend
 #  - Generates a recipe that describes all Rust deps for the specified target
 # =============================================================================
-FROM chef AS planner
+FROM chef AS backend-planner
 
 RUN echo "starting planner stage with sccache dir: ${SCCACHE_DIR}"
 
@@ -97,11 +97,14 @@ WORKDIR /src
 
 COPY . .
 
+RUN set -eux; \
+    sed -i -E '/^\s*members\s*=\s*\[/ { s/(,\s*)?"frontend"(,\s*)?/\1/g; s/\[\s*,/\[/; s/,\s*\]/]/ }' Cargo.toml
+
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
-    cargo chef prepare --recipe-path recipe.json
+    cargo chef prepare --recipe-path backend-recipe.json
 
 # =============================================================================
 # Stage 3: backend-build (cargo-chef cook && build application code)
@@ -131,14 +134,14 @@ WORKDIR /src
 # COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 # COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
 
-COPY --from=planner /src/recipe.json ./recipe.json
+COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
-    cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path recipe.json  
+    cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json  
 
 COPY . .
 
@@ -148,14 +151,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
     set -eux; \
     cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 
-# # =============================================================================
-# # Stage 4: frontend-planner (cargo-chef prepare for WASM)
-# #  - Minimal synthetic workspace (frontend + shared only) to avoid pulling in backend
-# #  - Generates a recipe that describes all Rust deps for the WASM target
-# # =============================================================================
-# FROM chef AS frontend-planner
+# =============================================================================
+# Stage 4: frontend-planner (cargo-chef prepare for WASM)
+#  - Minimal synthetic workspace (frontend + shared only) to avoid pulling in backend
+#  - Generates a recipe that describes all Rust deps for the WASM target
+# =============================================================================
+FROM chef AS frontend-planner
 
-# WORKDIR /src
+WORKDIR /src
 
 # # Synthetic minimal workspace (frontend + shared only) generated ahead of time
 # COPY docker/build-tools/cargo-chef/frontend/Cargo.toml ./Cargo.toml
@@ -170,9 +173,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
 #     : > frontend/src/lib.rs; \
 #     : > shared/src/lib.rs
 
-# # Produce the dependency recipe for WASM using the existing lockfile.
-# RUN set -eux; \
-#     cargo chef prepare --recipe-path frontend-recipe.json
+COPY . .
+
+RUN set -eux; \
+    sed -i -E '/^\s*members\s*=\s*\[/ { s/(,\s*)?"backend"(,\s*)?/\1/g; s/\[\s*,/\[/; s/,\s*\]/]/ }' Cargo.toml
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+    set -eux; \
+    cargo chef prepare --recipe-path frontend-recipe.json
+
 
 # =============================================================================
 # Stage 5: frontend-builder (cook + trunk build)
@@ -199,14 +210,14 @@ WORKDIR /src
 # COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 # COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
 
-COPY --from=planner /src/recipe.json ./recipe.json
+COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
-    cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path recipe.json
+    cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
 # # Keep using the planner's lockfile so the trimmed workspace stays consistent.
 # COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
