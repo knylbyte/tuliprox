@@ -254,6 +254,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry-${TARG
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
     set -eux; \
+    mkdir -p ./frontend/dist; \
     trunk build --release --locked --config ./frontend/Trunk.toml --dist ./frontend/dist
 
 # dist -> /src/frontend/dist
