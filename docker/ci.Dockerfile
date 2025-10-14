@@ -146,12 +146,17 @@ WORKDIR /src
 
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 
+# Prepare target output directories ahead of sccache cache hits (see mozilla/sccache#2076).
+RUN set -eux; \
+    mkdir -p \
+        "./target/release/deps" \
+        "./target/$(cat /rust-target)/release/deps"
+
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     set -eux; \
-    mkdir -p "./target/$(cat /rust-target)/release/deps"; \
     cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json  
 
 COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
@@ -234,12 +239,19 @@ WORKDIR /src
 
 COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 
+# Prepare target output directories ahead of sccache cache hits (see mozilla/sccache#2076 -> https://github.com/mozilla/sccache/issues/2076).
+RUN set -eux; \
+    rust_target="$(cat /rust-target)"; \
+    mkdir -p \
+        "./target/release/deps" \
+        "./target/${rust_target}/release/deps" \
+        "./target/wasm32-unknown-unknown/release/deps"
+
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     set -eux; \
-    mkdir -p "./target/$(cat /rust-target)/release/deps"; \
     cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
 # # Keep using the planner's lockfile so the trimmed workspace stays consistent.
