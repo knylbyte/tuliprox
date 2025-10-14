@@ -121,11 +121,22 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install --locked cargo-chef --version ${CARGO_CHEF_VER} \
       --target "$(cat /rust-target)" --root /out; \
     cargo install --locked cargo-machete --version ${CARGO_MACHETE_VER} \
-      --target "$(cat /rust-target)" --root /out; \
-    cargo install --locked sccache --no-default-features --features "${SCCACHE_FEATURE_LIST}" \
+      --target "$(cat /rust-target)" --root /out;
+    # \
+    # cargo install --locked sccache --no-default-features --features "${SCCACHE_FEATURE_LIST}" \
+    #   --target "$(cat /rust-target)" \
+    #   --root /out \
+    #   --version ${SCCACHE_VER}
+
+### TESTING: build sccache from custom fork
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    set -eux; \
+    cargo install --locked sccache --git https://github.com/knylbyte/sccache.git --branch main \
+      --no-default-features --features "${SCCACHE_FEATURE_LIST}" \
       --target "$(cat /rust-target)" \
-      --root /out \
-      --version ${SCCACHE_VER}
+      --root /out
+### End TESTING
 
 # Strip (best-effort)
 RUN case "$(cat /rust-target)" in \
