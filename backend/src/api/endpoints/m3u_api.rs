@@ -217,7 +217,7 @@ async fn m3u_api_stream(
             &pli.url,
             pli.virtual_id,
             &input,
-            &req_headers,
+            req_headers,
             connection_permission,
         )
         .await

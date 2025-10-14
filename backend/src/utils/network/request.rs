@@ -304,9 +304,11 @@ pub async fn get_remote_content_as_stream(
 
 async fn get_remote_content(client: Arc<reqwest::Client>, input: &InputSource, headers: Option<&HeaderMap>, url: &Url) -> Result<(String, String), Error> {
     let start_time = Instant::now();
-    let custom_headers: Option<HashMap<String, Vec<u8>>> = headers.map(|h|  h.iter().map(|(k, v)| (k.as_str().to_string(), v.as_bytes().to_vec())).collect());
-    let headers = get_request_headers(Some(&input.headers), custom_headers.as_ref());
-    let headers: HashMap<String, String> = headers.iter().map(|(k, v)| (k.as_str().to_string(), String::from_utf8_lossy(&*v.as_bytes().to_vec()).to_string())).collect();
+
+    let custom_headers = headers.map(|h| {
+        h.iter().map(|(k, v)| (k.as_str().to_string(), v.as_bytes().to_vec())).collect::<HashMap<_, _>>()});
+    let merged = get_request_headers(Some(&input.headers), custom_headers.as_ref());
+    let headers: HashMap<String, String> = merged.iter().map(|(k, v)| (k.as_str().to_string(), String::from_utf8_lossy(v.as_bytes()).to_string())).collect();
 
     let (mut stream, response_url) = get_remote_content_as_stream(client.clone(), url, input.method, Some(&headers)).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
     let mut content = String::new();

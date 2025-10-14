@@ -381,7 +381,7 @@ async fn xtream_player_api_stream(
             &stream_url,
             pli.virtual_id,
             &input,
-            &req_headers,
+            req_headers,
             connection_permission,
         )
         .await
@@ -484,7 +484,7 @@ async fn xtream_player_api_stream_with_token(
                 &pli.url,
                 pli.virtual_id,
                 &input,
-                &req_headers,
+                req_headers,
                 UserConnectionPermission::Allowed,
             )
             .await

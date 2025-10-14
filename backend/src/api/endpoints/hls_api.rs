@@ -1,4 +1,4 @@
-use crate::api::api_utils::{get_headers_from_request, try_option_bad_request};
+use crate::api::api_utils::{get_headers_from_request, try_option_bad_request, HeaderFilter};
 use crate::api::api_utils::try_unwrap_body;
 use crate::api::api_utils::{
     force_provider_stream_response, get_stream_alternative_url, is_seek_request,
@@ -94,9 +94,10 @@ pub(in crate::api) async fn handle_hls_stream_request(
     };
 
 
-    let filter_header = None;
-    let req_headers = get_headers_from_request(req_headers, &filter_header);
-    let headers = request::get_request_headers(None, Some(&req_headers));
+    // Don't forward Range on playlist fetch; segments use original headers in provider path
+    let filter_header: HeaderFilter = Some(Box::new(|name: &str| !name.eq_ignore_ascii_case("range")));
+    let forwarded = get_headers_from_request(req_headers, &filter_header);
+    let headers = request::get_request_headers(None, Some(&forwarded));
     let input_source = InputSource::from(input).with_url(request_url);
     match request::download_text_content(
         Arc::clone(&app_state.http_client.load()),
