@@ -189,7 +189,7 @@ jobs:
   #         exit 1
 
   prebuilds:
-    name: Ensure prebuilds exist
+    name: Ensure tuliprox build tools exist
     #needs: cargo-chef-guard
     runs-on: ubuntu-24.04
     outputs:
@@ -231,7 +231,7 @@ jobs:
           done
           echo "need_build_tools=$need_build_tools" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.5 - Summary (prebuild check)
+      - name: Step 2.5 - Summary (tuliprox build tools check)
         if: always()
         shell: bash
         run: |
@@ -411,6 +411,9 @@ jobs:
       arches: ${{ steps.export.outputs.arches }}
       display_tags: ${{ steps.export.outputs.display_tags }}
       tag_aliases: ${{ steps.export.outputs.tag_aliases }}
+    env:
+      CARGO_HOME: /usr/local/cargo
+      SCCACHE_DIR: /var/cache/sccache
 
     steps:
       - name: Step 4.1 - Checkout
@@ -425,6 +428,7 @@ jobs:
 
       - name: Step 4.3 - Set up Buildx
         uses: docker/setup-buildx-action@v3
+        id: setup-buildx
         with:
           platforms: ${{ matrix.platform }}
 
@@ -438,14 +442,36 @@ jobs:
       # see also: https://depot.dev/docs/container-builds/how-to-guides/optimal-dockerfiles/rust-dockerfile
       - name: Step 4.5 - Cache cargo and sccache directories for Docker build
         uses: actions/cache@v4
+        id: cache
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cache/sccache
+            usr-local-cargo-registry
+            usr-local-cargo-git
+            var-cache-sccache
           key: ${{ runner.os }}-cargo-docker-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-docker-${{ matrix.arch_tag }}-
+
+      - name: Step 2.6 - Restore Docker cache mounts
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          builder: ${{ steps.setup-buildx.outputs.name }}
+          cache-map: |
+            {
+              "usr-local-cargo-registry": {
+                "target": "${{ env.CARGO_HOME}}/registry",
+                "id": "cargo-registry-${{ matrix.arch_tag }}"
+              },
+              "usr-local-cargo-git": {
+                "target": "${{ env.CARGO_HOME}}/git",
+                "id": "cargo-git-${{ matrix.arch_tag }}"
+              },
+              "var-cache-sccache": {
+                "target": "${{ env.SCCACHE_DIR}}",
+                "id": "sccache-${{ matrix.arch_tag }}"
+              }
+            }
+          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
       # --- Read version from CHANGELOG.md ---
       - name: Step 4.6 - Read version
@@ -817,18 +843,12 @@ jobs:
             if [[ -n "${CACHE_BASE_TAG}" ]]; then
               echo "type=registry,ref=${NS}:${CACHE_BASE_TAG}-${ARCH}"
             fi
-            echo "type=local,src=~/.cargo/registry"
-            echo "type=local,src=~/.cargo/git"
-            echo "type=local,src=~/.cache/sccache"
             echo "type=registry,ref=${NS}:${CACHE_TAG}-${ARCH}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
           {
             echo "cache_to<<EOF"
-            echo "type=local,dest=~/.cargo/registry,mode=max"
-            echo "type=local,dest=~/.cargo/git,mode=max"
-            echo "type=local,dest=~/.cache/sccache",mode=max
             echo "type=gha,scope=image-${CACHE_TAG}-${ARCH},mode=max"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -845,8 +865,8 @@ jobs:
             BUILDKIT_INLINE_CACHE=1
             GHCR_NS=${{ env.GHCR_NS }}
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-            CARGO_HOME=~/.cargo
-            SCCACHE_DIR=~/.cache/sccache
+            CARGO_HOME=${{ env.CARGO_HOME }}
+            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
           target: ${{ steps.plan.outputs.primary_stage }}
           tags: ${{ steps.primary_meta.outputs.tags }}
         # cache-from/to defined below to avoid blank lines when base cache missing
@@ -934,18 +954,12 @@ jobs:
             if [[ -n "${CACHE_BASE_TAG}" ]]; then
               echo "type=registry,ref=${NS}:${CACHE_BASE_TAG}-${ARCH}"
             fi
-            echo "type=local,src=~/.cargo/registry"
-            echo "type=local,src=~/.cargo/git"
-            echo "type=local,src=~/.cache/sccache"
             echo "type=registry,ref=${NS}:${CACHE_TAG}-${ARCH}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
           {
             echo "cache_to<<EOF"
-            echo "type=local,dest=~/.cargo/registry,mode=max"
-            echo "type=local,dest=~/.cargo/git,mode=max"
-            echo "type=local,dest=~/.cache/sccache",mode=max
             echo "type=gha,mode=max,scope=image-${CACHE_TAG}-${ARCH}"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -963,8 +977,8 @@ jobs:
             BUILDKIT_INLINE_CACHE=1
             GHCR_NS=${{ env.GHCR_NS }}
             BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-            CARGO_HOME=~/.cargo
-            SCCACHE_DIR=~/.cache/sccache
+            CARGO_HOME=${{ env.CARGO_HOME }}
+            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
           target: ${{ steps.plan.outputs.secondary_stage }}
           tags: ${{ steps.secondary_meta.outputs.tags }}
           cache-from: ${{ steps.secondary_meta.outputs.cache_from }}
