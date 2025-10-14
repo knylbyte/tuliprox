@@ -118,7 +118,7 @@ async fn config_batch_content(
         // The url is changed at this point, we need the raw url for the batch file
         if let Some(batch_url) = config_input.t_batch_url.as_ref() {
             let input_source = InputSource::from(&*config_input).with_url(batch_url.to_owned());
-            return match download_text_content(Arc::clone(&app_state.http_client.load()), &input_source, None).await {
+            return match download_text_content(Arc::clone(&app_state.http_client.load()), &input_source, None, None).await {
                 Ok((content, _path)) => {
                     // Return CSV with explicit content-type
                     try_unwrap_body!(axum::response::Response::builder()

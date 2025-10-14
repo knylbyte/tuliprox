@@ -1,9 +1,9 @@
-use crate::api::api_utils::try_option_bad_request;
+use crate::api::api_utils::{get_headers_from_request, try_option_bad_request, HeaderFilter};
 use crate::api::api_utils::try_unwrap_body;
 use crate::api::api_utils::{
     force_provider_stream_response, get_stream_alternative_url, is_seek_request,
 };
-use crate::api::model::AppState;
+use crate::api::model::{AppState};
 use crate::api::model::UserSession;
 use crate::api::model::{create_custom_video_stream_response, CustomVideoStreamType};
 use crate::auth::Fingerprint;
@@ -19,6 +19,7 @@ use serde::Deserialize;
 use shared::model::{PlaylistItemType, UserConnectionPermission, XtreamCluster};
 use shared::utils::{is_hls_url, replace_url_extension, sanitize_sensitive_info, HLS_EXT};
 use std::sync::Arc;
+use axum::http::HeaderMap;
 
 #[derive(Debug, Deserialize)]
 struct HlsApiPathParams {
@@ -46,6 +47,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
     hls_url: &str,
     virtual_id: u32,
     input: &ConfigInput,
+    req_headers: &HeaderMap,
     connection_permission: UserConnectionPermission,
 ) -> impl IntoResponse + Send {
     let url = replace_url_extension(hls_url, HLS_EXT);
@@ -91,10 +93,16 @@ pub(in crate::api) async fn handle_hls_stream_request(
         }
     };
 
+
+    // Don't forward Range on playlist fetch; segments use original headers in provider path
+    let filter_header: HeaderFilter = Some(Box::new(|name: &str| !name.eq_ignore_ascii_case("range")));
+    let forwarded = get_headers_from_request(req_headers, &filter_header);
+    let headers = request::get_request_headers(None, Some(&forwarded));
     let input_source = InputSource::from(input).with_url(request_url);
     match request::download_text_content(
         Arc::clone(&app_state.http_client.load()),
         &input_source,
+        Some(&headers),
         None,
     )
     .await
@@ -232,6 +240,7 @@ async fn hls_api_stream(
                 &session.stream_url,
                 virtual_id,
                 &input,
+                &req_headers,
                 connection_permission,
             )
             .await

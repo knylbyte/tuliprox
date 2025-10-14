@@ -157,9 +157,9 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
     html! {
         <div class="tp__proxy-user-credentials-form tp__form-page">
           <div class="tp__proxy-user-credentials-form__body tp__form-page__body">
-            { if *update {
+            { /*if *update {
                  config_field_custom!(translate.t("LABEL.PLAYLIST"), (*set_selected_target).as_ref().map_or_else(String::new, |t| t.clone()))
-               } else { config_field_child!(translate.t("LABEL.PLAYLIST"), {
+               } else {*/ config_field_child!(translate.t("LABEL.PLAYLIST"), {
                html! { <Select name="target"
                     multi_select={false}
                     onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
@@ -171,7 +171,7 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                     })}
                     options={(*targets).clone()}
                 />
-            }})}}
+            }})} //}
             { config_field_child!(translate.t("LABEL.STATUS"), {
                html! { <Select name="status"
                     multi_select={false}
