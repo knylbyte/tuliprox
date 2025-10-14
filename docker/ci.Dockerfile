@@ -20,8 +20,8 @@ ARG BUILDPLATFORM_TAG=latest
 ARG ALPINE_VER=3.22.2
 ARG RUST_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
-ARG CARGO_HOME=~/.cargo
-ARG SCCACHE_DIR=~/.cache/sccache
+ARG CARGO_HOME=/usr/local/cargo
+ARG SCCACHE_DIR=var/cache/sccache
 # ARG SCCACHE_GHA_ENABLED=off
 # ARG SCCACHE_GHA_CACHE_SIZE
 # ARG SCCACHE_GHA_VERSION
@@ -34,6 +34,7 @@ ARG SCCACHE_DIR=~/.cache/sccache
 FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS chef
 
 ARG TARGETPLATFORM
+ARG ARCH_TAG
 ARG RUST_TARGET
 ARG CARGO_HOME
 ARG SCCACHE_DIR
@@ -109,9 +110,9 @@ RUN set -eux; \
         exit "$cargo_machete_exit_code"; \
     fi
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     set -eux; \
     cargo chef prepare --recipe-path backend-recipe.json
 
@@ -146,9 +147,9 @@ WORKDIR /src
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 
 # Build dependencies - this is the caching Docker layer!
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     set -eux; \
     cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json  
 
@@ -157,9 +158,9 @@ COPY --from=backend-planner /src/Cargo.toml ./Cargo.toml
 COPY --from=backend-planner /src/backend ./backend
 COPY --from=backend-planner /src/shared ./shared
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     set -eux; \
     cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 
@@ -198,9 +199,9 @@ RUN set -eux; \
         exit "$cargo_machete_exit_code"; \
     fi
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     set -eux; \
     cargo chef prepare --recipe-path frontend-recipe.json
 
@@ -233,9 +234,9 @@ WORKDIR /src
 COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 
 # Build dependencies - this is the caching Docker layer!
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     set -eux; \
     cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
@@ -253,9 +254,9 @@ COPY --from=frontend-planner /src/Cargo.toml ./Cargo.toml
 COPY --from=frontend-planner /src/frontend ./frontend
 COPY --from=frontend-planner /src/shared ./shared
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${TARGETPLATFORM},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${TARGETPLATFORM},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     set -eux; \
     mkdir -p ./frontend/dist; \
     trunk build --release --locked --config ./frontend/Trunk.toml --dist ./frontend/dist
