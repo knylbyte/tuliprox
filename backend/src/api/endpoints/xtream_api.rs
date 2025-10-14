@@ -381,6 +381,7 @@ async fn xtream_player_api_stream(
             &stream_url,
             pli.virtual_id,
             &input,
+            &req_headers,
             connection_permission,
         )
         .await
@@ -483,6 +484,7 @@ async fn xtream_player_api_stream_with_token(
                 &pli.url,
                 pli.virtual_id,
                 &input,
+                &req_headers,
                 UserConnectionPermission::Allowed,
             )
             .await
@@ -1082,6 +1084,7 @@ async fn xtream_get_short_epg(
                         return match request::download_text_content(
                             Arc::clone(&app_state.http_client.load()),
                             &input_source,
+                            None,
                             None,
                         )
                         .await

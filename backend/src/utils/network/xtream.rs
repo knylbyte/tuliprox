@@ -46,7 +46,7 @@ pub fn get_xtream_player_api_info_url(input: &ConfigInput, cluster: XtreamCluste
 
 
 pub async fn get_xtream_stream_info_content(client: Arc<reqwest::Client>, input: &InputSource) -> Result<String, Error> {
-    match request::download_text_content(client, input, None).await {
+    match request::download_text_content(client, input, None, None).await {
         Ok((content, _response_url)) => Ok(content),
         Err(err) => Err(err)
     }
