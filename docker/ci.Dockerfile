@@ -151,6 +151,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     set -eux; \
+    mkdir -p "./target/$(cat /rust-target)/release/deps"; \
     cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json  
 
 COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
@@ -238,6 +239,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     set -eux; \
+    mkdir -p "./target/$(cat /rust-target)/release/deps"; \
     cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
 # # Keep using the planner's lockfile so the trimmed workspace stays consistent.
