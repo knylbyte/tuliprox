@@ -1144,7 +1144,7 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
 - Strings / Text: Enclosed in double quotes. "example string" 
 - Null value `null`
 - Regex Matching:   `@FieldName ~ "Regex"` like in filter statements. You can match a `FieldName` or a existing `variable`.
-- Access a field in a regex match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at 1.
+- Access a field in a regex match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at `1` like `result.1`, `result.2`.
 - Builtin functions: 
   - concat(a, b, ...)
   - uppercase(a)
