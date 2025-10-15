@@ -313,10 +313,18 @@ impl TransportStreamBuffer {
             new_packet.copy_from_slice(packet);
 
             // ---- Continuity Counter ----
+            // let pid = (u16::from(new_packet[1] & 0x1F) << 8) | u16::from(new_packet[2]);
+            // let counter = self.continuity_counters.entry(pid).or_insert(0);
+            // new_packet[3] = (new_packet[3] & 0xF0) | (*counter & 0x0F);
+            // *counter = (*counter + 1) % 16;
             let pid = (u16::from(new_packet[1] & 0x1F) << 8) | u16::from(new_packet[2]);
+            let afc = (new_packet[3] >> 4) & 0b11;
+            let has_payload = (afc & 0x01) != 0;
             let counter = self.continuity_counters.entry(pid).or_insert(0);
             new_packet[3] = (new_packet[3] & 0xF0) | (*counter & 0x0F);
-            *counter = (*counter + 1) % 16;
+            if pid != 0x1FFF && has_payload {
+                *counter = (*counter + 1) % 16;
+            }
 
             // ---- PCR update ----
             let afc = (new_packet[3] >> 4) & 0b11;
@@ -336,14 +344,14 @@ impl TransportStreamBuffer {
 
             // ---- PTS/DTS update ----
             if let Some((pts_offset, dts_offset, _diff)) = pts_dts_maybe {
-                let orig_dts = decode_timestamp(&new_packet[dts_offset..dts_offset + 5]);
-                let orig_pts = decode_timestamp(&new_packet[pts_offset..pts_offset + 5]);
-                let new_dts = (orig_dts + self.timestamp_offset) % MAX_PTS_DTS;
-                let new_pts = (orig_pts + self.timestamp_offset) % MAX_PTS_DTS;
+                let decoding_ts_orig = decode_timestamp(&new_packet[dts_offset..dts_offset + 5]);
+                let presentation_ts_orig = decode_timestamp(&new_packet[pts_offset..pts_offset + 5]);
+                let new_decoding_ts = (decoding_ts_orig + self.timestamp_offset) % MAX_PTS_DTS;
+                let new_presentation_ts = (presentation_ts_orig + self.timestamp_offset) % MAX_PTS_DTS;
 
                 // Replace in-place, no new Vec allocation
-                new_packet[pts_offset..pts_offset + 5].copy_from_slice(&encode_timestamp(new_pts));
-                new_packet[dts_offset..dts_offset + 5].copy_from_slice(&encode_timestamp(new_dts));
+                new_packet[pts_offset..pts_offset + 5].copy_from_slice(&encode_timestamp(new_decoding_ts));
+                new_packet[dts_offset..dts_offset + 5].copy_from_slice(&encode_timestamp(new_presentation_ts));
             }
 
             bytes.extend_from_slice(&new_packet);

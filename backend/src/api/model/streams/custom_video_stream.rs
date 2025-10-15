@@ -41,6 +41,11 @@ impl Stream for CustomVideoStream {
         // new sleep-timer
         self.delay = Some(Box::pin(sleep(self.frame_interval)));
 
+        // Pre-register waker so we get notified even if the consumer doesn't poll again immediately.
+        if let Some(ref mut delay) = self.delay {
+          let _ = delay.as_mut().poll(cx);
+        }
+
         Poll::Ready(Some(Ok(chunk)))
     }
 }
