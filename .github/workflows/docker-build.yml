@@ -471,7 +471,7 @@ jobs:
                 "id": "sccache-${{ matrix.arch_tag }}"
               }
             }
-          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
+          # skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
       # --- Read version from CHANGELOG.md ---
       - name: Step 4.6 - Read version
