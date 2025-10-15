@@ -97,8 +97,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TA
         apt-get install -y --no-install-recommends \
           libc6-dev-arm64-cross linux-libc-dev-arm64-cross ;; \
       *) : ;; \
-    esac; \
-    rm -rf /var/lib/apt/lists/*
+    esac
 
 # Targets required for tool builds
 RUN rustup target add wasm32-unknown-unknown $(cat /rust-target)
@@ -188,8 +187,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TA
     apt-get install -y --no-install-recommends \
       pkg-config musl-tools \
       curl ca-certificates \
-      libclang-dev binaryen; \
-    rm -rf /var/lib/apt/lists/*
+      libclang-dev binaryen
 
 # Add rust targets used by the application:
 # - wasm32 (frontend)
