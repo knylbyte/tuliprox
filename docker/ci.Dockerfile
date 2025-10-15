@@ -54,20 +54,20 @@ ENV SCCACHE_DIR=${SCCACHE_DIR}
 # - arm64  -> aarch64-unknown-linux-musl
 # - arm/v7 -> armv7-unknown-linux-musleabihf
 RUN set -eux; \
-if [ -z "${RUST_TARGET:-}" ]; then \
-case "$TARGETPLATFORM" in \
-"linux/amd64")  echo x86_64-unknown-linux-musl        > /rust-target ;; \
-"linux/arm64")  echo aarch64-unknown-linux-musl       > /rust-target ;; \
-"linux/arm/v7") echo armv7-unknown-linux-musleabihf   > /rust-target ;; \
-*) echo "Unsupported TARGETPLATFORM: $TARGETPLATFORM" >&2; exit 1 ;; \
-esac; \
-else \
-echo "${RUST_TARGET}" > /rust-target; \
-fi; \
-printf "Using RUST_TARGET=%s\n" "$(cat /rust-target)"
+  if [ -z "${RUST_TARGET:-}" ]; then \
+    case "$TARGETPLATFORM" in \
+      "linux/amd64")  echo x86_64-unknown-linux-musl        > /rust-target ;; \
+      "linux/arm64")  echo aarch64-unknown-linux-musl       > /rust-target ;; \
+      "linux/arm/v7") echo armv7-unknown-linux-musleabihf   > /rust-target ;; \
+      *) echo "Unsupported TARGETPLATFORM: $TARGETPLATFORM" >&2; exit 1 ;; \
+    esac; \
+  else \
+    echo "${RUST_TARGET}" > /rust-target; \
+  fi; \
+  printf "Using RUST_TARGET=%s\n" "$(cat /rust-target)"
 
-# Ensure the target is available in the toolchain (prebuild already has rustup)
-RUN rustup target add "$(cat /rust-target)" || true
+  # Ensure the target is available in the toolchain (prebuild already has rustup)
+  RUN rustup target add "$(cat /rust-target)" || true
 
 # =============================================================================
 # Stage 2: backend-planner (cargo-chef prepare)
@@ -107,7 +107,7 @@ RUN set -eux; \
     cargo_machete_exit_code=0; \
     cargo machete --with-metadata || cargo_machete_exit_code=$?; \
     if [ "$cargo_machete_exit_code" -gt 1 ]; then \
-        exit "$cargo_machete_exit_code"; \
+      exit "$cargo_machete_exit_code"; \
     fi
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
@@ -154,9 +154,9 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     # "cargo chef cook" starts by running "cargo clean", so we need to recreate the
     # target directories inside the same RUN step to avoid sccache cache hits failing
     # with missing *.d files (mozilla/sccache#2076).
-    mkdir -p \
-        "./target/release/deps" \
-        "./target/$(cat /rust-target)/release/deps"; \
+    # mkdir -p \
+    #     "./target/release/deps" \
+    #     "./target/$(cat /rust-target)/release/deps"; \
     cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json
 
 COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
@@ -202,7 +202,7 @@ RUN set -eux; \
     cargo_machete_exit_code=0; \
     cargo machete --with-metadata || cargo_machete_exit_code=$?; \
     if [ "$cargo_machete_exit_code" -gt 1 ]; then \
-        exit "$cargo_machete_exit_code"; \
+      exit "$cargo_machete_exit_code"; \
     fi
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
@@ -247,10 +247,10 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     rust_target="$(cat /rust-target)"; \
     # As above, recreate the target output directories _after_ cargo clean runs inside
     # cargo-chef so sccache always finds the expected layout.
-    mkdir -p \
-        "./target/release/deps" \
-        "./target/${rust_target}/release/deps" \
-        "./target/wasm32-unknown-unknown/release/deps"; \
+    # mkdir -p \
+    #   "./target/release/deps" \
+    #   "./target/${rust_target}/release/deps" \
+    #   "./target/wasm32-unknown-unknown/release/deps"; \
     cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
 # # Keep using the planner's lockfile so the trimmed workspace stays consistent.
@@ -344,10 +344,10 @@ RUN set -eux; \
 # Layout under /opt (root-owned)
 RUN set -eux; \
     mkdir -p \
-    /opt/tuliprox/bin \
-    /opt/tuliprox/data \
-    /opt/tuliprox/web \
-    /opt/tuliprox/resources
+      /opt/tuliprox/bin \
+      /opt/tuliprox/data \
+      /opt/tuliprox/web \
+      /opt/tuliprox/resources
 
 # Copy zoneinfo & CA store
 COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
