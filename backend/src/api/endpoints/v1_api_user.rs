@@ -7,7 +7,7 @@ use axum::Router;
 use serde_json::json;
 use shared::model::{ApiProxyConfigDto, ProxyUserCredentialsDto};
 use std::sync::Arc;
-
+use shared::utils::mask_credentials;
 
 async fn save_config_api_proxy_user(
     method: axum::http::Method,
@@ -15,6 +15,9 @@ async fn save_config_api_proxy_user(
     axum::extract::Path(target_name): axum::extract::Path<String>,
     axum::extract::Json(mut credential): axum::extract::Json<ProxyUserCredentialsDto>,
 ) -> impl axum::response::IntoResponse + Send {
+    let virtual_file = PathBuf::from("api_proxy");
+    let _lock = app_state.app_config.file_locks.write_lock(&virtual_file).await;
+
     credential.prepare();
     if let Err(err) = credential.validate() {
         return (
@@ -24,9 +27,6 @@ async fn save_config_api_proxy_user(
     }
 
     let is_update = method == axum::http::Method::PUT;
-
-    let virtual_file = PathBuf::from("api_proxy");
-    let _lock = app_state.app_config.file_locks.write_lock(&virtual_file).await;
 
     let mut api_proxy = if let Some(old) = app_state.app_config.api_proxy.load().clone() {
         (*old).clone()
@@ -46,7 +46,7 @@ async fn save_config_api_proxy_user(
         for (u_idx, user) in target_user.credentials.iter().enumerate() {
             if let (Some(u), Some(c)) = (&user.token, &credential.token) {
                 if u == c && user.username != credential.username {
-                    return ( axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": format!("Duplicate token {c}")})) ).into_response();
+                    return ( axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": format!("Duplicate token {}", mask_credentials(c))})) ).into_response();
                 }
             }
             if user.username == credential.username {

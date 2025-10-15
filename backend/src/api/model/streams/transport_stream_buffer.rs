@@ -60,7 +60,7 @@ fn encode_pcr(pcr: u64) -> [u8; 6] {
     ]
 }
 
-type TsInfoExtraction = (Vec<(usize, Option<(usize, usize, u16)>)>, Vec<(u16, u8)>);
+type TsInfoExtraction = (Vec<(usize, Option<(usize, usize, u16)>)>, HashMap<u16, u8>);
 
 /// Extracts PTS and DTS info from MPEG-TS data.
 /// Returns a vector of tuples containing:
@@ -158,30 +158,27 @@ pub fn extract_pts_dts_indices_with_continuity(ts_data: &[u8]) -> TsInfoExtracti
             result[first_dts_idx] = (idx, Some((pts, dts, (avg_diff & 0xFFFF) as u16)));
         }
     }
-    let mut vec = Vec::with_capacity(continuity_counters.len());
-    vec.extend(continuity_counters.iter().map(|(&k, &v)| (k, v)));
-
-    (result, vec)
+    (result, continuity_counters)
 }
-
-/// Replace PTS and DTS timestamps in the TS packet slice
-fn replace_pts_dts(packet_slice: &[u8], pts_index: usize, dts_index: usize, new_presentation_ts: u64, new_decoding_ts: u64) -> Vec<u8> {
-    let before_pts = &packet_slice[..pts_index];
-    let between_pts_dts = &packet_slice[pts_index + 5..dts_index];
-    let after_dts = &packet_slice[dts_index + 5..];
-
-    let new_presentation_ts_bytes = encode_timestamp(new_presentation_ts);
-    let new_decoding_ts_bytes = encode_timestamp(new_decoding_ts);
-
-    let mut new_packet = Vec::with_capacity(packet_slice.len());
-    new_packet.extend_from_slice(before_pts);
-    new_packet.extend_from_slice(&new_presentation_ts_bytes);
-    new_packet.extend_from_slice(between_pts_dts);
-    new_packet.extend_from_slice(&new_decoding_ts_bytes);
-    new_packet.extend_from_slice(after_dts);
-
-    new_packet
-}
+//
+// /// Replace PTS and DTS timestamps in the TS packet slice
+// fn replace_pts_dts(packet_slice: &[u8], pts_index: usize, dts_index: usize, new_presentation_ts: u64, new_decoding_ts: u64) -> Vec<u8> {
+//     let before_pts = &packet_slice[..pts_index];
+//     let between_pts_dts = &packet_slice[pts_index + 5..dts_index];
+//     let after_dts = &packet_slice[dts_index + 5..];
+//
+//     let new_presentation_ts_bytes = encode_timestamp(new_presentation_ts);
+//     let new_decoding_ts_bytes = encode_timestamp(new_decoding_ts);
+//
+//     let mut new_packet = Vec::with_capacity(packet_slice.len());
+//     new_packet.extend_from_slice(before_pts);
+//     new_packet.extend_from_slice(&new_presentation_ts_bytes);
+//     new_packet.extend_from_slice(between_pts_dts);
+//     new_packet.extend_from_slice(&new_decoding_ts_bytes);
+//     new_packet.extend_from_slice(after_dts);
+//
+//     new_packet
+// }
 
 /// Finds TS alignment by checking for 0x47 sync byte every 188 bytes
 fn find_ts_alignment(buf: &[u8]) -> Option<usize> {
@@ -238,8 +235,8 @@ pub struct TransportStreamBuffer {
     timestamp_offset: u64,
     length: usize,
     stream_duration_90khz: u64, // Duration in 90kHz units
-    initial_continuity_counters: Arc<Vec<(u16,u8)>>,
-    continuity_counters: Vec<(u16,u8)>,
+    initial_continuity_counters: Arc<HashMap<u16,u8>>,
+    continuity_counters: HashMap<u16,u8>,
 }
 
 impl Clone for TransportStreamBuffer {
@@ -290,76 +287,63 @@ impl TransportStreamBuffer {
     }
 
     /// Returns next chunks with adjusted PTS/DTS and PCR
+    /// Returns next chunks with adjusted PTS/DTS and PCR
     pub fn next_chunk(&mut self) -> Bytes {
         let mut bytes = BytesMut::with_capacity(CHUNK_SIZE);
-        // we send this amount of packets in one chunk
+
+        // Change continuity_counters to HashMap<u16, u8> instead of Vec<(u16,u8)>
+        // to avoid O(n) searches per PID. (Change type in struct definition)
+        // continuity_counters: HashMap<u16, u8>,
+
         let mut packets_remaining = PACKET_COUNT;
 
         while packets_remaining > 0 {
             if self.current_pos >= self.length {
                 // Loop back and update timestamp offset
                 self.current_pos = 0;
-
-                let new_offset = (self.timestamp_offset + self.stream_duration_90khz) % MAX_PTS_DTS;
-                self.timestamp_offset = new_offset;
-
+                self.timestamp_offset = (self.timestamp_offset + self.stream_duration_90khz) % MAX_PTS_DTS;
                 self.current_dts = 0;
             }
 
-            let current_pos = self.current_pos;
-            let (packet_start, pts_dts_maybe) = self.packet_indices[current_pos];
+            let (packet_start, pts_dts_maybe) = self.packet_indices[self.current_pos];
             let packet = &self.buffer[packet_start..packet_start + TS_PACKET_SIZE];
 
-            let mut new_packet = packet.to_vec();
+            // Reuse stack array instead of heap allocation
+            let mut new_packet = [0u8; TS_PACKET_SIZE];
+            new_packet.copy_from_slice(packet);
 
-            // update continuity counter
+            // ---- Continuity Counter ----
             let pid = (u16::from(new_packet[1] & 0x1F) << 8) | u16::from(new_packet[2]);
-            // let counter = &mut self.continuity_counters[pid as usize];
-            // new_packet[3] = (new_packet[3] & 0xF0) | (*counter & 0x0F);
-            // *counter = (*counter + 1) % 16;
+            let counter = self.continuity_counters.entry(pid).or_insert(0);
+            new_packet[3] = (new_packet[3] & 0xF0) | (*counter & 0x0F);
+            *counter = (*counter + 1) % 16;
 
-            // Find the entry with this PID (mutable), or insert a new entry if it doesn't exist
-            if let Some((_pid, counter)) = self.continuity_counters.iter_mut().find(|(p, _)| *p == pid) {
-                new_packet[3] = (new_packet[3] & 0xF0) | (*counter & 0x0F);
-                *counter = (*counter + 1) % 16;
-            } else {
-                // This should not happen because we scan the entire pids.
-                // PID not present yet, insert new entry with counter = 0
-                self.continuity_counters.push((pid, 1)); // Start at 1, since we immediately use the counter
-                new_packet[3] &= 0xF0;
-            }
-
-            // adjust PCR based on the original PCR, then add the offset
+            // ---- PCR update ----
             let afc = (new_packet[3] >> 4) & 0b11;
             if afc == 2 || afc == 3 {
                 let adaptation_len = new_packet[4] as usize;
-                if adaptation_len > 0 {
+                if adaptation_len >= 7 {
                     let flags = new_packet[5];
                     if (flags & ADAPTATION_FIELD_FLAG_PCR) != 0 {
                         let pcr_pos = 6;
-                        if new_packet.len() >= pcr_pos + 6 {
-                            // read original PCR
-                            let orig_pcr = decode_pcr(&new_packet[pcr_pos..pcr_pos + 6]);
-                            // Apply PCR offset; PCR runs at 27 MHz, so multiply by 300 to convert from 90 kHz to 27 MHz
-                            let offset = self.timestamp_offset * 300;
-                            let new_pcr = (orig_pcr + offset) % MAX_PCR;
-                            let pcr_bytes = encode_pcr(new_pcr);
-                            new_packet[pcr_pos..pcr_pos + 6].copy_from_slice(&pcr_bytes);
-                        }
+                        let orig_pcr = decode_pcr(&new_packet[pcr_pos..pcr_pos + 6]);
+                        let new_pcr = (orig_pcr + self.timestamp_offset * 300) % MAX_PCR;
+                        let pcr_bytes = encode_pcr(new_pcr);
+                        new_packet[pcr_pos..pcr_pos + 6].copy_from_slice(&pcr_bytes);
                     }
                 }
             }
 
-            // adjust PTS/DTS
+            // ---- PTS/DTS update ----
             if let Some((pts_offset, dts_offset, _diff)) = pts_dts_maybe {
                 let orig_dts = decode_timestamp(&new_packet[dts_offset..dts_offset + 5]);
-                let new_decoding_ts = (orig_dts + self.timestamp_offset) % MAX_PTS_DTS;
+                let orig_pts = decode_timestamp(&new_packet[pts_offset..pts_offset + 5]);
+                let new_dts = (orig_dts + self.timestamp_offset) % MAX_PTS_DTS;
+                let new_pts = (orig_pts + self.timestamp_offset) % MAX_PTS_DTS;
 
-                let orig_presentation_ts = decode_timestamp(&new_packet[pts_offset..pts_offset + 5]);
-                let new_presentation_ts = (orig_presentation_ts + self.timestamp_offset) % MAX_PTS_DTS;
-
-                let replaced = replace_pts_dts(&new_packet, pts_offset, dts_offset, new_presentation_ts, new_decoding_ts);
-                new_packet = replaced;
+                // Replace in-place, no new Vec allocation
+                new_packet[pts_offset..pts_offset + 5].copy_from_slice(&encode_timestamp(new_pts));
+                new_packet[dts_offset..dts_offset + 5].copy_from_slice(&encode_timestamp(new_dts));
             }
 
             bytes.extend_from_slice(&new_packet);
