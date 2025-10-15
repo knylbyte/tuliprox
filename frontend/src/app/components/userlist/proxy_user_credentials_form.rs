@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use chrono::{Duration, Utc};
+use log::debug;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{ApiProxyServerInfoDto, ConfigTargetDto, ProxyType, ProxyUserCredentialsDto, ProxyUserStatus};
@@ -39,6 +40,7 @@ pub struct ProxyUserCredentialsFormProps {
     pub targets: Rc<Vec<Rc<ConfigTargetDto>>>,
     pub server: Rc<Vec<ApiProxyServerInfoDto>>,
     pub on_save: Callback<(bool, String, ProxyUserCredentialsDto)>,
+    pub on_cancel: Callback<()>,
 }
 
 #[function_component]
@@ -116,6 +118,13 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
         );
     }
 
+    let handle_cancel = {
+        let oncancel = props.on_cancel.clone();
+        Callback::from(move |_| {
+            oncancel.emit(());
+        })
+    };
+
     let handle_save_user = {
         let user = form_state.clone();
         let original = props.user.clone();
@@ -125,8 +134,11 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
         let onsave = props.on_save.clone();
         let is_update = update.clone();
         Callback::from(move |_| {
+            let nothing_to_save = || services.toastr.warning(translate_clone.t("MESSAGES.SAVE.USER.NOTHING_TO_SAVE"));
             if let Some(target_name) = (*target).as_ref().cloned() {
-                if user.modified() {
+                let original_target = original.as_ref().map(|u| u.target.clone()).unwrap_or_default();
+                let target_changed = target_name != original_target;
+                if target_changed || user.modified() {
                     let user = user.data();
                     if let Err(err) = user.validate() {
                         services.toastr.error(err.to_string());
@@ -134,14 +146,16 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                         match original.as_ref().map(|t| t.credentials.clone()) {
                             None => onsave.emit((*is_update, target_name, user.clone())),
                             Some(original_user) => {
-                                if &(*original_user) != user {
+                                if target_changed || &(*original_user) != user {
                                     onsave.emit((*is_update, target_name, user.clone()));
+                                } else {
+                                    nothing_to_save();
                                 }
                             }
                         };
                     }
                 } else {
-                    services.toastr.warning(translate_clone.t("MESSAGES.SAVE.USER.NOTHING_TO_SAVE"));
+                   nothing_to_save();
                 }
             } else {
                 services.toastr.error(translate_clone.t("MESSAGES.SAVE.USER.TARGET_NOT_SELECTED"));
@@ -227,6 +241,10 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                 icon="Save"
                 title={ translate.t("LABEL.SAVE")}
                 onclick={handle_save_user}></TextButton>
+             <TextButton class="secondary" name="cancel_user"
+                icon="Cancel"
+                title={ translate.t("LABEL.CANCEL")}
+                onclick={handle_cancel}></TextButton>
           </div>
         </div>
     }
