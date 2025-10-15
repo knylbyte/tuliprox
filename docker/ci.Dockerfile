@@ -49,6 +49,8 @@ ENV SCCACHE_DIR=${SCCACHE_DIR}
 # ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
 # ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 
+ENV RUST_BACKTRACE=1
+
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
 # - amd64  -> x86_64-unknown-linux-musl
 # - arm64  -> aarch64-unknown-linux-musl
