@@ -7,7 +7,7 @@ dialog {
   color: var(--card-color);
   border: none;
   border-radius: var(--border-radius);
-  filter: drop-shadow(6px 6px 6px var(--popup-shadow-color));
+  box-shadow: var(--popup-shadow);
   &::backdrop {
     background: rgba(0, 0, 0, 0.3);
   }

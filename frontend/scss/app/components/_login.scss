@@ -106,22 +106,23 @@
   }
 }
 
-$gradient-color: rgb(19, 29, 30);
-$gradient-color77: rgb(12 24 25 / 77%);
 .tp__background {
   width: 100vw;
   height: 100vh;
   position: absolute;
   overflow: hidden;
 
+  --c1: rgb(19 29 30);
+  --c2: rgb(12 24 25 / 77%);
+
   background-color: var(--background-color);
   background-image:
-          linear-gradient(30deg, $gradient-color 12%, transparent 12.5%, transparent 87%, $gradient-color 87.5%, $gradient-color),
-          linear-gradient(150deg, $gradient-color 12%, transparent 12.5%, transparent 87%, $gradient-color 87.5%, $gradient-color),
-          linear-gradient(30deg, $gradient-color 12%, transparent 12.5%, transparent 87%, $gradient-color 87.5%, $gradient-color),
-          linear-gradient(150deg, $gradient-color 12%, transparent 12.5%, transparent 87%, $gradient-color 87.5%, $gradient-color),
-          linear-gradient(60deg, $gradient-color77 25%, transparent 25.5%, transparent 75%, $gradient-color77 75%, $gradient-color77),
-          linear-gradient(60deg, $gradient-color77 25%, transparent 25.5%, transparent 75%, $gradient-color77 75%, $gradient-color77);
+          linear-gradient(30deg, var(--c1) 12%, transparent 12.5%, transparent 87%, var(--c1) 87.5%, var(--c1)),
+          linear-gradient(150deg, var(--c1) 12%, transparent 12.5%, transparent 87%, var(--c1) 87.5%, var(--c1)),
+          linear-gradient(30deg, var(--c1) 12%, transparent 12.5%, transparent 87%, var(--c1) 87.5%, var(--c1)),
+          linear-gradient(150deg, var(--c1) 12%, transparent 12.5%, transparent 87%, var(--c1) 87.5%, var(--c1)),
+          linear-gradient(60deg, var(--c2) 25%, transparent 25.5%, transparent 75%, var(--c2) 75%, var(--c2)),
+          linear-gradient(60deg, var(--c2) 25%, transparent 25.5%, transparent 75%, var(--c2) 75%, var(--c2));
   background-size: 64px 112px;
   background-position: 0 0, 0 0, 32px 56px, 32px 56px, 0 0, 32px 56px;
 
