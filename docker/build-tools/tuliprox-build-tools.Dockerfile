@@ -131,6 +131,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     #   --version ${SCCACHE_VER}
 
 ### TESTING: build sccache from custom fork
+# force: true
 WORKDIR /tmp
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \

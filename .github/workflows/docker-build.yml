@@ -471,6 +471,7 @@ jobs:
                 "id": "sccache-${{ matrix.arch_tag }}"
               }
             }
+          save-always: true
           # skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
       # --- Read version from CHANGELOG.md ---
