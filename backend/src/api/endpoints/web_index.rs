@@ -68,7 +68,7 @@ async fn token(
             }
 
             req.zeroize();
-            axum::http::StatusCode::BAD_REQUEST.into_response()
+            axum::http::StatusCode::UNAUTHORIZED.into_response()
         }
     }
 }
@@ -101,7 +101,7 @@ async fn token_refresh(
                         }).into_response();
                 }
             }
-            axum::http::StatusCode::BAD_REQUEST.into_response()
+            axum::http::StatusCode::UNAUTHORIZED.into_response()
         }
     }
 }
