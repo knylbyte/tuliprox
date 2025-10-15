@@ -32,6 +32,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}/tuliprox-build-tools
+  CARGO_HOME: /usr/local/cargo
 
 jobs:
   build:
@@ -41,13 +42,13 @@ jobs:
         include:
           - platform: linux/amd64
             runner: ubuntu-24.04
-            tag: linux-amd64
+            arch_tag: linux-amd64
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
-            tag: linux-arm64
+            arch_tag: linux-arm64
           - platform: linux/arm/v7         # build armv7 on arm64 runner (fast cross-compile)
             runner: ubuntu-24.04-arm
-            tag: linux-armv7
+            arch_tag: linux-armv7
 
     runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
 
@@ -62,8 +63,48 @@ jobs:
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
+        id: setup-buildx
         with:
           platforms: ${{ matrix.platform }}
+
+      # see also: https://depot.dev/docs/container-builds/how-to-guides/optimal-dockerfiles/rust-dockerfile
+      - name: Step 4.5 - Cache cargo and sccache directories for Docker build
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: |
+            usr-local-cargo-registry
+            usr-local-cargo-git
+            var-lib-apt
+            var-cache-apt
+          key: ${{ runner.os }}-tuliprox-build-tools-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-tuliprox-build-tools--${{ matrix.arch_tag }}-
+
+      - name: Step 2.6 - Restore Docker cache mounts
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          builder: ${{ steps.setup-buildx.outputs.name }}
+          cache-map: |
+            {
+              "usr-local-cargo-registry": {
+                "target": "${{ env.CARGO_HOME}}/registry",
+                "id": "cargo-registry-${{ matrix.arch_tag }}"
+              },
+              "usr-local-cargo-git": {
+                "target": "${{ env.CARGO_HOME}}/git",
+                "id": "cargo-git-${{ matrix.arch_tag }}"
+              },
+              "var-lib-apt": {
+                "target": "/var/lib/apt",
+                "id": "var-lib-apt-${{ matrix.arch_tag }}"
+              },
+              "var-cache-apt": {
+                "target": "/var/cache/apt",
+                "id": "var-cache-apt-${{ matrix.arch_tag }}"
+              }
+            }
+          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
       - name: Prepare build args
         id: build-args
@@ -79,6 +120,7 @@ jobs:
           {
             echo "value<<EOF"
             echo "BUILDKIT_INLINE_CACHE=1"
+            echo "BUILDPLATFORM_TAG=${{ matrix.platform }}"
             if [ -n "${TRUNK_INPUT}" ]; then
               echo "TRUNK_VER=${TRUNK_INPUT}"
             fi
@@ -112,22 +154,22 @@ jobs:
           build-args: ${{ steps.build-args.outputs.value }}
           push: true
           tags: |
-            ${{ env.IMAGE }}:${{ matrix.tag }}
+            ${{ env.IMAGE }}:${{ matrix.arch_tag }}
           cache-from: |
-            type=gha,scope=tools-${{ matrix.tag }}
-            type=registry,ref=${{ env.IMAGE }}:${{ matrix.tag }}
+            type=gha,scope=tools-${{ matrix.arch_tag }}
+            type=registry,ref=${{ env.IMAGE }}:${{ matrix.arch_tag }}
           cache-to: |
-            type=gha,mode=max,scope=tools-${{ matrix.tag }}
+            type=gha,mode=max,scope=tools-${{ matrix.arch_tag }}
 
       - name: Inspect image
-        run: docker buildx imagetools inspect "${IMAGE}:${{ matrix.tag }}"
+        run: docker buildx imagetools inspect "${IMAGE}:${{ matrix.arch_tag }}"
 
       # Pull platform-specific image and read label versions
       - name: Pull & inspect image labels
         id: img
         shell: bash
         env:
-          IMG: ${{ env.IMAGE }}:${{ matrix.tag }}
+          IMG: ${{ env.IMAGE }}:${{ matrix.arch_tag }}
           PLAT: ${{ matrix.platform }}
         run: |
           set -euo pipefail
@@ -188,9 +230,9 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## tuliprox-build-tools \`${{ matrix.tag }}\`"
+            echo "## tuliprox-build-tools \`${{ matrix.arch_tag }}\`"
             echo ""
-            echo "🖼️ Image: \`${{ env.IMAGE }}:${{ matrix.tag }}\`"
+            echo "🖼️ Image: \`${{ env.IMAGE }}:${{ matrix.arch_tag }}\`"
             echo "🧭 Platform: \`${{ matrix.platform }}\`"
             echo ""
             if [[ "${{ steps.img.outputs.published }}" == "true" ]]; then
