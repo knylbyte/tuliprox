@@ -104,7 +104,7 @@ jobs:
                 "id": "var-cache-apt-${{ matrix.arch_tag }}"
               }
             }
-          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
+          # skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
       - name: Prepare build args
         id: build-args
