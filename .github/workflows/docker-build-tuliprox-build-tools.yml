@@ -79,7 +79,7 @@ jobs:
             var-cache-apt
           key: ${{ runner.os }}-tuliprox-build-tools-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-tuliprox-build-tools--${{ matrix.arch_tag }}-
+            ${{ runner.os }}-tuliprox-build-tools-${{ matrix.arch_tag }}-
 
       - name: Step 2.6 - Restore Docker cache mounts
         uses: reproducible-containers/buildkit-cache-dance@v3
