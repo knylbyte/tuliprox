@@ -88,11 +88,11 @@ jobs:
           cache-map: |
             {
               "usr-local-cargo-registry": {
-                "target": "${{ env.CARGO_HOME}}/registry",
+                "target": "${{ env.CARGO_HOME }}/registry",
                 "id": "cargo-registry-${{ matrix.arch_tag }}"
               },
               "usr-local-cargo-git": {
-                "target": "${{ env.CARGO_HOME}}/git",
+                "target": "${{ env.CARGO_HOME }}/git",
                 "id": "cargo-git-${{ matrix.arch_tag }}"
               },
               "var-lib-apt": {
@@ -121,6 +121,7 @@ jobs:
             echo "value<<EOF"
             echo "BUILDKIT_INLINE_CACHE=1"
             echo "BUILDPLATFORM_TAG=${{ matrix.platform }}"
+            echo "CARGO_HOME=${{ env.CARGO_HOME }}"
             if [ -n "${TRUNK_INPUT}" ]; then
               echo "TRUNK_VER=${TRUNK_INPUT}"
             fi
