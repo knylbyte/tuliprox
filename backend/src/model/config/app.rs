@@ -290,6 +290,8 @@ impl AppConfig {
             self.access_token_secret = generate_secret();
             self.encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;
             self.prepare_paths();
+        } else {
+            self.prepare_mapping_path();
         }
 
         self.prepare_sources()?;
@@ -315,11 +317,13 @@ impl AppConfig {
         }
     }
 
+    fn prepare_mapping_path(&self) {
+        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
+        self.set_mapping_path(config.mapping_path.as_deref());
+    }
+
     fn prepare_paths(&self) {
-        {
-            let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
-            self.set_mapping_path(config.mapping_path.as_deref());
-        }
+        self.prepare_mapping_path();
         self.prepare_custom_stream_response();
     }
 

@@ -1,4 +1,5 @@
 @use "../../size";
+
 .tp__login-view {
   display: flex;
   flex-flow: column;
@@ -11,9 +12,44 @@
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
   background-color: var(--card-background-color);
+
   width: 400px;
   @media(max-width: size.$mobile-breakpoint) {
     width: 280px;
+  }
+
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 8px 4px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(255, 255, 255, 0.1), inset 0 0 10px 2px rgba(255, 255, 255, 0.1);
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+                    90deg,
+                    transparent,
+                    rgba(255, 255, 255, 0.4),
+                    transparent
+    );
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 100%;
+    background: linear-gradient(
+                    180deg,
+                    rgba(255, 255, 255, 0.4),
+                    transparent,
+                    rgba(255, 255, 255, 0.3)
+    );
   }
 
   &__header {
@@ -68,4 +104,25 @@
       height: 3.2rem;
     }
   }
+}
+
+$gradient-color: rgb(19, 29, 30);
+$gradient-color77: rgb(12 24 25 / 77%);
+.tp__background {
+  width: 100vw;
+  height: 100vh;
+  position: absolute;
+  overflow: hidden;
+
+  background-color: var(--background-color);
+  background-image:
+          linear-gradient(30deg, $gradient-color 12%, transparent 12.5%, transparent 87%, $gradient-color 87.5%, $gradient-color),
+          linear-gradient(150deg, $gradient-color 12%, transparent 12.5%, transparent 87%, $gradient-color 87.5%, $gradient-color),
+          linear-gradient(30deg, $gradient-color 12%, transparent 12.5%, transparent 87%, $gradient-color 87.5%, $gradient-color),
+          linear-gradient(150deg, $gradient-color 12%, transparent 12.5%, transparent 87%, $gradient-color 87.5%, $gradient-color),
+          linear-gradient(60deg, $gradient-color77 25%, transparent 25.5%, transparent 75%, $gradient-color77 75%, $gradient-color77),
+          linear-gradient(60deg, $gradient-color77 25%, transparent 25.5%, transparent 75%, $gradient-color77 75%, $gradient-color77);
+  background-size: 64px 112px;
+  background-position: 0 0, 0 0, 32px 56px, 32px 56px, 0 0, 32px 56px;
+
 }
