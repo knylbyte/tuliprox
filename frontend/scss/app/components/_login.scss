@@ -20,7 +20,7 @@
     display: flex;
     flex-flow: column;
     align-items: center;
-    background-color: var(--card-background-color);
+    background-color: transparent;
     padding: 0 8px;
     &-title {
       color: var(--card-color);
@@ -62,5 +62,10 @@
       gap: 20px;
       padding-top: 20px;
    }
+
+    .tp__text-button {
+      max-height: 3.2rem;
+      height: 3.2rem;
+    }
   }
 }

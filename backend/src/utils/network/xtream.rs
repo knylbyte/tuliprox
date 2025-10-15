@@ -136,7 +136,7 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Input
     let content = if let Ok(content) = request::get_input_json_content(Arc::clone(client), input, None).await {
         content
     } else {
-        let input_source_account_info = input.with_url(format!("{}&action=get_account_info", &input.url));
+        let input_source_account_info = input.with_url(format!("{}&action={}", &input.url, crate::model::XC_ACTION_GET_ACCOUNT_INFO));
         match request::get_input_json_content(Arc::clone(client), &input_source_account_info, None).await {
             Ok(content) => content,
             Err(err) => {
