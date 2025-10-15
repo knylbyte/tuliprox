@@ -18,7 +18,8 @@ ARG CARGO_CHEF_VER=0.1.73
 ARG CARGO_MACHETE_VER=0.9.1
 ARG SCCACHE_VER=0.11.0
 ARG ALPINE_VER=3.22.2
-
+ARG CARGO_HOME=/usr/local/cargo
+ARG BUILDPLATFORM_TAG=latest
 ############################################
 # Build stage to produce ffmpeg resources
 # -> contains prebuilt .ts files from .jpg
@@ -53,19 +54,21 @@ RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
 ############################################
 FROM --platform=$BUILDPLATFORM rust:${RUST_DISTRO} AS builder
 
+ARG BUILDPLATFORM_TAG
 ARG TARGETPLATFORM
 ARG TRUNK_VER
 ARG BINDGEN_VER
 ARG CARGO_CHEF_VER
 ARG CARGO_MACHETE_VER
 ARG SCCACHE_VER
+ARG CARGO_HOME
 
-ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-ENV DEBIAN_FRONTEND=noninteractive \
-    CARGO_HOME=/usr/local/cargo \
-    RUSTUP_HOME=/usr/local/rustup \
-    PATH=/usr/local/cargo/bin:$PATH \
-    SCCACHE_DIR=/var/cache/sccache
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL="sparse"
+ENV DEBIAN_FRONTEND="noninteractive"
+ENV CARGO_HOME=${CARGO_HOME}
+ENV PATH="/usr/local/cargo/bin:$PATH"
+ENV SCCACHE_DIR="/var/cache/sccache"
+ENV SCCACHE_FEATURE_LIST="dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl";
 
 # Map Docker TARGETPLATFORM -> Rust target triple for *tool binaries*.
 # Tools must run inside the final image for that platform (gnu is fine here).
@@ -77,9 +80,10 @@ RUN case "$TARGETPLATFORM" in \
     esac
 
 # Cross toolchains so we can produce tool binaries for the platform above
-RUN --mount=type=cache,id=apt-builder-cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=apt-builder-lib,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATTFORM_TAG},sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATTFORM_TAG},sharing=locked \
     set -eux; \
+    rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       curl ca-certificates pkg-config make perl \
@@ -110,10 +114,9 @@ ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=64 \
     CARGO_PROFILE_RELEASE_OPT_LEVEL=2
 
 # Build trunk & wasm-bindgen for the platform-specific tool image
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     set -eux; \
-    SCCACHE_FEATURE_LIST="dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl"; \
     cargo install --locked trunk --version ${TRUNK_VER} \
       --target "$(cat /rust-target)" --root /out; \
     cargo install --locked wasm-bindgen-cli --version ${BINDGEN_VER} \
@@ -123,17 +126,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install --locked cargo-machete --version ${CARGO_MACHETE_VER} \
       --target "$(cat /rust-target)" --root /out;
     # \
-    # cargo install --locked sccache --no-default-features --features "${SCCACHE_FEATURE_LIST}" \
+    # cargo install --locked sccache --no-default-features --features ${SCCACHE_FEATURE_LIST} \
     #   --target "$(cat /rust-target)" \
     #   --root /out \
     #   --version ${SCCACHE_VER}
 
 ### TESTING: build sccache from custom fork
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     set -eux; \
     cargo install --locked sccache --git https://github.com/knylbyte/sccache.git --branch main \
-      --no-default-features --features "${SCCACHE_FEATURE_LIST}" \
+      --no-default-features --features ${SCCACHE_FEATURE_LIST} \
       --target "$(cat /rust-target)" \
       --root /out
 ### End TESTING
@@ -177,8 +180,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # - Stage 1 (native binary): musl-tools (for musl static builds)
 # - Stage 2 (WASM): libclang-dev, binaryen
 # Keep it lean; no OpenSSL dev packages (we use rustls).
-RUN --mount=type=cache,id=apt-final-cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=apt-final-lib,target=/var/lib/apt,sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATTFORM_TAG},sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATTFORM_TAG},sharing=locked \
     set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
