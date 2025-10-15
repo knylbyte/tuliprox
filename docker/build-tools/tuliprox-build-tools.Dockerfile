@@ -136,7 +136,7 @@ WORKDIR /tmp
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     set -eux; \
-    apt get install -y git; \
+    apt-get install -y git; \
     git clone https://github.com/knylbyte/sccache.git -b main; \
     cd sccache; \
     cargo install --locked --release \
