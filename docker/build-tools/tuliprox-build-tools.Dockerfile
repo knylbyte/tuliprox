@@ -68,7 +68,7 @@ ENV DEBIAN_FRONTEND="noninteractive"
 ENV CARGO_HOME=${CARGO_HOME}
 ENV PATH="/usr/local/cargo/bin:$PATH"
 ENV SCCACHE_DIR="/var/cache/sccache"
-ENV SCCACHE_FEATURE_LIST="dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl";
+ENV SCCACHE_FEATURE_LIST="dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl"
 
 # Map Docker TARGETPLATFORM -> Rust target triple for *tool binaries*.
 # Tools must run inside the final image for that platform (gnu is fine here).
@@ -80,8 +80,8 @@ RUN case "$TARGETPLATFORM" in \
     esac
 
 # Cross toolchains so we can produce tool binaries for the platform above
-RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATTFORM_TAG},sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATTFORM_TAG},sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATFORM_TAG},sharing=locked \
     set -eux; \
     rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update; \
@@ -180,8 +180,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # - Stage 1 (native binary): musl-tools (for musl static builds)
 # - Stage 2 (WASM): libclang-dev, binaryen
 # Keep it lean; no OpenSSL dev packages (we use rustls).
-RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATTFORM_TAG},sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATTFORM_TAG},sharing=locked \
+RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATFORM_TAG},sharing=locked \
     set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
