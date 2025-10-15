@@ -131,10 +131,16 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     #   --version ${SCCACHE_VER}
 
 ### TESTING: build sccache from custom fork
+WORKDIR /tmp
+
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     set -eux; \
-    cargo install --locked sccache --git https://github.com/knylbyte/sccache.git --branch main \
+    apt get install -y git; \
+    git clone https://github.com/knylbyte/sccache.git -b main; \
+    cd sccache; \
+    cargo install --locked --release \
+      --path . --bin sccache \
       --no-default-features --features ${SCCACHE_FEATURE_LIST} \
       --target "$(cat /rust-target)" \
       --root /out
