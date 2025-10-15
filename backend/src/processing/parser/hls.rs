@@ -69,6 +69,11 @@ pub fn rewrite_hls(user: &ProxyUserCredentials, props: &RewriteHlsProps) -> Stri
     let password = &user.password;
     let mut result = Vec::new();
     for line in props.content.lines() {
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
         // skip comments
         if line.starts_with('#') {
             let rewritten = rewrite_uri_attrib(line, props);

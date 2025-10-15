@@ -24,9 +24,13 @@
 
   color: var(--text-color);
   background-color: var(--card-background-color);
-  filter: drop-shadow(6px 6px 6px var(--popup-shadow-color));
+  box-shadow: var(--popup-shadow);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
+
   max-width: 90%;
   max-height: 90%;
   width: auto;

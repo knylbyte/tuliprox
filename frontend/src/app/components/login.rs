@@ -78,6 +78,8 @@ pub fn Login() -> Html {
     }
 
     html! {
+        <>
+        <div class="tp__background"></div>
         <div class="tp__login-view">
            <div class={"tp__login-view__header"}>
                 <div class={"tp__login-view__header-logo"}>{app_logo.as_ref().clone()}</div>
@@ -94,5 +96,6 @@ pub fn Login() -> Html {
                 </div>
             </form>
         </div>
+        </>
     }
 }
