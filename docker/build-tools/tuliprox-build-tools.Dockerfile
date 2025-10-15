@@ -139,11 +139,11 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     apt-get install -y git; \
     git clone https://github.com/knylbyte/sccache.git -b main; \
     cd sccache; \
-    cargo install --locked --release \
-      --path . --bin sccache \
+    cargo install --locked --path .\
       --no-default-features --features ${SCCACHE_FEATURE_LIST} \
       --target "$(cat /rust-target)" \
-      --root /out
+      --root /out; \
+    rm -rf /tmp/sccache
 ### End TESTING
 
 # Strip (best-effort)
