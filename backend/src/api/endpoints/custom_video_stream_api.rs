@@ -13,7 +13,7 @@ async fn cvs_api(
 ) -> impl IntoResponse + Send {
 
     let Ok(custom_video_type) = CustomVideoStreamType::from_str(&stream_type) else {
-        return axum::http::StatusCode::BAD_REQUEST.into_response();
+        return axum::http::StatusCode::NOT_FOUND.into_response();
     };
 
     let Some((user, _target)) =  app_state.app_config.get_target_for_user(&username, &password) else {

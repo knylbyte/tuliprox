@@ -277,7 +277,7 @@ async fn m3u_api_resource(
                     "Failed to get m3u url: {}",
                     sanitize_sensitive_info(err.to_string().as_str())
                 );
-                return axum::http::StatusCode::BAD_REQUEST.into_response();
+                return axum::http::StatusCode::NOT_FOUND.into_response();
             }
         };
 

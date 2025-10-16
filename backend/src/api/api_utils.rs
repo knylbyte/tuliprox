@@ -1065,7 +1065,7 @@ async fn build_stream_response(
     let status = response.status();
     let mut response_builder =
         axum::response::Response::builder().status(status);
-    let has_content_range = !response.headers().contains_key(axum::http::header::CONTENT_RANGE);
+    let has_content_range = response.headers().contains_key(axum::http::header::CONTENT_RANGE);
     for (key, value) in response.headers() {
         let name = key.as_str();
         let is_hop_by_hop = matches!(
