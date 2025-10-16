@@ -212,6 +212,7 @@ pub struct ConfigTarget {
     pub mapping: Arc<ArcSwapOption<Vec<Mapping>>>,
     pub processing_order: ProcessingOrder,
     pub watch: Option<Vec<regex::Regex>>,
+    pub use_memory_cache: bool,
 }
 
 impl ConfigTarget {
@@ -288,7 +289,8 @@ impl From<&ConfigTargetDto> for ConfigTarget {
             mapping_ids: dto.mapping.clone(),
             mapping: Arc::new(ArcSwapOption::new(None)),
             processing_order: dto.processing_order,
-            watch: dto.watch.as_ref().map(|list| list.iter().filter_map(|s| Regex::new(s).ok()).collect())
+            watch: dto.watch.as_ref().map(|list| list.iter().filter_map(|s| Regex::new(s).ok()).collect()),
+            use_memory_cache: dto.use_memory_cache,
         }
     }
 }

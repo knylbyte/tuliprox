@@ -8,7 +8,7 @@ use crate::api::endpoints::web_index::{index_register_with_path, index_register_
 use crate::api::endpoints::websocket_api::ws_api_register;
 use crate::api::endpoints::xmltv_api::xmltv_api_register;
 use crate::api::endpoints::xtream_api::xtream_api_register;
-use crate::api::model::ActiveProviderManager;
+use crate::api::model::{ActiveProviderManager, PlaylistStorageState};
 use crate::api::model::ActiveUserManager;
 use crate::api::model::DownloadQueue;
 use crate::api::model::EventManager;
@@ -27,11 +27,12 @@ use axum::Router;
 use log::{error, info};
 use std::io::ErrorKind;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc};
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use shared::utils::{concat_path_leading_slash};
 use crate::api::endpoints::custom_video_stream_api::cvs_api_register;
+use crate::repository::playlist_repository::load_playlists_into_memory_cache;
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -91,6 +92,7 @@ fn create_shared_data(
         active_provider,
         event_manager,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
+        playlists: Arc::new(PlaylistStorageState::new()),
     }
 }
 
@@ -107,8 +109,9 @@ fn exec_update_on_boot(
     if update_on_boot {
         let app_state_clone = Arc::clone(&app_state.app_config);
         let targets_clone = Arc::clone(targets);
+        let playlist_state = Arc::clone(&app_state.playlists);
         tokio::spawn(
-            async move { playlist::exec_processing(client, app_state_clone, targets_clone, None).await },
+            async move { playlist::exec_processing(client, app_state_clone, targets_clone, None, Some(playlist_state)).await },
         );
     }
 }
@@ -237,17 +240,23 @@ pub async fn start_server(
         )
     };
 
+    if let Err(err) = load_playlists_into_memory_cache(&app_state).await {
+        error!("Failed to load playlists into memory cache: {err}");
+    }
+
     exec_scheduler(
         &Arc::clone(&shared_data.http_client.load()),
         &app_state,
         &targets,
         &cancel_token_scheduler,
     );
+
     exec_update_on_boot(
         Arc::clone(&shared_data.http_client.load()),
         &app_state,
         &targets,
     );
+
     exec_config_watch(&app_state, &cancel_token_file_watch);
 
     let web_auth_enabled = is_web_auth_enabled(&cfg, web_ui_enabled);

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::api::model::ActiveProviderManager;
 use crate::api::model::ActiveUserManager;
 use crate::api::model::DownloadQueue;
@@ -5,19 +6,21 @@ use crate::api::scheduler::exec_scheduler;
 use crate::model::{AppConfig, Config, HdHomeRunConfig, HdHomeRunDeviceConfig, ProcessTargets, ScheduleConfig, SourcesConfig};
 use crate::tools::lru_cache::LRUResourceCache;
 use crate::utils::request::create_client;
-use arc_swap::{ArcSwap, ArcSwapAny};
+use arc_swap::{ArcSwap, ArcSwapOption};
 use log::error;
 use reqwest::Client;
 use shared::error::TuliproxError;
-use shared::model::UserConnectionPermission;
+use shared::model::{M3uPlaylistItem, UserConnectionPermission, XtreamPlaylistItem};
 use shared::utils::small_vecs_equal_unordered;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use crate::api::config_watch::exec_config_watch;
 use crate::api::model::EventManager;
 use crate::api::model::SharedStreamManager;
+use crate::repository::bplustree::BPlusTree;
+use crate::repository::target_id_mapping::VirtualIdRecord;
 
 macro_rules! cancel_service {
     ($field: ident, $changes:expr, $cancel_tokens:expr) => {
@@ -159,18 +162,86 @@ macro_rules! change_detect {
     };
 }
 
+pub struct PlaylistXtreamStorage {
+  pub id_mapping: BPlusTree<u32, VirtualIdRecord>,
+  pub live: BPlusTree<u32, XtreamPlaylistItem>,
+  pub vod: BPlusTree<u32, XtreamPlaylistItem>,
+  pub series: BPlusTree<u32, XtreamPlaylistItem>,
+}
+
+pub type PlaylistM3uStorage = BPlusTree<u32, M3uPlaylistItem>;
+
+pub enum PlaylistStorage {
+    M3uPlaylist(Box<PlaylistM3uStorage>),
+    XtreamPlaylist(Box<PlaylistXtreamStorage>),
+}
+
+pub struct TargetPlaylistStorage {
+    pub xtream: Option<PlaylistXtreamStorage>,
+    pub m3u: Option<PlaylistM3uStorage>,
+}
+
+pub type TargetPlaylistStorageMap = HashMap<String, TargetPlaylistStorage>;
+
+pub struct PlaylistStorageState {
+  pub data: RwLock<TargetPlaylistStorageMap>,
+}
+
+impl PlaylistStorageState {
+
+    pub(crate) fn new() -> Self {
+        Self {
+            data: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub async fn cache_playlist(&self, target_name: &str, playlist: PlaylistStorage) {
+        match playlist {
+            PlaylistStorage::M3uPlaylist(m3u_playlist) => {
+                match self.data.write().await.entry(target_name.to_string()) {
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        let storage = entry.get_mut();
+                        storage.m3u = Some(*m3u_playlist);
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(TargetPlaylistStorage {
+                            xtream: None,
+                            m3u: Some(*m3u_playlist),
+                        });
+                    }
+                }
+            }
+            PlaylistStorage::XtreamPlaylist(xtream_playlist) => {
+                match self.data.write().await.entry(target_name.to_string()) {
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        let storage = entry.get_mut();
+                        storage.xtream = Some(*xtream_playlist);
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(TargetPlaylistStorage {
+                            xtream: Some(*xtream_playlist),
+                            m3u: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub forced_targets: Arc<ArcSwap<ProcessTargets>>, // as program arguments
     pub app_config: Arc<AppConfig>,
     pub http_client: Arc<ArcSwap<Client>>,
     pub downloads: Arc<DownloadQueue>,
-    pub cache: Arc<ArcSwapAny<Option<Arc<Mutex<LRUResourceCache>>>>>,
+    pub cache: Arc<ArcSwapOption<Mutex<LRUResourceCache>>>,
     pub shared_stream_manager: Arc<SharedStreamManager>,
     pub active_users: Arc<ActiveUserManager>,
     pub active_provider: Arc<ActiveProviderManager>,
     pub event_manager: Arc<EventManager>,
     pub cancel_tokens: Arc<ArcSwap<CancelTokens>>,
+    pub playlists: Arc<PlaylistStorageState>,
 }
 
 impl AppState {
@@ -249,6 +320,10 @@ impl AppState {
             hdhomerun: false,
             file_watch: file_watch_changed,
         }
+    }
+
+    pub async fn cache_playlist(&self, target_name: &str, playlist: PlaylistStorage) {
+        self.playlists.cache_playlist(target_name, playlist).await;
     }
 }
 

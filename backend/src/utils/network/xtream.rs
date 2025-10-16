@@ -240,8 +240,6 @@ pub async fn get_xtream_playlist(cfg: &Config, client: Arc<reqwest::Client>, inp
             }
         }
     }
-    // why we need a sort if there is no sort defined ?
-    //playlist_groups.sort_by(|a, b| a.title.partial_cmp(&b.title).unwrap_or(Ordering::Greater));
 
     for (grp_id, plg) in (1_u32..).zip(playlist_groups.iter_mut()) {
         plg.id = grp_id;

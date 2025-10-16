@@ -160,6 +160,8 @@ pub struct ConfigTargetDto {
     pub processing_order: ProcessingOrder,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<Vec<String>>,
+    #[serde(default)]
+    pub use_memory_cache: bool,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
 }
@@ -178,6 +180,7 @@ impl Default for ConfigTargetDto {
             mapping: None,
             processing_order: ProcessingOrder::default(),
             watch: None,
+            use_memory_cache: false,
             t_filter: None,
         }
     }
