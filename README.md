@@ -1473,7 +1473,7 @@ Now you can do `nginx`  configuration like
    }
 ```
 When you use nginx be sure to have 
-```
+```nginx
       proxy_redirect off;
       proxy_buffering off;
       proxy_request_buffering off;

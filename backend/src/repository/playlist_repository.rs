@@ -68,24 +68,6 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
                         errors.push(err);
                     }
                 }
-
-                if target.use_memory_cache {
-                    if let Some(playlist_storage) = playlist_state {
-                        match output {
-                            TargetOutput::Xtream(_) => {
-                                if let Ok(storage) = load_xtream_target_storage(app_config, target) {
-                                    playlist_storage.cache_playlist(&target.name, PlaylistStorage::XtreamPlaylist(Box::new(storage))).await;
-                                }
-                            },
-                            TargetOutput::M3u(_) => {
-                                if let Ok(storage) = load_m3u_target_storage(app_config, target) {
-                                    playlist_storage.cache_playlist(&target.name, PlaylistStorage::M3uPlaylist(Box::new(storage))).await;
-                                }
-                            },
-                            _ => {}
-                        }
-                    }
-                }
             }
             Err(err) => errors.push(err)
         }
@@ -95,6 +77,26 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
         errors.push(info_err!(err.to_string()));
     }
     drop(file_lock);
+
+    if target.use_memory_cache {
+        if let Some(playlist_storage) = playlist_state {
+            for output in &target.output {
+                match output {
+                    TargetOutput::Xtream(_) => {
+                        if let Ok(storage) = load_xtream_target_storage(app_config, target) {
+                            playlist_storage.cache_playlist(&target.name, PlaylistStorage::XtreamPlaylist(Box::new(storage))).await;
+                        }
+                    },
+                    TargetOutput::M3u(_) => {
+                        if let Ok(storage) = load_m3u_target_storage(app_config, target) {
+                            playlist_storage.cache_playlist(&target.name, PlaylistStorage::M3uPlaylist(Box::new(storage))).await;
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        }
+    }
 
     if errors.is_empty() { Ok(()) } else { Err(errors) }
 }

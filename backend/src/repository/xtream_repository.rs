@@ -415,10 +415,11 @@ pub async fn xtream_get_item_for_stream_id(
     xtream_cluster: Option<XtreamCluster>,
 ) -> Result<(XtreamPlaylistItem, VirtualIdRecord), Error> {
     if target.use_memory_cache {
-        if let Some((playlist_item, virtual_record)) =
-            xtream_get_item_for_stream_id_from_memory(virtual_id, app_state, target, xtream_cluster).await? {
+        if let Ok(Some((playlist_item, virtual_record))) =
+            xtream_get_item_for_stream_id_from_memory(virtual_id, app_state, target, xtream_cluster).await {
             return Ok((playlist_item, virtual_record));
         }
+        // fall through to disk lookup on cache miss
     }
 
     let app_config: &AppConfig = &app_state.app_config;
