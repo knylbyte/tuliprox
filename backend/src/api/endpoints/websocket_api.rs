@@ -276,7 +276,7 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth: bo
 
             Ok(event) = event_rx.recv() => {
                 if let Err(e) = handle_event_message(&mut socket, event, &handler).await {
-                    error!("Failed to send event: {e}");
+                    error!("Failed to send ws event: {e}");
                     break;
                 }
             }

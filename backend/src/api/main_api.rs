@@ -31,6 +31,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use shared::utils::{concat_path_leading_slash};
+use crate::api::endpoints::custom_video_stream_api::cvs_api_register;
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -300,14 +301,13 @@ pub async fn start_server(
         .merge(xtream_api_register())
         .merge(m3u_api_register())
         .merge(xmltv_api_register())
-        .merge(hls_api_register());
-    // let mut rate_limiting = false;
+        .merge(hls_api_register())
+        .merge(cvs_api_register());
     if let Some(rate_limiter) = cfg
         .reverse_proxy
         .as_ref()
         .and_then(|r| r.rate_limit.clone())
     {
-        // rate_limiting = rate_limiter.enabled;
         api_router = add_rate_limiter(api_router, &rate_limiter);
     }
 

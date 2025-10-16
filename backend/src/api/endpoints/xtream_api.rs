@@ -7,7 +7,7 @@ use crate::api::api_utils::{
     is_seek_request, redirect_response, resource_response, separate_number_and_remainder,
     serve_file, stream_response, RedirectParams,
 };
-use crate::api::api_utils::{redirect, try_option_bad_request, try_result_bad_request};
+use crate::api::api_utils::{redirect, try_result_not_found, try_option_bad_request, try_result_bad_request};
 use crate::api::endpoints::hls_api::handle_hls_stream_request;
 use crate::api::endpoints::xmltv_api::get_empty_epg_response;
 use crate::api::model::AppState;
@@ -246,7 +246,7 @@ async fn xtream_player_api_stream(
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
     let virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
-    let (pli, mapping) = try_result_bad_request!(
+    let (pli, mapping) = try_result_not_found!(
         xtream_repository::xtream_get_item_for_stream_id(
             virtual_id,
             &app_state.app_config,

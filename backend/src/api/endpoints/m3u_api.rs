@@ -2,7 +2,7 @@ use crate::api::api_utils::try_unwrap_body;
 use crate::api::api_utils::{
     force_provider_stream_response, get_user_target, get_user_target_by_credentials,
     is_seek_request, redirect, redirect_response, resource_response, separate_number_and_remainder,
-    stream_response, try_option_bad_request, try_result_bad_request, RedirectParams,
+    stream_response, try_result_not_found, try_option_bad_request, try_result_bad_request, RedirectParams,
 };
 use crate::api::endpoints::hls_api::handle_hls_stream_request;
 use crate::api::endpoints::xtream_api::{ApiStreamContext, ApiStreamRequest};
@@ -112,7 +112,7 @@ async fn m3u_api_stream(
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
     let virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
-    let pli = try_result_bad_request!(
+    let pli = try_result_not_found!(
         m3u_get_item_for_stream_id(virtual_id, &app_state.app_config, &target).await,
         true,
         format!("Failed to read m3u item for stream id {}", virtual_id)

@@ -1,25 +1,25 @@
-use crate::api::api_utils::{get_headers_from_request, try_option_bad_request, HeaderFilter};
 use crate::api::api_utils::try_unwrap_body;
 use crate::api::api_utils::{
     force_provider_stream_response, get_stream_alternative_url, is_seek_request,
 };
-use crate::api::model::{AppState};
+use crate::api::api_utils::{get_headers_from_request, try_option_bad_request, HeaderFilter};
 use crate::api::model::UserSession;
 use crate::api::model::{create_custom_video_stream_response, CustomVideoStreamType};
+use crate::api::model::AppState;
 use crate::auth::Fingerprint;
-use crate::model::{ConfigInput, InputSource};
 use crate::model::ProxyUserCredentials;
+use crate::model::{ConfigInput, InputSource};
 use crate::processing::parser::hls::{
     get_hls_session_token_and_url_from_token, rewrite_hls, RewriteHlsProps,
 };
 use crate::utils::request;
+use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use log::{debug, error};
 use serde::Deserialize;
 use shared::model::{PlaylistItemType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{is_hls_url, replace_url_extension, sanitize_sensitive_info, HLS_EXT};
+use shared::utils::{is_hls_url, replace_url_extension, sanitize_sensitive_info, CUSTOM_VIDEO_PREFIX, HLS_EXT};
 use std::sync::Arc;
-use axum::http::HeaderMap;
 
 #[derive(Debug, Deserialize)]
 struct HlsApiPathParams {
@@ -105,7 +105,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
         Some(&headers),
         None,
     )
-    .await
+        .await
     {
         Ok((content, response_url)) => {
             let rewrite_hls_props = RewriteHlsProps {
@@ -125,11 +125,27 @@ pub(in crate::api) async fn handle_hls_stream_request(
                 "Failed to download m3u8 {}",
                 sanitize_sensitive_info(err.to_string().as_str())
             );
-            create_custom_video_stream_response(
-                &app_state.app_config,
-                CustomVideoStreamType::ChannelUnavailable,
-            )
-            .into_response()
+
+            let custom_stream_response = app_state.app_config.custom_stream_response.load();
+            if custom_stream_response.as_ref().and_then(|c| c.channel_unavailable.as_ref()).is_some() {
+                let url = format!(
+                    "{}/{CUSTOM_VIDEO_PREFIX}/{}/{}/{}",
+                    &server_info.get_base_url(),
+                    user.username,
+                    user.password,
+                    CustomVideoStreamType::ChannelUnavailable);
+
+                let playlist = format!(r"#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:600
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:600.0,
+{url}
+");
+                hls_response(playlist.to_string()).into_response()
+            } else {
+                axum::http::StatusCode::NOT_FOUND.into_response()
+            }
         }
     }
 }
@@ -153,7 +169,7 @@ async fn hls_api_stream(
             &app_state.app_config,
             CustomVideoStreamType::UserAccountExpired,
         )
-        .into_response();
+            .into_response();
     }
 
     let target_name = &target.name;
@@ -178,7 +194,7 @@ async fn hls_api_stream(
                 &app_state.app_config,
                 CustomVideoStreamType::UserConnectionsExhausted,
             )
-            .into_response();
+                .into_response();
         }
 
         if app_state
@@ -190,7 +206,7 @@ async fn hls_api_stream(
                 &app_state.app_config,
                 CustomVideoStreamType::ProviderConnectionsExhausted,
             )
-            .into_response();
+                .into_response();
         }
 
         let hls_url = match get_hls_session_token_and_url_from_token(
@@ -214,8 +230,8 @@ async fn hls_api_stream(
                     &input,
                     &user,
                 )
-                .await
-                .into_response();
+                    .await
+                    .into_response();
             }
         } else {
             return axum::http::StatusCode::BAD_REQUEST.into_response();
@@ -227,7 +243,7 @@ async fn hls_api_stream(
                 &app_state.app_config,
                 CustomVideoStreamType::UserConnectionsExhausted,
             )
-            .into_response();
+                .into_response();
         }
 
         if is_hls_url(&session.stream_url) {
@@ -243,8 +259,8 @@ async fn hls_api_stream(
                 &req_headers,
                 connection_permission,
             )
-            .await
-            .into_response();
+                .await
+                .into_response();
         }
 
         force_provider_stream_response(
@@ -256,8 +272,8 @@ async fn hls_api_stream(
             &input,
             &user,
         )
-        .await
-        .into_response()
+            .await
+            .into_response()
     } else {
         axum::http::StatusCode::BAD_REQUEST.into_response()
     }
