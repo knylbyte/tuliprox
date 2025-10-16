@@ -1,6 +1,5 @@
 use std::rc::Rc;
 use chrono::{Duration, Utc};
-use log::debug;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{ApiProxyServerInfoDto, ConfigTargetDto, ProxyType, ProxyUserCredentialsDto, ProxyUserStatus};

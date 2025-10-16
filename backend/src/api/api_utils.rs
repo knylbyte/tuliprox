@@ -69,29 +69,6 @@ macro_rules! try_option_bad_request {
 }
 
 #[macro_export]
-macro_rules! try_result_bad_request {
-    ($option:expr, $msg_is_error:expr, $msg:expr) => {
-        match $option {
-            Ok(value) => value,
-            Err(_) => {
-                if $msg_is_error {
-                    error!("{}", $msg);
-                } else {
-                    debug!("{}", $msg);
-                }
-                return axum::http::StatusCode::BAD_REQUEST.into_response();
-            }
-        }
-    };
-    ($option:expr) => {
-        match $option {
-            Ok(value) => value,
-            Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
-        }
-    };
-}
-
-#[macro_export]
 macro_rules! try_unwrap_body {
     ($body:expr) => {
         $body.map_or_else(
@@ -101,8 +78,53 @@ macro_rules! try_unwrap_body {
     };
 }
 
+#[macro_export]
+macro_rules! try_result_or_status {
+    ($option:expr, $status:expr, $msg_is_error:expr, $msg:expr) => {
+        match $option {
+            Ok(value) => value,
+            Err(_) => {
+                if $msg_is_error {
+                    error!("{}", $msg);
+                } else {
+                    debug!("{}", $msg);
+                }
+                return $status.into_response();
+            }
+        }
+    };
+    ($option:expr, $status:expr) => {
+        match $option {
+            Ok(value) => value,
+            Err(_) => return $status.into_response(),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! try_result_bad_request {
+    ($option:expr, $msg_is_error:expr, $msg:expr) => {
+       $crate::api::api_utils::try_result_or_status!($option, axum::http::StatusCode::BAD_REQUEST, $msg_is_error, $msg)
+    };
+    ($option:expr) => {
+       $crate::api::api_utils::try_result_or_status!($option, axum::http::StatusCode::BAD_REQUEST)
+    };
+}
+
+#[macro_export]
+macro_rules! try_result_not_found {
+    ($option:expr, $msg_is_error:expr, $msg:expr) => {
+       $crate::api::api_utils::try_result_or_status!($option, axum::http::StatusCode::NOT_FOUND, $msg_is_error, $msg)
+    };
+    ($option:expr) => {
+       $crate::api::api_utils::try_result_or_status!($option, axum::http::StatusCode::NOT_FOUND)
+    };
+}
+
+pub use try_result_or_status;
 pub use try_option_bad_request;
 pub use try_result_bad_request;
+pub use try_result_not_found;
 pub use try_unwrap_body;
 
 pub fn get_server_time() -> String {
@@ -1043,7 +1065,7 @@ async fn build_stream_response(
     let status = response.status();
     let mut response_builder =
         axum::response::Response::builder().status(status);
-    let has_content_range = !response.headers().contains_key(axum::http::header::CONTENT_RANGE);
+    let has_content_range = response.headers().contains_key(axum::http::header::CONTENT_RANGE);
     for (key, value) in response.headers() {
         let name = key.as_str();
         let is_hop_by_hop = matches!(
@@ -1218,7 +1240,7 @@ pub fn separate_number_and_remainder(input: &str) -> (String, Option<String>) {
 pub fn empty_json_list_response() -> impl IntoResponse + Send {
     try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
-        .header("Content-Type", mime::APPLICATION_JSON.to_string())
+        .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
         .body("[]".to_owned()))
 }
 
@@ -1247,7 +1269,7 @@ pub fn get_username_from_auth_header(token: &str, app_state: &Arc<AppState>) -> 
 pub fn redirect(url: &str) -> impl IntoResponse {
     try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::FOUND)
-        .header("Location", url)
+        .header(axum::http::header::LOCATION, url)
         .body(axum::body::Body::empty()))
 }
 

@@ -173,7 +173,7 @@ async fn index(
                 error!("Failed to generate random bytes for nonce: {e}");
                 // Fallback: without further manipulation back
                 return try_unwrap_body!(axum::response::Response::builder()
-                    .header("Content-Type", mime::TEXT_HTML_UTF_8.as_ref())
+                    .header(axum::http::header::CONTENT_TYPE, mime::TEXT_HTML_UTF_8.as_ref())
                     .body(new_content));
             }
             let nonce_b64 = base64::engine::general_purpose::STANDARD.encode(rnd);
@@ -191,7 +191,7 @@ async fn index(
             new_content = inject_nonce_with_parser(new_content, &nonce_b64);
 
             let mut builder = axum::response::Response::builder()
-                .header("Content-Type", mime::TEXT_HTML_UTF_8.as_ref());
+                .header(axum::http::header::CONTENT_TYPE, mime::TEXT_HTML_UTF_8.as_ref());
             if let Some(csp) = config
                 .web_ui
                 .as_ref()
@@ -269,7 +269,7 @@ async fn index_config(
 
                     if let Ok(json_content) = serde_json::to_string(&json_data) {
                         return try_unwrap_body!(axum::response::Response::builder()
-                            .header("Content-Type", mime::APPLICATION_JSON.as_ref())
+                            .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
                             .body(axum::body::Body::from(json_content)));
                     }
                 }
