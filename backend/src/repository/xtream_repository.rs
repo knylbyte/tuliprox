@@ -1,4 +1,4 @@
-use crate::api::model::{AppState, PlaylistStorage};
+use crate::api::model::AppState;
 use crate::model::normalize_release_date;
 use crate::model::{rewrite_doc_urls, PlaylistXtreamCategory, XtreamMappingOptions, XtreamSeriesEpisode};
 use crate::model::{AppConfig, ProxyUserCredentials};
@@ -178,9 +178,9 @@ pub fn xtream_get_file_paths(storage_path: &Path, cluster: XtreamCluster) -> (Pa
     xtream_get_file_paths_for_name(storage_path, &cluster.as_str().to_lowercase())
 }
 
-pub fn xtream_get_file_paths_for_series(storage_path: &Path) -> (PathBuf, PathBuf) {
-    xtream_get_file_paths_for_name(storage_path, storage_const::FILE_SERIES)
-}
+// pub fn xtream_get_file_paths_for_series(storage_path: &Path) -> (PathBuf, PathBuf) {
+//     xtream_get_file_paths_for_name(storage_path, storage_const::FILE_SERIES)
+// }
 
 fn xtream_garbage_collect(config: &AppConfig, target_name: &str) -> std::io::Result<()> {
     // Garbage collect series
@@ -328,7 +328,7 @@ fn xtream_read_series_item_for_stream_id(
     stream_id: u32,
     storage_path: &Path,
 ) -> Result<XtreamPlaylistItem, Error> {
-    let (xtream_path, idx_path) = xtream_get_file_paths_for_series(storage_path);
+    let (xtream_path, idx_path) = xtream_get_file_paths(storage_path, XtreamCluster::Series);
     {
         let _file_lock = cfg.file_locks.read_lock(&xtream_path);
         IndexedDocumentDirectAccess::read_indexed_item::<u32, XtreamPlaylistItem>(&xtream_path, &idx_path, &stream_id)
@@ -343,74 +343,71 @@ macro_rules! try_cluster {
     };
 }
 
-fn xtream_get_item_for_stream_id_from_memory(
+async fn xtream_get_item_for_stream_id_from_memory(
     virtual_id: u32,
     app_state: &AppState,
     target: &ConfigTarget,
     xtream_cluster: Option<XtreamCluster>,
 ) -> Result<(XtreamPlaylistItem, VirtualIdRecord), Error> {
-    if let Some(playlist_storage) = &app_state.playlists {
-        let storage = playlist_storage.load();
-        if let Some(playlist) = storage.get(target.name.as_str()) {
-            return match playlist {
-                PlaylistStorage::M3uPlaylist(_) => {
-                    Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}. It seems to be a m3u playlist")))
-                }
-                PlaylistStorage::XtreamPlaylist(xtream_storage) => {
-                    let mapping = xtream_storage.id_mapping.query(&virtual_id).ok_or_else(|| str_to_io_error(&format!("Could not find mapping for target {} and id {}", target.name, virtual_id)))?.clone();
-                    let result = match mapping.item_type {
-                        PlaylistItemType::SeriesInfo => {
-                            Ok(xtream_storage.series.query(&mapping.virtual_id)
+    if let Some(playlist) = app_state.playlists.read().await.get(target.name.as_str()) {
+        return match playlist.xtream.as_ref() {
+            None => {
+                Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}. It seems to be a m3u playlist")))
+            }
+            Some(xtream_storage) => {
+                let mapping = xtream_storage.id_mapping.query(&virtual_id).ok_or_else(|| str_to_io_error(&format!("Could not find mapping for target {} and id {}", target.name, virtual_id)))?.clone();
+                let result = match mapping.item_type {
+                    PlaylistItemType::SeriesInfo => {
+                        Ok(xtream_storage.series.query(&mapping.virtual_id)
+                            .ok_or_else(|| str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))?
+                            .clone())
+                    }
+                    PlaylistItemType::Series => {
+                        if let Some(item) = xtream_storage.series.query(&mapping.parent_virtual_id) {
+                            let mut xc_item = item.clone();
+                            xc_item.provider_id = mapping.provider_id;
+                            Ok(xc_item)
+                        } else {
+                            Ok(xtream_storage.series.query(&virtual_id)
                                 .ok_or_else(|| str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))?
                                 .clone())
                         }
-                        PlaylistItemType::Series => {
-                            if let Some(item) = xtream_storage.series.query(&mapping.parent_virtual_id) {
-                                let mut xc_item = item.clone();
-                                xc_item.provider_id = mapping.provider_id;
-                                Ok(xc_item)
-                            } else {
-                                Ok(xtream_storage.series.query(&virtual_id)
-                                    .ok_or_else(|| str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))?
-                                    .clone())
-                            }
-                        }
-                        PlaylistItemType::Catchup => {
-                            let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
-                            let item = match cluster {
-                                XtreamCluster::Live => xtream_storage.live.query(&virtual_id),
-                                XtreamCluster::Video => xtream_storage.vod.query(&virtual_id),
-                                XtreamCluster::Series => xtream_storage.series.query(&virtual_id),
-                            };
+                    }
+                    PlaylistItemType::Catchup => {
+                        let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
+                        let item = match cluster {
+                            XtreamCluster::Live => xtream_storage.live.query(&virtual_id),
+                            XtreamCluster::Video => xtream_storage.vod.query(&virtual_id),
+                            XtreamCluster::Series => xtream_storage.series.query(&virtual_id),
+                        };
 
-                            if let Some(pl_item) = item {
-                                let mut xc_item = pl_item.clone();
-                                xc_item.provider_id = mapping.provider_id;
-                                Ok(xc_item)
-                            } else {
-                                Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))
-                            }
+                        if let Some(pl_item) = item {
+                            let mut xc_item = pl_item.clone();
+                            xc_item.provider_id = mapping.provider_id;
+                            Ok(xc_item)
+                        } else {
+                            Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))
                         }
-                        _ => {
-                            let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
-                            Ok((match cluster {
-                                XtreamCluster::Live => xtream_storage.live.query(&virtual_id),
-                                XtreamCluster::Video => xtream_storage.vod.query(&virtual_id),
-                                XtreamCluster::Series => xtream_storage.series.query(&virtual_id),
-                            }).ok_or_else(|| str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))?
-                                .clone())
-                        }
-                    };
+                    }
+                    _ => {
+                        let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
+                        Ok((match cluster {
+                            XtreamCluster::Live => xtream_storage.live.query(&virtual_id),
+                            XtreamCluster::Video => xtream_storage.vod.query(&virtual_id),
+                            XtreamCluster::Series => xtream_storage.series.query(&virtual_id),
+                        }).ok_or_else(|| str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))?
+                            .clone())
+                    }
+                };
 
-                    result.map(|xpli| (xpli, mapping))
-                }
-            };
-        }
+                result.map(|xpli| (xpli, mapping))
+            }
+        };
     }
     Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}. No entry found.")))
 }
 
-pub fn xtream_get_item_for_stream_id(
+pub async fn xtream_get_item_for_stream_id(
     virtual_id: u32,
     app_state: &AppState,
     target: &ConfigTarget,
@@ -418,9 +415,9 @@ pub fn xtream_get_item_for_stream_id(
 ) -> Result<(XtreamPlaylistItem, VirtualIdRecord), Error> {
     if target.use_memory_cache {
         return xtream_get_item_for_stream_id_from_memory(virtual_id,
-        app_state,
-        target,
-        xtream_cluster);
+                                                         app_state,
+                                                         target,
+                                                         xtream_cluster).await;
     }
 
     let app_config: &AppConfig = &app_state.app_config;

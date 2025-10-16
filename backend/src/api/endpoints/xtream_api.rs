@@ -252,7 +252,7 @@ async fn xtream_player_api_stream(
             &app_state,
             &target,
             None
-        ),
+        ).await,
         true,
         format!("Failed to read xtream item for stream id {}", virtual_id)
     );
@@ -429,7 +429,7 @@ async fn xtream_player_api_stream_with_token(
                 &app_state,
                 &target,
                 None
-            ),
+            ).await,
             true,
             format!("Failed to read xtream item for stream id {}", virtual_id)
         );
@@ -732,7 +732,7 @@ async fn xtream_player_api_resource(
             &app_state,
             &target,
             None
-        ),
+        ).await,
         true,
         format!("Failed to read xtream item for stream id {}", virtual_id)
     );
@@ -972,7 +972,7 @@ async fn xtream_get_stream_info_response(
         &app_state,
         target,
         Some(cluster),
-    ) {
+    ).await {
         if pli.provider_id > 0 {
             let input_name = &pli.input_name;
             if let Some(input) = app_state.app_config.get_input_by_name(input_name.as_str()) {
@@ -1057,7 +1057,7 @@ async fn xtream_get_short_epg(
             &app_state,
             target,
             None,
-        ) {
+        ).await {
             if pli.provider_id > 0 {
                 let input_name = &pli.input_name;
                 if let Some(input) = app_state.app_config.get_input_by_name(input_name.as_str()) {
@@ -1218,7 +1218,7 @@ async fn xtream_get_catchup_response(
         &app_state,
         target,
         Some(XtreamCluster::Live)
-    ));
+    ).await);
     let input = try_option_bad_request!(app_state
         .app_config
         .get_input_by_name(pli.input_name.as_str()));

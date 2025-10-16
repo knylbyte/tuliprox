@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::api::api_utils::{get_build_time, get_server_time};
 use crate::api::config_watch::exec_config_watch;
 use crate::api::endpoints::hdhomerun_api::hdhr_api_register;
@@ -27,7 +28,8 @@ use axum::Router;
 use log::{error, info};
 use std::io::ErrorKind;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc};
+use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use shared::utils::{concat_path_leading_slash};
@@ -92,7 +94,7 @@ fn create_shared_data(
         active_provider,
         event_manager,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
-        playlists: None,
+        playlists: Arc::new(RwLock::new(HashMap::new())),
     }
 }
 
@@ -239,7 +241,9 @@ pub async fn start_server(
         )
     };
 
-    load_playlists_into_memory_cache(&app_state);
+    if let Err(err) = load_playlists_into_memory_cache(&app_state).await {
+        error!("Failed to load playlists into memory cache: {err}");
+    }
 
     exec_scheduler(
         &Arc::clone(&shared_data.http_client.load()),
