@@ -374,11 +374,12 @@ async fn xtream_get_item_for_stream_id_from_memory(
                         }
                     }
                     PlaylistItemType::Catchup => {
-                        let cluster = try_cluster!(xtream_cluster, mapping.item_type, mapping.parent_virtual_id)?;
+
+                        let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
                         let item = match cluster {
-                            XtreamCluster::Live => xtream_storage.live.query(&virtual_id),
-                            XtreamCluster::Video => xtream_storage.vod.query(&virtual_id),
-                            XtreamCluster::Series => xtream_storage.series.query(&virtual_id),
+                            XtreamCluster::Live => xtream_storage.live.query(&mapping.parent_virtual_id),
+                            XtreamCluster::Video => xtream_storage.vod.query(&mapping.parent_virtual_id),
+                            XtreamCluster::Series => xtream_storage.series.query(&mapping.parent_virtual_id),
                         };
 
                         if let Some(pl_item) = item {
