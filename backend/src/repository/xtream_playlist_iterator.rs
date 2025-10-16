@@ -30,6 +30,9 @@ impl XtreamPlaylistIterator {
         category_id: Option<u32>,
         user: &ProxyUserCredentials,
     ) -> Result<Self, TuliproxError> {
+
+        // TODO use playlist memory cache and keep sorted
+
         let xtream_output = target.get_xtream_output().ok_or_else(|| info_err!(format!("Unexpected: xtream output required for target {}", target.name)))?;
         let config = app_config.config.load();
         if let Some(storage_path) = xtream_get_storage_path(&config, target.name.as_str()) {

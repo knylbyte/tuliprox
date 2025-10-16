@@ -249,7 +249,7 @@ async fn xtream_player_api_stream(
     let (pli, mapping) = try_result_not_found!(
         xtream_repository::xtream_get_item_for_stream_id(
             virtual_id,
-            &app_state,
+            app_state,
             &target,
             None
         ).await,
@@ -426,7 +426,7 @@ async fn xtream_player_api_stream_with_token(
         let (pli, _mapping) = try_result_bad_request!(
             xtream_repository::xtream_get_item_for_stream_id(
                 virtual_id,
-                &app_state,
+                app_state,
                 &target,
                 None
             ).await,
@@ -729,7 +729,7 @@ async fn xtream_player_api_resource(
     let (pli, _) = try_result_bad_request!(
         xtream_repository::xtream_get_item_for_stream_id(
             virtual_id,
-            &app_state,
+            app_state,
             &target,
             None
         ).await,
@@ -969,7 +969,7 @@ async fn xtream_get_stream_info_response(
 
     if let Ok((pli, virtual_record)) = xtream_repository::xtream_get_item_for_stream_id(
         virtual_id,
-        &app_state,
+        app_state,
         target,
         Some(cluster),
     ).await {
@@ -1054,7 +1054,7 @@ async fn xtream_get_short_epg(
 
         if let Ok((pli, _)) = xtream_repository::xtream_get_item_for_stream_id(
             virtual_id,
-            &app_state,
+            app_state,
             target,
             None,
         ).await {
@@ -1215,7 +1215,7 @@ async fn xtream_get_catchup_response(
     let virtual_id: u32 = try_result_bad_request!(FromStr::from_str(stream_id));
     let (pli, _) = try_result_bad_request!(xtream_repository::xtream_get_item_for_stream_id(
         virtual_id,
-        &app_state,
+        app_state,
         target,
         Some(XtreamCluster::Live)
     ).await);

@@ -93,17 +93,12 @@ pub async fn m3u_get_item_for_stream_id(stream_id: u32, app_state: &AppState, ta
         return Err(str_to_io_error("id should start with 1"));
     }
     {
-        if let Some(playlist) = app_state.playlists.read().await.get(target.name.as_str()) {
-            return match playlist.m3u.as_ref() {
-                Some(m3u_playlist) => {
-                    Ok(m3u_playlist.query(&stream_id)
-                        .ok_or_else(|| str_to_io_error(&format!("Failed to read m3u item for id {stream_id}")))?
-                        .clone())
-                }
-                None => {
-                    Err(str_to_io_error(&format!("Failed to read m3u item for id {stream_id}. It seems to be a xtream playlist")))
-                }
-            };
+        if let Some(playlist) = app_state.playlists.data.read().await.get(target.name.as_str()) {
+            if let Some(m3u_playlist) = playlist.m3u.as_ref() {
+                return Ok(m3u_playlist.query(&stream_id)
+                    .ok_or_else(|| str_to_io_error(&format!("Failed to read m3u item for id {stream_id}")))?
+                    .clone())
+            }
         }
 
         let cfg: &AppConfig = &app_state.app_config;

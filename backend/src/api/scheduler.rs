@@ -59,7 +59,8 @@ async fn start_scheduler(client: Arc<reqwest::Client>, expression: &str, app_sta
                         () = tokio::time::sleep_until(tokio::time::Instant::from(datetime_to_instant(datetime))) => {
                            let app_config = Arc::clone(&app_state.app_config);
                            let event_manager = Arc::clone(&app_state.event_manager);
-                           exec_processing(Arc::clone(&client), app_config, Arc::clone(&targets), Some(event_manager)).await;
+                           let playlist_state = app_state.playlists.clone();
+                           exec_processing(Arc::clone(&client), app_config, Arc::clone(&targets), Some(event_manager), Some(playlist_state)).await;
                         }
                         () = cancel.cancelled() => {
                             break;

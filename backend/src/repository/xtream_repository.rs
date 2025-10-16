@@ -348,11 +348,11 @@ async fn xtream_get_item_for_stream_id_from_memory(
     app_state: &AppState,
     target: &ConfigTarget,
     xtream_cluster: Option<XtreamCluster>,
-) -> Result<(XtreamPlaylistItem, VirtualIdRecord), Error> {
-    if let Some(playlist) = app_state.playlists.read().await.get(target.name.as_str()) {
+) -> Result<Option<(XtreamPlaylistItem, VirtualIdRecord)>, Error> {
+    if let Some(playlist) = app_state.playlists.data.read().await.get(target.name.as_str()) {
         return match playlist.xtream.as_ref() {
             None => {
-                Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}. It seems to be a m3u playlist")))
+                Ok(None)
             }
             Some(xtream_storage) => {
                 let mapping = xtream_storage.id_mapping.query(&virtual_id).ok_or_else(|| str_to_io_error(&format!("Could not find mapping for target {} and id {}", target.name, virtual_id)))?.clone();
@@ -400,11 +400,12 @@ async fn xtream_get_item_for_stream_id_from_memory(
                     }
                 };
 
-                result.map(|xpli| (xpli, mapping))
+                result.map(|xpli| Some((xpli, mapping)))
             }
         };
     }
-    Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}. No entry found.")))
+    //Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}. No entry found.")))
+    Ok(None)
 }
 
 pub async fn xtream_get_item_for_stream_id(
@@ -414,10 +415,10 @@ pub async fn xtream_get_item_for_stream_id(
     xtream_cluster: Option<XtreamCluster>,
 ) -> Result<(XtreamPlaylistItem, VirtualIdRecord), Error> {
     if target.use_memory_cache {
-        return xtream_get_item_for_stream_id_from_memory(virtual_id,
-                                                         app_state,
-                                                         target,
-                                                         xtream_cluster).await;
+        if let Some((playlist_item, virtual_record)) =
+            xtream_get_item_for_stream_id_from_memory(virtual_id, app_state, target, xtream_cluster).await? {
+            return Ok((playlist_item, virtual_record));
+        }
     }
 
     let app_config: &AppConfig = &app_state.app_config;

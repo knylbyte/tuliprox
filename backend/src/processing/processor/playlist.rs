@@ -34,7 +34,7 @@ use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputTy
                     PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
 use shared::utils::default_as_default;
 use std::time::Instant;
-use crate::api::model::{EventManager, EventMessage};
+use crate::api::model::{EventManager, EventMessage, PlaylistStorageState};
 
 fn is_valid(pli: &PlaylistItem, target: &ConfigTarget) -> bool {
     let provider = ValueProvider { pli };
@@ -244,8 +244,9 @@ async fn playlist_download_from_input(client: &Arc<reqwest::Client>, config: &Ar
 }
 
 async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, source_idx: usize,
-                        user_targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>)
-                        -> (Vec<InputStats>, Vec<TargetStats>, Vec<TuliproxError>) {
+                        user_targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>,
+                        playlist_state: Option<&Arc<PlaylistStorageState>>
+)-> (Vec<InputStats>, Vec<TargetStats>, Vec<TuliproxError>) {
     let sources = cfg.sources.load();
     let mut errors = vec![];
     let mut input_stats = HashMap::<String, InputStats>::new();
@@ -301,7 +302,7 @@ async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, sourc
                 for target in &source.targets {
                     let event_manager_clone = event_manager_clone.clone();
                     if is_target_enabled(target, &user_targets) {
-                        match process_playlist_for_target(&cfg, Arc::clone(&client), &mut source_playlists, target, &mut input_stats, &mut errors, event_manager_clone).await {
+                        match process_playlist_for_target(&cfg, Arc::clone(&client), &mut source_playlists, target, &mut input_stats, &mut errors, event_manager_clone, playlist_state).await {
                             Ok(()) => {
                                 target_stats.push(TargetStats::success(&target.name));
                             }
@@ -335,7 +336,9 @@ fn create_input_stat(group_count: usize, channel_count: usize, error_count: usiz
     }
 }
 
-async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, user_targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>) -> (Vec<SourceStats>, Vec<TuliproxError>) {
+async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, user_targets: Arc<ProcessTargets>,
+                         event_manager: Option<Arc<EventManager>>, playlist_state: Option<&Arc<PlaylistStorageState>>
+) -> (Vec<SourceStats>, Vec<TuliproxError>) {
     let mut handle_list = vec![];
     let thread_num = config.config.load().threads;
     let sources = config.sources.load();
@@ -360,6 +363,7 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
         let event_manager = event_manager.clone();
         if process_parallel {
             let http_client = Arc::clone(&client);
+            let playlist_state = playlist_state.cloned();
             let handles = &mut handle_list;
             let process = move || {
                 // TODO better way ?
@@ -367,7 +371,7 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
                     Ok(rt) => {
                         rt.block_on(async {
                             let (input_stats, target_stats, mut res_errors) =
-                                process_source(Arc::clone(&http_client), cfg, index, usr_trgts, event_manager).await;
+                                process_source(Arc::clone(&http_client), cfg, index, usr_trgts, event_manager, playlist_state.as_ref()).await;
                             shared_errors.lock().await.append(&mut res_errors);
                             let process_stats = SourceStats::new(input_stats, target_stats);
                             shared_stats.lock().await.push(process_stats);
@@ -381,7 +385,8 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
                 handles.drain(..).for_each(|handle| { let _ = handle.join(); });
             }
         } else {
-            let (input_stats, target_stats, mut res_errors) = process_source(Arc::clone(&client), cfg, index, usr_trgts, event_manager).await;
+            let (input_stats, target_stats, mut res_errors) =
+                process_source(Arc::clone(&client), cfg, index, usr_trgts, event_manager, playlist_state).await;
             shared_errors.lock().await.append(&mut res_errors);
             let process_stats = SourceStats::new(input_stats, target_stats);
             shared_stats.lock().await.push(process_stats);
@@ -460,13 +465,16 @@ fn flatten_groups(playlistgroups: Vec<PlaylistGroup>) -> Vec<PlaylistGroup> {
     sort_order
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_playlist_for_target(app_config: &AppConfig,
                                      client: Arc<reqwest::Client>,
                                      playlists: &mut [FetchedPlaylist<'_>],
                                      target: &ConfigTarget,
                                      stats: &mut HashMap<String, InputStats>,
                                      errors: &mut Vec<TuliproxError>,
-                                     event_manager: Option<Arc<EventManager>>) -> Result<(), Vec<TuliproxError>> {
+                                     event_manager: Option<Arc<EventManager>>,
+                                     playlist_state: Option<&Arc<PlaylistStorageState>>
+) -> Result<(), Vec<TuliproxError>> {
     let pipe = get_processing_pipe(target);
     debug_if_enabled!("Processing order is {}", &target.processing_order);
 
@@ -527,7 +535,7 @@ async fn process_playlist_for_target(app_config: &AppConfig,
         if process_watch(&config, &client, target, &flat_new_playlist) {
             step.tick("group watches");
         }
-        let result = persist_playlist(app_config, &mut flat_new_playlist, flatten_tvguide(&new_epg).as_ref(), target).await;
+        let result = persist_playlist(app_config, &mut flat_new_playlist, flatten_tvguide(&new_epg).as_ref(), target, playlist_state).await;
         step.stop("Persisting playlists");
         result
     }
@@ -582,10 +590,10 @@ fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &ConfigTar
     }
 }
 
-pub async fn exec_processing(client: Arc<reqwest::Client>, app_config: Arc<AppConfig>, targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>) {
+pub async fn exec_processing(client: Arc<reqwest::Client>, app_config: Arc<AppConfig>, targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>, playlist_state: Option<Arc<PlaylistStorageState>>) {
     let start_time = Instant::now();
     let event_manager_clone = event_manager.clone();
-    let (stats, errors) = process_sources(Arc::clone(&client), &app_config, targets.clone(), event_manager_clone).await;
+    let (stats, errors) = process_sources(Arc::clone(&client), &app_config, targets.clone(), event_manager_clone, playlist_state.as_ref()).await;
     // log errors
     for err in &errors {
         error!("{}", err.message);

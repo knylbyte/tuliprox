@@ -172,8 +172,8 @@ pub struct PlaylistXtreamStorage {
 pub type PlaylistM3uStorage = BPlusTree<u32, M3uPlaylistItem>;
 
 pub enum PlaylistStorage {
-    M3uPlaylist(PlaylistM3uStorage),
-    XtreamPlaylist(PlaylistXtreamStorage),
+    M3uPlaylist(Box<PlaylistM3uStorage>),
+    XtreamPlaylist(Box<PlaylistXtreamStorage>),
 }
 
 pub struct TargetPlaylistStorage {
@@ -181,7 +181,53 @@ pub struct TargetPlaylistStorage {
     pub m3u: Option<PlaylistM3uStorage>,
 }
 
-type TargetPlaylistStorageMap = HashMap<String, TargetPlaylistStorage>;
+pub type TargetPlaylistStorageMap = HashMap<String, TargetPlaylistStorage>;
+
+pub struct PlaylistStorageState {
+  pub data: RwLock<TargetPlaylistStorageMap>,
+}
+
+impl PlaylistStorageState {
+
+    pub(crate) fn new() -> Self {
+        Self {
+            data: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub async fn cache_playlist(&self, target_name: &str, playlist: PlaylistStorage) {
+        match playlist {
+            PlaylistStorage::M3uPlaylist(m3u_playlist) => {
+                match self.data.write().await.entry(target_name.to_string()) {
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        let storage = entry.get_mut();
+                        storage.m3u = Some(*m3u_playlist);
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(TargetPlaylistStorage {
+                            xtream: None,
+                            m3u: Some(*m3u_playlist),
+                        });
+                    }
+                }
+            }
+            PlaylistStorage::XtreamPlaylist(xtream_playlist) => {
+                match self.data.write().await.entry(target_name.to_string()) {
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        let storage = entry.get_mut();
+                        storage.xtream = Some(*xtream_playlist);
+                    }
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(TargetPlaylistStorage {
+                            xtream: Some(*xtream_playlist),
+                            m3u: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -195,7 +241,7 @@ pub struct AppState {
     pub active_provider: Arc<ActiveProviderManager>,
     pub event_manager: Arc<EventManager>,
     pub cancel_tokens: Arc<ArcSwap<CancelTokens>>,
-    pub playlists: Arc<RwLock<TargetPlaylistStorageMap>>
+    pub playlists: Arc<PlaylistStorageState>,
 }
 
 impl AppState {
@@ -277,36 +323,7 @@ impl AppState {
     }
 
     pub async fn cache_playlist(&self, target_name: &str, playlist: PlaylistStorage) {
-        match playlist {
-            PlaylistStorage::M3uPlaylist(m3u_playlist) => {
-                match self.playlists.write().await.entry(target_name.to_string()) {
-                    std::collections::hash_map::Entry::Occupied(mut entry) => {
-                        let storage = entry.get_mut();
-                        storage.m3u = Some(m3u_playlist);
-                    }
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(TargetPlaylistStorage {
-                            xtream: None,
-                            m3u: Some(m3u_playlist),
-                        });
-                    }
-                }
-            }
-            PlaylistStorage::XtreamPlaylist(xtream_playlist) => {
-                match self.playlists.write().await.entry(target_name.to_string()) {
-                    std::collections::hash_map::Entry::Occupied(mut entry) => {
-                        let storage = entry.get_mut();
-                        storage.xtream = Some(xtream_playlist);
-                    }
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(TargetPlaylistStorage {
-                            xtream: Some(xtream_playlist),
-                            m3u: None,
-                        });
-                    }
-                }
-            }
-        }
+        self.playlists.cache_playlist(target_name, playlist).await;
     }
 }
 

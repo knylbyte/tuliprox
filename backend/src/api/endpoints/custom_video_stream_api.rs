@@ -12,7 +12,9 @@ async fn cvs_api(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> impl IntoResponse + Send {
 
-    let Ok(custom_video_type) = CustomVideoStreamType::from_str(&stream_type) else {
+    let cvs_type = stream_type.strip_suffix(".ts").unwrap_or(&stream_type);
+
+    let Ok(custom_video_type) = CustomVideoStreamType::from_str(cvs_type) else {
         return axum::http::StatusCode::NOT_FOUND.into_response();
     };
 

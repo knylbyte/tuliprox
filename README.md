@@ -1465,8 +1465,24 @@ Now you can do `nginx`  configuration like
       proxy_ssl_session_reuse off;
       proxy_set_header Host $http_host;
       proxy_redirect off;
+      proxy_buffering off;
+      proxy_request_buffering off;
+      proxy_cache off;
+      tcp_nopush on;
+      tcp_nodelay on;
    }
 ```
+When you use nginx be sure to have 
+```
+      proxy_redirect off;
+      proxy_buffering off;
+      proxy_request_buffering off;
+      proxy_cache off;
+      tcp_nopush on;
+      tcp_nodelay on;
+```
+because without this config you could get very high cpu peaks.
+
 You can also use traefik as reverse proxy server in front of your tuliprox instance. However if you wan't to use paths, you must note that the path for web-ui and api-proxy must be different. In this short example used paths are:
 * web-ui: tuliprox
 * api-proxy: tv

@@ -129,7 +129,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
             let custom_stream_response = app_state.app_config.custom_stream_response.load();
             if custom_stream_response.as_ref().and_then(|c| c.channel_unavailable.as_ref()).is_some() {
                 let url = format!(
-                    "{}/{CUSTOM_VIDEO_PREFIX}/{}/{}/{}",
+                    "{}/{CUSTOM_VIDEO_PREFIX}/{}/{}/{}.ts",
                     &server_info.get_base_url(),
                     user.username,
                     user.password,

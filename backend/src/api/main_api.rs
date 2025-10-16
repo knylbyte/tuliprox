@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::api::api_utils::{get_build_time, get_server_time};
 use crate::api::config_watch::exec_config_watch;
 use crate::api::endpoints::hdhomerun_api::hdhr_api_register;
@@ -9,7 +8,7 @@ use crate::api::endpoints::web_index::{index_register_with_path, index_register_
 use crate::api::endpoints::websocket_api::ws_api_register;
 use crate::api::endpoints::xmltv_api::xmltv_api_register;
 use crate::api::endpoints::xtream_api::xtream_api_register;
-use crate::api::model::ActiveProviderManager;
+use crate::api::model::{ActiveProviderManager, PlaylistStorageState};
 use crate::api::model::ActiveUserManager;
 use crate::api::model::DownloadQueue;
 use crate::api::model::EventManager;
@@ -29,7 +28,6 @@ use log::{error, info};
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::{Arc};
-use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use shared::utils::{concat_path_leading_slash};
@@ -94,7 +92,7 @@ fn create_shared_data(
         active_provider,
         event_manager,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
-        playlists: Arc::new(RwLock::new(HashMap::new())),
+        playlists: Arc::new(PlaylistStorageState::new()),
     }
 }
 
@@ -111,8 +109,9 @@ fn exec_update_on_boot(
     if update_on_boot {
         let app_state_clone = Arc::clone(&app_state.app_config);
         let targets_clone = Arc::clone(targets);
+        let playlist_state = Arc::clone(&app_state.playlists);
         tokio::spawn(
-            async move { playlist::exec_processing(client, app_state_clone, targets_clone, None).await },
+            async move { playlist::exec_processing(client, app_state_clone, targets_clone, None, Some(playlist_state)).await },
         );
     }
 }
