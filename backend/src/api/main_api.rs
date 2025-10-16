@@ -32,6 +32,7 @@ use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use shared::utils::{concat_path_leading_slash};
 use crate::api::endpoints::custom_video_stream_api::cvs_api_register;
+use crate::repository::playlist_repository::load_playlists_into_memory_cache;
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -91,6 +92,7 @@ fn create_shared_data(
         active_provider,
         event_manager,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
+        playlists: None,
     }
 }
 
@@ -237,17 +239,21 @@ pub async fn start_server(
         )
     };
 
+    load_playlists_into_memory_cache(&app_state);
+
     exec_scheduler(
         &Arc::clone(&shared_data.http_client.load()),
         &app_state,
         &targets,
         &cancel_token_scheduler,
     );
+
     exec_update_on_boot(
         Arc::clone(&shared_data.http_client.load()),
         &app_state,
         &targets,
     );
+
     exec_config_watch(&app_state, &cancel_token_file_watch);
 
     let web_auth_enabled = is_web_auth_enabled(&cfg, web_ui_enabled);

@@ -5,6 +5,7 @@
 If you use TimeZone the timeshift will change on Summer/Winter time if its applied in the TZ.
 - Fixed: Mappings now automatically reload and reapply after configuration changes, preventing stale settings.
 - Search in Playlist Explorer now returns groups instead of matching flat channel list.
+- Added `use_memory_cache` attribute to target definition to hold playlist in memory to reduce disc access. 
 
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch

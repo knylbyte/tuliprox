@@ -1,16 +1,21 @@
-use shared::error::info_err;
+use shared::error::{info_err, str_to_io_error, TuliproxErrorKind};
 use shared::error::{TuliproxError};
 use crate::model::{AppConfig, ConfigTarget, TargetOutput};
-use shared::model::{PlaylistGroup, PlaylistItemType};
+use shared::model::{PlaylistGroup, PlaylistItemType, XtreamPlaylistItem};
 use crate::model::Epg;
 use crate::repository::epg_repository::epg_write;
 use crate::repository::strm_repository::write_strm_playlist;
 use crate::repository::m3u_repository::m3u_write_playlist;
-use crate::repository::storage::{ensure_target_storage_path, get_target_id_mapping_file};
-use crate::repository::target_id_mapping::TargetIdMapping;
-use crate::repository::xtream_repository::xtream_write_playlist;
+use crate::repository::storage::{ensure_target_storage_path, get_target_id_mapping_file, get_target_storage_path};
+use crate::repository::target_id_mapping::{TargetIdMapping, VirtualIdRecord};
+use crate::repository::xtream_repository::{xtream_get_file_paths_for_series, xtream_get_storage_path, xtream_write_playlist};
 use std::path::Path;
+use cron::TimeUnitSpec;
+use shared::create_tuliprox_error_result;
 use shared::utils::{is_dash_url, is_hls_url};
+use crate::api::model::{AppState, PlaylistXtreamStorage};
+use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery};
+use crate::repository::indexed_document::IndexedDocumentDirectAccess;
 use crate::utils;
 
 pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGroup], epg: Option<&Epg>,
@@ -77,4 +82,65 @@ pub async fn get_target_id_mapping(cfg: &AppConfig, target_path: &Path) -> (Targ
     let target_id_mapping_file = get_target_id_mapping_file(target_path);
     let file_lock = cfg.file_locks.write_lock(&target_id_mapping_file).await;
     (TargetIdMapping::new(&target_id_mapping_file), file_lock)
+}
+
+pub fn load_playlists_into_memory_cache(app_state: &AppState) -> Result<(), TuliproxError>{
+    for sources in app_state.app_config.sources.load().sources.iter() {
+        for target in sources.targets.iter() {
+            if target.use_memory_cache {
+                for output in target.output.iter() {
+                    match output {
+                        TargetOutput::Xtream(_) => {
+                            let app_config: &AppConfig = &app_state.app_config;
+                            let config = app_config.config.load();
+                            let target_path = get_target_storage_path(&config, target.name.as_str()).ok_or_else(||
+                                create_tuliprox_error_result!(
+                                TuliproxErrorKind::Info,
+                                "Could not find path for target {}", &target.name
+                            ))?;
+
+                            let storage_path = xtream_get_storage_path(&config, target.name.as_str()).ok_or_else(||
+                            create_tuliprox_error_result!(
+                                TuliproxErrorKind::Info,
+                            "Could not find path for target {} xtream output", &target.name))?;
+
+                            let target_id_mapping = {
+                                let target_id_mapping_file = get_target_id_mapping_file(&target_path);
+                                let _file_lock = app_config.file_locks.read_lock(&target_id_mapping_file);
+
+                                BPlusTree::<u32, VirtualIdRecord>::load(&target_id_mapping_file).map_err(|err|
+                                    create_tuliprox_error_result!(
+                                    TuliproxErrorKind::Info,
+                                    "Could not find path for target {} err:{err}", &target.name
+                                ))?
+                            };
+
+                            
+                            At this point we are stuck, because the playlist itemas are written into a indexed
+                            This means we have a  BtreePlus index and a Data
+                            From the index we read the offset.
+
+
+                            let (xtream_path, idx_path) = xtream_get_file_paths_for_series(storage_path);
+                            {
+                                let _file_lock = app_config.file_locks.read_lock(&xtream_path);
+                                IndexedDocumentDirectAccess::read_indexed_item::<u32, XtreamPlaylistItem>(&xtream_path, &idx_path, &stream_id)
+                            }
+
+                            let storage = PlaylistXtreamStorage {
+                                    id_mapping: target_id_mapping,
+                                    live: Default::default(),
+                                    vod: Default::default(),
+                                    series: Default::default(),
+                                };
+                            }
+                        }
+                        TargetOutput::M3u(_) => {}
+                        _ => {}
+                    }
+                };
+            }
+        }
+    }
+    Ok(())
 }

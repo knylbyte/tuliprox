@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::api::model::ActiveProviderManager;
 use crate::api::model::ActiveUserManager;
 use crate::api::model::DownloadQueue;
@@ -9,7 +10,7 @@ use arc_swap::{ArcSwap, ArcSwapAny};
 use log::error;
 use reqwest::Client;
 use shared::error::TuliproxError;
-use shared::model::UserConnectionPermission;
+use shared::model::{M3uPlaylistItem, UserConnectionPermission, XtreamPlaylistItem};
 use shared::utils::small_vecs_equal_unordered;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +19,8 @@ use tokio_util::sync::CancellationToken;
 use crate::api::config_watch::exec_config_watch;
 use crate::api::model::EventManager;
 use crate::api::model::SharedStreamManager;
+use crate::repository::bplustree::BPlusTree;
+use crate::repository::target_id_mapping::VirtualIdRecord;
 
 macro_rules! cancel_service {
     ($field: ident, $changes:expr, $cancel_tokens:expr) => {
@@ -159,6 +162,18 @@ macro_rules! change_detect {
     };
 }
 
+pub struct PlaylistXtreamStorage {
+  pub id_mapping: BPlusTree<u32, VirtualIdRecord>,
+  pub live: BPlusTree<u32, XtreamPlaylistItem>,
+  pub vod: BPlusTree<u32, XtreamPlaylistItem>,
+  pub series: BPlusTree<u32, XtreamPlaylistItem>,
+}
+
+pub enum PlaylistStorage {
+    M3uPlaylist(BPlusTree<u32, M3uPlaylistItem>),
+    XtreamPlaylist(PlaylistXtreamStorage),
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub forced_targets: Arc<ArcSwap<ProcessTargets>>, // as program arguments
@@ -171,6 +186,7 @@ pub struct AppState {
     pub active_provider: Arc<ActiveProviderManager>,
     pub event_manager: Arc<EventManager>,
     pub cancel_tokens: Arc<ArcSwap<CancelTokens>>,
+    pub playlists: Option<Arc<ArcSwap<HashMap<String, PlaylistStorage>>>>
 }
 
 impl AppState {

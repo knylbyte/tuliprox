@@ -281,7 +281,8 @@
     "ADD_ATTRIBUTE": "Add Attribute",
     "ADD_EXTENSION": "Add Extension",
     "ADD_DEVICE": "Add Device",
-    "EXTENDED_ATTRIBUTES": "Extended Attributes"
+    "EXTENDED_ATTRIBUTES": "Extended Attributes",
+    "USE_MEMORY_CACHE": "Mem-Cache"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

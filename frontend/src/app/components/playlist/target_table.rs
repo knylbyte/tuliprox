@@ -1,8 +1,6 @@
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, FilterView, PlaylistMappings,
-                             PlaylistProcessing, RevealContent, Table, TableDefinition, TargetOptions,
-                             TargetOutput, TargetRename, TargetSort, TargetWatch};
+use crate::app::components::{convert_bool_to_chip_style, AppIcon, Chip, FilterView, PlaylistMappings, PlaylistProcessing, RevealContent, Table, TableDefinition, TargetOptions, TargetOutput, TargetRename, TargetSort, TargetWatch, ToggleSwitch};
 use crate::hooks::use_service_context;
 use crate::model::DialogResult;
 use crate::services::DialogService;
@@ -16,7 +14,7 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 use crate::html_if;
 
-const HEADERS: [&str; 11] = [
+const HEADERS: [&str; 12] = [
     "LABEL.EMPTY",
     "LABEL.ENABLED",
     "LABEL.NAME",
@@ -28,6 +26,7 @@ const HEADERS: [&str; 11] = [
     "LABEL.MAPPING",
     "LABEL.PROCESSING_ORDER",
     "LABEL.WATCH",
+    "LABEL.USE_MEMORY_CACHE",
 ];
 
 #[derive(Properties, PartialEq, Clone)]
@@ -111,6 +110,7 @@ pub fn TargetTable(props: &TargetTableProps) -> Html {
                     },
                     9 => html! { <PlaylistProcessing order={dto.processing_order} /> },
                     10 => html! { <TargetWatch  target={Rc::clone(&dto)} /> },
+                    11 => html! { <ToggleSwitch value={dto.use_memory_cache} readonly={true} /> },
                     _ => html! {""},
                 }
             })
