@@ -956,7 +956,7 @@ async fn xtream_player_api_timeshift_query_stream(
 }
 
 async fn xtream_get_stream_info_response(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     user: &ProxyUserCredentials,
     target: &ConfigTarget,
     stream_id: &str,
@@ -984,7 +984,7 @@ async fn xtream_get_stream_info_response(
                         return redirect(&info_url).into_response();
                     } else if let Ok(content) = xtream::get_xtream_stream_info(
                         Arc::clone(&app_state.http_client.load()),
-                        &app_state.app_config,
+                        app_state,
                         user,
                         &input,
                         target,
@@ -1039,7 +1039,7 @@ async fn xtream_get_stream_info_response(
 }
 
 async fn xtream_get_short_epg(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     user: &ProxyUserCredentials,
     target: &ConfigTarget,
     stream_id: &str,
@@ -1206,7 +1206,7 @@ async fn xtream_player_api_handle_content_action(
 }
 
 async fn xtream_get_catchup_response(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     target: &ConfigTarget,
     stream_id: &str,
     start: &str,

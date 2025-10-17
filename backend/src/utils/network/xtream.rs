@@ -1,4 +1,4 @@
-use crate::model::{AppConfig, InputSource, ProxyUserCredentials};
+use crate::model::{InputSource, ProxyUserCredentials};
 use crate::model::{Config, ConfigInput, ConfigTarget};
 use crate::processing::parser::xtream;
 use crate::repository::xtream_repository;
@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::{extract_extension_from_url, get_i64_from_serde_value, get_string_from_serde_value};
+use crate::api::model::AppState;
 use crate::messaging::{send_message};
 
 #[inline]
@@ -54,7 +55,7 @@ pub async fn get_xtream_stream_info_content(client: Arc<reqwest::Client>, input:
 
 #[allow(clippy::too_many_arguments)]
 pub async fn get_xtream_stream_info<P>(client: Arc<reqwest::Client>,
-                                       app_config: &AppConfig,
+                                       app_state: &Arc<AppState>,
                                        user: &ProxyUserCredentials,
                                        input: &ConfigInput,
                                        target: &ConfigTarget,
@@ -66,17 +67,19 @@ where
 {
     let xtream_output = target.get_xtream_output().ok_or_else(|| Error::other("Unexpected error, missing xtream output"))?;
 
+    let app_config = &app_state.app_config;
+
     if cluster == XtreamCluster::Series {
         if let Some(content) = xtream_repository::xtream_load_series_info(app_config, target.name.as_str(), pli.get_virtual_id()) {
             // Deliver existing target content
-            return rewrite_xtream_series_info_content(app_config, target, xtream_output, pli, user, &content).await;
+            return rewrite_xtream_series_info_content(app_state, target, xtream_output, pli, user, &content).await;
         }
 
         // Check if the content has been resolved
         if xtream_output.resolve_series {
             if let Some(provider_id) = pli.get_provider_id() {
                 if let Some(content) = xtream_get_input_info(app_config, input, provider_id, XtreamCluster::Series) {
-                    return xtream_repository::write_and_get_xtream_series_info(app_config, target, xtream_output, pli, user, &content).await;
+                    return xtream_repository::write_and_get_xtream_series_info(app_state, target, xtream_output, pli, user, &content).await;
                 }
             }
         }
@@ -100,7 +103,7 @@ where
         return match cluster {
             XtreamCluster::Live => Ok(content),
             XtreamCluster::Video => xtream_repository::write_and_get_xtream_vod_info(app_config, target, xtream_output, pli, user, &content).await,
-            XtreamCluster::Series => xtream_repository::write_and_get_xtream_series_info(app_config, target, xtream_output, pli, user, &content).await,
+            XtreamCluster::Series => xtream_repository::write_and_get_xtream_series_info(app_state, target, xtream_output, pli, user, &content).await,
         };
     }
 

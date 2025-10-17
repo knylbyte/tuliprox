@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 use shared::model::{M3uPlaylistItem, XtreamPlaylistItem};
+use crate::model::ConfigTarget;
 use crate::repository::bplustree::BPlusTree;
-use crate::repository::target_id_mapping::VirtualIdRecord;
+use crate::repository::target_id_mapping::{VirtualIdRecord};
 
 pub struct PlaylistXtreamStorage {
     pub id_mapping: BPlusTree<u32, VirtualIdRecord>,
@@ -34,6 +35,18 @@ impl PlaylistStorageState {
     pub(crate) fn new() -> Self {
         Self {
             data: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub async fn update_target_id_mapping(&self, target: &ConfigTarget, mapping: Vec<VirtualIdRecord>) {
+        if target.use_memory_cache {
+            if let Some(storage) = self.data.write().await.get_mut(&target.name) {
+                if let Some(xtream) = storage.xtream.as_mut() {
+                    for record in mapping {
+                        xtream.id_mapping.insert(record.virtual_id, record);
+                    }
+                }
+            }
         }
     }
 
