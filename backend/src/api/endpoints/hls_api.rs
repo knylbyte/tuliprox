@@ -137,9 +137,9 @@ pub(in crate::api) async fn handle_hls_stream_request(
 
                 let playlist = format!(r"#EXTM3U
 #EXT-X-VERSION:3
-#EXT-X-TARGETDURATION:30
+#EXT-X-TARGETDURATION:10
 #EXT-X-MEDIA-SEQUENCE:0
-#EXTINF:30.0,
+#EXTINF:10.0,
 {url}
 #EXT-X-ENDLIST
 ");
