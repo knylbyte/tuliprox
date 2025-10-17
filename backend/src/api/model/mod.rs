@@ -10,8 +10,10 @@ mod active_provider_manager;
 mod stream;
 mod provider_config;
 mod event_manager;
+mod playlist_mem_cache;
 
 pub use self::app_state::*;
+pub use self::playlist_mem_cache::*;
 pub(in crate::api) use self::request::*;
 pub(in crate::api) use self::download::*;
 pub(in crate::api) use self::xtream::*;

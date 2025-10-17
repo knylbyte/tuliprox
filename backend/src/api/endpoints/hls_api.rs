@@ -137,10 +137,11 @@ pub(in crate::api) async fn handle_hls_stream_request(
 
                 let playlist = format!(r"#EXTM3U
 #EXT-X-VERSION:3
-#EXT-X-TARGETDURATION:3600
+#EXT-X-TARGETDURATION:30
 #EXT-X-MEDIA-SEQUENCE:0
-#EXTINF:3600.0,
+#EXTINF:30.0,
 {url}
+#EXT-X-ENDLIST
 ");
                 hls_response(playlist.to_string()).into_response()
             } else {

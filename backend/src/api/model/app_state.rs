@@ -1,26 +1,25 @@
 use std::collections::HashMap;
-use crate::api::model::ActiveProviderManager;
+use crate::api::model::{ActiveProviderManager, PlaylistStorage, PlaylistStorageState};
 use crate::api::model::ActiveUserManager;
 use crate::api::model::DownloadQueue;
 use crate::api::scheduler::exec_scheduler;
-use crate::model::{AppConfig, Config, HdHomeRunConfig, HdHomeRunDeviceConfig, ProcessTargets, ScheduleConfig, SourcesConfig};
+use crate::model::{AppConfig, Config, ConfigTarget, HdHomeRunConfig, HdHomeRunDeviceConfig, ProcessTargets, ScheduleConfig, SourcesConfig};
 use crate::tools::lru_cache::LRUResourceCache;
 use crate::utils::request::create_client;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use log::error;
 use reqwest::Client;
 use shared::error::TuliproxError;
-use shared::model::{M3uPlaylistItem, UserConnectionPermission, XtreamPlaylistItem};
+use shared::model::{UserConnectionPermission};
 use shared::utils::small_vecs_equal_unordered;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex};
 use tokio_util::sync::CancellationToken;
 use crate::api::config_watch::exec_config_watch;
 use crate::api::model::EventManager;
 use crate::api::model::SharedStreamManager;
-use crate::repository::bplustree::BPlusTree;
-use crate::repository::target_id_mapping::VirtualIdRecord;
+use crate::repository::playlist_repository::{load_target_into_memory_cache};
 
 macro_rules! cancel_service {
     ($field: ident, $changes:expr, $cancel_tokens:expr) => {
@@ -33,10 +32,33 @@ macro_rules! cancel_service {
     };
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum TargetStatus {
+    Old,
+    New,
+    Keep
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum TargetCacheState {
+    UnchangedFalse,
+    UnchangedTrue,
+    ChangedToTrue,
+    ChangedToFalse
+}
+
+struct TargetChanges {
+    name: String,
+    status: TargetStatus,
+    cache_status: TargetCacheState,
+    target: Arc<ConfigTarget>
+}
+
 pub(in crate::api) struct UpdateChanges {
     scheduler: bool,
     hdhomerun: bool,
     file_watch: bool,
+    targets: Option<HashMap<String, TargetChanges>>,
 }
 
 impl UpdateChanges {
@@ -44,6 +66,32 @@ impl UpdateChanges {
         self.scheduler || self.hdhomerun || self.file_watch
     }
 }
+
+async fn update_target_caches(app_state: &Arc<AppState>, target_changes: Option<&HashMap<String, TargetChanges>>) {
+    if let Some(target_changes) = target_changes {
+        for target in target_changes.values() {
+            match target.status {
+                TargetStatus::Old => {
+                    app_state.playlists.data.write().await.remove(&target.name);
+                }
+                TargetStatus::New // Normally, a new target shouldn't require any updates, but attempting to load it does no harm.
+                | TargetStatus::Keep => {
+                    match target.cache_status {
+                        TargetCacheState::UnchangedFalse
+                        | TargetCacheState::UnchangedTrue => {} // skip this
+                        TargetCacheState::ChangedToTrue => {
+                            load_target_into_memory_cache(app_state, &target.target).await;
+                        }
+                        TargetCacheState::ChangedToFalse => {
+                            app_state.playlists.data.write().await.remove(&target.name);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 pub async fn update_app_state_config(app_state: &Arc<AppState>, config: Config) -> Result<(), TuliproxError> {
     let updates = app_state.set_config(config).await?;
@@ -55,6 +103,7 @@ pub async fn update_app_state_sources(app_state: &Arc<AppState>, sources: Source
     let targets = sources.validate_targets(Some(&app_state.forced_targets.load().target_names))?;
     app_state.forced_targets.store(Arc::new(targets));
     let updates = app_state.set_sources(sources).await?;
+    update_target_caches(app_state, updates.targets.as_ref()).await;
     restart_services(app_state, &updates);
     Ok(())
 }
@@ -162,73 +211,6 @@ macro_rules! change_detect {
     };
 }
 
-pub struct PlaylistXtreamStorage {
-  pub id_mapping: BPlusTree<u32, VirtualIdRecord>,
-  pub live: BPlusTree<u32, XtreamPlaylistItem>,
-  pub vod: BPlusTree<u32, XtreamPlaylistItem>,
-  pub series: BPlusTree<u32, XtreamPlaylistItem>,
-}
-
-pub type PlaylistM3uStorage = BPlusTree<u32, M3uPlaylistItem>;
-
-pub enum PlaylistStorage {
-    M3uPlaylist(Box<PlaylistM3uStorage>),
-    XtreamPlaylist(Box<PlaylistXtreamStorage>),
-}
-
-pub struct TargetPlaylistStorage {
-    pub xtream: Option<PlaylistXtreamStorage>,
-    pub m3u: Option<PlaylistM3uStorage>,
-}
-
-pub type TargetPlaylistStorageMap = HashMap<String, TargetPlaylistStorage>;
-
-pub struct PlaylistStorageState {
-  pub data: RwLock<TargetPlaylistStorageMap>,
-}
-
-impl PlaylistStorageState {
-
-    pub(crate) fn new() -> Self {
-        Self {
-            data: RwLock::new(HashMap::new()),
-        }
-    }
-
-    pub async fn cache_playlist(&self, target_name: &str, playlist: PlaylistStorage) {
-        match playlist {
-            PlaylistStorage::M3uPlaylist(m3u_playlist) => {
-                match self.data.write().await.entry(target_name.to_string()) {
-                    std::collections::hash_map::Entry::Occupied(mut entry) => {
-                        let storage = entry.get_mut();
-                        storage.m3u = Some(*m3u_playlist);
-                    }
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(TargetPlaylistStorage {
-                            xtream: None,
-                            m3u: Some(*m3u_playlist),
-                        });
-                    }
-                }
-            }
-            PlaylistStorage::XtreamPlaylist(xtream_playlist) => {
-                match self.data.write().await.entry(target_name.to_string()) {
-                    std::collections::hash_map::Entry::Occupied(mut entry) => {
-                        let storage = entry.get_mut();
-                        storage.xtream = Some(*xtream_playlist);
-                    }
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(TargetPlaylistStorage {
-                            xtream: Some(*xtream_playlist),
-                            m3u: None,
-                        });
-                    }
-                }
-            }
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct AppState {
     pub forced_targets: Arc<ArcSwap<ProcessTargets>>, // as program arguments
@@ -285,6 +267,7 @@ impl AppState {
         let changes = self.detect_changes_for_sources(&sources);
         self.app_config.set_sources(sources)?;
         self.active_provider.update_config(&self.app_config).await;
+
         Ok(changes)
     }
 
@@ -306,19 +289,57 @@ impl AppState {
             scheduler: changed_schedules,
             hdhomerun: changed_hdhomerun,
             file_watch: changed_file_watch,
+            targets: None,
         }
     }
 
     fn detect_changes_for_sources(&self, sources: &SourcesConfig) -> UpdateChanges {
-        let file_watch_changed = {
+        let (file_watch_changed, target_changes) = {
             let old_sources = self.app_config.sources.load();
-            old_sources.get_input_files() !=  sources.get_input_files()
+            let file_watch_changed = old_sources.get_input_files() !=  sources.get_input_files();
+
+            let mut target_changes = HashMap::new();
+            for source in &old_sources.sources {
+                for target in &source.targets {
+                    target_changes.insert(target.name.clone(), TargetChanges {
+                        name: target.name.to_string(),
+                        status: TargetStatus::Old,
+                        cache_status: if target.use_memory_cache {TargetCacheState::UnchangedTrue} else {TargetCacheState::UnchangedFalse},
+                        target: Arc::clone(target)
+                    });
+                }
+            }
+            for source in &sources.sources {
+                for target in &source.targets {
+                    match target_changes.get_mut(&target.name) {
+                        None => {
+                            target_changes.insert(target.name.clone(), TargetChanges {
+                                name: target.name.to_string(),
+                                status: TargetStatus::New,
+                                cache_status: if target.use_memory_cache {TargetCacheState::ChangedToTrue} else {TargetCacheState::ChangedToFalse},
+                                target: Arc::clone(target)
+                            });
+                        }
+                        Some(changes) => {
+                            changes.status = TargetStatus::Keep;
+                            changes.cache_status = match (changes.cache_status, target.use_memory_cache) {
+                                (TargetCacheState::UnchangedFalse, true) => TargetCacheState::ChangedToTrue,
+                                (TargetCacheState::UnchangedTrue, false) => TargetCacheState::ChangedToFalse,
+                                (x, _) => x,
+                            };
+                        }
+                    }
+                }
+            }
+
+            (file_watch_changed, target_changes)
         };
 
         UpdateChanges {
             scheduler: false,
             hdhomerun: false,
             file_watch: file_watch_changed,
+            targets: Some(target_changes),
         }
     }
 

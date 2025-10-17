@@ -1,5 +1,5 @@
 use crate::api::api_utils::{HeaderFilter};
-use crate::api::model::CustomVideoStream;
+use crate::api::model::{CustomVideoStream, ThrottledStream};
 use crate::model::{AppConfig};
 use shared::model::PlaylistItemType;
 use log::{trace};
@@ -71,7 +71,7 @@ fn create_video_stream(video_buffer: Option<&TransportStreamBuffer>, headers: &[
             .filter(|(key, _)| !(key.eq("content-type") || key.eq("content-length") || key.contains("range")))
             .map(|(key, value)| (key.clone(), value.clone())).collect();
         response_headers.push(("content-type".to_string(), "video/mp2t".to_string()));
-        (Some(Box::pin(CustomVideoStream::new(video.clone()))), Some((response_headers, StatusCode::OK, None)))
+        (Some(Box::pin(ThrottledStream::new(CustomVideoStream::new(video.clone()), 8000))), Some((response_headers, StatusCode::OK, None)))
     } else {
         (None, None)
     }

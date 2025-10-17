@@ -1462,7 +1462,6 @@ Now you can do `nginx`  configuration like
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-NginX-Proxy true;
       proxy_pass http://192.169.1.9:8901/;
-      proxy_ssl_session_reuse off;
       proxy_set_header Host $http_host;
       proxy_redirect off;
       proxy_buffering off;
