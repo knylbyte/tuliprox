@@ -761,6 +761,8 @@ Has the following top level entries:
 - `rename` _optional_
 - `mapping` _optional_
 - `watch` _optional_
+- `use_memory_cache`, default is false. If set to `true` playlist is cached into memory to reduce disc access.
+Placing playlist into memory causes more RAM usage but reduces disk access.
 
 ### 2.2.2.1 `sort`
 Has three top level attributes

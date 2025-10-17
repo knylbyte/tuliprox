@@ -27,6 +27,7 @@ use std::fs;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
@@ -345,7 +346,7 @@ macro_rules! try_cluster {
 
 async fn xtream_get_item_for_stream_id_from_memory(
     virtual_id: u32,
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     target: &ConfigTarget,
     xtream_cluster: Option<XtreamCluster>,
 ) -> Result<Option<(XtreamPlaylistItem, VirtualIdRecord)>, Error> {
@@ -374,7 +375,6 @@ async fn xtream_get_item_for_stream_id_from_memory(
                         }
                     }
                     PlaylistItemType::Catchup => {
-
                         let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
                         let item = match cluster {
                             XtreamCluster::Live => xtream_storage.live.query(&mapping.parent_virtual_id),
@@ -411,7 +411,7 @@ async fn xtream_get_item_for_stream_id_from_memory(
 
 pub async fn xtream_get_item_for_stream_id(
     virtual_id: u32,
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     target: &ConfigTarget,
     xtream_cluster: Option<XtreamCluster>,
 ) -> Result<(XtreamPlaylistItem, VirtualIdRecord), Error> {
@@ -678,7 +678,7 @@ pub async fn write_and_get_xtream_vod_info<P>(
 }
 
 async fn rewrite_xtream_series_info<P>(
-    app_config: &AppConfig,
+    app_state: &Arc<AppState>,
     target: &ConfigTarget,
     xtream_output: &XtreamTargetOutput,
     pli: &P,
@@ -687,6 +687,7 @@ async fn rewrite_xtream_series_info<P>(
 ) -> Result<String, Error> where
     P: PlaylistEntry,
 {
+    let app_config = &app_state.app_config;
     let config = app_config.config.load();
     let target_path = get_target_storage_path(&config, target.name.as_str()).ok_or_else(|| str_to_io_error(&format!("Could not find path for target {}", target.name)))?;
 
@@ -726,6 +727,9 @@ async fn rewrite_xtream_series_info<P>(
         let (mut target_id_mapping, file_lock) = get_target_id_mapping(app_config, &target_path).await;
         let options = XtreamMappingOptions::from_target_options(target, xtream_output, app_config);
 
+        let use_memory_cache = target.use_memory_cache;
+        let mut id_mapping_records = vec![];
+
         let provider_url = pli.get_provider_url();
         for episode_list in episodes.values_mut().filter_map(Value::as_array_mut) {
             for episode in episode_list.iter_mut().filter_map(Value::as_object_mut) {
@@ -738,6 +742,12 @@ async fn rewrite_xtream_series_info<P>(
                         PlaylistItemType::Series,
                         virtual_id,
                     );
+
+                    if use_memory_cache {
+                        let record = VirtualIdRecord::new(episode_provider_id, episode_virtual_id, PlaylistItemType::Series, virtual_id, uuid);
+                        id_mapping_records.push(record);
+                    }
+
                     episode.insert(crate::model::XC_TAG_ID.to_string(), Value::String(episode_virtual_id.to_string()));
                     if resource_url.is_some() {
                         // we need to update the info data.
@@ -753,11 +763,15 @@ async fn rewrite_xtream_series_info<P>(
             }
         }
 
-        if let Err(err) = target_id_mapping.persist() {
-            error!("{err}");
-        }
+        let result = target_id_mapping.persist();
         drop(file_lock);
         drop(target_id_mapping);
+
+        if let Err(err) = result {
+            error!("{err}");
+        } else if use_memory_cache && !id_mapping_records.is_empty() {
+            app_state.playlists.update_target_id_mapping(target, id_mapping_records).await;
+        }
     }
     let result = serde_json::to_string(&doc).map_err(|_| str_to_io_error("Failed to serialize updated series info"))?;
 
@@ -765,7 +779,7 @@ async fn rewrite_xtream_series_info<P>(
 }
 
 pub async fn rewrite_xtream_series_info_content<P>(
-    config: &AppConfig,
+    app_state: &Arc<AppState>,
     target: &ConfigTarget,
     xtream_output: &XtreamTargetOutput,
     pli_series_info: &P,
@@ -775,11 +789,11 @@ pub async fn rewrite_xtream_series_info_content<P>(
     P: PlaylistEntry,
 {
     let mut doc = serde_json::from_str::<Map<String, Value>>(content).map_err(|_| str_to_io_error("Failed to parse JSON content"))?;
-    rewrite_xtream_series_info(config, target, xtream_output, pli_series_info, user, &mut doc).await
+    rewrite_xtream_series_info(app_state, target, xtream_output, pli_series_info, user, &mut doc).await
 }
 
 pub async fn write_and_get_xtream_series_info<P>(
-    config: &AppConfig,
+    app_state: &Arc<AppState>,
     target: &ConfigTarget,
     xtream_output: &XtreamTargetOutput,
     pli_series_info: &P,
@@ -790,8 +804,9 @@ pub async fn write_and_get_xtream_series_info<P>(
 {
     let mut doc = serde_json::from_str::<Map<String, Value>>(content).map_err(|_| str_to_io_error("Failed to parse JSON content"))?;
     let virtual_id = pli_series_info.get_virtual_id();
-    xtream_write_series_info(config, target.name.as_str(), virtual_id, content).ok();
-    rewrite_xtream_series_info(config, target, xtream_output, pli_series_info, user, &mut doc).await
+    let app_config = &app_state.app_config;
+    xtream_write_series_info(app_config, target.name.as_str(), virtual_id, content).ok();
+    rewrite_xtream_series_info(app_state, target, xtream_output, pli_series_info, user, &mut doc).await
 }
 
 pub fn xtream_get_input_info(
