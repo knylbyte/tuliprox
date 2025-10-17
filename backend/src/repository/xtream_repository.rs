@@ -766,7 +766,7 @@ async fn rewrite_xtream_series_info<P>(
 
         if let Err(err) = target_id_mapping.persist() {
             error!("{err}");
-        } else if use_memory_cache {
+        } else if use_memory_cache && !id_mapping_records.is_empty() {
                 app_state.playlists.update_target_id_mapping(target, id_mapping_records).await;
         }
         drop(file_lock);

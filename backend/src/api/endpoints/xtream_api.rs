@@ -49,6 +49,7 @@ use std::fmt::{Display, Formatter};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
+use crate::repository::target_id_mapping::VirtualIdRecord;
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ApiStreamContext {
@@ -1248,6 +1249,7 @@ async fn xtream_get_catchup_response(
         try_option_bad_request!(get_target_storage_path(config, target.name.as_str()));
     let (mut target_id_mapping, file_lock) =
         get_target_id_mapping(&app_state.app_config, &target_path).await;
+    let mut in_memory_updates = Vec::new();
     for epg_list_item in epg_listings.iter_mut().filter_map(Value::as_object_mut) {
         // TODO epg_id
         if let Some(catchup_provider_id) = epg_list_item
@@ -1267,6 +1269,19 @@ async fn xtream_get_catchup_response(
                 PlaylistItemType::Catchup,
                 pli.provider_id,
             );
+
+            if target.use_memory_cache {
+                in_memory_updates.push(
+                    VirtualIdRecord::new(
+                        catchup_provider_id,
+                        virtual_id,
+                        PlaylistItemType::Catchup,
+                        pli.provider_id,
+                        uuid,
+                    ),
+                );
+            }
+
             epg_list_item.insert(
                 crate::model::XC_TAG_ID.to_string(),
                 Value::String(virtual_id.to_string()),
@@ -1278,6 +1293,11 @@ async fn xtream_get_catchup_response(
         return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
     drop(file_lock);
+
+    if target.use_memory_cache && !in_memory_updates.is_empty() {
+        app_state.playlists.update_target_id_mapping(target, in_memory_updates).await;
+    }
+
     serde_json::to_string(&doc).map_or_else(
         |_| axum::http::StatusCode::BAD_REQUEST.into_response(),
         |result| {
