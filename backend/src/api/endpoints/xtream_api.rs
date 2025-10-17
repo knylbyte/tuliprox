@@ -267,12 +267,11 @@ async fn xtream_player_api_stream(
             stream_req.context
         )
     );
-    let cluster = pli.xtream_cluster;
 
-    let item_type = if stream_req.context == ApiStreamContext::Timeshift {
-        PlaylistItemType::Catchup
+    let (cluster, item_type) = if stream_req.context == ApiStreamContext::Timeshift {
+        (XtreamCluster::Video, PlaylistItemType::Catchup)
     } else {
-        pli.item_type
+        (pli.xtream_cluster, pli.item_type)
     };
 
     let session_key = format!("{fingerprint}{virtual_id}");
