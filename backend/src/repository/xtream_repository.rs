@@ -375,7 +375,6 @@ async fn xtream_get_item_for_stream_id_from_memory(
                         }
                     }
                     PlaylistItemType::Catchup => {
-
                         let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
                         let item = match cluster {
                             XtreamCluster::Live => xtream_storage.live.query(&mapping.parent_virtual_id),
@@ -764,13 +763,15 @@ async fn rewrite_xtream_series_info<P>(
             }
         }
 
-        if let Err(err) = target_id_mapping.persist() {
-            error!("{err}");
-        } else if use_memory_cache && !id_mapping_records.is_empty() {
-                app_state.playlists.update_target_id_mapping(target, id_mapping_records).await;
-        }
+        let result = target_id_mapping.persist();
         drop(file_lock);
         drop(target_id_mapping);
+
+        if let Err(err) = result {
+            error!("{err}");
+        } else if use_memory_cache && !id_mapping_records.is_empty() {
+            app_state.playlists.update_target_id_mapping(target, id_mapping_records).await;
+        }
     }
     let result = serde_json::to_string(&doc).map_err(|_| str_to_io_error("Failed to serialize updated series info"))?;
 
