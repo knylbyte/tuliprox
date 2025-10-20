@@ -32,7 +32,6 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}/tuliprox-build-tools
-  CARGO_HOME: /usr/local/cargo
 
 jobs:
   build:
@@ -67,45 +66,6 @@ jobs:
         with:
           platforms: ${{ matrix.platform }}
 
-      # see also: https://depot.dev/docs/container-builds/how-to-guides/optimal-dockerfiles/rust-dockerfile
-      - name: Step 4.5 - Cache cargo and sccache directories for Docker build
-        uses: actions/cache@v4
-        id: cache
-        with:
-          path: |
-            usr-local-cargo-registry
-            usr-local-cargo-git
-            var-lib-apt
-            var-cache-apt
-          key: ${{ runner.os }}-tuliprox-build-tools-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-tuliprox-build-tools-${{ matrix.arch_tag }}-
-
-      - name: Step 2.6 - Restore Docker cache mounts
-        uses: reproducible-containers/buildkit-cache-dance@v3
-        with:
-          builder: ${{ steps.setup-buildx.outputs.name }}
-          cache-map: |
-            {
-              "usr-local-cargo-registry": {
-                "target": "${{ env.CARGO_HOME }}/registry",
-                "id": "cargo-registry-${{ matrix.arch_tag }}"
-              },
-              "usr-local-cargo-git": {
-                "target": "${{ env.CARGO_HOME }}/git",
-                "id": "cargo-git-${{ matrix.arch_tag }}"
-              },
-              "var-lib-apt": {
-                "target": "/var/lib/apt",
-                "id": "var-lib-apt-${{ matrix.arch_tag }}"
-              },
-              "var-cache-apt": {
-                "target": "/var/cache/apt",
-                "id": "var-cache-apt-${{ matrix.arch_tag }}"
-              }
-            }
-          # skip-extraction: ${{ steps.cache.outputs.cache-hit }}
-
       - name: Prepare build args
         id: build-args
         shell: bash
@@ -114,14 +74,14 @@ jobs:
           BINDGEN_INPUT: ${{ github.event.inputs.bindgen_ver }}
           CHEF_INPUT: ${{ github.event.inputs.cargo_chef_ver }}
           ALPINE_INPUT: ${{ github.event.inputs.alpine_ver }}
+          SCCACHE_FEATURES: "dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl"
         run: |
           set -euo pipefail
-          SCCACHE_FEATURES="dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl"
           {
             echo "value<<EOF"
             echo "BUILDKIT_INLINE_CACHE=1"
             echo "BUILDPLATFORM_TAG=${{ matrix.platform }}"
-            echo "CARGO_HOME=${{ env.CARGO_HOME }}"
+            
             if [ -n "${TRUNK_INPUT}" ]; then
               echo "TRUNK_VER=${TRUNK_INPUT}"
             fi
@@ -134,9 +94,11 @@ jobs:
             if [ -n "${ALPINE_INPUT}" ]; then
               echo "ALPINE_VER=${ALPINE_INPUT}"
             fi
+            if [ -n "${SCCACHE_FEATURES}" ]; then
+              echo "SCCACHE_FEATURES=${SCCACHE_FEATURES}"
+            fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-          echo "features=${SCCACHE_FEATURES}" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -257,7 +219,7 @@ jobs:
             echo "- wasm-bindgen: **${{ steps.img.outputs.bindgen_version }}**"
             echo "- cargo-chef: **${{ steps.img.outputs.chef_version }}**"
             echo "- sccache: **${{ steps.img.outputs.sccache_version }}**"
-            echo "- sccache features: **${{ steps.build-args.outputs.features }}**"
+            echo "- sccache features: **${{ steps.build-args.outputs.sccache_features }}**"
             echo ""
             if [[ "${{ steps.img.outputs.resources_ok }}" == "true" && "${{ steps.img.outputs.published }}" == "true" ]]; then
               echo "✅ All resource files present."
