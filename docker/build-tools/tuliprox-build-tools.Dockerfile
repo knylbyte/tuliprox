@@ -19,6 +19,7 @@ ARG RUST_DISTRO=1.90.0-trixie \
     SCCACHE_VER=0.11.0 \
     ALPINE_VER=3.22.2 \
     CARGO_HOME=/usr/local/cargo \
+    SCCACHE_DIR=/var/cache/sccache \
     BUILDPLATFORM_TAG=latest
 ############################################
 # Build stage to produce ffmpeg resources
@@ -61,7 +62,8 @@ ARG BUILDPLATFORM_TAG \
     CARGO_CHEF_VER \
     CARGO_MACHETE_VER \
     SCCACHE_VER \
-    CARGO_HOME
+    CARGO_HOME \
+    SCCACHE_DIR
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
     DEBIAN_FRONTEND=noninteractive \
@@ -165,7 +167,9 @@ ARG BUILDPLATFORM_TAG \
     BINDGEN_VER \
     CARGO_CHEF_VER \
     CARGO_MACHETE_VER \
-    SCCACHE_VER
+    SCCACHE_VER \
+    CARGO_HOME \
+    SCCACHE_DIR
 
 LABEL io.tuliprox.rust.version="${RUST_DISTRO%%-*}" \
       io.tuliprox.trunk.version="${TRUNK_VER}" \
