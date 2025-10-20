@@ -439,41 +439,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
-      # see also: https://depot.dev/docs/container-builds/how-to-guides/optimal-dockerfiles/rust-dockerfile
-      - name: Step 4.5 - Cache cargo and sccache directories for Docker build
-        uses: actions/cache@v4
-        id: cache
-        with:
-          path: |
-            usr-local-cargo-registry
-            usr-local-cargo-git
-            var-cache-sccache
-          key: ${{ runner.os }}-cargo-docker-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-docker-${{ matrix.arch_tag }}-
-
-      - name: Step 2.6 - Restore Docker cache mounts
-        uses: reproducible-containers/buildkit-cache-dance@v3
-        with:
-          builder: ${{ steps.setup-buildx.outputs.name }}
-          cache-map: |
-            {
-              "usr-local-cargo-registry": {
-                "target": "${{ env.CARGO_HOME}}/registry",
-                "id": "cargo-registry-${{ matrix.arch_tag }}"
-              },
-              "usr-local-cargo-git": {
-                "target": "${{ env.CARGO_HOME}}/git",
-                "id": "cargo-git-${{ matrix.arch_tag }}"
-              },
-              "var-cache-sccache": {
-                "target": "${{ env.SCCACHE_DIR}}",
-                "id": "sccache-${{ matrix.arch_tag }}"
-              }
-            }
-          save-always: true
-          # skip-extraction: ${{ steps.cache.outputs.cache-hit }}
-
       # --- Read version from CHANGELOG.md ---
       - name: Step 4.6 - Read version
         id: version
@@ -854,14 +819,65 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Ensure cache context dir
+        run: mkdir -p .ci-cache/${{ matrix.arch_tag }}
+
+      # see also: https://depot.dev/docs/container-builds/how-to-guides/optimal-dockerfiles/rust-dockerfile
+      - name: Step 4.9 - Cache cargo and sccache directories for Docker build
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: |
+            .ci-cache/${{ matrix.arch_tag }}
+          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
+
+      - name: Step 4.10 - Build and export cache TARs (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          platforms: ${{ matrix.platform }}
+          push: false
+          build-contexts: |
+            cache=./.ci-cache/${{ matrix.arch_tag }}
+          outputs: |
+            type=local,dest=/tmp/.ci-cache/${{ matrix.arch_tag }}
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+            GHCR_NS=${{ env.GHCR_NS }}
+            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
+            CARGO_HOME=${{ env.CARGO_HOME }}
+            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
+          target: cache-export
+        # cache-from/to defined below to avoid blank lines when base cache missing
+          cache-from: ${{ steps.primary_meta.outputs.cache_from }}
+
+      - name: Step 4.11 - Move cache TARs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mv /tmp/.ci-cache/${{ matrix.arch_tag }}/out/*.tar .ci-cache/${{ matrix.arch_tag }} || true
+      
+      - name: Step 4.12 - Save cache TARs
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ci-cache/${{ matrix.arch_tag }}
+          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
+
       # --- Build primary variant ---
-      - name: Step 4.10 - Build primary image (${{ matrix.platform }})
+      - name: Step 4.13 - Build primary image (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ env.DOCKERFILE }}
           platforms: ${{ matrix.platform }}
           push: true
+          build-contexts: |
+            cache=./.ci-cache/${{ matrix.arch_tag }}
           build-args: |
             BUILDKIT_INLINE_CACHE=1
             GHCR_NS=${{ env.GHCR_NS }}
