@@ -79,14 +79,12 @@ RUN set -eux; \
 
 FROM chef AS cache-import
 
-# ---- Cache import into mounts (if TARs are available) ----
-# We integrate an additional build context source “cache” (see workflow).
-ARG CACHE_CTX=cache
+ARG BUILDPLATFORM_TAG
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
-    --mount=type=bind,from=${CACHE_CTX},source=.,target=/cache,readonly \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=bind,from=cache,source=.,target=/cache,readonly \
     SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
     if [[ -s /cache/cargo-registry.tar ]]; then \
       tar -C "${CARGO_HOME}" -xf /cache/cargo-registry.tar; \
@@ -95,9 +93,8 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
       tar -C "${CARGO_HOME}" -xf /cache/cargo-git.tar; \
     fi; \
     if [[ -s /cache/sccache.tar ]]; then \
-      tar -C "$(SCCACHE_HOME)" -xf /cache/sccache.tar; \
+      tar -C "${SCCACHE_HOME}" -xf /cache/sccache.tar; \
     fi
-
 
 # =============================================================================
 # Stage 2: backend-planner (cargo-chef prepare)
