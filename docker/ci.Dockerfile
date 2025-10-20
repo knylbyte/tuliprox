@@ -61,7 +61,7 @@ RUN mkdir -p \
 # - amd64  -> x86_64-unknown-linux-musl
 # - arm64  -> aarch64-unknown-linux-musl
 # - arm/v7 -> armv7-unknown-linux-musleabihf
-RUN set -eux; \
+RUN \
   if [ -z "${RUST_TARGET:-}" ]; then \
     case "$TARGETPLATFORM" in \
       "linux/amd64")  echo x86_64-unknown-linux-musl        > /rust-target ;; \
@@ -115,13 +115,13 @@ WORKDIR /src
 # COPY backend/Cargo.toml ./backend/Cargo.toml
 # COPY shared/Cargo.toml ./shared/Cargo.toml
 
-# RUN set -eux; \
+# RUN \
 #     mkdir -p backend/src shared/src; \
 #     printf 'fn main() {}\n' > backend/src/main.rs; \
 #     : > shared/src/lib.rs
 
 # # Produce the dependency recipe using the existing lockfile.
-# RUN set -eux; \
+# RUN \
 #     cargo chef prepare --recipe-path backend-recipe.json
 
 COPY ./Cargo.toml .
@@ -129,7 +129,7 @@ COPY ./Cargo.lock .
 COPY ./backend ./backend
 COPY ./shared ./shared
 
-RUN set -eux; \
+RUN \
     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml; \
     cargo_machete_exit_code=0; \
     cargo machete --with-metadata || cargo_machete_exit_code=$?; \
@@ -161,7 +161,7 @@ WORKDIR /src
 # COPY backend/Cargo.toml ./backend/Cargo.toml
 # COPY shared/Cargo.toml ./shared/Cargo.toml
 
-# RUN set -eux; \
+# RUN \
 #     mkdir -p backend/src shared/src; \
 #     printf 'fn main() {}\n' > backend/src/main.rs; \
 #     : > shared/src/lib.rs
@@ -194,6 +194,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 
+RUN echo ok > /.built-backend
 # =============================================================================
 # Stage 4: frontend-planner (cargo-chef prepare for WASM)
 #  - Minimal synthetic workspace (frontend + shared only) to avoid pulling in backend
@@ -211,7 +212,7 @@ WORKDIR /src
 # COPY frontend/Cargo.toml ./frontend/Cargo.toml
 # COPY shared/Cargo.toml   ./shared/Cargo.toml
 
-# RUN set -eux; \
+# RUN \
 #     mkdir -p frontend/src shared/src; \
 #     : > frontend/src/lib.rs; \
 #     : > shared/src/lib.rs
@@ -221,7 +222,7 @@ COPY ./Cargo.lock .
 COPY ./frontend ./frontend
 COPY ./shared ./shared
 
-RUN set -eux; \
+RUN \
     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml; \
     cargo_machete_exit_code=0; \
     cargo machete --with-metadata || cargo_machete_exit_code=$?; \
@@ -251,7 +252,7 @@ WORKDIR /src
 # COPY frontend/Cargo.toml ./frontend/Cargo.toml
 # COPY shared/Cargo.toml   ./shared/Cargo.toml
 
-# RUN set -eux; \
+# RUN \
 #     mkdir -p frontend/src shared/src; \
 #     : > frontend/src/lib.rs; \
 #     : > shared/src/lib.rs
@@ -294,10 +295,15 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     mkdir -p ./frontend/dist; \
     trunk build --release --locked --config ./frontend/Trunk.toml --dist ./frontend/dist
-
 # dist -> /src/frontend/dist
 
+RUN echo ok > /.built-frontend
+
 FROM chef AS cache-pack
+
+# These minimal markers prevent build stages from being skipped for cache export.
+COPY --from=backend-builder /.built-backend /deps/backend
+COPY --from=frontend-builder /.built-frontend /deps/frontend
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
@@ -317,7 +323,7 @@ COPY --from=cache-pack /out/ /out/
 # Stage 6: tzdata/zoneinfo supplier (shared)
 # -----------------------------------------------------------------
 FROM alpine:${ALPINE_VER} AS tzdata
-RUN set -eux; \
+RUN \
     apk add --no-cache tzdata ca-certificates; \
     update-ca-certificates; \
     test -d /usr/share/zoneinfo
@@ -374,13 +380,11 @@ ENV TZ=${DEFAULT_TZ}
 
 # Dev tooling: bash, curl, tshark
 # (tshark may require --cap-add NET_ADMIN --cap-add NET_RAW and often --network host)
-RUN set -eux; \
-    apk add --no-cache ca-certificates bash curl tshark; \
+RUN apk add --no-cache ca-certificates bash curl tshark; \
     update-ca-certificates
 
 # Layout under /opt (root-owned)
-RUN set -eux; \
-    mkdir -p \
+RUN mkdir -p \
       /opt/tuliprox/bin \
       /opt/tuliprox/data \
       /opt/tuliprox/web \
