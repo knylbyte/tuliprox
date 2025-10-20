@@ -74,6 +74,7 @@ impl XtreamTargetOutputDto {
             || self.resolve_series
             || self.resolve_vod
             || self.trakt.is_some()
+            || self.filter.is_some()
     }
 }
 
@@ -97,6 +98,7 @@ impl M3uTargetOutputDto {
         self.filename.is_some()
             || self.include_type_in_url
             || self.mask_redirect_url
+            || self.filter.is_some()
     }
 }
 

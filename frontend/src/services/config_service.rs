@@ -72,9 +72,12 @@ impl ConfigService {
                         target.t_filter = get_filter(target.filter.as_str(), templates.as_ref()).ok();
                         for output in target.output.iter_mut() {
                             match output {
-                                TargetOutputDto::Xtream(o) => o.t_filter = o.filter.as_ref().and_then(|flt| get_filter(flt, templates.as_ref()).ok()),
-                                TargetOutputDto::M3u(o) => o.t_filter = o.filter.as_ref().and_then(|flt| get_filter(flt, templates.as_ref()).ok()),
-                                TargetOutputDto::Strm(o) => o.t_filter = o.filter.as_ref().and_then(|flt| get_filter(flt, templates.as_ref()).ok()),
+                                TargetOutputDto::Xtream(o) =>
+                                    o.t_filter = o.filter.as_ref().and_then(|flt| get_filter(flt, templates.as_ref()).map_err(|e| error!("Failed to parse Xtream output filter: {}", e)).ok()),
+                                TargetOutputDto::M3u(o) =>
+                                    o.t_filter = o.filter.as_ref().and_then(|flt| get_filter(flt, templates.as_ref()).map_err(|e| error!("Failed to parse M3U output filter: {}", e)).ok()),
+                                TargetOutputDto::Strm(o) =>
+                                    o.t_filter = o.filter.as_ref().and_then(|flt| get_filter(flt, templates.as_ref()).map_err(|e| error!("Failed to parse Strm output filter: {}", e)).ok()),
                                 TargetOutputDto::HdHomeRun(_) => {}
                             }
                         }
