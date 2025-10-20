@@ -33,16 +33,9 @@ impl BufferedStream {
         while client_close_signal.is_active() {
             match stream.next().await {
                 Some(Ok(chunk)) => {
-                  match tx.reserve().await {
-                    Ok(permit) => {
-                        permit.send(Ok(chunk));
-                        // tokio::task::yield_now().await;
-                    },
-                    Err(_err) => {
-                        // Receiver dropped, notify and exit
-                        client_close_signal.notify();
-                        break;
-                    }
+                  if tx.send(Ok(chunk)).await.is_err() {
+                      client_close_signal.notify();
+                      break;
                   }
                 }
                 Some(Err(err)) => {

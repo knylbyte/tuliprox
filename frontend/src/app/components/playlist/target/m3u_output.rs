@@ -3,8 +3,9 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::M3uTargetOutputDto;
 use crate::app::components::chip::{convert_bool_to_chip_style};
-use crate::app::components::Tag;
+use crate::app::components::{FilterView, RevealContent, Tag};
 use crate::app::components::tag_list::TagList;
+use crate::html_if;
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct M3uOutputProps {
@@ -28,6 +29,11 @@ pub fn M3uOutput(props: &M3uOutputProps) -> Html {
 
     html! {
       <div class="tp__m3u-output tp__target-common">
+        { html_if!(props.output.t_filter.is_some(), {
+        <div class="tp__target-common__section">
+            <RevealContent preview={Some(html!{<FilterView inline={true} filter={props.output.t_filter.clone()} />})}><FilterView pretty={true} filter={props.output.t_filter.clone()} /></RevealContent>
+        </div>
+        }) }
         <div class="tp__target-common__section">
             <span class="tp__target-common__label">{translator.t("LABEL.FILENAME")}</span>
            { props.output.filename.as_ref().map(|f| html! {<span>{ f }</span>}) }

@@ -39,6 +39,7 @@ pub struct XtreamTargetOutput {
     pub resolve_vod: bool,
     pub resolve_vod_delay: u16,
     pub trakt: Option<TraktConfig>,
+    pub filter: Option<Filter>,
 }
 
 macros::from_impl!(XtreamTargetOutput);
@@ -53,6 +54,7 @@ impl From<&XtreamTargetOutputDto> for XtreamTargetOutput {
             resolve_vod: dto.resolve_vod,
             resolve_vod_delay: dto.resolve_vod_delay,
             trakt: dto.trakt.as_ref().map(Into::into),
+            filter: dto.t_filter.clone(),
         }
     }
 }
@@ -68,16 +70,18 @@ impl From<&XtreamTargetOutput> for XtreamTargetOutputDto {
             resolve_vod: instance.resolve_vod,
             resolve_vod_delay: instance.resolve_vod_delay,
             trakt: instance.trakt.as_ref().map(TraktConfigDto::from),
+            filter: instance.filter.as_ref().map(ToString::to_string),
+            t_filter: instance.filter.clone(),
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct M3uTargetOutput {
     pub filename: Option<String>,
     pub include_type_in_url: bool,
     pub mask_redirect_url: bool,
+    pub filter: Option<Filter>,
 }
 
 macros::from_impl!(M3uTargetOutput);
@@ -87,6 +91,7 @@ impl From<&M3uTargetOutputDto> for M3uTargetOutput {
             filename: dto.filename.clone(),
             include_type_in_url: dto.include_type_in_url,
             mask_redirect_url: dto.mask_redirect_url,
+            filter: dto.t_filter.clone(),
         }
     }
 }
@@ -96,6 +101,8 @@ impl From<&M3uTargetOutput> for M3uTargetOutputDto {
             filename: instance.filename.clone(),
             include_type_in_url: instance.include_type_in_url,
             mask_redirect_url: instance.mask_redirect_url,
+            filter: instance.filter.as_ref().map(ToString::to_string),
+            t_filter: instance.filter.clone(),
         }
     }
 }
@@ -110,6 +117,7 @@ pub struct StrmTargetOutput {
     pub underscore_whitespace: bool,
     pub cleanup: bool,
     pub strm_props: Option<Vec<String>>,
+    pub filter: Option<Filter>,
 }
 
 macros::from_impl!(StrmTargetOutput);
@@ -123,6 +131,7 @@ impl From<&StrmTargetOutputDto> for StrmTargetOutput {
             underscore_whitespace: dto.underscore_whitespace,
             cleanup: dto.cleanup,
             strm_props: dto.strm_props.clone(),
+            filter: dto.t_filter.clone(),
         }
     }
 }
@@ -136,6 +145,8 @@ impl From<&StrmTargetOutput> for StrmTargetOutputDto {
             underscore_whitespace: instance.underscore_whitespace,
             cleanup: instance.cleanup,
             strm_props: instance.strm_props.clone(),
+            filter: instance.filter.as_ref().map(ToString::to_string),
+            t_filter: instance.filter.clone(),
         }
     }
 }

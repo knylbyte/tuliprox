@@ -17,6 +17,7 @@ use shared::utils::{is_dash_url, is_hls_url};
 use shared::create_tuliprox_error;
 use std::path::Path;
 use std::sync::Arc;
+use crate::processing::processor::playlist::apply_filter_to_playlist;
 
 pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGroup], epg: Option<&Epg>,
                               target: &ConfigTarget, playlist_state: Option<&Arc<PlaylistStorageState>>) -> Result<(), Vec<TuliproxError>> {
@@ -53,11 +54,26 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
         }
     }
 
+
+
     for output in &target.output {
+        let mut filtered = match output {
+            TargetOutput::Xtream(out) => out.filter.as_ref().and_then(|flt| apply_filter_to_playlist(playlist, flt)),
+            TargetOutput::M3u(out) =>  out.filter.as_ref().and_then(|flt| apply_filter_to_playlist(playlist, flt)),
+            TargetOutput::Strm(out) =>  out.filter.as_ref().and_then(|flt| apply_filter_to_playlist(playlist, flt)),
+            TargetOutput::HdHomeRun(_) =>  None,
+        };
+
+        let pl: &mut [PlaylistGroup] = if let Some(filtered_playlist) = filtered.as_mut() {
+            filtered_playlist.as_mut_slice()
+        } else {
+            playlist
+        };
+
         let result = match output {
-            TargetOutput::Xtream(_xtream_output) => xtream_write_playlist(app_config, target, playlist).await,
-            TargetOutput::M3u(m3u_output) => m3u_write_playlist(app_config, target, m3u_output, &target_path, playlist).await,
-            TargetOutput::Strm(strm_output) => write_strm_playlist(app_config, target, strm_output, playlist).await,
+            TargetOutput::Xtream(_xtream_output) => xtream_write_playlist(app_config, target, pl).await,
+            TargetOutput::M3u(m3u_output) => m3u_write_playlist(app_config, target, m3u_output, &target_path, pl).await,
+            TargetOutput::Strm(strm_output) => write_strm_playlist(app_config, target, strm_output, pl).await,
             TargetOutput::HdHomeRun(_hdhomerun_output) => Ok(()),
         };
 

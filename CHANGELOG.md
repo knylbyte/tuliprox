@@ -7,6 +7,9 @@ If you use TimeZone the timeshift will change on Summer/Winter time if its appli
 - Search in Playlist Explorer now returns groups instead of matching flat channel list.
 - Added `use_memory_cache` attribute to target definition to hold playlist in memory to reduce disc access.
 Placing playlist into memory causes more RAM usage but reduces disk access.
+- Added optional `filter` attribute to Output (except HDHomerun-Output). 
+Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
+
 
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch
