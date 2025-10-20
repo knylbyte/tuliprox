@@ -33,6 +33,8 @@ ARG SCCACHE_DIR=var/cache/sccache
 # =============================================================================
 FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS chef
 
+SHELL ["/bin/bash", "-e", "-u", "-x", "-o", "pipefail", "-c"]
+
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM_TAG
 ARG RUST_TARGET
@@ -50,6 +52,10 @@ ENV SCCACHE_DIR=${SCCACHE_DIR}
 # ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 
 ENV RUST_BACKTRACE=full
+
+RUN mkdir -p \
+  ${SCCACHE_DIR} \
+  ${CARGO_HOME}
 
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
 # - amd64  -> x86_64-unknown-linux-musl
@@ -70,6 +76,28 @@ RUN set -eux; \
 
   # Ensure the target is available in the toolchain (prebuild already has rustup)
   RUN rustup target add "$(cat /rust-target)" || true
+
+FROM chef AS cache-import
+
+# ---- Cache import into mounts (if TARs are available) ----
+# We integrate an additional build context source “cache” (see workflow).
+ARG CACHE_CTX=cache
+
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
+    --mount=type=bind,from=${CACHE_CTX},source=.,target=/cache,readonly \
+    SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
+    if [[ -s /cache/cargo-registry.tar ]]; then \
+      tar -C "${CARGO_HOME}" -xf /cache/cargo-registry.tar; \
+    fi; \
+    if [[ -s /cache/cargo-git.tar ]]; then \
+      tar -C "${CARGO_HOME}" -xf /cache/cargo-git.tar; \
+    fi; \
+    if [[ -s /cache/sccache.tar ]]; then \
+      tar -C "$(SCCACHE_HOME)" -xf /cache/sccache.tar; \
+    fi
+
 
 # =============================================================================
 # Stage 2: backend-planner (cargo-chef prepare)
@@ -115,7 +143,6 @@ RUN set -eux; \
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
-    set -eux; \
     cargo chef prepare --recipe-path backend-recipe.json
 
 # =============================================================================
@@ -152,7 +179,6 @@ COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
-    set -eux; \
     # "cargo chef cook" starts by running "cargo clean", so we need to recreate the
     # target directories inside the same RUN step to avoid sccache cache hits failing
     # with missing *.d files (mozilla/sccache#2076).
@@ -169,7 +195,6 @@ COPY --from=backend-planner /src/shared ./shared
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
-    set -eux; \
     cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
 
 # =============================================================================
@@ -210,7 +235,6 @@ RUN set -eux; \
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
-    set -eux; \
     cargo chef prepare --recipe-path frontend-recipe.json
 
 
@@ -245,7 +269,6 @@ COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
-    set -eux; \
     rust_target="$(cat /rust-target)"; \
     # As above, recreate the target output directories _after_ cargo clean runs inside
     # cargo-chef so sccache always finds the expected layout.
@@ -272,11 +295,22 @@ COPY --from=frontend-planner /src/shared ./shared
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
-    set -eux; \
     mkdir -p ./frontend/dist; \
     trunk build --release --locked --config ./frontend/Trunk.toml --dist ./frontend/dist
 
 # dist -> /src/frontend/dist
+
+FROM chef AS cache-export
+
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
+    mkdir -p /out; \
+    SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
+    SCCACHE_BASE="$(basename "${SCCACHE_DIR}")"; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-registry.tar registry        || true; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-git.tar      git             || true; \
+    tar -C ${SCCACHE_HOME} -cf /out/sccache.tar      ${SCCACHE_BASE} || true
 
 # -----------------------------------------------------------------
 # Stage 6: tzdata/zoneinfo supplier (shared)
