@@ -11,15 +11,15 @@
 ############################################
 # Global args and versions
 ############################################
-ARG RUST_DISTRO=1.90.0-trixie
-ARG TRUNK_VER=0.21.14
-ARG BINDGEN_VER=0.2.104
-ARG CARGO_CHEF_VER=0.1.73
-ARG CARGO_MACHETE_VER=0.9.1
-ARG SCCACHE_VER=0.11.0
-ARG ALPINE_VER=3.22.2
-ARG CARGO_HOME=/usr/local/cargo
-ARG BUILDPLATFORM_TAG=latest
+ARG RUST_DISTRO=1.90.0-trixie \
+    TRUNK_VER=0.21.14 \
+    BINDGEN_VER=0.2.104 \
+    CARGO_CHEF_VER=0.1.73 \
+    CARGO_MACHETE_VER=0.9.1 \
+    SCCACHE_VER=0.11.0 \
+    ALPINE_VER=3.22.2 \
+    CARGO_HOME=/usr/local/cargo \
+    BUILDPLATFORM_TAG=latest
 ############################################
 # Build stage to produce ffmpeg resources
 # -> contains prebuilt .ts files from .jpg
@@ -54,21 +54,21 @@ RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
 ############################################
 FROM --platform=$BUILDPLATFORM rust:${RUST_DISTRO} AS builder
 
-ARG BUILDPLATFORM_TAG
-ARG TARGETPLATFORM
-ARG TRUNK_VER
-ARG BINDGEN_VER
-ARG CARGO_CHEF_VER
-ARG CARGO_MACHETE_VER
-ARG SCCACHE_VER
-ARG CARGO_HOME
+ARG BUILDPLATFORM_TAG \
+    TARGETPLATFORM  \
+    TRUNK_VER \
+    BINDGEN_VER \
+    CARGO_CHEF_VER \
+    CARGO_MACHETE_VER \
+    SCCACHE_VER \
+    CARGO_HOME
 
-ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL="sparse"
-ENV DEBIAN_FRONTEND="noninteractive"
-ENV CARGO_HOME=${CARGO_HOME}
-ENV PATH="/usr/local/cargo/bin:$PATH"
-ENV SCCACHE_DIR="/var/cache/sccache"
-ENV SCCACHE_FEATURE_LIST="dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl"
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
+    DEBIAN_FRONTEND=noninteractive \
+    CARGO_HOME=${CARGO_HOME} \
+    PATH=${CARGO_HOME}:$PATH \
+    SCCACHE_DIR=${SCCACHE_DIR} \
+    SCCACHE_FEATURE_LIST=dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl
 
 # Map Docker TARGETPLATFORM -> Rust target triple for *tool binaries*.
 # Tools must run inside the final image for that platform (gnu is fine here).
@@ -123,28 +123,27 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     cargo install --locked cargo-chef --version ${CARGO_CHEF_VER} \
       --target "$(cat /rust-target)" --root /out; \
     cargo install --locked cargo-machete --version ${CARGO_MACHETE_VER} \
-      --target "$(cat /rust-target)" --root /out;
-    # \
-    # cargo install --locked sccache --no-default-features --features ${SCCACHE_FEATURE_LIST} \
-    #   --target "$(cat /rust-target)" \
-    #   --root /out \
-    #   --version ${SCCACHE_VER}
+      --target "$(cat /rust-target)" --root /out; \
+    cargo install --locked sccache --no-default-features --features ${SCCACHE_FEATURE_LIST} \
+      --target "$(cat /rust-target)" \
+      --root /out \
+      --version ${SCCACHE_VER}
 
 ### TESTING: build sccache from custom fork
 # force: true
-WORKDIR /tmp
+# WORKDIR /tmp
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
-    set -eux; \
-    apt-get install -y git; \
-    git clone https://github.com/knylbyte/sccache.git -b main; \
-    cd sccache; \
-    cargo install --locked --path .\
-      --no-default-features --features ${SCCACHE_FEATURE_LIST} \
-      --target "$(cat /rust-target)" \
-      --root /out; \
-    rm -rf /tmp/sccache
+# RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
+#     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
+#     set -eux; \
+#     apt-get install -y git; \
+#     git clone https://github.com/knylbyte/sccache.git -b main; \
+#     cd sccache; \
+#     cargo install --locked --path .\
+#       --no-default-features --features ${SCCACHE_FEATURE_LIST} \
+#       --target "$(cat /rust-target)" \
+#       --root /out; \
+#     rm -rf /tmp/sccache
 ### End TESTING
 
 # Strip (best-effort)
@@ -160,13 +159,13 @@ RUN case "$(cat /rust-target)" in \
 ############################################
 FROM rust:${RUST_DISTRO}
 
-ARG BUILDPLATFORM_TAG
-ARG RUST_DISTRO
-ARG TRUNK_VER
-ARG BINDGEN_VER
-ARG CARGO_CHEF_VER
-ARG CARGO_MACHETE_VER
-ARG SCCACHE_VER
+ARG BUILDPLATFORM_TAG \
+    RUST_DISTRO \
+    TRUNK_VER \
+    BINDGEN_VER \
+    CARGO_CHEF_VER \
+    CARGO_MACHETE_VER \
+    SCCACHE_VER
 
 LABEL io.tuliprox.rust.version="${RUST_DISTRO%%-*}" \
       io.tuliprox.trunk.version="${TRUNK_VER}" \
@@ -175,13 +174,18 @@ LABEL io.tuliprox.rust.version="${RUST_DISTRO%%-*}" \
       io.tuliprox.cargo_machete.version="${CARGO_MACHETE_VER}" \
       io.tuliprox.sccache.version="${SCCACHE_VER}"
 
-ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-ENV DEBIAN_FRONTEND=noninteractive \
-    CARGO_HOME=/usr/local/cargo \
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
+    DEBIAN_FRONTEND=noninteractive \
+    CARGO_HOME=${CARGO_HOME} \
     RUSTUP_HOME=/usr/local/rustup \
-    PATH=/usr/local/cargo/bin:$PATH \
-    SCCACHE_DIR=/var/cache/sccache \
-    RUSTC_WRAPPER=/usr/local/cargo/bin/sccache
+    PATH=${CARGO_HOME}:$PATH \
+    SCCACHE_DIR=${SCCACHE_DIR} \
+    RUSTC_WRAPPER=${CARGO_HOME}/sccache
+
+RUN mkdir -p \
+  ${SCCACHE_DIR} \
+  ${CARGO_HOME} \
+  ${RUSTUP_HOME}
 
 # System deps for both stages of the app:
 # - Stage 1 (native binary): musl-tools (for musl static builds)
@@ -223,9 +227,6 @@ COPY --from=builder /out/bin/sccache /usr/local/cargo/bin/sccache
 
 # Copy precompiled .ts resources from resources stage
 COPY --from=resources /src/resources /src/resources
-
-RUN mkdir -p ${SCCACHE_DIR} \
- && chmod 777 ${SCCACHE_DIR}
 
 # Quick sanity
 RUN chmod +x  /usr/local/cargo/bin/trunk \
