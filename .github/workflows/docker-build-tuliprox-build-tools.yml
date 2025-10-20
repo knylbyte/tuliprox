@@ -95,7 +95,7 @@ jobs:
               echo "ALPINE_VER=${ALPINE_INPUT}"
             fi
             if [ -n "${SCCACHE_FEATURES}" ]; then
-              echo "SCCACHE_FEATURES=${SCCACHE_FEATURES}"
+              echo "sccache_features=${SCCACHE_FEATURES}"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
