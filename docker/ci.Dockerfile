@@ -297,7 +297,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
 
 # dist -> /src/frontend/dist
 
-FROM chef AS cache-export
+FROM chef AS cache-pack
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
@@ -308,6 +308,10 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     tar -C ${CARGO_HOME} -cf /out/cargo-registry.tar registry        || true; \
     tar -C ${CARGO_HOME} -cf /out/cargo-git.tar      git             || true; \
     tar -C ${SCCACHE_HOME} -cf /out/sccache.tar      ${SCCACHE_BASE} || true
+
+FROM scratch AS cache-export
+
+COPY --from=cache-pack /out/ /out/
 
 # -----------------------------------------------------------------
 # Stage 6: tzdata/zoneinfo supplier (shared)
