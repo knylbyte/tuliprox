@@ -37,6 +37,10 @@ pub struct XtreamTargetOutputDto {
     pub resolve_vod_delay: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trakt: Option<TraktConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(skip)]
+    pub t_filter: Option<Filter>,
 }
 
 impl Default for XtreamTargetOutputDto {
@@ -50,6 +54,8 @@ impl Default for XtreamTargetOutputDto {
             resolve_vod: false,
             resolve_vod_delay: default_resolve_delay_secs(),
             trakt: None,
+            filter: None,
+            t_filter: None,
         }
     }
 }
@@ -68,6 +74,7 @@ impl XtreamTargetOutputDto {
             || self.resolve_series
             || self.resolve_vod
             || self.trakt.is_some()
+            || self.filter.is_some()
     }
 }
 
@@ -80,6 +87,10 @@ pub struct M3uTargetOutputDto {
     pub include_type_in_url: bool,
     #[serde(default)]
     pub mask_redirect_url: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(skip)]
+    pub t_filter: Option<Filter>,
 }
 
 impl M3uTargetOutputDto {
@@ -87,6 +98,7 @@ impl M3uTargetOutputDto {
         self.filename.is_some()
             || self.include_type_in_url
             || self.mask_redirect_url
+            || self.filter.is_some()
     }
 }
 
@@ -106,6 +118,10 @@ pub struct StrmTargetOutputDto {
     pub cleanup: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strm_props: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(skip)]
+    pub t_filter: Option<Filter>,
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]

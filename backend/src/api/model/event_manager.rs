@@ -1,4 +1,4 @@
-use log::{error, info, trace};
+use log::{info, trace};
 use tokio::task;
 use shared::model::{ConfigType, PlaylistUpdateState};
 use crate::api::model::{ActiveUserConnectionChangeReceiver};
@@ -62,7 +62,7 @@ impl EventManager {
 
     pub fn send_event(&self, event: EventMessage) {
         if let Err(err) = self.channel_tx.send(event) {
-            error!("Failed to send event: {err}");
+           trace!("Failed to send event: {err}");
         }
     }
 

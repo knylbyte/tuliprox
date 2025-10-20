@@ -29,25 +29,25 @@ use deunicode::deunicode;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use reqwest::Client;
 use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
-use shared::foundation::filter::{get_field_value, set_field_value, ValueAccessor, ValueProvider};
+use shared::foundation::filter::{get_field_value, set_field_value, Filter, ValueAccessor, ValueProvider};
 use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry,
                     PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
 use shared::utils::default_as_default;
 use std::time::Instant;
 use crate::api::model::{EventManager, EventMessage, PlaylistStorageState};
 
-fn is_valid(pli: &PlaylistItem, target: &ConfigTarget) -> bool {
+fn is_valid(pli: &PlaylistItem, filter: &Filter) -> bool {
     let provider = ValueProvider { pli };
-    target.filter(&provider)
+    filter.filter(&provider)
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn filter_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {
+pub fn apply_filter_to_playlist(playlist: &mut [PlaylistGroup], filter: &Filter) -> Option<Vec<PlaylistGroup>> {
     debug!("Filtering {} groups", playlist.len());
     let mut new_playlist = Vec::with_capacity(128);
     for pg in playlist.iter_mut() {
         let channels = pg.channels.iter()
-            .filter(|&pli| is_valid(pli, target)).cloned().collect::<Vec<PlaylistItem>>();
+            .filter(|&pli| is_valid(pli, filter)).cloned().collect::<Vec<PlaylistItem>>();
         trace!("Filtered group {} has now {}/{} items", pg.title, channels.len(), pg.channels.len());
         if !channels.is_empty() {
             new_playlist.push(PlaylistGroup {
@@ -61,6 +61,9 @@ fn filter_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Opt
     Some(new_playlist)
 }
 
+fn filter_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {
+    apply_filter_to_playlist(playlist, &target.filter)
+}
 
 fn assign_channel_no_playlist(new_playlist: &mut [PlaylistGroup]) {
     let assigned_chnos: HashSet<u32> = new_playlist.iter().flat_map(|g| &g.channels)

@@ -771,13 +771,15 @@ Has three top level attributes
 - `channels`
 
 #### `groups`
-has one top level attribute `order` which can be set to `asc`or `desc`.
+Used for sorting at the group (category) level.
+It has one top-level attribute `order` which can be set to `asc`or `desc`.
 #### `channels`
-is a list of sort configurations for groups. Each configuration has 3 top level entries.
-- `field` can be  `group`, `title`, `name`, `caption` or `url`.
-- `group_pattern` is a regular expression like `'^TR.:\s?(.*)'` which is matched against group title.
-- `order` can be `asc` or `desc`
-- `sequence` _optional_  is a list of regexp matching field values (based on `field`) which are used to sort based on index. The `order` is ignored for this entries.
+Used for sorting the channels within a group/category.
+This is a list of sort configurations for groups. Each configuration has the following top-level entries:
+- `field` - can be  `title`, `name`, `caption` or `url`.
+- `group_pattern` - a regular expression like `'^TR.:\s?(.*)'` matched against group title.
+- `order` - can be `asc` or `desc`
+- `sequence` _optional_  - a list of regexp matching field values (based on `field`). These are used to sort based on index. The `order` is ignored for this entries.
 
 The pattern should be selected taking into account the processing sequence.
 
@@ -809,7 +811,8 @@ The numeric suffix indicates the priority: `c1` is evaluated first, followed by 
 ### 2.2.2.2 `output`
 
 Is a list of output format:
-Each format has different properties
+Each format has different properties.
+`Attention:` Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
 
 #### 'Target types':
 `xtream`
@@ -822,12 +825,14 @@ Each format has different properties
 - resolve_vod: true|false,
 - resolve_vod_delay: true|false,
 - trakt: Trakt Configuration
+- filter: optional filter
 
 `m3u`
 - type: m3u
 - filename: _optional_
 - include_type_in_url: _optional_, true|false, default false
 - mask_redirect_url: _optional_,  true|false, default false
+- filter: optional filter
 
 `strm`
 - directory: _mandatory_,
@@ -837,6 +842,7 @@ Each format has different properties
 - style: _mandatory_, kodi|plex|emby|jellyfin
 - flat: _optional_, true|false, default false
 - strm_props: _optional_, list of strings,
+- filter: optional filter
 
 `hdhomerun`
 - device: _mandatory_,
