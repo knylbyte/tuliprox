@@ -55,6 +55,8 @@ RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
 ############################################
 FROM --platform=$BUILDPLATFORM rust:${RUST_DISTRO} AS builder
 
+SHELL ["/bin/bash", "-e", "-u", "-x", "-o", "pipefail", "-c"]
+
 ARG BUILDPLATFORM_TAG \
     TARGETPLATFORM  \
     TRUNK_VER \
@@ -84,7 +86,6 @@ RUN case "$TARGETPLATFORM" in \
 # Cross toolchains so we can produce tool binaries for the platform above
 RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATFORM_TAG},sharing=locked \
-    set -eux; \
     rm -f /etc/apt/apt.conf.d/docker-clean; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -117,7 +118,7 @@ ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=64 \
 # Build trunk & wasm-bindgen for the platform-specific tool image
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
-    set -eux; \
+
     cargo install --locked trunk --version ${TRUNK_VER} \
       --target "$(cat /rust-target)" --root /out; \
     cargo install --locked wasm-bindgen-cli --version ${BINDGEN_VER} \
@@ -137,7 +138,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
 
 # RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
 #     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
-#     set -eux; \
+# 
 #     apt-get install -y git; \
 #     git clone https://github.com/knylbyte/sccache.git -b main; \
 #     cd sccache; \
@@ -150,9 +151,9 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
 
 # Strip (best-effort)
 RUN case "$(cat /rust-target)" in \
-      armv7-unknown-linux-gnueabihf)  arm-linux-gnueabihf-strip /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/sccache || true ;; \
-      aarch64-unknown-linux-gnu)      aarch64-linux-gnu-strip   /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/sccache || true ;; \
-      x86_64-unknown-linux-gnu)       strip                     /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/sccache || true ;; \
+      armv7-unknown-linux-gnueabihf)  arm-linux-gnueabihf-strip /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/cargo-machete /out/bin/sccache || true ;; \
+      aarch64-unknown-linux-gnu)      aarch64-linux-gnu-strip   /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/cargo-machete /out/bin/sccache || true ;; \
+      x86_64-unknown-linux-gnu)       strip                     /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/cargo-machete /out/bin/sccache || true ;; \
     esac
 
 ############################################
@@ -160,6 +161,8 @@ RUN case "$(cat /rust-target)" in \
 # -> contains all build deps + rust targets for tuliprox app
 ############################################
 FROM rust:${RUST_DISTRO}
+
+SHELL ["/bin/bash", "-e", "-u", "-x", "-o", "pipefail", "-c"]
 
 ARG BUILDPLATFORM_TAG \
     RUST_DISTRO \
@@ -197,7 +200,6 @@ RUN mkdir -p \
 # Keep it lean; no OpenSSL dev packages (we use rustls).
 RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATFORM_TAG},sharing=locked \
-    set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       pkg-config musl-tools \
