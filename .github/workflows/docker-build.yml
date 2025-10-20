@@ -820,7 +820,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Ensure cache context dir
-        run: mkdir -p .ci-cache/${{ matrix.arch_tag }}
+        run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
 
       # see also: https://depot.dev/docs/container-builds/how-to-guides/optimal-dockerfiles/rust-dockerfile
       - name: Step 4.9 - Cache cargo and sccache directories for Docker build
