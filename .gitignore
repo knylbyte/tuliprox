@@ -30,15 +30,3 @@ docker/resources
 
 # Ignore VSCode settings and files
 /.vscode
-
-# Ignore Python cache files
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-.pyre/
-.pytype/
-.mypy_cache/
-.pyright/
-.pyre/  

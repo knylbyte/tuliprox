@@ -473,10 +473,10 @@ mod tests {
             api_proxy: Arc::new(ArcSwapAny::default()),
             paths: Arc::new(ArcSwap::from(Arc::new(ConfigPaths {
                 config_path: temp_dir().to_string_lossy().to_string(),
-                config_file_path: String::new(),
-                sources_file_path: String::new(),
+                config_file_path: "".to_string(),
+                sources_file_path: "".to_string(),
                 mapping_file_path: None,
-                api_proxy_file_path: String::new(),
+                api_proxy_file_path: "".to_string(),
                 custom_stream_response_path: None,
             }))),
             file_locks: Arc::new(FileLockManager::default()),

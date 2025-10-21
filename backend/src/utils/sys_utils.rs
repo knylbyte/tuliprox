@@ -45,17 +45,18 @@ fn get_memory_usage_windows() -> Option<u64> {
 
 #[cfg(target_os = "macos")]
 fn get_memory_usage_macos() -> Option<u64> {
-    use libc::{getrusage, rusage, RUSAGE_SELF};
-    use std::mem::MaybeUninit;
+    use libc::{sysctl, CTL_KERN, KERN_PROC, KERN_PROC_PID};
+    use std::ptr;
 
     unsafe {
-        let mut info = MaybeUninit::<rusage>::zeroed();
-        if getrusage(RUSAGE_SELF, info.as_mut_ptr()) != 0 {
-            return None;
-        }
-        let info = info.assume_init();
-        let rss = u64::try_from(info.ru_maxrss).ok()?;
-        Some(rss * 1024)
+        let mut mib = [CTL_KERN, KERN_PROC, KERN_PROC_PID, 0];
+        mib[3] = libc::getpid();
+        let mut info: libc::rusage = std::mem::zeroed();
+        let mut len = std::mem::size_of::<libc::rusage>();
+
+        sysctl(mib.as_mut_ptr(), mib.len() as libc::c_uint, &mut info as *mut _ as *mut _, &mut len, ptr::null_mut(), 0);
+
+        Some(info.ru_maxrss as u64 * 1024)
     }
 }
 
