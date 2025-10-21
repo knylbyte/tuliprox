@@ -9,7 +9,8 @@ If you use TimeZone the timeshift will change on Summer/Winter time if its appli
 Placing playlist into memory causes more RAM usage but reduces disk access.
 - Added optional `filter` attribute to Output (except HDHomerun-Output). 
 Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
-
+- Added burst buffer to shared stream
+- Telegram message thread support. thread id can now be appended to chat-id like `chat-id:thread-id`.
 
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch

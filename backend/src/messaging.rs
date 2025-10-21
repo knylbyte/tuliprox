@@ -3,6 +3,7 @@ use crate::model::{MessagingConfig};
 use log::{debug, error};
 use reqwest::{header};
 use shared::model::MsgKind;
+use crate::utils::{telegram_create_instance, telegram_send_message};
 
 fn is_enabled(kind: MsgKind, cfg: &MessagingConfig) -> bool {
     cfg.notify_on.contains(&kind)
@@ -28,15 +29,12 @@ fn send_http_post_request(client: &Arc<reqwest::Client>, msg: &str, messaging: &
     }
 }
 
-fn send_telegram_message(msg: &str, messaging: &MessagingConfig) {
+fn send_telegram_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &MessagingConfig) {
     // TODO use proxy settings
     if let Some(telegram) = &messaging.telegram {
         for chat_id in &telegram.chat_ids {
-            let bot = rustelebot::create_instance(&telegram.bot_token, chat_id);
-            match rustelebot::send_message(&bot, msg, None) {
-                Ok(()) => debug!("Text message sent successfully to {chat_id}"),
-                Err(e) => error!("Text message wasn't sent to {chat_id} because of: {e}")
-            }
+            let bot = telegram_create_instance(&telegram.bot_token, chat_id);
+            telegram_send_message(client, &bot, msg, None);
         }
     }
 }
@@ -74,7 +72,7 @@ fn send_pushover_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &M
 pub fn send_message(client: &Arc<reqwest::Client>, kind: &MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
     if let Some(messaging) = cfg {
         if is_enabled(*kind, messaging) {
-            send_telegram_message(msg, messaging);
+            send_telegram_message(client, msg, messaging);
             send_http_post_request(client, msg, messaging);
             send_pushover_message(client, msg, messaging);
         }
