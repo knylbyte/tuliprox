@@ -10,7 +10,7 @@ use crate::api::model::{BoxedProviderStream};
 use crate::api::model::StreamError;
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 
-const CHANNEL_SIZE: usize = 2048;
+pub const CHANNEL_SIZE: usize = 1024;
 
 pub(in crate::api::model) struct BufferedStream {
     stream: ReceiverStream<Result<bytes::Bytes, StreamError>>,

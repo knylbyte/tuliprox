@@ -18,7 +18,7 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
-
+use crate::api::model::streams::buffered_stream::CHANNEL_SIZE;
 
 // TODO make this configurable
 const  MIN_SHARED_BUFFER_SIZE: usize = 1024 * 1024 * 12; // 12 MB
@@ -115,14 +115,16 @@ impl SharedStreamState {
             guard.disable_release();
         }
         let (broadcaster, _) = tokio::sync::broadcast::channel(buf_size);
+        // TODO channel size versus byte size,  channels are chunk sized, burst_buffer byte sized
+        let burst_buffer_size_in_bytes = MIN_SHARED_BUFFER_SIZE.max(buf_size * 1024 * 12);
         Self {
             headers,
             buf_size,
             provider_guard,
-            subscribers: RwLock::new(HashMap::new()), //Arc::new(RwLock::new(Vec::new())),
+            subscribers: RwLock::new(HashMap::new()),
             broadcaster,
             stop_token: CancellationToken::new(),
-            burst_buffer : Arc::new(Mutex::new(BurstBuffer::new(buf_size))),
+            burst_buffer : Arc::new(Mutex::new(BurstBuffer::new(burst_buffer_size_in_bytes))),
         }
     }
 
@@ -367,7 +369,7 @@ impl SharedStreamManager {
         S: Stream<Item=Result<Bytes, E>> + Unpin + 'static + Send,
         E: std::fmt::Debug + Send,
     {
-        let buf_size =  MIN_SHARED_BUFFER_SIZE.max(buffer_size * 1024 * 12);
+        let buf_size =  CHANNEL_SIZE.max(buffer_size);
         let shared_state = Arc::new(SharedStreamState::new(headers, buf_size, provider_guard));
         app_state.shared_stream_manager.register(stream_url, Arc::clone(&shared_state)).await;
         debug_if_enabled!("Created shared provider stream {}", sanitize_sensitive_info(stream_url));
