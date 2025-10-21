@@ -17,7 +17,7 @@ pub(in crate::api::model) struct BufferedStream {
 
 impl BufferedStream {
     pub fn new(stream: BoxedProviderStream, buffer_size: usize, client_close_signal: Arc<AtomicOnceFlag>, _url: &str) -> Self {
-        let (tx, rx) = channel(max(buffer_size, 4096));
+        let (tx, rx) = channel(max(buffer_size, 1024));
         tokio::spawn(Self::buffer_stream(tx, stream, Arc::clone(&client_close_signal)));
         Self {
             stream: ReceiverStream::new(rx),
@@ -39,9 +39,6 @@ impl BufferedStream {
                   }
                 }
                 Some(Err(err)) => {
-                    //trace!("Buffered Stream Error: {err:?}");
-                    // tokio::time::sleep(sleep_duration).await;
-                    // Attempt to send error to client
                     if tx.send(Err(err)).await.is_err() {
                         client_close_signal.notify();
                     }

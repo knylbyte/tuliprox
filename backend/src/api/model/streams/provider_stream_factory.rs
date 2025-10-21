@@ -24,7 +24,7 @@ use crate::api::model::streams::buffered_stream::BufferedStream;
 use crate::api::model::streams::client_stream::ClientStream;
 
 // TODO make this configurable
-pub const STREAM_QUEUE_SIZE: usize = 4096; // mpsc channel holding messages. with possible 8192byte chunks
+pub const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with possible 8192byte chunks
 const RETRY_SECONDS: u64 = 5;
 const ERR_MAX_RETRY_COUNT: u32 = 5;
 

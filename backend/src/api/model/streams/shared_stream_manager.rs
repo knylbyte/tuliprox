@@ -2,10 +2,10 @@ use crate::api::model::AppState;
 use crate::api::model::StreamError;
 use crate::api::model::STREAM_QUEUE_SIZE;
 use crate::utils::debug_if_enabled;
-use bytes::Bytes;
+use bytes::{Bytes};
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use crate::api::model::BoxedProviderStream;
@@ -15,7 +15,8 @@ use crate::utils::{trace_if_enabled};
 use shared::utils::sanitize_sensitive_info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
@@ -57,6 +58,8 @@ pub struct SharedStreamState {
     subscribers: RwLock<HashMap<SubscriberId, CancellationToken>>,
     broadcaster: tokio::sync::broadcast::Sender<Bytes>,
     stop_token: CancellationToken,
+    start_buffer: Arc<Mutex<VecDeque<Bytes>>>,
+    start_buffer_size: usize
 }
 
 impl Drop for SharedStreamState {
@@ -81,6 +84,8 @@ impl SharedStreamState {
             subscribers: RwLock::new(HashMap::new()), //Arc::new(RwLock::new(Vec::new())),
             broadcaster,
             stop_token: CancellationToken::new(),
+            start_buffer: Arc::new(Mutex::new(VecDeque::with_capacity(buf_size))),
+            start_buffer_size: buf_size,
         }
     }
 
@@ -91,9 +96,18 @@ impl SharedStreamState {
         self.subscribers.write().await.insert(addr.to_string(), cancel_token.clone());
 
         let address = addr.to_string();
+        let client_tx_clone = client_tx.clone();
+        let start_buffer = self.start_buffer.clone();
+
         tokio::spawn(async move {
+            {
+                let buffer = start_buffer.lock().await;
+                send_start_buffer(&buffer, &client_tx_clone).await;
+            }
+            let mut loop_cnt = 0;
             loop {
-                tokio::select! {
+               loop_cnt += 1;
+               tokio::select! {
                     biased;
 
                     () = cancel_token.cancelled() => {
@@ -107,10 +121,17 @@ impl SharedStreamState {
                                     debug!("Shared stream client send error: {address} {err}");
                                     break;
                                 }
-                                tokio::task::yield_now().await;
+                                if loop_cnt > 200 {
+                                    tokio::task::yield_now().await;
+                                    loop_cnt = 0;
+                                }
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                                 trace!("Client lagged behind. Skipped {skipped} messages. {address}");
+                                if loop_cnt > 200 {
+                                    tokio::task::yield_now().await;
+                                    loop_cnt = 0;
+                                }
                             }
                             Err(_) => break,
                         }
@@ -136,6 +157,8 @@ impl SharedStreamState {
         let streaming_url = stream_url.to_string();
         let sender = self.broadcaster.clone();
         let stop_token = self.stop_token.clone();
+        let start_buffer = self.start_buffer.clone();
+        let start_buffer_size = self.start_buffer_size;
 
         tokio::spawn(async move {
             let mut counter = 0u32;
@@ -151,6 +174,11 @@ impl SharedStreamState {
                   item = source_stream.next() => {
                      match item {
                         Some(Ok(data)) => {
+                          {
+                            let mut buffer = start_buffer.lock().await;
+                            update_start_buffer(&mut buffer, &data, start_buffer_size);
+                          }
+
                           match sender.send(data) {
                             Ok(clients) =>  {
                                 if clients == 0 {
@@ -171,6 +199,8 @@ impl SharedStreamState {
                         }
                         Some(Err(e)) => {
                             trace!("Shared stream received error: {e:?}");
+                            tokio::task::yield_now().await;
+
                         }
                         None => {
                             debug_if_enabled!("Source stream ended. Closing shared provider stream {}", sanitize_sensitive_info(&streaming_url));
@@ -316,5 +346,27 @@ impl SharedStreamManager {
     ) -> Option<BoxedProviderStream> {
         let manager = Arc::clone(&app_state.shared_stream_manager);
         app_state.shared_stream_manager.subscribe_stream(stream_url, addr, manager).await
+    }
+}
+
+fn update_start_buffer(
+    start_buffer: &mut VecDeque<Bytes>,
+    packet: &Bytes,
+    buffer_size: usize,
+) {
+    start_buffer.push_back(packet.clone());
+    while start_buffer.len() > buffer_size {
+        start_buffer.pop_front();
+    }
+}
+
+async fn send_start_buffer(
+    start_buffer: &VecDeque<Bytes>,
+    client_tx: &Sender<Bytes>) {
+    for buf in start_buffer {
+        if let Err(err) = client_tx.send(buf.clone()).await {
+            debug!("Error sending current chunk: {err}");
+            return; // stop on send error
+        }
     }
 }
