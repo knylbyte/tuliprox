@@ -118,7 +118,6 @@ ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=64 \
 # Build trunk & wasm-bindgen for the platform-specific tool image
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
-
     cargo install --locked trunk --version ${TRUNK_VER} \
       --target "$(cat /rust-target)" --root /out; \
     cargo install --locked wasm-bindgen-cli --version ${BINDGEN_VER} \
