@@ -8,10 +8,12 @@ mod logging;
 mod trakt;
 mod json_utils;
 mod bincode_utils;
+mod telegram;
 
 pub use self::bincode_utils::*;
 pub use self::logging::*;
 pub use self::trakt::*;
+pub use self::telegram::*;
 
 
 #[macro_export]

@@ -131,6 +131,7 @@ messaging:
     bot_token: '<telegram bot token>'
     chat_ids:
       - '<telegram chat id>'
+      - '<telegram chat id>:<message thread id>'
   rest:
     url: '<api url as POST endpoint for json data>'
 
@@ -223,8 +224,18 @@ Has 2 attributes
 - `size`
 
 If `enabled` = true The stream is buffered. This is only possible if the provider stream is faster than the consumer.
+
 The stream is buffered with the configured `size`.
 `size` is the amount of `8192 byte` chunks. In this case the value `1024` means approx `8MB` for `2Mbit/s` stream.
+
+If you enable `share_live_streams`, each shared channel consumes at least 12 MB of memory,
+regardless of the number of clients. Increasing the buffer `size` above `1024` will increase memory usage.
+For example, with a buffer size of `2024`, memory usage is at least `24 MB` for **each** shared channel.
+
+This works differently for a BufferedStream. In this case, the buffer size refers to the number of data chunks received 
+from the provider. Each chunk can be up to `8 KB` in size. For `1024` chunks, the maximum memory usage would 
+be `1024 × 8 KB`, which is approximately `8 MB`  as stated above.
+
 
 - *a.* if `retry` is `false` and `buffer.enabled` is `false`  the provider stream is piped as is to the client.
 - *b.* if `retry` is `true` or  `buffer.enabled` is `true` the provider stream is processed and send to the client.
@@ -883,6 +894,10 @@ Target options are:
 - `ignore_logo` logo attributes are ignored to avoid caching logo files on devices.
 - `share_live_streams` to share live stream connections  in reverse proxy mode.
 - `remove_duplicates` tries to remove duplicates by `url`.
+
+If you enable share_live_streams, each shared channel consumes at least 12 MB of memory,
+regardless of the number of clients. Increasing the buffer size above 1024 will increase memory usage. 
+For example, with a buffer size of 2024, memory usage is at least 24 MB for **each** shared channel.     
 
 `strm` output has additional options:
 - `underscore_whitespace`: replaces all whitespaces with `_` in the path
