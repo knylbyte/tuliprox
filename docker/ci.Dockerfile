@@ -356,8 +356,7 @@ COPY --from=cache-pack /out/ /out/
 # Stage 6: tzdata/zoneinfo supplier (shared)
 # -----------------------------------------------------------------
 FROM alpine:${ALPINE_VER} AS tzdata
-RUN \
-    apk add --no-cache tzdata ca-certificates; \
+RUN apk add --no-cache tzdata ca-certificates; \
     update-ca-certificates; \
     test -d /usr/share/zoneinfo
 
