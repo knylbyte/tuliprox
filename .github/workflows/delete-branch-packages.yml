@@ -1,0 +1,137 @@
+name: Cleanup branch packages
+
+on:
+  delete:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  cleanup:
+    if: >-
+      github.event.ref_type == 'branch' && (
+        startsWith(github.event.ref, 'feature/') ||
+        startsWith(github.event.ref, 'bugfix/') ||
+        startsWith(github.event.ref, 'hotfix/')
+      )
+    runs-on: ubuntu-24.04
+    env:
+      ARCH_TAGS: linux-amd64 linux-arm64 linux-armv7
+    steps:
+      - name: Delete packages for deleted branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_REF: ${{ github.event.ref }}
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+
+          branch_ref="$BRANCH_REF"
+          sanitized_branch="${branch_ref//\//-}"
+
+          echo "🧹 Cleaning up packages for branch '$branch_ref' (sanitized: '$sanitized_branch')"
+
+          packages_endpoint="/repos/${OWNER}/${REPO_NAME}/packages"
+          echo "Fetching packages from ${packages_endpoint}"
+
+          set +e
+          packages_json=$(gh api -H "Accept: application/vnd.github+json" \
+            --paginate \
+            "${packages_endpoint}" \
+            -F package_type=container \
+            -F per_page=100)
+          status=$?
+          set -e
+
+          if [[ $status -ne 0 ]]; then
+            echo "Failed to fetch packages for ${OWNER}/${REPO_NAME} (status ${status})."
+            exit $status
+          fi
+
+          mapfile -t candidate_packages < <(printf '%s\n' "$packages_json" | jq -r --arg branch "$sanitized_branch" '
+            .[]
+            | select(
+                .name == $branch
+                or (.name | endswith("/" + $branch))
+                or (.name | endswith("-" + $branch))
+                or (.name | endswith("_" + $branch))
+              )
+            | .name
+          ' | sort -u)
+
+          if [[ ${#candidate_packages[@]} -eq 0 ]]; then
+            echo "No container packages matched branch '${sanitized_branch}'."
+          fi
+
+          deleted_packages=()
+          for package in "${candidate_packages[@]}"; do
+            encoded_package=$(jq -rn --arg value "$package" '$value|@uri')
+            echo "Attempting to delete package '${package}'"
+            if gh api -X DELETE -H "Accept: application/vnd.github+json" \
+              "/repos/${OWNER}/${REPO_NAME}/packages/container/${encoded_package}"; then
+              deleted_packages+=("$package")
+              echo "Deleted package '${package}'."
+            else
+              echo "Failed to delete package '${package}'."
+            fi
+          done
+
+          if [[ ${#deleted_packages[@]} -eq 0 ]]; then
+            echo "No packages were deleted for branch '${sanitized_branch}'."
+          else
+            printf 'Deleted packages: %s\n' "${deleted_packages[*]}"
+          fi
+
+          # Fallback: remove architecture tags from a package that exactly matches the sanitized branch
+          if [[ ${#deleted_packages[@]} -eq 0 ]]; then
+            package_name="$sanitized_branch"
+            encoded_package=$(jq -rn --arg value "$package_name" '$value|@uri')
+            echo "Attempting tag-level cleanup for package '${package_name}'."
+
+            set +e
+            versions_json=$(gh api -H "Accept: application/vnd.github+json" \
+              --paginate \
+              "/repos/${OWNER}/${REPO_NAME}/packages/container/${encoded_package}/versions" \
+              -F per_page=100)
+            status=$?
+            set -e
+
+            if [[ $status -ne 0 ]]; then
+              echo "No version data available for fallback cleanup (status ${status})."
+            else
+              tags_json=$(printf '%s' "$ARCH_TAGS" | jq -Rsc 'split(" ") | map(select(length > 0))')
+              mapfile -t versions_to_delete < <(printf '%s\n' "$versions_json" | jq -r --argjson tags "$tags_json" '
+                .[]
+                | select(
+                    [(.metadata.container.tags[]?)]
+                    | flatten
+                    | any(. as $tag | $tags[] == $tag)
+                  )
+                | .id
+              ')
+
+              for version_id in "${versions_to_delete[@]}"; do
+                if gh api -X DELETE -H "Accept: application/vnd.github+json" \
+                  "/repos/${OWNER}/${REPO_NAME}/packages/container/${encoded_package}/versions/${version_id}"; then
+                  echo "Deleted version ${version_id} from package '${package_name}'."
+                else
+                  echo "Failed to delete version ${version_id} from package '${package_name}'."
+                fi
+              done
+            fi
+          fi
+
+          if [[ ${#deleted_packages[@]} -gt 0 ]]; then
+            {
+              echo "## 🧹 Package cleanup"
+              echo "- Branch: \`${branch_ref}\`"
+              echo "- Sanitized: \`${sanitized_branch}\`"
+              echo "- Removed packages:"
+              for pkg in "${deleted_packages[@]}"; do
+                echo "  - \`${pkg}\`"
+              done
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
