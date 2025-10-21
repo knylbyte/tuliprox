@@ -187,7 +187,7 @@ ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
     RUSTUP_HOME=/usr/local/rustup \
     PATH=${CARGO_HOME}:$PATH \
     SCCACHE_DIR=${SCCACHE_DIR} \
-    RUSTC_WRAPPER=${CARGO_HOME}/sccache
+    RUSTC_WRAPPER=${CARGO_HOME}/bin/sccache
 
 RUN mkdir -p \
   ${SCCACHE_DIR} \
