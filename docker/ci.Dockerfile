@@ -51,11 +51,7 @@ ENV SCCACHE_DIR=${SCCACHE_DIR}
 # ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
 # ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 
-ENV RUST_BACKTRACE=full
-
-RUN mkdir -p \
-  ${SCCACHE_DIR} \
-  ${CARGO_HOME}
+ENV RUST_BACKTRACE=1
 
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
 # - amd64  -> x86_64-unknown-linux-musl
@@ -74,8 +70,8 @@ RUN \
   fi; \
   printf "Using RUST_TARGET=%s\n" "$(cat /rust-target)"
 
-  # Ensure the target is available in the toolchain (prebuild already has rustup)
-  RUN rustup target add "$(cat /rust-target)" || true
+# Ensure the target is available in the toolchain (prebuild already has rustup)
+RUN rustup target add "$(cat /rust-target)" || true
 
 FROM chef AS cache-import
 
@@ -87,13 +83,15 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     --mount=type=bind,from=cache,source=.,target=/cache,readonly \
     SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
     if [[ -s /cache/cargo-registry.tar ]]; then \
-      tar -C "${CARGO_HOME}" -xf /cache/cargo-registry.tar; \
+    tar -C "${CARGO_HOME}" -xf /cache/cargo-registry.tar; \
     fi; \
     if [[ -s /cache/cargo-git.tar ]]; then \
-      tar -C "${CARGO_HOME}" -xf /cache/cargo-git.tar; \
+    tar -C "${CARGO_HOME}" -xf /cache/cargo-git.tar; \
     fi; \
     if [[ -s /cache/sccache.tar ]]; then \
+      ls -l ${SCCACHE_HOME}; \
       tar -C "${SCCACHE_HOME}" -xf /cache/sccache.tar; \
+      ls -l ${SCCACHE_HOME}; \
     fi
 
 # =============================================================================
@@ -104,6 +102,8 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
 FROM chef AS backend-planner
 
 WORKDIR /src
+
+###### NEW Teststage ######
 
 # # Synthetic minimal workspace (backend + shared only) generated ahead of time
 # COPY docker/build-tools/cargo-chef/backend/Cargo.toml ./Cargo.toml
@@ -124,18 +124,24 @@ WORKDIR /src
 # RUN \
 #     cargo chef prepare --recipe-path backend-recipe.json
 
-COPY ./Cargo.toml .
-COPY ./Cargo.lock .
-COPY ./backend ./backend
-COPY ./shared ./shared
+###### NEW Teststage ######
 
-RUN \
-    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml; \
-    cargo_machete_exit_code=0; \
-    cargo machete --with-metadata || cargo_machete_exit_code=$?; \
-    if [ "$cargo_machete_exit_code" -gt 1 ]; then \
-      exit "$cargo_machete_exit_code"; \
-    fi
+# COPY ./Cargo.toml .
+# COPY ./Cargo.lock .
+# COPY ./backend ./backend
+# COPY ./shared ./shared
+
+# RUN \
+#     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["backend", "shared"]/' Cargo.toml; \
+#     cargo_machete_exit_code=0; \
+#     cargo machete --with-metadata || cargo_machete_exit_code=$?; \
+#     if [ "$cargo_machete_exit_code" -gt 1 ]; then \
+#       exit "$cargo_machete_exit_code"; \
+#     fi
+
+###### NEW Teststage ######
+
+COPY . .
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
@@ -152,6 +158,8 @@ FROM chef AS backend-builder
 ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 
 WORKDIR /src
+
+###### NEW Teststage ######
 
 # # Recreate the minimal workspace layout using the pre-generated manifest
 # COPY docker/build-tools/cargo-chef/backend/Cargo.toml ./Cargo.toml
@@ -182,18 +190,25 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     # mkdir -p \
     #     "./target/release/deps" \
     #     "./target/$(cat /rust-target)/release/deps"; \
-    cargo chef cook --release --locked --target "$(cat /rust-target)" --recipe-path backend-recipe.json
+    cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json
 
-COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
-COPY --from=backend-planner /src/Cargo.toml ./Cargo.toml
-COPY --from=backend-planner /src/backend ./backend
-COPY --from=backend-planner /src/shared ./shared
+###### NEW Teststage ######
+
+# COPY --from=backend-planner /src/Cargo.lock ./Cargo.lock
+# COPY --from=backend-planner /src/Cargo.toml ./Cargo.toml
+# COPY --from=backend-planner /src/backend ./backend
+# COPY --from=backend-planner /src/shared ./shared
+
+###### NEW Teststage ######
+
+COPY . .
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
-    cargo build --release --target "$(cat /rust-target)" --locked --bin tuliprox
+    cargo build --release --target "$(cat /rust-target)" --bin tuliprox
 
+# We need this marker for the cache-export stage
 RUN echo ok > /.built-backend
 # =============================================================================
 # Stage 4: frontend-planner (cargo-chef prepare for WASM)
@@ -203,6 +218,8 @@ RUN echo ok > /.built-backend
 FROM chef AS frontend-planner
 
 WORKDIR /src
+
+###### NEW Teststage ######
 
 # # Synthetic minimal workspace (frontend + shared only) generated ahead of time
 # COPY docker/build-tools/cargo-chef/frontend/Cargo.toml ./Cargo.toml
@@ -217,18 +234,24 @@ WORKDIR /src
 #     : > frontend/src/lib.rs; \
 #     : > shared/src/lib.rs
 
-COPY ./Cargo.toml .
-COPY ./Cargo.lock .
-COPY ./frontend ./frontend
-COPY ./shared ./shared
+###### NEW Teststage ######
 
-RUN \
-    sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml; \
-    cargo_machete_exit_code=0; \
-    cargo machete --with-metadata || cargo_machete_exit_code=$?; \
-    if [ "$cargo_machete_exit_code" -gt 1 ]; then \
-      exit "$cargo_machete_exit_code"; \
-    fi
+# COPY ./Cargo.toml .
+# COPY ./Cargo.lock .
+# COPY ./frontend ./frontend
+# COPY ./shared ./shared
+
+# RUN \
+#     sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml; \
+#     cargo_machete_exit_code=0; \
+#     cargo machete --with-metadata || cargo_machete_exit_code=$?; \
+#     if [ "$cargo_machete_exit_code" -gt 1 ]; then \
+#       exit "$cargo_machete_exit_code"; \
+#     fi
+
+###### NEW Teststage ######
+
+COPY . .
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
@@ -244,6 +267,8 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
 FROM chef AS frontend-builder
 
 WORKDIR /src
+
+###### NEW Teststage ######
 
 # # Recreate the minimal workspace layout using the pre-generated manifest
 # COPY docker/build-tools/cargo-chef/frontend/Cargo.toml ./Cargo.toml
@@ -267,14 +292,15 @@ COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
-    rust_target="$(cat /rust-target)"; \
     # As above, recreate the target output directories _after_ cargo clean runs inside
     # cargo-chef so sccache always finds the expected layout.
     # mkdir -p \
     #   "./target/release/deps" \
     #   "./target/${rust_target}/release/deps" \
     #   "./target/wasm32-unknown-unknown/release/deps"; \
-    cargo chef cook --release --locked --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
+    cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
+
+###### NEW Teststage ######
 
 # # Keep using the planner's lockfile so the trimmed workspace stays consistent.
 # COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
@@ -285,18 +311,25 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
 # # Build the actual frontend (Trunk will leverage the cooked deps)
 # WORKDIR /src/frontend
 
-COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
-COPY --from=frontend-planner /src/Cargo.toml ./Cargo.toml
-COPY --from=frontend-planner /src/frontend ./frontend
-COPY --from=frontend-planner /src/shared ./shared
+###### NEW Teststage ######
+
+# COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
+# COPY --from=frontend-planner /src/Cargo.toml ./Cargo.toml
+# COPY --from=frontend-planner /src/frontend ./frontend
+# COPY --from=frontend-planner /src/shared ./shared
+
+###### NEW Teststage ######
+
+COPY . .
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG} \
     mkdir -p ./frontend/dist; \
-    trunk build --release --locked --config ./frontend/Trunk.toml --dist ./frontend/dist
+    trunk build --release --config ./frontend/Trunk.toml --dist ./frontend/dist
 # dist -> /src/frontend/dist
 
+# We need this marker for the cache-export stage
 RUN echo ok > /.built-frontend
 
 FROM chef AS cache-pack
