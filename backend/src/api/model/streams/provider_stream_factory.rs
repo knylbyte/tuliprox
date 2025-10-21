@@ -23,8 +23,6 @@ use url::Url;
 use crate::api::model::streams::buffered_stream::BufferedStream;
 use crate::api::model::streams::client_stream::ClientStream;
 
-// TODO make this configurable
-pub const STREAM_QUEUE_SIZE: usize = 4096; // mpsc channel holding messages. with possible 8192byte chunks
 const RETRY_SECONDS: u64 = 5;
 const ERR_MAX_RETRY_COUNT: u32 = 5;
 
@@ -56,7 +54,7 @@ impl ProviderStreamFactoryOptions {
         let buffer_size = if stream_options.buffer_enabled {
             stream_options.buffer_size
         } else {
-            STREAM_QUEUE_SIZE
+            0
         };
         let filter_header = get_header_filter_for_item_type(item_type);
         let mut req_headers = get_headers_from_request(req_headers, &filter_header);
