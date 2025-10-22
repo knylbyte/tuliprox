@@ -905,6 +905,8 @@ jobs:
           SECONDARY_CACHE_TAG: ${{ steps.plan.outputs.secondary_cache_tag }}
           CACHE_BASE_PRIMARY_TAG: ${{ steps.plan.outputs.cache_base_primary_tag }}
           CACHE_BASE_SECONDARY_TAG: ${{ steps.plan.outputs.cache_base_secondary_tag }}
+          PRIMARY_STAGE: ${{ steps.plan.outputs.primary_stage }}
+          SECONDARY_STAGE: ${{ steps.plan.outputs.secondary_stage }}
         run: |
           {
             echo "## 🧱 Build & Release Summary"
@@ -919,6 +921,23 @@ jobs:
               echo "- Workflow dispatch simulated branch execution for: **${{ steps.plan.outputs.resolved_branch }}**"
             fi
             echo "- Target: **${{ steps.plan.outputs.target }}**"
+            targets=()
+            if [[ -n "${PRIMARY_STAGE// }" ]]; then
+              targets+=( "${PRIMARY_STAGE}" )
+            fi
+            if [[ -n "${SECONDARY_STAGE// }" ]]; then
+              targets+=( "${SECONDARY_STAGE}" )
+            fi
+            if [[ ${#targets[@]} -gt 0 ]]; then
+              joined=""
+              for t in "${targets[@]}"; do
+                if [[ -n "$joined" ]]; then
+                  joined+=" • "
+                fi
+                joined+="\`${t}\`"
+              done
+              echo "- Target stages: ${joined}"
+            fi
             echo ""
             echo "### 🧩 Prebuilds"
             printf -- '- Namespace: `%s`\n' "$GHCR_NS"
