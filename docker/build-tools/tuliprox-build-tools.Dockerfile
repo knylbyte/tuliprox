@@ -17,7 +17,6 @@ ARG RUST_DISTRO=1.90.0-trixie \
     CARGO_CHEF_VER=0.1.73 \
     CARGO_MACHETE_VER=0.9.1 \
     SCCACHE_VER=0.11.0 \
-    ZIG_VER=0.13.0 \
     ALPINE_VER=3.22.2 \
     CARGO_HOME=/usr/local/cargo \
     SCCACHE_DIR=/var/cache/sccache \
@@ -172,7 +171,6 @@ ARG TARGETPLATFORM \
     CARGO_CHEF_VER \
     CARGO_MACHETE_VER \
     SCCACHE_VER \
-    ZIG_VER \
     CARGO_HOME \
     SCCACHE_DIR
 
@@ -207,19 +205,10 @@ RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TA
       pkg-config musl-tools libssl-dev \
       curl ca-certificates \
       libclang-dev binaryen \
-      xz-utils
+      xz-utils \
+      zig
 
-# Install Zig and expose musl cross-compilers for all supported Rust targets
-RUN case "${TARGETPLATFORM}" in \
-      "linux/amd64") zig_pkg="zig-linux-x86_64-${ZIG_VER}" ;; \
-      "linux/arm64") zig_pkg="zig-linux-aarch64-${ZIG_VER}" ;; \
-      *) echo "Unsupported TARGETPLATFORM for Zig: ${TARGETPLATFORM}" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/ziglang/zig/releases/download/${ZIG_VER}/${zig_pkg}.tar.xz" -o /tmp/zig.tar.xz; \
-    mkdir -p /opt/zig; \
-    tar -xJf /tmp/zig.tar.xz -C /opt/zig --strip-components=1; \
-    ln -sf /opt/zig/zig /usr/local/bin/zig; \
-    rm -f /tmp/zig.tar.xz
+# Expose Zig-backed musl cross-compilers for all supported Rust targets
 
 RUN cat <<'EOF' >/usr/local/bin/zig-musl-tool
 #!/bin/sh
