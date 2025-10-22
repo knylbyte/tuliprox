@@ -206,10 +206,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     tar -C ${CARGO_HOME} -cf /out/cargo-git.tar      git             || true; \
     tar -C ${SCCACHE_HOME} -cf /out/sccache.tar      ${SCCACHE_BASE} || true
 
-FROM scratch AS cache-export
-
-COPY --from=cache-pack /out/ /out/
-
 # -----------------------------------------------------------------
 # Stage 6: tzdata/zoneinfo supplier (shared)
 # -----------------------------------------------------------------
@@ -300,7 +296,14 @@ ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
 CMD ["-s", "-p", "/opt/tuliprox/data"]
 
 # -----------------------------------------------------------------
-# Final Image #3: Debugging Environment (Alpine-based)
+# Final Image #3: Cache Exporter (from scratch) -> for CI caching
+# -----------------------------------------------------------------
+FROM scratch AS cache-export
+
+COPY --from=cache-pack /out/ /out/
+
+# -----------------------------------------------------------------
+# Final Image #4: Debugging Environment (Alpine-based)
 # -----------------------------------------------------------------
 # Allow overriding the rust image tag used for debug (e.g. "1.90-alpine3.20").
 FROM rust:${RUST_ALPINE_TAG} AS debug
