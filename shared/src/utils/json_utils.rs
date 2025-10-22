@@ -186,20 +186,27 @@ fn json_to_markdown(value: &Value) -> String {
     fn format_value(v: &Value, indent: usize) -> String {
         let pad = "  ".repeat(indent);
         match v {
-            Value::Object(map) => map.iter()
-                .map(|(k, v)| {
-                    let formatted = format_value(v, indent + 1);
-                    let key = humanize_snake_case(k);
-                    if v.is_object() || v.is_array() {
-                        format!("{pad}*{key}:*\n{formatted}")
-                    } else {
-                        format!("{pad}*{key}:* {formatted}")
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n"),
+            Value::Object(map) => {
+                let mut entries: Vec<_> = map.iter().collect();
+                entries.sort_by_key(|(k, _)| *k);
+                entries.into_iter()
+                    .map(|(k, v)| {
+                        let formatted = format_value(v, indent + 1);
+                        let key = escape_markdown_v2(&humanize_snake_case(k));
+                        if v.is_object() || v.is_array() {
+                            format!("{pad}*{key}:*\n{formatted}")
+                        } else {
+                            format!("{pad}*{key}:* {formatted}")
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            },
             Value::Array(arr) => arr.iter()
-                .map(|v| format!("{pad}\\- {}", format_value(v, indent + 1).trim()))
+                .map(|v| {
+                    let dash_pad = if indent > 0 { "  ".repeat(indent - 1) } else { "".to_string() };
+                    format!("{dash_pad}\\- {}", format_value(v, indent + 1).trim())
+                })
                 .collect::<Vec<_>>()
                 .join("\n"),
             Value::String(s) => escape_markdown_v2(s),

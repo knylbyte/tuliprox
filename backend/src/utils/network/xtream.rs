@@ -157,7 +157,7 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Input
                     if let Ok(cur_status) = ProxyUserStatus::from_str(&status) {
                         if !matches!(cur_status,  ProxyUserStatus::Active | ProxyUserStatus::Trial) {
                             warn!("User status for user {username} is {cur_status:?}");
-                            send_message(client, &MsgKind::Info, cfg.messaging.as_ref(), &format!("User status for user {username} is {cur_status:?}"));
+                            send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User status for user {username} is {cur_status:?}"));
                         }
                     }
                 }
@@ -175,11 +175,11 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Input
                                     let datetime = DateTime::from_timestamp(expiration_timestamp, 0).unwrap();
                                     let formatted = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
                                     warn!("User account for user {username} expires {formatted}");
-                                    send_message(client, &MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} expires {formatted}"));
+                                    send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} expires {formatted}"));
                                 }
                             } else {
                                 warn!("User account for user {username} is expired");
-                                send_message(client, &MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} is expired"));
+                                send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} is expired"));
                             }
                         }
                     }

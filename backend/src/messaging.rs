@@ -83,22 +83,20 @@ fn send_pushover_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &M
     }
 }
 
-pub fn send_message_json(client: &Arc<reqwest::Client>, kind: &MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
+fn dispatch_send_message(client: &Arc<reqwest::Client>, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str, json: bool) {
     if let Some(messaging) = cfg {
-        if is_enabled(*kind, messaging) {
-            send_telegram_message(client, msg, messaging, true);
+        if is_enabled(kind, messaging) {
+            send_telegram_message(client, msg, messaging, json);
             send_http_post_request(client, msg, messaging);
             send_pushover_message(client, msg, messaging);
         }
     }
 }
 
-pub fn send_message(client: &Arc<reqwest::Client>, kind: &MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
-    if let Some(messaging) = cfg {
-        if is_enabled(*kind, messaging) {
-            send_telegram_message(client, msg, messaging, false);
-            send_http_post_request(client, msg, messaging);
-            send_pushover_message(client, msg, messaging);
-        }
-    }
+pub fn send_message_json(client: &Arc<reqwest::Client>, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
+    dispatch_send_message(client, kind, cfg, msg, true);
+}
+
+pub fn send_message(client: &Arc<reqwest::Client>, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
+    dispatch_send_message(client, kind, cfg, msg, false);
 }

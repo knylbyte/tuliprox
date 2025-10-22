@@ -73,7 +73,7 @@ fn handle_watch_notification(client: &Arc<reqwest::Client>, cfg: &Config, added:
 
         let msg = serde_json::to_string_pretty(&changes).unwrap_or_else(|_| "Error: Failed to serialize watch changes".to_string());
         info!("{}", &msg);
-        send_message(client, &MsgKind::Watch, cfg.messaging.as_ref(), &msg);
+        send_message(client, MsgKind::Watch, cfg.messaging.as_ref(), &msg);
     }
 }
 
