@@ -15,7 +15,6 @@ pub use self::logging::*;
 pub use self::trakt::*;
 pub use self::telegram::*;
 
-
 #[macro_export]
 macro_rules! debug_if_enabled {
     ($fmt:expr, $( $args:expr ),*) => {

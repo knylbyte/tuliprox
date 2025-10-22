@@ -121,6 +121,9 @@ Messaging is Opt-In, you need to set the `notify_on` message types which are
 
 `telegram`, `rest` and `pushover.net` configurations are optional.
 
+`telegram` supports markdown generation for structured json messages.
+`telegram` supports `message_thread_id` for group chats. Simply put thread_id behind chat_id separated by `:`. `'<telegram chat id>:<message thread id>'`
+
 ```yaml
 messaging:
   notify_on:
@@ -128,6 +131,7 @@ messaging:
     - stats
     - error
   telegram:
+    markdown: true
     bot_token: '<telegram bot token>'
     chat_ids:
       - '<telegram chat id>'

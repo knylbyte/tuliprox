@@ -9,11 +9,12 @@ use std::sync::Arc;
 use std::thread;
 use tokio::sync::Mutex;
 
-use crate::messaging::send_message;
+use crate::api::model::{EventManager, EventMessage, PlaylistStorageState};
+use crate::messaging::send_message_json;
 use crate::model::Epg;
-use crate::model::{ConfigTarget, ProcessTargets};
-use crate::model::{Mapping};
 use crate::model::FetchedPlaylist;
+use crate::model::Mapping;
+use crate::model::{ConfigTarget, ProcessTargets};
 use crate::model::{InputStats, PlaylistStats, SourceStats, TargetStats};
 use crate::processing::parser::xmltv::flatten_tvguide;
 use crate::processing::playlist_watch::process_group_watch;
@@ -34,7 +35,6 @@ use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputTy
                     PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
 use shared::utils::default_as_default;
 use std::time::Instant;
-use crate::api::model::{EventManager, EventMessage, PlaylistStorageState};
 
 fn is_valid(pli: &PlaylistItem, filter: &Filter) -> bool {
     let provider = ValueProvider { pli };
@@ -248,8 +248,8 @@ async fn playlist_download_from_input(client: &Arc<reqwest::Client>, config: &Ar
 
 async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, source_idx: usize,
                         user_targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>,
-                        playlist_state: Option<&Arc<PlaylistStorageState>>
-)-> (Vec<InputStats>, Vec<TargetStats>, Vec<TuliproxError>) {
+                        playlist_state: Option<&Arc<PlaylistStorageState>>,
+) -> (Vec<InputStats>, Vec<TargetStats>, Vec<TuliproxError>) {
     let sources = cfg.sources.load();
     let mut errors = vec![];
     let mut input_stats = HashMap::<String, InputStats>::new();
@@ -292,7 +292,7 @@ async fn process_source(client: Arc<reqwest::Client>, cfg: Arc<AppConfig>, sourc
                 }
                 let elapsed = start_time.elapsed().as_secs();
                 input_stats.insert(input_name.clone(), create_input_stat(group_count, channel_count, error_list.len(),
-                                                                             input.input_type, input_name, elapsed));
+                                                                         input.input_type, input_name, elapsed));
             }
         }
         if source_downloaded {
@@ -340,7 +340,7 @@ fn create_input_stat(group_count: usize, channel_count: usize, error_count: usiz
 }
 
 async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, user_targets: Arc<ProcessTargets>,
-                         event_manager: Option<Arc<EventManager>>, playlist_state: Option<&Arc<PlaylistStorageState>>
+                         event_manager: Option<Arc<EventManager>>, playlist_state: Option<&Arc<PlaylistStorageState>>,
 ) -> (Vec<SourceStats>, Vec<TuliproxError>) {
     let mut handle_list = vec![];
     let thread_num = config.config.load().threads;
@@ -376,10 +376,11 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
                             let (input_stats, target_stats, mut res_errors) =
                                 process_source(Arc::clone(&http_client), cfg, index, usr_trgts, event_manager, playlist_state.as_ref()).await;
                             shared_errors.lock().await.append(&mut res_errors);
-                            let process_stats = SourceStats::new(input_stats, target_stats);
-                            shared_stats.lock().await.push(process_stats);
+                            if let Some(process_stats) = SourceStats::try_new(input_stats, target_stats) {
+                                shared_stats.lock().await.push(process_stats);
+                            }
                         });
-                    },
+                    }
                     Err(err) => error!("Could not create runtime !!! {err}"),
                 }
             };
@@ -391,8 +392,9 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
             let (input_stats, target_stats, mut res_errors) =
                 process_source(Arc::clone(&client), cfg, index, usr_trgts, event_manager, playlist_state).await;
             shared_errors.lock().await.append(&mut res_errors);
-            let process_stats = SourceStats::new(input_stats, target_stats);
-            shared_stats.lock().await.push(process_stats);
+            if let Some(process_stats) = SourceStats::try_new(input_stats, target_stats) {
+                shared_stats.lock().await.push(process_stats);
+            }
         }
         drop(update_lock);
     }
@@ -476,7 +478,7 @@ async fn process_playlist_for_target(app_config: &AppConfig,
                                      stats: &mut HashMap<String, InputStats>,
                                      errors: &mut Vec<TuliproxError>,
                                      event_manager: Option<Arc<EventManager>>,
-                                     playlist_state: Option<&Arc<PlaylistStorageState>>
+                                     playlist_state: Option<&Arc<PlaylistStorageState>>,
 ) -> Result<(), Vec<TuliproxError>> {
     let pipe = get_processing_pipe(target);
     debug_if_enabled!("Processing order is {}", &target.processing_order);
@@ -526,7 +528,7 @@ async fn process_playlist_for_target(app_config: &AppConfig,
         let mut flat_new_playlist = flatten_groups(new_playlist);
         step.tick("playlist merge");
 
-        if sort_playlist(target, &mut flat_new_playlist)  {
+        if sort_playlist(target, &mut flat_new_playlist) {
             step.tick("playlist sort");
         }
         assign_channel_no_playlist(&mut flat_new_playlist);
@@ -577,7 +579,7 @@ async fn process_epg(processed_fetched_playlists: &mut Vec<FetchedPlaylist<'_>>)
 }
 
 fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &ConfigTarget, new_playlist: &Vec<PlaylistGroup>) -> bool {
-    if let Some(watches)  = &target.watch {
+    if let Some(watches) = &target.watch {
         if default_as_default().eq_ignore_ascii_case(&target.name) {
             error!("cant watch a target with no unique name");
         } else {
@@ -603,19 +605,29 @@ pub async fn exec_processing(client: Arc<reqwest::Client>, app_config: Arc<AppCo
     }
     let config = app_config.config.load();
     let messaging = config.messaging.as_ref();
-    if let Ok(stats_msg) = serde_json::to_string(&serde_json::Value::Object(serde_json::map::Map::from_iter([("stats".to_string(), serde_json::to_value(stats).unwrap())]))) {
-        // print stats
-        info!("{stats_msg}");
-        // send stats
-        send_message(&client, &MsgKind::Stats, messaging, stats_msg.as_str());
+    match serde_json::to_value(&stats) {
+        Ok(val) => {
+            match serde_json::to_string(&serde_json::Value::Object(
+                serde_json::map::Map::from_iter([("stats".to_string(), val)]))) {
+                Ok(stats_msg) => {
+                    // print stats
+                    info!("{stats_msg}");
+                    // send stats
+                    send_message_json(&client, MsgKind::Stats, messaging, stats_msg.as_str());
+                }
+                Err(err) => error!("Failed to serialize playlist stats {err}"),
+            }
+        }
+        Err(err) => error!("Failed to serialize playlist stats {err}")
     }
+
     // send errors
     if let Some(message) = get_errors_notify_message!(errors, 255) {
         if let Some(events) = event_manager {
             events.send_event(EventMessage::PlaylistUpdate(PlaylistUpdateState::Failure));
         }
         if let Ok(error_msg) = serde_json::to_string(&serde_json::Value::Object(serde_json::map::Map::from_iter([("errors".to_string(), serde_json::Value::String(message))]))) {
-            send_message(&client, &MsgKind::Error, messaging, error_msg.as_str());
+            send_message_json(&client, MsgKind::Error, messaging, error_msg.as_str());
         }
     } else if let Some(events) = event_manager {
         events.send_event(EventMessage::PlaylistUpdate(PlaylistUpdateState::Success));
@@ -626,17 +638,17 @@ pub async fn exec_processing(client: Arc<reqwest::Client>, app_config: Arc<AppCo
 
 // #[cfg(test)]
 // mod tests {
-    // #[test]
-    // fn test_jaro_winkeler() {
-    //     let data = [("yessport5", "heyessport5gold"), ("yessport5", "heyesport5gold")];
-    //
-    //     data.iter().for_each(|(first, second)|
-    //     println!("jaro_winkler {} = {} => {}", first, second, strsim::jaro_winkler(first, second)));
-    //     // println!("jaro {}", strsim::jaro(data.0, data.1));
-    //     // println!("levenhstein {}", strsim::levenshtein(data.0, data.1));
-    //     // println!("damerau_levenshtein {:?}", strsim::damerau_levenshtein(data.0, data.1));
-    //     // println!("osa distance {:?}", strsim::osa_distance(data.0, data.1));
-    //     // println!("sorensen dice {:?}", strsim::sorensen_dice(data.0, data.1));
-    // }
+// #[test]
+// fn test_jaro_winkeler() {
+//     let data = [("yessport5", "heyessport5gold"), ("yessport5", "heyesport5gold")];
+//
+//     data.iter().for_each(|(first, second)|
+//     println!("jaro_winkler {} = {} => {}", first, second, strsim::jaro_winkler(first, second)));
+//     // println!("jaro {}", strsim::jaro(data.0, data.1));
+//     // println!("levenhstein {}", strsim::levenshtein(data.0, data.1));
+//     // println!("damerau_levenshtein {:?}", strsim::damerau_levenshtein(data.0, data.1));
+//     // println!("osa distance {:?}", strsim::osa_distance(data.0, data.1));
+//     // println!("sorensen dice {:?}", strsim::sorensen_dice(data.0, data.1));
+// }
 
 // }
