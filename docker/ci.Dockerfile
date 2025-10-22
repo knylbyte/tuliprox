@@ -51,7 +51,7 @@ ENV SCCACHE_DIR=${SCCACHE_DIR}
 # ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
 # ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 
-ENV RUST_BACKTRACE=full
+ENV RUST_BACKTRACE=1
 
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
 # - amd64  -> x86_64-unknown-linux-musl
@@ -119,7 +119,6 @@ FROM chef AS backend-builder
 ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 
 WORKDIR /src
-
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 
 # Build dependencies - this is the caching Docker layer!
@@ -146,9 +145,12 @@ RUN echo ok > /.built-backend
 FROM chef AS frontend-planner
 
 WORKDIR /src
-COPY . .
 
-WORKDIR /src/frontend
+COPY Cargo.toml Cargo.lock ./
+COPY frontend ./frontend
+COPY shared ./shared
+
+RUN sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
@@ -162,9 +164,14 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
 # =============================================================================
 FROM chef AS frontend-builder
 
-WORKDIR /src/frontend
+WORKDIR /src
 
-COPY --from=frontend-planner /src/frontend/frontend-recipe.json ./frontend-recipe.json
+COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
+COPY Cargo.toml Cargo.lock ./
+COPY frontend ./frontend
+COPY shared ./shared
+
+RUN sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
@@ -172,7 +179,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
-WORKDIR /src
 COPY . .
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
