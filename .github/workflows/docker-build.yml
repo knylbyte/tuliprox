@@ -18,9 +18,9 @@ on:
       - master
       - develop
       # temporary disabled because not finalized yet
-      # - 'feature/**'
-      # - 'bugfix/**'
-      # - 'hotfix/**'
+      - 'feature/**'
+      - 'bugfix/**'
+      - 'hotfix/**'
 
 concurrency:
   group: build-and-pusch-tuliprox
