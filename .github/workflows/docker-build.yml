@@ -859,10 +859,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mv /tmp/.ci-cache/${{ matrix.arch_tag }}/out/*.tar .ci-cache/${{ matrix.arch_tag }} || true
+          find /tmp/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
+          ls -al .ci-cache/${{ matrix.arch_tag }}
       
       - name: Step 4.12 - Save cache TARs
-        if: always()
+        if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .ci-cache/${{ matrix.arch_tag }}
