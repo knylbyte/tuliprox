@@ -196,14 +196,15 @@ RUN mkdir -p \
 # System deps for both stages of the app:
 # - Stage 1 (native binary): musl-tools (for musl static builds)
 # - Stage 2 (WASM): libclang-dev, binaryen
-# Keep it lean; no OpenSSL dev packages (we use rustls).
+# Keep it lean; no OpenSSL dev packages (we use rustls). <- not yet implemented
 RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATFORM_TAG},sharing=locked \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       pkg-config musl-tools \
       curl ca-certificates \
-      libclang-dev binaryen
+      libclang-dev binaryen \
+      libssl-dev
 
 # Add rust targets used by the application:
 # - wasm32 (frontend)
