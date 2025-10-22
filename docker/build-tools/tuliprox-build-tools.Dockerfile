@@ -199,12 +199,12 @@ RUN mkdir -p \
 # System deps for both stages of the app:
 # - Stage 1 (native binary): musl-tools (for musl static builds)
 # - Stage 2 (WASM): libclang-dev, binaryen
-# Keep it lean; no OpenSSL dev packages (we use rustls).
+# - libssl-dev to support crates bundling against OpenSSL
 RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATFORM_TAG},sharing=locked \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-      pkg-config musl-tools \
+      pkg-config musl-tools libssl-dev \
       curl ca-certificates \
       libclang-dev binaryen \
       xz-utils
@@ -219,8 +219,9 @@ RUN case "${TARGETPLATFORM}" in \
     mkdir -p /opt/zig; \
     tar -xJf /tmp/zig.tar.xz -C /opt/zig --strip-components=1; \
     ln -sf /opt/zig/zig /usr/local/bin/zig; \
-    rm -f /tmp/zig.tar.xz; \
-    cat <<'EOF' >/usr/local/bin/zig-musl-tool
+    rm -f /tmp/zig.tar.xz
+
+RUN cat <<'EOF' >/usr/local/bin/zig-musl-tool
 #!/bin/sh
 set -eu
 tool="$(basename "$0")"
@@ -238,7 +239,8 @@ case "$tool" in
 esac
 exec zig "$cmd" -target "$target" "$@"
 EOF
-    chmod +x /usr/local/bin/zig-musl-tool; \
+
+RUN chmod +x /usr/local/bin/zig-musl-tool; \
     ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/x86_64-linux-musl-gcc; \
     ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/x86_64-linux-musl-ar; \
     ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/x86_64-linux-musl-ranlib; \
