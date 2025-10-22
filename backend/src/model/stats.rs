@@ -82,8 +82,12 @@ pub struct SourceStats {
 }
 
 impl SourceStats {
-    pub fn new(inputs: Vec<InputStats>, targets: Vec<TargetStats>)->Self {
-        Self {inputs, targets}
+    pub fn new(inputs: Vec<InputStats>, targets: Vec<TargetStats>)-> Option<Self> {
+        if inputs.is_empty() || targets.is_empty() {
+            None
+        } else {
+            Some(Self {inputs, targets})
+        }
     }
 }
 

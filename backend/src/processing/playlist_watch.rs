@@ -52,24 +52,26 @@ pub fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, target_n
     }
 }
 
+#[derive(Debug, serde::Serialize)]
+struct WatchChanges {
+    pub target: String,
+    pub group: String,
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+}
+
 fn handle_watch_notification(client: &Arc<reqwest::Client>, cfg: &Config, added: &BTreeSet<String>, removed: &BTreeSet<String>, target_name: &str, group_name: &str) {
-    let added_entries = added.iter().map(std::string::ToString::to_string).collect::<Vec<String>>().join("\n\t");
-    let removed_entries = removed.iter().map(std::string::ToString::to_string).collect::<Vec<String>>().join("\n\t");
+    let added = added.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
+    let removed = removed.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
+    if !added.is_empty() || !removed.is_empty() {
+        let changes = WatchChanges {
+            target: target_name.to_string(),
+            group: group_name.to_string(),
+            added,
+            removed
+        };
 
-    let mut message = vec![];
-    if !added_entries.is_empty() {
-        message.push("added: [\n\t".to_string());
-        message.push(added_entries);
-        message.push("\n]\n".to_string());
-    }
-    if !removed_entries.is_empty() {
-        message.push("removed: [\n\t".to_string());
-        message.push(removed_entries);
-        message.push("\n]\n".to_string());
-    }
-
-    if !message.is_empty() {
-        let msg = format!("Changes {}/{}\n{}", target_name, group_name, message.join(""));
+        let msg = serde_json::to_string_pretty(&changes).unwrap_or_else(|_| "Error: Failed to serialize watch changes".to_string());
         info!("{}", &msg);
         send_message(client, &MsgKind::Watch, cfg.messaging.as_ref(), &msg);
     }

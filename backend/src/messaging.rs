@@ -1,9 +1,11 @@
-use std::sync::Arc;
-use crate::model::{MessagingConfig};
+use std::borrow::Cow;
+use crate::model::MessagingConfig;
+use crate::utils::{telegram_create_instance, telegram_send_message, SendMessageOption, SendMessageParseMode};
 use log::{debug, error};
-use reqwest::{header};
+use reqwest::header;
 use shared::model::MsgKind;
-use crate::utils::{telegram_create_instance, telegram_send_message};
+use shared::utils::json_str_to_markdown;
+use std::sync::Arc;
 
 fn is_enabled(kind: MsgKind, cfg: &MessagingConfig) -> bool {
     cfg.notify_on.contains(&kind)
@@ -29,12 +31,24 @@ fn send_http_post_request(client: &Arc<reqwest::Client>, msg: &str, messaging: &
     }
 }
 
-fn send_telegram_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &MessagingConfig) {
+fn send_telegram_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &MessagingConfig, json: bool) {
     // TODO use proxy settings
     if let Some(telegram) = &messaging.telegram {
+        let (message, options) = {
+            if json && telegram.markdown {
+                if let Ok(md) = json_str_to_markdown(msg) {
+                    (Cow::Owned(md), Some(SendMessageOption { parse_mode: SendMessageParseMode::MarkdownV2 }))
+                } else {
+                    (Cow::Borrowed(msg), None)
+                }
+            } else {
+                (Cow::Borrowed(msg), None)
+            }
+        };
+
         for chat_id in &telegram.chat_ids {
             let bot = telegram_create_instance(&telegram.bot_token, chat_id);
-            telegram_send_message(client, &bot, msg, None);
+            telegram_send_message(client, &bot, &message, options.as_ref());
         }
     }
 }
@@ -62,17 +76,27 @@ fn send_pushover_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &M
                     } else {
                         error!("Failed to send text message to PUSHOVER, status code {}", response.status());
                     }
-                },
+                }
                 Err(e) => error!("Text message wasn't sent to PUSHOVER api because of: {e}"),
             }
         });
     }
 }
 
+pub fn send_message_json(client: &Arc<reqwest::Client>, kind: &MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
+    if let Some(messaging) = cfg {
+        if is_enabled(*kind, messaging) {
+            send_telegram_message(client, msg, messaging, true);
+            send_http_post_request(client, msg, messaging);
+            send_pushover_message(client, msg, messaging);
+        }
+    }
+}
+
 pub fn send_message(client: &Arc<reqwest::Client>, kind: &MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
     if let Some(messaging) = cfg {
         if is_enabled(*kind, messaging) {
-            send_telegram_message(client, msg, messaging);
+            send_telegram_message(client, msg, messaging, false);
             send_http_post_request(client, msg, messaging);
             send_pushover_message(client, msg, messaging);
         }

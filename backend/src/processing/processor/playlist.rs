@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::thread;
 use tokio::sync::Mutex;
 
-use crate::messaging::send_message;
+use crate::messaging::{send_message_json};
 use crate::model::Epg;
 use crate::model::{ConfigTarget, ProcessTargets};
 use crate::model::{Mapping};
@@ -376,8 +376,9 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
                             let (input_stats, target_stats, mut res_errors) =
                                 process_source(Arc::clone(&http_client), cfg, index, usr_trgts, event_manager, playlist_state.as_ref()).await;
                             shared_errors.lock().await.append(&mut res_errors);
-                            let process_stats = SourceStats::new(input_stats, target_stats);
-                            shared_stats.lock().await.push(process_stats);
+                            if let Some(process_stats) = SourceStats::new(input_stats, target_stats) {
+                                shared_stats.lock().await.push(process_stats);
+                            }
                         });
                     },
                     Err(err) => error!("Could not create runtime !!! {err}"),
@@ -391,8 +392,9 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
             let (input_stats, target_stats, mut res_errors) =
                 process_source(Arc::clone(&client), cfg, index, usr_trgts, event_manager, playlist_state).await;
             shared_errors.lock().await.append(&mut res_errors);
-            let process_stats = SourceStats::new(input_stats, target_stats);
-            shared_stats.lock().await.push(process_stats);
+            if let Some(process_stats) = SourceStats::new(input_stats, target_stats) {
+                shared_stats.lock().await.push(process_stats);
+            }
         }
         drop(update_lock);
     }
@@ -607,7 +609,7 @@ pub async fn exec_processing(client: Arc<reqwest::Client>, app_config: Arc<AppCo
         // print stats
         info!("{stats_msg}");
         // send stats
-        send_message(&client, &MsgKind::Stats, messaging, stats_msg.as_str());
+        send_message_json(&client, &MsgKind::Stats, messaging, stats_msg.as_str());
     }
     // send errors
     if let Some(message) = get_errors_notify_message!(errors, 255) {
@@ -615,7 +617,7 @@ pub async fn exec_processing(client: Arc<reqwest::Client>, app_config: Arc<AppCo
             events.send_event(EventMessage::PlaylistUpdate(PlaylistUpdateState::Failure));
         }
         if let Ok(error_msg) = serde_json::to_string(&serde_json::Value::Object(serde_json::map::Map::from_iter([("errors".to_string(), serde_json::Value::String(message))]))) {
-            send_message(&client, &MsgKind::Error, messaging, error_msg.as_str());
+            send_message_json(&client, &MsgKind::Error, messaging, error_msg.as_str());
         }
     } else if let Some(events) = event_manager {
         events.send_event(EventMessage::PlaylistUpdate(PlaylistUpdateState::Success));
