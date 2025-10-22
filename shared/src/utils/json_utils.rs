@@ -3,6 +3,7 @@ use std::io::{self, Read};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize};
 use serde_json::{self, Deserializer, Value};
+use crate::utils::humanize_snake_case;
 
 fn read_skipping_ws(mut reader: impl Read) -> io::Result<u8> {
     loop {
@@ -166,4 +167,59 @@ where
 {
     let value: Option<String> = Option::deserialize(deserializer)?;
     Ok(value.unwrap_or_default())
+}
+
+const MARKDOWN_SPECIAL_CHARS: &str = r#"_*[]()~`>#+-=|{}.!\"#;
+
+fn escape_markdown_v2(text: &str) -> String {
+    let mut escaped = String::new();
+    for c in text.chars() {
+        if MARKDOWN_SPECIAL_CHARS.contains(c) {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
+fn json_to_markdown(value: &Value) -> String {
+    fn format_value(v: &Value, indent: usize) -> String {
+        let pad = "  ".repeat(indent);
+        match v {
+            Value::Object(map) => {
+                let mut entries: Vec<_> = map.iter().collect();
+                entries.sort_by_key(|(k, _)| *k);
+                entries.into_iter()
+                    .map(|(k, v)| {
+                        let formatted = format_value(v, indent + 1);
+                        let key = escape_markdown_v2(&humanize_snake_case(k));
+                        if v.is_object() || v.is_array() {
+                            format!("{pad}*{key}:*\n{formatted}")
+                        } else {
+                            format!("{pad}*{key}:* {formatted}")
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            },
+            Value::Array(arr) => arr.iter()
+                .map(|v| {
+                    let dash_pad = if indent > 0 { "  ".repeat(indent - 1) } else { "".to_string() };
+                    format!("{dash_pad}\\- {}", format_value(v, indent + 1).trim())
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Value::String(s) => escape_markdown_v2(s),
+            Value::Number(n) => escape_markdown_v2(&n.to_string()),
+            Value::Bool(b) => b.to_string(),
+            Value::Null => "null".to_string(),
+        }
+    }
+
+    format_value(value, 0)
+}
+
+pub fn json_str_to_markdown(json_str: &str) -> Result<String, serde_json::Error> {
+    let value: Value = serde_json::from_str(json_str)?;
+    Ok(json_to_markdown(&value))
 }

@@ -28,7 +28,7 @@ pub enum SendMessageParseMode {
 
 /// Options which can be used with `sendMessage` API
 pub struct SendMessageOption {
-    pub parse_mode: Option<SendMessageParseMode>,
+    pub parse_mode: SendMessageParseMode,
 }
 
 fn get_send_message_parse_mode_str(mode: &SendMessageParseMode) -> &'static str {
@@ -39,7 +39,7 @@ fn get_send_message_parse_mode_str(mode: &SendMessageParseMode) -> &'static str 
 }
 
 #[derive(Debug, serde::Serialize)]
-pub struct RequestObj {
+struct RequestObj {
     pub chat_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_thread_id: Option<String>,
@@ -66,7 +66,7 @@ pub fn telegram_send_message(
     client: &Arc<reqwest::Client>,
     instance: &BotInstance,
     msg: &str,
-    options: Option<SendMessageOption>,
+    options: Option<&SendMessageOption>,
 ) {
     let chat_id = instance.chat_id.to_string();
     let raw_url_str = format!("https://api.telegram.org/bot{}/sendMessage", instance.bot_token);
@@ -77,13 +77,13 @@ pub fn telegram_send_message(
             return;
         }
     };
+
     let request_json_obj = RequestObj {
         chat_id: instance.chat_id.clone(),
         message_thread_id: instance.message_thread_id.clone(),
         text: msg.to_string(),
         parse_mode: options
-            .and_then(|o| o.parse_mode)
-            .map(|mode: SendMessageParseMode| get_send_message_parse_mode_str(&mode))
+            .map(|o| get_send_message_parse_mode_str(&o.parse_mode))
             .map(ToString::to_string),
     };
 

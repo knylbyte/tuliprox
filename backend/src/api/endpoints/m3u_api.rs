@@ -16,10 +16,7 @@ use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::stream;
 use log::{debug, error};
-use shared::model::{
-    FieldGetAccessor, PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission,
-    XtreamCluster,
-};
+use shared::model::{FieldGetAccessor, PlaylistEntry, PlaylistItemType, TargetType, UserConnectionPermission, XtreamCluster};
 use shared::utils::{concat_path, extract_extension_from_url, sanitize_sensitive_info, HLS_EXT};
 use std::sync::Arc;
 

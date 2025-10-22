@@ -5,6 +5,7 @@ use crate::model::macros;
 pub struct TelegramMessagingConfig {
     pub bot_token: String,
     pub chat_ids: Vec<String>,
+    pub markdown: bool,
 }
 
 macros::from_impl!(TelegramMessagingConfig);
@@ -13,6 +14,7 @@ impl From<&TelegramMessagingConfigDto>  for TelegramMessagingConfig {
         Self {
             bot_token: dto.bot_token.clone(),
             chat_ids: dto.chat_ids.clone(),
+            markdown: dto.markdown,
         }
     }
 }
@@ -22,6 +24,7 @@ impl From<&TelegramMessagingConfig>  for TelegramMessagingConfigDto {
         Self {
             bot_token: instance.bot_token.clone(),
             chat_ids: instance.chat_ids.clone(),
+            markdown: instance.markdown,
         }
     }
 }

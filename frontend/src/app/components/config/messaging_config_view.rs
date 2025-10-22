@@ -2,10 +2,7 @@ use crate::app::components::config::config_page::ConfigForm;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::macros::HasFormData;
 use crate::app::components::{Card, Chip, RadioButtonGroup};
-use crate::{
-    config_field, config_field_child, config_field_empty, config_field_hide, config_field_optional,
-    edit_field_list, edit_field_text, edit_field_text_option, generate_form_reducer,
-};
+use crate::{config_field, config_field_bool, config_field_bool_empty, config_field_child, config_field_empty, config_field_hide, config_field_optional, edit_field_bool, edit_field_list, edit_field_text, edit_field_text_option, generate_form_reducer};
 use shared::model::{MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto, TelegramMessagingConfigDto};
 use std::rc::Rc;
 use std::str::FromStr;
@@ -19,6 +16,7 @@ const LABEL_PUSHOVER: &str = "LABEL.PUSHOVER";
 const LABEL_REST: &str = "LABEL.REST";
 const LABEL_BOT_TOKEN: &str = "LABEL.BOT_TOKEN";
 const LABEL_CHAT_IDS: &str = "LABEL.CHAT_IDS";
+const LABEL_MARKDOWN: &str = "LABEL.MARKDOWN";
 const LABEL_URL: &str = "LABEL.URL";
 const LABEL_TOKEN: &str = "LABEL.TOKEN";
 const LABEL_USER: &str = "LABEL.USER";
@@ -29,6 +27,7 @@ generate_form_reducer!(
     fields {
         BotToken => bot_token: String,
         ChatIds => chat_ids: Vec<String>,
+        Markdown => markdown: bool,
     }
 );
 
@@ -183,6 +182,7 @@ pub fn MessagingConfigView() -> Html {
                       </div>
                   }
               })}
+             { config_field_bool!(entry, translate.t(LABEL_MARKDOWN), markdown) }
           </Card>
         },
         None => html! {
@@ -190,6 +190,7 @@ pub fn MessagingConfigView() -> Html {
              <h1>{translate.t(LABEL_TELEGRAM)}</h1>
              { config_field_empty!(translate.t(LABEL_BOT_TOKEN)) }
              { config_field_empty!(translate.t(LABEL_CHAT_IDS)) }
+             { config_field_bool_empty!(translate.t(LABEL_MARKDOWN)) }
           </Card>
         },
     };
@@ -237,7 +238,7 @@ pub fn MessagingConfigView() -> Html {
              html! { <div class="tp__messaging-config-view__notify-on">
                  { for  notify_on_options.iter().map(|t| {
                      let is_selected = msg_state.form.notify_on.contains(t);
-                      let class = if is_selected { "tp__text-button primary" } else { "tp__text-button" };
+                      let class = if is_selected { "tp__text-button tp__button-primary" } else { "tp__text-button" };
                      html! {
                      <Chip label={t.to_string()} class={class}/>
                  }}) }
@@ -282,8 +283,9 @@ pub fn MessagingConfigView() -> Html {
             <div class="tp__messaging-config-view__body tp__config-view-page__body">
                 <Card class="tp__config-view__card">
                     <h1>{translate.t(LABEL_TELEGRAM)}</h1>
-                    { edit_field_text!(telegram_state, translate.t(LABEL_BOT_TOKEN), bot_token, TelegramMessagingConfigFormAction::BotToken) }
+                    { edit_field_text!(telegram_state, translate.t(LABEL_BOT_TOKEN), bot_token, TelegramMessagingConfigFormAction::BotToken, true) }
                     { edit_field_list!(telegram_state, translate.t(LABEL_CHAT_IDS), chat_ids, TelegramMessagingConfigFormAction::ChatIds, translate.t("LABEL.ADD_CHAT_ID")) }
+                    { edit_field_bool!(telegram_state, translate.t(LABEL_MARKDOWN), markdown, TelegramMessagingConfigFormAction::Markdown) }
                 </Card>
 
                 <Card class="tp__config-view__card">
