@@ -36,187 +36,34 @@ env:
   DOCKERFILE: docker/ci.Dockerfile
 
 jobs:
-  # cargo-chef-guard:
-  #   name: Validate cargo-chef inputs
-  #   runs-on: ubuntu-24.04
-
-  #   steps:
-  #     - name: Step 1.1 - Checkout
-  #       uses: actions/checkout@v5
-  #       with:
-  #         fetch-depth: 0
-
-  #     - name: Step 1.2 - Compare manifest checksums
-  #       id: checksum
-  #       shell: python
-  #       run: |
-  #         import hashlib
-  #         import json
-  #         import os
-  #         from pathlib import Path
-
-  #         targets = [
-  #             "Cargo.toml",
-  #             "backend/Cargo.toml",
-  #             "frontend/Cargo.toml",
-  #             "shared/Cargo.toml",
-  #         ]
-
-  #         checksum_path = Path("docker/build-tools/cargo-chef/checksums.json")
-  #         if not checksum_path.exists():
-  #             print("::error::Missing cargo-chef checksum file. Run update-cargo-chef workflow.")
-  #             raise SystemExit(1)
-
-  #         recorded = json.loads(checksum_path.read_text())
-  #         results = []
-  #         mismatches = []
-
-  #         def sha256(path: Path) -> str:
-  #             digest = hashlib.sha256()
-  #             with path.open("rb") as handle:
-  #                 for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-  #                     if not chunk:
-  #                         break
-  #                     digest.update(chunk)
-  #             return digest.hexdigest()
-
-  #         for rel in targets:
-  #             path = Path(rel)
-  #             entry = {
-  #                 "file": rel,
-  #                 "expected": recorded.get(rel),
-  #                 "actual": None,
-  #                 "status": "missing",
-  #             }
-  #             if path.exists():
-  #                 entry["actual"] = sha256(path)
-  #                 if entry["expected"] == entry["actual"]:
-  #                     entry["status"] = "match"
-  #                 else:
-  #                     entry["status"] = "mismatch"
-  #                     mismatches.append(entry)
-  #             else:
-  #                 mismatches.append(entry)
-
-  #             results.append(entry)
-
-  #         mismatches_path = Path("checksum-report.json")
-  #         results_path = Path("checksum-results.json")
-  #         mismatches_path.write_text(json.dumps(mismatches, indent=2))
-  #         results_path.write_text(json.dumps(results, indent=2))
-
-  #         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-  #             handle.write(f"changed={'true' if mismatches else 'false'}\n")
-  #             handle.write(f"report={mismatches_path.as_posix()}\n")
-  #             handle.write(f"results={results_path.as_posix()}\n")
-
-  #     - name: Step 1.3 - Summary (cargo-chef guard)
-  #       if: always()
-  #       env:
-  #         RESULTS_PATH: ${{ steps.checksum.outputs.results }}
-  #       shell: python
-  #       run: |
-  #         import json
-  #         import os
-  #         from pathlib import Path
-
-  #         results_path = Path(os.environ.get('RESULTS_PATH', 'checksum-results.json'))
-  #         data = []
-  #         if results_path.exists():
-  #             try:
-  #                 data = json.loads(results_path.read_text())
-  #             except json.JSONDecodeError:
-  #                 data = []
-
-  #         lines = ["## 📦 Cargo-chef manifest hashes", ""]
-
-  #         if not data:
-  #             lines.append("⚠️ No hash results found.")
-  #         else:
-  #             statuses = [entry.get('status') for entry in data]
-  #             all_match = bool(data) and all(status == 'match' for status in statuses)
-  #             if all_match:
-  #                 lines.append("✅ All recorded hashes match.")
-  #             else:
-  #                 lines.append("❌ Hash discrepancies detected.")
-  #             lines.append("")
-  #             for entry in data:
-  #                 file = entry.get('file')
-  #                 status = entry.get('status')
-  #                 expected = entry.get('expected')
-  #                 actual = entry.get('actual')
-  #                 if status == 'match':
-  #                     hash_value = actual or expected or 'unknown'
-  #                     lines.append(f"- ✅ `{file}` `{hash_value}`")
-  #                 elif status == 'missing':
-  #                     expected_value = expected or 'unknown'
-  #                     lines.append(f"- ❌ `{file}` missing (expected `{expected_value}`)")
-  #                 elif status == 'mismatch':
-  #                     expected_value = expected or 'unknown'
-  #                     actual_value = actual or 'unknown'
-  #                     lines.append(f"- ❌ `{file}` `{expected_value}` -> `{actual_value}`")
-  #                 else:
-  #                     hash_value = actual or expected or 'unknown'
-  #                     lines.append(f"- ⚠️ `{file}` status {status} (`{hash_value}`)")
-
-  #         summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
-  #         if summary_path:
-  #             with open(summary_path, 'a', encoding='utf-8') as handle:
-  #                 handle.write("\n".join(lines).strip() + "\n")
-
-  #     - name: Step 1.4 - Trigger cargo-chef refresh workflow
-  #       if: steps.checksum.outputs.changed == 'true' && github.ref_name == 'develop'
-  #       env:
-  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       shell: bash
-  #       run: |
-  #         set -euo pipefail
-  #         ref="${GITHUB_REF_NAME}"
-  #         echo "Dispatching update-cargo-chef workflow for branch ${ref}"
-  #         gh workflow run update-cargo-chef.yml --ref "${ref}" -f trigger=docker-build
-  #         echo "Dispatched; please wait for it to complete and push updated cargo-chef artifacts."
-
-  #     - name: Step 1.5 - Fail due to stale cargo manifests
-  #       if: steps.checksum.outputs.changed == 'true'
-  #       run: |
-  #         echo "Cargo manifest checksums changed."
-  #         if [ "${GITHUB_REF_NAME}" = "develop" ]; then
-  #           echo "update-cargo-chef workflow has been dispatched; wait for it to push fresh cargo-chef artifacts and rerun this workflow."
-  #         else
-  #           echo "update-cargo-chef workflow runs on branch 'develop'. Please sync your dependency changes via develop before retrying."
-  #         fi
-  #         exit 1
-
   prebuilds:
     name: Ensure tuliprox build tools exist
-    #needs: cargo-chef-guard
     runs-on: ubuntu-24.04
     outputs:
       need_build_tools: ${{ steps.check.outputs.need_build_tools }}
       archs: ${{ steps.arch.outputs.archs }}
 
     steps:
-      - name: Step 2.1 - Checkout
+      - name: Step 1.1 - Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Step 2.2 - Login to GHCR
+      - name: Step 1.2 - Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Step 2.3 - Set arch list
+      - name: Step 1.3 - Set arch list
         id: arch
         shell: bash
         run: |
           set -euo pipefail
           echo "archs=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.4 - Check prebuild availability (all archs)
+      - name: Step 1.4 - Check prebuild availability (all archs)
         id: check
         shell: bash
         env:
@@ -231,7 +78,7 @@ jobs:
           done
           echo "need_build_tools=$need_build_tools" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.5 - Summary (tuliprox build tools check)
+      - name: Step 1.5 - Summary (tuliprox build tools check)
         if: always()
         shell: bash
         run: |
@@ -250,147 +97,16 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
       
-      - name: Step 2.6 - Build tuliprox-build-tools if needed
+      - name: Step 1.6 - Build tuliprox-build-tools if needed
         if: steps.check.outputs.need_build_tools == 'true'
         run: |
           gh workflow run docker-build-tuliprox-build-tools.yml --ref ${{ github.ref }} --repo ${{ github.repository }} --field trigger=gh-actions
           exit 1
 
-
-  # build-tools-prebuild:
-  #   name: Build tuliprox-build-tools
-  #   needs: prebuilds
-  #   runs-on: ubuntu-24.04
-
-  #   steps:
-  #     - name: Step 3.1 - Evaluate requirement
-  #       id: requirement
-  #       shell: bash
-  #       env:
-  #         NEED_BUILD_TOOLS: ${{ needs.prebuilds.outputs.need_build_tools }}
-  #       run: |
-  #         set -euo pipefail
-  #         if [[ "${NEED_BUILD_TOOLS}" == "true" ]]; then
-  #           echo "required=true" >> "$GITHUB_OUTPUT"
-  #         else
-  #           echo "required=false" >> "$GITHUB_OUTPUT"
-  #           echo "ℹ️ tuliprox-build-tools images already present." >> "$GITHUB_STEP_SUMMARY"
-  #         fi
-
-  #     - name: Step 3.2 - Login to GHCR
-  #       if: steps.requirement.outputs.required == 'true'
-  #       uses: docker/login-action@v3
-  #       with:
-  #         registry: ghcr.io
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
-
-  #     - name: Step 3.3 - Ensure prebuild workflow is running
-  #       if: steps.requirement.outputs.required == 'true'
-  #       id: ensure
-  #       env:
-  #         GH_TOKEN: ${{ github.token }}
-  #       shell: bash
-  #       run: |
-  #         set -euo pipefail
-  #         wf="docker-build-tuliprox-build-tools.yml"
-
-  #         existing="$(gh run list --workflow "$wf" --limit 10 --json databaseId,status -q 'map(select(.status == "in_progress" or .status == "queued")) | .[0].databaseId')"
-  #         if [[ -n "${existing:-}" && "${existing}" != "null" ]]; then
-  #           echo "🔁 Found existing run #${existing} for $wf" >&2
-  #           echo "run_id=${existing}" >> "$GITHUB_OUTPUT"
-  #           echo "triggered=false" >> "$GITHUB_OUTPUT"
-  #           exit 0
-  #         fi
-
-  #         echo "⏳ Triggering workflow: $wf" >&2
-  #         gh workflow run "$wf"
-  #         sleep 3
-
-  #         run_id="$(gh run list --workflow "$wf" --limit 1 --json databaseId -q '.[0].databaseId')"
-  #         if [[ -z "${run_id:-}" || "${run_id}" == "null" ]]; then
-  #           echo "Failed to detect run for $wf" >&2
-  #           exit 1
-  #         fi
-
-  #         echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
-  #         echo "triggered=true" >> "$GITHUB_OUTPUT"
-
-  #     - name: Step 3.4 - Wait for prebuild workflow
-  #       if: steps.requirement.outputs.required == 'true'
-  #       env:
-  #         GH_TOKEN: ${{ github.token }}
-  #       shell: bash
-  #       run: |
-  #         set -euo pipefail
-  #         run_id="${{ steps.ensure.outputs.run_id }}"
-  #         if [[ -z "${run_id:-}" ]]; then
-  #           echo "No workflow run id returned" >&2
-  #           exit 1
-  #         fi
-  #         echo "🔎 Waiting for run #${run_id} to finish" >&2
-  #         gh run watch "$run_id" --exit-status
-
-  #     - name: Step 3.5 - Verify tuliprox-build-tools tags
-  #       if: steps.requirement.outputs.required == 'true'
-  #       shell: bash
-  #       env:
-  #         BUILD_TOOLS_IMAGE: ${{ env.GHCR_NS }}/tuliprox-build-tools
-  #       run: |
-  #         set -euo pipefail
-  #         archs="${{ needs.prebuilds.outputs.archs }}"
-
-  #         for i in $(seq 1 60); do
-  #           missing=0
-  #           for a in $archs; do
-  #             docker buildx imagetools inspect "${BUILD_TOOLS_IMAGE}:${a}" >/dev/null 2>&1 || missing=1
-  #           done
-  #           if [[ $missing -eq 0 ]]; then
-  #             echo "✅ All prebuild tags are available."
-  #             exit 0
-  #           fi
-  #           echo "… waiting for prebuild tags to appear (try $i/60)"
-  #           sleep 10
-  #         done
-
-  #         echo "❌ Timeout waiting for prebuild images" >&2
-  #         exit 1
-
-  #     - name: Step 3.6 - Summary (tuliprox-build-tools)
-  #       if: always()
-  #       shell: bash
-  #       env:
-  #         REQUIRED: ${{ steps.requirement.outputs.required }}
-  #         RUN_ID: ${{ steps.ensure.outputs.run_id }}
-  #         TRIGGERED: ${{ steps.ensure.outputs.triggered }}
-  #         ARCHS: ${{ needs.prebuilds.outputs.archs }}
-  #       run: |
-  #         archs="${ARCHS}"
-  #         {
-  #           echo "## 🛠️ tuliprox-build-tools"
-  #           echo ""
-  #           if [[ "${REQUIRED}" == "true" ]]; then
-  #             if [[ "${TRIGGERED}" == "true" ]]; then
-  #               echo "✅ Triggered workflow run #${RUN_ID} to build missing images."
-  #             else
-  #               echo "🔁 Reused existing workflow run #${RUN_ID} and waited for completion."
-  #             fi
-  #             echo ""
-  #             echo "### 📦 Tags confirmed"
-  #             for a in $archs; do
-  #               echo "- \`${{ env.GHCR_NS }}/tuliprox-build-tools:${a}\`"
-  #             done
-  #           else
-  #             echo "✅ No rebuild required; all expected tags already present."
-  #           fi
-  #         } >> "$GITHUB_STEP_SUMMARY"
-
   build:
     name: Build & Publish
     needs:
       - prebuilds
-      # - build-tools-prebuild
-    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -405,6 +121,7 @@ jobs:
           # - platform: linux/arm/v7
           #   runner: ubuntu-24.04-arm
           #   arch_tag: linux-armv7
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
     outputs:
       plan: ${{ steps.export.outputs.plan }}
       tags: ${{ steps.export.outputs.tags }}
@@ -416,23 +133,23 @@ jobs:
       SCCACHE_DIR: /var/cache/sccache
 
     steps:
-      - name: Step 4.1 - Checkout
+      - name: Step 2.1 - Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Step 4.2 - Set up QEMU
+      - name: Step 2.2 - Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: ${{ matrix.platform }}
 
-      - name: Step 4.3 - Set up Buildx
+      - name: Step 2.3 - Set up Buildx
         uses: docker/setup-buildx-action@v3
         id: setup-buildx
         with:
           platforms: ${{ matrix.platform }}
 
-      - name: Step 4.4 - Login to GHCR
+      - name: Step 2.4 - Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -440,7 +157,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       
       # --- Read version from CHANGELOG.md ---
-      - name: Step 4.6 - Read version
+      - name: Step 2.5 - Read version
         id: version
         shell: bash
         run: |
@@ -453,7 +170,7 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
       # --- Decide plan and tags ---
-      - name: Step 4.6 - Decide plan
+      - name: Step 2.6 - Decide plan
         id: plan
         shell: bash
         env:
@@ -715,7 +432,7 @@ jobs:
           fi
 
       # --- Detect new version (only to decide Release later; tagging happens after build) ---
-      - name: Step 4.7 - Detect new version (master only)
+      - name: Step 2.7 - Detect new version (master only)
         id: newver
         if: steps.plan.outputs.plan == 'master'
         shell: bash
@@ -730,7 +447,7 @@ jobs:
           fi
 
       # --- Prepare metadata for primary image ---
-      - name: Step 4.8 - Prepare primary image metadata (${{ matrix.platform }})
+      - name: Step 2.8 - Prepare primary image metadata (${{ matrix.platform }})
         id: primary_meta
         shell: bash
         env:
@@ -819,11 +536,11 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Ensure cache context dir
+      - name: Step 2.9 - Ensure cache context dir
         run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
 
       # see also: https://depot.dev/docs/container-builds/how-to-guides/optimal-dockerfiles/rust-dockerfile
-      - name: Step 4.9 - Cache cargo and sccache directories for Docker build
+      - name: Step 2.10 - Cache cargo and sccache directories for Docker build
         uses: actions/cache@v4
         id: cache
         with:
@@ -833,7 +550,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
-      - name: Step 4.10 - Build and export cache TARs (${{ matrix.platform }})
+      - name: Step 2.11 - Build and export cache TARs (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -854,7 +571,7 @@ jobs:
         # cache-from/to defined below to avoid blank lines when base cache missing
           cache-from: ${{ steps.primary_meta.outputs.cache_from }}
 
-      - name: Step 4.11 - Move cache TARs
+      - name: Step 2.12 - Move cache TARs
         if: always()
         shell: bash
         run: |
@@ -862,7 +579,7 @@ jobs:
           find /tmp/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
           ls -al .ci-cache/${{ matrix.arch_tag }}
       
-      - name: Step 4.12 - Save cache TARs
+      - name: Step 2.13 - Save cache TARs
         if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
@@ -870,7 +587,7 @@ jobs:
           key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
 
       # --- Build primary variant ---
-      - name: Step 4.13 - Build primary image (${{ matrix.platform }})
+      - name: Step 2.14 - Build primary image (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -892,7 +609,7 @@ jobs:
           cache-to: ${{ steps.primary_meta.outputs.cache_to }}
 
       # --- Prepare metadata for secondary image (if any) ---
-      - name: Step 4.11 - Prepare secondary image metadata (${{ matrix.platform }})
+      - name: Step 2.15 - Prepare secondary image metadata (${{ matrix.platform }})
         if: steps.plan.outputs.secondary_stage != ''
         id: secondary_meta
         shell: bash
@@ -983,7 +700,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # --- Build secondary variant ---
-      - name: Step 4.12 - Build secondary image (${{ matrix.platform }})
+      - name: Step 2.16 - Build secondary image (${{ matrix.platform }})
         if: steps.plan.outputs.secondary_stage != ''
         uses: docker/build-push-action@v6
         with:
@@ -1003,7 +720,7 @@ jobs:
           cache-to: ${{ steps.secondary_meta.outputs.cache_to }}
 
       # --- Export PLAN/TAGS for manifests ---
-      - name: Step 4.13 - Export PLAN/TAGS for manifests
+      - name: Step 2.17 - Export PLAN/TAGS for manifests
         id: export
         shell: bash
         run: |
@@ -1125,7 +842,7 @@ jobs:
           echo "arches=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
 
       # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
-      - name: Step 4.14 - Extract release notes (master only, new version)
+      - name: Step 2.18 - Extract release notes (master only, new version)
         id: notes
         if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
         shell: bash
@@ -1140,7 +857,7 @@ jobs:
           ' CHANGELOG.md > release_notes.md
           echo "notes_file=$PWD/release_notes.md" >> "$GITHUB_OUTPUT"
 
-      - name: Step 4.15 - Bump Cargo.toml + tag + release (master only, new version)
+      - name: Step 2.19 - Bump Cargo.toml + tag + release (master only, new version)
         if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1176,7 +893,7 @@ jobs:
           gh release create "v${ver}" --title "v${ver}" --notes-file "${{ steps.notes.outputs.notes_file }}"
 
       # --- Summary ---
-      - name: Step 4.16 - Summary
+      - name: Step 2.20 - Summary
         if: always()
         shell: bash
         env:
@@ -1231,31 +948,6 @@ jobs:
               fi
             fi
             echo ""
-            echo "### 🏷️ Final tags"
-            declare -A alias_map=()
-            if [[ -n "${SUMMARY_TAG_ALIASES// }" ]]; then
-              while IFS= read -r pair; do
-                [[ -n "${pair// }" ]] || continue
-                actual="${pair%%|*}"
-                friendly="${pair#*|}"
-                alias_map["$actual"]="$friendly"
-              done <<< "${SUMMARY_TAG_ALIASES}"
-            fi
-
-            if [[ -n "${SUMMARY_TAGS// }" ]]; then
-              while IFS= read -r t; do
-                [[ -n "${t// }" ]] || continue
-                friendly="${alias_map[$t]:-}"
-                if [[ -n "$friendly" && "$friendly" != "$t" ]]; then
-                  printf -- '- `%s:%s` (alias: `%s`)\n' "$GHCR_NS" "$t" "$friendly"
-                else
-                  printf -- '- `%s:%s`\n' "$GHCR_NS" "$t"
-                fi
-              done <<< "${SUMMARY_TAGS}"
-            else
-              echo "↔️ No final tags."
-            fi
-            echo ""
             if [[ "${{ steps.plan.outputs.plan }}" == "master" ]]; then
               if [[ "${{ steps.newver.outputs.is_new }}" == "true" ]]; then
                 echo "### 🚀 Release"
@@ -1277,10 +969,10 @@ jobs:
 
     steps:
       # Keep login/buildx setup minimal and explicit
-      - name: Step 5.1 - Docker Buildx
+      - name: Step 3.1 - Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Step 5.2 - GHCR Login
+      - name: Step 3.2 - GHCR Login
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -1288,7 +980,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # --- Create manifests ---
-      - name: Step 5.3 - Create manifests
+      - name: Step 3.3 - Create manifests
         id: create
         shell: bash
         run: |
@@ -1326,7 +1018,7 @@ jobs:
           done
 
       # --- Final summary for the manifests ---
-      - name: Step 5.4 - Summary (manifests)
+      - name: Step 3.4 - Summary (manifests)
         if: always()
         shell: bash
         run: |
@@ -1340,7 +1032,7 @@ jobs:
             fi
             echo ""
 
-            echo "### 🏷️ Tags"
+            echo "### 🏷️ Final tags"
             # Reuse outputs for a user-friendly list
             TAGS_INPUT='${{ needs.build.outputs.tags }}'
             ALIASES_INPUT='${{ needs.build.outputs.tag_aliases }}'
@@ -1359,10 +1051,21 @@ jobs:
               while IFS= read -r line; do
                 [[ -n "${line// }" ]] || continue
                 friendly="${alias_map[$line]:-}"
+                image="${GHCR_NS}:${line}"
+                digest="$(docker buildx imagetools inspect "$image" 2>/dev/null | awk '/^Digest:/ {print $2; exit}')"
                 if [[ -n "$friendly" && "$friendly" != "$line" ]]; then
-                  echo "- \`${{ env.GHCR_NS }}:${line}\` (alias: \`$friendly\`)"
+                  echo "- \`$image\` (alias: \`$friendly\`)"
                 else
-                  echo "- \`${{ env.GHCR_NS }}:${line}\`"
+                  echo "- \`$image\`"
+                fi
+                if [[ -n "$digest" ]]; then
+                  if [[ "$digest" == sha256:* ]]; then
+                    echo "  - sha256: \`${digest#sha256:}\`"
+                  else
+                    echo "  - digest: \`$digest\`"
+                  fi
+                else
+                  echo "  - sha256: *(lookup failed)*"
                 fi
               done <<< "$TAGS_INPUT"
             else
