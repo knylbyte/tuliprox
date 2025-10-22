@@ -253,6 +253,8 @@ WORKDIR /src
 
 COPY . .
 
+WORKDIR /src/frontend
+
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
@@ -266,7 +268,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
 # =============================================================================
 FROM chef AS frontend-builder
 
-WORKDIR /src
+WORKDIR /src/frontend
 
 ###### NEW Teststage ######
 
@@ -286,7 +288,7 @@ WORKDIR /src
 # COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
 # COPY --from=frontend-planner /src/Cargo.lock ./Cargo.lock
 
-COPY --from=frontend-planner /src/frontend-recipe.json ./frontend-recipe.json
+COPY --from=frontend-planner /src/frontend/frontend-recipe.json ./frontend-recipe.json
 
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
@@ -320,6 +322,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
 
 ###### NEW Teststage ######
 
+WORKDIR /src
 COPY . .
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
