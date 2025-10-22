@@ -214,7 +214,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "archs=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
+          echo "archs=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
 
       - name: Step 2.4 - Check prebuild availability (all archs)
         id: check
@@ -401,10 +401,9 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
             arch_tag: linux-arm64
-          # temporarily disabled because of long build times
-          # - platform: linux/arm/v7
-          #   runner: ubuntu-24.04-arm
-          #   arch_tag: linux-armv7
+          - platform: linux/arm/v7
+            runner: ubuntu-24.04-arm
+            arch_tag: linux-armv7
     outputs:
       plan: ${{ steps.export.outputs.plan }}
       tags: ${{ steps.export.outputs.tags }}
@@ -1121,7 +1120,7 @@ jobs:
           echo "plan=${PLAN}" >> "$GITHUB_OUTPUT"
 
           # Emit ARCHES used for manifests (keep in sync with build matrix)
-          echo "arches=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
+          echo "arches=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
 
       # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
       - name: Step 4.14 - Extract release notes (master only, new version)
@@ -1182,6 +1181,8 @@ jobs:
           SUMMARY_TAGS: ${{ steps.export.outputs.tags }}
           SUMMARY_TAGS_FRIENDLY: ${{ steps.export.outputs.display_tags }}
           SUMMARY_TAG_ALIASES: ${{ steps.export.outputs.tag_aliases }}
+          PREBUILD_ARCHES: ${{ needs.prebuilds.outputs.archs }}
+          SUMMARY_ARCHES: ${{ steps.export.outputs.arches }}
           CACHE_BASE_BRANCH: ${{ steps.plan.outputs.cache_base_branch }}
           PRIMARY_CACHE_TAG: ${{ steps.plan.outputs.primary_cache_tag }}
           SECONDARY_CACHE_TAG: ${{ steps.plan.outputs.secondary_cache_tag }}
@@ -1204,7 +1205,11 @@ jobs:
             echo ""
             echo "### 🧩 Prebuilds"
             printf -- '- Namespace: `%s`\n' "$GHCR_NS"
-            echo "- Checked arch tags: linux-amd64 • linux-arm64 • linux-armv7"
+            if [[ -n "${PREBUILD_ARCHES// }" ]]; then
+              echo "- Checked arch tags: ${PREBUILD_ARCHES// / • }"
+            else
+              echo "- Checked arch tags: (none)"
+            fi
             echo ""
             echo "### 🧷 Cache"
             echo "- GHA cache scopes:" 
@@ -1266,7 +1271,11 @@ jobs:
             fi
             echo ""
             echo "### 🧭 Platforms"
-            echo "- linux/amd64 • linux/arm64"
+            if [[ -n "${SUMMARY_ARCHES// }" ]]; then
+              echo "- ${SUMMARY_ARCHES// / • }"
+            else
+              echo "- (none)"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   manifests:

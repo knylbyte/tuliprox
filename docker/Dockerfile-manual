@@ -15,6 +15,7 @@ RUN apk add --no-cache tzdata \
 FROM alpine:latest AS binary-selector
 
 ARG TARGETARCH
+ARG TARGETVARIANT
 
 WORKDIR /app
 
@@ -22,9 +23,11 @@ WORKDIR /app
 COPY ./binaries ./binaries
 
 # Select the appropriate binary based on target architecture
-RUN case "${TARGETARCH}" in \
-        "amd64") cp ./binaries/tuliprox-x86_64-unknown-linux-musl ./tuliprox ;; \
-        "arm64") cp ./binaries/tuliprox-aarch64-unknown-linux-musl ./tuliprox ;; \
+RUN case "${TARGETARCH}/${TARGETVARIANT}" in \
+        amd64/) cp ./binaries/tuliprox-x86_64-unknown-linux-musl ./tuliprox ;; \
+        arm64/) cp ./binaries/tuliprox-aarch64-unknown-linux-musl ./tuliprox ;; \
+        arm/v7) cp ./binaries/tuliprox-armv7-unknown-linux-musleabihf ./tuliprox ;; \
+        arm/|arm/*) echo "Unsupported ARM variant: ${TARGETVARIANT}" && exit 1 ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac
 

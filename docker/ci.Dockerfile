@@ -31,7 +31,7 @@ ARG SCCACHE_DIR=var/cache/sccache
 #  - Generates a recipe.json that represents all Rust dependencies
 #  - Computes /rust-target from TARGETPLATFORM if RUST_TARGET not set
 # =============================================================================
-FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS chef
+FROM --platform=$BUILDPLATFORM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS chef
 
 SHELL ["/bin/bash", "-e", "-u", "-x", "-o", "pipefail", "-c"]
 
@@ -348,14 +348,14 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     tar -C ${CARGO_HOME} -cf /out/cargo-git.tar      git             || true; \
     tar -C ${SCCACHE_HOME} -cf /out/sccache.tar      ${SCCACHE_BASE} || true
 
-FROM scratch AS cache-export
+FROM --platform=$BUILDPLATFORM scratch AS cache-export
 
 COPY --from=cache-pack /out/ /out/
 
 # -----------------------------------------------------------------
 # Stage 6: tzdata/zoneinfo supplier (shared)
 # -----------------------------------------------------------------
-FROM alpine:${ALPINE_VER} AS tzdata
+FROM --platform=$TARGETPLATFORM alpine:${ALPINE_VER} AS tzdata
 RUN apk add --no-cache tzdata ca-certificates; \
     update-ca-certificates; \
     test -d /usr/share/zoneinfo
@@ -363,7 +363,7 @@ RUN apk add --no-cache tzdata ca-certificates; \
 # -----------------------------------------------------------------
 # Stage 7: Resources (prebuilt ffmpeg outputs)
 # -----------------------------------------------------------------
-FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS resources
+FROM --platform=$BUILDPLATFORM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS resources
 # Expected: /src/resources/*.ts
 
 # =================================================================
@@ -378,7 +378,7 @@ FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS resources
 # -----------------------------------------------------------------
 # Final Image #1: Final runtime (FROM scratch) -> all musl targets
 # -----------------------------------------------------------------
-FROM scratch AS scratch-final
+FROM --platform=$TARGETPLATFORM scratch AS scratch-final
 
 ARG DEFAULT_TZ=UTC
 ENV TZ=${DEFAULT_TZ}
@@ -405,7 +405,7 @@ CMD ["-s", "-p", "/opt/tuliprox/data"]
 # -----------------------------------------------------------------
 # Final Image #2: Final runtime (FROM Alpine) -> dev-friendly
 # -----------------------------------------------------------------
-FROM alpine:${ALPINE_VER} AS alpine-final
+FROM --platform=$TARGETPLATFORM alpine:${ALPINE_VER} AS alpine-final
 
 ARG DEFAULT_TZ=UTC
 ENV TZ=${DEFAULT_TZ}
@@ -445,7 +445,7 @@ CMD ["-s", "-p", "/opt/tuliprox/data"]
 # Final Image #3: Debugging Environment (Alpine-based)
 # -----------------------------------------------------------------
 # Allow overriding the rust image tag used for debug (e.g. "1.90-alpine3.20").
-FROM rust:${RUST_ALPINE_TAG} AS debug
+FROM --platform=$TARGETPLATFORM rust:${RUST_ALPINE_TAG} AS debug
 
 # For Alpine, the correct target architecture typically uses 'musl'
 ARG RUST_TARGET=x86_64-unknown-linux-musl

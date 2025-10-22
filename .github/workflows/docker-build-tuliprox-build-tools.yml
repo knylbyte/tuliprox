@@ -45,9 +45,6 @@ jobs:
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
             arch_tag: linux-arm64
-          - platform: linux/arm/v7         # build armv7 on arm64 runner (fast cross-compile)
-            runner: ubuntu-24.04-arm
-            arch_tag: linux-armv7
 
     runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
 

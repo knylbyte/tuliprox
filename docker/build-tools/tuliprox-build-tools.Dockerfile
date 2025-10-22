@@ -17,6 +17,7 @@ ARG RUST_DISTRO=1.90.0-trixie \
     CARGO_CHEF_VER=0.1.73 \
     CARGO_MACHETE_VER=0.9.1 \
     SCCACHE_VER=0.11.0 \
+    ZIG_VER=0.13.0 \
     ALPINE_VER=3.22.2 \
     CARGO_HOME=/usr/local/cargo \
     SCCACHE_DIR=/var/cache/sccache \
@@ -163,13 +164,15 @@ FROM rust:${RUST_DISTRO}
 
 SHELL ["/bin/bash", "-e", "-u", "-x", "-o", "pipefail", "-c"]
 
-ARG BUILDPLATFORM_TAG \
+ARG TARGETPLATFORM \
+    BUILDPLATFORM_TAG \
     RUST_DISTRO \
     TRUNK_VER \
     BINDGEN_VER \
     CARGO_CHEF_VER \
     CARGO_MACHETE_VER \
     SCCACHE_VER \
+    ZIG_VER \
     CARGO_HOME \
     SCCACHE_DIR
 
@@ -203,7 +206,48 @@ RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TA
     apt-get install -y --no-install-recommends \
       pkg-config musl-tools \
       curl ca-certificates \
-      libclang-dev binaryen
+      libclang-dev binaryen \
+      xz-utils
+
+# Install Zig and expose musl cross-compilers for all supported Rust targets
+RUN case "${TARGETPLATFORM}" in \
+      "linux/amd64") zig_pkg="zig-linux-x86_64-${ZIG_VER}" ;; \
+      "linux/arm64") zig_pkg="zig-linux-aarch64-${ZIG_VER}" ;; \
+      *) echo "Unsupported TARGETPLATFORM for Zig: ${TARGETPLATFORM}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/ziglang/zig/releases/download/${ZIG_VER}/${zig_pkg}.tar.xz" -o /tmp/zig.tar.xz; \
+    mkdir -p /opt/zig; \
+    tar -xJf /tmp/zig.tar.xz -C /opt/zig --strip-components=1; \
+    ln -sf /opt/zig/zig /usr/local/bin/zig; \
+    rm -f /tmp/zig.tar.xz; \
+    cat <<'EOF' >/usr/local/bin/zig-musl-tool
+#!/bin/sh
+set -eu
+tool="$(basename "$0")"
+case "$tool" in
+  x86_64-linux-musl-gcc)      cmd=cc;     target=x86_64-linux-musl ;;
+  x86_64-linux-musl-ar)       cmd=ar;     target=x86_64-linux-musl ;;
+  x86_64-linux-musl-ranlib)   cmd=ranlib; target=x86_64-linux-musl ;;
+  aarch64-linux-musl-gcc)     cmd=cc;     target=aarch64-linux-musl ;;
+  aarch64-linux-musl-ar)      cmd=ar;     target=aarch64-linux-musl ;;
+  aarch64-linux-musl-ranlib)  cmd=ranlib; target=aarch64-linux-musl ;;
+  armv7l-linux-musleabihf-gcc)    cmd=cc;     target=arm-linux-musleabihf ;;
+  armv7l-linux-musleabihf-ar)     cmd=ar;     target=arm-linux-musleabihf ;;
+  armv7l-linux-musleabihf-ranlib) cmd=ranlib; target=arm-linux-musleabihf ;;
+  *) echo "Unsupported zig musl tool: $tool" >&2; exit 1 ;;
+esac
+exec zig "$cmd" -target "$target" "$@"
+EOF
+    chmod +x /usr/local/bin/zig-musl-tool; \
+    ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/x86_64-linux-musl-gcc; \
+    ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/x86_64-linux-musl-ar; \
+    ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/x86_64-linux-musl-ranlib; \
+    ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/aarch64-linux-musl-gcc; \
+    ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/aarch64-linux-musl-ar; \
+    ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/aarch64-linux-musl-ranlib; \
+    ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/armv7l-linux-musleabihf-gcc; \
+    ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/armv7l-linux-musleabihf-ar; \
+    ln -sf /usr/local/bin/zig-musl-tool /usr/local/bin/armv7l-linux-musleabihf-ranlib
 
 # Add rust targets used by the application:
 # - wasm32 (frontend)
@@ -214,14 +258,26 @@ RUN rustup target add \
       aarch64-unknown-linux-musl \
       armv7-unknown-linux-musleabihf
 
-# Tell cargo which C compiler/linker to use for musl targets
+# Tell cargo which toolchain wrappers to use for musl targets
 # (when building *inside* the platform-native tool image)
-ENV CC_x86_64_unknown_linux_musl=musl-gcc \
-    CC_aarch64_unknown_linux_musl=musl-gcc \
-    CC_armv7_unknown_linux_musleabihf=musl-gcc \
-    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-    CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=musl-gcc
+ENV CC_x86_64_unknown_linux_musl=/usr/local/bin/x86_64-linux-musl-gcc \
+    CC_aarch64_unknown_linux_musl=/usr/local/bin/aarch64-linux-musl-gcc \
+    CC_armv7_unknown_linux_musleabihf=/usr/local/bin/armv7l-linux-musleabihf-gcc \
+    AR_x86_64_unknown_linux_musl=/usr/local/bin/x86_64-linux-musl-ar \
+    AR_aarch64_unknown_linux_musl=/usr/local/bin/aarch64-linux-musl-ar \
+    AR_armv7_unknown_linux_musleabihf=/usr/local/bin/armv7l-linux-musleabihf-ar \
+    RANLIB_x86_64_unknown_linux_musl=/usr/local/bin/x86_64-linux-musl-ranlib \
+    RANLIB_aarch64_unknown_linux_musl=/usr/local/bin/aarch64-linux-musl-ranlib \
+    RANLIB_armv7_unknown_linux_musleabihf=/usr/local/bin/armv7l-linux-musleabihf-ranlib \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=/usr/local/bin/x86_64-linux-musl-gcc \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=/usr/local/bin/aarch64-linux-musl-gcc \
+    CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=/usr/local/bin/armv7l-linux-musleabihf-gcc \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_AR=/usr/local/bin/x86_64-linux-musl-ar \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_AR=/usr/local/bin/aarch64-linux-musl-ar \
+    CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_AR=/usr/local/bin/armv7l-linux-musleabihf-ar \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RANLIB=/usr/local/bin/x86_64-linux-musl-ranlib \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RANLIB=/usr/local/bin/aarch64-linux-musl-ranlib \
+    CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RANLIB=/usr/local/bin/armv7l-linux-musleabihf-ranlib
 
 # Ship tool binaries built in the builder stage
 COPY --from=builder /out/bin/trunk /usr/local/cargo/bin/trunk
@@ -244,6 +300,9 @@ RUN trunk --version \
  && wasm-bindgen --version \
  && cargo-chef --version \
  && cargo machete --version \
- && sccache --version
+ && sccache --version \
+ && zig version \
+ && aarch64-linux-musl-gcc --version \
+ && armv7l-linux-musleabihf-gcc --version
 
 
