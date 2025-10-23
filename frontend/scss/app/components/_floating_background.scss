@@ -1,0 +1,31 @@
+.tp__floating-background {
+
+  width: 100vw;
+  height: 100vh;
+  position: absolute;
+  overflow: hidden;
+  //background-color: var(--floating-background-color);
+  background: radial-gradient(var(--floating-background-color) 0%, var(--background-color) 70%);
+  z-index: 0;
+
+  .tp__star {
+    position: absolute;
+
+    pointer-events: none;
+    user-select: none;
+
+    border-radius: 50%;
+
+    //.organic-circle {
+    background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 70%);
+    animation: organic-wobble 8s ease-in-out infinite;
+    filter: blur(3px);
+  }
+  @keyframes organic-wobble {
+    0% { transform: scale(1); }
+    25% { transform: scale(1.3); }
+    50% { transform: scale(0.7); }
+    75% { transform: scale(1.3); }
+    100% { transform: scale(1); }
+  }
+}

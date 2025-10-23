@@ -1,10 +1,10 @@
+use crate::model::{xtream_const, CommonPlaylistItem, ConfigTargetOptions};
+use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id, get_string_from_serde_value, get_u32_from_serde_value, get_u64_from_serde_value};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use crate::model::{ConfigTargetOptions, xtream_const, CommonPlaylistItem};
-use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id, get_string_from_serde_value, get_u32_from_serde_value, get_u64_from_serde_value};
 
 // https://de.wikipedia.org/wiki/M3U
 // https://siptv.eu/howto/playlist.html
@@ -158,11 +158,17 @@ pub struct PlaylistItemHeader {
     #[serde(default)]
     pub category_id: u32,
     pub input_name: String,
+    #[serde(default)]
+    pub copy: bool, // not original, a copy
 }
 
 impl PlaylistItemHeader {
     pub fn gen_uuid(&mut self) {
-        self.uuid = generate_playlist_uuid(&self.input_name, &self.id, self.item_type, &self.url);
+        self.uuid = if self.copy {
+            generate_playlist_uuid(&format!("copy-{}", self.input_name), &self.id, self.item_type, &format!("copy-{}", self.url))
+        } else {
+            generate_playlist_uuid(&self.input_name, &self.id, self.item_type, &self.url)
+        };
     }
     pub const fn get_uuid(&self) -> &UUIDType {
         &self.uuid
@@ -293,6 +299,8 @@ pub struct M3uPlaylistItem {
     pub epg_channel_id: Option<String>,
     pub input_name: String,
     pub item_type: PlaylistItemType,
+    #[serde(default)]
+    pub copy: bool,
     #[serde(skip)]
     pub t_stream_url: String,
     #[serde(skip)]
@@ -425,10 +433,11 @@ pub struct XtreamPlaylistItem {
     pub category_id: u32,
     pub input_name: String,
     pub channel_no: u32,
+    #[serde(default)]
+    pub copy: bool,
 }
 
 impl XtreamPlaylistItem {
-
     pub fn get_additional_property(&self, field: &str) -> Option<Value> {
         if let Some(json) = self.additional_properties.as_ref() {
             if let Ok(Value::Object(props)) = serde_json::from_str(json) {
@@ -461,7 +470,6 @@ impl XtreamPlaylistItem {
             category_id: Some(self.category_id),
         }
     }
-
 }
 
 impl PlaylistEntry for XtreamPlaylistItem {
@@ -587,6 +595,7 @@ impl PlaylistItem {
             epg_channel_id: header.epg_channel_id.clone(),
             input_name: header.input_name.to_string(),
             item_type: header.item_type,
+            copy: header.copy,
             t_stream_url: header.url.to_string(),
             t_resource_url: None,
         }
@@ -646,6 +655,7 @@ impl PlaylistItem {
             category_id: header.category_id,
             input_name: header.input_name.to_string(),
             channel_no: header.chno.parse::<u32>().unwrap_or(0),
+            copy: header.copy,
         }
     }
 
@@ -703,7 +713,6 @@ impl PlaylistItem {
             chno: header.chno.clone(),
         }
     }
-    
 }
 
 impl PlaylistEntry for PlaylistItem {

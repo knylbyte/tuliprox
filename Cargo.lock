@@ -1139,6 +1139,7 @@ dependencies = [
  "bytes",
  "chrono",
  "cron",
+ "fastrand",
  "futures",
  "futures-signals",
  "gloo-render 0.2.0",

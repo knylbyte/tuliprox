@@ -309,6 +309,9 @@
         "FAIL": "Failed to download server config!"
       }
     },
+    "LOGIN": {
+      "MESSAGE": "Enter Your Credentials"
+    },
     "SAVE": {
       "MAIN_CONFIG": {
         "SUCCESS": "Main config saved!",

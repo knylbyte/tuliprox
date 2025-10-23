@@ -45,6 +45,9 @@ mod key_value_editor;
 mod loading_screen;
 mod theme;
 mod websocket_status;
+
+mod floating_background;
+
 // pub use self::input::*;
 // pub use self::menu_item::*;
 // pub use self::popup_menu::*;

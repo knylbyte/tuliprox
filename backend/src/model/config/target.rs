@@ -8,7 +8,7 @@ use regex::Regex;
 use shared::foundation::filter::Filter;
 use shared::foundation::filter::ValueProvider;
 use crate::model::{macros, ConfigRename, ConfigSort};
-
+use crate::model::config::favourites::ConfigFavourites;
 
 #[derive(Clone, Debug)]
 pub struct ProcessTargets {
@@ -221,6 +221,7 @@ pub struct ConfigTarget {
     pub rename: Option<Vec<ConfigRename>>,
     pub mapping_ids: Option<Vec<String>>,
     pub mapping: Arc<ArcSwapOption<Vec<Mapping>>>,
+    pub favourites: Option<Vec<ConfigFavourites>>,
     pub processing_order: ProcessingOrder,
     pub watch: Option<Vec<regex::Regex>>,
     pub use_memory_cache: bool,
@@ -299,6 +300,7 @@ impl From<&ConfigTargetDto> for ConfigTarget {
             rename: dto.rename.as_ref().map(|l| l.iter().map(Into::into).collect()),
             mapping_ids: dto.mapping.clone(),
             mapping: Arc::new(ArcSwapOption::new(None)),
+            favourites: dto.favourites.as_ref().map(|f| f.iter().map(Into::into).collect()),
             processing_order: dto.processing_order,
             watch: dto.watch.as_ref().map(|list| list.iter().filter_map(|s| Regex::new(s).ok()).collect()),
             use_memory_cache: dto.use_memory_cache,
