@@ -103,6 +103,8 @@ RUN echo ok > /.build-cache-import
 # =============================================================================
 FROM chef AS backend-planner
 
+COPY --from=cache-import  /.build-cache-import  /.build-cache-import
+
 WORKDIR /src
 COPY . .
 
@@ -145,6 +147,8 @@ RUN echo ok > /.built-backend
 #  - Generates a recipe that describes all Rust deps for the WASM target
 # =============================================================================
 FROM chef AS frontend-planner
+
+COPY --from=cache-import  /.build-cache-import  /.build-cache-import
 
 WORKDIR /src
 
