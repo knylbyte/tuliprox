@@ -245,11 +245,11 @@ COPY --from=resources         /src/resources                  /opt/tuliprox/reso
 # In scratch we cannot create symlinks (no shell); duplicate to PATH location
 COPY --from=backend-builder   /src/target/*/release/tuliprox /usr/local/bin/tuliprox
 
+RUN echo ok > /.build-scratch-final
+
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
 CMD ["-s", "-p", "/opt/tuliprox/data"]
-
-RUN echo ok > /.build-scratch-final
 
 # -----------------------------------------------------------------
 # Final Image #2: Final runtime (FROM Alpine) -> dev-friendly
@@ -283,14 +283,14 @@ COPY --from=resources         /src/resources                  /opt/tuliprox/reso
 # PATH convenience symlink
 RUN ln -s /opt/tuliprox/bin/tuliprox /usr/local/bin/tuliprox
 
+RUN echo ok > /.build-alpine-final
+
 # Land in /opt/tuliprox/data on attach
 WORKDIR /opt/tuliprox/data
 
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
 CMD ["-s", "-p", "/opt/tuliprox/data"]
-
-RUN echo ok > /.build-alpine-final
 
 # =================================================================
 #
