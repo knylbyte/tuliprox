@@ -213,6 +213,13 @@ FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS resources
 # Expected: /src/resources/*.ts
 
 RUN echo ok > /.built-resources
+
+FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS cache-marker
+
+RUN echo ok > /.build-scratch-final
+RUN echo ok > /.build-alpine-final
+RUN echo ok > /.build-cache-marker
+
 # =================================================================
 #
 # Part 2: Final Image Stages
@@ -245,11 +252,13 @@ COPY --from=resources         /src/resources                  /opt/tuliprox/reso
 # In scratch we cannot create symlinks (no shell); duplicate to PATH location
 COPY --from=backend-builder   /src/target/*/release/tuliprox /usr/local/bin/tuliprox
 
-RUN echo ok > /.build-scratch-final
-
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
 CMD ["-s", "-p", "/opt/tuliprox/data"]
+
+# We need this marker for the cache-export stage and must copy it from cache-marker
+# because scratch has no shell to create it.
+COPY --from=cache-marker /.build-scratch-final /.build-scratch-final
 
 # -----------------------------------------------------------------
 # Final Image #2: Final runtime (FROM Alpine) -> dev-friendly
@@ -283,14 +292,14 @@ COPY --from=resources         /src/resources                  /opt/tuliprox/reso
 # PATH convenience symlink
 RUN ln -s /opt/tuliprox/bin/tuliprox /usr/local/bin/tuliprox
 
-RUN echo ok > /.build-alpine-final
-
 # Land in /opt/tuliprox/data on attach
 WORKDIR /opt/tuliprox/data
 
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
 CMD ["-s", "-p", "/opt/tuliprox/data"]
+
+COPY --from=cache-marker /.build-alpine-final /.build-alpine-final
 
 # =================================================================
 #
