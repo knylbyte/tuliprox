@@ -578,16 +578,9 @@ jobs:
           set -euo pipefail
           find /tmp/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
           ls -al .ci-cache/${{ matrix.arch_tag }}
-      
-      - name: Step 2.13 - Save cache TARs
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: .ci-cache/${{ matrix.arch_tag }}
-          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
 
       # --- Build primary variant ---
-      - name: Step 2.14 - Build primary image (${{ matrix.platform }})
+      - name: Step 2.13 - Build primary image (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -609,7 +602,7 @@ jobs:
           cache-to: ${{ steps.primary_meta.outputs.cache_to }}
 
       # --- Prepare metadata for secondary image (if any) ---
-      - name: Step 2.15 - Prepare secondary image metadata (${{ matrix.platform }})
+      - name: Step 2.14 - Prepare secondary image metadata (${{ matrix.platform }})
         if: steps.plan.outputs.secondary_stage != ''
         id: secondary_meta
         shell: bash
@@ -700,7 +693,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # --- Build secondary variant ---
-      - name: Step 2.16 - Build secondary image (${{ matrix.platform }})
+      - name: Step 2.15 - Build secondary image (${{ matrix.platform }})
         if: steps.plan.outputs.secondary_stage != ''
         uses: docker/build-push-action@v6
         with:
@@ -720,7 +713,7 @@ jobs:
           cache-to: ${{ steps.secondary_meta.outputs.cache_to }}
 
       # --- Export PLAN/TAGS for manifests ---
-      - name: Step 2.17 - Export PLAN/TAGS for manifests
+      - name: Step 2.16 - Export PLAN/TAGS for manifests
         id: export
         shell: bash
         run: |
@@ -842,7 +835,7 @@ jobs:
           echo "arches=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
 
       # ---- Release & Cargo.toml bump AFTER successful build+manifest ----
-      - name: Step 2.18 - Extract release notes (master only, new version)
+      - name: Step 2.17 - Extract release notes (master only, new version)
         id: notes
         if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
         shell: bash
@@ -857,7 +850,7 @@ jobs:
           ' CHANGELOG.md > release_notes.md
           echo "notes_file=$PWD/release_notes.md" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.19 - Bump Cargo.toml + tag + release (master only, new version)
+      - name: Step 2.18 - Bump Cargo.toml + tag + release (master only, new version)
         if: success() && steps.plan.outputs.plan == 'master' && steps.newver.outputs.is_new == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -893,7 +886,7 @@ jobs:
           gh release create "v${ver}" --title "v${ver}" --notes-file "${{ steps.notes.outputs.notes_file }}"
 
       # --- Summary ---
-      - name: Step 2.20 - Summary
+      - name: Step 2.19 - Summary
         if: always()
         shell: bash
         env:
@@ -920,7 +913,6 @@ jobs:
             if [[ "${{ steps.plan.outputs.dispatch_simulated }}" == "true" ]]; then
               echo "- Workflow dispatch simulated branch execution for: **${{ steps.plan.outputs.resolved_branch }}**"
             fi
-            echo "- Target: **${{ steps.plan.outputs.target }}**"
             targets=()
             if [[ -n "${PRIMARY_STAGE// }" ]]; then
               targets+=( "${PRIMARY_STAGE}" )
@@ -1071,7 +1063,10 @@ jobs:
                 [[ -n "${line// }" ]] || continue
                 friendly="${alias_map[$line]:-}"
                 image="${GHCR_NS}:${line}"
-                digest="$(docker buildx imagetools inspect "$image" 2>/dev/null | awk '/^Digest:/ {print $2; exit}')"
+                digest=""
+                if info="$(docker buildx imagetools inspect "$image" 2>/dev/null)"; then
+                  digest="$(awk '/^Digest:/ {print $2; exit}' <<< "$info")"
+                fi
                 if [[ -n "$friendly" && "$friendly" != "$line" ]]; then
                   echo "- \`$image\` (alias: \`$friendly\`)"
                 else
