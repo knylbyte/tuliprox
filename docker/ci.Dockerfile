@@ -94,6 +94,8 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
       ls -l ${SCCACHE_HOME}; \
     fi
 
+RUN echo ok > /.build-cache-import
+
 # =============================================================================
 # Stage 2: backend-planner (cargo-chef prepare)
 #  - Minimal synthetic workspace (backend + shared only) to avoid pulling in frontend
@@ -302,6 +304,7 @@ RUN echo ok > /.build-alpine-final
 FROM chef AS cache-pack
 
 # These minimal markers prevent build stages from being skipped for cache export.
+COPY --from=cache-import      /.build-cache-import    /deps/cache-import
 COPY --from=backend-builder   /.built-backend         /deps/backend
 COPY --from=frontend-builder  /.built-frontend        /deps/frontend
 COPY --from=tzdata            /.built-tzdata          /deps/tzdata
