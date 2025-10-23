@@ -190,22 +190,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
 # We need this marker for the cache-export stage
 RUN echo ok > /.built-frontend
 
-FROM chef AS cache-pack
-
-# These minimal markers prevent build stages from being skipped for cache export.
-COPY --from=backend-builder /.built-backend /deps/backend
-COPY --from=frontend-builder /.built-frontend /deps/frontend
-
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
-    mkdir -p /out; \
-    SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
-    SCCACHE_BASE="$(basename "${SCCACHE_DIR}")"; \
-    tar -C ${CARGO_HOME} -cf /out/cargo-registry.tar registry        || true; \
-    tar -C ${CARGO_HOME} -cf /out/cargo-git.tar      git             || true; \
-    tar -C ${SCCACHE_HOME} -cf /out/sccache.tar      ${SCCACHE_BASE} || true
-
 # -----------------------------------------------------------------
 # Stage 6: tzdata/zoneinfo supplier (shared)
 # -----------------------------------------------------------------
@@ -214,12 +198,15 @@ RUN apk add --no-cache tzdata ca-certificates; \
     update-ca-certificates; \
     test -d /usr/share/zoneinfo
 
+RUN echo ok > /.built-tzdata
+
 # -----------------------------------------------------------------
 # Stage 7: Resources (prebuilt ffmpeg outputs)
 # -----------------------------------------------------------------
 FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS resources
 # Expected: /src/resources/*.ts
 
+RUN echo ok > /.built-resources
 # =================================================================
 #
 # Part 2: Final Image Stages
@@ -255,6 +242,8 @@ COPY --from=backend-builder   /src/target/*/release/tuliprox /usr/local/bin/tuli
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
 CMD ["-s", "-p", "/opt/tuliprox/data"]
+
+RUN echo ok > /.build-scratch-final
 
 # -----------------------------------------------------------------
 # Final Image #2: Final runtime (FROM Alpine) -> dev-friendly
@@ -294,6 +283,41 @@ WORKDIR /opt/tuliprox/data
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
 CMD ["-s", "-p", "/opt/tuliprox/data"]
+
+RUN echo ok > /.build-alpine-final
+
+# =================================================================
+#
+# Part 3: Build cache export images
+#
+# These stages build the cachable images by ci platform
+# like github actions.
+#
+# =================================================================
+
+# -----------------------------------------------------------------
+# Final Image #1: Final runtime (FROM scratch) -> all musl targets
+# -----------------------------------------------------------------
+
+FROM chef AS cache-pack
+
+# These minimal markers prevent build stages from being skipped for cache export.
+COPY --from=backend-builder   /.built-backend         /deps/backend
+COPY --from=frontend-builder  /.built-frontend        /deps/frontend
+COPY --from=tzdata            /.built-tzdata          /deps/tzdata
+COPY --from=resources         /.built-resources       /deps/resources
+COPY --from=scratch-final     /.build-scratch-final   /deps/scratch-final
+COPY --from=alpine-final      /.build-alpine-final    /deps/alpine-final
+
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+    mkdir -p /out; \
+    SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
+    SCCACHE_BASE="$(basename "${SCCACHE_DIR}")"; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-registry.tar registry        || true; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-git.tar      git             || true; \
+    tar -C ${SCCACHE_HOME} -cf /out/sccache.tar      ${SCCACHE_BASE} || true
 
 # -----------------------------------------------------------------
 # Final Image #3: Cache Exporter (from scratch) -> for CI caching
