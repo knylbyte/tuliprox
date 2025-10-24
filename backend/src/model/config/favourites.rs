@@ -1,7 +1,7 @@
+use crate::model::macros;
 use regex::Regex;
 use shared::foundation::filter::{CompiledRegex, Filter};
 use shared::model::{ConfigFavouritesDto, ItemField};
-use crate::model::macros;
 
 #[derive(Debug, Clone)]
 pub struct ConfigFavourites {
@@ -9,12 +9,25 @@ pub struct ConfigFavourites {
     pub filter: Filter,
 }
 
+impl ConfigFavourites {
+    fn default_filter() -> Filter {
+        Filter::FieldComparison(
+            ItemField::Group,
+            CompiledRegex {
+                restr: String::new(),
+                re: Regex::new(".*").unwrap(),
+            },
+        )
+    }
+}
+
+
 macros::from_impl!(ConfigFavourites);
 impl From<&ConfigFavouritesDto> for ConfigFavourites {
     fn from(dto: &ConfigFavouritesDto) -> Self {
         Self {
             group: dto.group.clone(),
-            filter: dto.t_filter.as_ref().map_or_else(|| Filter::FieldComparison(ItemField::Group, CompiledRegex { restr: String::new(), re: Regex::new(".*").unwrap() }), Clone::clone),
+            filter: dto.t_filter.as_ref().map_or_else(Self::default_filter, Clone::clone),
         }
     }
 }

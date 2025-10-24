@@ -610,7 +610,7 @@ where
         params.user.proxy.is_redirect(item_type) || params.target.is_force_redirect(item_type);
     let is_hls_request =
         item_type == PlaylistItemType::LiveHls || params.stream_ext == Some(HLS_EXT);
-    let is_dash_request = !is_hls_request && item_type == PlaylistItemType::LiveDash
+    let is_dash_request = (!is_hls_request && item_type == PlaylistItemType::LiveDash)
         || params.stream_ext == Some(DASH_EXT);
 
     if params.target_type == TargetType::M3u {

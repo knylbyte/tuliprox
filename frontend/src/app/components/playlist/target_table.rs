@@ -226,15 +226,13 @@ impl Display for TargetTableAction {
 impl FromStr for TargetTableAction {
     type Err = TuliproxError;
 
+
     fn from_str(s: &str) -> Result<Self, TuliproxError> {
-        if s.eq("edit") {
-            Ok(Self::Edit)
-        } else if s.eq("refresh") {
-            Ok(Self::Refresh)
-        } else if s.eq("delete") {
-            Ok(Self::Delete)
-        } else {
-            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown Target Action: {}", s)
+        match s {
+            "edit" => Ok(Self::Edit),
+            "refresh" => Ok(Self::Refresh),
+            "delete" => Ok(Self::Delete),
+            _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown Target Action: {}", s),
         }
     }
 }

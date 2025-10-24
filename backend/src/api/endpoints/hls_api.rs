@@ -155,21 +155,18 @@ pub(in crate::api) async fn handle_hls_stream_request(
 
 async fn get_stream_channel(app_state: &Arc<AppState>, target: &Arc<ConfigTarget>, virtual_id: u32) -> Option<StreamChannel> {
     if target.has_output(TargetType::Xtream) {
-        if let Ok((pli, _mapping)) = xtream_repository::xtream_get_item_for_stream_id(
-            virtual_id,
-            app_state,
-            target,
-            None
-        ).await {
-            Some(pli.to_stream_channel())
-        } else {
-            None
+        if let Ok((pli, _)) = xtream_repository::xtream_get_item_for_stream_id(virtual_id, app_state, target, None).await {
+            return Some(pli.to_stream_channel());
         }
+        // fall back to M3U if available
+        if target.has_output(TargetType::M3u) {
+            if let Ok(pli) = m3u_get_item_for_stream_id(virtual_id, app_state, target).await {
+                return Some(pli.to_stream_channel());
+            }
+        }
+        None
     } else {
-        match m3u_get_item_for_stream_id(virtual_id, app_state, target).await {
-            Ok(pli) => Some(pli.to_stream_channel()),
-            Err(_) => { None }
-        }
+        m3u_get_item_for_stream_id(virtual_id, app_state, target).await.ok().map(|pli| pli.to_stream_channel())
     }
 }
 
