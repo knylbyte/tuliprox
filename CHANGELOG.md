@@ -12,6 +12,7 @@ Output filters are applied after all transformations have been performed, theref
 - Added burst buffer to shared stream
 - Telegram message thread support. thread id can now be appended to chat-id like `chat-id:thread-id`.
 - Telegram supports markdown generation for structured json messages. simply set `markdown: true` in telegram config.
+- Added User-Stream-Connections Table to WebUI
 
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch

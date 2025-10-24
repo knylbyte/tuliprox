@@ -158,17 +158,11 @@ pub struct PlaylistItemHeader {
     #[serde(default)]
     pub category_id: u32,
     pub input_name: String,
-    #[serde(default)]
-    pub copy: bool, // not original, a copy
 }
 
 impl PlaylistItemHeader {
     pub fn gen_uuid(&mut self) {
-        self.uuid = if self.copy {
-            generate_playlist_uuid(&format!("copy-{}", self.input_name), &self.id, self.item_type, &format!("copy-{}", self.url))
-        } else {
-            generate_playlist_uuid(&self.input_name, &self.id, self.item_type, &self.url)
-        };
+        self.uuid = generate_playlist_uuid(&self.input_name, &self.id, self.item_type, &self.url);
     }
     pub const fn get_uuid(&self) -> &UUIDType {
         &self.uuid
@@ -299,8 +293,6 @@ pub struct M3uPlaylistItem {
     pub epg_channel_id: Option<String>,
     pub input_name: String,
     pub item_type: PlaylistItemType,
-    #[serde(default)]
-    pub copy: bool,
     #[serde(skip)]
     pub t_stream_url: String,
     #[serde(skip)]
@@ -433,8 +425,6 @@ pub struct XtreamPlaylistItem {
     pub category_id: u32,
     pub input_name: String,
     pub channel_no: u32,
-    #[serde(default)]
-    pub copy: bool,
 }
 
 impl XtreamPlaylistItem {
@@ -595,7 +585,6 @@ impl PlaylistItem {
             epg_channel_id: header.epg_channel_id.clone(),
             input_name: header.input_name.to_string(),
             item_type: header.item_type,
-            copy: header.copy,
             t_stream_url: header.url.to_string(),
             t_resource_url: None,
         }
@@ -655,7 +644,6 @@ impl PlaylistItem {
             category_id: header.category_id,
             input_name: header.input_name.to_string(),
             channel_no: header.chno.parse::<u32>().unwrap_or(0),
-            copy: header.copy,
         }
     }
 

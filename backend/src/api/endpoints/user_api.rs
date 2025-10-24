@@ -51,7 +51,7 @@ async fn playlist_categories(
                 return axum::http::StatusCode::FORBIDDEN.into_response();
             }
             let target_name = &target.name;
-            let xtream_stream = if target.has_output(&TargetType::Xtream) {
+            let xtream_stream = if target.has_output(TargetType::Xtream) {
                 let config = &app_state.app_config.config.load();
                 let live_categories = get_categories_from_xtream(xtream_get_playlist_categories(config, target_name, XtreamCluster::Live).await);
                 let vod_categories = get_categories_from_xtream(xtream_get_playlist_categories(config, target_name, XtreamCluster::Video).await);
@@ -69,7 +69,7 @@ async fn playlist_categories(
                 stream::iter(vec![Ok::<Bytes, String>(Bytes::from(r#"{"live":[],"vod":[],"series":[]}"#))])
             };
 
-            let m3u_stream = if target.has_output(&TargetType::M3u) {
+            let m3u_stream = if target.has_output(TargetType::M3u) {
                 let live_categories = get_categories_from_m3u_playlist(&target, &app_state.app_config).await;
                 stream::iter(vec![
                     Ok::<Bytes, String>(Bytes::from(r#"{"live": "#)),

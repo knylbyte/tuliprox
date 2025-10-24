@@ -10,7 +10,7 @@ use bytes::Bytes;
 use futures::Stream;
 use futures::StreamExt;
 use log::{error, info};
-use shared::model::UserConnectionPermission;
+use shared::model::{StreamChannel, UserConnectionPermission};
 use std::pin::Pin;
 use std::sync::atomic::AtomicU8;
 use std::sync::{Arc};
@@ -38,13 +38,20 @@ impl ActiveClientStream {
                       app_state: &AppState,
                       user: &ProxyUserCredentials,
                       connection_permission: UserConnectionPermission,
-                      addr: &str) -> Self {
+                      addr: &str,
+                      stream_channel: StreamChannel) -> Self {
         if connection_permission == UserConnectionPermission::Exhausted {
             error!("Something is wrong this should not happen");
         }
         let grant_user_grace_period = connection_permission == UserConnectionPermission::GracePeriod;
         let username = user.username.as_str();
-        let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, addr).await);
+        let provider_name = stream_details
+            .provider_connection_guard
+            .as_ref()
+            .and_then(|guard| guard.get_provider_name())
+            .as_deref()
+            .map_or_else(String::new, ToString::to_string);
+        let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, addr, &provider_name, stream_channel).await);
         let cfg = &app_state.app_config;
         let waker = Some(Arc::new(AtomicWaker::new()));
         let waker_clone = waker.clone();

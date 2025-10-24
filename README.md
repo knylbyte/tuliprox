@@ -775,7 +775,6 @@ Has the following top level entries:
 - `filter` _mandatory_,
 - `rename` _optional_
 - `mapping` _optional_
-- `favourites` _optional_
 - `watch` _optional_
 - `use_memory_cache`, default is false. If set to `true` playlist is cached into memory to reduce disc access.
 Placing playlist into memory causes more RAM usage but reduces disk access.
@@ -1111,28 +1110,6 @@ In `config.yml`
 messaging:
   notify_on:
     - watch
-```
-
-### 2.5.2.9 `favourites`
-The Favourites feature allows users to define `custom playlist groups` that automatically collect channels based on filter rules.
-Each favourite definition specifies:
-
-A `group name` (the name under which the favourite channels will appear in the playlist).
-
-A `filter expression` (which channels should be included in that group).
-
-During playlist processing, the system scans all existing playlist groups and channels.
-For each configured favourite, it creates a new virtual group that contains all channels matching the filter condition.
-
-This allows a channel to appear in multiple groups — both its original one and any favourite groups where it matches.
-
-Example
-```yaml
-favourites:
-  - group: "[Sports]  Tennis"
-    filter: 'Group ~ "EU: Sports" AND Caption ~ "Davis Cup Qualifiers"'
-  - group: "[Sports] Soccer"
-    filter: 'Group ~ "EU: Sports" AND Caption ~ "FIFA World Cup"'
 ```
 
 ## 2. `mapping.yml`

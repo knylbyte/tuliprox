@@ -265,13 +265,13 @@ impl ConfigTarget {
         }
     }
 
-    pub fn has_output(&self, tt: &TargetType) -> bool {
+    pub fn has_output(&self, tt: TargetType) -> bool {
         for target_output in &self.output {
             match target_output {
-                TargetOutput::Xtream(_) => { if tt == &TargetType::Xtream { return true; } }
-                TargetOutput::M3u(_) => { if tt == &TargetType::M3u { return true; } }
-                TargetOutput::Strm(_) => { if tt == &TargetType::Strm { return true; } }
-                TargetOutput::HdHomeRun(_) => { if tt == &TargetType::HdHomeRun { return true; } }
+                TargetOutput::Xtream(_) => { if tt == TargetType::Xtream { return true; } }
+                TargetOutput::M3u(_) => { if tt == TargetType::M3u { return true; } }
+                TargetOutput::Strm(_) => { if tt == TargetType::Strm { return true; } }
+                TargetOutput::HdHomeRun(_) => { if tt == TargetType::HdHomeRun { return true; } }
             }
         }
         false

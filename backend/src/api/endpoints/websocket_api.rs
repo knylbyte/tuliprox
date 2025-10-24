@@ -201,8 +201,8 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage, handl
                             .await
                             .map_err(|e| format!("Server Error event: {e} "))?;
                     }
-                    EventMessage::ActiveUser(users, connections) => {
-                        let msg = ProtocolMessage::ActiveUserResponse(users, connections)
+                    EventMessage::ActiveUser(event) => {
+                        let msg = ProtocolMessage::ActiveUserResponse(event)
                             .to_bytes()
                             .map_err(|e| e.to_string())?;
                         socket

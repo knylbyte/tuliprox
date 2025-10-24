@@ -151,10 +151,10 @@ pub fn TargetTable(props: &TargetTableProps) -> Html {
         let services_ctx = services.clone();
         let selected_dto = selected_dto.clone();
         Callback::from(move |(name, _): (String, _)| {
-            if let Ok(action) = TableAction::from_str(&name) {
+            if let Ok(action) = TargetTableAction::from_str(&name) {
                 match action {
-                    TableAction::Edit => {}
-                    TableAction::Refresh => {
+                    TargetTableAction::Edit => {}
+                    TargetTableAction::Refresh => {
                         let translate = translate.clone();
                         let services_ctx = services_ctx.clone();
                         let dto_name = selected_dto.as_ref().map_or_else(String::new, |d| d.name.to_string());
@@ -166,7 +166,7 @@ pub fn TargetTable(props: &TargetTableProps) -> Html {
                             }
                         });
                     }
-                    TableAction::Delete => {
+                    TargetTableAction::Delete => {
                         let confirm = confirm.clone();
                         let translator = translate.clone();
                         spawn_local(async move {
@@ -190,10 +190,10 @@ pub fn TargetTable(props: &TargetTableProps) -> Html {
                   <>
                    <Table::<ConfigTargetDto> definition={definition.clone()} />
                     <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
-                        <MenuItem icon="Edit" name={TableAction::Edit.to_string()} label={translate.t("LABEL.EDIT")} onclick={&handle_menu_click}></MenuItem>
-                        <MenuItem icon="Refresh" name={TableAction::Refresh.to_string()} label={translate.t("LABEL.REFRESH")} onclick={&handle_menu_click} class="tp__update_action"></MenuItem>
+                        <MenuItem icon="Edit" name={TargetTableAction::Edit.to_string()} label={translate.t("LABEL.EDIT")} onclick={&handle_menu_click}></MenuItem>
+                        <MenuItem icon="Refresh" name={TargetTableAction::Refresh.to_string()} label={translate.t("LABEL.REFRESH")} onclick={&handle_menu_click} class="tp__update_action"></MenuItem>
                         <hr/>
-                        <MenuItem icon="Delete" name={TableAction::Delete.to_string()} label={translate.t("LABEL.DELETE")} onclick={&handle_menu_click} class="tp__delete_action"></MenuItem>
+                        <MenuItem icon="Delete" name={TargetTableAction::Delete.to_string()} label={translate.t("LABEL.DELETE")} onclick={&handle_menu_click} class="tp__delete_action"></MenuItem>
                     </PopupMenu>
                 </>
                   }
@@ -207,13 +207,13 @@ pub fn TargetTable(props: &TargetTableProps) -> Html {
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-enum TableAction {
+enum TargetTableAction {
     Edit,
     Refresh,
     Delete,
 }
 
-impl Display for TableAction {
+impl Display for TargetTableAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
             Self::Edit => "edit",
@@ -223,7 +223,7 @@ impl Display for TableAction {
     }
 }
 
-impl FromStr for TableAction {
+impl FromStr for TargetTableAction {
     type Err = TuliproxError;
 
     fn from_str(s: &str) -> Result<Self, TuliproxError> {
@@ -234,7 +234,7 @@ impl FromStr for TableAction {
         } else if s.eq("delete") {
             Ok(Self::Delete)
         } else {
-            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
+            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown Target Action: {}", s)
         }
     }
 }

@@ -61,41 +61,41 @@ pub fn apply_filter_to_playlist(playlist: &mut [PlaylistGroup], filter: &Filter)
 }
 
 pub fn apply_favourites_to_playlist(
-    playlist: &mut Vec<PlaylistGroup>,
-    favourites_cfg: Option<&Vec<ConfigFavourites>>,
+    _playlist: &mut Vec<PlaylistGroup>,
+    _favourites_cfg: Option<&Vec<ConfigFavourites>>,
 ) {
-    if let Some(favourites) = favourites_cfg {
-        let mut fav_groups: HashMap<String, Vec<PlaylistItem>> = HashMap::new();
-
-        for pg in playlist.iter_mut() {
-            for pli in &pg.channels {
-                for fav in favourites {
-                    if is_valid(pli, &fav.filter) {
-                        let mut channel = pli.clone();
-                        channel.header.copy = true;
-                        channel.header.group.clone_from(&fav.group);
-                        channel.header.gen_uuid();
-                        fav_groups
-                            .entry(fav.group.clone())
-                            .or_default()
-                            .push(channel);
-                    }
-                }
-            }
-        }
-
-        for (group_name, channels) in fav_groups {
-            if !channels.is_empty() {
-                let xtream_cluster = channels[0].header.xtream_cluster;
-                playlist.push(PlaylistGroup {
-                    id: 0,
-                    title: group_name,
-                    channels,
-                    xtream_cluster,
-                });
-            }
-        }
-    }
+    // if let Some(favourites) = favourites_cfg {
+    //     let mut fav_groups: HashMap<String, Vec<PlaylistItem>> = HashMap::new();
+    //
+    //     for pg in playlist.iter_mut() {
+    //         for pli in &pg.channels {
+    //             for fav in favourites {
+    //                 if is_valid(pli, &fav.filter) {
+    //                     let mut channel = pli.clone();
+    //                     channel.header.copy = true;
+    //                     channel.header.group.clone_from(&fav.group);
+    //                     channel.header.gen_uuid();
+    //                     fav_groups
+    //                         .entry(fav.group.clone())
+    //                         .or_default()
+    //                         .push(channel);
+    //                 }
+    //             }
+    //         }
+    //     }
+    //
+    //     for (group_name, channels) in fav_groups {
+    //         if !channels.is_empty() {
+    //             let xtream_cluster = channels[0].header.xtream_cluster;
+    //             playlist.push(PlaylistGroup {
+    //                 id: 0,
+    //                 title: group_name,
+    //                 channels,
+    //                 xtream_cluster,
+    //             });
+    //         }
+    //     }
+    // }
 }
 
 fn filter_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {

@@ -25,10 +25,7 @@ use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, log_enabled, trace};
 use reqwest::header::RETRY_AFTER;
-use shared::model::{
-    Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType,
-    UserConnectionPermission, XtreamCluster,
-};
+use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
 use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_byte_size, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
@@ -738,7 +735,7 @@ pub async fn force_provider_stream_response(
     addr: &str,
     app_state: &AppState,
     user_session: &UserSession,
-    item_type: PlaylistItemType,
+    stream_channel: StreamChannel,
     req_headers: &HeaderMap,
     input: &ConfigInput,
     user: &ProxyUserCredentials,
@@ -746,6 +743,7 @@ pub async fn force_provider_stream_response(
     let stream_options = get_stream_options(app_state);
     let share_stream = false;
     let connection_permission = UserConnectionPermission::Allowed;
+    let item_type = stream_channel.item_type;
 
     let mut stream_details = create_stream_response_details(
         app_state,
@@ -771,7 +769,7 @@ pub async fn force_provider_stream_response(
             .update_session_addr(&user.username, &user_session.token, addr)
             .await;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr, stream_channel)
                 .await;
 
         let (status_code, header_map) =
@@ -809,8 +807,7 @@ pub async fn stream_response(
     addr: &str,
     app_state: &AppState,
     session_token: &str,
-    virtual_id: u32,
-    item_type: PlaylistItemType,
+    stream_channel: StreamChannel,
     stream_url: &str,
     req_headers: &HeaderMap,
     input: &ConfigInput,
@@ -830,10 +827,13 @@ pub async fn stream_response(
         .into_response();
     }
 
+    let virtual_id = stream_channel.virtual_id;
+    let item_type = stream_channel.item_type;
+
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
         if let Some(value) =
-            shared_stream_response(app_state, stream_url, addr, user, connection_permission).await
+            shared_stream_response(app_state, stream_url, addr, user, connection_permission, stream_channel.clone()).await
         {
             return value.into_response();
         }
@@ -870,7 +870,7 @@ pub async fn stream_response(
             None
         };
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr, stream_channel)
                 .await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
@@ -984,6 +984,7 @@ async fn shared_stream_response(
     addr: &str,
     user: &ProxyUserCredentials,
     connect_permission: UserConnectionPermission,
+    stream_channel: StreamChannel
 ) -> Option<impl IntoResponse> {
     if let Some(stream) =
         SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)).await
@@ -1003,7 +1004,7 @@ async fn shared_stream_response(
             )));
             let stream_details = StreamDetails::from_stream(stream);
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr)
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr, stream_channel)
                     .await
                     .boxed();
             let mut response = axum::response::Response::builder().status(status_code);
