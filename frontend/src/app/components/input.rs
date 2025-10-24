@@ -1,6 +1,6 @@
 use web_sys::{HtmlInputElement, InputEvent, KeyboardEvent, MouseEvent};
 use yew::{function_component, html, use_effect_with, use_state, Callback, Html, NodeRef, Properties, TargetCast};
-use crate::app::components::IconButton;
+use crate::app::components::{AppIcon, IconButton};
 use crate::html_if;
 
 #[derive(Properties, Clone, PartialEq, Debug)]
@@ -21,6 +21,11 @@ pub struct InputProps {
     pub on_change: Option<Callback<String>>,
     #[prop_or_default]
     pub value: String,
+    #[prop_or_default]
+    pub icon: Option<String>,
+    #[prop_or_default]
+    pub placeholder: Option<String>,
+
 }
 
 #[function_component]
@@ -68,6 +73,9 @@ pub fn Input(props: &InputProps) -> Html {
                 } else { html!{} }
             }
             <div class="tp__input-wrapper">
+                { html_if!(props.icon.is_some(), {
+                    <AppIcon name={props.icon.as_ref().unwrap().clone()} />
+                })}
                 <input
                     ref={local_ref.clone()}
                     type={if *hide_content { "password".to_string() } else { "text".to_string() }}
@@ -75,6 +83,7 @@ pub fn Input(props: &InputProps) -> Html {
                     autocomplete={if props.autocomplete { "on".to_string() } else { "off".to_string() }}
                     onkeydown={props.onkeydown.clone()}
                     oninput={handle_oninput}
+                    placeholder={props.placeholder.clone()}
                     />
                 { html_if!(props.hidden, {
                      <IconButton name="hide" icon="Visibility" class={if !*hide_content {"active"} else {""}} onclick={handle_hide_content} />

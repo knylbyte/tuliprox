@@ -17,6 +17,7 @@
 @forward "components/dashboard/status_card";
 @forward "components/dashboard/dashboard_view";
 @forward "components/dashboard/stats_view";
+@forward "components/dashboard/streams_view";
 @forward "components/list_view";
 @forward "components/reveal_content";
 @forward "components/hide_content";
@@ -73,3 +74,4 @@
 @forward "components/loading_screen";
 @forward "components/websocket_status";
 @forward "components/playlist/epg_view";
+@forward "components/floating_background";

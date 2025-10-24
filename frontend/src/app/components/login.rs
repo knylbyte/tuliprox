@@ -5,6 +5,7 @@ use crate::hooks::use_service_context;
 use yew::prelude::*;
 use yew_hooks::use_async;
 use yew_i18n::use_translation;
+use crate::app::components::floating_background::FloatingBackground;
 use crate::app::components::input::Input;
 use crate::app::components::TextButton;
 
@@ -79,16 +80,17 @@ pub fn Login() -> Html {
 
     html! {
         <>
-        <div class="tp__background"></div>
+        <FloatingBackground />
         <div class="tp__login-view">
            <div class={"tp__login-view__header"}>
                 <div class={"tp__login-view__header-logo"}>{app_logo.as_ref().clone()}</div>
-                <div class={"tp__login-view__header-title"}>{ format!("Login to {app_title}") }</div>
+                <div class={"tp__login-view__header-title"}>{ format!("{app_title}") }</div>
             </div>
+            <div class="tp__login-view__message">{translation.t("MESSAGES.LOGIN.MESSAGE")}</div>
             <form>
                 <div class="tp__login-view__form">
-                    <Input label={translation.t("LABEL.USERNAME")} input_ref={username_ref} name="username" autocomplete={true} />
-                    <Input label={translation.t("LABEL.PASSWORD")} input_ref={password_ref} name="password" hidden={true}  autocomplete={false} onkeydown={handle_key_down}/>
+                    <Input placeholder={translation.t("LABEL.USERNAME")} input_ref={username_ref} name="username" autocomplete={true} icon="User"/>
+                    <Input placeholder={translation.t("LABEL.PASSWORD")} input_ref={password_ref} name="password" hidden={true}  autocomplete={false} onkeydown={handle_key_down} icon="Lock"/>
                     <div class="tp__login-view__form-action">
                         <TextButton class="primary" name="login" title={ translation.t("LABEL.LOGIN")} onclick={handle_login}></TextButton>
                         <span class={if *auth_success { "tp__hidden" }  else { "tp__error-text" }}>{ "Failed to login" }</span>

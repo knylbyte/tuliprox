@@ -78,6 +78,7 @@ pub struct CompiledRegex {
     pub restr: String,
     pub re: regex::Regex,
 }
+
 impl PartialEq for CompiledRegex {
     fn eq(&self, other: &Self) -> bool {
         self.restr == other.restr

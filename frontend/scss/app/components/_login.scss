@@ -8,69 +8,65 @@
   overflow: hidden;
   position: relative;
   z-index: 1;
-  padding: 60px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
-  background-color: var(--card-background-color);
+  padding: 40px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  color: var(--text-color);
+  background-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
 
   width: 400px;
   @media(max-width: size.$mobile-breakpoint) {
     width: 280px;
   }
 
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: 0 8px 4px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(255, 255, 255, 0.1), inset 0 0 10px 2px rgba(255, 255, 255, 0.1);
-
   &::before {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
+    left: -75%;
+    width: 20%;
+    height: 100%;
+    filter: blur(20px);
     background: linear-gradient(
-                    90deg,
-                    transparent,
-                    rgba(255, 255, 255, 0.4),
-                    transparent
+                    120deg,
+                    rgba(255,255,255,0) 0%,
+                    rgba(255,255,255,0.1) 50%,
+                    rgba(255,255,255,0) 100%
     );
+    transform: skewX(-30deg);
+    animation: shine 2s;
   }
 
-  &::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 1px;
-    height: 100%;
-    background: linear-gradient(
-                    180deg,
-                    rgba(255, 255, 255, 0.4),
-                    transparent,
-                    rgba(255, 255, 255, 0.3)
-    );
+  @keyframes shine {
+    0% { left: -75%; }
+    100% { left: 125%; }  /* Move completely across */
   }
 
   &__header {
     display: flex;
-    flex-flow: column;
+    flex-flow: row;
+    gap: var(--gap-default);
     align-items: center;
+    justify-content: center;
     background-color: transparent;
     padding: 0 8px;
+    margin-bottom: 1rem;
     &-title {
-      color: var(--card-color);
+      color: var(--text-color);
       padding: 8px;
       font-size: 1.5rem;
+      font-weight: bolder;
     }
     &-logo {
       overflow: hidden;
       img, svg {
-        height: 4rem;
-        width: 4rem;
+        height: 3rem;
+        width: 3rem;
       }
     }
-
   }
 
   &__logo {
@@ -86,17 +82,36 @@
     }
   }
 
+  &__message {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: var(--card-color);
+    font-size: 0.8rem;
+  }
+
   &__form {
     display: flex;
     flex-flow: column;
     gap: 20px;
     padding: 8px;
+    fill: var(--modest-text-color);
+
+    .tp__input-wrapper {
+      max-height: 3rem;
+      height: 3rem;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background-color: rgba(0, 0, 0, 0.15);
+      svg {
+        transform: scale(0.8);
+        padding-left: var(--padding-micro);
+      }
+    }
 
     &-action {
       display: flex;
       flex-flow: column;
       gap: 20px;
-      padding-top: 20px;
    }
 
     .tp__text-button {
@@ -104,26 +119,4 @@
       height: 3.2rem;
     }
   }
-}
-
-.tp__background {
-  width: 100vw;
-  height: 100vh;
-  position: absolute;
-  overflow: hidden;
-
-  --c1: rgb(19 29 30);
-  --c2: rgb(12 24 25 / 77%);
-
-  background-color: var(--background-color);
-  background-image:
-          linear-gradient(30deg, var(--c1) 12%, transparent 12.5%, transparent 87%, var(--c1) 87.5%, var(--c1)),
-          linear-gradient(150deg, var(--c1) 12%, transparent 12.5%, transparent 87%, var(--c1) 87.5%, var(--c1)),
-          linear-gradient(30deg, var(--c1) 12%, transparent 12.5%, transparent 87%, var(--c1) 87.5%, var(--c1)),
-          linear-gradient(150deg, var(--c1) 12%, transparent 12.5%, transparent 87%, var(--c1) 87.5%, var(--c1)),
-          linear-gradient(60deg, var(--c2) 25%, transparent 25.5%, transparent 75%, var(--c2) 75%, var(--c2)),
-          linear-gradient(60deg, var(--c2) 25%, transparent 25.5%, transparent 75%, var(--c2) 75%, var(--c2));
-  background-size: 64px 112px;
-  background-position: 0 0, 0 0, 32px 56px, 32px 56px, 0 0, 32px 56px;
-
 }

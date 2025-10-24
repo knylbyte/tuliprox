@@ -135,6 +135,7 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
           <div class="tp__app-sidebar__content">
             <MenuItem class={if *active_menu == ViewType::Dashboard { "active" } else {""}} icon="DashboardOutline" name={ViewType::Dashboard.to_string()} label={translate.t("LABEL.DASHBOARD")} onclick={&handle_menu_click}></MenuItem>
             <MenuItem class={if *active_menu == ViewType::Stats { "active" } else {""}} icon="Stats" name={ViewType::Stats.to_string()} label={translate.t("LABEL.STATS")} onclick={&handle_menu_click}></MenuItem>
+            <MenuItem class={if *active_menu == ViewType::Streams { "active" } else {""}} icon="Streams" name={ViewType::Streams.to_string()} label={translate.t("LABEL.STREAMS")} onclick={&handle_menu_click}></MenuItem>
             <CollapsePanel title={translate.t("LABEL.SETTINGS")}>
               <MenuItem class={if *active_menu == ViewType::Config { "active" } else {""}} icon="Config" name={ViewType::Config.to_string()} label={translate.t("LABEL.CONFIG")}  onclick={&handle_menu_click}></MenuItem>
               <MenuItem class={if *active_menu == ViewType::Users { "active" } else {""}} icon="UserOutline" name={ViewType::Users.to_string()} label={translate.t("LABEL.USER")} onclick={&handle_menu_click}></MenuItem>
@@ -154,6 +155,7 @@ pub fn Sidebar(props: &SidebarProps) -> Html {
           <div class="tp__app-sidebar__content">
             <IconButton class={if *active_menu == ViewType::Dashboard { "active" } else {""}}  icon="DashboardOutline" name={ViewType::Dashboard.to_string()} onclick={&handle_menu_click}></IconButton>
             <IconButton class={if *active_menu == ViewType::Stats { "active" } else {""}} icon="Stats" name={ViewType::Stats.to_string()} onclick={&handle_menu_click}></IconButton>
+            <IconButton class={if *active_menu == ViewType::Streams { "active" } else {""}} icon="Streams" name={ViewType::Streams.to_string()} onclick={&handle_menu_click}></IconButton>
             <span class="tp__app-sidebar__content-space"></span>
             <IconButton class={if *active_menu == ViewType::Config { "active" } else {""}} icon="Config" name={ViewType::Config.to_string()} onclick={&handle_menu_click}></IconButton>
             <IconButton class={if *active_menu == ViewType::Users { "active" } else {""}} icon="UserOutline" name={ViewType::Users.to_string()} onclick={&handle_menu_click}></IconButton>

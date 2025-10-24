@@ -102,7 +102,7 @@ async fn m3u_api_stream(
     }
 
     let target_name = &target.name;
-    if !target.has_output(&TargetType::M3u) {
+    if !target.has_output(TargetType::M3u) {
         debug!("Target has no m3u playlist {target_name}");
         return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
@@ -154,7 +154,7 @@ async fn m3u_api_stream(
                 addr,
                 app_state,
                 session,
-                pli.item_type,
+                pli.to_stream_channel(),
                 req_headers,
                 &input,
                 &user,
@@ -188,7 +188,7 @@ async fn m3u_api_stream(
         user: &user,
         stream_ext: stream_ext.as_deref(),
         req_context: context,
-        action_path: "", // TODO is there timeshoft or something like that ?
+        action_path: "", // TODO is there timeshift or something like that ?
     };
 
     if let Some(response) = redirect_response(app_state, &redirect_params).await {
@@ -225,8 +225,7 @@ async fn m3u_api_stream(
         addr,
         app_state,
         &session_key,
-        pli.virtual_id,
-        pli.item_type,
+        pli.to_stream_channel(),
         session_url,
         req_headers,
         &input,
@@ -262,7 +261,7 @@ async fn m3u_api_resource(
     }
 
     let target_name = &target.name;
-    if !target.has_output(&TargetType::M3u) {
+    if !target.has_output(TargetType::M3u) {
         debug!("Target has no m3u playlist {target_name}");
         return axum::http::StatusCode::BAD_REQUEST.into_response();
     }

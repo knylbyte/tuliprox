@@ -393,7 +393,7 @@ fn handle_text_tag(stack: &mut [XmlTag], e: &BytesText) {
                 let t_fixed: Cow<str> = if t.ends_with('\\') {
                     let mut owned = t.to_string();
                     owned.pop();
-                    owned.push_str("&apos;");
+                    owned.push_str("&apos; ");
                     Cow::Owned(owned)
                 } else {
                     Cow::Borrowed(t)

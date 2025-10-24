@@ -2,7 +2,7 @@ use log::warn;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use crate::foundation::filter::{get_filter, Filter};
-use crate::model::{ClusterFlags, ConfigRenameDto, ConfigSortDto, HdHomeRunDeviceOverview, PatternTemplate, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
+use crate::model::{ClusterFlags, ConfigFavouritesDto, ConfigRenameDto, ConfigSortDto, HdHomeRunDeviceOverview, PatternTemplate, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
 use crate::utils::{default_as_true, default_resolve_delay_secs, default_as_default};
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -172,6 +172,8 @@ pub struct ConfigTargetDto {
     pub rename: Option<Vec<ConfigRenameDto>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mapping: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub favourites: Option<Vec<ConfigFavouritesDto>>,
     #[serde(default)]
     pub processing_order: ProcessingOrder,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -194,6 +196,7 @@ impl Default for ConfigTargetDto {
             output: Vec::new(),
             rename: None,
             mapping: None,
+            favourites: None,
             processing_order: ProcessingOrder::default(),
             watch: None,
             use_memory_cache: false,
@@ -312,6 +315,12 @@ impl ConfigTargetDto {
                 if !hdhr_devices.enabled {
                     warn!("You have defined an HDHomeRun output, but HDHomeRun devices are disabled.");
                 }
+            }
+        }
+
+        if let Some(favourites) = self.favourites.as_mut() {
+            for favourite in favourites {
+                favourite.prepare(templates)?;
             }
         }
 

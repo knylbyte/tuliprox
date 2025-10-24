@@ -32,6 +32,7 @@ mod playlist_update_state;
 mod proxy_type;
 
 mod proxy_user_status;
+mod favourites;
 
 pub use proxy_type::*;
 pub use proxy_user_status::*;
@@ -65,4 +66,5 @@ pub use paths::*;
 pub use app_config::*;
 pub use config_type::*;
 pub use playlist_update_state::*;
+pub use favourites::*;
 pub use crate::apply_batch_aliases;
