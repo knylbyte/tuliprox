@@ -10,6 +10,7 @@ pub struct StreamChannel {
     pub group: String,
     pub title: String,
     pub url: String,
+    pub shared: bool,
 }
 impl XtreamPlaylistItem {
     pub fn to_stream_channel(&self) -> StreamChannel {
@@ -21,6 +22,7 @@ impl XtreamPlaylistItem {
             group: self.group.clone(),
             title: self.title.clone(),
             url: self.url.clone(),
+            shared: false,
         }
     }
 }
@@ -35,6 +37,7 @@ impl M3uPlaylistItem {
             group: self.group.clone(),
             title: self.title.clone(),
             url: self.url.clone(),
+            shared: false,
         }
     }
 }

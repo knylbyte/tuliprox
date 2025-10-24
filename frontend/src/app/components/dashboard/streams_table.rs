@@ -1,6 +1,6 @@
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{AppIcon, Table, TableDefinition};
+use crate::app::components::{AppIcon, Table, TableDefinition, ToggleSwitch};
 use crate::hooks::use_service_context;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use shared::model::{SortOrder, StreamInfo};
@@ -10,14 +10,15 @@ use std::str::FromStr;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 
-const HEADERS: [&str; 7] = [
+const HEADERS: [&str; 8] = [
     "LABEL.EMPTY",
     "LABEL.USERNAME",
     "LABEL.STREAM_ID",
     "LABEL.CHANNEL",
     "LABEL.GROUP",
     "LABEL.CLIENT_IP",
-    "LABEL.PROVIDER"
+    "LABEL.PROVIDER",
+    "LABEL.SHARED"
 ];
 
 #[derive(Properties, PartialEq, Clone)]
@@ -94,6 +95,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                     4 => html! {dto.channel.group.as_str()},
                     5 => html! {dto.addr.as_str()},
                     6 => html! {dto.provider.as_str()},
+                    7 => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
                     _ => html! {""},
                 }
             })

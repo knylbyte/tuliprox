@@ -186,6 +186,7 @@ async fn resolve_stream_channel(
             group: "Unknown".to_string(),
             title: "Unknown".to_string(),
             url: hls_url.to_string(),
+            shared: false,
         },
     };
 

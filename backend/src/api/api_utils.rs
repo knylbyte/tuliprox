@@ -735,7 +735,7 @@ pub async fn force_provider_stream_response(
     addr: &str,
     app_state: &AppState,
     user_session: &UserSession,
-    stream_channel: StreamChannel,
+    mut stream_channel: StreamChannel,
     req_headers: &HeaderMap,
     input: &ConfigInput,
     user: &ProxyUserCredentials,
@@ -768,6 +768,7 @@ pub async fn force_provider_stream_response(
             .active_users
             .update_session_addr(&user.username, &user_session.token, addr)
             .await;
+        stream_channel.shared = share_stream;
         let stream =
             ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr, stream_channel)
                 .await;
@@ -807,7 +808,7 @@ pub async fn stream_response(
     addr: &str,
     app_state: &AppState,
     session_token: &str,
-    stream_channel: StreamChannel,
+    mut stream_channel: StreamChannel,
     stream_url: &str,
     req_headers: &HeaderMap,
     input: &ConfigInput,
@@ -869,6 +870,7 @@ pub async fn stream_response(
         } else {
             None
         };
+        stream_channel.shared = share_stream;
         let stream =
             ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr, stream_channel)
                 .await;
@@ -984,7 +986,7 @@ async fn shared_stream_response(
     addr: &str,
     user: &ProxyUserCredentials,
     connect_permission: UserConnectionPermission,
-    stream_channel: StreamChannel
+    mut stream_channel: StreamChannel
 ) -> Option<impl IntoResponse> {
     if let Some(stream) =
         SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)).await
@@ -1003,6 +1005,7 @@ async fn shared_stream_response(
                 axum::http::StatusCode::OK,
             )));
             let stream_details = StreamDetails::from_stream(stream);
+            stream_channel.shared = true;
             let stream =
                 ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr, stream_channel)
                     .await
