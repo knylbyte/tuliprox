@@ -253,8 +253,8 @@ async fn hls_api_stream(
         };
 
         session.stream_url.clone_from(&hls_url);
-        let stream_channel = resolve_stream_channel(&app_state, &target, virtual_id, &hls_url).await;
         if session.virtual_id == virtual_id {
+            let stream_channel = resolve_stream_channel(&app_state, &target, virtual_id, &hls_url).await;
             if is_seek_request(stream_channel.cluster, &req_headers).await {
                 // partial request means we are in reverse proxy mode, seek happened
                 return force_provider_stream_response(
@@ -299,6 +299,7 @@ async fn hls_api_stream(
                 .into_response();
         }
 
+        let stream_channel = resolve_stream_channel(&app_state, &target, virtual_id, &hls_url).await;
         force_provider_stream_response(
             &addr,
             &app_state,
