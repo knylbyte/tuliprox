@@ -701,6 +701,8 @@ jobs:
           file: ${{ env.DOCKERFILE }}
           platforms: ${{ matrix.platform }}
           push: true
+          build-contexts: |
+            cache=./.ci-cache/${{ matrix.arch_tag }}
           build-args: |
             BUILDKIT_INLINE_CACHE=1
             GHCR_NS=${{ env.GHCR_NS }}
