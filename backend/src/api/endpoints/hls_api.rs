@@ -158,16 +158,8 @@ async fn get_stream_channel(app_state: &Arc<AppState>, target: &Arc<ConfigTarget
         if let Ok((pli, _)) = xtream_repository::xtream_get_item_for_stream_id(virtual_id, app_state, target, None).await {
             return Some(pli.to_stream_channel());
         }
-        // fall back to M3U if available
-        if target.has_output(TargetType::M3u) {
-            if let Ok(pli) = m3u_get_item_for_stream_id(virtual_id, app_state, target).await {
-                return Some(pli.to_stream_channel());
-            }
-        }
-        None
-    } else {
-        m3u_get_item_for_stream_id(virtual_id, app_state, target).await.ok().map(|pli| pli.to_stream_channel())
     }
+     m3u_get_item_for_stream_id(virtual_id, app_state, target).await.ok().map(|pli| pli.to_stream_channel())
 }
 
 async fn resolve_stream_channel(
@@ -222,8 +214,7 @@ async fn hls_api_stream(
         app_state.app_config.get_input_by_id(params.input_id),
         true,
         format!(
-            "Cant find input for target {target_name}, context {}, stream_id {virtual_id}",
-            XtreamCluster::Live
+            "Cant find input for target {target_name}, stream_id {virtual_id}, hls"
         )
     );
 
@@ -262,10 +253,10 @@ async fn hls_api_stream(
         };
 
         session.stream_url.clone_from(&hls_url);
+        let stream_channel = resolve_stream_channel(&app_state, &target, virtual_id, &hls_url).await;
         if session.virtual_id == virtual_id {
-            if is_seek_request(XtreamCluster::Live, &req_headers).await {
+            if is_seek_request(stream_channel.cluster, &req_headers).await {
                 // partial request means we are in reverse proxy mode, seek happened
-                let stream_channel = resolve_stream_channel(&app_state, &target, virtual_id, &hls_url).await;
                 return force_provider_stream_response(
                     &addr,
                     &app_state,
@@ -307,8 +298,6 @@ async fn hls_api_stream(
                 .await
                 .into_response();
         }
-
-        let stream_channel = resolve_stream_channel(&app_state, &target, virtual_id, &hls_url).await;
 
         force_provider_stream_response(
             &addr,

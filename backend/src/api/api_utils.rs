@@ -282,9 +282,9 @@ pub fn get_stream_alternative_url(
         return stream_url.to_owned();
     };
 
-    let modified = stream_url.replace(&input_user_info.base_url, &alt_input_user_info.base_url);
-    let modified = modified.replace(&input_user_info.username, &alt_input_user_info.username);
-    modified.replace(&input_user_info.password, &alt_input_user_info.password)
+    let modified = stream_url.replacen(&input_user_info.base_url, &alt_input_user_info.base_url, 1);
+    let modified = modified.replacen(&input_user_info.username, &alt_input_user_info.username, 1);
+    modified.replacen(&input_user_info.password, &alt_input_user_info.password, 1)
 }
 
 async fn get_redirect_alternative_url<'a>(
@@ -1141,8 +1141,8 @@ async fn fetch_resource_with_retry(
                 let should_retry = status.is_server_error()
                     || matches!(
                         status,
-                        reqwest::StatusCode::BAD_REQUEST
-                            | reqwest::StatusCode::REQUEST_TIMEOUT
+                        // reqwest::StatusCode::BAD_REQUEST // 400 is typically client error; retrying likely won't help and adds load.
+                            reqwest::StatusCode::REQUEST_TIMEOUT
                             | reqwest::StatusCode::TOO_EARLY
                             | reqwest::StatusCode::TOO_MANY_REQUESTS
                     );
