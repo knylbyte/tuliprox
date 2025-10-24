@@ -19,7 +19,7 @@
     border-radius: 50%;
 
     //.organic-circle {
-    background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 70%);
+    background: radial-gradient(circle, var(--floating-particle-gradient-color-1) 0%, var(--floating-particle-gradient-color-2) 70%);
     animation: organic-wobble 8s ease-in-out infinite;
     filter: blur(3px);
     will-change: transform;
