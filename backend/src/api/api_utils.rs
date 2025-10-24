@@ -25,10 +25,7 @@ use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, log_enabled, trace};
 use reqwest::header::RETRY_AFTER;
-use shared::model::{
-    Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, TargetType,
-    UserConnectionPermission, XtreamCluster,
-};
+use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
 use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_byte_size, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
@@ -285,9 +282,9 @@ pub fn get_stream_alternative_url(
         return stream_url.to_owned();
     };
 
-    let modified = stream_url.replace(&input_user_info.base_url, &alt_input_user_info.base_url);
-    let modified = modified.replace(&input_user_info.username, &alt_input_user_info.username);
-    modified.replace(&input_user_info.password, &alt_input_user_info.password)
+    let modified = stream_url.replacen(&input_user_info.base_url, &alt_input_user_info.base_url, 1);
+    let modified = modified.replacen(&input_user_info.username, &alt_input_user_info.username, 1);
+    modified.replacen(&input_user_info.password, &alt_input_user_info.password, 1)
 }
 
 async fn get_redirect_alternative_url<'a>(
@@ -613,7 +610,7 @@ where
         params.user.proxy.is_redirect(item_type) || params.target.is_force_redirect(item_type);
     let is_hls_request =
         item_type == PlaylistItemType::LiveHls || params.stream_ext == Some(HLS_EXT);
-    let is_dash_request = !is_hls_request && item_type == PlaylistItemType::LiveDash
+    let is_dash_request = (!is_hls_request && item_type == PlaylistItemType::LiveDash)
         || params.stream_ext == Some(DASH_EXT);
 
     if params.target_type == TargetType::M3u {
@@ -738,7 +735,7 @@ pub async fn force_provider_stream_response(
     addr: &str,
     app_state: &AppState,
     user_session: &UserSession,
-    item_type: PlaylistItemType,
+    mut stream_channel: StreamChannel,
     req_headers: &HeaderMap,
     input: &ConfigInput,
     user: &ProxyUserCredentials,
@@ -746,6 +743,7 @@ pub async fn force_provider_stream_response(
     let stream_options = get_stream_options(app_state);
     let share_stream = false;
     let connection_permission = UserConnectionPermission::Allowed;
+    let item_type = stream_channel.item_type;
 
     let mut stream_details = create_stream_response_details(
         app_state,
@@ -770,8 +768,9 @@ pub async fn force_provider_stream_response(
             .active_users
             .update_session_addr(&user.username, &user_session.token, addr)
             .await;
+        stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr, stream_channel)
                 .await;
 
         let (status_code, header_map) =
@@ -809,8 +808,7 @@ pub async fn stream_response(
     addr: &str,
     app_state: &AppState,
     session_token: &str,
-    virtual_id: u32,
-    item_type: PlaylistItemType,
+    mut stream_channel: StreamChannel,
     stream_url: &str,
     req_headers: &HeaderMap,
     input: &ConfigInput,
@@ -830,10 +828,13 @@ pub async fn stream_response(
         .into_response();
     }
 
+    let virtual_id = stream_channel.virtual_id;
+    let item_type = stream_channel.item_type;
+
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
         if let Some(value) =
-            shared_stream_response(app_state, stream_url, addr, user, connection_permission).await
+            shared_stream_response(app_state, stream_url, addr, user, connection_permission, stream_channel.clone()).await
         {
             return value.into_response();
         }
@@ -869,8 +870,9 @@ pub async fn stream_response(
         } else {
             None
         };
+        stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr, stream_channel)
                 .await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
@@ -984,6 +986,7 @@ async fn shared_stream_response(
     addr: &str,
     user: &ProxyUserCredentials,
     connect_permission: UserConnectionPermission,
+    mut stream_channel: StreamChannel
 ) -> Option<impl IntoResponse> {
     if let Some(stream) =
         SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)).await
@@ -1002,8 +1005,9 @@ async fn shared_stream_response(
                 axum::http::StatusCode::OK,
             )));
             let stream_details = StreamDetails::from_stream(stream);
+            stream_channel.shared = true;
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr)
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr, stream_channel)
                     .await
                     .boxed();
             let mut response = axum::response::Response::builder().status(status_code);
@@ -1137,8 +1141,8 @@ async fn fetch_resource_with_retry(
                 let should_retry = status.is_server_error()
                     || matches!(
                         status,
-                        reqwest::StatusCode::BAD_REQUEST
-                            | reqwest::StatusCode::REQUEST_TIMEOUT
+                        // reqwest::StatusCode::BAD_REQUEST // 400 is typically client error; retrying likely won't help and adds load.
+                            reqwest::StatusCode::REQUEST_TIMEOUT
                             | reqwest::StatusCode::TOO_EARLY
                             | reqwest::StatusCode::TOO_MANY_REQUESTS
                     );

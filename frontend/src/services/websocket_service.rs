@@ -72,8 +72,8 @@ impl WebSocketService {
                                     ProtocolMessage::Error(err) => {
                                         error!("{err}");
                                     },
-                                    ProtocolMessage::ActiveUserResponse(user_count, connections) => {
-                                        event_service.broadcast(EventMessage::ActiveUser(user_count, connections));
+                                    ProtocolMessage::ActiveUserResponse(event) => {
+                                        event_service.broadcast(EventMessage::ActiveUser(event));
                                     },
                                     ProtocolMessage::ActiveProviderResponse(user_count, connections) => {
                                         event_service.broadcast(EventMessage::ActiveProvider(user_count, connections));

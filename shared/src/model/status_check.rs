@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
+use crate::model::StreamInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StatusCheck {
@@ -13,6 +14,7 @@ pub struct StatusCheck {
     pub cache: Option<String>,
     pub active_users: usize,
     pub active_user_connections: usize,
+    pub active_user_streams: Vec<StreamInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_provider_connections: Option<BTreeMap<String, usize>>,
 }
@@ -29,6 +31,7 @@ impl Default for StatusCheck {
             active_users: 0,
             active_user_connections: 0,
             active_provider_connections: None,
+            active_user_streams: Vec::new(),
         }
     }
 }

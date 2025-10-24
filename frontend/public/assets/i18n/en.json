@@ -136,6 +136,7 @@
     "NOTES": "Notes",
     "DASHBOARD": "Dashboard",
     "STATS": "Stats",
+    "STREAMS": "Streams",
     "SETTINGS": "Settings",
     "WELCOME": "Welcome",
     "RELEASES": "Releases",
@@ -283,7 +284,13 @@
     "ADD_EXTENSION": "Add Extension",
     "ADD_DEVICE": "Add Device",
     "EXTENDED_ATTRIBUTES": "Extended Attributes",
-    "USE_MEMORY_CACHE": "Mem-Cache"
+    "USE_MEMORY_CACHE": "Mem-Cache",
+    "KICK": "Kick",
+    "CHANNEL": "Channel",
+    "GROUP": "Group",
+    "CLIENT_IP": "Client IP",
+    "STREAM_ID": "Stream Id",
+    "SHARED": "Shared"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"
@@ -308,6 +315,9 @@
       "SERVER_CONFIG": {
         "FAIL": "Failed to download server config!"
       }
+    },
+    "LOGIN": {
+      "MESSAGE": "Enter Your Credentials"
     },
     "SAVE": {
       "MAIN_CONFIG": {

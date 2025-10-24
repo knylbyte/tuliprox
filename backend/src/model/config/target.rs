@@ -8,7 +8,7 @@ use regex::Regex;
 use shared::foundation::filter::Filter;
 use shared::foundation::filter::ValueProvider;
 use crate::model::{macros, ConfigRename, ConfigSort};
-
+use crate::model::config::favourites::ConfigFavourites;
 
 #[derive(Clone, Debug)]
 pub struct ProcessTargets {
@@ -221,6 +221,7 @@ pub struct ConfigTarget {
     pub rename: Option<Vec<ConfigRename>>,
     pub mapping_ids: Option<Vec<String>>,
     pub mapping: Arc<ArcSwapOption<Vec<Mapping>>>,
+    pub favourites: Option<Vec<ConfigFavourites>>,
     pub processing_order: ProcessingOrder,
     pub watch: Option<Vec<regex::Regex>>,
     pub use_memory_cache: bool,
@@ -264,13 +265,13 @@ impl ConfigTarget {
         }
     }
 
-    pub fn has_output(&self, tt: &TargetType) -> bool {
+    pub fn has_output(&self, tt: TargetType) -> bool {
         for target_output in &self.output {
             match target_output {
-                TargetOutput::Xtream(_) => { if tt == &TargetType::Xtream { return true; } }
-                TargetOutput::M3u(_) => { if tt == &TargetType::M3u { return true; } }
-                TargetOutput::Strm(_) => { if tt == &TargetType::Strm { return true; } }
-                TargetOutput::HdHomeRun(_) => { if tt == &TargetType::HdHomeRun { return true; } }
+                TargetOutput::Xtream(_) => { if tt == TargetType::Xtream { return true; } }
+                TargetOutput::M3u(_) => { if tt == TargetType::M3u { return true; } }
+                TargetOutput::Strm(_) => { if tt == TargetType::Strm { return true; } }
+                TargetOutput::HdHomeRun(_) => { if tt == TargetType::HdHomeRun { return true; } }
             }
         }
         false
@@ -299,6 +300,7 @@ impl From<&ConfigTargetDto> for ConfigTarget {
             rename: dto.rename.as_ref().map(|l| l.iter().map(Into::into).collect()),
             mapping_ids: dto.mapping.clone(),
             mapping: Arc::new(ArcSwapOption::new(None)),
+            favourites: dto.favourites.as_ref().map(|f| f.iter().map(Into::into).collect()),
             processing_order: dto.processing_order,
             watch: dto.watch.as_ref().map(|list| list.iter().filter_map(|s| Regex::new(s).ok()).collect()),
             use_memory_cache: dto.use_memory_cache,

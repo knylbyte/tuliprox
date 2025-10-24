@@ -224,7 +224,7 @@ async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<AppConfig>, creden
     let use_all = use_output.is_none();
     let use_m3u = use_output.as_ref() == Some(&TargetType::M3u);
     let use_xtream = use_output.as_ref() == Some(&TargetType::Xtream);
-    if (use_all || use_m3u) && target.has_output(&TargetType::M3u) {
+    if (use_all || use_m3u) && target.has_output(TargetType::M3u) {
         let iterator = M3uPlaylistIterator::new(cfg, target, credentials).await.ok();
         let stream = m3u_item_to_lineup_stream(iterator);
         let body_stream = stream::once(async { Ok(Bytes::from("[")) })
@@ -234,7 +234,7 @@ async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<AppConfig>, creden
             .status(axum::http::StatusCode::OK)
             .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
             .body(axum::body::Body::from_stream(body_stream)));
-    } else if (use_all || use_xtream) && target.has_output(&TargetType::Xtream) {
+    } else if (use_all || use_xtream) && target.has_output(TargetType::Xtream) {
         let server_info = app_state.app_state.app_config.get_user_server_info(credentials);
         let base_url = server_info.get_base_url();
 

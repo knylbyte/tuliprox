@@ -1,4 +1,4 @@
-use crate::api::api_utils::try_unwrap_body;
+use crate::api::api_utils::{json_or_bin_response, try_unwrap_body};
 use crate::api::endpoints::download_api;
 use crate::api::endpoints::user_api::user_api_register;
 use crate::api::endpoints::v1_api_playlist::v1_api_playlist_register;
@@ -12,6 +12,7 @@ use shared::model::{IpCheckDto,StatusCheck};
 use shared::utils::{concat_path_leading_slash};
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use crate::api::endpoints::extract_accept_header::ExtractAcceptHeader;
 use crate::api::endpoints::v1_api_config::v1_api_config_register;
 
 async fn create_ipinfo_check(app_state: &Arc<AppState>) -> Option<(Option<String>, Option<String>)> {
@@ -31,9 +32,9 @@ pub async fn create_status_check(app_state: &Arc<AppState>) -> StatusCheck {
             Some(lock.lock().await.get_size_text())
         }
     };
-    let (active_users, active_user_connections) = {
+    let (active_users, active_user_connections, active_user_streams) = {
         let active_user = &app_state.active_users;
-        (active_user.active_users().await, active_user.active_connections().await)
+        (active_user.active_users().await, active_user.active_connections().await, active_user.active_streams().await)
     };
 
     let active_provider_connections = app_state.active_provider.active_connections().await.map(|c| c.into_iter().collect::<BTreeMap<_, _>>());
@@ -47,6 +48,7 @@ pub async fn create_status_check(app_state: &Arc<AppState>) -> StatusCheck {
         active_users,
         active_user_connections,
         active_provider_connections,
+        active_user_streams,
         cache,
     }
 }
@@ -57,6 +59,12 @@ async fn status(axum::extract::State(app_state): axum::extract::State<Arc<AppSta
             .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string()).body(pretty_json)),
         Err(_) => axum::Json(status).into_response(),
     }
+}
+
+async fn streams(ExtractAcceptHeader(accept): ExtractAcceptHeader,
+                 axum::extract::State(app_state): axum::extract::State<Arc<AppState>>) -> axum::response::Response {
+    let streams = app_state.active_users.active_streams().await;
+    json_or_bin_response(accept.as_ref(), &streams).into_response()
 }
 
 async fn ipinfo(axum::extract::State(app_state): axum::extract::State<Arc<AppState>>) -> axum::response::Response {
@@ -78,6 +86,7 @@ pub fn v1_api_register(web_auth_enabled: bool, app_state: Arc<AppState>, web_ui_
     let mut router = axum::Router::new();
     router = router
         .route("/status", axum::routing::get(status))
+        .route("/streams", axum::routing::get(streams))
         .route("/file/download", axum::routing::post(download_api::queue_download_file))
         .route("/file/download/info", axum::routing::get(download_api::download_file_info))
         .route("/ipinfo", axum::routing::get(ipinfo));

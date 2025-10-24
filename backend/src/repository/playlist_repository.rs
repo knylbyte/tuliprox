@@ -48,13 +48,12 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
                     _ => header.item_type,
                 };
             }
+
             let uuid = header.get_uuid();
             let item_type = header.item_type;
             header.virtual_id = target_id_mapping.get_and_update_virtual_id(uuid, provider_id, item_type, 0);
         }
     }
-
-
 
     for output in &target.output {
         let mut filtered = match output {

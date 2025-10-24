@@ -128,7 +128,7 @@ async fn grouped_channels(
 
 pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Option<&ConfigTarget>, cfg: &AppConfig, accept: Option<&String>) -> impl axum::response::IntoResponse + Send {
     if let Some(target) = cfg_target {
-        if target.has_output(&TargetType::Xtream) {
+        if target.has_output(TargetType::Xtream) {
             let live_channels = grouped_channels(cfg, target, XtreamCluster::Live).await;
             let vod_channels = grouped_channels(cfg, target, XtreamCluster::Video).await;
             let series_channels = grouped_channels(cfg, target, XtreamCluster::Series).await;
@@ -140,7 +140,7 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
             };
 
             return json_or_bin_response(accept, &response).into_response();
-        } else if target.has_output(&TargetType::M3u) {
+        } else if target.has_output(TargetType::M3u) {
             let all_channels = m3u_repository::iter_raw_m3u_playlist(cfg, target).await;
             let (live_channels, vod_channels, series_channels) = group_playlist_items_by_cluster(all_channels);
             let response = PlaylistCategoriesResponse {

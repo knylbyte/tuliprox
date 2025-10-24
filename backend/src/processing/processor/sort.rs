@@ -65,7 +65,11 @@ fn playlist_comparator(
                     }
                 }
 
-                Ordering::Equal
+                let o = value_a.cmp(value_b);
+                match order {
+                    SortOrder::Asc => o,
+                    SortOrder::Desc => o.reverse(),
+                }
             }
             (Some(_), None) => match order {
                 SortOrder::Asc => Ordering::Less,

@@ -240,7 +240,7 @@ async fn xtream_player_api_stream(
     }
 
     let target_name = &target.name;
-    if !target.has_output(&TargetType::Xtream) {
+    if !target.has_output(TargetType::Xtream) {
         debug!("Target has no xtream codes playlist {target_name}");
         return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
@@ -306,7 +306,7 @@ async fn xtream_player_api_stream(
                 addr,
                 app_state,
                 session,
-                item_type,
+                pli.to_stream_channel(),
                 req_headers,
                 &input,
                 &user,
@@ -392,8 +392,7 @@ async fn xtream_player_api_stream(
         addr,
         app_state,
         session_key.as_str(),
-        pli.virtual_id,
-        item_type,
+        pli.to_stream_channel(),
         &stream_url,
         req_headers,
         &input,
@@ -417,7 +416,7 @@ async fn xtream_player_api_stream_with_token(
 ) -> impl IntoResponse + Send {
     if let Some(target) = app_state.app_config.get_target_by_id(target_id) {
         let target_name = &target.name;
-        if !target.has_output(&TargetType::Xtream) {
+        if !target.has_output(TargetType::Xtream) {
             debug!("Target has no xtream output {target_name}");
             return axum::http::StatusCode::BAD_REQUEST.into_response();
         }
@@ -524,8 +523,7 @@ async fn xtream_player_api_stream_with_token(
             addr,
             app_state,
             session_key.as_str(),
-            pli.virtual_id,
-            pli.item_type,
+            pli.to_stream_channel(),
             &stream_url,
             req_headers,
             &input,
@@ -720,7 +718,7 @@ async fn xtream_player_api_resource(
         return axum::http::StatusCode::FORBIDDEN.into_response();
     }
     let target_name = &target.name;
-    if !target.has_output(&TargetType::Xtream) {
+    if !target.has_output(TargetType::Xtream) {
         debug!("Target has no xtream output {target_name}");
         return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
@@ -1046,7 +1044,7 @@ async fn xtream_get_short_epg(
     limit: &str,
 ) -> impl IntoResponse + Send {
     let target_name = &target.name;
-    if target.has_output(&TargetType::Xtream) {
+    if target.has_output(TargetType::Xtream) {
         let virtual_id: u32 = match FromStr::from_str(stream_id.trim()) {
             Ok(id) => id,
             Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
@@ -1337,7 +1335,7 @@ async fn xtream_player_api(
 ) -> impl IntoResponse + Send {
     let user_target = get_user_target(&api_req, app_state);
     if let Some((user, target)) = user_target {
-        if !target.has_output(&TargetType::Xtream) {
+        if !target.has_output(TargetType::Xtream) {
             return axum::response::Json(get_user_info(&user, app_state).await).into_response();
         }
 

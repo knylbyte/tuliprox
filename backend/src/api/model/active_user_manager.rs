@@ -4,7 +4,7 @@ use crate::model::Config;
 use crate::model::ProxyUserCredentials;
 use jsonwebtoken::get_current_timestamp;
 use log::{debug, error, info};
-use shared::model::UserConnectionPermission;
+use shared::model::{ActiveUserConnectionChange, StreamChannel, StreamInfo, UserConnectionPermission};
 use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -16,8 +16,8 @@ const USER_GC_TTL: u64 = 900;  // 15 Min
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
 const USER_SESSION_LIMIT: usize = 50;
 
-type ActiveUserConnectionChangeSender = tokio::sync::mpsc::Sender<(usize, usize)>;
-pub type ActiveUserConnectionChangeReceiver = tokio::sync::mpsc::Receiver<(usize, usize)>;
+type ActiveUserConnectionChangeSender = tokio::sync::mpsc::Sender<ActiveUserConnectionChange>;
+pub type ActiveUserConnectionChangeReceiver = tokio::sync::mpsc::Receiver<ActiveUserConnectionChange>;
 
 macro_rules! active_user_manager_shared_impl {
     () => {
@@ -35,11 +35,10 @@ macro_rules! active_user_manager_shared_impl {
 
         async fn log_active_user(&self) {
           let user = Arc::clone(&self.user);
-          let connection_change_tx = self.connection_change_tx.clone();
           let is_log_user_enabled = self.is_log_user_enabled();
           let user_connection_count = Self::get_active_connections(&user).await;
           let user_count = user.read().await.iter().filter(|(_, c)| c.connections > 0).count();
-          let _= connection_change_tx.try_send((user_count, user_connection_count));
+          let _= self.connection_change_tx.try_send(ActiveUserConnectionChange::Connections(user_count, user_connection_count));
           if is_log_user_enabled {
               info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
           }
@@ -61,11 +60,13 @@ macro_rules! active_user_manager_shared_impl {
                         connection_data.granted_grace = false;
                         connection_data.grace_ts = 0;
                     }
+                    connection_data.streams.retain(|c| c.addr != addr);
                 }
             }
             self.drop_connection(&addr);
             self.shared_stream_manager.release_connection(addr, true).await;
             self.provider_manager.release_connection(addr).await;
+            let _= self.connection_change_tx.try_send(ActiveUserConnectionChange::Disconnected(addr.to_string()));
             self.log_active_user().await;
         }
     };
@@ -132,6 +133,7 @@ struct UserConnectionData {
     granted_grace: bool,
     grace_ts: u64,
     sessions: Vec<UserSession>,
+    streams: Vec<StreamInfo>,
     ts: u64,
 }
 
@@ -143,6 +145,7 @@ impl UserConnectionData {
             granted_grace: false,
             grace_ts: 0,
             sessions: Vec::new(),
+            streams: Vec::new(),
             ts: current_time_secs(),
         }
     }
@@ -277,16 +280,24 @@ impl ActiveUserManager {
         Self::get_active_connections(&self.user).await
     }
 
-    pub async fn add_connection(&self, username: &str, max_connections: u32, addr: &str) -> UserConnectionGuard {
+    pub async fn add_connection(&self, username: &str, max_connections: u32, addr: &str, provider: &str, stream_channel: StreamChannel) -> UserConnectionGuard {
+        let stream_info = StreamInfo::new(
+            username,
+            addr,
+            provider,
+            stream_channel,
+        );
         {
             let mut user_map = self.user.write().await;
-            user_map
-                .entry(username.to_string())
-                .and_modify(|connection_data| {
-                    connection_data.connections += 1;
-                    connection_data.max_connections = max_connections;
-                })
-                .or_insert_with(|| UserConnectionData::new(1, max_connections));
+            if let Some(connection_data) = user_map.get_mut(username) {
+                connection_data.connections += 1;
+                connection_data.max_connections = max_connections;
+                connection_data.streams.push(stream_info.clone());
+            } else {
+                let mut connection_data = UserConnectionData::new(1, max_connections);
+                connection_data.streams.push(stream_info.clone());
+                user_map.insert(username.to_string(), connection_data);
+            }
         }
 
         {
@@ -294,6 +305,7 @@ impl ActiveUserManager {
             user_by_addr.insert(addr.to_owned(), username.to_owned());
         }
 
+        let _= self.connection_change_tx.try_send(ActiveUserConnectionChange::Connected(stream_info));
         self.log_active_user().await;
 
         UserConnectionGuard {
@@ -351,7 +363,7 @@ impl ActiveUserManager {
             }
         }
 
-        // If not session exists, create one
+        // If no session exists, create one
         debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
         let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
         let token = session.token.clone();
@@ -406,6 +418,17 @@ impl ActiveUserManager {
             }
         }
         None
+    }
+
+    pub async fn active_streams(&self) -> Vec<StreamInfo> {
+        let user_map = self.user.read().await;
+        let mut streams = Vec::new();
+        for (_username, connection_data) in user_map.iter() {
+            for stream in &connection_data.streams {
+                streams.push(stream.clone());
+            }
+        }
+        streams
     }
 
     fn gc(&self) {

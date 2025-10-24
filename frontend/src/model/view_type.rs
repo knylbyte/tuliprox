@@ -4,6 +4,7 @@ use shared::error::{info_err, TuliproxError};
 
 const DASHBOARD: &str = "dashboard";
 const STATS: &str = "stats";
+const STREAMS: &str = "streams";
 const USERS: &str = "users";
 const CONFIG: &str = "config";
 const PLAYLIST_UPDATE: &str = "playlist_update";
@@ -16,6 +17,7 @@ const PLAYLIST_EPG: &str = "playlist_epg";
 pub enum ViewType {
     Dashboard,
     Stats,
+    Streams,
     Users,
     Config,
     PlaylistUpdate,
@@ -31,6 +33,7 @@ impl FromStr for ViewType {
         match s.to_lowercase().as_str() {
             DASHBOARD => Ok(ViewType::Dashboard),
             STATS => Ok(ViewType::Stats),
+            STREAMS => Ok(ViewType::Streams),
             USERS => Ok(ViewType::Users),
             CONFIG => Ok(ViewType::Config),
             PLAYLIST_UPDATE => Ok(ViewType::PlaylistUpdate),
@@ -47,6 +50,7 @@ impl fmt::Display for ViewType {
         let s = match self {
             ViewType::Dashboard => DASHBOARD,
             ViewType::Stats => STATS,
+            ViewType::Streams => STREAMS,
             ViewType::Users => USERS,
             ViewType::Config => CONFIG,
             ViewType::PlaylistUpdate => PLAYLIST_UPDATE,

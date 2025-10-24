@@ -1,4 +1,4 @@
-use crate::model::{AppConfig, ConfigInput, ConfigRename};
+use crate::model::{AppConfig, ConfigFavourites, ConfigInput, ConfigRename};
 use crate::utils::epg;
 use crate::utils::m3u;
 use crate::utils::xtream;
@@ -31,8 +31,7 @@ use log::{debug, error, info, log_enabled, trace, warn, Level};
 use reqwest::Client;
 use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
 use shared::foundation::filter::{get_field_value, set_field_value, Filter, ValueAccessor, ValueProvider};
-use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry,
-                    PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
+use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
 use shared::utils::default_as_default;
 use std::time::Instant;
 
@@ -61,8 +60,51 @@ pub fn apply_filter_to_playlist(playlist: &mut [PlaylistGroup], filter: &Filter)
     Some(new_playlist)
 }
 
+pub fn apply_favourites_to_playlist(
+    _playlist: &mut Vec<PlaylistGroup>,
+    _favourites_cfg: Option<&Vec<ConfigFavourites>>,
+) {
+    // if let Some(favourites) = favourites_cfg {
+    //     let mut fav_groups: HashMap<String, Vec<PlaylistItem>> = HashMap::new();
+    //
+    //     for pg in playlist.iter_mut() {
+    //         for pli in &pg.channels {
+    //             for fav in favourites {
+    //                 if is_valid(pli, &fav.filter) {
+    //                     let mut channel = pli.clone();
+    //                     channel.header.copy = true;
+    //                     channel.header.group.clone_from(&fav.group);
+    //                     channel.header.gen_uuid();
+    //                     fav_groups
+    //                         .entry(fav.group.clone())
+    //                         .or_default()
+    //                         .push(channel);
+    //                 }
+    //             }
+    //         }
+    //     }
+    //
+    //     for (group_name, channels) in fav_groups {
+    //         if !channels.is_empty() {
+    //             let xtream_cluster = channels[0].header.xtream_cluster;
+    //             playlist.push(PlaylistGroup {
+    //                 id: 0,
+    //                 title: group_name,
+    //                 channels,
+    //                 xtream_cluster,
+    //             });
+    //         }
+    //     }
+    // }
+}
+
 fn filter_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {
-    apply_filter_to_playlist(playlist, &target.filter)
+    if let Some(mut filtered_playlist) = apply_filter_to_playlist(playlist, &target.filter) {
+        apply_favourites_to_playlist(&mut filtered_playlist, target.favourites.as_ref());
+        Some(filtered_playlist)
+    } else {
+        None
+    }
 }
 
 fn assign_channel_no_playlist(new_playlist: &mut [PlaylistGroup]) {
@@ -605,20 +647,23 @@ pub async fn exec_processing(client: Arc<reqwest::Client>, app_config: Arc<AppCo
     }
     let config = app_config.config.load();
     let messaging = config.messaging.as_ref();
-    match serde_json::to_value(&stats) {
-        Ok(val) => {
-            match serde_json::to_string(&serde_json::Value::Object(
-                serde_json::map::Map::from_iter([("stats".to_string(), val)]))) {
-                Ok(stats_msg) => {
-                    // print stats
-                    info!("{stats_msg}");
-                    // send stats
-                    send_message_json(&client, MsgKind::Stats, messaging, stats_msg.as_str());
+
+    if !stats.is_empty() {
+        match serde_json::to_value(&stats) {
+            Ok(val) => {
+                match serde_json::to_string(&serde_json::Value::Object(
+                    serde_json::map::Map::from_iter([("stats".to_string(), val)]))) {
+                    Ok(stats_msg) => {
+                        // print stats
+                        info!("{stats_msg}");
+                        // send stats
+                        send_message_json(&client, MsgKind::Stats, messaging, stats_msg.as_str());
+                    }
+                    Err(err) => error!("Failed to serialize playlist stats {err}"),
                 }
-                Err(err) => error!("Failed to serialize playlist stats {err}"),
             }
+            Err(err) => error!("Failed to serialize playlist stats {err}")
         }
-        Err(err) => error!("Failed to serialize playlist stats {err}")
     }
 
     // send errors

@@ -1,13 +1,13 @@
 use log::{info, trace};
 use tokio::task;
-use shared::model::{ConfigType, PlaylistUpdateState};
+use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState};
 use crate::api::model::{ActiveUserConnectionChangeReceiver};
 use crate::api::model::{ProviderConnectionChangeReceiver};
 
 #[derive(Clone, PartialEq)]
 pub enum EventMessage {
     ServerError(String),
-    ActiveUser(usize, usize), // user_count, connection count
+    ActiveUser(ActiveUserConnectionChange), // user_count, connection count
     ActiveProvider(String, usize), // provider name, connections
     ConfigChange(ConfigType),
     PlaylistUpdate(PlaylistUpdateState),
@@ -30,22 +30,22 @@ impl EventManager {
         task::spawn(async move {
             loop {
                tokio::select! {
-                    Some((user_count, connection_count)) = active_user_change_rx.recv() => {
-                        if let Err(e) = channel_tx_clone.send(EventMessage::ActiveUser(user_count, connection_count)) {
-                            trace!("Failed to send active user change event: {e}");
-                        }
-                    }
+                    Some(event) = active_user_change_rx.recv() => {
+                       if let Err(e) = channel_tx_clone.send(EventMessage::ActiveUser(event)) {
+                                    trace!("Failed to send active user change event: {e}");
+                       }
+                   }
 
-                    Some((provider, connection_count)) = provider_change_rx.recv() => {
+                   Some((provider, connection_count)) = provider_change_rx.recv() => {
                         if let Err(e) = channel_tx_clone.send(EventMessage::ActiveProvider(provider, connection_count)) {
                             trace!("Failed to send active provider change event: {e}");
                         }
-                    }
-                    else => {
+                   }
+                   else => {
                         // Both channels are closed, exit gracefully
                         info!("All input channels closed, terminating event manager task");
                         break;
-                    }
+                   }
                }
            }
         });
