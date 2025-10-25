@@ -21,6 +21,8 @@ use tokio::fs::{create_dir_all, remove_dir, remove_file, File};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use shared::model::{ClusterFlags, FieldGetAccessor, PlaylistGroup, PlaylistItem, PlaylistItemType, StrmExportStyle, UUIDType};
 use crate::utils;
+// Import the new MediaQuality struct
+use crate::model::{MediaQuality};
 
 /// Sanitizes a string to be safe for use as a file or directory name by
 /// following a strict "allow-list" approach and discarding invalid characters.
@@ -38,7 +40,7 @@ fn sanitize_for_filename(text: &str, underscore_whitespace: bool) -> String {
             // Decide which characters to keep or transform.
             if c.is_alphanumeric() {
                 Some(c)
-            } else if "+=,._-@#()".contains(c) { // <-- Allow list of safe punctuation.
+            } else if "+=,._-@#()[]".contains(c) { // <-- Allow list of safe punctuation, added [ and ] for quality tags.
                 Some(c)
             } else if c.is_whitespace() {
                 if underscore_whitespace {
@@ -444,7 +446,7 @@ fn format_for_kodi(
 
             let base_name = format!("{sanitized_title}{year_string}");
             let folder_name = format!("{base_name}{id_string}");
-            let final_filename = base_name; // Kodi is flexible, filename without ID is clean. The folder has the ID.
+            let final_filename = base_name;
 
             if flat {
                 dir_path.push(format!("{folder_name}{separator}[{category}]"));
@@ -506,7 +508,7 @@ fn format_for_plex(
 
             let base_name = format!("{sanitized_title}{year_string}");
             let folder_name = format!("{base_name}{id_string}");
-            let final_filename = base_name; // Plex: ID is only in the folder name.
+            let final_filename = base_name;
 
             if flat {
                 dir_path.push(format!("{folder_name}{separator}[{category}]"));
@@ -634,7 +636,7 @@ fn format_for_jellyfin(
 
             let base_name = format!("{sanitized_title}{year_string}");
             let folder_name = format!("{base_name}{id_string}");
-            let final_filename = base_name; // Jellyfin: ID is only in the folder name.
+            let final_filename = base_name;
 
             if flat {
                 dir_path.push(format!("{folder_name}{separator}[{category}]"));
@@ -676,7 +678,6 @@ fn format_for_jellyfin(
     }
 }
 
-
 /// Generates style-compliant directory and file names by dispatching
 /// the call to a dedicated formatting function for the respective style.
 async fn style_based_rename(
@@ -716,9 +717,7 @@ async fn prepare_strm_files(
     cfg: &AppConfig,
     new_playlist: &mut [PlaylistGroup],
     _root_path: &Path,
-    underscore_whitespace: bool,
-    style: &StrmExportStyle,
-    flat: bool,
+    strm_target_output: &StrmTargetOutput,
 ) -> Vec<StrmFile> {
     let channel_count = new_playlist
         .iter()
@@ -740,12 +739,33 @@ async fn prepare_strm_files(
                 cfg,
                 &strm_item_info,
                 &mut input_tmdb_indexes,
-                style,
-                underscore_whitespace,
-                flat,
+                &strm_target_output.style,
+                strm_target_output.underscore_whitespace,
+                strm_target_output.flat,
             ).await;
 
-            let filename = Arc::new(strm_file_name);
+            // Conditionally generate the quality string based on the new config flag
+            let quality_string = if strm_target_output.add_quality_to_filename {
+                pli.header.additional_properties
+                    .as_ref()
+                    .and_then(|props| props.get("info"))
+                    .and_then(MediaQuality::from_ffprobe_info)
+                    .map_or_else(String::new, |quality| {
+                        let formatted = quality.format_for_filename("|");
+                        if formatted.is_empty() {
+                            String::new()
+                        } else {
+                            // Hard-coded separator for filename clarity.
+                            format!(" - [{}]", formatted)
+                        }
+                    })
+            } else {
+                String::new()
+            };
+
+            let final_filename = format!("{}{}", strm_file_name, quality_string);
+            let filename = Arc::new(final_filename);
+
             if all_filenames.contains(&filename) {
                 collisions.insert(Arc::clone(&filename));
             }
@@ -763,22 +783,19 @@ async fn prepare_strm_files(
         // According to the docs (Plex, Jellyfin), this should be " - " (space-hyphen-space).
         // The user's `underscore_whitespace` setting should not apply to this structural separator.
         let version_separator = " - ";
-        let separator = if underscore_whitespace { "_" } else { " " };
+        let separator = if strm_target_output.underscore_whitespace { "_" } else { " " };
         result
             .iter_mut()
             .filter(|s| collisions.contains(&s.file_name))
             .for_each(|s| {
                 // Create a descriptive and unique identifier for this version.
-                // This will become the "ArbitraryText" or "Label".
                 let version_label = format!("Version{}id#{}", separator, s.strm_info.virtual_id);
 
                 // The base filename is the part that is identical for all versions.
                 let base_filename = &s.file_name;
 
                 // Apply the specific multi-version naming convention for the selected style.
-                // NOTE: For multi-versioning, all four platforms use the same " - Suffix" logic.
-                // A style-specific match is not strictly necessary here but is good practice for future flexibility.
-                let new_filename = match style {
+                let new_filename = match strm_target_output.style {
                     // Plex, Emby, and Kodi all follow the `Filename - Suffix` pattern.
                     StrmExportStyle::Plex | StrmExportStyle::Emby | StrmExportStyle::Kodi => {
                         format!("{base_filename}{version_separator}{version_label}")
@@ -837,19 +854,11 @@ pub async fn write_strm_playlist(
 
     let target_force_redirect = target.options.as_ref().and_then(|o| o.force_redirect.as_ref());
 
-    // we need to consider
-    // - Live streams
-    // - Xtream Series Episode (has series_name and release_date)
-    // - Xtream VOD (should have year or release_date)
-    // - M3u Series (TODO we dont have this currently, should be guessed through m3u parser)
-    // - M3u Vod (no additional infos, need to extract from title)
     let strm_files = prepare_strm_files(
         app_config,
         new_playlist,
         &root_path,
-        target_output.underscore_whitespace,
-        &target_output.style,
-        target_output.flat,
+        target_output,
     ).await;
     for strm_file in strm_files {
         // file paths

@@ -7,6 +7,7 @@ mod healthcheck;
 mod playlist_categories;
 mod config;
 mod input_source;
+pub mod media_properties;
 
 pub use self::playlist::*;
 pub use self::mapping::*;
@@ -18,3 +19,4 @@ pub use self::playlist_categories::*;
 pub use shared::model::xtream_const::*;
 pub use self::config::*;
 pub use self::input_source::*;
+pub use self::media_properties::*;
