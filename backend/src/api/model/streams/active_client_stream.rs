@@ -15,6 +15,8 @@ use std::pin::Pin;
 use std::sync::atomic::AtomicU8;
 use std::sync::{Arc};
 use std::task::{Poll};
+use axum::http::header::USER_AGENT;
+use axum::http::HeaderMap;
 use futures::task::AtomicWaker;
 
 const INNER_STREAM: u8 = 0_u8;
@@ -39,19 +41,16 @@ impl ActiveClientStream {
                       user: &ProxyUserCredentials,
                       connection_permission: UserConnectionPermission,
                       addr: &str,
-                      stream_channel: StreamChannel) -> Self {
+                      stream_channel: StreamChannel,
+                      req_headers: &HeaderMap) -> Self {
         if connection_permission == UserConnectionPermission::Exhausted {
             error!("Something is wrong this should not happen");
         }
         let grant_user_grace_period = connection_permission == UserConnectionPermission::GracePeriod;
         let username = user.username.as_str();
-        let provider_name = stream_details
-            .provider_connection_guard
-            .as_ref()
-            .and_then(|guard| guard.get_provider_name())
-            .as_deref()
-            .map_or_else(String::new, ToString::to_string);
-        let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, addr, &provider_name, stream_channel).await);
+        let provider_name = stream_details.provider_name.as_ref().map_or_else(String::new, ToString::to_string);
+        let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
+        let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, addr, &provider_name, stream_channel, user_agent).await);
         let cfg = &app_state.app_config;
         let waker = Some(Arc::new(AtomicWaker::new()));
         let waker_clone = waker.clone();
@@ -106,8 +105,8 @@ impl ActiveClientStream {
         let active_provider = Arc::clone(&app_state.active_provider);
         let shared_stream_manager = Arc::clone(&app_state.shared_stream_manager);
 
-        let provider_grace_check = if stream_details.has_grace_period() && stream_details.input_name.is_some() {
-            let provider_name = stream_details.input_name.as_deref().unwrap_or_default().to_string();
+        let provider_grace_check = if stream_details.has_grace_period() && stream_details.provider_name.is_some() {
+            let provider_name = stream_details.provider_name.as_ref().map_or_else(String::new, ToString::to_string);
             Some(provider_name)
         } else {
             None

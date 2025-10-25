@@ -3868,6 +3868,7 @@ dependencies = [
  "enum-iterator",
  "fastrand",
  "indexmap",
+ "js-sys",
  "log",
  "path-clean",
  "pest",

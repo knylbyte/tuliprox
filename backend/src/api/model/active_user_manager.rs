@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::api::model::ActiveProviderManager;
 use crate::api::model::SharedStreamManager;
 use crate::model::Config;
@@ -280,12 +281,13 @@ impl ActiveUserManager {
         Self::get_active_connections(&self.user).await
     }
 
-    pub async fn add_connection(&self, username: &str, max_connections: u32, addr: &str, provider: &str, stream_channel: StreamChannel) -> UserConnectionGuard {
+    pub async fn add_connection(&self, username: &str, max_connections: u32, addr: &str, provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> UserConnectionGuard {
         let stream_info = StreamInfo::new(
             username,
             addr,
             provider,
             stream_channel,
+            user_agent.to_string(),
         );
         {
             let mut user_map = self.user.write().await;

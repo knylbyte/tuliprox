@@ -290,7 +290,11 @@
     "GROUP": "Group",
     "CLIENT_IP": "Client IP",
     "STREAM_ID": "Stream Id",
-    "SHARED": "Shared"
+    "SHARED": "Shared",
+    "CLUSTER": "Type",
+    "USER_AGENT": "Player",
+    "FORMAT": "Format",
+    "DURATION": "Duration"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"
