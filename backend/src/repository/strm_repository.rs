@@ -745,13 +745,14 @@ async fn prepare_strm_files(
             ).await;
 
             // Conditionally generate the quality string based on the new config flag
+            let separator = if strm_target_output.underscore_whitespace { "_" } else { " " };
             let quality_string = if strm_target_output.add_quality_to_filename {
                 pli.header.additional_properties
                     .as_ref()
                     .and_then(|props| props.get("info"))
                     .and_then(MediaQuality::from_ffprobe_info)
                     .map_or_else(String::new, |quality| {
-                        let formatted = quality.format_for_filename("|");
+                        let formatted = quality.format_for_filename(separator);
                         if formatted.is_empty() {
                             String::new()
                         } else {
