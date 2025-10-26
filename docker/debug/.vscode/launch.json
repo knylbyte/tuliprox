@@ -3,33 +3,39 @@
     "configurations": 
     [
         {
-            "name": "Docker Remote Debug (start & attach)",
+            "name": "Docker Remote Debug (LLDB, start & attach)",
             "type": "lldb",
             "request": "launch",
+
+            // 0. Build and Recreate debug container stack
+            "preLaunchTask": "docker-compose-up-debug",
 
             "initCommands": [
                 "platform select remote-linux",
                 "platform connect connect://localhost:10586"
             ],
 
+            // 1. Load the local binary to load symbols and source code information.
             "targetCreateCommands": [
-                "target create /usr/src/tuliprox/target/x86_64-unknown-linux-musl/debug/tuliprox"
+                // Opt#1: binary path inside the docker container, for musl target (alpine-based image)
+                "target create ${workspaceFolder}/debug/target/x86_64-unknown-linux-musl/debug/tuliprox"
+
+                // Opt#2: binary path inside the docker container, for gnu target (debian-based image)
+                // "target create ${workspaceFolder}/debug/target/x86_64-unknown-linux-gnu/debug/tuliprox"
             ],
 
+            // 2. Connect to the remote debugger and continue the process.
             "processCreateCommands": [
-                // Attache to the process and continue after attaching
                 "attach -n tuliprox",
                 "continue"
             ],
             
             "sourceMap": {
                 "/usr/src/tuliprox": "${workspaceFolder}"
-            },
-            
-            "preLaunchTask": "docker-compose-up-debug"
+            }
         },
         {
-            "name": "Docker Remote Debug (attach only)",
+            "name": "Docker Remote Debug (LLDB, attach only)",
             "type": "lldb",
             "request": "launch",
 
@@ -39,11 +45,10 @@
             ],
 
             "targetCreateCommands": [
-                "target create /usr/src/tuliprox/target/x86_64-unknown-linux-musl/debug/tuliprox"
+                "target create ${workspaceFolder}/debug/target/x86_64-unknown-linux-musl/debug/tuliprox"
             ],
 
             "processCreateCommands": [
-                // Attache to the process and continue after attaching
                 "attach -n tuliprox",
                 "continue"
             ],

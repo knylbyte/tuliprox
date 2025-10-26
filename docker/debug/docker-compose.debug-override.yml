@@ -13,19 +13,14 @@
 #     The value is REPLACED.
 # ===================================================================
 version: '3.8'
-
-# Define named volumes that will persist on the host machine
-volumes:
-  cargo_cache:
-  cargo_registry:
-
 services:
   gluetun_vpn_1:
+    # Add additional exposed ports for debug server
     ports:
       - "1080:1080"
       - "8901:8901"
       # Add debugging server for VSCode
-      - "10586:10586" # LLDB-Server (main control port)
+      - "10586:10586" # Port of GDB- or LLDB-Server (main control port)
       - "10600-10700:10600-10700" # LLDB-Server (range for the debug sessions)
       
   tuliprox:
@@ -37,8 +32,11 @@ services:
       args:
         # Use the 'musl' target for the Alpine-based debug image
         RUST_TARGET: x86_64-unknown-linux-musl
-        # # Use the 'gnu' target for the Debian-based debug image
+
+        # Use the 'gnu' target for the Debian-based debug image
         # RUST_TARGET: x86_64-unknown-linux-gnu
+
+    # Define exposed ports on VPN network stack, if used
     # ports:
     #   - "8901:8901"
     #   # Add debugging server for VSCode
@@ -46,9 +44,15 @@ services:
     #   - "10600-10700:10600-10700" # LLDB-Server (range for the debug sessions)
     environment:
       # Pass port configuration to the entrypoint script
+      - DEBUG_SERVER=lldb   # Use 'gdb' or 'lldb' for the debug server
+      # Ports for LLDB-Server
       - LLDB_SERVER_PORT=10586
       - LLDB_MIN_PORT=10600
       - LLDB_MAX_PORT=10700
+      # Port for GDB-Server
+      - GDB_SERVER_PORT=10586
+      # Specify the Rust target triple, see above in 'build.args'
+      - RUST_TARGET=x86_64-unknown-linux-musl
     
     # Must be set to allow process debugging
     privileged: true
@@ -64,7 +68,6 @@ services:
       - "./data:/app/data:rw"
       - "./backup:/app/backup:rw"
       - "./downloads:/app/downloads:rw"
-      # Mounts the project's build artifacts cache
-      - cargo_cache:/usr/src/tuliprox/target
-      # Mounts the cache for downloaded crate dependencies
-      - cargo_registry:/usr/local/cargo/registry
+      # Store the project's build artifacts and cache the host for debugging and faster rebuilds
+      - "./debug/target:/usr/src/tuliprox/target"
+      - "./debug/registry:/usr/local/cargo/registry"
