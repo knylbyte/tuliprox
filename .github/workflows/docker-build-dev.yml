@@ -162,6 +162,7 @@ jobs:
 
       - name: Step 2.8 - Build cache-export TARs (${{ matrix.platform }})
         uses: docker/build-push-action@v6
+        if: steps.cache.outputs.cache-hit != 'true'
         with:
           context: .
           file: ${{ env.DOCKERFILE }}
@@ -209,7 +210,7 @@ jobs:
             CARGO_HOME=${{ env.CARGO_HOME }}
             SCCACHE_DIR=${{ env.SCCACHE_DIR }}
           target: scratch-final
-          tags: dev-slim-${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
+          tags: ${{ env.GHCR_NS }}:dev-slim-${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
           cache-from: |
             type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
             type=registry,ref=${{ env.GHCR_NS }}:dev
@@ -230,7 +231,7 @@ jobs:
             CARGO_HOME=${{ env.CARGO_HOME }}
             SCCACHE_DIR=${{ env.SCCACHE_DIR }}
           target: alpine-final
-          tags: dev-${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
+          tags: ${{ env.GHCR_NS }}:dev-${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
           cache-from: |
             type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
             type=registry,ref=${{ env.GHCR_NS }}:dev
