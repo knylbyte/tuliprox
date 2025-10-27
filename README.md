@@ -1481,6 +1481,11 @@ user:
         status: Active
 ```
 
+If yu use a reverse proxy in fron of Tuliprox, dont forget to forward
+- `X-Real-IP`
+- `X-Forwarded-For`
+
+
 Now you can do `nginx`  configuration like
 ```config
    location /tuliprox {

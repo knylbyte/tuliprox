@@ -9,8 +9,8 @@ use tokio::sync::RwLock;
 use shared::model::InputType;
 use shared::write_if_some;
 
-pub type ProviderConnectionChangeSender = tokio::sync::mpsc::Sender<(String, usize)>;
-pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::Receiver<(String, usize)>;
+pub type ProviderConnectionChangeSender = tokio::sync::mpsc::UnboundedSender<(String, usize)>;
+pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::UnboundedReceiver<(String, usize)>;
 
 pub type ProviderConnectionChangeCallback = Arc<dyn Fn(&str, usize) + Send + Sync>;
 

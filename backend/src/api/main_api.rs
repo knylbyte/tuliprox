@@ -69,9 +69,9 @@ fn create_shared_data(
     let config = app_config.config.load();
     let cache = create_cache(&config);
     let shared_stream_manager = Arc::new(SharedStreamManager::new());
-    let (provider_change_tx, provider_change_rx) = tokio::sync::mpsc::channel(10);
+    let (provider_change_tx, provider_change_rx) = tokio::sync::mpsc::unbounded_channel();
     let active_provider = Arc::new(ActiveProviderManager::new(app_config, provider_change_tx));
-    let (active_user_change_tx, active_user_change_rx) = tokio::sync::mpsc::channel(10);
+    let (active_user_change_tx, active_user_change_rx) = tokio::sync::mpsc::unbounded_channel();
     let active_users = Arc::new(ActiveUserManager::new(
         &config,
         &shared_stream_manager,

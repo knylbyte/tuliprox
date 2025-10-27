@@ -22,4 +22,5 @@ zeroize = "1"
 chrono = "0.4.42"
 bytes = "1"
 ciborium = "0.2.2"
+#[cfg(target_arch = "wasm32")]
 js-sys = "0.3.81"

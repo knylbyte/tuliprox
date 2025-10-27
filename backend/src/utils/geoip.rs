@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 use crate::repository::bplustree::BPlusTree;
 
 fn ipv4_to_u32(ip: &str) -> Option<u32> {
-    ip.parse::<Ipv4Addr>().ok().map(|a| u32::from(a))
+    ip.parse::<Ipv4Addr>().ok().map(u32::from)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -57,7 +57,7 @@ impl GeoIp {
 
 #[cfg(test)]
 mod test {
-    //https://github.com/datasets/geoip2-ipv4/blob/main/data/geoip2-ipv4.csv
+    // https://raw.githubusercontent.com/sapics/ip-location-db/refs/heads/main/asn-country/asn-country-ipv4.csv
 
     use std::fs::File;
     use std::io::BufReader;

@@ -72,9 +72,8 @@ where
                     let idx = get_entry_index_upper_bound::<K>(&node.keys, key);
                     if idx == 0 {
                         return None;
-                    } else {
-                        return node.values.get(idx - 1).cloned();
                     }
+                    return node.values.get(idx - 1).cloned();
                 }
                 let child_idx = get_entry_index_upper_bound::<K>(&node.keys, key);
                 if let Some(child_offsets) = pointers {

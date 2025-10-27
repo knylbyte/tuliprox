@@ -17,8 +17,8 @@ const USER_GC_TTL: u64 = 900;  // 15 Min
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
 const USER_SESSION_LIMIT: usize = 50;
 
-type ActiveUserConnectionChangeSender = tokio::sync::mpsc::Sender<ActiveUserConnectionChange>;
-pub type ActiveUserConnectionChangeReceiver = tokio::sync::mpsc::Receiver<ActiveUserConnectionChange>;
+type ActiveUserConnectionChangeSender = tokio::sync::mpsc::UnboundedSender<ActiveUserConnectionChange>;
+pub type ActiveUserConnectionChangeReceiver = tokio::sync::mpsc::UnboundedReceiver<ActiveUserConnectionChange>;
 
 macro_rules! active_user_manager_shared_impl {
     () => {
@@ -39,7 +39,9 @@ macro_rules! active_user_manager_shared_impl {
           let is_log_user_enabled = self.is_log_user_enabled();
           let user_connection_count = Self::get_active_connections(&user).await;
           let user_count = user.read().await.iter().filter(|(_, c)| c.connections > 0).count();
-          let _= self.connection_change_tx.try_send(ActiveUserConnectionChange::Connections(user_count, user_connection_count));
+          if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Connections(user_count, user_connection_count)) {
+             error!("Failed to send active user connection change: user-count: {user_count}, user-connection-count: {user_connection_count] {err:?}");
+          }
           if is_log_user_enabled {
               info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
           }
@@ -67,7 +69,9 @@ macro_rules! active_user_manager_shared_impl {
             self.drop_connection(&addr);
             self.shared_stream_manager.release_connection(addr, true).await;
             self.provider_manager.release_connection(addr).await;
-            let _= self.connection_change_tx.try_send(ActiveUserConnectionChange::Disconnected(addr.to_string()));
+            let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
+                 error!("Failed to send active user connection change: {err:?}");
+             }
             self.log_active_user().await;
         }
     };
@@ -307,7 +311,9 @@ impl ActiveUserManager {
             user_by_addr.insert(addr.to_owned(), username.to_owned());
         }
 
-        let _= self.connection_change_tx.try_send(ActiveUserConnectionChange::Connected(stream_info));
+        if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Connected(stream_info)) {
+            error!("Failed to send connection change: {err}");
+        }
         self.log_active_user().await;
 
         UserConnectionGuard {

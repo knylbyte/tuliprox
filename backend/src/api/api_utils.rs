@@ -469,8 +469,7 @@ async fn create_stream_response_details(
     connection_permission: UserConnectionPermission,
     force_provider: Option<&str>,
 ) -> StreamDetails {
-    let mut streaming_strategy =
-        resolve_streaming_strategy(app_state, stream_url, addr, input, force_provider).await;
+    let mut streaming_strategy = resolve_streaming_strategy(app_state, stream_url, addr, input, force_provider).await;
     let config_grace_period_millis = app_state
         .app_config
         .config
@@ -488,6 +487,8 @@ async fn create_stream_response_details(
         .provider_connection_guard
         .as_ref()
         .and_then(|guard| guard.get_provider_name());
+
+    debug!("🍄🍄🍄 using provider {provider_name:?}");
 
     match streaming_strategy.provider_stream_state {
         // custom stream means we display our own stream like connection exhausted, channel-unavailable...
@@ -886,7 +887,7 @@ pub async fn stream_response(
                 .as_ref()
                 .map_or_else(Vec::new, |(h, _, _)| h.clone());
 
-            if let Some(broadcast_stream) = SharedStreamManager::register_shared_stream(
+            if let Some((broadcast_stream, _provider)) = SharedStreamManager::register_shared_stream(
                 app_state,
                 stream_url,
                 stream,
@@ -991,7 +992,7 @@ async fn shared_stream_response(
     mut stream_channel: StreamChannel,
     req_headers: &HeaderMap,
 ) -> Option<impl IntoResponse> {
-    if let Some(stream) =
+    if let Some((stream, provider)) =
         SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)).await
     {
         debug_if_enabled!(
@@ -1007,7 +1008,8 @@ async fn shared_stream_response(
                 headers.clone(),
                 axum::http::StatusCode::OK,
             )));
-            let stream_details = StreamDetails::from_stream(stream);
+            let mut stream_details = StreamDetails::from_stream(stream);
+            stream_details.provider_name = provider;
             stream_channel.shared = true;
             let stream =
                 ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr, stream_channel, req_headers)
@@ -1322,4 +1324,8 @@ pub fn json_or_bin_response<T: Serialize>(accept: Option<&String>, data: &T) -> 
         return bin_response(data).into_response();
     }
     json_response(data).into_response()
+}
+
+pub fn create_fingerprint(fingerprint: &str, username: &str, virtual_id: u32) -> String {
+    format!("{fingerprint}{username}{virtual_id}")
 }
