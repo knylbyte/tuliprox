@@ -81,7 +81,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=bind,from=cache,source=.,target=/cache,readonly \
-    SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
     if [[ -s /cache/cargo-registry.tar ]]; then \
     tar -C "${CARGO_HOME}" -xf /cache/cargo-registry.tar; \
     fi; \
@@ -89,9 +88,9 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     tar -C "${CARGO_HOME}" -xf /cache/cargo-git.tar; \
     fi; \
     if [[ -s /cache/sccache.tar ]]; then \
-      ls -l ${SCCACHE_HOME}; \
+      ls -l ${SCCACHE_DIR}; \
       tar -C "${SCCACHE_HOME}" -xf /cache/sccache.tar; \
-      ls -l ${SCCACHE_HOME}; \
+      ls -l ${SCCACHE_DIR}; \
     fi
 
 RUN echo ok > /.build-cache-import
