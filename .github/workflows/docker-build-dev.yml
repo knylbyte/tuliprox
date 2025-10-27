@@ -353,17 +353,17 @@ jobs:
           fi
 
           {
-            echo "tags<<'EOF'"
+            echo 'tags<<EOF'
             for tag in "${CREATED_TAGS[@]}"; do
               printf '%s\n' "$tag"
             done
-            echo "EOF"
+            echo 'EOF'
             echo "arches=${ARCHES[*]}"
-            echo "digests<<'EOF'"
+            echo 'digests<<EOF'
             for tag in "${CREATED_TAGS[@]}"; do
               printf '%s %s\n' "$tag" "${DIGESTS[$tag]}"
             done
-            echo "EOF"
+            echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
       - name: Step 3.4 - Summary (manifests)
