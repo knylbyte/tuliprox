@@ -297,8 +297,8 @@ jobs:
           for arch in "${POSSIBLE_ARCHES[@]}"; do
             arch="${arch// }"
             [[ -n "$arch" ]] || continue
-            if docker buildx imagetools inspect "${GHCR_NS}:latest-${arch}" >/dev/null 2>&1 \
-              || docker buildx imagetools inspect "${GHCR_NS}:${VERSION}-${arch}" >/dev/null 2>&1; then
+            if docker buildx imagetools inspect "${GHCR_NS}:dev-${VERSION}-${arch}" >/dev/null 2>&1 \
+              || docker buildx imagetools inspect "${GHCR_NS}:dev-slim-${VERSION}-${arch}" >/dev/null 2>&1; then
               ARCHES+=("$arch")
             fi
           done
