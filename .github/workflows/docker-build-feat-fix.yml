@@ -1,4 +1,4 @@
-name: Docker Build (feature/bugfix/hotfix)
+name: Docker Build & Push (feature/bugfix/hotfix)
 
 on:
   push:
