@@ -1056,6 +1056,8 @@ fn get_add_cache_content(
     let cache = Arc::clone(cache);
     let add_cache_content: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |size| {
         let res_url = resource_url.clone();
+
+        // todo spawn, replace with unboundchannel
         let cache = Arc::clone(&cache);
         tokio::spawn(async move {
             if let Some(cache) = cache.load().as_ref() {

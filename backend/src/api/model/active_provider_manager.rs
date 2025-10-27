@@ -41,6 +41,7 @@ impl ProviderConnectionGuard {
     fn send_release(&self, config: &Arc<ProviderConfig>) {
         let provider_config = Arc::clone(config);
         if let Err(_err) = &self.release_tx.send(Arc::clone(config)) {
+            // Fallback
             tokio::spawn(async move {
                 provider_config.release().await;
             });

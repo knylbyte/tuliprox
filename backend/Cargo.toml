@@ -22,7 +22,7 @@ axum = { version = "0.8" , features = ["macros", "default", "ws"]}
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "auth", "fs", "compression-full", "trace"] }
 tower_governor = { version = "0.8", features = ["axum"] }
-jsonwebtoken = { version = "10.0", features = ["rust_crypto"] }
+jsonwebtoken = { version = "10.1", features = ["rust_crypto"] }
 rust-argon2 = "3"
 futures = "0.3"
 path-clean = "1.0"
@@ -41,7 +41,7 @@ flate2 = "1.1"
 blake3 = "1.8"
 bytes = "1.10"
 tokio-stream = { version = "0.1", features = ["sync"] }
-tokio = { version = "1.47", features = ["rt-multi-thread", "parking_lot", "fs"] }
+tokio = { version = "1.48", features = ["rt-multi-thread", "parking_lot", "fs"] }
 #tokio = { version = "1.46", features = ["rt-multi-thread", "parking_lot", "fs", "tracing"] }
 #console-subscriber = "0"
 #tracing = "0.1"

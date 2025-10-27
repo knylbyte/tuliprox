@@ -1,5 +1,4 @@
 use log::{info, trace};
-use tokio::task;
 use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState};
 use crate::api::model::{ActiveUserConnectionChangeReceiver};
 use crate::api::model::{ProviderConnectionChangeReceiver};
@@ -27,7 +26,7 @@ impl EventManager {
         let (channel_tx, _channel_rx) = tokio::sync::broadcast::channel(10);
 
         let channel_tx_clone = channel_tx.clone();
-        task::spawn(async move {
+        tokio::spawn(async move {
             loop {
                tokio::select! {
                     Some(event) = active_user_change_rx.recv() => {

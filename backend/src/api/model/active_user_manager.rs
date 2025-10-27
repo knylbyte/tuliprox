@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use crate::api::model::ActiveProviderManager;
+use crate::api::model::{ActiveProviderManager};
 use crate::api::model::SharedStreamManager;
 use crate::model::Config;
 use crate::model::ProxyUserCredentials;
@@ -10,6 +10,7 @@ use shared::utils::{current_time_secs, default_grace_period_millis, default_grac
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::RwLock;
 
 
@@ -40,7 +41,7 @@ macro_rules! active_user_manager_shared_impl {
           let user_connection_count = Self::get_active_connections(&user).await;
           let user_count = user.read().await.iter().filter(|(_, c)| c.connections > 0).count();
           if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Connections(user_count, user_connection_count)) {
-             error!("Failed to send active user connection change: user-count: {user_count}, user-connection-count: {user_connection_count] {err:?}");
+             error!("Failed to send active user connection change: user-count: {user_count}, user-connection-count: {user_connection_count} {err:?}");
           }
           if is_log_user_enabled {
               info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
@@ -69,7 +70,7 @@ macro_rules! active_user_manager_shared_impl {
             self.drop_connection(&addr);
             self.shared_stream_manager.release_connection(addr, true).await;
             self.provider_manager.release_connection(addr).await;
-            let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
+            if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
                  error!("Failed to send active user connection change: {err:?}");
              }
             self.log_active_user().await;
@@ -84,7 +85,7 @@ fn get_grace_options(config: &Config) -> (u64, u64) {
     (grace_period_millis, grace_period_timeout_secs)
 }
 
-struct ConnectionGuardUserManager {
+pub struct ConnectionGuardUserManager {
     log_active_user: bool,
     user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
     user_by_addr: Arc<RwLock<HashMap<String, String>>>,
@@ -105,18 +106,28 @@ pub struct UserConnectionGuard {
     manager: Arc<ConnectionGuardUserManager>,
     // username: String,
     addr: String,
+    release_tx: UnboundedSender<String>,
 }
+
+impl UserConnectionGuard {
+    pub fn new(manager: Arc<ConnectionGuardUserManager>, addr: &str, release_tx: UnboundedSender<String>) -> Self {
+        Self {
+            manager,
+            addr: addr.to_string(),
+            release_tx,
+        }
+    }
+}
+
 impl Drop for UserConnectionGuard {
     fn drop(&mut self) {
         let manager = self.manager.clone();
         let addr = self.addr.clone();
-        if let Ok(rt) = tokio::runtime::Handle::try_current() {
-            rt.spawn(async move {
+        if let Err(_err) = self.release_tx.send(addr.clone()) {
+            // fallback
+            tokio::spawn(async move {
                 manager.remove_connection(&addr).await;
             });
-        } else {
-            // Fallback: no runtime
-            error!("Runtime not available, cannot cleanly remove connection for {addr}");
         }
     }
 }
@@ -178,14 +189,19 @@ pub struct ActiveUserManager {
     shared_stream_manager: Arc<SharedStreamManager>,
     provider_manager: Arc<ActiveProviderManager>,
     connection_change_tx: ActiveUserConnectionChangeSender,
+    release_tx: UnboundedSender<String>,
 }
 
 impl ActiveUserManager {
-    pub fn new(config: &Config, shared_stream_manager: &Arc<SharedStreamManager>, provider_manager: &Arc<ActiveProviderManager>, connection_change_tx: ActiveUserConnectionChangeSender) -> Self {
-        let log_active_user = config.log.as_ref().is_some_and(|l| l.log_active_user);
+    pub fn new(config: &Config, shared_stream_manager: &Arc<SharedStreamManager>, provider_manager: &Arc<ActiveProviderManager>, connection_change_tx: ActiveUserConnectionChangeSender) -> Arc<Self> {
+        let log_active_user: bool = config.log.as_ref().is_some_and(|l| l.log_active_user);
         let (grace_period_millis, grace_period_timeout_secs) = get_grace_options(config);
         let (close_signal_tx, _) = tokio::sync::broadcast::channel(10);
-        Self {
+
+        // Create the cleanup channel
+        let (cleanup_tx, mut cleanup_rx) = unbounded_channel::<String>();
+
+        let active_user_manager = Arc::new(Self {
             grace_period_millis: AtomicU64::new(grace_period_millis),
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
             log_active_user: AtomicBool::new(log_active_user),
@@ -196,10 +212,28 @@ impl ActiveUserManager {
             shared_stream_manager: Arc::clone(shared_stream_manager),
             provider_manager: Arc::clone(provider_manager),
             connection_change_tx,
-        }
+            release_tx: cleanup_tx,
+        });
+
+        let active_user_manager_clone = Arc::clone(&active_user_manager);
+        // Spawn the async cleanup worker
+        tokio::spawn(async move {
+            while let Some(addr) = cleanup_rx.recv().await {
+                debug!("🧹 User manager - connection releasing {:?}", addr);
+                active_user_manager_clone.remove_connection(&addr).await
+            }
+            debug!("User manager - cleanup worker terminated");
+        });
+
+
+        active_user_manager
     }
 
     active_user_manager_shared_impl!();
+
+    pub fn release_sender(&self) -> UnboundedSender<String> {
+        self.release_tx.clone()
+    }
 
     pub fn update_config(&self, config: &Config) {
         let log_active_user = config.log.as_ref().is_some_and(|l| l.log_active_user);
@@ -316,10 +350,7 @@ impl ActiveUserManager {
         }
         self.log_active_user().await;
 
-        UserConnectionGuard {
-            manager: Arc::new(self.clone_inner()),
-            addr: addr.to_owned(),
-        }
+        UserConnectionGuard::new(Arc::new(self.clone_inner()), addr, self.release_sender())
     }
 
     fn is_log_user_enabled(&self) -> bool {

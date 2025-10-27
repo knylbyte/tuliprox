@@ -103,10 +103,7 @@ pub struct SharedStreamState {
 impl Drop for SharedStreamState {
     fn drop(&mut self) {
         if let Some(guard) = self.provider_guard.as_ref() {
-            let guard = guard.clone();
-            tokio::spawn(async move {
-                guard.force_release();
-            });
+            guard.force_release();
         }
     }
 }

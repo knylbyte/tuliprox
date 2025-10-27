@@ -72,12 +72,12 @@ fn create_shared_data(
     let (provider_change_tx, provider_change_rx) = tokio::sync::mpsc::unbounded_channel();
     let active_provider = Arc::new(ActiveProviderManager::new(app_config, provider_change_tx));
     let (active_user_change_tx, active_user_change_rx) = tokio::sync::mpsc::unbounded_channel();
-    let active_users = Arc::new(ActiveUserManager::new(
+    let active_users = ActiveUserManager::new(
         &config,
         &shared_stream_manager,
         &active_provider,
         active_user_change_tx,
-    ));
+    );
     let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx, ));
     let client = create_http_client(app_config);
 
