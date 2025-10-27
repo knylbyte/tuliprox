@@ -186,7 +186,7 @@ jobs:
             type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max
 
       - name: Step 2.9 - Move cache TARs
-        if: always()
+        if: steps.cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -253,7 +253,7 @@ jobs:
             echo "### 🧷 Cache"
             echo "- cache-from: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}\`"
             echo "- cache-from: \`type=registry,ref=${{ env.GHCR_NS }}:dev\`"
-            echo "- cache-export cache-to: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max\`"
+            echo "- cache-to: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max\`"
             echo ""
             echo "### 🧭 Platforms"
             echo "- ${{ matrix.platform }}"
