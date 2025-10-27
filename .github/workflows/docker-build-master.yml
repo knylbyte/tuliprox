@@ -147,9 +147,6 @@ jobs:
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.8 - Ensure cache context dir
-        run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
-
       - name: Step 2.9 - Load cargo chef and sccache directories for Docker build
         uses: actions/cache@v4
         id: cache
@@ -159,39 +156,6 @@ jobs:
           key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
-
-      - name: Step 2.10 - Build cache-export TARs (${{ matrix.platform }})
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ env.DOCKERFILE }}
-          platforms: ${{ matrix.platform }}
-          push: false
-          build-contexts: |
-            cache=./.ci-cache/${{ matrix.arch_tag }}
-          outputs: |
-            type=local,dest=/tmp/.ci-cache/${{ matrix.arch_tag }}
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-            GHCR_NS=${{ env.GHCR_NS }}
-            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-            CARGO_HOME=${{ env.CARGO_HOME }}
-            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
-          target: cache-export
-          cache-from: |
-            type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
-            type=registry,ref=${{ env.GHCR_NS }}:dev-${{ matrix.arch_tag }}
-          cache-to: |
-            type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max
-
-      - name: Step 2.11 - Move cache TARs
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          find /tmp/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
-          ls -al .ci-cache/${{ matrix.arch_tag }}
-          rm -rf /tmp/.ci-cache/${{ matrix.arch_tag }}
 
       - name: Step 2.12 - Build scratch-final image (${{ matrix.platform }})
         uses: docker/build-push-action@v6
@@ -209,28 +173,9 @@ jobs:
             CARGO_HOME=${{ env.CARGO_HOME }}
             SCCACHE_DIR=${{ env.SCCACHE_DIR }}
           target: scratch-final
-          tags: dev-slim-${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
-          cache-from: |
-            type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
-            type=registry,ref=${{ env.GHCR_NS }}:dev
-
-      - name: Step 2.14 - Build alpine-final image (${{ matrix.platform }})
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ env.DOCKERFILE }}
-          platforms: ${{ matrix.platform }}
-          push: true
-          build-contexts: |
-            cache=./.ci-cache/${{ matrix.arch_tag }}
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-            GHCR_NS=${{ env.GHCR_NS }}
-            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-            CARGO_HOME=${{ env.CARGO_HOME }}
-            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
-          target: alpine-final
-          tags: dev-${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
+          tags: |
+            latest-${{ matrix.arch_tag }}
+            ${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
           cache-from: |
             type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
             type=registry,ref=${{ env.GHCR_NS }}:dev
@@ -246,20 +191,22 @@ jobs:
             echo "- CHANGELOG version: **${{ steps.version.outputs.version }}**"
             echo ""
             echo "### 🏷️ Published tags"
-            echo "- \`${{ env.GHCR_NS }}:dev-slim-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
-            echo "- \`${{ env.GHCR_NS }}:dev-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
+            echo "- \`${{ env.GHCR_NS }}:latest-${{ matrix.arch_tag }}\`"
+            echo "- \`${{ env.GHCR_NS }}:${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
             echo ""
             echo "### 🧷 Cache"
             echo "- cache-from: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}\`"
             echo "- cache-from: \`type=registry,ref=${{ env.GHCR_NS }}:dev\`"
-            echo "- cache-export cache-to: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max\`"
             echo ""
             echo "### 🧭 Platforms"
             echo "- ${{ matrix.platform }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
   manifests:
     name: Manifests
-    needs: build
+    needs:
+      - prebuilds
+      - build
     runs-on: ubuntu-24.04
 
     steps:
@@ -278,32 +225,87 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          VERSION="${{ needs.build.outputs.version }}"
 
-          TAGS_INPUT='${{ needs.build.outputs.tags }}'
-          ARCHES_INPUT='${{ needs.build.outputs.arches }}'
-
-          readarray -t TAGS <<< "$TAGS_INPUT"
-          read -r -a ARCHES <<< "$ARCHES_INPUT"
-
-          if [[ ${#TAGS[@]} -eq 0 || -z "${TAGS[0]// }" ]]; then
-            echo "No tags to publish"
-            exit 0
+          if [[ -z "${VERSION:-}" ]]; then
+            echo "Unable to determine version for manifest creation." >&2
+            exit 1
           fi
 
-          make_manifest() {
-            local tag="$1"
-            local src=()
-            for arch in "${ARCHES[@]}"; do
-              src+=( "${GHCR_NS}:${tag}-${arch}" )
-            done
-            echo "⛏️  Creating manifest ${GHCR_NS}:${tag}"
-            docker buildx imagetools create -t "${GHCR_NS}:${tag}" "${src[@]}"
-          }
+          ARCHES_INPUT='${{ needs.prebuilds.outputs.archs }}'
 
-          for t in "${TAGS[@]}"; do
-            [[ -n "${t// }" ]] || continue
-            make_manifest "$t"
+          read -r -a POSSIBLE_ARCHES <<< "${ARCHES_INPUT:-}"
+
+          ARCHES=()
+          for arch in "${POSSIBLE_ARCHES[@]}"; do
+            arch="${arch// }"
+            [[ -n "$arch" ]] || continue
+            if docker buildx imagetools inspect "${GHCR_NS}:latest-${arch}" >/dev/null 2>&1 \
+              || docker buildx imagetools inspect "${GHCR_NS}:${VERSION}-${arch}" >/dev/null 2>&1; then
+              ARCHES+=("$arch")
+            fi
           done
+
+          if [[ ${#ARCHES[@]} -eq 0 ]]; then
+            echo "No architecture images detected. Cannot create manifests." >&2
+            exit 1
+          fi
+
+          declare -A MANIFEST_SOURCES=(
+            ["latest"]="latest"
+            ["${VERSION}"]="${VERSION}"
+          )
+
+          CREATED_TAGS=()
+          declare -A DIGESTS=()
+
+          for manifest_tag in "${!MANIFEST_SOURCES[@]}"; do
+            src_base="${MANIFEST_SOURCES[$manifest_tag]}"
+            src_refs=()
+            for arch in "${ARCHES[@]}"; do
+              candidate="${GHCR_NS}:${src_base}-${arch}"
+              if docker buildx imagetools inspect "$candidate" >/dev/null 2>&1; then
+                src_refs+=("$candidate")
+              else
+                echo "⚠️  Missing architecture image $candidate" >&2
+              fi
+            done
+
+            if [[ ${#src_refs[@]} -eq 0 ]]; then
+              echo "Skipping manifest ${GHCR_NS}:${manifest_tag} (no sources found)." >&2
+              continue
+            fi
+
+            echo "⛏️  Creating manifest ${GHCR_NS}:${manifest_tag}"
+            docker buildx imagetools create -t "${GHCR_NS}:${manifest_tag}" "${src_refs[@]}"
+            CREATED_TAGS+=("$manifest_tag")
+
+            if info="$(docker buildx imagetools inspect "${GHCR_NS}:${manifest_tag}" 2>/dev/null)"; then
+              digest="$(awk '/^Digest:/ {print $2; exit}' <<< "$info")"
+              DIGESTS["$manifest_tag"]="$digest"
+            else
+              DIGESTS["$manifest_tag"]=""
+            fi
+          done
+
+          if [[ ${#CREATED_TAGS[@]} -eq 0 ]]; then
+            echo "No manifests were created." >&2
+            exit 1
+          fi
+
+          {
+            echo "tags<<'EOF'"
+            for tag in "${CREATED_TAGS[@]}"; do
+              printf '%s\n' "$tag"
+            done
+            echo "EOF"
+            echo "arches=${ARCHES[*]}"
+            echo "digests<<'EOF'"
+            for tag in "${CREATED_TAGS[@]}"; do
+              printf '%s %s\n' "$tag" "${DIGESTS[$tag]}"
+            done
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Step 3.4 - Summary (manifests)
         if: always()
@@ -318,17 +320,31 @@ jobs:
               echo "❌ Manifest creation encountered an error."
             fi
             echo ""
+            echo "### 🔖 Version"
+            if [[ -n "${{ needs.build.outputs.version }}" ]]; then
+              echo "- CHANGELOG version: **${{ needs.build.outputs.version }}**"
+            else
+              echo "- CHANGELOG version: *(unavailable)*"
+            fi
+            echo ""
             echo "### 🏷️ Final tags"
-            TAGS_INPUT='${{ needs.build.outputs.tags }}'
+            TAGS_INPUT='${{ steps.create.outputs.tags }}'
+            DIGESTS_INPUT='${{ steps.create.outputs.digests }}'
+            declare -A DIGEST_LOOKUP=()
+            if [[ -n "$DIGESTS_INPUT" ]]; then
+              while IFS= read -r line; do
+                [[ -n "${line// }" ]] || continue
+                tag="${line%% *}"
+                digest="${line#* }"
+                DIGEST_LOOKUP["$tag"]="$digest"
+              done <<< "$DIGESTS_INPUT"
+            fi
             if [[ -n "$TAGS_INPUT" ]]; then
               while IFS= read -r line; do
                 [[ -n "${line// }" ]] || continue
                 image="${GHCR_NS}:${line}"
-                digest=""
-                if info="$(docker buildx imagetools inspect "$image" 2>/dev/null)"; then
-                  digest="$(awk '/^Digest:/ {print $2; exit}' <<< "$info")"
-                fi
                 echo "- \`$image\`"
+                digest="${DIGEST_LOOKUP[$line]:-}"
                 if [[ -n "$digest" ]]; then
                   if [[ "$digest" == sha256:* ]]; then
                     echo "  - sha256: \`${digest#sha256:}\`"
@@ -344,9 +360,14 @@ jobs:
             fi
             echo ""
             echo "### 🧩 Architectures"
-            for a in ${{ needs.build.outputs.arches }}; do
-              echo "- ${a}"
-            done
+            ARCHES_OUTPUT='${{ steps.create.outputs.arches }}'
+            if [[ -n "$ARCHES_OUTPUT" ]]; then
+              for a in $ARCHES_OUTPUT; do
+                echo "- ${a}"
+              done
+            else
+              echo "- *(not available)*"
+            fi
             echo ""
             echo "### 📦 Registry"
             echo "- ghcr.io"

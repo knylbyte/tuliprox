@@ -147,7 +147,10 @@ jobs:
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.9 - Load cargo chef and sccache directories for Docker build
+      - name: Step 2.6 - Ensure cache context dir
+        run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
+
+      - name: Step 2.7 - Load cargo chef and sccache directories for Docker build
         uses: actions/cache@v4
         id: cache
         with:
@@ -157,7 +160,40 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
-      - name: Step 2.12 - Build scratch-final image (${{ matrix.platform }})
+      - name: Step 2.8 - Build cache-export TARs (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          platforms: ${{ matrix.platform }}
+          push: false
+          build-contexts: |
+            cache=./.ci-cache/${{ matrix.arch_tag }}
+          outputs: |
+            type=local,dest=/tmp/.ci-cache/${{ matrix.arch_tag }}
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+            GHCR_NS=${{ env.GHCR_NS }}
+            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
+            CARGO_HOME=${{ env.CARGO_HOME }}
+            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
+          target: cache-export
+          cache-from: |
+            type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
+            type=registry,ref=${{ env.GHCR_NS }}:dev-${{ matrix.arch_tag }}
+          cache-to: |
+            type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max
+
+      - name: Step 2.9 - Move cache TARs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          find /tmp/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
+          ls -al .ci-cache/${{ matrix.arch_tag }}
+          rm -rf /tmp/.ci-cache/${{ matrix.arch_tag }}
+
+      - name: Step 2.10 - Build scratch-final image (${{ matrix.platform }})
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -173,14 +209,33 @@ jobs:
             CARGO_HOME=${{ env.CARGO_HOME }}
             SCCACHE_DIR=${{ env.SCCACHE_DIR }}
           target: scratch-final
-          tags: |
-            latest-${{ matrix.arch_tag }}
-            ${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
+          tags: dev-slim-${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
           cache-from: |
             type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
             type=registry,ref=${{ env.GHCR_NS }}:dev
 
-      - name: Step 2.16 - Summary
+      - name: Step 2.11 - Build alpine-final image (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          platforms: ${{ matrix.platform }}
+          push: true
+          build-contexts: |
+            cache=./.ci-cache/${{ matrix.arch_tag }}
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+            GHCR_NS=${{ env.GHCR_NS }}
+            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
+            CARGO_HOME=${{ env.CARGO_HOME }}
+            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
+          target: alpine-final
+          tags: dev-${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
+          cache-from: |
+            type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
+            type=registry,ref=${{ env.GHCR_NS }}:dev
+
+      - name: Step 2.12 - Summary
         if: always()
         shell: bash
         run: |
@@ -191,17 +246,18 @@ jobs:
             echo "- CHANGELOG version: **${{ steps.version.outputs.version }}**"
             echo ""
             echo "### 🏷️ Published tags"
-            echo "- \`${{ env.GHCR_NS }}:latest-${{ matrix.arch_tag }}\`"
-            echo "- \`${{ env.GHCR_NS }}:${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
+            echo "- \`${{ env.GHCR_NS }}:dev-slim-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
+            echo "- \`${{ env.GHCR_NS }}:dev-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
             echo ""
             echo "### 🧷 Cache"
             echo "- cache-from: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}\`"
             echo "- cache-from: \`type=registry,ref=${{ env.GHCR_NS }}:dev\`"
+            echo "- cache-export cache-to: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max\`"
             echo ""
             echo "### 🧭 Platforms"
             echo "- ${{ matrix.platform }}"
           } >> "$GITHUB_STEP_SUMMARY"
-
+  
   manifests:
     name: Manifests
     needs:
@@ -252,8 +308,10 @@ jobs:
           fi
 
           declare -A MANIFEST_SOURCES=(
-            ["latest"]="latest"
-            ["${VERSION}"]="${VERSION}"
+            ["dev"]="dev"
+            ["dev-${VERSION}"]="dev-${VERSION}"
+            ["dev-slim"]="dev-slim"
+            ["dev-slim-${VERSION}"]="dev-slim-${VERSION}"
           )
 
           CREATED_TAGS=()
