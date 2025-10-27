@@ -28,5 +28,8 @@ docker/web
 docker/tuliprox
 docker/resources
 
+# Ignore CI cache artifacts exported between build steps
+.ci-cache/
+
 # Ignore VSCode settings and files
 /.vscode
