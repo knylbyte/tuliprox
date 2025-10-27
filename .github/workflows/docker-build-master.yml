@@ -173,9 +173,7 @@ jobs:
             CARGO_HOME=${{ env.CARGO_HOME }}
             SCCACHE_DIR=${{ env.SCCACHE_DIR }}
           target: scratch-final
-          tags: |
-            latest-${{ matrix.arch_tag }}
-            ${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
+          tags: ${{ env.GHCR_NS }}:${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
           cache-from: |
             type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
             type=registry,ref=${{ env.GHCR_NS }}:dev
