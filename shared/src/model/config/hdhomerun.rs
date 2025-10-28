@@ -149,12 +149,16 @@ impl HdHomeRunConfigDto {
                 return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun duplicate device_id {}", device.device_id);
             }
         }
-        let mut current_port = api_port + 1;
+        let mut current_port = api_port.saturating_add(1);
         for device in &mut self.devices {
             if device.port == 0 {
-                while ports.contains(&current_port) {
-                    current_port += 1;
+                while ports.contains(&current_port) || current_port == 0 {
+                  current_port = current_port.wrapping_add(1);
+                  if current_port == api_port { // full cycle guard
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "No free port available for HdHomeRun devices");
+                  }
                 }
+
                 device.port = current_port;
                 ports.insert(current_port);
                 current_port += 1;

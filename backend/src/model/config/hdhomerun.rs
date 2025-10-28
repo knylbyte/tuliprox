@@ -41,7 +41,8 @@ impl From<&HdHomeRunDeviceConfigDto> for HdHomeRunDeviceConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct HdHomeRunConfig {
     pub enabled: bool,
     pub auth: bool,

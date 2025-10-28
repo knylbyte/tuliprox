@@ -1,5 +1,3 @@
-use rand::Rng;
-
 const CHECKSUM_LOOKUP: [u8; 16] = [0xA, 0x5, 0xF, 0x6, 0x7, 0xC, 0x1, 0xB, 0x9, 0x2, 0x8, 0xD, 0x4, 0x3, 0xE, 0x0];
 
 fn calculate_checksum(device_id_int: u32) -> u8 {
@@ -27,7 +25,11 @@ pub fn validate_hdhr_device_id(device_id: &str) -> bool {
 
 pub fn generate_hdhr_device_id_from_base(base_id: &str) -> String {
     let base_sanitized = base_id.chars().filter(|c| c.is_ascii_hexdigit()).collect::<String>();
-    let base_padded = format!("{:0<7}", base_sanitized.get(0..7).unwrap_or("1050000"));
+    let base_padded = if base_sanitized.is_empty() {
+       return generate_hdhr_device_id();
+    } else {
+       format!("{:0<7}", &base_sanitized[..base_sanitized.len().min(7)])
+    };
 
     if let Ok(device_id_int_base) = u32::from_str_radix(&base_padded, 16) {
         let checksum = calculate_checksum(device_id_int_base);
@@ -39,11 +41,10 @@ pub fn generate_hdhr_device_id_from_base(base_id: &str) -> String {
 }
 
 pub fn generate_hdhr_device_id() -> String {
-    let random_part: String = rand::thread_rng()
-        .sample_iter(&rand::distributions::Uniform::from(0..16))
-        .take(4)
-        .map(|num| format!("{:X}", num))
+    let random_part: String = (0..4)
+        .map(|_| format!("{:X}", fastrand::u8(0..16)))
         .collect();
+
     let base_id = format!("105{}0", random_part);
     generate_hdhr_device_id_from_base(&base_id)
 }

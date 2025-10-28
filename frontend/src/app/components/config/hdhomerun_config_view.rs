@@ -1,3 +1,4 @@
+use log::error;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{HdHomeRunDeviceConfigDto, HdHomeRunConfigDto};
@@ -12,6 +13,8 @@ use crate::app::components::config::HasFormData;
 const LABEL_ENABLED: &str = "LABEL.ENABLED";
 const LABEL_DEVICE_AUTH: &str = "LABEL.DEVICE_AUTH";
 const LABEL_DEVICES: &str ="LABEL.DEVICES";
+const LABEL_SSDP_DISCOVERY: &str ="LABEL.SSDP_DISCOVERY";
+const LABEL_PROPRIETARY_DISCOVERY: &str ="LABEL.PROPRIETARY_DISCOVERY";
 
 
 generate_form_reducer!(
@@ -83,7 +86,9 @@ pub fn HdHomerunConfigView() -> Html {
                 .unwrap_or(8901) + 1;
             new_device.port = next_port;
             new_device.name = format!("hdhr_{next_port}");
-            new_device.prepare(devices.len() as u8);
+            if let Err(err) = new_device.prepare(devices.len() as u8) {
+                error!("Failed to prepare hdhr device: {err}");
+            }
             devices.push(new_device);
             form_state.dispatch(HdHomeRunConfigFormAction::Devices(devices));
         })
@@ -130,8 +135,8 @@ pub fn HdHomerunConfigView() -> Html {
                  <>
                      { edit_field_bool!(form_state, translate.t(LABEL_ENABLED), enabled, HdHomeRunConfigFormAction::Enabled) }
                      { edit_field_bool!(form_state, translate.t(LABEL_DEVICE_AUTH), auth, HdHomeRunConfigFormAction::Auth) }
-                     { edit_field_bool!(form_state, "SSDP Discovery", ssdp_discovery, HdHomeRunConfigFormAction::SsdpDiscovery) }
-                     { edit_field_bool!(form_state, "Proprietary Discovery", proprietary_discovery, HdHomeRunConfigFormAction::ProprietaryDiscovery) }
+                     { edit_field_bool!(form_state, translate.t(LABEL_SSDP_DISCOVERY), ssdp_discovery, HdHomeRunConfigFormAction::SsdpDiscovery) }
+                     { edit_field_bool!(form_state, translate.t(LABEL_PROPRIETARY_DISCOVERY), proprietary_discovery, HdHomeRunConfigFormAction::ProprietaryDiscovery) }
                  </>
                 }
               } else {
@@ -139,8 +144,8 @@ pub fn HdHomerunConfigView() -> Html {
                 <>
                     { config_field_bool!(&form_state.form, translate.t(LABEL_ENABLED), enabled) }
                     { config_field_bool!(&form_state.form, translate.t(LABEL_DEVICE_AUTH), auth) }
-                    { config_field_bool!(&form_state.form, "SSDP Discovery", ssdp_discovery) }
-                    { config_field_bool!(&form_state.form, "Proprietary Discovery", proprietary_discovery) }
+                    { config_field_bool!(&form_state.form, translate.t(LABEL_SSDP_DISCOVERY), ssdp_discovery) }
+                    { config_field_bool!(&form_state.form, translate.t(LABEL_PROPRIETARY_DISCOVERY), proprietary_discovery) }
                 </>
                 }
               }

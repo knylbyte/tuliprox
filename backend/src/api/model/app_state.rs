@@ -1,3 +1,4 @@
+use crate::api::config_watch::exec_config_watch;
 use crate::api::model::{
     ActiveProviderManager, EventManager, PlaylistStorage, PlaylistStorageState,
     SharedStreamManager,
@@ -23,7 +24,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use crate::api::config_watch::exec_config_watch;
 
 macro_rules! cancel_service {
     ($field: ident, $changes:expr, $cancel_tokens:expr) => {
@@ -76,10 +76,11 @@ async fn update_target_caches(
     target_changes: Option<&HashMap<String, TargetChanges>>,
 ) {
     if let Some(target_changes) = target_changes {
+       let mut to_remove = Vec::new();
         for target in target_changes.values() {
             match target.status {
                 TargetStatus::Old => {
-                    app_state.playlists.data.write().await.remove(&target.name);
+                    to_remove.push(target.name.clone());
                 }
                 TargetStatus::New // Normally, a new target shouldn't require any updates, but attempting to load it does no harm.
                 | TargetStatus::Keep => {
@@ -89,10 +90,16 @@ async fn update_target_caches(
                             load_target_into_memory_cache(app_state, &target.target).await;
                         }
                         TargetCacheState::ChangedToFalse => {
-                            app_state.playlists.data.write().await.remove(&target.name);
+                            to_remove.push(target.name.clone());
                         }
                     }
                 }
+            }
+        }
+        if !to_remove.is_empty() {
+            let mut guard = app_state.playlists.data.write().await;
+            for name in to_remove {
+                guard.remove(&name);
             }
         }
     }
@@ -415,29 +422,32 @@ impl AppState {
 }
 
 fn schedules_changed(a: &[ScheduleConfig], b: &[ScheduleConfig]) -> bool {
-    if a.len() != b.len() {
-        return true;
-    }
-    for schedule in a {
-        if let Some(found) = b.iter().find(|&s| s.schedule == schedule.schedule) {
-            match (schedule.targets.as_ref(), found.targets.as_ref()) {
-                (None, None) => return false,
-                (Some(_targets), None) | (None, Some(_targets)) => return true,
-                (Some(a_targets), Some(b_targets)) => {
-                    if !small_vecs_equal_unordered(a_targets, b_targets) {
-                        return true;
-                    }
-                }
-            }
-        } else {
-            return true;
-        }
-    }
-    false
+   if a.len() != b.len() {
+       return true;
+   }
+   for schedule in a {
+       let Some(found) = b.iter().find(|&s| s.schedule == schedule.schedule) else {
+           return true;
+       };
+       match (schedule.targets.as_ref(), found.targets.as_ref()) {
+           (None, None) => {}
+           (Some(_), None) | (None, Some(_)) => return true,
+           (Some(a_targets), Some(b_targets)) => {
+               if !small_vecs_equal_unordered(a_targets, b_targets) {
+                   return true;
+               }
+           }
+       }
+   }
+   false
 }
 
 fn hdhomerun_changed(a: &HdHomeRunConfig, b: &HdHomeRunConfig) -> bool {
-    if a.enabled != b.enabled || a.auth != b.auth {
+    if a.enabled != b.enabled
+        || a.auth != b.auth
+        || a.ssdp_discovery != b.ssdp_discovery
+        || a.proprietary_discovery != b.proprietary_discovery
+    {
         return true;
     }
     if !small_vecs_equal_unordered(a.devices.as_ref(), b.devices.as_ref()) {

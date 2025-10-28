@@ -290,7 +290,9 @@
     "GROUP": "Group",
     "CLIENT_IP": "Client IP",
     "STREAM_ID": "Stream Id",
-    "SHARED": "Shared"
+    "SHARED": "Shared",
+    "SSDP_DISCOVERY": "SSDP Discovery",
+    "PROPRIETARY_DISCOVERY": "Proprietary Discovery"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"

@@ -1,9 +1,11 @@
+use crate::api::api_utils::try_unwrap_body;
 use crate::api::model::HdHomerunAppState;
 use crate::auth::AuthBasic;
 use crate::model::{AppConfig, ConfigTarget, ProxyUserCredentials};
+use crate::processing::parser::xtream::get_xtream_url;
 use crate::repository::m3u_playlist_iterator::M3uPlaylistIterator;
-use crate::repository::xtream_playlist_iterator::XtreamPlaylistIterator;
 use crate::repository::m3u_repository;
+use crate::repository::xtream_playlist_iterator::XtreamPlaylistIterator;
 use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::{stream, Stream, StreamExt};
@@ -15,8 +17,6 @@ use shared::model::{
 };
 use shared::utils::{concat_path, get_string_from_serde_value};
 use std::sync::Arc;
-use crate::api::api_utils::try_unwrap_body;
-use crate::processing::parser::xtream::get_xtream_url;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Lineup {
@@ -96,9 +96,9 @@ fn xtream_item_to_lineup_stream<I>(
     credentials: Arc<ProxyUserCredentials>,
     base_url: Option<String>,
     channels: Option<I>,
-) -> impl Stream<Item = Result<Bytes, String>>
+) -> impl Stream<Item=Result<Bytes, String>>
 where
-    I: Iterator<Item = (XtreamPlaylistItem, bool)> + 'static,
+    I: Iterator<Item=(XtreamPlaylistItem, bool)> + 'static,
 {
     match channels {
         Some(chans) => {
@@ -149,9 +149,9 @@ where
     }
 }
 
-fn m3u_item_to_lineup_stream<I>(channels: Option<I>) -> impl Stream<Item = Result<Bytes, String>>
+fn m3u_item_to_lineup_stream<I>(channels: Option<I>) -> impl Stream<Item=Result<Bytes, String>>
 where
-    I: Iterator<Item = (M3uPlaylistItem, bool)> + 'static,
+    I: Iterator<Item=(M3uPlaylistItem, bool)> + 'static,
 {
     match channels {
         Some(chans) => {
@@ -164,7 +164,7 @@ where
                     } else {
                         &item.t_stream_url
                     })
-                    .clone(),
+                        .clone(),
                 };
                 match serde_json::to_string(&lineup) {
                     Ok(content) => Ok(Bytes::from(if has_next {
@@ -267,9 +267,9 @@ async fn lineup_status(
             "Source": "Cable",
             "SourceList": ["Cable"],
         }))
-        .into_response()
+            .into_response()
     } else {
-        let new_state = current_state + 20;
+        let new_state = current_state.saturating_add(20);
         let final_state = if new_state > 100 { 100 } else { new_state };
 
         let cfg = Arc::clone(&app_state.app_state.app_config);
@@ -287,9 +287,9 @@ async fn lineup_status(
             } else if target.has_output(TargetType::Xtream) {
                 let credentials = Arc::new(user);
                 let live =
-                    XtreamPlaylistIterator::new(XtreamCluster::Live, &cfg, &target, None, &credentials).await.map_or(0, |iter| iter.count());
+                    XtreamPlaylistIterator::new(XtreamCluster::Live, &cfg, &target, None, &credentials).await.map_or(0, std::iter::Iterator::count);
                 let vod =
-                    XtreamPlaylistIterator::new(XtreamCluster::Video, &cfg, &target, None, &credentials).await.map_or(0, |iter| iter.count());
+                    XtreamPlaylistIterator::new(XtreamCluster::Video, &cfg, &target, None, &credentials).await.map_or(0, std::iter::Iterator::count);
                 live + vod
             } else {
                 0
@@ -307,13 +307,13 @@ async fn lineup_status(
                 .hd_scan_state
                 .store(final_state, std::sync::atomic::Ordering::SeqCst);
         }
-        let found = (num_of_channels * final_state as usize) / 100;
+        let found = (num_of_channels * usize::try_from(final_state).unwrap_or(1)) / 100;
         axum::Json(json!({
             "ScanInProgress": 1,
             "Progress": final_state,
             "Found": found,
         }))
-        .into_response()
+            .into_response()
     }
 }
 
@@ -415,19 +415,22 @@ async fn lineup(
             base_url_vod.clone(),
             vod_channels,
         );
-        let live_stream_peek = live_stream.peekable();
-        let vod_stream_peek = vod_stream.peekable();
-        let comma_stream =
-            if live_stream_peek.size_hint().0 > 0 && vod_stream_peek.size_hint().0 > 0 {
-                stream::once(async { Ok(Bytes::from(",")) }).left_stream()
-            } else {
-                stream::empty().right_stream()
-            };
+
+        let mut live_stream_peek = Box::pin(live_stream.peekable());
+        let mut vod_stream_peek = Box::pin(vod_stream.peekable());
+        let both_non_empty = live_stream_peek.as_mut().peek().await.is_some() && vod_stream_peek.as_mut().peek().await.is_some();
+        let comma_stream = if both_non_empty {
+            stream::once(async { Ok(Bytes::from(",")) }).left_stream()
+        } else {
+            stream::empty().right_stream()
+        };
+
         let body_stream = stream::once(async { Ok(Bytes::from("[")) })
             .chain(live_stream_peek)
             .chain(comma_stream)
             .chain(vod_stream_peek)
             .chain(stream::once(async { Ok(Bytes::from("]")) }));
+
         return try_unwrap_body!(axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(
