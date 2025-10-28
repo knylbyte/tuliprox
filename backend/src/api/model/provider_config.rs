@@ -260,11 +260,11 @@ impl ProviderConfig {
 
     pub async fn release(&self) {
         let mut guard = self.connection.write().await;
+        if guard.current_connections == 1 || guard.current_connections > self.max_connections {
+            guard.granted_grace = false;
+            guard.grace_ts = 0;
+        }
         if guard.current_connections > 0 {
-            if guard.current_connections == 1 && self.max_connections > 1 {
-                guard.granted_grace = false;
-                guard.grace_ts = 0;
-            }
             modify_connections!(self, guard, -1);
         }
     }

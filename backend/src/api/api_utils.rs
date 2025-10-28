@@ -1144,7 +1144,7 @@ async fn fetch_resource_with_retry(
                         build_stream_response(app_state, resource_url, response).await,
                     );
                 }
-                // Retry only for 400, 408, 425, 429 and all 5xx statuses
+                // Retry only for 408, 425, 429 and all 5xx statuses
                 let should_retry = status.is_server_error()
                     || matches!(
                         status,

@@ -147,7 +147,6 @@ impl SharedStreamState {
 
             let mut loop_cnt = 0;
             loop {
-                loop_cnt += 1;
                 tokio::select! {
                     biased;
 
@@ -162,16 +161,18 @@ impl SharedStreamState {
                                     debug!("Shared stream client send error: {address} {err}");
                                     break;
                                 }
-                                if loop_cnt > YIELD_COUNTER {
-                                    tokio::task::yield_now().await;
-                                    loop_cnt = 0;
-                                }
+                                loop_cnt += 1;
+                                if loop_cnt >= YIELD_COUNTER {
+                                   tokio::task::yield_now().await;
+                                   loop_cnt = 0;
+                                 }
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                                 trace!("Client lagged behind. Skipped {skipped} messages. {address}");
-                                if loop_cnt > YIELD_COUNTER {
-                                    tokio::task::yield_now().await;
-                                    loop_cnt = 0;
+                                loop_cnt += 1;
+                               if loop_cnt >= YIELD_COUNTER {
+                                   tokio::task::yield_now().await;
+                                   loop_cnt = 0;
                                 }
                             }
                             Err(_) => break,

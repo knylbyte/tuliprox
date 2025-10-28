@@ -620,16 +620,21 @@ async fn process_epg(processed_fetched_playlists: &mut Vec<FetchedPlaylist<'_>>)
     (new_epg, new_playlist)
 }
 
-async fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &ConfigTarget, new_playlist: &Vec<PlaylistGroup>) -> bool {
+async fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &ConfigTarget, new_playlist: &[PlaylistGroup]) -> bool {
     if let Some(watches) = &target.watch {
         if default_as_default().eq_ignore_ascii_case(&target.name) {
             error!("cant watch a target with no unique name");
-        } else {
-            for pl in new_playlist {
-                if watches.iter().any(|r| r.is_match(&pl.title)) {
-                    process_group_watch(client, cfg, &target.name, pl).await;
-                }
+            return false;
+        }
+
+        let mut futs = Vec::new();
+        for pl in new_playlist {
+            if watches.iter().any(|r| r.is_match(&pl.title)) {
+                futs.push(process_group_watch(client, cfg, &target.name, pl));
             }
+        }
+        if !futs.is_empty() {
+            futures::future::join_all(futs).await;
         }
         true
     } else {

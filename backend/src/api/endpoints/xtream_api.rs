@@ -219,7 +219,17 @@ async fn xtream_player_api_stream(
     stream_req: ApiStreamRequest<'_>,
 ) -> impl IntoResponse + Send {
 
-    debug!("Stream Request {stream_req:?} - {req_headers:?}");
+    // if log_enabled!(log::Level::Debug) {
+    //     debug!(
+    //         "Stream request ctx={} user={} stream_id={} action_path={}",
+    //         stream_req.context,
+    //         sanitize_sensitive_info(stream_req.username),
+    //         sanitize_sensitive_info(stream_req.stream_id),
+    //         sanitize_sensitive_info(stream_req.action_path),
+    //     );
+    //     let message = format!("Client Request headers {req_headers:?}");
+    //     debug!("{}", sanitize_sensitive_info(&message));
+    // }
 
     if log_enabled!(log::Level::Debug) {
         let message = format!("Client Request headers {req_headers:?}");

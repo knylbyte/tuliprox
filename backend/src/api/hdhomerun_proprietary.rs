@@ -3,7 +3,7 @@ use crate::model::{AppConfig, HdHomeRunDeviceConfig};
 use bytes::{Buf, BufMut, BytesMut};
 use log::{error, info, trace};
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::{Cursor};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,18 +46,18 @@ fn write_tlv_u8(buf: &mut BytesMut, tag: u8, value: u8) {
     buf.put_u8(value);
 }
 
-fn write_tlv_str(buf: &mut BytesMut, tag: u8, value: &str) {
+fn write_tlv_str(buf: &mut bytes::BytesMut, tag: u8, value: &str) {
     let bytes = value.as_bytes();
+    let Some(len) = u16::try_from(bytes.len()).ok() else {
+        error!("TLV value too long (max 65535 bytes)");
+        return;
+    };
+
+    // 1 byte type
     buf.put_u8(tag);
-    if bytes.len() < 0x80 {
-        buf.put_u8(u8::try_from(bytes.len()).unwrap_or(0));
-    } else {
-        let len = u16::try_from(bytes.len()).unwrap_or(0);
-        let byte_first = 0x80 | ((len & 0x7F) as u8);
-        let byte_second = ((len >> 7) & 0xFF) as u8;
-        buf.put_u8(byte_first);
-        buf.put_u8(byte_second);
-    }
+    // 2 bytes length (big-endian)
+    buf.put_u16(len);
+    // value bytes
     buf.put_slice(bytes);
 }
 
@@ -107,39 +107,45 @@ fn build_discover_response(device: &HdHomeRunDeviceConfig, server_host: &str) ->
 
 fn parse_tlv(cursor: &mut Cursor<&[u8]>) -> HashMap<u8, Vec<u8>> {
     let mut tags = HashMap::new();
-    while cursor.position() < cursor.get_ref().len() as u64 {
-        let mut tag_buf = [0u8; 1];
-        if Read::read_exact(cursor, &mut tag_buf).is_err() {
-            break;
-        }
 
-        let mut len_buf = [0u8; 1];
-        if Read::read_exact(cursor, &mut len_buf).is_err() {
-            break;
-        }
-
-        let len = if (len_buf[0] & 0x80) == 0 {
-            len_buf[0] as usize
-        } else {
-            let mut second_byte = [0u8; 1];
-            if Read::read_exact(cursor, &mut second_byte).is_err() {
-                break;
+    loop {
+        let pos =  match usize::try_from(cursor.position()) {
+            Ok(pos) => pos,
+            Err(_err) => {
+                return tags;
             }
-            ((second_byte[0] as usize) << 7) + ((len_buf[0] & 0x7F) as usize)
         };
 
+        if pos >= cursor.get_ref().len() {
+            break;
+        }
+        let mut tag_buf = [0u8; 1];
+        if std::io::Read::read_exact(cursor, &mut tag_buf).is_err() {
+            break;
+        }
+        let tag = tag_buf[0];
 
-        if cursor.get_ref().len() <  usize::try_from(cursor.position()).unwrap_or(0) + len {
+        // 2-Byte length (big-endian)
+        let mut len_buf = [0u8; 2];
+        if std::io::Read::read_exact(cursor, &mut len_buf).is_err() {
+            break;
+        }
+        let len = u16::from_be_bytes(len_buf) as usize;
+
+        // Check for incomplete TLV
+        let remaining = cursor.get_ref().len() as u64 - cursor.position();
+        if remaining < len as u64 {
+            break; // incomplete or invalid TLV record
+        }
+
+        let mut val_buf = vec![0u8; len];
+        if std::io::Read::read_exact(cursor, &mut val_buf).is_err() {
             break;
         }
 
-        let mut val_buf = vec![0; len];
-        if Read::read_exact(cursor, &mut val_buf).is_err() {
-            break;
-        }
-
-        tags.insert(tag_buf[0], val_buf);
+        tags.insert(tag, val_buf);
     }
+
     tags
 }
 
