@@ -1,6 +1,7 @@
 # Ignore build artifacts
 target/
 bin/
+debug/
 
 # Ignore the entire docker directory...
 docker/

@@ -856,7 +856,8 @@ Each format has different properties.
 - cleanup: _optional_, true|false, default false
 - style: _mandatory_, kodi|plex|emby|jellyfin
 - flat: _optional_, true|false, default false
-- strm_props: _optional_, list of strings,
+- strm_props: _optional_, list of strings
+- add_quality_to_filename: _optional_, true|false
 - filter: optional filter
 
 `hdhomerun`
@@ -904,11 +905,12 @@ regardless of the number of clients. Increasing the buffer size above 1024 will 
 For example, with a buffer size of 2024, memory usage is at least 24 MB for **each** shared channel.     
 
 `strm` output has additional options:
-- `underscore_whitespace`: replaces all whitespaces with `_` in the path
-- `cleanup`: deletes the directory given at `filename`. Don't point at existing media folder or everything will be deleted
-- `style`: determines naming convention (kodi, plex, emby, jellyfin)
-- `flat`: creates flat directory structure with category tags in folder names
-- `strm_props`: list of properties written to the strm file
+- `underscore_whitespace`: Replaces all whitespaces with `_` in the path and filename.
+- `cleanup`: If `true`, the directory given at `filename` will be deleted. Don't point at existing media folder or everything will be deleted!
+- `style`: Naming style convention for your media player / server (kodi, plex, emby, jellyfin)
+- `flat`: If `true`, creates flat directory structure with category tags in folder names
+- `strm_props`: List of stream properties placed within .strm file to configure how Kodi's internal player handles the media stream.
+- `add_quality_to_filename`: If `true`, adds media quality tags to the filename (e.g., `Movie Title - [1080p|x265|HDR].strm`).
 
 Supported styles:
 - Kodi: `Movie Name (Year) {tmdb=ID}/Movie Name (Year).strm`
