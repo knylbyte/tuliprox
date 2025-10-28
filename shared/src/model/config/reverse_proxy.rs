@@ -1,5 +1,5 @@
 use crate::error::TuliproxError;
-use crate::model::{CacheConfigDto, RateLimitConfigDto, StreamConfigDto};
+use crate::model::{CacheConfigDto, GeoIpConfigDto, RateLimitConfigDto, StreamConfigDto};
 use log::warn;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -15,6 +15,9 @@ pub struct ReverseProxyConfigDto {
     pub cache: Option<CacheConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate_limit: Option<RateLimitConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geoip: Option<GeoIpConfigDto>,
+
 }
 
 impl ReverseProxyConfigDto {

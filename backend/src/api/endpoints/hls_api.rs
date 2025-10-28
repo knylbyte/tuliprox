@@ -1,4 +1,4 @@
-use crate::api::api_utils::try_unwrap_body;
+use crate::api::api_utils::{create_fingerprint, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_stream_alternative_url, is_seek_request,
 };
@@ -78,7 +78,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
             {
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
-                    let user_session_token = format!("{fingerprint}{virtual_id}");
+                    let user_session_token = create_fingerprint(fingerprint, &user.username, virtual_id);
                     let session_token = app_state.active_users.create_user_session(
                         user,
                         &user_session_token,
@@ -218,7 +218,7 @@ async fn hls_api_stream(
         )
     );
 
-    let user_session_token = format!("{fingerprint}{virtual_id}");
+    let user_session_token = create_fingerprint(&fingerprint, &user.username, virtual_id);
     let mut user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &user_session_token).await;

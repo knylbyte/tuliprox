@@ -1,7 +1,7 @@
 // https://github.com/tellytv/go.xtream-codes/blob/master/structs.go
 
 use crate::api::api_utils;
-use crate::api::api_utils::try_unwrap_body;
+use crate::api::api_utils::{create_fingerprint, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_user_target, get_user_target_by_credentials,
     is_seek_request, redirect_response, resource_response, separate_number_and_remainder,
@@ -29,7 +29,7 @@ use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::stream::{self, StreamExt};
 use futures::Stream;
-use log::{debug, error, warn};
+use log::{debug, error, log_enabled, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use shared::error::create_tuliprox_error_result;
@@ -218,25 +218,22 @@ async fn xtream_player_api_stream(
     api_req: &UserApiRequest,
     stream_req: ApiStreamRequest<'_>,
 ) -> impl IntoResponse + Send {
+
+    debug!("Stream Request {stream_req:?} - {req_headers:?}");
+
+    if log_enabled!(log::Level::Debug) {
+        let message = format!("Client Request headers {req_headers:?}");
+        debug!("{}", sanitize_sensitive_info(&message));
+    }
+
+
     let (user, target) = try_option_bad_request!(
-        get_user_target_by_credentials(
-            stream_req.username,
-            stream_req.password,
-            api_req,
-            app_state
-        ),
+        get_user_target_by_credentials( stream_req.username, stream_req.password, api_req, app_state),
         false,
-        format!(
-            "Could not find any user for xc stream {}",
-            stream_req.username
-        )
+        format!("Could not find any user for xc stream {}", stream_req.username)
     );
     if user.permission_denied(app_state) {
-        return create_custom_video_stream_response(
-            &app_state.app_config,
-            CustomVideoStreamType::UserAccountExpired,
-        )
-        .into_response();
+        return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserAccountExpired,).into_response();
     }
 
     let target_name = &target.name;
@@ -248,24 +245,14 @@ async fn xtream_player_api_stream(
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
     let virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
     let (pli, mapping) = try_result_not_found!(
-        xtream_repository::xtream_get_item_for_stream_id(
-            virtual_id,
-            app_state,
-            &target,
-            None
-        ).await,
+        xtream_repository::xtream_get_item_for_stream_id(virtual_id, app_state, &target, None).await,
         true,
-        format!("Failed to read xtream item for stream id {}", virtual_id)
+        format!("Failed to read xtream item for stream id {virtual_id}")
     );
     let input = try_option_bad_request!(
-        app_state
-            .app_config
-            .get_input_by_name(pli.input_name.as_str()),
+        app_state.app_config.get_input_by_name(pli.input_name.as_str()),
         true,
-        format!(
-            "Cant find input for target {target_name}, context {}, stream_id {virtual_id}",
-            stream_req.context
-        )
+        format!( "Cant find input for target {target_name}, context {}, stream_id {virtual_id}", stream_req.context)
     );
 
     let (cluster, item_type) = if stream_req.context == ApiStreamContext::Timeshift {
@@ -274,7 +261,7 @@ async fn xtream_player_api_stream(
         (pli.xtream_cluster, pli.item_type)
     };
 
-    let session_key = format!("{fingerprint}{virtual_id}");
+    let session_key = create_fingerprint(fingerprint, &user.username, virtual_id);
     let user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &session_key).await;
@@ -443,7 +430,7 @@ async fn xtream_player_api_stream_with_token(
             )
         );
 
-        let session_key = format!("{fingerprint}{virtual_id}");
+        let session_key = create_fingerprint(fingerprint, "webui", virtual_id);
 
         let is_hls_request =
             pli.item_type == PlaylistItemType::LiveHls || stream_ext.as_deref() == Some(HLS_EXT);

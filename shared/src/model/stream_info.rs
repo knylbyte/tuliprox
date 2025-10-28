@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::model::{M3uPlaylistItem, PlaylistEntry, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
+use crate::utils::{current_time_secs, StringExt};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StreamChannel {
@@ -20,7 +21,7 @@ impl XtreamPlaylistItem {
             item_type: self.item_type,
             cluster: self.xtream_cluster,
             group: self.group.clone(),
-            title: self.title.clone(),
+            title: String::longest(self.title.as_str(), self.name.as_str()).to_string(),
             url: self.url.clone(),
             shared: false,
         }
@@ -35,7 +36,7 @@ impl M3uPlaylistItem {
             item_type: self.item_type,
             cluster: XtreamCluster::try_from(self.item_type).unwrap_or(XtreamCluster::Live),
             group: self.group.clone(),
-            title: self.title.clone(),
+            title: String::longest(self.title.as_str(), self.name.as_str()).to_string(),
             url: self.url.clone(),
             shared: false,
         }
@@ -48,15 +49,21 @@ pub struct StreamInfo {
     pub channel: StreamChannel,
     pub provider: String,
     pub addr: String,
+    pub user_agent: String,
+    pub ts: u64,
+    pub country: Option<String>,
 }
 
 impl StreamInfo {
-    pub fn new(username: &str, addr: &str, provider: &str, stream_channel: StreamChannel) -> Self {
+    pub fn new(username: &str, addr: &str, provider: &str, stream_channel: StreamChannel, user_agent: String, country: Option<String>) -> Self {
         Self {
             username: username.to_string(),
             channel: stream_channel,
             provider: provider.to_string(),
             addr: addr.to_string(),
+            user_agent,
+            ts: current_time_secs(),
+            country,
         }
     }
 }

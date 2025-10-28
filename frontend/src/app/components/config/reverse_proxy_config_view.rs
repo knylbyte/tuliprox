@@ -1,15 +1,12 @@
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::{
-    CacheConfigDto, RateLimitConfigDto, StreamConfigDto, ReverseProxyConfigDto,
-};
+use shared::model::{CacheConfigDto, RateLimitConfigDto, StreamConfigDto, ReverseProxyConfigDto, GeoIpConfigDto};
 use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::ConfigForm;
 use crate::app::components::config::macros::HasFormData;
-use crate::app::components::Card;
-use crate::{config_field, config_field_bool, config_field_optional,
-            edit_field_bool, edit_field_number, edit_field_number_u64, edit_field_text_option, generate_form_reducer};
+use crate::app::components::{Card};
+use crate::{config_field, config_field_bool, config_field_optional, edit_field_bool, edit_field_number, edit_field_number_u64, edit_field_text, edit_field_text_option, generate_form_reducer};
 
 const LABEL_CACHE: &str = "LABEL.CACHE";
 const LABEL_ENABLED: &str = "LABEL.ENABLED";
@@ -30,6 +27,8 @@ const LABEL_BURST_SIZE: &str = "LABEL.BURST_SIZE";
 
 const LABEL_RESOURCE_REWRITE_DISABLED: &str = "LABEL.RESOURCE_REWRITE_DISABLED";
 const LABEL_DISABLE_REFERER_HEADER: &str = "LABEL.DISABLE_REFERER_HEADER";
+const LABEL_GEOIP: &str = "LABEL.GEOIP";
+const LABEL_URL: &str = "LABEL.URL";
 
 generate_form_reducer!(
     state: CacheConfigFormState { form: CacheConfigDto },
@@ -65,6 +64,15 @@ generate_form_reducer!(
 );
 
 generate_form_reducer!(
+    state: GeoIpConfigFormState { form: GeoIpConfigDto },
+    action_name: GeoIpConfigFormAction,
+    fields {
+        Enabled => enabled: bool,
+        Url => url: String,
+    }
+);
+
+generate_form_reducer!(
     state: ReverseProxyConfigFormState { form: ReverseProxyConfigDto },
     action_name: ReverseProxyConfigFormAction,
     fields {
@@ -92,22 +100,28 @@ pub fn ReverseProxyConfigView() -> Html {
         StreamConfigFormState { form: StreamConfigDto::default(), modified: false }
     });
 
+    let geoip_state: UseReducerHandle<GeoIpConfigFormState> = use_reducer(|| {
+        GeoIpConfigFormState { form: GeoIpConfigDto::default(), modified: false }
+    });
+
     {
         let on_form_change = config_view_ctx.on_form_change.clone();
         let reverse_proxy_state = reverse_proxy_state.clone();
         let cache_state = cache_state.clone();
         let rate_limit_state = rate_limit_state.clone();
         let stream_state = stream_state.clone();
+        let geoip_state = geoip_state.clone();
 
         use_effect_with(
-            (reverse_proxy_state, cache_state, rate_limit_state, stream_state),
-            move |(rp, cache, rl, stream)| {
+            (reverse_proxy_state, cache_state, rate_limit_state, stream_state, geoip_state),
+            move |(rp, cache, rl, stream, geoip)| {
                 let mut form = rp.form.clone();
                 form.cache = Some(cache.form.clone());
                 form.rate_limit = Some(rl.form.clone());
                 form.stream = Some(stream.form.clone());
+                form.geoip = Some(geoip.form.clone());
 
-                let modified = rp.modified || cache.modified || rl.modified || stream.modified;
+                let modified = rp.modified || cache.modified || rl.modified || stream.modified || geoip.modified;
                 on_form_change.emit(ConfigForm::ReverseProxy(modified, form));
             },
         );
@@ -118,6 +132,7 @@ pub fn ReverseProxyConfigView() -> Html {
         let cache_state = cache_state.clone();
         let rate_limit_state = rate_limit_state.clone();
         let stream_state = stream_state.clone();
+        let geoip_state = geoip_state.clone();
 
         let reverse_proxy_cfg = config_ctx.config.as_ref().and_then(|c| c.config.reverse_proxy.clone());
         use_effect_with((reverse_proxy_cfg, config_view_ctx.edit_mode.clone()), move |(cfg, _mode)| {
@@ -126,11 +141,13 @@ pub fn ReverseProxyConfigView() -> Html {
                 cache_state.dispatch(CacheConfigFormAction::SetAll(rp.cache.as_ref().map_or_else(CacheConfigDto::default, |c| c.clone())));
                 rate_limit_state.dispatch(RateLimitConfigFormAction::SetAll(rp.rate_limit.as_ref().map_or_else(RateLimitConfigDto::default, |rl| rl.clone())));
                 stream_state.dispatch(StreamConfigFormAction::SetAll(rp.stream.as_ref().map_or_else(StreamConfigDto::default, |s| s.clone())));
+                geoip_state.dispatch(GeoIpConfigFormAction::SetAll(rp.geoip.as_ref().map_or_else(GeoIpConfigDto::default, |s| s.clone())));
             } else {
                 reverse_proxy_state.dispatch(ReverseProxyConfigFormAction::SetAll(ReverseProxyConfigDto::default()));
                 cache_state.dispatch(CacheConfigFormAction::SetAll(CacheConfigDto::default()));
                 rate_limit_state.dispatch(RateLimitConfigFormAction::SetAll(RateLimitConfigDto::default()));
                 stream_state.dispatch(StreamConfigFormAction::SetAll(StreamConfigDto::default()));
+                geoip_state.dispatch(GeoIpConfigFormAction::SetAll(GeoIpConfigDto::default()));
             }
             || ()
         });
@@ -171,6 +188,16 @@ pub fn ReverseProxyConfigView() -> Html {
         }
     };
 
+    let render_geoip = || {
+        html! {
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_GEOIP)}</h1>
+                { config_field_bool!(geoip_state.form, translate.t(LABEL_ENABLED), enabled) }
+                { config_field!(geoip_state.form, translate.t(LABEL_URL), url) }
+            </Card>
+        }
+    };
+
     let render_view_mode = || {
        html! {
             <>
@@ -182,6 +209,7 @@ pub fn ReverseProxyConfigView() -> Html {
                 { render_cache() }
                 { render_rate_limit() }
                 { render_stream() }
+                { render_geoip() }
               </div>
             </>
         }
@@ -214,6 +242,11 @@ pub fn ReverseProxyConfigView() -> Html {
                 { edit_field_number_u64!(stream_state, translate.t(LABEL_GRACE_PERIOD_TIMEOUT_SECS), grace_period_timeout_secs, StreamConfigFormAction::GracePeriodTimeoutSecs) }
                 { edit_field_number!(stream_state, translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS), forced_retry_interval_secs, StreamConfigFormAction::ForcedRetryIntervalSecs) }
                 { edit_field_number_u64!(stream_state, translate.t(LABEL_THROTTLE_KBPS), throttle_kbps, StreamConfigFormAction::ThrottleKbps) }
+            </Card>
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_GEOIP)}</h1>
+                { edit_field_bool!(geoip_state, translate.t(LABEL_ENABLED), enabled, GeoIpConfigFormAction::Enabled) }
+                { edit_field_text!(geoip_state, translate.t(LABEL_URL), url, GeoIpConfigFormAction::Url) }
             </Card>
           </div>
         </>

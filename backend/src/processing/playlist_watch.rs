@@ -8,7 +8,7 @@ use crate::model::Config;
 use crate::utils;
 use crate::utils::{bincode_deserialize, bincode_serialize};
 
-pub fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, target_name: &str, pl: &PlaylistGroup) {
+pub async fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, target_name: &str, pl: &PlaylistGroup) {
     let mut new_tree = BTreeSet::new();
     pl.channels.iter().for_each(|chan| {
         let header = &chan.header;
@@ -28,7 +28,7 @@ pub fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, target_n
                     let removed_difference: BTreeSet<String> = loaded_tree.difference(&new_tree).cloned().collect();
                     if !added_difference.is_empty() || !removed_difference.is_empty() {
                         changed = true;
-                        handle_watch_notification(client, cfg, &added_difference, &removed_difference, target_name, &pl.title);
+                        handle_watch_notification(client, cfg, &added_difference, &removed_difference, target_name, &pl.title).await;
                     }
                 } else {
                     error!("failed to load watch_file {}", &path.to_str().unwrap_or_default());
@@ -60,7 +60,7 @@ struct WatchChanges {
     pub removed: Vec<String>,
 }
 
-fn handle_watch_notification(client: &Arc<reqwest::Client>, cfg: &Config, added: &BTreeSet<String>, removed: &BTreeSet<String>, target_name: &str, group_name: &str) {
+async fn handle_watch_notification(client: &Arc<reqwest::Client>, cfg: &Config, added: &BTreeSet<String>, removed: &BTreeSet<String>, target_name: &str, group_name: &str) {
     let added = added.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
     let removed = removed.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
     if !added.is_empty() || !removed.is_empty() {
@@ -73,7 +73,7 @@ fn handle_watch_notification(client: &Arc<reqwest::Client>, cfg: &Config, added:
 
         let msg = serde_json::to_string_pretty(&changes).unwrap_or_else(|_| "Error: Failed to serialize watch changes".to_string());
         info!("{}", &msg);
-        send_message(client, MsgKind::Watch, cfg.messaging.as_ref(), &msg);
+        send_message(client, MsgKind::Watch, cfg.messaging.as_ref(), &msg).await;
     }
 }
 

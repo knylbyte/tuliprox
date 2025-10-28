@@ -58,6 +58,49 @@ where
 }
 
 
+fn query_tree_le<K, V, R: Read + Seek>(file: &mut R, key: &K) -> Option<V>
+where
+    K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
+    V: Serialize + for<'de> Deserialize<'de> + Clone,
+{
+    let mut offset = 0;
+    let mut buffer = vec![0u8; BLOCK_SIZE];
+    loop {
+        match BPlusTreeNode::<K, V>::deserialize_from_block(file, &mut buffer, offset, false) {
+            Ok((node, pointers)) => {
+                if node.is_leaf {
+                    let idx = get_entry_index_upper_bound::<K>(&node.keys, key);
+                    if idx == 0 {
+                        return None;
+                    }
+                    return node.values.get(idx - 1).cloned();
+                }
+                let child_idx = get_entry_index_upper_bound::<K>(&node.keys, key);
+                if let Some(child_offsets) = pointers {
+                    if let Some(child_offset) = child_offsets.get(child_idx) {
+                        offset = *child_offset;
+                    } else {
+                        // defensive: if out of bounds try last pointer
+                        if let Some(last) = child_offsets.last() {
+                            offset = *last;
+                        } else {
+                            return None;
+                        }
+                    }
+                } else {
+                    return None;
+                }
+            }
+            Err(err) => {
+                error!("Failed to read id tree from file {err}");
+                return None;
+            }
+        }
+    }
+}
+
+
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct BPlusTreeNode<K, V> {
     keys: Vec<K>,
@@ -190,6 +233,32 @@ where
                 self.children.push(child.clone());
             }
             node
+        }
+    }
+
+    /// Find the largest key <= `key` in this subtree.
+    /// Returns a reference to (key, value) if found (only valid for leaf entries).
+    fn find_le(&self, key: &K) -> Option<(&K, &V)> {
+        if self.is_leaf {
+            // find index of first key > key, then step one back
+            let idx = self.get_entry_index_upper_bound(key);
+            if idx == 0 {
+                None
+            } else {
+                let i = idx - 1;
+                // safe: leaf guarantees values.len() == keys.len()
+                Some((&self.keys[i], &self.values[i]))
+            }
+        } else {
+            // descend into the appropriate child (child index = upper_bound)
+            let child_idx = self.get_entry_index_upper_bound(key);
+            // child_idx can be equal to children.len() if key > all keys; children.get handles that
+            if let Some(child) = self.children.get(child_idx) {
+                child.find_le(key)
+            } else {
+                // fallback: if child_idx is out of bounds, try last child (defensive)
+                self.children.last().and_then(|c| c.find_le(key))
+            }
         }
     }
 
@@ -506,6 +575,15 @@ where
         Ok(Self::new_with_root(root))
     }
 
+    /// Find the largest key <= `key` in the in-memory tree and return references to (key, value).
+    pub fn find_le(&self, key: &K) -> Option<(&K, &V)> {
+        // empty tree
+        if self.root.keys.is_empty() && self.root.is_leaf && self.root.values.is_empty() {
+            return None;
+        }
+        self.root.find_le(key)
+    }
+
     pub fn traverse<F>(&self, mut visit: F)
     where
         F: FnMut(&Vec<K>, &Vec<V>),
@@ -604,6 +682,19 @@ where
         query_tree(&mut self.file, key)
     }
 
+    /// On-disk: find largest key <= `key` and return owned V (cloned/deserialized)
+    pub fn query_le(&mut self, key: &K) -> Option<V> {
+        // use the same buffer/reader pattern as query()
+        // we need a mutable reader over the inner BufReader<File>
+        let file = &mut self.file;
+        // Seek to start to be safe
+        if file.seek(SeekFrom::Start(0)).is_err() {
+            // if seek fails, still try to query — but bail out with None
+            return None;
+        }
+        query_tree_le(file, key)
+    }
+
     // pub fn traverse<F>(&mut self, mut visit: F)
     // where
     //     F: FnMut(&Vec<K>, &Vec<V>),
@@ -680,6 +771,12 @@ where
                 }
             }
         }
+    }
+
+    /// On-disk update helper: find largest key <= `key`.
+    pub fn query_le(&mut self, key: &K) -> Option<V> {
+        let mut reader = utils::file_reader(&mut self.file);
+        query_tree_le(&mut reader, key)
     }
 }
 

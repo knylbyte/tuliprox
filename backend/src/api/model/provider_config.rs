@@ -9,8 +9,8 @@ use tokio::sync::RwLock;
 use shared::model::InputType;
 use shared::write_if_some;
 
-pub type ProviderConnectionChangeSender = tokio::sync::mpsc::Sender<(String, usize)>;
-pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::Receiver<(String, usize)>;
+pub type ProviderConnectionChangeSender = tokio::sync::mpsc::UnboundedSender<(String, usize)>;
+pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::UnboundedReceiver<(String, usize)>;
 
 pub type ProviderConnectionChangeCallback = Arc<dyn Fn(&str, usize) + Send + Sync>;
 
@@ -261,12 +261,11 @@ impl ProviderConfig {
     pub async fn release(&self) {
         let mut guard = self.connection.write().await;
         if guard.current_connections > 0 {
+            if guard.current_connections == 1 && self.max_connections > 1 {
+                guard.granted_grace = false;
+                guard.grace_ts = 0;
+            }
             modify_connections!(self, guard, -1);
-        }
-
-        if guard.current_connections == 0  || guard.current_connections < self.max_connections {
-            guard.granted_grace = false;
-            guard.grace_ts = 0;
         }
     }
 

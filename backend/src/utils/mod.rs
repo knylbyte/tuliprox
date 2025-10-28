@@ -9,11 +9,13 @@ mod trakt;
 mod json_utils;
 mod bincode_utils;
 mod telegram;
+mod geoip;
 
 pub use self::bincode_utils::*;
 pub use self::logging::*;
 pub use self::trakt::*;
 pub use self::telegram::*;
+pub use self::geoip::*;
 
 #[macro_export]
 macro_rules! debug_if_enabled {

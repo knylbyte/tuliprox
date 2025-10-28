@@ -24,16 +24,20 @@ pub fn validate_hdhr_device_id(device_id: &str) -> bool {
 }
 
 pub fn generate_hdhr_device_id_from_base(base_id: &str) -> String {
-    let base_sanitized = base_id.chars().filter(|c| c.is_ascii_hexdigit()).collect::<String>();
-    let base_padded = if base_sanitized.is_empty() {
-       return generate_hdhr_device_id();
-    } else {
-       format!("{:0<7}", &base_sanitized[..base_sanitized.len().min(7)])
-    };
-
-    if let Ok(device_id_int_base) = u32::from_str_radix(&base_padded, 16) {
-        let checksum = calculate_checksum(device_id_int_base);
-        let final_id = (device_id_int_base & 0xFFFFFFF0) | u32::from(checksum);
+    let base_sanitized: String = base_id
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .collect::<String>()
+        .to_uppercase();
+    if base_sanitized.is_empty() {
+        return generate_hdhr_device_id();
+    }
+    // Keep at most 7 hex digits, pad-left with zeros to 7
+    let base7 = format!("{:0>7}", &base_sanitized[..base_sanitized.len().min(7)]);
+    if let Ok(base7_int) = u32::from_str_radix(&base7, 16) {
+        let base_shifted = base7_int << 4; // bits 4-31 for base, bits 0-3 for checksum
+        let checksum = calculate_checksum(base_shifted);
+        let final_id = base_shifted | u32::from(checksum);
         format!("{:08X}", final_id)
     } else {
         generate_hdhr_device_id()
@@ -41,10 +45,8 @@ pub fn generate_hdhr_device_id_from_base(base_id: &str) -> String {
 }
 
 pub fn generate_hdhr_device_id() -> String {
-    let random_part: String = (0..4)
-        .map(|_| format!("{:X}", fastrand::u8(0..16)))
-        .collect();
-
-    let base_id = format!("105{}0", random_part);
-    generate_hdhr_device_id_from_base(&base_id)
+    // 3 fixed + 4 random = 7 hex digits base
+    let rnd = (0..4).map(|_| format!("{:X}", fastrand::u8(0..16))).collect::<String>();
+    let base7 = format!("105{rnd}");
+    generate_hdhr_device_id_from_base(&base7)
 }

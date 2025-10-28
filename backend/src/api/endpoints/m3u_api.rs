@@ -1,4 +1,4 @@
-use crate::api::api_utils::try_unwrap_body;
+use crate::api::api_utils::{create_fingerprint, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_user_target, get_user_target_by_credentials,
     is_seek_request, redirect, redirect_response, resource_response, separate_number_and_remainder,
@@ -123,7 +123,7 @@ async fn m3u_api_stream(
     );
     let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
 
-    let session_key = format!("{fingerprint}{virtual_id}");
+    let session_key = create_fingerprint(fingerprint, &user.username, virtual_id);
     let user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &session_key).await;

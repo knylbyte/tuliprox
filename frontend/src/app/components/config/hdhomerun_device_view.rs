@@ -46,7 +46,7 @@ pub fn HdHomerunDeviceView(props: &HdHomerunDeviceViewProps) -> Html {
         let device_id = props.device_id;
         let deps = (form_state.clone(), form_state.modified);
         use_effect_with(deps, move |(state, modified)| {
-            on_form_change.emit((device_id, *modified, *state.form.clone()));
+            on_form_change.emit((device_id, *modified, (*state.form).clone()));
         });
     }
 

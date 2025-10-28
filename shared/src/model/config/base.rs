@@ -148,7 +148,7 @@ pub struct HdHomeRunDeviceOverview {
 }
 
 impl ConfigDto {
-    pub fn prepare(&mut self) -> Result<(), TuliproxError> {
+    pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         if let Some(mins) = self.sleep_timer_mins {
             if mins == 0 {
                 return Err(TuliproxError::new(TuliproxErrorKind::Info, "`sleep_timer_mins` must be > 0 when specified".to_string()));
@@ -157,7 +157,7 @@ impl ConfigDto {
 
         self.api.prepare();
         self.prepare_web()?;
-        self.prepare_hdhomerun()?;
+        self.prepare_hdhomerun(include_computed)?;
         self.prepare_video_config()?;
 
         if let Some(reverse_proxy) = self.reverse_proxy.as_mut() {
@@ -180,10 +180,10 @@ impl ConfigDto {
         Ok(())
     }
 
-    fn prepare_hdhomerun(&mut self) -> Result<(), TuliproxError> {
+    fn prepare_hdhomerun(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         if let Some(hdhomerun) = &mut self.hdhomerun {
             if hdhomerun.enabled {
-                hdhomerun.prepare(self.api.port)?;
+                hdhomerun.prepare(self.api.port, include_computed)?;
             }
         }
         Ok(())
@@ -251,4 +251,9 @@ impl ConfigDto {
         self.accept_insecure_ssl_certificates = main_config.accept_insecure_ssl_certificates;
 
     }
+
+    pub fn is_geoip_enabled(&self) -> bool {
+        self.reverse_proxy.as_ref().is_some_and(|r| r.geoip.as_ref().is_some_and(|g| g.enabled))
+    }
+
 }
