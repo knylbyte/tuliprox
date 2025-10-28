@@ -109,6 +109,7 @@ impl From<&M3uTargetOutput> for M3uTargetOutputDto {
 
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct StrmTargetOutput {
     pub directory: String,
     pub username: Option<String>,

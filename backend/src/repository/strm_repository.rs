@@ -757,14 +757,14 @@ async fn prepare_strm_files(
                             String::new()
                         } else {
                             // Hard-coded separator for filename clarity.
-                            format!(" - [{}]", formatted)
+                            format!(" - [{formatted}]")
                         }
                     })
             } else {
                 String::new()
             };
 
-            let final_filename = format!("{}{}", strm_file_name, quality_string);
+            let final_filename = format!("{strm_file_name}{quality_string}");
             let filename = Arc::new(final_filename);
 
             if all_filenames.contains(&filename) {

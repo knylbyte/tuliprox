@@ -162,7 +162,7 @@ impl MediaQuality {
     }
 
     /// Extracts media quality information from an `ffprobe` info block.
-    /// The info_block is expected to be a `serde_json::Value` object.
+    /// The `info_block` is expected to be a `serde_json::Value` object.
     pub fn from_ffprobe_info(info_block: &Value) -> Option<Self> {
         let video_info = info_block.get("video")?.as_object()?;
         // Assuming the first audio stream is the primary one.
@@ -193,7 +193,7 @@ impl MediaQuality {
 
         // 2. Classify video codec
         let video_codec = get_value(video_info, &["codec_name"])
-            .and_then(|v| v.as_str().map(|s| s.to_lowercase()))
+            .and_then(|v| v.as_str().map(str::to_lowercase))
             .map_or(VideoCodec::default(), |name| match name.as_str() {
                 "h264" => VideoCodec::H264,
                 "hevc" => VideoCodec::H265,
@@ -205,13 +205,13 @@ impl MediaQuality {
         // 3. Classify dynamic range
         let dynamic_range = {
             let tag_string = get_value(video_info, &["codec_tag_string"])
-                .and_then(|v| v.as_str().map(|s| s.to_lowercase()));
+                .and_then(|v| v.as_str().map(str::to_lowercase));
 
             if tag_string == Some("dovi".to_string()) {
                 VideoDynamicRange::DV
             } else {
                 get_value(video_info, &["color_transfer"])
-                    .and_then(|v| v.as_str().map(|s| s.to_lowercase()))
+                    .and_then(|v| v.as_str().map(str::to_lowercase))
                     .map_or(VideoDynamicRange::SDR, |ct| match ct.as_str() {
                         "smpte2084" => VideoDynamicRange::HDR10,
                         "arib-std-b67" => VideoDynamicRange::HLG,
@@ -222,7 +222,7 @@ impl MediaQuality {
             
         // 4. Classify audio codec
         let audio_codec = get_value(audio_info, &["codec_name"])
-            .and_then(|v| v.as_str().map(|s| s.to_lowercase()))
+            .and_then(|v| v.as_str().map(str::to_lowercase))
             .map_or(AudioCodec::default(), |name| match name.as_str() {
                 "aac" => AudioCodec::AAC,
                 "ac3" => AudioCodec::AC3,
