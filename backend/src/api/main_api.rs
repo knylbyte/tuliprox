@@ -32,6 +32,8 @@ use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
+use crate::repository::storage::get_geoip_path;
+use crate::utils::GeoIp;
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -66,21 +68,33 @@ fn create_shared_data(
     forced_targets: &Arc<ProcessTargets>,
 ) -> AppState {
     let config = app_config.config.load();
+
+    let use_geoip = config.is_geoip_enabled();
+    let geoip =    if use_geoip {
+        let path = get_geoip_path(&config.working_dir);
+        let _file_lock = app_config.file_locks.read_lock(&path);
+        let geoip = GeoIp::load(&path).ok();
+        if geoip.is_some() {
+            info!("GeoIp db loaded");
+        }
+        Arc::new(ArcSwapOption::from_pointee(geoip))
+    } else {
+        Arc::new(ArcSwapOption::from(None))
+    };
+
     let cache = create_cache(&config);
     let shared_stream_manager = Arc::new(SharedStreamManager::new());
-    let (provider_change_tx, provider_change_rx) = tokio::sync::mpsc::channel(10);
+    let (provider_change_tx, provider_change_rx) = tokio::sync::mpsc::unbounded_channel();
     let active_provider = Arc::new(ActiveProviderManager::new(app_config, provider_change_tx));
-    let (active_user_change_tx, active_user_change_rx) = tokio::sync::mpsc::channel(10);
-    let active_users = Arc::new(ActiveUserManager::new(
+    let (active_user_change_tx, active_user_change_rx) = tokio::sync::mpsc::unbounded_channel();
+    let active_users = ActiveUserManager::new(
         &config,
         &shared_stream_manager,
         &active_provider,
+        &geoip,
         active_user_change_tx,
-    ));
-    let event_manager = Arc::new(EventManager::new(
-        active_user_change_rx,
-        provider_change_rx,
-    ));
+    );
+    let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx, ));
     let client = create_http_client(app_config);
 
     AppState {
@@ -95,6 +109,7 @@ fn create_shared_data(
         event_manager,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
         playlists: Arc::new(PlaylistStorageState::new()),
+        geoip,
     }
 }
 

@@ -32,3 +32,7 @@ pub fn get_input_storage_path(input_name: &str, working_dir: &str) -> std::io::R
     // Create the directory and return the path or propagate the error
     std::fs::create_dir_all(&path).map(|()| path)
 }
+
+pub fn get_geoip_path(working_dir: &str) -> PathBuf {
+    Path::new(working_dir).join("geoip.db")
+}

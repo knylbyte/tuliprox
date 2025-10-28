@@ -134,11 +134,7 @@ where
 
         let user_manager_clone = Arc::clone(&user_manager);
         let mut addr_close_rx = user_manager_clone.get_close_connection_channel();
-        let connection_closed = async move || {
-            debug!("Connection closed: {remote_addr}");
-            let addr = remote_addr.to_string();
-            user_manager_clone.remove_connection(&addr).await;
-        };
+        let connection_release = user_manager.release_sender();
 
         debug!("Connection opened: {addr_str}");
 
@@ -148,11 +144,17 @@ where
                     if let Err(err) = result {
                         trace!("failed to serve connection: {err:#}");
                     }
-                    connection_closed().await;
+                    if let Err(_err) = connection_release.send(remote_addr.to_string()) {
+                        let addr = remote_addr.to_string();
+                        user_manager_clone.remove_connection(&addr).await;
+                    }
                     break;
                 }
                 () = &mut signal_closed => {
-                    connection_closed().await;
+                    if let Err(_err) = connection_release.send(remote_addr.to_string()) {
+                         let addr = remote_addr.to_string();
+                         user_manager_clone.remove_connection(&addr).await;
+                    }
                     debug!("Connection gracefully closed: {remote_addr}");
                     conn.as_mut().graceful_shutdown();
                 }

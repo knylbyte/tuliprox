@@ -1,8 +1,8 @@
-use std::collections::HashSet;
-use log::warn;
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::utils::{default_as_true, generate_hdhr_device_id, generate_hdhr_device_id_from_base, validate_hdhr_device_id, hash_string, hex_encode};
+use crate::utils::{default_as_true, generate_hdhr_device_id, generate_hdhr_device_id_from_base, hash_string, hex_encode, validate_hdhr_device_id};
+use log::warn;
+use std::collections::HashSet;
 
 fn default_friendly_name() -> String { String::from("TuliproxTV") }
 fn default_manufacturer() -> String { String::from("Silicondust") }
@@ -60,11 +60,13 @@ impl Default for HdHomeRunDeviceConfigDto {
 }
 
 impl HdHomeRunDeviceConfigDto {
-    pub fn prepare(&mut self, device_num: u8) -> Result<(), TuliproxError> {
+    pub fn prepare(&mut self, device_num: u8, include_computed: bool) -> Result<(), TuliproxError> {
         self.name = self.name.trim().to_string();
         if self.name.is_empty() {
             self.name = format!("device{device_num}");
-            warn!("Device name empty, assigned new name: {}", self.name);
+            if include_computed {
+                warn!("Device name empty, assigned new name: {}", self.name);
+            }
         }
 
         if self.tuner_count == 0 {
@@ -86,7 +88,9 @@ impl HdHomeRunDeviceConfigDto {
             let p4 = hex_encode(&hash[8..10]);
             let p5 = hex_encode(&hash[10..16]);
             self.device_udn = format!("{p1}-{p2}-{p3}-{p4}-{p5}");
-            warn!("HDHomeRun device '{}' is missing a unique device_udn. A new one has been generated: {}", self.name, self.device_udn);
+            if include_computed {
+                warn!("HDHomeRun device '{}' is missing a unique device_udn. A new one has been generated: {}", self.name, self.device_udn);
+            }
         } else {
             // Ensure only the UUID part is stored.
             if let Some(uuid_part) = self.device_udn.strip_prefix("uuid:") {
@@ -97,11 +101,15 @@ impl HdHomeRunDeviceConfigDto {
         // --- Device ID Logic ---
         if self.device_id.is_empty() {
             self.device_id = generate_hdhr_device_id();
-            warn!("HDHomeRun device '{}' is missing a device_id. A new one has been generated: {}", self.name, self.device_id);
+            if include_computed {
+                warn!("HDHomeRun device '{}' is missing a device_id. A new one has been generated: {}", self.name, self.device_id);
+            }
         } else if !validate_hdhr_device_id(&self.device_id) {
             let old_id = self.device_id.clone();
             self.device_id = generate_hdhr_device_id_from_base(&self.device_id);
-            warn!("HDHomeRun device '{}' has an invalid device_id '{}'. A valid one has been generated: {}", self.name, old_id, self.device_id);
+            if include_computed {
+                warn!("HDHomeRun device '{}' has an invalid device_id '{}'. A valid one has been generated: {}", self.name, old_id, self.device_id);
+            }
         }
         Ok(())
     }
@@ -132,13 +140,13 @@ impl HdHomeRunConfigDto {
         // It's only included to satisfy the frontend compiler.
     }
 
-    pub fn prepare(&mut self, api_port: u16)  -> Result<(), TuliproxError> {
+    pub fn prepare(&mut self, api_port: u16, include_computed: bool) -> Result<(), TuliproxError> {
         let mut names = HashSet::new();
         let mut ports = HashSet::new();
         let mut device_ids = HashSet::new();
         ports.insert(api_port);
         for (device_num, device) in (0_u8..).zip(self.devices.iter_mut()) {
-            device.prepare(device_num)?;
+            device.prepare(device_num, include_computed)?;
             if !names.insert(device.name.clone()) {
                 return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun duplicate device name {}", device.name);
             }
@@ -153,10 +161,10 @@ impl HdHomeRunConfigDto {
         for device in &mut self.devices {
             if device.port == 0 {
                 while ports.contains(&current_port) || current_port == 0 {
-                  current_port = current_port.wrapping_add(1);
-                  if current_port == api_port { // full cycle guard
-                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "No free port available for HdHomeRun devices");
-                  }
+                    current_port = current_port.wrapping_add(1);
+                    if current_port == api_port { // full cycle guard
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "No free port available for HdHomeRun devices");
+                    }
                 }
 
                 device.port = current_port;

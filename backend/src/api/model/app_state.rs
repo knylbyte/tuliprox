@@ -24,6 +24,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
+use crate::repository::storage::get_geoip_path;
+use crate::utils::GeoIp;
 
 macro_rules! cancel_service {
     ($field: ident, $changes:expr, $cancel_tokens:expr) => {
@@ -58,16 +60,18 @@ struct TargetChanges {
     target: Arc<ConfigTarget>,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub(in crate::api) struct UpdateChanges {
     scheduler: bool,
     hdhomerun: bool,
     file_watch: bool,
+    geoip: bool,
     targets: Option<HashMap<String, TargetChanges>>,
 }
 
 impl UpdateChanges {
     pub(in crate::api) fn modified(&self) -> bool {
-        self.scheduler || self.hdhomerun || self.file_watch
+        self.scheduler || self.hdhomerun || self.file_watch || self.geoip
     }
 }
 
@@ -258,6 +262,7 @@ pub struct AppState {
     pub event_manager: Arc<EventManager>,
     pub cancel_tokens: Arc<ArcSwap<CancelTokens>>,
     pub playlists: Arc<PlaylistStorageState>,
+    pub geoip: Arc<ArcSwapOption<GeoIp>>
 }
 
 impl AppState {
@@ -267,12 +272,29 @@ impl AppState {
     ) -> Result<UpdateChanges, TuliproxError> {
         let changes = self.detect_changes_for_config(&config);
         config.update_runtime();
+
+        let use_geoip = config.is_geoip_enabled();
+        let working_dir = config.working_dir.clone();
+
         self.active_users.update_config(&config);
         self.app_config.set_config(config)?;
         self.active_provider
             .update_config(&self.app_config)
             .await;
         self.update_config().await;
+
+        if changes.geoip {
+            let new_geoip = if use_geoip {
+                let path = get_geoip_path(&working_dir);
+                let _file_lock = self.app_config.file_locks.read_lock(&path);
+                GeoIp::load(&path).ok().map(Arc::new)
+            } else {
+                None
+            };
+
+            self.geoip.store(new_geoip);
+        }
+
         Ok(changes)
     }
 
@@ -340,11 +362,15 @@ impl AppState {
             config.mapping_path.as_ref()
         );
 
+        let geoip_enabled = config.is_geoip_enabled();
+        let geoip_enabled_old = old_config.is_geoip_enabled();
+
         UpdateChanges {
             scheduler: changed_schedules,
             hdhomerun: changed_hdhomerun,
             file_watch: changed_file_watch,
             targets: None,
+            geoip: geoip_enabled != geoip_enabled_old,
         }
     }
 
@@ -412,6 +438,7 @@ impl AppState {
             scheduler: false,
             hdhomerun: false,
             file_watch: file_watch_changed,
+            geoip: false,
             targets: Some(target_changes),
         }
     }

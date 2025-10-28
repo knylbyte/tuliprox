@@ -59,18 +59,16 @@ impl Fingerprint {
             }
         }
 
-        let client_ip = format!("{}:{}", real_ip.as_ref()
+        let client_ip = real_ip.as_ref()
             .map(ToString::to_string)
             .or(forwarded_for.as_ref().map(ToString::to_string))
-            .unwrap_or_else(|| addr.ip().to_string()),
-            addr.port());
+            .unwrap_or_else(|| addr.ip().to_string());
+
+        let client_ip_port =format!("{client_ip}:{}", addr.port());
 
         let ua = user_agent.unwrap_or_else(String::new);
-        let key = match real_ip.or(forwarded_for) {
-            Some(xff) => format!("{}{xff}{ua}", addr.ip()),
-            None => format!("{}{ua}", addr.ip()),
-        };
+        let key = format!("{client_ip }{ua}");
 
-        Ok(Fingerprint(key, client_ip))
+        Ok(Fingerprint(key, client_ip_port))
     }
 }

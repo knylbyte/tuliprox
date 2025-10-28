@@ -7,19 +7,51 @@ use shared::model::{SortOrder, StreamInfo};
 use std::fmt::Display;
 use std::rc::Rc;
 use std::str::FromStr;
+use gloo_timers::callback::Interval;
+use gloo_utils::window;
+use wasm_bindgen::JsCast;
+use web_sys::Element;
 use yew::prelude::*;
 use yew_i18n::use_translation;
+use shared::utils::{current_time_secs, strip_port};
 
-const HEADERS: [&str; 8] = [
+const HEADERS: [&str; 12] = [
     "LABEL.EMPTY",
     "LABEL.USERNAME",
     "LABEL.STREAM_ID",
+    "LABEL.CLUSTER",
     "LABEL.CHANNEL",
     "LABEL.GROUP",
     "LABEL.CLIENT_IP",
+    "LABEL.COUNTRY",
     "LABEL.PROVIDER",
-    "LABEL.SHARED"
+    "LABEL.SHARED",
+    "LABEL.USER_AGENT",
+    "LABEL.DURATION"
 ];
+
+pub fn format_duration(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
+}
+
+fn update_timestamps() {
+    let window = window();
+    let document = window.document().unwrap();
+    let spans = document.query_selector_all("span[data-ts]").unwrap();
+    for i in 0..spans.length() {
+        if let Some(node) = spans.item(i) {
+            let el: Element = node.dyn_into().unwrap();
+            if let Some(ts_str) = el.get_attribute("data-ts") {
+                if let Ok(ts) = ts_str.parse::<u64>() {
+                    el.set_inner_html(&format_duration(current_time_secs() - ts));
+                }
+            }
+        }
+    }
+}
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct StreamsTableProps {
@@ -33,6 +65,14 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
     let selected_dto = use_state(|| None::<Rc<StreamInfo>>);
+
+
+    use_effect_with((), move |_| {
+        Interval::new(1000, || {
+            update_timestamps();
+        }).forget();
+    });
+
 
     let handle_popup_close = {
         let set_is_open = popup_is_open.clone();
@@ -91,11 +131,15 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                             { dto.channel.provider_id.to_string() }
                             {")"}
                         </>},
-                    3 => html! {dto.channel.title.as_str()},
-                    4 => html! {dto.channel.group.as_str()},
-                    5 => html! {dto.addr.as_str()},
-                    6 => html! {dto.provider.as_str()},
-                    7 => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
+                    3 => html! {dto.channel.cluster},
+                    4 => html! {dto.channel.title.as_str()},
+                    5 => html! {dto.channel.group.as_str()},
+                    6 => html! { strip_port(&dto.addr)},
+                    7 => html! { dto.country.as_ref().map_or_else(String::new, |c| c.clone()) },
+                    8 => html! {dto.provider.as_str()},
+                    9 => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
+                    10 => html! { dto.user_agent.as_str() },
+                    11 => html! { <span class="tp__stream-table__duration" data-ts={dto.ts.to_string()}>{format_duration(dto.ts)}</span> },
                     _ => html! {""},
                 }
             })

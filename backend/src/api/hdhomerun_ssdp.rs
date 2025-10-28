@@ -36,19 +36,39 @@ async fn ssdp_task_loop(socket: UdpSocket, app_config: Arc<AppConfig>, server_ho
         };
 
         let request = String::from_utf8_lossy(&buf[..len]);
-        if request.starts_with("M-SEARCH") && (request.contains("urn:schemas-upnp-org:device:MediaServer:1") || request.contains("ssdp:all")) {
-            trace!("Received HDHomeRun M-SEARCH from {remote_addr}");
-            let hdhomerun_guard = app_config.hdhomerun.load();
-            if let Some(hd_config) = &*hdhomerun_guard {
-                if hd_config.enabled {
-                    for device in &hd_config.devices {
-                        if device.t_enabled {
-                            let response = create_ssdp_response(device, &server_host);
-                            if let Err(e) = socket.send_to(response.as_bytes(), remote_addr).await {
-                                error!("Failed to send SSDP response to {remote_addr}: {e}");
-                            } else {
-                                trace!("Sent SSDP response for device '{}' to {remote_addr}", device.name);
-                            }
+        if !request.starts_with("M-SEARCH") { continue; }
+        let req = request.to_ascii_lowercase();
+        if !req.contains(r#"man: "ssdp:discover""#) { continue; }
+        // Extract ST and MX (defaults)
+        let st = req.lines()
+            .find_map(|l| l.strip_prefix("st:").map(|v| v.trim().to_string()))
+            .unwrap_or_else(|| "ssdp:all".to_string());
+        let mx: u64 = req.lines()
+            .find_map(|l| l.strip_prefix("mx:").and_then(|v| v.trim().parse().ok()))
+            .unwrap_or(1);
+        // Normalize to the set we support
+        let supported = [
+            "urn:schemas-upnp-org:device:mediaserver:1",
+            "upnp:rootdevice",
+            "ssdp:all",
+        ];
+        if !supported.contains(&st.as_str()) && st != "ssdp:all" { continue; }
+        // Randomized delay per MX
+        let delay_ms = (fastrand::u64(0..=mx*1000)).min(2000);
+        if delay_ms > 0 { tokio::time::sleep(Duration::from_millis(delay_ms)).await; }
+
+
+        trace!("Received HDHomeRun M-SEARCH from {remote_addr}");
+        let hdhomerun_guard = app_config.hdhomerun.load();
+        if let Some(hd_config) = &*hdhomerun_guard {
+            if hd_config.enabled {
+                for device in &hd_config.devices {
+                    if device.t_enabled {
+                        let response = create_ssdp_response(device, &server_host);
+                        if let Err(e) = socket.send_to(response.as_bytes(), remote_addr).await {
+                            error!("Failed to send SSDP response to {remote_addr}: {e}");
+                        } else {
+                            trace!("Sent SSDP response for device '{}' to {remote_addr}", device.name);
                         }
                     }
                 }
