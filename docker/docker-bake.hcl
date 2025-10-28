@@ -34,6 +34,15 @@ variable "inline_cache" {
   default = "1"
 }
 
+group "default" {
+  targets = [
+    "common",
+    "cache-export",
+    "scratch-final",
+    "alpine-final"
+  ]
+}
+
 target "common" {
   context    = "."
   dockerfile = "docker/ci.Dockerfile"
