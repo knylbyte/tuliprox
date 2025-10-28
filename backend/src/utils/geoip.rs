@@ -14,6 +14,7 @@ pub struct GeoIp {
     tree: BPlusTree<u32, (u32, String)>,
 }
 
+
 impl GeoIp {
 
     pub fn load(path: &Path) -> io::Result<Self> {
@@ -53,6 +54,12 @@ impl GeoIp {
         }
         None
     }
+}
+
+impl Default for GeoIp {
+  fn default() -> Self {
+      Self::new()
+  }
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 use shared::model::ReverseProxyConfigDto;
 use crate::model::config::cache::CacheConfig;
-use crate::model::{macros, RateLimitConfig, StreamConfig};
+use crate::model::{macros, GeoIpConfig, RateLimitConfig, StreamConfig};
 
 #[derive(Debug, Clone)]
 pub struct ReverseProxyConfig {
@@ -9,6 +9,7 @@ pub struct ReverseProxyConfig {
     pub stream: Option<StreamConfig>,
     pub cache: Option<CacheConfig>,
     pub rate_limit: Option<RateLimitConfig>,
+    pub geoip: Option<GeoIpConfig>,
 }
 
 macros::from_impl!(ReverseProxyConfig);
@@ -21,6 +22,7 @@ impl From<&ReverseProxyConfigDto> for ReverseProxyConfig {
             stream: dto.stream.as_ref().map(Into::into),
             cache: dto.cache.as_ref().map(Into::into),
             rate_limit: dto.rate_limit.as_ref().map(Into::into),
+            geoip: dto.geoip.as_ref().map(Into::into),
         }
     }
 }
@@ -33,6 +35,7 @@ impl From<&ReverseProxyConfig> for ReverseProxyConfigDto {
             stream: instance.stream.as_ref().map(Into::into),
             cache: instance.cache.as_ref().map(Into::into),
             rate_limit: instance.rate_limit.as_ref().map(Into::into),
+            geoip: instance.geoip.as_ref().map(Into::into),
         }
     }
 }

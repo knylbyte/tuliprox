@@ -28,6 +28,7 @@ mod api_user;
 mod trakt_api;
 pub mod macros;
 mod favourites;
+mod geoip;
 
 pub use api::*;
 pub use api_proxy::*;
@@ -46,6 +47,7 @@ pub use proxy::*;
 pub use rate_limit::*;
 pub use rename::*;
 pub use reverse_proxy::*;
+pub use geoip::*;
 pub use schedule::*;
 pub use sort::*;
 pub use source::*;

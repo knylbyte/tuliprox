@@ -117,6 +117,10 @@ impl Config {
                 devices: hdhr.devices.iter().map(|d| d.name.clone()).collect::<Vec<String>>(),
             })
     }
+
+    pub fn is_geoip_enabled(&self) -> bool {
+        self.reverse_proxy.as_ref().is_some_and(|r| r.geoip.as_ref().is_some_and(|g| g.enabled))
+    }
 }
 
 macros::from_impl!(Config);

@@ -6,13 +6,14 @@ use crate::model::ProxyUserCredentials;
 use jsonwebtoken::get_current_timestamp;
 use log::{debug, error, info};
 use shared::model::{ActiveUserConnectionChange, StreamChannel, StreamInfo, UserConnectionPermission};
-use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info};
+use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info, strip_port};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use arc_swap::ArcSwapOption;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::RwLock;
-
+use crate::utils::GeoIp;
 
 const USER_GC_TTL: u64 = 900;  // 15 Min
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
@@ -54,26 +55,29 @@ macro_rules! active_user_manager_shared_impl {
             };
 
             if let Some(username) = username_opt {
-                let mut user = self.user.write().await;
-                if let Some(connection_data) = user.get_mut(&username) {
-                    if connection_data.connections > 0 {
-                        connection_data.connections -= 1;
-                    }
+                 {
+                    let mut user = self.user.write().await;
+                    if let Some(connection_data) = user.get_mut(&username) {
+                        if connection_data.connections > 0 {
+                            connection_data.connections -= 1;
+                        }
 
-                    if connection_data.connections < connection_data.max_connections {
-                        connection_data.granted_grace = false;
-                        connection_data.grace_ts = 0;
+                        if connection_data.connections < connection_data.max_connections {
+                            connection_data.granted_grace = false;
+                            connection_data.grace_ts = 0;
+                        }
+                        connection_data.streams.retain(|c| c.addr != addr);
                     }
-                    connection_data.streams.retain(|c| c.addr != addr);
                 }
-            }
-            self.drop_connection(&addr);
-            self.shared_stream_manager.release_connection(addr, true).await;
-            self.provider_manager.release_connection(addr).await;
-            if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
-                 error!("Failed to send active user connection change: {err:?}");
+
+                self.drop_connection(&addr);
+                self.shared_stream_manager.release_connection(addr, true).await;
+                self.provider_manager.release_connection(addr).await;
+                if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
+                     error!("Failed to send active user connection change: {err:?}");
+                 }
+                self.log_active_user().await;
              }
-            self.log_active_user().await;
         }
     };
 }
@@ -188,12 +192,16 @@ pub struct ActiveUserManager {
     close_signal_tx: tokio::sync::broadcast::Sender<String>,
     shared_stream_manager: Arc<SharedStreamManager>,
     provider_manager: Arc<ActiveProviderManager>,
+    geo_ip: Arc<ArcSwapOption<GeoIp>>,
     connection_change_tx: ActiveUserConnectionChangeSender,
     release_tx: UnboundedSender<String>,
 }
 
 impl ActiveUserManager {
-    pub fn new(config: &Config, shared_stream_manager: &Arc<SharedStreamManager>, provider_manager: &Arc<ActiveProviderManager>, connection_change_tx: ActiveUserConnectionChangeSender) -> Arc<Self> {
+    pub fn new(config: &Config, shared_stream_manager: &Arc<SharedStreamManager>,
+               provider_manager: &Arc<ActiveProviderManager>,
+               geoip: &Arc<ArcSwapOption<GeoIp>>,
+               connection_change_tx: ActiveUserConnectionChangeSender) -> Arc<Self> {
         let log_active_user: bool = config.log.as_ref().is_some_and(|l| l.log_active_user);
         let (grace_period_millis, grace_period_timeout_secs) = get_grace_options(config);
         let (close_signal_tx, _) = tokio::sync::broadcast::channel(10);
@@ -211,6 +219,7 @@ impl ActiveUserManager {
             close_signal_tx,
             shared_stream_manager: Arc::clone(shared_stream_manager),
             provider_manager: Arc::clone(provider_manager),
+            geo_ip: Arc::clone(geoip),
             connection_change_tx,
             release_tx: cleanup_tx,
         });
@@ -320,12 +329,22 @@ impl ActiveUserManager {
     }
 
     pub async fn add_connection(&self, username: &str, max_connections: u32, addr: &str, provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> UserConnectionGuard {
+        let country = {
+            let geoip = self.geo_ip.load();
+            if let Some(geoip_db) = (*geoip).as_ref() {
+                geoip_db.lookup(&strip_port(addr))
+            } else {
+                None
+            }
+        };
+
         let stream_info = StreamInfo::new(
             username,
             addr,
             provider,
             stream_channel,
             user_agent.to_string(),
+            country,
         );
         {
             let mut user_map = self.user.write().await;

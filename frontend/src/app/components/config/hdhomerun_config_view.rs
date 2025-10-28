@@ -86,7 +86,7 @@ pub fn HdHomerunConfigView() -> Html {
                 .unwrap_or(8901) + 1;
             new_device.port = next_port;
             new_device.name = format!("hdhr_{next_port}");
-            if let Err(err) = new_device.prepare(devices.len() as u8) {
+            if let Err(err) = new_device.prepare(devices.len() as u8, false) {
                 error!("Failed to prepare hdhr device: {err}");
             }
             devices.push(new_device);

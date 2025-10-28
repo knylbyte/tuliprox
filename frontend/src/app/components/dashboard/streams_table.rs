@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
 use crate::app::components::{AppIcon, Table, TableDefinition, ToggleSwitch};
@@ -10,14 +9,13 @@ use std::rc::Rc;
 use std::str::FromStr;
 use gloo_timers::callback::Interval;
 use gloo_utils::window;
-use log::debug;
 use wasm_bindgen::JsCast;
 use web_sys::Element;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::utils::current_time_secs;
+use shared::utils::{current_time_secs, strip_port};
 
-const HEADERS: [&str; 11] = [
+const HEADERS: [&str; 12] = [
     "LABEL.EMPTY",
     "LABEL.USERNAME",
     "LABEL.STREAM_ID",
@@ -25,35 +23,12 @@ const HEADERS: [&str; 11] = [
     "LABEL.CHANNEL",
     "LABEL.GROUP",
     "LABEL.CLIENT_IP",
+    "LABEL.COUNTRY",
     "LABEL.PROVIDER",
     "LABEL.SHARED",
     "LABEL.USER_AGENT",
     "LABEL.DURATION"
 ];
-
-pub fn strip_port<'a>(input: &'a str) -> Cow<'a, str> {
-    // IPv6 with port: [2001:db8::1]:8080
-    if let Some(stripped) = input.strip_prefix('[') {
-        if let Some(end) = stripped.find(']') {
-            return Cow::Owned(stripped[..end].to_string());
-        }
-        // Invalid IPv6
-        return Cow::Borrowed(input);
-    }
-
-    // IPv4 or IPv6 without bracket
-    if let Some((left, right)) = input.rsplit_once(':') {
-        // If `left` has a colon then its IPv6 without port.
-        if left.contains(':') {
-            Cow::Borrowed(input)
-        } else {
-            // IPv4:Port
-            Cow::Owned(left.to_string())
-        }
-    } else {
-        Cow::Borrowed(input)
-    }
-}
 
 pub fn format_duration(seconds: u64) -> String {
     let hours = seconds / 3600;
@@ -160,10 +135,11 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                     4 => html! {dto.channel.title.as_str()},
                     5 => html! {dto.channel.group.as_str()},
                     6 => html! { strip_port(&dto.addr)},
-                    7 => html! {dto.provider.as_str()},
-                    8 => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
-                    9 => html! { dto.user_agent.as_str() },
-                    10 => html! { <span class="tp__stream-table__duration" data-ts={dto.ts.to_string()}>{format_duration(dto.ts)}</span> },
+                    7 => html! { dto.country.as_ref().map_or_else(String::new, |c| c.clone()) },
+                    8 => html! {dto.provider.as_str()},
+                    9 => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
+                    10 => html! { dto.user_agent.as_str() },
+                    11 => html! { <span class="tp__stream-table__duration" data-ts={dto.ts.to_string()}>{format_duration(dto.ts)}</span> },
                     _ => html! {""},
                 }
             })
