@@ -183,7 +183,7 @@ jobs:
         uses: docker/bake-action@v6
         with:
           files: |
-            docker-bake.hcl
+            docker/docker-bake.hcl
           targets: ${{ steps.bake-targets.outputs.targets }}
           set: |
             ghcr_ns=${{ env.GHCR_NS }}

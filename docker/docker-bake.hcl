@@ -39,11 +39,11 @@ target "common" {
   dockerfile = "docker/ci.Dockerfile"
 
   args = {
-    GHCR_NS             = var.ghcr_ns
-    BUILDPLATFORM_TAG   = var.arch_tag
-    CARGO_HOME          = var.cargo_home
-    SCCACHE_DIR         = var.sccache_dir
-    BUILDKIT_INLINE_CACHE = var.inline_cache
+    GHCR_NS               = "${var.ghcr_ns}"
+    BUILDPLATFORM_TAG     = "${var.arch_tag}"
+    CARGO_HOME            = "${var.cargo_home}"
+    SCCACHE_DIR           = "${var.sccache_dir}"
+    BUILDKIT_INLINE_CACHE = "${var.inline_cache}"
   }
 
   platforms = [var.platform]
@@ -57,12 +57,12 @@ target "cache-export" {
     cache = "type=local,src=${var.cache_context}"
   }
 
-  cache-from = [
+  cache_from = [
     "type=gha,scope=dev-cache-export-${var.arch_tag}",
     "type=registry,ref=${var.ghcr_ns}:dev"
   ]
 
-  cache-to = [
+  cache_to = [
     "type=gha,scope=dev-cache-export-${var.arch_tag},mode=max"
   ]
 
@@ -79,12 +79,12 @@ target "scratch-final" {
     cache = "type=local,src=${var.cache_context}"
   }
 
-  cache-from = [
+  cache_from = [
     "type=gha,scope=dev-cache-export-${var.arch_tag}",
     "type=registry,ref=${var.ghcr_ns}:dev"
   ]
 
-  cache-to = [
+  cache_to = [
     "type=gha,scope=dev-cache-export-${var.arch_tag},mode=max"
   ]
 
@@ -103,12 +103,12 @@ target "alpine-final" {
     cache = "type=local,src=${var.cache_context}"
   }
 
-  cache-from = [
+  cache_from = [
     "type=gha,scope=dev-cache-export-${var.arch_tag}",
     "type=registry,ref=${var.ghcr_ns}:dev"
   ]
 
-  cache-to = [
+  cache_to = [
     "type=gha,scope=dev-cache-export-${var.arch_tag},mode=max"
   ]
 
