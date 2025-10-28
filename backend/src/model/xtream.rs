@@ -423,6 +423,14 @@ impl XtreamSeriesInfoEpisode {
         add_i64_property_if_exists!(result, self.episode_num, "episode");
         let series_tmdb_id = info.and_then(|i| i.tmdb_id.or(i.tmdb));
         add_opt_i64_property_if_exists!(result, self.info.as_ref().and_then(|info| info.tmdb_id.or(info.tmdb.or(series_tmdb_id))), "tmdb_id");
+
+        // Add the "info" section to the playlist item additional properties.
+        if let Some(episode_info) = &self.info {
+            if let Ok(info_value) = serde_json::to_value(episode_info) {
+                result.insert("info".to_string(), info_value);
+            }
+        }
+
         if result.is_empty() { None } else { Some(Value::Object(result)) }
     }
 }

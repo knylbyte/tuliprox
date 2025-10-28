@@ -87,10 +87,7 @@ impl ProxyUserCredentials {
 
             if let Some(status) = &self.status {
                 if !matches!(status, ProxyUserStatus::Active | ProxyUserStatus::Trial) {
-                    debug!(
-                        "User access denied, status invalid: {status} for user: {}",
-                        self.username
-                    );
+                    debug!("User access denied, status invalid: {status} for user: {}",self.username);
                     return false;
                 }
             } // NO STATUS SET, ok admins fault, we take this as a valid status
@@ -106,9 +103,7 @@ impl ProxyUserCredentials {
     pub async fn connection_permission(&self, app_state: &AppState) -> UserConnectionPermission {
         let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.app_config.config);
         if self.max_connections > 0 && config.user_access_control {
-            return app_state
-                .get_connection_permission(&self.username, self.max_connections)
-                .await;
+            return app_state.get_connection_permission(&self.username, self.max_connections).await;
         }
         UserConnectionPermission::Allowed
     }

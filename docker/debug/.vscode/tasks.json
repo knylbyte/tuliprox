@@ -4,7 +4,12 @@
         {
             "label": "docker-compose-up-debug",
             "type": "shell",
+            // command to build and start the Docker Compose stack for debugging
             "command": "docker compose -f docker-compose.yml -f docker-compose.debug-override.yml up --build --force-recreate -d --wait",
+            "options": {
+                // This tells VS Code to run the command in the parent directory of the VSCODE workspaceFolder
+                "cwd": "${workspaceFolder}"
+            },
             "problemMatcher": [],
             "presentation": {
                 "reveal": "always",
@@ -16,6 +21,9 @@
             "label": "docker-compose-down",
             "type": "shell",
             "command": "docker compose -f docker-compose.yml -f docker-compose.debug-override.yml down",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
             "problemMatcher": [],
             "presentation": {
                 "reveal": "silent",
