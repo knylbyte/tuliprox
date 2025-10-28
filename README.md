@@ -330,6 +330,7 @@ if set to true, an update is started when the application starts.
 `log_level` priority  CLI-Argument, Env-Var, Config, Default(`info`).
 
 ```yaml
+                    
 log:
   sanitize_sensitive_info: false
   log_active_user: true
@@ -347,6 +348,7 @@ log:
   - `secret` is used for jwt token generation.
   - `token_ttl_mins`  default 30 minutes, setting it to 0 uses a 100-year expiration (effectively no expiration)—not recommended for production. !!CAUTION SECURITY RISK!!!
   - `userfile` is the file where the ui users are stored. If the filename is not absolute, `tuliprox` will look into the `config_dir`. If `userfile` is not given, the default value is `user.txt`.
+
 ```yaml
 web_ui:
   enabled: true
@@ -450,54 +452,60 @@ It is the storage path for user configurations (f.e. bouquets).
 
 ### 1.16 `hdhomerun`
 
-It is possible to define `hdhomerun` target for output. To use this outputs we need to define HdHomeRun devices.
-Supports now basic auth like <http://user:password@ip:port/lineup.json>.
+This feature allows `tuliprox` to emulate one or more HDHomeRun network tuners, enabling auto-discovery by clients like 
+TVHeadend, Plex, Emby, and Jellyfin. It uses both the standard **SSDP/UPnP protocol (Port 1900)** 
+for broad compatibility and the **proprietary SiliconDust protocol (Port 65001)** for compatibility with official HDHomeRun tools.
 
-The simplest config looks like:
 ```yaml
 hdhomerun:
   enabled: true
-  auth: true
+  auth: false # Set to true to require basic auth on lineup.json
   devices:
-  - name: hdhr1
-  - name: hdhr2
+    - name: hdhr1
+      tuner_count: 4
+      port: 5004 # Each device needs a unique port for its HTTP API
+      device_id: "107ABCDF" # Optional: 8-char hex ID. If invalid, will be corrected. If empty, will be generated.
+    - name: hdhr2
+      port: 5005
+      tuner_count: 2
 ```
 
-The `name` must be unique and is used in the target configuration in `source.yml` like.
+The `name` of each device must correspond to a `device` name in a `hdhomerun` output target in your `source.yml`.
 
 ```yaml
-sources:
-- inputs:
-  - name: ...
-    ...
-  targets:
-  - name: xt_m3u
+# In source.yml
+targets:
+  - name: my-tv-lineup
     output:
-      - type: xtream
       - type: hdhomerun
-        username: xtr
-        output: hdhr1
-    filter: "!ALL_FILTER!"
+        device: hdhr1      # Must match a device name from config.yml
+        username: local    # The user whose playlist will be served
 ```
 
-The HdHomerun config has the following attribute:
-`enabled`:  default is `false`,  you need to set it to `true`
-`devices`: is a list of HdHomeRun Device configuraitons.
-For each output you need to define one device with a unique name. Each output gets his own port to connect.
+**Configuration Fields:**
 
-HdHomeRun device config has the following attributes:
+- `enabled`: `true` or `false`. Enables or disables the entire HDHomeRun emulation feature. Default: `false`.
+- `auth`: `true` or `false`. If `true`, the `/lineup.json` endpoint for each device will require HTTP Basic Authentication using the credentials of the user assigned to the device in `source.yml`. Default: `false`.
+- `devices`: A list of virtual HDHomeRun devices to emulate.
 
-- `name`: _mandatory_ and must be unique
-- `tuner_count`: _optional_, default 1
-- `friendly_name`: _optional_
-- `manufacturer`: _optional_
-- `model_name`: _optional_
-- `model_number`: _optional_
-- `firmware_name`: _optional_
-- `firmware_version`: _optional_
-- `device_type`: _optional_
-- `device_udn`: _optional_
-- `port`: _optional_, if not given the tuliprox-server port is incremented for each device.
+**Device Fields:**
+
+- `name`: (Mandatory) A unique internal name for the device (e.g., `hdhr1`). This name is used in your `source.yml` to link a playlist target to a specific virtual tuner.
+- `tuner_count`: (Optional) The number of virtual tuners this device will report. Default: `1`.
+- `port`: (Optional) The TCP port for this device's HTTP API (`/device.xml`, `/lineup.json`, etc.). Each device must have a unique port. If omitted, `tuliprox` will automatically assign a port, starting from the main API port + 1.
+- `friendly_name`: (Optional) The human-readable name that appears in client applications (e.g., "Tuliprox Living Room"). If not specified, a default name is generated.
+- `device_id`: (Optional) An 8-character hexadecimal string for the proprietary SiliconDust discovery protocol (Port 65001).
+  - If left empty, a valid, random ID will be generated.
+  - If you provide a value that is not a valid HDHomeRun ID, `tuliprox` will automatically correct it by calculating the proper checksum.
+- `device_udn`: (Optional) The Unique Device Name (UDN) for the standard UPnP/SSDP discovery protocol (Port 1900). It must be a UUID.
+  - It is recommended to leave this at its default value. `tuliprox` will automatically append a suffix to ensure it's unique for each device you define.
+- `manufacturer`, `model_name`, `model_number`, `firmware_name`, `firmware_version`: (Optional) These fields allow you to customize the device information that is reported to clients. It is safe to leave them at their default values, which mimic a real HDTC-2US model.
+
+**Important Distinction:**
+- **`device_id`** is used by the proprietary discovery protocol (UDP port 65001).
+- **`device_udn`** is used by the standard SSDP/UPnP discovery protocol (UDP port 1900).
+
+Both are necessary for `tuliprox` to behave like a real HDHomeRun device and ensure maximum compatibility across different client applications.
 
 ### 1.17 `proxy`
 
@@ -1122,6 +1130,13 @@ Has the root item `mappings` which has the following top level entries:
 Instead of using a single `mapping.yml` file, you can use multiple mapping files
 when you set `mapping_path` in `config.yml` to a directory.
 
+The files are loaded in **alphanumeric** order.
+**Note:** This is a lexicographic sort — so `m_10.yml` comes before `m_2.yml` unless you name files carefully (e.g., `m_01.yml`, `m_02.yml`, ..., `m_10.yml`).
+
+The filename or path can be given as `-m` argument. (See Mappings section)
+
+Default mapping file is `maping.yml`
+
 ### 2.1 `templates`
 If you have a lot of repeats in you regexps, you can use `templates` to make your regexps cleaner.
 You can reference other templates in templates with `!name!`;
@@ -1180,12 +1195,12 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
   - lowercase(a)
   - capitalize(a)
   - trim(a)
-  - number(a)
   - print(a, b, c)
+  - number(a)
   - first(a)
   - template(a)
   - replace(text, match, replacement)
-Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
+Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `audio_track"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
 When you use Regular expressions it could be that your match contains multiple results. The builtin function `first` returns the first match.
 Example `print(uppercase("hello"))`. output is only visible in `trace` log level you can enable it like `log_level: debug,tuliprox::foundation::mapper=trace` in config
 - Assignment assigns an expression result. variable or field.
@@ -1207,7 +1222,7 @@ result = match {
 - Map block assigns expression results to a variable or field
 
 Mapping over text
-It is possible to define multiple keys with `|` seperated for one case.  
+It is possible to define multiple keys with `|` seperated for one case.
 ```dsl
 result = map variable_name {
     "key1" => result1,
@@ -1236,7 +1251,8 @@ Mapping over number ranges
 ```            
 
 Example `if then else` block
-```
+
+```dsl
   # Maybe there is no station
   station = @Caption ~ "ABC"
   match {
@@ -1253,9 +1269,7 @@ Example `if then else` block
 ```
 
 Example of removing prefix
-```
 `@Caption = replace(@Caption, "UK:",  "EN:"`
-```
 
 Example `mapping.yml`
 
@@ -1927,8 +1941,7 @@ sources:
       output:
         - type: xtream
       filter: "!MY_CHANNELS!"
-      ...
-```
+      ...```
 
 The resulting playlist contains all French and German channels except Shopping.
 
@@ -2041,8 +2054,7 @@ Title splitting. As you can see there are 2 captures, the first one is the prefi
 You get something like 
 - title_prefix = 'FR'
 - title_name = 'TV5Monde'
-from "FR: TV5Monde"
-```
+from "FR: TV5Monde"```
 title_match = @Caption ~ "(.*?)\:\s*(.*)"
 title_prefix = title_match.1
 title_name = title_match.2

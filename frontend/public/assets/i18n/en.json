@@ -291,7 +291,9 @@
     "CLIENT_IP": "Client IP",
     "STREAM_ID": "Stream Id",
     "SHARED": "Shared",
-    "ADD_QUALITY_TO_FILENAME": "Quality"
+    "ADD_QUALITY_TO_FILENAME": "Quality",
+    "SSDP_DISCOVERY": "SSDP Discovery",
+    "PROPRIETARY_DISCOVERY": "Proprietary Discovery"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"
