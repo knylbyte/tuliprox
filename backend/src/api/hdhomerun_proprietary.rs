@@ -141,12 +141,31 @@ fn parse_tlv(cursor: &mut Cursor<&[u8]>) -> HashMap<u8, Vec<u8>> {
         }
         let tag = tag_buf[0];
 
-        // 2-Byte length (big-endian)
-        let mut len_buf = [0u8; 2];
-        if std::io::Read::read_exact(cursor, &mut len_buf).is_err() {
-            break;
-        }
-        let len = u16::from_be_bytes(len_buf) as usize;
+        // // 2-Byte length (big-endian)
+        // let mut len_buf = [0u8; 2];
+        // if std::io::Read::read_exact(cursor, &mut len_buf).is_err() {
+        //     break;
+        // }
+        // let len = u16::from_be_bytes(len_buf) as usize;
+
+         // Variable-length TLV decoding
+         let mut first_len_byte = [0u8; 1];
+         if std::io::Read::read_exact(cursor, &mut first_len_byte).is_err() {
+              break;
+         }
+         let len = if first_len_byte[0] & 0x80 == 0 {
+             // Single-byte length (≤127)
+             first_len_byte[0] as usize
+         } else {
+             // Two-byte length (≥128)
+             let mut second_len_byte = [0u8; 1];
+             if std::io::Read::read_exact(cursor, &mut second_len_byte).is_err() {
+                 break;
+             }
+             let low_bits = (first_len_byte[0] & 0x7F) as usize;
+             let high_bits = (second_len_byte[0] as usize) << 7;
+             low_bits | high_bits
+         };
 
         // Check for incomplete TLV
         let remaining = cursor.get_ref().len() as u64 - cursor.position();
@@ -227,6 +246,10 @@ async fn proprietary_discover_loop(
                             };
                             if should_reply {
                                 let response = build_discover_response(device, &server_host);
+                                if response.is_empty() {
+                                   error!("Failed to build discovery response for device '{}'", device.name);
+                                   continue;
+                                }
                                 if let Err(e) = socket.send_to(&response, remote_addr).await {
                                     error!("Failed to send proprietary discovery response to {remote_addr}: {e}");
                                 } else {
