@@ -112,10 +112,8 @@ jobs:
       SCCACHE_DIR: /var/cache/sccache
 
     steps:
-      # - name: Step 2.1 - Checkout
-      #   uses: actions/checkout@v5
-      #   with:
-      #     fetch-depth: 0
+      - name: Step 2.1 - Checkout
+        uses: actions/checkout@v5
 
       - name: Step 2.2 - Set up QEMU
         uses: docker/setup-qemu-action@v3
