@@ -4420,6 +4420,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "crc32fast",
  "cron",
  "dashmap",
  "deunicode",
