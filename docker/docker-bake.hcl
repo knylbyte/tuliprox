@@ -39,14 +39,14 @@ target "common" {
   dockerfile = "docker/ci.Dockerfile"
 
   args = {
-    GHCR_NS               = "${var.ghcr_ns}"
-    BUILDPLATFORM_TAG     = "${var.arch_tag}"
-    CARGO_HOME            = "${var.cargo_home}"
-    SCCACHE_DIR           = "${var.sccache_dir}"
-    BUILDKIT_INLINE_CACHE = "${var.inline_cache}"
+    GHCR_NS               = "${ghcr_ns}"
+    BUILDPLATFORM_TAG     = "${arch_tag}"
+    CARGO_HOME            = "${cargo_home}"
+    SCCACHE_DIR           = "${sccache_dir}"
+    BUILDKIT_INLINE_CACHE = "${inline_cache}"
   }
 
-  platforms = [var.platform]
+  platforms = [platform]
 }
 
 target "cache-export" {
@@ -54,20 +54,20 @@ target "cache-export" {
   target   = "cache-export"
 
   contexts = {
-    cache = "type=local,src=${var.cache_context}"
+    cache = "type=local,src=${cache_context}"
   }
 
   cache_from = [
-    "type=gha,scope=dev-cache-export-${var.arch_tag}",
-    "type=registry,ref=${var.ghcr_ns}:dev"
+    "type=gha,scope=dev-cache-export-${arch_tag}",
+    "type=registry,ref=${ghcr_ns}:dev"
   ]
 
   cache_to = [
-    "type=gha,scope=dev-cache-export-${var.arch_tag},mode=max"
+    "type=gha,scope=dev-cache-export-${arch_tag},mode=max"
   ]
 
   output = [
-    "type=local,dest=${var.cache_output}"
+    "type=local,dest=${cache_output}"
   ]
 }
 
@@ -76,20 +76,20 @@ target "scratch-final" {
   target   = "scratch-final"
 
   contexts = {
-    cache = "type=local,src=${var.cache_context}"
+    cache = "type=local,src=${cache_context}"
   }
 
   cache_from = [
-    "type=gha,scope=dev-cache-export-${var.arch_tag}",
-    "type=registry,ref=${var.ghcr_ns}:dev"
+    "type=gha,scope=dev-cache-export-${arch_tag}",
+    "type=registry,ref=${ghcr_ns}:dev"
   ]
 
   cache_to = [
-    "type=gha,scope=dev-cache-export-${var.arch_tag},mode=max"
+    "type=gha,scope=dev-cache-export-${arch_tag},mode=max"
   ]
 
   tags = [
-    "${var.ghcr_ns}:dev-slim-${var.version}-${var.arch_tag}"
+    "${ghcr_ns}:dev-slim-${version}-${arch_tag}"
   ]
 
   push = true
@@ -100,20 +100,20 @@ target "alpine-final" {
   target   = "alpine-final"
 
   contexts = {
-    cache = "type=local,src=${var.cache_context}"
+    cache = "type=local,src=${cache_context}"
   }
 
   cache_from = [
-    "type=gha,scope=dev-cache-export-${var.arch_tag}",
-    "type=registry,ref=${var.ghcr_ns}:dev"
+    "type=gha,scope=dev-cache-export-${arch_tag}",
+    "type=registry,ref=${ghcr_ns}:dev"
   ]
 
   cache_to = [
-    "type=gha,scope=dev-cache-export-${var.arch_tag},mode=max"
+    "type=gha,scope=dev-cache-export-${arch_tag},mode=max"
   ]
 
   tags = [
-    "${var.ghcr_ns}:dev-${var.version}-${var.arch_tag}"
+    "${ghcr_ns}:dev-${version}-${arch_tag}"
   ]
 
   push = true
