@@ -1,8 +1,8 @@
-variable "ghcr_ns" {
+variable "arg-ghcr_ns" {
   default = "ghcr.io/example/repo"
 }
 
-variable "arch_tag" {
+variable "arg-arch_tag" {
   default = "linux-amd64"
 }
 
@@ -22,25 +22,16 @@ variable "cache_output" {
   default = "/tmp/cache-out"
 }
 
-variable "cargo_home" {
+variable "arg-cargo_home" {
   default = "/usr/local/cargo"
 }
 
-variable "sccache_dir" {
+variable "arg-sccache_dir" {
   default = "/var/cache/sccache"
 }
 
-variable "inline_cache" {
+variable "arg-inline_cache" {
   default = "1"
-}
-
-group "default" {
-  targets = [
-    "common",
-    "cache-export",
-    "scratch-final",
-    "alpine-final"
-  ]
 }
 
 target "common" {
@@ -48,14 +39,14 @@ target "common" {
   dockerfile = "docker/ci.Dockerfile"
 
   args = {
-    GHCR_NS               = "${ghcr_ns}"
-    BUILDPLATFORM_TAG     = "${arch_tag}"
-    CARGO_HOME            = "${cargo_home}"
-    SCCACHE_DIR           = "${sccache_dir}"
-    BUILDKIT_INLINE_CACHE = "${inline_cache}"
+    GHCR_NS               = "${arg-ghcr_ns}"
+    BUILDPLATFORM_TAG     = "${arg-arch_tag}"
+    CARGO_HOME            = "${arg-cargo_home}"
+    SCCACHE_DIR           = "${arg-sccache_dir}"
+    BUILDKIT_INLINE_CACHE = "${arg-inline_cache}"
   }
 
-  platforms = [platform]
+  platforms = ["${platform}"]
 }
 
 target "cache-export" {
