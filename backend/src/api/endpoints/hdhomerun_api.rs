@@ -1,23 +1,22 @@
 use crate::api::model::HdHomerunAppState;
 use crate::auth::AuthBasic;
 use crate::model::{AppConfig, ConfigTarget, ProxyUserCredentials};
-use shared::model::{M3uPlaylistItem, PlaylistItemType, TargetType, XtreamCluster, XtreamPlaylistItem};
-use crate::processing::parser::xtream::get_xtream_url;
 use crate::repository::m3u_playlist_iterator::M3uPlaylistIterator;
 use crate::repository::xtream_playlist_iterator::XtreamPlaylistIterator;
+use crate::repository::m3u_repository;
 use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::{stream, Stream, StreamExt};
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::Arc;
+use shared::model::{
+    M3uPlaylistItem, PlaylistItemType, TargetType, XtreamCluster, XtreamPlaylistItem,
+};
 use shared::utils::{concat_path, get_string_from_serde_value};
+use std::sync::Arc;
 use crate::api::api_utils::try_unwrap_body;
-// https://info.hdhomerun.com/info/http_api
-
-// const DISCOVERY_BYTES: &[u8] =  &[0, 2, 0, 12, 1, 4, 255, 255, 255, 255, 2, 4, 255, 255, 255, 255, 115, 204, 125, 143];
-// const RESPONSE_BYTES: &[u8] =  &[0, 3, 0, 12, 1, 4, 255, 255, 255, 255, 2, 4, 255, 255, 255, 255, 115, 204, 125, 143];
+use crate::processing::parser::xtream::get_xtream_url;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Lineup {
@@ -35,8 +34,6 @@ struct Device {
     friendly_name: String,
     #[serde(rename = "Manufacturer")]
     manufacturer: String,
-    // #[serde(rename = "ManufacturerURL")]
-    // manufacturer_url: String,
     #[serde(rename = "ModelNumber")]
     model_number: String,
     #[serde(rename = "ModelName")]
@@ -57,19 +54,21 @@ struct Device {
     lineup_url: String,
     #[serde(rename = "DiscoverURL")]
     discover_url: String,
-
+    #[serde(skip)] // UDN is not needed in JSON responses
+    udn: String,
 }
 
 impl Device {
     fn as_xml(&self) -> String {
-        format!(r#"<root xmlns="urn:schemas-upnp-org:device-1-0">
+        format!(
+            r#"<root xmlns="urn:schemas-upnp-org:device-1-0">
 <specVersion>
 <major>1</major>
 <minor>0</minor>
 </specVersion>
 <URLBase>{}</URLBase>
 <device>
-  <deviceType>urn:dial-multicast:com.silicondust.hdhomerun</deviceType>
+  <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
   <friendlyName>{}</friendlyName>
   <manufacturer>{}</manufacturer>
   <modelName>{}</modelName>
@@ -79,27 +78,55 @@ impl Device {
   <UDN>uuid:{}</UDN>
 </device>
 </root>"#,
-                self.base_url, self.friendly_name, self.manufacturer, self.model_number,
-                self.model_number, self.tuner_count, self.id, self.id
+            self.base_url,
+            self.friendly_name,
+            self.manufacturer,
+            self.model_name,
+            self.model_number,
+            self.tuner_count,
+            self.id, // Correct: 8-digit hex device ID
+            self.udn // Correct: Application/Device UUID for UDN
         )
     }
 }
 
-fn xtream_item_to_lineup_stream<I>(cfg: Arc<AppConfig>, cluster: XtreamCluster, credentials: Arc<ProxyUserCredentials>,
-                                   base_url: Option<String>, channels: Option<I>) -> impl Stream<Item=Result<Bytes, String>>
+fn xtream_item_to_lineup_stream<I>(
+    cfg: Arc<AppConfig>,
+    cluster: XtreamCluster,
+    credentials: Arc<ProxyUserCredentials>,
+    base_url: Option<String>,
+    channels: Option<I>,
+) -> impl Stream<Item = Result<Bytes, String>>
 where
-    I: Iterator<Item=(XtreamPlaylistItem, bool)> + 'static,
+    I: Iterator<Item = (XtreamPlaylistItem, bool)> + 'static,
 {
     match channels {
         Some(chans) => {
             let mapped = chans.map(move |(item, has_next)| {
                 let input_options = cfg.get_input_options_by_name(&item.input_name);
-                let (live_stream_use_prefix, live_stream_without_extension) = input_options.as_ref()
-                    .map_or((true, false), |o| (o.xtream_live_stream_use_prefix, o.xtream_live_stream_without_extension));
-                let container_extension = item.get_additional_property("container_extension").map(|v| get_string_from_serde_value(&v).unwrap_or_default());
+                let (live_stream_use_prefix, live_stream_without_extension) = input_options
+                    .as_ref()
+                    .map_or((true, false), |o| {
+                        (
+                            o.xtream_live_stream_use_prefix,
+                            o.xtream_live_stream_without_extension,
+                        )
+                    });
+                let container_extension = item
+                    .get_additional_property("container_extension")
+                    .map(|v| get_string_from_serde_value(&v).unwrap_or_default());
                 let stream_url = match &base_url {
                     None => item.url.clone(),
-                    Some(url) => get_xtream_url(cluster, url, &credentials.username, &credentials.password, item.virtual_id, container_extension.as_ref(), live_stream_use_prefix, live_stream_without_extension)
+                    Some(url) => get_xtream_url(
+                        cluster,
+                        url,
+                        &credentials.username,
+                        &credentials.password,
+                        item.virtual_id,
+                        container_extension.as_ref(),
+                        live_stream_use_prefix,
+                        live_stream_without_extension,
+                    ),
                 };
 
                 let lineup = Lineup {
@@ -108,27 +135,23 @@ where
                     url: stream_url,
                 };
                 match serde_json::to_string(&lineup) {
-                    Ok(content) => {
-                        Ok(Bytes::from(if has_next {
-                            format!("{content},")
-                        } else {
-                            content
-                        }))
-                    }
+                    Ok(content) => Ok(Bytes::from(if has_next {
+                        format!("{content},")
+                    } else {
+                        content
+                    })),
                     Err(_) => Ok(Bytes::from("")),
                 }
             });
             stream::iter(mapped).left_stream()
         }
-        None => {
-            stream::once(async { Ok(Bytes::from("")) }).right_stream()
-        }
+        None => stream::once(async { Ok(Bytes::from("")) }).right_stream(),
     }
 }
 
-fn m3u_item_to_lineup_stream<I>(channels: Option<I>) -> impl Stream<Item=Result<Bytes, String>>
+fn m3u_item_to_lineup_stream<I>(channels: Option<I>) -> impl Stream<Item = Result<Bytes, String>>
 where
-    I: Iterator<Item=(M3uPlaylistItem, bool)> + 'static,
+    I: Iterator<Item = (M3uPlaylistItem, bool)> + 'static,
 {
     match channels {
         Some(chans) => {
@@ -136,54 +159,71 @@ where
                 let lineup = Lineup {
                     guide_number: item.epg_channel_id.unwrap_or(item.name).clone(),
                     guide_name: item.title.clone(),
-                    url: (if item.t_stream_url.is_empty() { &item.url } else { &item.t_stream_url }).clone(),
+                    url: (if item.t_stream_url.is_empty() {
+                        &item.url
+                    } else {
+                        &item.t_stream_url
+                    })
+                    .clone(),
                 };
                 match serde_json::to_string(&lineup) {
-                    Ok(content) => {
-                        Ok(Bytes::from(if has_next {
-                            format!("{content},")
-                        } else {
-                            content
-                        }))
-                    }
+                    Ok(content) => Ok(Bytes::from(if has_next {
+                        format!("{content},")
+                    } else {
+                        content
+                    })),
                     Err(_) => Ok(Bytes::from("")),
                 }
             });
             stream::iter(mapped).left_stream()
         }
-        None => {
-            stream::once(async { Ok(Bytes::from("")) }).right_stream()
-        }
+        None => stream::once(async { Ok(Bytes::from("")) }).right_stream(),
     }
 }
 
 fn create_device(app_state: &Arc<HdHomerunAppState>) -> Option<Device> {
-    if let Some(credentials) = app_state.app_state.app_config.get_user_credentials(&app_state.device.t_username) {
-        let server_info = app_state.app_state.app_config.get_user_server_info(&credentials);
+    if let Some(credentials) = app_state
+        .app_state
+        .app_config
+        .get_user_credentials(&app_state.device.t_username)
+    {
+        let server_info = app_state
+            .app_state
+            .app_config
+            .get_user_server_info(&credentials);
         let device = &app_state.device;
-        let device_url = format!("{}://{}:{}", server_info.protocol, server_info.host, device.port);
+        let device_url = format!(
+            "{}://{}:{}",
+            server_info.protocol, server_info.host, device.port
+        );
+
         Some(Device {
             friendly_name: device.friendly_name.clone(),
             manufacturer: device.manufacturer.clone(),
-            //manufacturer_url: "https://github.com/euzu/tuliprox".to_string(),
             model_number: device.model_number.clone(),
             model_name: device.model_name.clone(),
             firmware_name: device.firmware_name.clone(),
             tuner_count: device.tuner_count,
             firmware_version: device.firmware_version.clone(),
             auth: String::new(),
-            id: device.device_udn.clone(),
+            id: device.device_id.clone(),
+            udn: device.device_udn.clone(), // Set UDN from device configuration
             lineup_url: concat_path(&device_url, "lineup.json"),
             discover_url: concat_path(&device_url, "discover.json"),
             base_url: device_url,
         })
     } else {
-        error!("Failed to get credentials for username: {} for device: {} ", &app_state.device.t_username, &app_state.device.name);
+        error!(
+            "Failed to get credentials for username: {} for device: {} ",
+            &app_state.device.t_username, &app_state.device.name
+        );
         None
     }
 }
 
-async fn device_xml(axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
+async fn device_xml(
+    axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>,
+) -> impl IntoResponse {
     if let Some(device) = create_device(&app_state) {
         try_unwrap_body!(axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
@@ -194,7 +234,9 @@ async fn device_xml(axum::extract::State(app_state): axum::extract::State<Arc<Hd
     }
 }
 
-async fn device_json(axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
+async fn device_json(
+    axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>,
+) -> impl IntoResponse {
     if let Some(device) = create_device(&app_state) {
         axum::Json(device).into_response()
     } else {
@@ -202,7 +244,9 @@ async fn device_json(axum::extract::State(app_state): axum::extract::State<Arc<H
     }
 }
 
-async fn discover_json(axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
+async fn discover_json(
+    axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>,
+) -> impl IntoResponse {
     if let Some(device) = create_device(&app_state) {
         axum::Json(device).into_response()
     } else {
@@ -210,51 +254,175 @@ async fn discover_json(axum::extract::State(app_state): axum::extract::State<Arc
     }
 }
 
-async fn lineup_status() -> impl IntoResponse {
-    axum::Json(json!({
-                "ScanInProgress": 0,
-                "ScanPossible": 0,
-                "Source": "Cable",
-                "SourceList": ["Cable"],
-            }))
+async fn lineup_status(
+    axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>,
+) -> impl IntoResponse {
+    let current_state = app_state
+        .hd_scan_state
+        .load(std::sync::atomic::Ordering::SeqCst);
+    if current_state < 0 {
+        axum::Json(json!({
+            "ScanInProgress": 0,
+            "ScanPossible": 1,
+            "Source": "Cable",
+            "SourceList": ["Cable"],
+        }))
+        .into_response()
+    } else {
+        let new_state = current_state + 20;
+        let final_state = if new_state > 100 { 100 } else { new_state };
+
+        let cfg = Arc::clone(&app_state.app_state.app_config);
+        let num_of_channels = if let Some((user, target)) =
+            cfg.get_target_for_username(&app_state.device.t_username)
+        {
+            if target.has_output(TargetType::M3u) {
+                if let Some((_guard, iter)) =
+                    m3u_repository::iter_raw_m3u_playlist(&cfg, &target).await
+                {
+                    iter.count()
+                } else {
+                    0
+                }
+            } else if target.has_output(TargetType::Xtream) {
+                let credentials = Arc::new(user);
+                let live =
+                    XtreamPlaylistIterator::new(XtreamCluster::Live, &cfg, &target, None, &credentials).await.map_or(0, |iter| iter.count());
+                let vod =
+                    XtreamPlaylistIterator::new(XtreamCluster::Video, &cfg, &target, None, &credentials).await.map_or(0, |iter| iter.count());
+                live + vod
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        if final_state >= 100 {
+            app_state
+                .hd_scan_state
+                .store(-1, std::sync::atomic::Ordering::SeqCst);
+        } else {
+            app_state
+                .hd_scan_state
+                .store(final_state, std::sync::atomic::Ordering::SeqCst);
+        }
+        let found = (num_of_channels * final_state as usize) / 100;
+        axum::Json(json!({
+            "ScanInProgress": 1,
+            "Progress": final_state,
+            "Found": found,
+        }))
+        .into_response()
+    }
 }
 
-async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<AppConfig>, credentials: &Arc<ProxyUserCredentials>, target: &ConfigTarget) -> impl IntoResponse {
-    let use_output = target.get_hdhomerun_output().as_ref().and_then(|o| o.use_output);
+#[derive(Deserialize)]
+struct LineupPostQuery {
+    scan: String,
+}
+
+async fn lineup_post(
+    axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>,
+    axum::extract::Query(query): axum::extract::Query<LineupPostQuery>,
+) -> impl IntoResponse {
+    match query.scan.as_str() {
+        "start" => {
+            app_state
+                .hd_scan_state
+                .store(0, std::sync::atomic::Ordering::SeqCst);
+            axum::http::StatusCode::OK.into_response()
+        }
+        "abort" => {
+            app_state
+                .hd_scan_state
+                .store(-1, std::sync::atomic::Ordering::SeqCst);
+            axum::http::StatusCode::OK.into_response()
+        }
+        _ => axum::http::StatusCode::BAD_REQUEST.into_response(),
+    }
+}
+
+async fn lineup(
+    app_state: &Arc<HdHomerunAppState>,
+    cfg: &Arc<AppConfig>,
+    credentials: &Arc<ProxyUserCredentials>,
+    target: &ConfigTarget,
+) -> impl IntoResponse {
+    let use_output = target
+        .get_hdhomerun_output()
+        .as_ref()
+        .and_then(|o| o.use_output);
     let use_all = use_output.is_none();
     let use_m3u = use_output.as_ref() == Some(&TargetType::M3u);
     let use_xtream = use_output.as_ref() == Some(&TargetType::Xtream);
     if (use_all || use_m3u) && target.has_output(TargetType::M3u) {
-        let iterator = M3uPlaylistIterator::new(cfg, target, credentials).await.ok();
+        let iterator = M3uPlaylistIterator::new(cfg, target, credentials)
+            .await
+            .ok();
         let stream = m3u_item_to_lineup_stream(iterator);
         let body_stream = stream::once(async { Ok(Bytes::from("[")) })
             .chain(stream)
             .chain(stream::once(async { Ok(Bytes::from("]")) }));
         return try_unwrap_body!(axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
-            .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
+            .header(
+                axum::http::header::CONTENT_TYPE,
+                mime::APPLICATION_JSON.to_string()
+            )
             .body(axum::body::Body::from_stream(body_stream)));
     } else if (use_all || use_xtream) && target.has_output(TargetType::Xtream) {
-        let server_info = app_state.app_state.app_config.get_user_server_info(credentials);
+        let server_info = app_state
+            .app_state
+            .app_config
+            .get_user_server_info(credentials);
         let base_url = server_info.get_base_url();
 
-        let base_url_live = if credentials.proxy.is_redirect(PlaylistItemType::Live) || target.is_force_redirect(PlaylistItemType::Live) { None } else { Some(base_url.clone()) };
-        let base_url_vod = if credentials.proxy.is_redirect(PlaylistItemType::Video) || target.is_force_redirect(PlaylistItemType::Video) { None } else { Some(base_url) };
+        let base_url_live = if credentials.proxy.is_redirect(PlaylistItemType::Live)
+            || target.is_force_redirect(PlaylistItemType::Live)
+        {
+            None
+        } else {
+            Some(base_url.clone())
+        };
+        let base_url_vod = if credentials.proxy.is_redirect(PlaylistItemType::Video)
+            || target.is_force_redirect(PlaylistItemType::Video)
+        {
+            None
+        } else {
+            Some(base_url)
+        };
 
-        let live_channels = XtreamPlaylistIterator::new(XtreamCluster::Live, cfg, target, None, credentials).await.ok();
-        let vod_channels = XtreamPlaylistIterator::new(XtreamCluster::Video, cfg, target, None, credentials).await.ok();
-        // TODO include series when resolved
-        //let series_channels = xtream_repository::iter_raw_xtream_playlist(cfg, target, XtreamCluster::Series);
-        let live_stream = xtream_item_to_lineup_stream(Arc::clone(cfg), XtreamCluster::Live, Arc::clone(credentials), base_url_live.clone(), live_channels);
-        let vod_stream = xtream_item_to_lineup_stream(Arc::clone(cfg), XtreamCluster::Video, Arc::clone(credentials), base_url_vod.clone(), vod_channels);
+        let live_channels =
+            XtreamPlaylistIterator::new(XtreamCluster::Live, cfg, target, None, credentials)
+                .await
+                .ok();
+        let vod_channels =
+            XtreamPlaylistIterator::new(XtreamCluster::Video, cfg, target, None, credentials)
+                .await
+                .ok();
+        let live_stream = xtream_item_to_lineup_stream(
+            Arc::clone(cfg),
+            XtreamCluster::Live,
+            Arc::clone(credentials),
+            base_url_live.clone(),
+            live_channels,
+        );
+        let vod_stream = xtream_item_to_lineup_stream(
+            Arc::clone(cfg),
+            XtreamCluster::Video,
+            Arc::clone(credentials),
+            base_url_vod.clone(),
+            vod_channels,
+        );
         let live_stream_peek = live_stream.peekable();
         let vod_stream_peek = vod_stream.peekable();
-        // helper to decide if a comma is needed
-        let comma_stream = if live_stream_peek.size_hint().0 > 0 && vod_stream_peek.size_hint().0 > 0 {
-            stream::once(async { Ok(Bytes::from(",")) }).left_stream()
-        } else {
-            stream::empty().right_stream()
-        };
+        let comma_stream =
+            if live_stream_peek.size_hint().0 > 0 && vod_stream_peek.size_hint().0 > 0 {
+                stream::once(async { Ok(Bytes::from(",")) }).left_stream()
+            } else {
+                stream::empty().right_stream()
+            };
         let body_stream = stream::once(async { Ok(Bytes::from("[")) })
             .chain(live_stream_peek)
             .chain(comma_stream)
@@ -262,35 +430,51 @@ async fn lineup(app_state: &Arc<HdHomerunAppState>, cfg: &Arc<AppConfig>, creden
             .chain(stream::once(async { Ok(Bytes::from("]")) }));
         return try_unwrap_body!(axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
-            .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
+            .header(
+                axum::http::header::CONTENT_TYPE,
+                mime::APPLICATION_JSON.to_string()
+            )
             .body(axum::body::Body::from_stream(body_stream)));
     }
     axum::http::StatusCode::NOT_FOUND.into_response()
 }
 
-async fn auth_lineup_json(AuthBasic((username, password)): AuthBasic, axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
+async fn auth_lineup_json(
+    AuthBasic((username, password)): AuthBasic,
+    axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>,
+) -> impl IntoResponse {
     let cfg = Arc::clone(&app_state.app_state.app_config);
-    if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username) {
+    if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username)
+    {
         if !username.eq(&credentials.username) || !password.eq(&credentials.password) {
             return axum::http::StatusCode::UNAUTHORIZED.into_response();
         }
         let user_credentials = Arc::new(credentials);
-        return lineup(&app_state, &cfg, &user_credentials, &target).await.into_response();
+        return lineup(&app_state, &cfg, &user_credentials, &target)
+            .await
+            .into_response();
     }
     axum::http::StatusCode::NOT_FOUND.into_response()
 }
 
-async fn lineup_json(axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>) -> impl IntoResponse {
+async fn lineup_json(
+    axum::extract::State(app_state): axum::extract::State<Arc<HdHomerunAppState>>,
+) -> impl IntoResponse {
     let cfg = Arc::clone(&app_state.app_state.app_config);
-    if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username) {
+    if let Some((credentials, target)) = cfg.get_target_for_username(&app_state.device.t_username)
+    {
         let user_credentials = Arc::new(credentials);
-        return lineup(&app_state, &cfg, &user_credentials, &target).await.into_response();
+        return lineup(&app_state, &cfg, &user_credentials, &target)
+            .await
+            .into_response();
     }
     axum::http::StatusCode::NOT_FOUND.into_response()
 }
 
-async fn auto_channel(axum::extract::State(_app_state): axum::extract::State<Arc<HdHomerunAppState>>,
-                      axum::extract::Path(channel): axum::extract::Path<String>) -> impl IntoResponse {
+async fn auto_channel(
+    axum::extract::State(_app_state): axum::extract::State<Arc<HdHomerunAppState>>,
+    axum::extract::Path(channel): axum::extract::Path<String>,
+) -> impl IntoResponse {
     warn!("HdHomerun api not implemented for auto_channel {channel}");
     axum::http::StatusCode::NOT_FOUND.into_response()
 }
@@ -301,52 +485,18 @@ pub fn hdhr_api_register(basic_auth: bool) -> axum::Router<Arc<HdHomerunAppState
         .route("/device.json", axum::routing::get(device_json))
         .route("/discover.json", axum::routing::get(discover_json))
         .route("/lineup_status.json", axum::routing::get(lineup_status))
-        .route("/lineup.json", if basic_auth { axum::routing::get(auth_lineup_json) } else { axum::routing::get(lineup_json) })
-        // cfg.service(web::resource("/lineup.xml").route(web::get().to(lineup_xml)));
-        // cfg.service(web::resource("/lineup.m3u").route(web::get().to(lineup_m3u)));
+        .route(
+            "/lineup.json",
+            if basic_auth {
+                axum::routing::get(auth_lineup_json)
+            } else {
+                axum::routing::get(lineup_json)
+            },
+        )
+        .route("/lineup.post", axum::routing::post(lineup_post))
         .route("/auto/{channel}", axum::routing::get(auto_channel))
-        .route("/tuner{tuner_num}/{channel}", axum::routing::get(auto_channel))
+        .route(
+            "/tuner{tuner_num}/{channel}",
+            axum::routing::get(auto_channel),
+        )
 }
-
-// fn start_hdhomerum_discovery_handler(ssdp_socket: Arc<UdpSocket>, server: String, location: String, cache_control: String, usn: String) {
-//     let mut buffer = [0; 4096];
-//     actix_rt::spawn(async move {
-//         let response_bytes = RESPONSE_BYTES;
-//         loop {
-//             match ssdp_socket.recv_from(&mut buffer).await {
-//                 Ok((size, src_addr)) => {
-//                     let content = &buffer[..size];
-//                     if content == DISCOVERY_BYTES {
-//                         match ssdp_socket.send_to(&response_bytes, src_addr).await {
-//                             Err(err) => eprintln!("Failed to send SSDP response: {err:?}"),
-//                             Ok(_) => println!("Sent SSDP response to: {src_addr:?}"),
-//                         }
-//                     }
-//                 }
-//                 Err(err) => eprintln!("Failed to receive SSDP request: {err:?}"),
-//             }
-//         }
-//     });
-// }
-//
-// pub async fn start_hdhomerun(/*host: &str, */port: u16) {
-//     let version = "2021.08.18";
-//     let server_url = format!("http://10.41.41.89:{port}");
-//
-//     // let multicast_addr: Ipv4Addr = "255.255.255.255".parse().unwrap();
-//
-//     let socket_addr: SocketAddr = "0.0.0.0:65001".parse().unwrap();
-//     let socket = Socket::new(Domain::IPV4, Type::DGRAM, None).unwrap();
-//     // setting SO_REUSEADDR-Option if other dlna server is running
-//     socket.set_reuse_address(true).unwrap();
-//     socket.bind(&socket_addr.into()).unwrap();
-//     let udp_socket = UdpSocket::from_std(socket.into()).unwrap();
-//
-//     let ssdp_socket = Arc::new(udp_socket);
-//     // ssdp_socket.join_multicast_v4(multicast_addr, "0.0.0.0".parse().unwrap()).unwrap();
-//     let server = format!("SERVER: HDHomeRun/{}", version);
-//     let location = format!("LOCATION: {server_url}/device.xml");
-//     let cache_control = "CACHE-CONTROL: max-age=1800";
-//     let usn = "USN: uuid:12345678-90ab-cdef-1234-567890abcdef::urn:dial-multicast:com.silicondust.hdhomerun";
-//     start_hdhomerum_discovery_handler(Arc::clone(&ssdp_socket), server.to_string(), location.to_string(), cache_control.to_string(), usn.to_string());
-// }

@@ -1,13 +1,13 @@
-use std::sync::Arc;
+use crate::api::model::AppState;
+use crate::model::{macros, Config};
 use arc_swap::access::Access;
 use arc_swap::ArcSwap;
 use chrono::Local;
 use log::debug;
 use shared::model::{ProxyType, ProxyUserCredentialsDto, ProxyUserStatus, TargetUserDto, UserConnectionPermission};
-use crate::api::model::AppState;
-use crate::model::{macros, Config};
+use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProxyUserCredentials {
     pub username: String,
     pub password: String,
@@ -62,9 +62,7 @@ impl From<&ProxyUserCredentials> for ProxyUserCredentialsDto {
     }
 }
 
-
 impl ProxyUserCredentials {
-
     pub fn matches_token(&self, token: &str) -> bool {
         if let Some(tkn) = &self.token {
             return tkn.eq(token);
@@ -89,7 +87,10 @@ impl ProxyUserCredentials {
 
             if let Some(status) = &self.status {
                 if !matches!(status, ProxyUserStatus::Active | ProxyUserStatus::Trial) {
-                    debug!("User access denied, status invalid: {status} for user: {}", self.username);
+                    debug!(
+                        "User access denied, status invalid: {status} for user: {}",
+                        self.username
+                    );
                     return false;
                 }
             } // NO STATUS SET, ok admins fault, we take this as a valid status
@@ -105,8 +106,9 @@ impl ProxyUserCredentials {
     pub async fn connection_permission(&self, app_state: &AppState) -> UserConnectionPermission {
         let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.app_config.config);
         if self.max_connections > 0 && config.user_access_control {
-            // we allow requests with max connection reached, but we should block streaming after grace period
-            return app_state.get_connection_permission(&self.username, self.max_connections).await;
+            return app_state
+                .get_connection_permission(&self.username, self.max_connections)
+                .await;
         }
         UserConnectionPermission::Allowed
     }

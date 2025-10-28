@@ -20,6 +20,8 @@ generate_form_reducer!(
     fields {
         Enabled => enabled: bool,
         Auth => auth: bool,
+        SsdpDiscovery => ssdp_discovery: bool,
+        ProprietaryDiscovery => proprietary_discovery: bool,
         Devices => devices: Vec<HdHomeRunDeviceConfigDto>,
     }
 );
@@ -126,15 +128,19 @@ pub fn HdHomerunConfigView() -> Html {
               {if  edit_mode {
                  html! {
                  <>
-                 { edit_field_bool!(form_state, translate.t(LABEL_ENABLED), enabled, HdHomeRunConfigFormAction::Enabled) }
-                 { edit_field_bool!(form_state, translate.t(LABEL_DEVICE_AUTH), auth, HdHomeRunConfigFormAction::Auth) }
+                     { edit_field_bool!(form_state, translate.t(LABEL_ENABLED), enabled, HdHomeRunConfigFormAction::Enabled) }
+                     { edit_field_bool!(form_state, translate.t(LABEL_DEVICE_AUTH), auth, HdHomeRunConfigFormAction::Auth) }
+                     { edit_field_bool!(form_state, "SSDP Discovery", ssdp_discovery, HdHomeRunConfigFormAction::SsdpDiscovery) }
+                     { edit_field_bool!(form_state, "Proprietary Discovery", proprietary_discovery, HdHomeRunConfigFormAction::ProprietaryDiscovery) }
                  </>
                 }
               } else {
                 html! {
                 <>
-                { config_field_bool!(&form_state.form, translate.t(LABEL_ENABLED), enabled) }
-                { config_field_bool!(&form_state.form, translate.t(LABEL_DEVICE_AUTH), auth) }
+                    { config_field_bool!(&form_state.form, translate.t(LABEL_ENABLED), enabled) }
+                    { config_field_bool!(&form_state.form, translate.t(LABEL_DEVICE_AUTH), auth) }
+                    { config_field_bool!(&form_state.form, "SSDP Discovery", ssdp_discovery) }
+                    { config_field_bool!(&form_state.form, "Proprietary Discovery", proprietary_discovery) }
                 </>
                 }
               }
