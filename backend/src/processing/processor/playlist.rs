@@ -27,6 +27,7 @@ use crate::repository::playlist_repository::persist_playlist;
 use crate::utils::debug_if_enabled;
 use crate::utils::StepMeasure;
 use deunicode::deunicode;
+use futures::StreamExt;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use reqwest::Client;
 use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
@@ -627,15 +628,13 @@ async fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &Con
             return false;
         }
 
-        let mut futs = Vec::new();
-        for pl in new_playlist {
-            if watches.iter().any(|r| r.is_match(&pl.title)) {
-                futs.push(process_group_watch(client, cfg, &target.name, pl));
-            }
-        }
-        if !futs.is_empty() {
-            futures::future::join_all(futs).await;
-        }
+        futures::stream::iter(
+            new_playlist
+                .iter()
+                .filter(|pl| watches.iter().any(|r| r.is_match(&pl.title)))
+                .map(|pl| process_group_watch(client, cfg, &target.name, pl))
+        ).for_each_concurrent(16, |f| f).await;
+
         true
     } else {
         false

@@ -3,7 +3,7 @@ use crate::model::{AppConfig, HdHomeRunDeviceConfig};
 use bytes::{Buf, BufMut, BytesMut};
 use log::{error, info, trace};
 use std::collections::HashMap;
-use std::io::{Cursor};
+use std::io::Cursor;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,13 +36,13 @@ mod packet {
 
 fn write_tlv_u32(buf: &mut BytesMut, tag: u8, value: u32) {
     buf.put_u8(tag);
-    buf.put_u8(4);
+    buf.put_u16(4);
     buf.put_u32(value);
 }
 
 fn write_tlv_u8(buf: &mut BytesMut, tag: u8, value: u8) {
     buf.put_u8(tag);
-    buf.put_u8(1);
+    buf.put_u16(1);
     buf.put_u8(value);
 }
 
@@ -96,7 +96,11 @@ fn build_discover_response(device: &HdHomeRunDeviceConfig, server_host: &str) ->
 
     let mut response = BytesMut::new();
     response.put_u16(packet::HDHOMERUN_TYPE_DISCOVER_RSP);
-    response.put_u16(u16::try_from(payload.len()).unwrap_or(0));
+    //response.put_u16(u16::try_from(payload.len()).unwrap_or(0));
+    if let Ok(n) = u16::try_from(payload.len()) { response.put_u16(n) } else {
+        error!("HDHR response payload too large ({} bytes)", payload.len());
+        return Vec::new();
+    }
     response.put(payload);
 
     let crc = crc32fast::hash(&response);
@@ -109,7 +113,7 @@ fn parse_tlv(cursor: &mut Cursor<&[u8]>) -> HashMap<u8, Vec<u8>> {
     let mut tags = HashMap::new();
 
     loop {
-        let pos =  match usize::try_from(cursor.position()) {
+        let pos = match usize::try_from(cursor.position()) {
             Ok(pos) => pos,
             Err(_err) => {
                 return tags;
@@ -170,9 +174,27 @@ async fn proprietary_discover_loop(
             continue;
         }
 
+        // let mut cursor = Cursor::new(data);
+        // let msg_type = cursor.get_u16();
+        // let _msg_len = cursor.get_u16();
+
         let mut cursor = Cursor::new(data);
         let msg_type = cursor.get_u16();
-        let _msg_len = cursor.get_u16();
+        let msg_len = cursor.get_u16() as usize;
+
+        // Validate total size: header (4) + payload (msg_len) + CRC (4)
+        if data.len() < 4 + msg_len + 4 {
+            trace!("Short HDHR discovery packet from {remote_addr}");
+            continue;
+        }
+        let payload_end = 4 + msg_len;
+        let (framed, crc_tail) = data.split_at(payload_end);
+        let received_crc = u32::from_le_bytes(crc_tail[..4].try_into().unwrap_or_default());
+        if crc32fast::hash(framed) != received_crc {
+            trace!("Invalid CRC in HDHR discovery packet from {remote_addr}");
+            continue;
+        }
+        let mut cursor = Cursor::new(&framed[4..]); // parse TLV over payload only
 
         if msg_type == packet::HDHOMERUN_TYPE_DISCOVER_REQ {
             let tags = parse_tlv(&mut cursor);

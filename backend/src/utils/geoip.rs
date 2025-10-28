@@ -34,8 +34,6 @@ impl GeoIp {
             if reader.read_line(&mut buf)? == 0 { break; }
             let line = buf.trim();
             if line.is_empty() || line.starts_with('#') { continue; }
-            let line = buf.trim();
-            if line.is_empty() || line.starts_with('#') { continue; }
 
             let parts: Vec<&str> = line.split(',').collect();
             if parts.len() != 3 { continue; }

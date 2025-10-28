@@ -67,7 +67,7 @@ impl Fingerprint {
         let client_ip_port =format!("{client_ip}:{}", addr.port());
 
         let ua = user_agent.unwrap_or_else(String::new);
-        let key = format!("{client_ip }|{ua}");
+        let key = format!("{client_ip}|{ua}");
 
         Ok(Fingerprint(key, client_ip_port))
     }
