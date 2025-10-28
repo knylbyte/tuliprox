@@ -1,0 +1,66 @@
+---
+version: "3.9"
+
+x-build-common: &build-common
+  context: .
+  dockerfile: docker/ci.Dockerfile
+  args:
+    GHCR_NS: ${GHCR_NS}
+    BUILDPLATFORM_TAG: ${ARCH_TAG}
+    CARGO_HOME: ${CARGO_HOME}
+    SCCACHE_DIR: ${SCCACHE_DIR}
+    BUILDKIT_INLINE_CACHE: "1"
+
+services:
+  cache-export:
+    build:
+      <<: *build-common
+      target: cache-export
+    x-bake:
+      platforms:
+        - ${PLATFORM}
+      contexts:
+        cache: ${CACHE_CONTEXT}
+      cache-from:
+        - type=gha,scope=dev-cache-export-${ARCH_TAG}
+        - type=registry,ref=${GHCR_NS}:dev
+      cache-to:
+        - type=gha,scope=dev-cache-export-${ARCH_TAG},mode=max
+      output:
+        - type=local,dest=${CACHE_OUTPUT}
+
+  scratch-final:
+    build:
+      <<: *build-common
+      target: scratch-final
+    x-bake:
+      platforms:
+        - ${PLATFORM}
+      contexts:
+        cache: ${CACHE_CONTEXT}
+      cache-from:
+        - type=gha,scope=dev-cache-export-${ARCH_TAG}
+        - type=registry,ref=${GHCR_NS}:dev
+      cache-to:
+        - type=gha,scope=dev-cache-export-${ARCH_TAG},mode=max
+      tags:
+        - ${GHCR_NS}:dev-slim-${VERSION}-${ARCH_TAG}
+      push: true
+
+  alpine-final:
+    build:
+      <<: *build-common
+      target: alpine-final
+    x-bake:
+      platforms:
+        - ${PLATFORM}
+      contexts:
+        cache: ${CACHE_CONTEXT}
+      cache-from:
+        - type=gha,scope=dev-cache-export-${ARCH_TAG}
+        - type=registry,ref=${GHCR_NS}:dev
+      cache-to:
+        - type=gha,scope=dev-cache-export-${ARCH_TAG},mode=max
+      tags:
+        - ${GHCR_NS}:dev-${VERSION}-${ARCH_TAG}
+      push: true

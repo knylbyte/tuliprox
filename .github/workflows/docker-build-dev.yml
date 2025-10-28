@@ -112,10 +112,10 @@ jobs:
       SCCACHE_DIR: /var/cache/sccache
 
     steps:
-      - name: Step 2.1 - Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
+      # - name: Step 2.1 - Checkout
+      #   uses: actions/checkout@v5
+      #   with:
+      #     fetch-depth: 0
 
       - name: Step 2.2 - Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -147,8 +147,8 @@ jobs:
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.6 - Ensure cache context dir
-        run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
+      # - name: Step 2.6 - Ensure cache context dir
+      #   run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
 
       - name: Step 2.7 - Load cargo chef and sccache directories for Docker build
         uses: actions/cache@v4
@@ -160,32 +160,44 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
-      - name: Step 2.8 - Build cache-export TARs (${{ matrix.platform }})
-        uses: docker/build-push-action@v6
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          context: .
-          file: ${{ env.DOCKERFILE }}
-          platforms: ${{ matrix.platform }}
-          push: false
-          build-contexts: |
-            cache=./.ci-cache/${{ matrix.arch_tag }}
-          outputs: |
-            type=local,dest=/tmp/.ci-cache/${{ matrix.arch_tag }}
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-            GHCR_NS=${{ env.GHCR_NS }}
-            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-            CARGO_HOME=${{ env.CARGO_HOME }}
-            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
-          target: cache-export
-          cache-from: |
-            type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
-            type=registry,ref=${{ env.GHCR_NS }}:dev-${{ matrix.arch_tag }}
-          cache-to: |
-            type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max
+      - name: Step 2.8 - Resolve Bake targets
+        id: bake-targets
+        shell: bash
+        run: |
+          if [[ "${{ steps.cache.outputs.cache-hit }}" == "true" ]]; then
+            {
+              echo 'targets<<EOF'
+              echo 'scratch-final'
+              echo 'alpine-final'
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo 'targets<<EOF'
+              echo 'cache-export'
+              echo 'scratch-final'
+              echo 'alpine-final'
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Step 2.9 - Move cache TARs
+      - name: Step 2.9 - Build images with Buildx Bake (${{ matrix.platform }})
+        uses: docker/bake-action@v6
+        with:
+          files: |
+            docker-bake.yml
+          targets: ${{ steps.bake-targets.outputs.targets }}
+        env:
+          GHCR_NS: ${{ env.GHCR_NS }}
+          ARCH_TAG: ${{ matrix.arch_tag }}
+          PLATFORM: ${{ matrix.platform }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CACHE_CONTEXT: ./.ci-cache/${{ matrix.arch_tag }}
+          CACHE_OUTPUT: /tmp/.ci-cache/${{ matrix.arch_tag }}
+          CARGO_HOME: ${{ env.CARGO_HOME }}
+          SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
+
+      - name: Step 2.10 - Move cache TARs
         if: steps.cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
@@ -194,49 +206,8 @@ jobs:
           ls -al .ci-cache/${{ matrix.arch_tag }}
           rm -rf /tmp/.ci-cache/${{ matrix.arch_tag }}
 
-      - name: Step 2.10 - Build scratch-final image (${{ matrix.platform }})
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ env.DOCKERFILE }}
-          platforms: ${{ matrix.platform }}
-          push: true
-          build-contexts: |
-            cache=./.ci-cache/${{ matrix.arch_tag }}
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-            GHCR_NS=${{ env.GHCR_NS }}
-            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-            CARGO_HOME=${{ env.CARGO_HOME }}
-            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
-          target: scratch-final
-          tags: ${{ env.GHCR_NS }}:dev-slim-${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
-          cache-from: |
-            type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
-            type=registry,ref=${{ env.GHCR_NS }}:dev
 
-      - name: Step 2.11 - Build alpine-final image (${{ matrix.platform }})
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ env.DOCKERFILE }}
-          platforms: ${{ matrix.platform }}
-          push: true
-          build-contexts: |
-            cache=./.ci-cache/${{ matrix.arch_tag }}
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-            GHCR_NS=${{ env.GHCR_NS }}
-            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
-            CARGO_HOME=${{ env.CARGO_HOME }}
-            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
-          target: alpine-final
-          tags: ${{ env.GHCR_NS }}:dev-${{ steps.version.outputs.version  }}-${{ matrix.arch_tag }}
-          cache-from: |
-            type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}
-            type=registry,ref=${{ env.GHCR_NS }}:dev
-
-      - name: Step 2.12 - Summary
+      - name: Step 2.11 - Summary
         if: always()
         shell: bash
         run: |
