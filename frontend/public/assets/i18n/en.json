@@ -291,6 +291,7 @@
     "CLIENT_IP": "Client IP",
     "STREAM_ID": "Stream Id",
     "SHARED": "Shared",
+    "ADD_QUALITY_TO_FILENAME": "Quality",
     "SSDP_DISCOVERY": "SSDP Discovery",
     "PROPRIETARY_DISCOVERY": "Proprietary Discovery"
   },

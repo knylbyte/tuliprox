@@ -187,7 +187,8 @@ Schedule is optional.
 Format is
 ```yaml
 #   sec  min   hour   day of month   month   day of week   year
-schedule: "0  0  8,20  *  *  *  *"```
+schedule: "0  0  8,20  *  *  *  *"
+```
 
 For `version >= 2.0.11`
 Format is
@@ -329,6 +330,7 @@ if set to true, an update is started when the application starts.
 `log_level` priority  CLI-Argument, Env-Var, Config, Default(`info`).
 
 ```yaml
+                    
 log:
   sanitize_sensitive_info: false
   log_active_user: true
@@ -345,7 +347,9 @@ log:
   - `issuer`
   - `secret` is used for jwt token generation.
   - `token_ttl_mins`  default 30 minutes, setting it to 0 uses a 100-year expiration (effectively no expiration)—not recommended for production. !!CAUTION SECURITY RISK!!!
-  - `userfile` is the file where the ui users are stored. If the filename is not absolute, `tuliprox` will look into the `config_dir`. If `userfile` is not given, the default value is `user.txt`.```yaml
+  - `userfile` is the file where the ui users are stored. If the filename is not absolute, `tuliprox` will look into the `config_dir`. If `userfile` is not given, the default value is `user.txt`.
+
+```yaml
 web_ui:
   enabled: true
   user_ui_enabled: true
@@ -448,7 +452,9 @@ It is the storage path for user configurations (f.e. bouquets).
 
 ### 1.16 `hdhomerun`
 
-This feature allows `tuliprox` to emulate one or more HDHomeRun network tuners, enabling auto-discovery by clients like TVHeadend, Plex, Emby, and Jellyfin. It uses both the standard **SSDP/UPnP protocol (Port 1900)** for broad compatibility and the **proprietary SiliconDust protocol (Port 65001)** for compatibility with official HDHomeRun tools.
+This feature allows `tuliprox` to emulate one or more HDHomeRun network tuners, enabling auto-discovery by clients like 
+TVHeadend, Plex, Emby, and Jellyfin. It uses both the standard **SSDP/UPnP protocol (Port 1900)** 
+for broad compatibility and the **proprietary SiliconDust protocol (Port 65001)** for compatibility with official HDHomeRun tools.
 
 ```yaml
 hdhomerun:
@@ -509,7 +515,8 @@ Proxy configuration for all outgoing requests in `config.yml`. supported http, h
 proxy:
   url: socks5://192.168.1.6:8123
   username: uname  # <- optional basic auth
-  password: secret # <- optional basic auth```
+  password: secret # <- optional basic auth
+```
 
 ### 1.18 `ipcheck`
 - `url` # URL that may return both IPv4 and IPv6 in one response
@@ -857,7 +864,8 @@ Each format has different properties.
 - cleanup: _optional_, true|false, default false
 - style: _mandatory_, kodi|plex|emby|jellyfin
 - flat: _optional_, true|false, default false
-- strm_props: _optional_, list of strings,
+- strm_props: _optional_, list of strings
+- add_quality_to_filename: _optional_, true|false
 - filter: optional filter
 
 `hdhomerun`
@@ -905,11 +913,12 @@ regardless of the number of clients. Increasing the buffer size above 1024 will 
 For example, with a buffer size of 2024, memory usage is at least 24 MB for **each** shared channel.     
 
 `strm` output has additional options:
-- `underscore_whitespace`: replaces all whitespaces with `_` in the path
-- `cleanup`: deletes the directory given at `filename`. Don't point at existing media folder or everything will be deleted
-- `style`: determines naming convention (kodi, plex, emby, jellyfin)
-- `flat`: creates flat directory structure with category tags in folder names
-- `strm_props`: list of properties written to the strm file
+- `underscore_whitespace`: Replaces all whitespaces with `_` in the path and filename.
+- `cleanup`: If `true`, the directory given at `filename` will be deleted. Don't point at existing media folder or everything will be deleted!
+- `style`: Naming style convention for your media player / server (kodi, plex, emby, jellyfin)
+- `flat`: If `true`, creates flat directory structure with category tags in folder names
+- `strm_props`: List of stream properties placed within .strm file to configure how Kodi's internal player handles the media stream.
+- `add_quality_to_filename`: If `true`, adds media quality tags to the filename (e.g., `Movie Title - [1080p|x265|HDR].strm`).
 
 Supported styles:
 - Kodi: `Movie Name (Year) {tmdb=ID}/Movie Name (Year).strm`
@@ -1213,7 +1222,8 @@ result = match {
 - Map block assigns expression results to a variable or field
 
 Mapping over text
-It is possible to define multiple keys with `|` seperated for one case.  ```dsl
+It is possible to define multiple keys with `|` seperated for one case.
+```dsl
 result = map variable_name {
     "key1" => result1,
     "key2" => result2,
@@ -1240,7 +1250,9 @@ Mapping over number ranges
   }
 ```            
 
-Example `if then else` block```
+Example `if then else` block
+
+```dsl
   # Maybe there is no station
   station = @Caption ~ "ABC"
   match {
@@ -1257,8 +1269,7 @@ Example `if then else` block```
 ```
 
 Example of removing prefix
-````@Caption = replace(@Caption, "UK:",  "EN:"`
-```
+`@Caption = replace(@Caption, "UK:",  "EN:"`
 
 Example `mapping.yml`
 

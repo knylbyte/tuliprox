@@ -113,14 +113,7 @@ fn exec_update_on_boot(
         let targets_clone = Arc::clone(targets);
         let playlist_state = Arc::clone(&app_state.playlists);
         tokio::spawn(async move {
-            playlist::exec_processing(
-                client,
-                app_state_clone,
-                targets_clone,
-                None,
-                Some(playlist_state),
-            )
-            .await;
+            playlist::exec_processing(client, app_state_clone, targets_clone, None, Some(playlist_state)).await;
         });
     }
 }

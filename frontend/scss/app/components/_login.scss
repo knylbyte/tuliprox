@@ -9,13 +9,13 @@
   position: relative;
   z-index: 1;
   padding: 40px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--glass-border-color);
   border-radius: 20px;
   color: var(--text-color);
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--glass-background-color);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 30px var(--glass-shadow-color);
 
   width: 400px;
   @media(max-width: size.$mobile-breakpoint) {
@@ -32,9 +32,9 @@
     filter: blur(20px);
     background: linear-gradient(
                     120deg,
-                    rgba(255,255,255,0) 0%,
-                    rgba(255,255,255,0.1) 50%,
-                    rgba(255,255,255,0) 100%
+                    var(--glass-background-gradient-color-1) 0%,
+                    var(--glass-background-gradient-color-2) 50%,
+                    var(--glass-background-gradient-color-1) 100%
     );
     transform: skewX(-30deg);
     animation: shine 2s;
@@ -100,8 +100,8 @@
     .tp__input-wrapper {
       max-height: 3rem;
       height: 3rem;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      background-color: rgba(0, 0, 0, 0.15);
+      border: 1px solid var(--glass-input-border-color);
+      background-color: var(--glass-input-background-color);
       svg {
         transform: scale(0.8);
         padding-left: var(--padding-micro);

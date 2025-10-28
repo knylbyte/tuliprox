@@ -122,6 +122,8 @@ pub struct StrmTargetOutputDto {
     pub filter: Option<String>,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
+    #[serde(default)]
+    pub add_quality_to_filename: bool,
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]

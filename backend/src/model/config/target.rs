@@ -109,6 +109,7 @@ impl From<&M3uTargetOutput> for M3uTargetOutputDto {
 
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct StrmTargetOutput {
     pub directory: String,
     pub username: Option<String>,
@@ -118,6 +119,8 @@ pub struct StrmTargetOutput {
     pub cleanup: bool,
     pub strm_props: Option<Vec<String>>,
     pub filter: Option<Filter>,
+    // boolean flag to enable or disable quality info in filenames.
+    pub add_quality_to_filename: bool,
 }
 
 macros::from_impl!(StrmTargetOutput);
@@ -132,6 +135,7 @@ impl From<&StrmTargetOutputDto> for StrmTargetOutput {
             cleanup: dto.cleanup,
             strm_props: dto.strm_props.clone(),
             filter: dto.t_filter.clone(),
+            add_quality_to_filename: dto.add_quality_to_filename,
         }
     }
 }
@@ -147,6 +151,7 @@ impl From<&StrmTargetOutput> for StrmTargetOutputDto {
             strm_props: instance.strm_props.clone(),
             filter: instance.filter.as_ref().map(ToString::to_string),
             t_filter: instance.filter.clone(),
+            add_quality_to_filename: instance.add_quality_to_filename,
         }
     }
 }
