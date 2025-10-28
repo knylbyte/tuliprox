@@ -295,7 +295,9 @@
     "USER_AGENT": "Player",
     "FORMAT": "Format",
     "DURATION": "Duration",
-    "ADD_QUALITY_TO_FILENAME": "Quality"
+    "ADD_QUALITY_TO_FILENAME": "Quality",
+    "SSDP_DISCOVERY": "SSDP Discovery",
+    "PROPRIETARY_DISCOVERY": "Proprietary Discovery"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"
