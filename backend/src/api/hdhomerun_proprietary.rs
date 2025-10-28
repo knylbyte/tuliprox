@@ -46,7 +46,7 @@ fn write_tlv_u8(buf: &mut BytesMut, tag: u8, value: u8) {
     buf.put_u8(value);
 }
 
-fn write_tlv_str(buf: &mut bytes::BytesMut, tag: u8, value: &str) {
+fn write_tlv_str(buf: &mut BytesMut, tag: u8, value: &str) {
     let bytes = value.as_bytes();
     let Some(len) = u16::try_from(bytes.len()).ok() else {
         error!("TLV value too long (max 65535 bytes)");
@@ -269,8 +269,18 @@ async fn handle_tcp_connection(
 }
 
 async fn process_getset_request(request: &[u8], app_state: &Arc<AppState>) -> Vec<u8> {
+    if request.len() < 8 {
+        error!("HDHR GET/SET request too short");
+        return Vec::new();
+    }
     let (data, crc_bytes) = request.split_at(request.len() - 4);
-    let received_crc = u32::from_le_bytes(crc_bytes.try_into().unwrap());
+
+    let Ok(crc_array) = crc_bytes.try_into() else {
+        error!("Invalid CRC bytes in HDHR GET/SET request");
+        return Vec::new();
+    };
+    let received_crc = u32::from_le_bytes(crc_array);
+
     if crc32fast::hash(data) != received_crc {
         error!("Invalid CRC in HDHomeRun GET/SET request");
         return Vec::new();
@@ -357,7 +367,12 @@ async fn process_getset_request(request: &[u8], app_state: &Arc<AppState>) -> Ve
 
     let mut response = BytesMut::new();
     response.put_u16(packet::HDHOMERUN_TYPE_GETSET_RSP);
-    response.put_u16(u16::try_from(response_payload.len()).unwrap_or(0));
+    if let Ok(n) = u16::try_from(response_payload.len()) {
+        response.put_u16(n)
+    } else {
+        error!("HDHR GET/SET response payload too large ({} bytes)", response_payload.len());
+        return Vec::new();
+    }
     response.put(response_payload);
 
     let crc = crc32fast::hash(&response);
