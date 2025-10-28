@@ -4368,6 +4368,7 @@ dependencies = [
  "deunicode",
  "enum-iterator",
  "env_logger",
+ "fastrand",
  "filetime",
  "flate2",
  "futures",

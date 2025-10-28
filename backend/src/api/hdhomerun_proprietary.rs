@@ -52,8 +52,11 @@ fn write_tlv_str(buf: &mut BytesMut, tag: u8, value: &str) {
     if bytes.len() < 0x80 {
         buf.put_u8(u8::try_from(bytes.len()).unwrap_or(0));
     } else {
-        buf.put_u8(0x82);
-        buf.put_u16(u16::try_from(bytes.len()).unwrap_or(0));
+        let len = u16::try_from(bytes.len()).unwrap_or(0);
+        let byte_first = 0x80 | ((len & 0x7F) as u8);
+        let byte_second = ((len >> 7) & 0xFF) as u8;
+        buf.put_u8(byte_first);
+        buf.put_u8(byte_second);
     }
     buf.put_slice(bytes);
 }
@@ -118,12 +121,11 @@ fn parse_tlv(cursor: &mut Cursor<&[u8]>) -> HashMap<u8, Vec<u8>> {
         let len = if (len_buf[0] & 0x80) == 0 {
             len_buf[0] as usize
         } else {
-            let ext_len_bytes = (len_buf[0] & 0x7F) as usize;
-            let mut ext = vec![0u8; ext_len_bytes];
-            if Read::read_exact(cursor, &mut ext).is_err() {
+            let mut second_byte = [0u8; 1];
+            if Read::read_exact(cursor, &mut second_byte).is_err() {
                 break;
             }
-            ext.iter().fold(0usize, |acc, b| (acc << 8) | (*b as usize))
+            ((second_byte[0] as usize) << 7) + ((len_buf[0] & 0x7F) as usize)
         };
 
 
@@ -212,7 +214,7 @@ async fn handle_tcp_connection(
             Ok(0) => return, // Connection closed
             Ok(n) => {
                 let request_data = &buf[..n];
-                if request_data.len() < 4 {
+                if request_data.len() < 8 {
                     continue;
                 }
 
@@ -221,7 +223,7 @@ async fn handle_tcp_connection(
                 if msg_type == packet::HDHOMERUN_TYPE_GETSET_REQ {
                     let response = process_getset_request(request_data, &app_state).await;
                     if response.is_empty() {
-                        error!("Protocol error or oinvalid request");
+                        error!("Protocol error or invalid request");
                         return;
                     }
                     if let Err(e) = stream.write_all(&response).await {
