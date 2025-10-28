@@ -440,8 +440,6 @@ pub async fn xtream_get_item_for_stream_id(
             PlaylistItemType::Series => {
                 if let Ok(mut item) = xtream_read_series_item_for_stream_id(app_config, mapping.parent_virtual_id, &storage_path) {
                     item.provider_id = mapping.provider_id;
-
-
                     Ok(item)
                 } else {
                     xtream_read_item_for_stream_id(app_config, virtual_id, &storage_path, XtreamCluster::Series)

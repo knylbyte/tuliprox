@@ -29,7 +29,9 @@ impl GeoIp {
     pub fn import_ipv4_from_csv(&mut self, mut reader: impl BufRead, db_path: &Path) -> std::io::Result<u64> {
         let mut buf = String::new();
 
-        while reader.read_line(&mut buf)? > 0 {
+        loop {
+            buf.clear();
+            if reader.read_line(&mut buf)? == 0 { break; }
             let line = buf.trim();
             if line.is_empty() || line.starts_with('#') { continue; }
 

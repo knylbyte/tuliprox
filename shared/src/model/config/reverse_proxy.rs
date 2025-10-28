@@ -27,6 +27,7 @@ impl ReverseProxyConfigDto {
             && (self.stream.is_none() || self.stream.as_ref().is_some_and(|s| s.is_empty()))
             && (self.cache.is_none() || self.cache.as_ref().is_some_and(|c| c.is_empty()))
             && (self.rate_limit.is_none() || self.rate_limit.as_ref().is_some_and(|r| r.is_empty()))
+            && (self.geoip.is_none() || self.geoip.as_ref().is_some_and(|g| g.is_empty()))
     }
 
     pub fn clean(&mut self) {
@@ -38,6 +39,9 @@ impl ReverseProxyConfigDto {
         }
         if self.rate_limit.as_ref().is_some_and(|s| s.is_empty()) {
             self.rate_limit = None;
+        }
+        if self.geoip.as_ref().is_some_and(|g| g.is_empty()) {
+            self.geoip = None;
         }
     }
 

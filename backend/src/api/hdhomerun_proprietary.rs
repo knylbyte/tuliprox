@@ -3,7 +3,7 @@ use crate::model::{AppConfig, HdHomeRunDeviceConfig};
 use bytes::{Buf, BufMut, BytesMut};
 use log::{error, info, trace};
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,31 +34,43 @@ mod packet {
 
 // --- UDP Discovery Logic ---
 
-fn write_tlv_u32(buf: &mut BytesMut, tag: u8, value: u32) {
+fn write_tlv_u8(buf: &mut bytes::BytesMut, tag: u8, value: u8) {
     buf.put_u8(tag);
-    buf.put_u8(4);
-    buf.put_u32(value);
-}
-
-fn write_tlv_u8(buf: &mut BytesMut, tag: u8, value: u8) {
-    buf.put_u8(tag);
-    buf.put_u8(1);
+    write_tlv_length(buf, 1);
     buf.put_u8(value);
 }
 
-fn write_tlv_str(buf: &mut BytesMut, tag: u8, value: &str) {
-    let bytes = value.as_bytes();
+fn write_tlv_u32(buf: &mut bytes::BytesMut, tag: u8, value: u32) {
     buf.put_u8(tag);
-    if bytes.len() < 0x80 {
-        buf.put_u8(u8::try_from(bytes.len()).unwrap_or(0));
-    } else {
-        let len = u16::try_from(bytes.len()).unwrap_or(0);
-        let byte_first = 0x80 | ((len & 0x7F) as u8);
-        let byte_second = ((len >> 7) & 0xFF) as u8;
-        buf.put_u8(byte_first);
-        buf.put_u8(byte_second);
+    write_tlv_length(buf, 4);
+    buf.put_u32(value);
+}
+
+fn write_tlv_str(buf: &mut bytes::BytesMut, tag: u8, value: &str) {
+    let bytes = value.as_bytes();
+    if bytes.len() > 0x7FFF {
+        // maximum length for 15-bit TLV = 32767
+        log::warn!("TLV string too long, truncating to 32767 bytes");
     }
-    buf.put_slice(bytes);
+    let len = std::cmp::min(bytes.len(), 0x7FFF);
+    buf.put_u8(tag);
+    write_tlv_length(buf, len);
+    buf.put_slice(&bytes[..len]);
+}
+
+// helper function for variable-length TLV
+fn write_tlv_length(buf: &mut bytes::BytesMut, len: usize) {
+    if len <= 0x7F {
+        // ≤ 127 → 1 Byte length
+        buf.put_u8(u8::try_from(len).unwrap_or(0xFF));
+    } else {
+        // ≥ 128 → 2-byte length with the highest bit set
+        let len = u16::try_from(len).unwrap_or(0); // safe, we limit it above to 0x7FFF
+        let first = 0x80 | ((len & 0x7F) as u8);
+        let second = ((len >> 7) & 0xFF) as u8;
+        buf.put_u8(first);
+        buf.put_u8(second);
+    }
 }
 
 fn build_discover_response(device: &HdHomeRunDeviceConfig, server_host: &str) -> Vec<u8> {
@@ -96,7 +108,11 @@ fn build_discover_response(device: &HdHomeRunDeviceConfig, server_host: &str) ->
 
     let mut response = BytesMut::new();
     response.put_u16(packet::HDHOMERUN_TYPE_DISCOVER_RSP);
-    response.put_u16(u16::try_from(payload.len()).unwrap_or(0));
+    //response.put_u16(u16::try_from(payload.len()).unwrap_or(0));
+    if let Ok(n) = u16::try_from(payload.len()) { response.put_u16(n) } else {
+        error!("HDHR response payload too large ({} bytes)", payload.len());
+        return Vec::new();
+    }
     response.put(payload);
 
     let crc = crc32fast::hash(&response);
@@ -107,39 +123,64 @@ fn build_discover_response(device: &HdHomeRunDeviceConfig, server_host: &str) ->
 
 fn parse_tlv(cursor: &mut Cursor<&[u8]>) -> HashMap<u8, Vec<u8>> {
     let mut tags = HashMap::new();
-    while cursor.position() < cursor.get_ref().len() as u64 {
-        let mut tag_buf = [0u8; 1];
-        if Read::read_exact(cursor, &mut tag_buf).is_err() {
-            break;
-        }
 
-        let mut len_buf = [0u8; 1];
-        if Read::read_exact(cursor, &mut len_buf).is_err() {
-            break;
-        }
-
-        let len = if (len_buf[0] & 0x80) == 0 {
-            len_buf[0] as usize
-        } else {
-            let mut second_byte = [0u8; 1];
-            if Read::read_exact(cursor, &mut second_byte).is_err() {
-                break;
+    loop {
+        let pos = match usize::try_from(cursor.position()) {
+            Ok(pos) => pos,
+            Err(_err) => {
+                return tags;
             }
-            ((second_byte[0] as usize) << 7) + ((len_buf[0] & 0x7F) as usize)
         };
 
+        if pos >= cursor.get_ref().len() {
+            break;
+        }
+        let mut tag_buf = [0u8; 1];
+        if std::io::Read::read_exact(cursor, &mut tag_buf).is_err() {
+            break;
+        }
+        let tag = tag_buf[0];
 
-        if cursor.get_ref().len() <  usize::try_from(cursor.position()).unwrap_or(0) + len {
+        // // 2-Byte length (big-endian)
+        // let mut len_buf = [0u8; 2];
+        // if std::io::Read::read_exact(cursor, &mut len_buf).is_err() {
+        //     break;
+        // }
+        // let len = u16::from_be_bytes(len_buf) as usize;
+
+         // Variable-length TLV decoding
+         let mut first_len_byte = [0u8; 1];
+         if std::io::Read::read_exact(cursor, &mut first_len_byte).is_err() {
+              break;
+         }
+         let len = if first_len_byte[0] & 0x80 == 0 {
+             // Single-byte length (≤127)
+             first_len_byte[0] as usize
+         } else {
+             // Two-byte length (≥128)
+             let mut second_len_byte = [0u8; 1];
+             if std::io::Read::read_exact(cursor, &mut second_len_byte).is_err() {
+                 break;
+             }
+             let low_bits = (first_len_byte[0] & 0x7F) as usize;
+             let high_bits = (second_len_byte[0] as usize) << 7;
+             low_bits | high_bits
+         };
+
+        // Check for incomplete TLV
+        let remaining = cursor.get_ref().len() as u64 - cursor.position();
+        if remaining < len as u64 {
+            break; // incomplete or invalid TLV record
+        }
+
+        let mut val_buf = vec![0u8; len];
+        if std::io::Read::read_exact(cursor, &mut val_buf).is_err() {
             break;
         }
 
-        let mut val_buf = vec![0; len];
-        if Read::read_exact(cursor, &mut val_buf).is_err() {
-            break;
-        }
-
-        tags.insert(tag_buf[0], val_buf);
+        tags.insert(tag, val_buf);
     }
+
     tags
 }
 
@@ -164,9 +205,27 @@ async fn proprietary_discover_loop(
             continue;
         }
 
+        // let mut cursor = Cursor::new(data);
+        // let msg_type = cursor.get_u16();
+        // let _msg_len = cursor.get_u16();
+
         let mut cursor = Cursor::new(data);
         let msg_type = cursor.get_u16();
-        let _msg_len = cursor.get_u16();
+        let msg_len = cursor.get_u16() as usize;
+
+        // Validate total size: header (4) + payload (msg_len) + CRC (4)
+        if data.len() < 4 + msg_len + 4 {
+            trace!("Short HDHR discovery packet from {remote_addr}");
+            continue;
+        }
+        let payload_end = 4 + msg_len;
+        let (framed, crc_tail) = data.split_at(payload_end);
+        let received_crc = u32::from_le_bytes(crc_tail[..4].try_into().unwrap_or_default());
+        if crc32fast::hash(framed) != received_crc {
+            trace!("Invalid CRC in HDHR discovery packet from {remote_addr}");
+            continue;
+        }
+        let mut cursor = Cursor::new(&framed[4..]); // parse TLV over payload only
 
         if msg_type == packet::HDHOMERUN_TYPE_DISCOVER_REQ {
             let tags = parse_tlv(&mut cursor);
@@ -187,6 +246,10 @@ async fn proprietary_discover_loop(
                             };
                             if should_reply {
                                 let response = build_discover_response(device, &server_host);
+                                if response.is_empty() {
+                                   error!("Failed to build discovery response for device '{}'", device.name);
+                                   continue;
+                                }
                                 if let Err(e) = socket.send_to(&response, remote_addr).await {
                                     error!("Failed to send proprietary discovery response to {remote_addr}: {e}");
                                 } else {
@@ -241,8 +304,18 @@ async fn handle_tcp_connection(
 }
 
 async fn process_getset_request(request: &[u8], app_state: &Arc<AppState>) -> Vec<u8> {
+    if request.len() < 8 {
+        error!("HDHR GET/SET request too short");
+        return Vec::new();
+    }
     let (data, crc_bytes) = request.split_at(request.len() - 4);
-    let received_crc = u32::from_le_bytes(crc_bytes.try_into().unwrap());
+
+    let Ok(crc_array) = crc_bytes.try_into() else {
+        error!("Invalid CRC bytes in HDHR GET/SET request");
+        return Vec::new();
+    };
+    let received_crc = u32::from_le_bytes(crc_array);
+
     if crc32fast::hash(data) != received_crc {
         error!("Invalid CRC in HDHomeRun GET/SET request");
         return Vec::new();
@@ -278,10 +351,7 @@ async fn process_getset_request(request: &[u8], app_state: &Arc<AppState>) -> Ve
                 if let Ok(tuner_index) = rest[..end].parse::<usize>() {
                     let active_streams = app_state.active_users.active_streams().await;
                     let status_str = if let Some(stream_info) = active_streams.get(tuner_index) {
-                        format!(
-                            "ch={} lock=8vsb ss=98 snq=80 seq=90 bps=12345678 pps=1234",
-                            stream_info.channel.title
-                        )
+                        format!("ch={} lock=8vsb ss=98 snq=80 seq=90 bps=12345678 pps=1234", stream_info.channel.title)
                     } else {
                         "ch=none lock=none ss=0 snq=0 seq=0 bps=0 pps=0".to_string()
                     };
@@ -311,25 +381,22 @@ async fn process_getset_request(request: &[u8], app_state: &Arc<AppState>) -> Ve
             }
             s if s.starts_with("/tuner") && s.ends_with("/lockkey") => {
                 let err_msg = "ERROR: resource locked";
-                write_tlv_str(
-                    &mut response_payload,
-                    packet::HDHOMERUN_TAG_ERROR_MESSAGE,
-                    err_msg,
-                );
+                write_tlv_str(&mut response_payload, packet::HDHOMERUN_TAG_ERROR_MESSAGE, err_msg);
             }
             _ => {
-                write_tlv_str(
-                    &mut response_payload,
-                    packet::HDHOMERUN_TAG_GETSET_VALUE,
-                    "",
-                );
+                write_tlv_str(&mut response_payload,packet::HDHOMERUN_TAG_GETSET_VALUE,"");
             }
         }
     }
 
     let mut response = BytesMut::new();
     response.put_u16(packet::HDHOMERUN_TYPE_GETSET_RSP);
-    response.put_u16(u16::try_from(response_payload.len()).unwrap_or(0));
+    if let Ok(n) = u16::try_from(response_payload.len()) {
+        response.put_u16(n);
+    } else {
+        error!("HDHR GET/SET response payload too large ({} bytes)", response_payload.len());
+        return Vec::new();
+    }
     response.put(response_payload);
 
     let crc = crc32fast::hash(&response);

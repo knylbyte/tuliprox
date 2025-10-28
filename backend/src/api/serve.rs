@@ -151,8 +151,8 @@ where
                     break;
                 }
                 () = &mut signal_closed => {
-                    if let Err(_err) = connection_release.send(remote_addr.to_string()) {
-                         let addr = remote_addr.to_string();
+                    let addr = remote_addr.to_string();
+                    if let Err(_err) = connection_release.send(addr.clone()) {
                          user_manager_clone.remove_connection(&addr).await;
                     }
                     debug!("Connection gracefully closed: {remote_addr}");

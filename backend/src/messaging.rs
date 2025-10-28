@@ -78,9 +78,11 @@ async fn send_pushover_message(client: &Arc<reqwest::Client>, msg: &str, messagi
 async fn dispatch_send_message(client: &Arc<reqwest::Client>, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str, json: bool) {
     if let Some(messaging) = cfg {
         if is_enabled(kind, messaging) {
-            send_telegram_message(client, msg, messaging, json).await;
-            send_http_post_request(client, msg, messaging).await;
-            send_pushover_message(client, msg, messaging).await;
+            tokio::join!(
+            send_telegram_message(client, msg, messaging, json),
+            send_http_post_request(client, msg, messaging),
+            send_pushover_message(client, msg, messaging)
+            );
         }
     }
 }

@@ -9,3 +9,9 @@ pub struct GeoIpConfigDto {
     #[serde(default = "default_geoip_url")]
     pub url: String,
 }
+
+impl GeoIpConfigDto {
+    pub fn is_empty(&self) -> bool {
+        !self.enabled && self.url.trim().is_empty()
+    }
+}

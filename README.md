@@ -218,7 +218,7 @@ Attributes:
 - `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
 - `grace_period_millis`  default set to 300 milliseconds.
 - `grace_period_timeout_secs` default set to 2 seconds.
-- `geopip` is for resolving ip addresses to country names.
+- `geoip` is for resolving IP addresses to country names.
 
 ##### 1.6.1.1 `retry`
 If set to `true` on connection loss to provider, the stream will be reconnected.
@@ -279,8 +279,8 @@ It has 2 attributes:
      url: <the url> 
 ```  
 
-The `url` is optional and default vaue is: `https://raw.githubusercontent.com/sapics/ip-location-db/refs/heads/main/asn-country/asn-country-ipv4.csv`
-The format is csv  with 3 columns  `range_start,range_end,country_code`
+The `url` is optional; default value: `https://raw.githubusercontent.com/sapics/ip-location-db/refs/heads/main/asn-country/asn-country-ipv4.csv`
+The format is CSV with 3 columns: `range_start,range_end,country_code`.
 
 Example:
 ```csv
@@ -1518,7 +1518,7 @@ user:
         status: Active
 ```
 
-If yu use a reverse proxy in fron of Tuliprox, dont forget to forward
+If you use a reverse proxy in front of Tuliprox, don’t forget to forward:
 - `X-Real-IP`
 - `X-Forwarded-For`
 
