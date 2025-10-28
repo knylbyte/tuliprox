@@ -183,17 +183,19 @@ jobs:
         uses: docker/bake-action@v6
         with:
           files: |
-            docker-bake.yml
+            docker-bake.hcl
           targets: ${{ steps.bake-targets.outputs.targets }}
+          set: |
+            ghcr_ns=${{ env.GHCR_NS }}
+            arch_tag=${{ matrix.arch_tag }}
+            platform=${{ matrix.platform }}
+            version=${{ steps.version.outputs.version }}
+            cache_context=./.ci-cache/${{ matrix.arch_tag }}
+            cache_output=/tmp/.ci-cache/${{ matrix.arch_tag }}
+            cargo_home=${{ env.CARGO_HOME }}
+            sccache_dir=${{ env.SCCACHE_DIR }}
         env:
-          GHCR_NS: ${{ env.GHCR_NS }}
-          ARCH_TAG: ${{ matrix.arch_tag }}
-          PLATFORM: ${{ matrix.platform }}
-          VERSION: ${{ steps.version.outputs.version }}
-          CACHE_CONTEXT: ./.ci-cache/${{ matrix.arch_tag }}
-          CACHE_OUTPUT: /tmp/.ci-cache/${{ matrix.arch_tag }}
-          CARGO_HOME: ${{ env.CARGO_HOME }}
-          SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
+          BUILDKIT_PROGRESS: plain
 
       - name: Step 2.10 - Move cache TARs
         if: steps.cache.outputs.cache-hit != 'true'
