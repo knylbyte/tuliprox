@@ -70,14 +70,19 @@ fn create_shared_data(
     let config = app_config.config.load();
 
     let use_geoip = config.is_geoip_enabled();
-    let geoip =    if use_geoip {
+    let geoip = if use_geoip {
         let path = get_geoip_path(&config.working_dir);
         let _file_lock = app_config.file_locks.read_lock(&path);
-        let geoip = GeoIp::load(&path).ok();
-        if geoip.is_some() {
-            info!("GeoIp db loaded");
+        match GeoIp::load(&path) {
+            Ok(db) => {
+                info!("GeoIp db loaded");
+                Arc::new(ArcSwapOption::from(Some(Arc::new(db))))
+            }
+            Err(err) => {
+                error!("Failed to load GeoIp db: {err}");
+                Arc::new(ArcSwapOption::from(None))
+            }
         }
-        Arc::new(ArcSwapOption::from_pointee(geoip))
     } else {
         Arc::new(ArcSwapOption::from(None))
     };

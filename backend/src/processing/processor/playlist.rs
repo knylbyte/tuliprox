@@ -27,6 +27,7 @@ use crate::repository::playlist_repository::persist_playlist;
 use crate::utils::debug_if_enabled;
 use crate::utils::StepMeasure;
 use deunicode::deunicode;
+use futures::StreamExt;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use reqwest::Client;
 use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
@@ -620,17 +621,20 @@ async fn process_epg(processed_fetched_playlists: &mut Vec<FetchedPlaylist<'_>>)
     (new_epg, new_playlist)
 }
 
-async fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &ConfigTarget, new_playlist: &Vec<PlaylistGroup>) -> bool {
+async fn process_watch(cfg: &Config, client: &Arc<reqwest::Client>, target: &ConfigTarget, new_playlist: &[PlaylistGroup]) -> bool {
     if let Some(watches) = &target.watch {
         if default_as_default().eq_ignore_ascii_case(&target.name) {
-            error!("cant watch a target with no unique name");
-        } else {
-            for pl in new_playlist {
-                if watches.iter().any(|r| r.is_match(&pl.title)) {
-                    process_group_watch(client, cfg, &target.name, pl).await;
-                }
-            }
+            error!("can't watch a target with no unique name");
+            return false;
         }
+
+        futures::stream::iter(
+            new_playlist
+                .iter()
+                .filter(|pl| watches.iter().any(|r| r.is_match(&pl.title)))
+                .map(|pl| process_group_watch(client, cfg, &target.name, pl))
+        ).for_each_concurrent(16, |f| f).await;
+
         true
     } else {
         false

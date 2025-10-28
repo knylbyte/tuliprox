@@ -40,7 +40,7 @@ impl ProviderConnectionGuard {
 
     fn send_release(&self, config: &Arc<ProviderConfig>) {
         let provider_config = Arc::clone(config);
-        if let Err(_err) = &self.release_tx.send(Arc::clone(config)) {
+        if let Err(_err) = &self.release_tx.send(provider_config.clone()) {
             // Fallback
             tokio::spawn(async move {
                 provider_config.release().await;
@@ -536,8 +536,8 @@ impl ProviderLineupManager {
         let on_connection_change: ProviderConnectionChangeCallback = Arc::new(move |_name: &str, connections: usize| {
             let connection_change_sender = connection_change_sender.clone();
             let provider_cfg_name = cfg_name.clone();
-            if let Err(err) = connection_change_sender.send((provider_cfg_name, connections)) {
-                error!("Failed to send connection change: {cfg_name}: {connections},  {err}");
+            if let Err(err) = connection_change_sender.send((provider_cfg_name.clone(), connections)) {
+                error!("Failed to send connection change: {provider_cfg_name}: {connections}, {err}");
             }
         });
 

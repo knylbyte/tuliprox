@@ -127,14 +127,8 @@ pub fn humanize_snake_case(s: &str) -> String {
     result
 }
 
-pub trait StringExt {
-    fn longest<'a>(a: &'a str, b: &'a str) -> &'a str;
-}
-
-impl StringExt for String {
-    fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
-        if a.len() >= b.len() { a } else { b }
-    }
+pub fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+   if a.len() >= b.len() { a } else { b }
 }
 
 #[cfg(test)]

@@ -243,7 +243,7 @@ pub fn ConfigView() -> Html {
             <div class="tp__config-view__header">
                 <h1>{ translate.t(LABEL_CONFIG) } </h1>
                 {html_if!(config_ctx.config.is_some_and(|c| c.config.is_geoip_enabled()), {
-                    <TextButton class="tertiary" name="save_config"
+                    <TextButton class="tertiary" name="update_geo_ip"
                         icon="Refresh"
                         title={ translate.t(LABEL_UPDATE_GEOIP)}
                         onclick={handle_update_geoip}></TextButton>

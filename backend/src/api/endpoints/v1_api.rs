@@ -107,7 +107,7 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
                            },
                            (None, Some(err)) => {
                                error!("Failed to process geoip db: {err}");
-                               axum::http::StatusCode::NOT_FOUND.into_response()
+                               axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
                            },
                            _ => {
                                axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()

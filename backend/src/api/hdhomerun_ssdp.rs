@@ -52,7 +52,7 @@ async fn ssdp_task_loop(socket: UdpSocket, app_config: Arc<AppConfig>, server_ho
             "upnp:rootdevice",
             "ssdp:all",
         ];
-        if !supported.contains(&st.as_str()) && st != "ssdp:all" { continue; }
+        if !supported.contains(&st.as_str()) { continue; }
         // Randomized delay per MX
         let delay_ms = (fastrand::u64(0..=mx*1000)).min(2000);
         if delay_ms > 0 { tokio::time::sleep(Duration::from_millis(delay_ms)).await; }

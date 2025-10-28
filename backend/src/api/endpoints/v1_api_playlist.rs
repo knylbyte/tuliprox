@@ -60,10 +60,16 @@ async fn playlist_update(
     let process_targets = app_state.app_config.sources.load().validate_targets(user_targets.as_ref());
     match process_targets {
         Ok(valid_targets) => {
+            let http_client = Arc::clone(&app_state.http_client.load());
             let app_config = Arc::clone(&app_state.app_config);
             let event_manager = Arc::clone(&app_state.event_manager);
             let playlist_state = Arc::clone(&app_state.playlists);
-            playlist::exec_processing(Arc::clone(&app_state.http_client.load()), app_config, Arc::new(valid_targets), Some(event_manager), Some(playlist_state)).await;
+            let valid_targets = Arc::new(valid_targets);
+            tokio::spawn({
+               async move {
+                   playlist::exec_processing(http_client, app_config, valid_targets, Some(event_manager), Some(playlist_state)).await;
+               }
+            });
             axum::http::StatusCode::ACCEPTED.into_response()
         }
         Err(err) => {

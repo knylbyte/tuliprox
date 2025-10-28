@@ -30,7 +30,7 @@ const HEADERS: [&str; 12] = [
     "LABEL.DURATION"
 ];
 
-pub fn format_duration(seconds: u64) -> String {
+fn format_duration(seconds: u64) -> String {
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
     let seconds = seconds % 60;
@@ -68,9 +68,8 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
 
 
     use_effect_with((), move |_| {
-        Interval::new(1000, || {
-            update_timestamps();
-        }).forget();
+        let interval = Interval::new(1000, update_timestamps);
+        move || drop(interval)
     });
 
 
