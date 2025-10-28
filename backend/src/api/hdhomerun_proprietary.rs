@@ -34,31 +34,43 @@ mod packet {
 
 // --- UDP Discovery Logic ---
 
-fn write_tlv_u32(buf: &mut BytesMut, tag: u8, value: u32) {
+fn write_tlv_u8(buf: &mut bytes::BytesMut, tag: u8, value: u8) {
     buf.put_u8(tag);
-    buf.put_u16(4);
-    buf.put_u32(value);
-}
-
-fn write_tlv_u8(buf: &mut BytesMut, tag: u8, value: u8) {
-    buf.put_u8(tag);
-    buf.put_u16(1);
+    write_tlv_length(buf, 1);
     buf.put_u8(value);
 }
 
-fn write_tlv_str(buf: &mut BytesMut, tag: u8, value: &str) {
-    let bytes = value.as_bytes();
-    let Some(len) = u16::try_from(bytes.len()).ok() else {
-        error!("TLV value too long (max 65535 bytes)");
-        return;
-    };
-
-    // 1 byte type
+fn write_tlv_u32(buf: &mut bytes::BytesMut, tag: u8, value: u32) {
     buf.put_u8(tag);
-    // 2 bytes length (big-endian)
-    buf.put_u16(len);
-    // value bytes
-    buf.put_slice(bytes);
+    write_tlv_length(buf, 4);
+    buf.put_u32(value);
+}
+
+fn write_tlv_str(buf: &mut bytes::BytesMut, tag: u8, value: &str) {
+    let bytes = value.as_bytes();
+    if bytes.len() > 0x7FFF {
+        // maximum length for 15-bit TLV = 32767
+        log::warn!("TLV string too long, truncating to 32767 bytes");
+    }
+    let len = std::cmp::min(bytes.len(), 0x7FFF);
+    buf.put_u8(tag);
+    write_tlv_length(buf, len);
+    buf.put_slice(&bytes[..len]);
+}
+
+// helper function for variable-length TLV
+fn write_tlv_length(buf: &mut bytes::BytesMut, len: usize) {
+    if len <= 0x7F {
+        // ≤ 127 → 1 Byte length
+        buf.put_u8(u8::try_from(len).unwrap_or(0xFF));
+    } else {
+        // ≥ 128 → 2-byte length with the highest bit set
+        let len = u16::try_from(len).unwrap_or(0); // safe, we limit it above to 0x7FFF
+        let first = 0x80 | ((len & 0x7F) as u8);
+        let second = ((len >> 7) & 0xFF) as u8;
+        buf.put_u8(first);
+        buf.put_u8(second);
+    }
 }
 
 fn build_discover_response(device: &HdHomeRunDeviceConfig, server_host: &str) -> Vec<u8> {
@@ -316,10 +328,7 @@ async fn process_getset_request(request: &[u8], app_state: &Arc<AppState>) -> Ve
                 if let Ok(tuner_index) = rest[..end].parse::<usize>() {
                     let active_streams = app_state.active_users.active_streams().await;
                     let status_str = if let Some(stream_info) = active_streams.get(tuner_index) {
-                        format!(
-                            "ch={} lock=8vsb ss=98 snq=80 seq=90 bps=12345678 pps=1234",
-                            stream_info.channel.title
-                        )
+                        format!("ch={} lock=8vsb ss=98 snq=80 seq=90 bps=12345678 pps=1234", stream_info.channel.title)
                     } else {
                         "ch=none lock=none ss=0 snq=0 seq=0 bps=0 pps=0".to_string()
                     };
@@ -349,18 +358,10 @@ async fn process_getset_request(request: &[u8], app_state: &Arc<AppState>) -> Ve
             }
             s if s.starts_with("/tuner") && s.ends_with("/lockkey") => {
                 let err_msg = "ERROR: resource locked";
-                write_tlv_str(
-                    &mut response_payload,
-                    packet::HDHOMERUN_TAG_ERROR_MESSAGE,
-                    err_msg,
-                );
+                write_tlv_str(&mut response_payload, packet::HDHOMERUN_TAG_ERROR_MESSAGE, err_msg);
             }
             _ => {
-                write_tlv_str(
-                    &mut response_payload,
-                    packet::HDHOMERUN_TAG_GETSET_VALUE,
-                    "",
-                );
+                write_tlv_str(&mut response_payload,packet::HDHOMERUN_TAG_GETSET_VALUE,"");
             }
         }
     }
@@ -368,7 +369,7 @@ async fn process_getset_request(request: &[u8], app_state: &Arc<AppState>) -> Ve
     let mut response = BytesMut::new();
     response.put_u16(packet::HDHOMERUN_TYPE_GETSET_RSP);
     if let Ok(n) = u16::try_from(response_payload.len()) {
-        response.put_u16(n)
+        response.put_u16(n);
     } else {
         error!("HDHR GET/SET response payload too large ({} bytes)", response_payload.len());
         return Vec::new();
