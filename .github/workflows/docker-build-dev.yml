@@ -186,7 +186,7 @@ jobs:
             docker/docker-bake.hcl
           targets: ${{ steps.bake-targets.outputs.targets }}
           set: |
-            ghcr_ns=${{ env.GHCR_NS }}
+            ghcr_namespace=${{ env.GHCR_NS }}
             arch_tag=${{ matrix.arch_tag }}
             platform=${{ matrix.platform }}
             version=${{ steps.version.outputs.version }}
