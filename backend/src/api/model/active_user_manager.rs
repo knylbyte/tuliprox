@@ -231,7 +231,7 @@ impl ActiveUserManager {
         // Spawn the async cleanup worker
         tokio::spawn(async move {
             while let Some(addr) = cleanup_rx.recv().await {
-                trace!("🧹 User manager - connection releasing {addr:?}");
+                trace!("User manager - connection releasing {addr:?}");
                 active_user_manager_clone.remove_connection(&addr).await;
             }
             debug!("User manager - cleanup worker terminated");

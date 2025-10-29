@@ -9,7 +9,7 @@ use crate::model::ProxyUserCredentials;
 use bytes::Bytes;
 use futures::Stream;
 use futures::StreamExt;
-use log::{debug, error, info};
+use log::{error, info};
 use shared::model::{StreamChannel, UserConnectionPermission};
 use std::pin::Pin;
 use std::sync::atomic::AtomicU8;
@@ -49,11 +49,6 @@ impl ActiveClientStream {
         let grant_user_grace_period = connection_permission == UserConnectionPermission::GracePeriod;
         let username = user.username.as_str();
         let provider_name = stream_details.provider_name.as_ref().map_or_else(String::new, ToString::to_string);
-
-        if let Some(guard) = stream_details.provider_connection_guard.as_ref() {
-            debug!("🌻🌻🌻 Provider guard: {:?} ==> {provider_name}", guard.as_ref().get_provider_name());
-        }
-
 
         let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
         let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, addr, &provider_name, stream_channel, user_agent).await);

@@ -1,4 +1,4 @@
-use crate::api::model::AppState;
+use crate::api::model::{AppState};
 use crate::api::model::StreamError;
 use crate::utils::debug_if_enabled;
 use bytes::{Bytes};
@@ -200,8 +200,6 @@ impl SharedStreamState {
             Some(connection_guard) => connection_guard.get_provider_name()
         };
 
-        debug!("🌻🌻🌻")
-
         (convert_stream(ReceiverStream::new(client_rx).boxed()), provider)
     }
 
@@ -399,6 +397,7 @@ impl SharedStreamManager {
         let subscribed_stream = Self::subscribe_shared_stream(app_state, stream_url, addr).await;
         shared_state.broadcast(stream_url, bytes_stream, Arc::clone(&app_state.shared_stream_manager));
         subscribed_stream
+
     }
 
     /// Creates a broadcast notify stream for the given URL if a shared stream exists.

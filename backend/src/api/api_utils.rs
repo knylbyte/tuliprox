@@ -483,7 +483,7 @@ async fn create_stream_response_details(
         &streaming_strategy.provider_stream_state,
         config_grace_period_millis,
     );
-    let provider_name = streaming_strategy
+    let guard_provider_name = streaming_strategy
         .provider_connection_guard
         .as_ref()
         .and_then(|guard| guard.get_provider_name());
@@ -495,14 +495,14 @@ async fn create_stream_response_details(
             StreamDetails {
                 stream,
                 stream_info,
-                provider_name: provider_name.clone(),
+                provider_name: guard_provider_name.clone(),
                 grace_period_millis,
                 reconnect_flag: None,
                 provider_connection_guard: streaming_strategy.provider_connection_guard.clone(),
             }
         }
-        ProviderStreamState::Available(provider_name, request_url)
-        | ProviderStreamState::GracePeriod(provider_name, request_url) => {
+        ProviderStreamState::Available(_provider_name, request_url)
+        | ProviderStreamState::GracePeriod(_provider_name, request_url) => {
             let parsed_url = Url::parse(&request_url);
             let ((stream, stream_info), reconnect_flag) = if let Ok(url) = parsed_url {
                 let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
@@ -553,7 +553,7 @@ async fn create_stream_response_details(
             StreamDetails {
                 stream,
                 stream_info,
-                provider_name,
+                provider_name: guard_provider_name.clone(),
                 grace_period_millis,
                 reconnect_flag,
                 provider_connection_guard: streaming_strategy.provider_connection_guard.take(),
@@ -885,7 +885,7 @@ pub async fn stream_response(
                 .as_ref()
                 .map_or_else(Vec::new, |(h, _, _)| h.clone());
 
-            if let Some((broadcast_stream, _provider)) = SharedStreamManager::register_shared_stream(
+            if let Some((broadcast_stream, _shared_provider)) = SharedStreamManager::register_shared_stream(
                 app_state,
                 stream_url,
                 stream,

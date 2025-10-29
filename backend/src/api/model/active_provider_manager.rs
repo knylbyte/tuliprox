@@ -796,7 +796,7 @@ impl ActiveProviderManager {
         // Spawn the async cleanup worker
         tokio::spawn(async move {
             while let Some(cfg) = cleanup_rx.recv().await {
-                debug!("🧹 Provider connection releasing {:?}", cfg.name);
+                debug!("Provider connection releasing {:?}", cfg.name);
                 cfg.release().await;
             }
             debug!("Provider cleanup worker terminated");
@@ -864,7 +864,7 @@ impl ActiveProviderManager {
 
     async fn register_connection(&self, addr: &str, guard: &Arc<ProviderConnectionGuard>) {
         if !matches!(guard.allocation, ProviderAllocation::Exhausted) {
-            debug!("🌻🌻🌻 Added provider connection {:?} for {addr}", guard.get_provider_name().unwrap_or_default());
+            debug!("Added provider connection {:?} for {addr}", guard.get_provider_name().unwrap_or_default());
             self.connections.write().await.insert(addr.to_string(), Arc::clone(guard));
         }
     }
@@ -872,7 +872,7 @@ impl ActiveProviderManager {
     pub async fn release_connection(&self, addr: &str) {
         let guard = self.connections.write().await.remove(addr);
         if let Some(guard) = guard {
-            debug!("🌸🌸🌸 Released provider connection {:?} for {addr}", guard.get_provider_name().unwrap_or_default());
+            debug!("Released provider connection {:?} for {addr}", guard.get_provider_name().unwrap_or_default());
             guard.release();
         }
     }
