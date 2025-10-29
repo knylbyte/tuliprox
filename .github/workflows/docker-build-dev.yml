@@ -159,7 +159,7 @@ jobs:
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
       - name: test cache output
-        run: ls -al ./.ci-cache/${{ matrix.arch_tag }}
+        run: ls -al .ci-cache/${{ matrix.arch_tag }}
 
       - name: Step 2.8 - Resolve Bake targets
         id: bake-targets
@@ -193,7 +193,7 @@ jobs:
           ARCH_TAG: ${{ matrix.arch_tag }}
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ steps.version.outputs.version }}
-          CACHE_CONTEXT: ./.ci-cache/${{ matrix.arch_tag }}
+          CACHE_CONTEXT: .ci-cache/${{ matrix.arch_tag }}
           CACHE_OUTPUT: /tmp/.ci-cache/${{ matrix.arch_tag }}
           CARGO_HOME: ${{ env.CARGO_HOME }}
           SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
