@@ -207,6 +207,7 @@ jobs:
           echo "Running docker buildx bake with ${#target_list[@]} targets: ${target_list[*]}"
           docker buildx bake \
             --file docker/docker-bake.hcl \
+            --load \
             --progress plain \
             "${target_list[@]}"
 
