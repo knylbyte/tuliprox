@@ -62,7 +62,9 @@ struct BurstBuffer {
     current_bytes: usize,
 }
 
+#[allow(clippy::missing_fields_in_debug)]
 impl Debug for BurstBuffer {
+
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("BurstBuffer")
             .field("buffer_size", &self.buffer_size)

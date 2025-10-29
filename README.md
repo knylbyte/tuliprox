@@ -565,7 +565,7 @@ For example, if you have a bind mount like this:
 /config /home/tuliprox/config none bind 0 0
 ```
 
-```
+```text
 /config                ← your configured mount point
 /home/tuliprox/config  ← original source directory
 ```

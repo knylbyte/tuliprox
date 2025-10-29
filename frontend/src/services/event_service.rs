@@ -1,11 +1,10 @@
 use crate::model::EventMessage;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-type Subscriber = RefCell<HashMap<usize, Pin<Box<dyn Fn(EventMessage)>>>>;
+type Subscriber = RefCell<HashMap<usize, Box<dyn Fn(EventMessage)>>>;
 
 pub struct EventService {
     subscriber_id: Rc<AtomicUsize>,
@@ -55,7 +54,7 @@ impl EventService {
 
     pub fn subscribe<F: Fn(EventMessage) + 'static>(&self, callback: F) -> usize {
         let sub_id = self.subscriber_id.fetch_add(1, Ordering::SeqCst);
-        self.subscribers.borrow_mut().insert(sub_id, Box::pin(callback));
+        self.subscribers.borrow_mut().insert(sub_id, Box::new(callback));
         sub_id
     }
 
