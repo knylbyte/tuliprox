@@ -108,12 +108,13 @@ async fn m3u_api_stream(
     }
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
-    let virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
+    let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
     let pli = try_result_not_found!(
-        m3u_get_item_for_stream_id(virtual_id, app_state, &target).await,
+        m3u_get_item_for_stream_id(req_virtual_id, app_state, &target).await,
         true,
-        format!("Failed to read m3u item for stream id {}", virtual_id)
+        format!("Failed to read m3u item for stream id {req_virtual_id}")
     );
+    let virtual_id = pli.virtual_id;
     let input = try_option_bad_request!(
         app_state
             .app_config

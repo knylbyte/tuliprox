@@ -29,7 +29,7 @@ use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::stream::{self, StreamExt};
 use futures::Stream;
-use log::{debug, error, log_enabled, warn};
+use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use shared::error::create_tuliprox_error_result;
@@ -219,7 +219,7 @@ async fn xtream_player_api_stream(
     stream_req: ApiStreamRequest<'_>,
 ) -> impl IntoResponse + Send {
 
-    // if log_enabled!(log::Level::Debug) {
+    // if log::log_enabled!(log::Level::Debug) {
     //     debug!(
     //         "Stream request ctx={} user={} stream_id={} action_path={}",
     //         stream_req.context,
@@ -229,12 +229,9 @@ async fn xtream_player_api_stream(
     //     );
     //     let message = format!("Client Request headers {req_headers:?}");
     //     debug!("{}", sanitize_sensitive_info(&message));
+    //     let message = format!("Client Request headers {req_headers:?}");
+    //     debug!("{}", sanitize_sensitive_info(&message));
     // }
-
-    if log_enabled!(log::Level::Debug) {
-        let message = format!("Client Request headers {req_headers:?}");
-        debug!("{}", sanitize_sensitive_info(&message));
-    }
 
 
     let (user, target) = try_option_bad_request!(
@@ -253,12 +250,13 @@ async fn xtream_player_api_stream(
     }
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
-    let virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
+    let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
     let (pli, mapping) = try_result_not_found!(
-        xtream_repository::xtream_get_item_for_stream_id(virtual_id, app_state, &target, None).await,
+        xtream_repository::xtream_get_item_for_stream_id(req_virtual_id, app_state, &target, None).await,
         true,
-        format!("Failed to read xtream item for stream id {virtual_id}")
+        format!("Failed to read xtream item for stream id {req_virtual_id}")
     );
+    let virtual_id = pli.virtual_id;
     let input = try_option_bad_request!(
         app_state.app_config.get_input_by_name(pli.input_name.as_str()),
         true,
@@ -418,25 +416,26 @@ async fn xtream_player_api_stream_with_token(
             return axum::http::StatusCode::BAD_REQUEST.into_response();
         }
         let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
-        let virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
+        let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
         let (pli, _mapping) = try_result_bad_request!(
             xtream_repository::xtream_get_item_for_stream_id(
-                virtual_id,
+                req_virtual_id,
                 app_state,
                 &target,
                 None
             ).await,
             true,
-            format!("Failed to read xtream item for stream id {}", virtual_id)
+            format!("Failed to read xtream item for stream id {req_virtual_id}")
         );
+        let virtual_id = pli.virtual_id;
         let input = try_option_bad_request!(
             app_state
                 .app_config
                 .get_input_by_name(pli.input_name.as_str()),
             true,
             format!(
-                "Cant find input for target {target_name}, context {}, stream_id {virtual_id}",
-                stream_req.context
+                "Cant find input for target {target_name}, context {}, stream_id {}",
+                stream_req.context, pli.virtual_id
             )
         );
 
@@ -478,7 +477,7 @@ async fn xtream_player_api_stream_with_token(
                 &user,
                 None,
                 &pli.url,
-                pli.virtual_id,
+                virtual_id,
                 &input,
                 req_headers,
                 UserConnectionPermission::Allowed,
@@ -507,8 +506,8 @@ async fn xtream_player_api_stream_with_token(
             ),
             true,
             format!(
-                "Cant find stream url for target {target_name}, context {}, stream_id {virtual_id}",
-                stream_req.context
+                "Cant find stream url for target {target_name}, context {}, stream_id {}",
+                stream_req.context, virtual_id
             )
         );
 
@@ -719,17 +718,17 @@ async fn xtream_player_api_resource(
         debug!("Target has no xtream output {target_name}");
         return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
-    let virtual_id: u32 = try_result_bad_request!(resource_req.stream_id.trim().parse());
+    let req_virtual_id: u32 = try_result_bad_request!(resource_req.stream_id.trim().parse());
     let resource = resource_req.action_path.trim();
     let (pli, _) = try_result_bad_request!(
         xtream_repository::xtream_get_item_for_stream_id(
-            virtual_id,
+            req_virtual_id,
             app_state,
             &target,
             None
         ).await,
         true,
-        format!("Failed to read xtream item for stream id {}", virtual_id)
+        format!("Failed to read xtream item for stream id {req_virtual_id}")
     );
     let stream_url = if resource.starts_with(crate::model::XC_INFO_RESOURCE_PREFIX) {
         try_result_bad_request!(xtream_get_info_resource_url(
@@ -1207,9 +1206,9 @@ async fn xtream_get_catchup_response(
     start: &str,
     end: &str,
 ) -> impl IntoResponse + Send {
-    let virtual_id: u32 = try_result_bad_request!(FromStr::from_str(stream_id));
+    let req_virtual_id: u32 = try_result_bad_request!(FromStr::from_str(stream_id));
     let (pli, _) = try_result_bad_request!(xtream_repository::xtream_get_item_for_stream_id(
-        virtual_id,
+        req_virtual_id,
         app_state,
         target,
         Some(XtreamCluster::Live)

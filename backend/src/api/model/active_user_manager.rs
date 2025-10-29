@@ -1,3 +1,4 @@
+use log::trace;
 use std::borrow::Cow;
 use crate::api::model::{ActiveProviderManager};
 use crate::api::model::SharedStreamManager;
@@ -73,6 +74,7 @@ macro_rules! active_user_manager_shared_impl {
                 self.drop_connection(&addr);
                 self.shared_stream_manager.release_connection(addr, true).await;
                 self.provider_manager.release_connection(addr).await;
+
                 if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
                      error!("Failed to send active user connection change: {err:?}");
                  }
@@ -126,8 +128,8 @@ impl UserConnectionGuard {
 impl Drop for UserConnectionGuard {
     fn drop(&mut self) {
         let manager = self.manager.clone();
-        let addr = self.addr.clone();
-        if let Err(_err) = self.release_tx.send(addr.clone()) {
+        if let Err(_err) = self.release_tx.send(self.addr.clone()) {
+            let addr = self.addr.clone();
             // fallback
             tokio::spawn(async move {
                 manager.remove_connection(&addr).await;
@@ -147,6 +149,7 @@ pub struct UserSession {
     pub permission: UserConnectionPermission,
 }
 
+#[derive(Debug)]
 struct UserConnectionData {
     max_connections: u32,
     connections: u32,
@@ -228,7 +231,7 @@ impl ActiveUserManager {
         // Spawn the async cleanup worker
         tokio::spawn(async move {
             while let Some(addr) = cleanup_rx.recv().await {
-                debug!("🧹 User manager - connection releasing {addr:?}");
+                trace!("User manager - connection releasing {addr:?}");
                 active_user_manager_clone.remove_connection(&addr).await;
             }
             debug!("User manager - cleanup worker terminated");
@@ -361,7 +364,7 @@ impl ActiveUserManager {
 
         {
             let mut user_by_addr = self.user_by_addr.write().await;
-            user_by_addr.insert(addr.to_owned(), username.to_owned());
+            user_by_addr.insert(addr.to_string(), username.to_string());
         }
 
         if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Connected(stream_info)) {
