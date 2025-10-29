@@ -145,8 +145,8 @@ jobs:
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
-      # - name: Step 2.6 - Ensure cache context dir
-      #   run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
+      - name: Step 2.6 - Ensure cache context dir
+        run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
 
       - name: Step 2.7 - Load cargo chef and sccache directories for Docker build
         uses: actions/cache@v4
@@ -197,7 +197,6 @@ jobs:
           BUILDKIT_PROGRESS: plain
 
       - name: Step 2.10 - Move cache TARs
-        if: steps.cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
