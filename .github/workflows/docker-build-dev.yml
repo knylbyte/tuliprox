@@ -175,7 +175,6 @@ jobs:
           else
             {
               echo 'targets<<EOF'
-              echo 'cache-export'
               echo 'scratch-final'
               echo 'alpine-final'
               echo 'EOF'
