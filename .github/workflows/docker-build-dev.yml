@@ -187,6 +187,7 @@ jobs:
           files: |
             docker/docker-bake.hcl
           targets: ${{ steps.bake-targets.outputs.targets }}
+        workdir: ${{ github.workspace }}
         env:
           GHCR_NS: ${{ env.GHCR_NS }}
           ARCH_TAG: ${{ matrix.arch_tag }}
