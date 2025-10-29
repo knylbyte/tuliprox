@@ -210,6 +210,10 @@ jobs:
             --progress plain \
             "${target_list[@]}"
 
+      - name: Print docker images
+        run: |
+          docker image ls
+
       - name: Step 2.11 - Move cache TARs
         shell: bash
         run: |
