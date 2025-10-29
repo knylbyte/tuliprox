@@ -54,7 +54,10 @@ target "cache-export" {
   target   = "cache-export"
 
   contexts = {
-    cache = "type=local,src=${CACHE_CONTEXT}"
+    cache = {
+      type = "local"
+      src  = "${CACHE_CONTEXT}"
+    }
   }
 
   cache_from = [
@@ -76,7 +79,10 @@ target "scratch-final" {
   target   = "scratch-final"
 
   contexts = {
-    cache = "type=local,src=${CACHE_CONTEXT}"
+    cache = {
+      type = "local"
+      src  = "${CACHE_CONTEXT}"
+    }
   }
 
   cache_from = [
@@ -100,7 +106,10 @@ target "alpine-final" {
   target   = "alpine-final"
 
   contexts = {
-    cache = "type=local,src=${CACHE_CONTEXT}"
+    cache = {
+      type = "local"
+      src  = "${CACHE_CONTEXT}"
+    }
   }
 
   cache_from = [
