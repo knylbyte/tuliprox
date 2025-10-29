@@ -182,39 +182,40 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Step 2.9 - Inspect cache dir inside container
+      - name: Step 2.10 - Build images with docker buildx bake (debug)
         shell: bash
-        run: |
-          set -euo pipefail
-          docker run --rm \
-            -e ARCH_TAG="${{ matrix.arch_tag }}" \
-            -v "${{ github.workspace }}:/github/workspace" \
-            alpine:3.19 \
-            sh -c 'set -eu; TARGET="/github/workspace/.ci-cache/${ARCH_TAG}"; if [ -d "$TARGET" ]; then echo "Listing $TARGET"; ls -al "$TARGET"; else echo "Cache directory not found at $TARGET"; fi'
-
-      - name: Step 2.10 - Build images with Buildx Bake (${{ matrix.platform }})
-        uses: docker/bake-action@v6
-        with:
-          files: |
-            docker/docker-bake.hcl
-          targets: ${{ steps.bake-targets.outputs.targets }}
         env:
           GHCR_NS: ${{ env.GHCR_NS }}
           ARCH_TAG: ${{ matrix.arch_tag }}
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ steps.version.outputs.version }}
-          CACHE_CONTEXT: /github/workspace/.ci-cache/${{ matrix.arch_tag }}
+          CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           CACHE_OUTPUT: /tmp/.ci-cache/${{ matrix.arch_tag }}
           CARGO_HOME: ${{ env.CARGO_HOME }}
           SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
           BUILDKIT_PROGRESS: plain
+        run: |
+          set -euo pipefail
+          echo "Cache contents before build:"
+          ls -al ${CACHE_CONTEXT}
+          
+          targets="${{ steps.bake-targets.outputs.targets }}"
+          echo "Targets (raw):"
+          printf '  %s\n' "$targets"
+          mapfile -t target_list <<<"$targets"
+          
+          echo "Running docker buildx bake with ${#target_list[@]} targets: ${target_list[*]}"
+          docker buildx bake \
+            --file docker/docker-bake.hcl \
+            --progress plain \
+            "${target_list[@]}"
 
       - name: Step 2.11 - Move cache TARs
         shell: bash
         run: |
           set -euo pipefail
           find /tmp/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
-          ls -al .ci-cache/${{ matrix.arch_tag }}
+          ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           rm -rf /tmp/.ci-cache/${{ matrix.arch_tag }}
 
       - name: Step 2.12 - Summary
