@@ -92,7 +92,9 @@ target "scratch-final" {
     "${GHCR_NS}:dev-slim-${VERSION}-${ARCH_TAG}"
   ]
 
-  push = true
+  output = [
+    "type=image,push=false"
+  ]
 }
 
 target "alpine-final" {
@@ -116,5 +118,7 @@ target "alpine-final" {
     "${GHCR_NS}:dev-${VERSION}-${ARCH_TAG}"
   ]
 
-  push = true
+  output = [
+    "type=image,push=false"
+  ]
 }
