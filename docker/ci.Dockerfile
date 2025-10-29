@@ -81,7 +81,7 @@ FROM chef AS cache-import
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=bind,from=ctx_cache,source=.,target=/cache,readonly \
+    --mount=type=bind,from=./.ci-cache/${BUILDPLATFORM_TAG},target=/cache,readonly \
     SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
     if [[ -s /cache/cargo-registry.tar ]]; then \
     tar -C "${CARGO_HOME}" -xf /cache/cargo-registry.tar; \
