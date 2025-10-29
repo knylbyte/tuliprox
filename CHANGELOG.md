@@ -15,6 +15,7 @@ Output filters are applied after all transformations have been performed, theref
 - Added User-Stream-Connections Table to WebUI
 - Enhanced STRM output filenames to include detailed media quality info (e.g., 4K, HDR, x265, 5.1) for easy version distinction.
 - Added standardized SSDP (Simple Service Discovery Protocol) and the Proprietary HDHomeRun UDP Discovery Protocol (Port 65001)
+- Fixed some session handling issue
 
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch

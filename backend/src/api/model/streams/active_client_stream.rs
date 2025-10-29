@@ -49,6 +49,7 @@ impl ActiveClientStream {
         let grant_user_grace_period = connection_permission == UserConnectionPermission::GracePeriod;
         let username = user.username.as_str();
         let provider_name = stream_details.provider_name.as_ref().map_or_else(String::new, ToString::to_string);
+
         let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
         let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, addr, &provider_name, stream_channel, user_agent).await);
         let cfg = &app_state.app_config;

@@ -64,11 +64,9 @@ impl Fingerprint {
             .or(forwarded_for.as_ref().map(ToString::to_string))
             .unwrap_or_else(|| addr.ip().to_string());
 
-        let client_ip_port =format!("{client_ip}:{}", addr.port());
-
         let ua = user_agent.unwrap_or_else(String::new);
         let key = format!("{client_ip}|{ua}");
 
-        Ok(Fingerprint(key, client_ip_port))
+        Ok(Fingerprint(key, addr.to_string()))
     }
 }
