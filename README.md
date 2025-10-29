@@ -556,6 +556,25 @@ ipcheck:
 ### 1.19 `config_hot_reload`
 if set to true, `mapping` files and `api_proxy.yml` are hot reloaded.
 
+⚠️ Important Note for Bind-Mounted Directories
+If you are using a bind mount, the file watcher may report the original source path instead of the mount point.
+
+For example, if you have a bind mount like this:
+
+```fstab
+/config /home/tuliprox/config none bind 0 0
+```
+
+```
+/config                ← your configured mount point
+/home/tuliprox/config  ← original source directory
+```
+
+and you use `/config` in your configuration files, the file watcher will still report events using `/home/tuliprox/config`.
+
+This means that any file paths returned by the watcher might not match the paths in your configuration.
+You need to account for this difference when handling file events, e.g., by mapping the original path to your configured path.
+
 ## 2. `source.yml`
 
 Has the following top level entries:

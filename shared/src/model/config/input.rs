@@ -29,11 +29,11 @@ macro_rules! apply_batch_aliases {
             if let Some(index) = $index {
                 let mut idx = index;
                 // set to the same id as the first alias, because the first alias is copied into this input
-                $source.id = index + 1;
+                $source.id = idx;
                 if let Some(aliases) = $source.aliases.as_mut() {
                     for alias in aliases {
-                        idx += 1;
                         alias.id = idx;
+                        idx += 1;
                     }
                 }
                 Some(idx)
