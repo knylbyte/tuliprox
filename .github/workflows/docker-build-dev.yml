@@ -193,7 +193,7 @@ jobs:
           ARCH_TAG: ${{ matrix.arch_tag }}
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ steps.version.outputs.version }}
-          CACHE_CONTEXT: .ci-cache/${{ matrix.arch_tag }}
+          CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           CACHE_OUTPUT: /tmp/.ci-cache/${{ matrix.arch_tag }}
           CARGO_HOME: ${{ env.CARGO_HOME }}
           SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
