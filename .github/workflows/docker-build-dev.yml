@@ -159,7 +159,7 @@ jobs:
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
       - name: test cache output
-        run: ls -al .ci-cache/${{ matrix.arch_tag }}
+        run: ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
 
       - name: Step 2.8 - Resolve Bake targets
         id: bake-targets
