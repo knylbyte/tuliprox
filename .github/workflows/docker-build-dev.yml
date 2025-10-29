@@ -146,20 +146,20 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
       - name: Step 2.6 - Ensure cache context dir
-        run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
+        run: mkdir -p ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
 
       - name: Step 2.7 - Load cargo chef and sccache directories for Docker build
         uses: actions/cache@v4
         id: cache
         with:
           path: |
-            .ci-cache/${{ matrix.arch_tag }}
+            ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
       - name: test cache output
-        run: ls -al .ci-cache/${{ matrix.arch_tag }}
+        run: ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
 
       - name: Step 2.8 - Resolve Bake targets
         id: bake-targets
@@ -193,7 +193,7 @@ jobs:
           ARCH_TAG: ${{ matrix.arch_tag }}
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ steps.version.outputs.version }}
-          CACHE_CONTEXT: ./.ci-cache/${{ matrix.arch_tag }}
+          CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           CACHE_OUTPUT: /tmp/.ci-cache/${{ matrix.arch_tag }}
           CARGO_HOME: ${{ env.CARGO_HOME }}
           SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
