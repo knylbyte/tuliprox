@@ -54,7 +54,7 @@ target "cache-export" {
   target   = "cache-export"
 
   contexts = {
-    cache = "${CACHE_CONTEXT}"
+    ctx_cache = "${CACHE_CONTEXT}"
   }
 
   cache_from = [
@@ -76,7 +76,7 @@ target "scratch-final" {
   target   = "scratch-final"
 
   contexts = {
-    cache = "${CACHE_CONTEXT}"
+    ctx_cache = "${CACHE_CONTEXT}"
   }
 
   cache_from = [
@@ -100,7 +100,7 @@ target "alpine-final" {
   target   = "alpine-final"
 
   contexts = {
-    cache = "${CACHE_CONTEXT}"
+    ctx_cache = "${CACHE_CONTEXT}"
   }
 
   cache_from = [
