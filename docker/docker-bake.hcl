@@ -1,36 +1,36 @@
-variable "ghcr_namespace" {
-  default = "ghcr.io/example/repo"
+variable "GHCR_NS" {
+  default = "ghcr.io/euzu/tuliprox"
 }
 
-variable "arch_tag" {
+variable "ARCH_TAG" {
   default = "linux-amd64"
 }
 
-variable "platform" {
+variable "PLATFORM" {
   default = "linux/amd64"
 }
 
-variable "version" {
+variable "VERSION" {
   default = "dev"
 }
 
-variable "cache_context" {
+variable "CACHE_CONTEXT" {
   default = "."
 }
 
-variable "cache_output" {
+variable "CACHE_OUTPUT" {
   default = "/tmp/cache-out"
 }
 
-variable "cargo_home" {
+variable "CARGO_HOME" {
   default = "/usr/local/cargo"
 }
 
-variable "sccache_dir" {
+variable "SCCACHE_DIR" {
   default = "/var/cache/sccache"
 }
 
-variable "inline_cache" {
+variable "INLINE_CACHE" {
   default = "1"
 }
 
@@ -39,14 +39,14 @@ target "common" {
   dockerfile = "docker/ci.Dockerfile"
 
   args = {
-    GHCR_NS               = "${ghcr_namespace}"
-    BUILDPLATFORM_TAG     = "${arch_tag}"
-    CARGO_HOME            = "${cargo_home}"
-    SCCACHE_DIR           = "${sccache_dir}"
-    BUILDKIT_INLINE_CACHE = "${inline_cache}"
+    GHCR_NS               = "${GHCR_NS}"
+    BUILDPLATFORM_TAG     = "${ARCH_TAG}"
+    CARGO_HOME            = "${CARGO_HOME}"
+    SCCACHE_DIR           = "${SCCACHE_DIR}"
+    BUILDKIT_INLINE_CACHE = "${INLINE_CACHE}"
   }
 
-  platforms = ["${platform}"]
+  platforms = ["${PLATFORM}"]
 }
 
 target "cache-export" {
@@ -54,20 +54,20 @@ target "cache-export" {
   target   = "cache-export"
 
   contexts = {
-    cache = "type=local,src=${cache_context}"
+    cache = "type=local,src=${CACHE_CONTEXT}"
   }
 
   cache_from = [
-    "type=gha,scope=dev-cache-export-${arch_tag}",
-    "type=registry,ref=${ghcr_namespace}:dev"
+    "type=gha,scope=dev-cache-export-${ARCH_TAG}",
+    "type=registry,ref=${GHCR_NS}:dev"
   ]
 
   cache_to = [
-    "type=gha,scope=dev-cache-export-${arch_tag},mode=max"
+    "type=gha,scope=dev-cache-export-${ARCH_TAG},mode=max"
   ]
 
   output = [
-    "type=local,dest=${cache_output}"
+    "type=local,dest=${CACHE_OUTPUT}"
   ]
 }
 
@@ -76,20 +76,20 @@ target "scratch-final" {
   target   = "scratch-final"
 
   contexts = {
-    cache = "type=local,src=${cache_context}"
+    cache = "type=local,src=${CACHE_CONTEXT}"
   }
 
   cache_from = [
-    "type=gha,scope=dev-cache-export-${arch_tag}",
-    "type=registry,ref=${ghcr_namespace}:dev"
+    "type=gha,scope=dev-cache-export-${ARCH_TAG}",
+    "type=registry,ref=${GHCR_NS}:dev"
   ]
 
   cache_to = [
-    "type=gha,scope=dev-cache-export-${arch_tag},mode=max"
+    "type=gha,scope=dev-cache-export-${ARCH_TAG},mode=max"
   ]
 
   tags = [
-    "${ghcr_namespace}:dev-slim-${version}-${arch_tag}"
+    "${GHCR_NS}:dev-slim-${VERSION}-${ARCH_TAG}"
   ]
 
   push = true
@@ -100,20 +100,20 @@ target "alpine-final" {
   target   = "alpine-final"
 
   contexts = {
-    cache = "type=local,src=${cache_context}"
+    cache = "type=local,src=${CACHE_CONTEXT}"
   }
 
   cache_from = [
-    "type=gha,scope=dev-cache-export-${arch_tag}",
-    "type=registry,ref=${ghcr_namespace}:dev"
+    "type=gha,scope=dev-cache-export-${ARCH_TAG}",
+    "type=registry,ref=${GHCR_NS}:dev"
   ]
 
   cache_to = [
-    "type=gha,scope=dev-cache-export-${arch_tag},mode=max"
+    "type=gha,scope=dev-cache-export-${ARCH_TAG},mode=max"
   ]
 
   tags = [
-    "${ghcr_namespace}:dev-${version}-${arch_tag}"
+    "${GHCR_NS}:dev-${VERSION}-${ARCH_TAG}"
   ]
 
   push = true
