@@ -5,6 +5,8 @@ use bytes::{Bytes};
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
+use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use crate::api::model::BoxedProviderStream;
@@ -60,6 +62,15 @@ struct BurstBuffer {
     current_bytes: usize,
 }
 
+impl Debug for BurstBuffer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BurstBuffer")
+            .field("buffer_size", &self.buffer_size)
+            .field("current_bytes", &self.current_bytes)
+            .finish()
+    }
+}
+
 impl BurstBuffer {
     pub fn new(buf_size: usize) -> Self {
         Self {
@@ -90,6 +101,7 @@ impl BurstBuffer {
 /// Represents the state of a shared provider URL.
 ///
 /// - `headers`: The initial connection headers used during the setup of the shared stream.
+#[derive(Debug)]
 pub struct SharedStreamState {
     headers: Vec<(String, String)>,
     buf_size: usize,
@@ -187,6 +199,8 @@ impl SharedStreamState {
             None => None,
             Some(connection_guard) => connection_guard.get_provider_name()
         };
+
+        debug!("🌻🌻🌻")
 
         (convert_stream(ReceiverStream::new(client_rx).boxed()), provider)
     }
@@ -288,7 +302,8 @@ impl SharedStreamManager {
         self.shared_streams.read().await.get(stream_url).map(Arc::clone)
     }
 
-    async fn unregister(&self, stream_url: &str, send_stop_signal: bool) {
+    async fn unregister(&self, stream_url: &str, send_stop_signal: bool)
+    {
         let mut broadcast_stop_sender = None;
         let shared_state = self.shared_streams.write().await.remove(stream_url);
         if let Some(shared_state) = shared_state {
@@ -307,7 +322,6 @@ impl SharedStreamManager {
     }
 
     pub async fn release_connection(&self, addr: &str, send_stop_signal: bool) {
-
         let stream_url = {
             self.shared_streams_by_addr.write().await.remove(addr)
         };
@@ -345,12 +359,14 @@ impl SharedStreamManager {
     }
 
     async fn subscribe_stream(&self, stream_url: &str, addr: Option<&str>, manager: Arc<SharedStreamManager>) -> Option<(BoxedProviderStream, Option<String>)> {
-        let shared_stream_state = self.shared_streams.read().await.get(stream_url).map(Arc::clone);
+        let shared_stream_state = {
+            self.shared_streams.read().await.get(stream_url).map(Arc::clone)
+        };
         match shared_stream_state {
             None => None,
             Some(stream_state) => {
                 if let Some(address) = addr {
-                    debug_if_enabled!("Responding to existing shared client stream {}", sanitize_sensitive_info(stream_url));
+                    debug_if_enabled!("Responding to existing shared client stream {} {}", address.to_string(),  sanitize_sensitive_info(stream_url));
                     self.shared_streams_by_addr.write().await.insert(address.to_string(), stream_url.to_owned());
                     Some(stream_state.subscribe(address, manager).await)
                 } else {

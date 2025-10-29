@@ -136,7 +136,7 @@ where
         let mut addr_close_rx = user_manager_clone.get_close_connection_channel();
         let connection_release = user_manager.release_sender();
 
-        debug!("Connection opened: {addr_str}");
+        trace!("Connection opened: {addr_str}");
 
         loop {
             tokio::select! {
@@ -144,21 +144,23 @@ where
                     if let Err(err) = result {
                         trace!("failed to serve connection: {err:#}");
                     }
-                    if let Err(_err) = connection_release.send(remote_addr.to_string()) {
-                        let addr = remote_addr.to_string();
-                        user_manager_clone.remove_connection(&addr).await;
+                    if let Err(_err) = connection_release.send(addr_str.clone()) {
+                        // fallback
+                        user_manager_clone.remove_connection(&addr_str).await;
                     }
                     break;
                 }
                 () = &mut signal_closed => {
-                    let addr = remote_addr.to_string();
-                    if let Err(_err) = connection_release.send(addr.clone()) {
-                         user_manager_clone.remove_connection(&addr).await;
+                    if let Err(_err) = connection_release.send(addr_str.clone()) {
+                        // fallback
+                         user_manager_clone.remove_connection(&addr_str).await;
                     }
                     debug!("Connection gracefully closed: {remote_addr}");
                     conn.as_mut().graceful_shutdown();
                 }
                 Ok(msg) = addr_close_rx.recv() => {
+                    // this comes from user manager itself when a user connection is closed
+                    // no need to call `user_manager.remove_connection()`
                     if msg == addr_str {
                         debug!("Forced client disconnect {msg}");
                         conn.as_mut().graceful_shutdown();

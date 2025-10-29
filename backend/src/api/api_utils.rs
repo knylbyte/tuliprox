@@ -488,8 +488,6 @@ async fn create_stream_response_details(
         .as_ref()
         .and_then(|guard| guard.get_provider_name());
 
-    debug!("🍄🍄🍄 using provider {provider_name:?}");
-
     match streaming_strategy.provider_stream_state {
         // custom stream means we display our own stream like connection exhausted, channel-unavailable...
         ProviderStreamState::Custom(provider_stream) => {

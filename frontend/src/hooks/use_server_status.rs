@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::collections::BTreeMap;
 use gloo_timers::callback::Interval;
+use log::error;
 use yew::prelude::*;
 use shared::model::{ActiveUserConnectionChange, StatusCheck};
 use crate::hooks::use_service_context;

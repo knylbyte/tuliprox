@@ -16,6 +16,7 @@ const CONNECTION_STATE_ACTIVE: u8 = 0;
 const CONNECTION_STATE_SHARED: u8 = 1;
 const CONNECTION_STATE_RELEASED: u8 = 2;
 
+#[derive(Debug)]
 pub struct ProviderConnectionGuard {
     allocation: ProviderAllocation,
     release_tx: UnboundedSender<Arc<ProviderConfig>>,

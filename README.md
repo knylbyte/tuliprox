@@ -218,7 +218,6 @@ Attributes:
 - `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
 - `grace_period_millis`  default set to 300 milliseconds.
 - `grace_period_timeout_secs` default set to 2 seconds.
-- `geoip` is for resolving IP addresses to country names.
 
 ##### 1.6.1.1 `retry`
 If set to `true` on connection loss to provider, the stream will be reconnected.
@@ -269,26 +268,6 @@ If the connection is not throttled, the player will play its buffered content lo
 ##### 1.6.1.4 `grace_period_timeout_secs`
 How long the grace grant will last, until another grace grant can made.
 
-##### 1.6.1.5 `geoip`
-Disabled by default.
-Is used to resolve ip addresses to location.
-It has 2 attributes:
-```yaml
-  geoip:
-     enabled: true
-     url: <the url> 
-```  
-
-The `url` is optional; default value: `https://raw.githubusercontent.com/sapics/ip-location-db/refs/heads/main/asn-country/asn-country-ipv4.csv`
-The format is CSV with 3 columns: `range_start,range_end,country_code`.
-
-Example:
-```csv
-1.0.0.0,1.0.0.255,AU
-1.0.1.0,1.0.3.255,CN
-1.0.4.0,1.0.7.255,AU
-```
-
 #### 1.6.2 `cache`
 LRU-Cache is for resources. If it is `enabled`, the resources/images are persisted in the given `dir`. If the cache size exceeds `size`,
 In an LRU cache, the least recently used items are evicted to make room for new items if the cache `size`is exceeded.
@@ -332,6 +311,29 @@ This option, when set to `true`, prevents tuliprox from sending the Referer head
 ```yaml
 reverse_proxy:
   disable_referer_header: false
+```
+
+### 1.6.7 `geoip`
+`geoip` is for resolving IP addresses to country names.
+
+Disabled by default.
+Is used to resolve ip addresses to location.
+It has 2 attributes:
+
+```yaml
+  geoip:
+     enabled: true
+     url: <the url> 
+```  
+
+The `url` is optional; default value: `https://raw.githubusercontent.com/sapics/ip-location-db/refs/heads/main/asn-country/asn-country-ipv4.csv`
+The format is CSV with 3 columns: `range_start,range_end,country_code`.
+
+Example:
+```csv
+1.0.0.0,1.0.0.255,AU
+1.0.1.0,1.0.3.255,CN
+1.0.4.0,1.0.7.255,AU
 ```
 
 ### 1.7 `backup_dir`
