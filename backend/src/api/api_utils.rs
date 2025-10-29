@@ -1327,5 +1327,5 @@ pub fn json_or_bin_response<T: Serialize>(accept: Option<&String>, data: &T) -> 
 }
 
 pub fn create_fingerprint(fingerprint: &str, username: &str, virtual_id: u32) -> String {
-    format!("{fingerprint}{username}{virtual_id}")
+    format!("{fingerprint}|{username}|{virtual_id}")
 }
