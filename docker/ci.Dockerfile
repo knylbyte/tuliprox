@@ -275,7 +275,7 @@ CMD ["-s", "-p", "/opt/tuliprox/data"]
 
 # =================================================================
 #
-# Part 3: Build cache export images
+# Part 3: Build cache export image
 #
 # These stages build the cachable images by ci platform
 # like github actions.
@@ -297,9 +297,6 @@ COPY --from=tzdata /etc/ssl/certs      /tmp/tuliprox/etc/ssl/certs
 COPY --from=backend-builder   /src/target/*/release/tuliprox  /tmp/tuliprox/opt/tuliprox/bin/tuliprox
 COPY --from=frontend-builder  /src/frontend/dist              /tmp/tuliprox/opt/tuliprox/web/dist
 COPY --from=resources         /src/resources                  /tmp/tuliprox/opt/tuliprox/resources
-
-### Clean up temporary build tree to reduce output file size ###
-RUN rm -rf /tmp/tuliprox
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
