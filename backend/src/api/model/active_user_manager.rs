@@ -14,6 +14,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwapOption;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::RwLock;
+use crate::auth::Fingerprint;
 use crate::utils::GeoIp;
 
 const USER_GC_TTL: u64 = 900;  // 15 Min
@@ -331,11 +332,11 @@ impl ActiveUserManager {
         Self::get_active_connections(&self.user).await
     }
 
-    pub async fn add_connection(&self, username: &str, max_connections: u32, addr: &str, provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> UserConnectionGuard {
+    pub async fn add_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint, provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> UserConnectionGuard {
         let country = {
             let geoip = self.geo_ip.load();
             if let Some(geoip_db) = (*geoip).as_ref() {
-                geoip_db.lookup(&strip_port(addr))
+                geoip_db.lookup(&strip_port(&fingerprint.client_ip))
             } else {
                 None
             }
@@ -343,7 +344,8 @@ impl ActiveUserManager {
 
         let stream_info = StreamInfo::new(
             username,
-            addr,
+            &fingerprint.addr,
+            &fingerprint.client_ip,
             provider,
             stream_channel,
             user_agent.to_string(),
@@ -364,7 +366,7 @@ impl ActiveUserManager {
 
         {
             let mut user_by_addr = self.user_by_addr.write().await;
-            user_by_addr.insert(addr.to_string(), username.to_string());
+            user_by_addr.insert(fingerprint.addr.to_string(), username.to_string());
         }
 
         if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Connected(stream_info)) {
@@ -372,7 +374,7 @@ impl ActiveUserManager {
         }
         self.log_active_user().await;
 
-        UserConnectionGuard::new(Arc::new(self.clone_inner()), addr, self.release_sender())
+        UserConnectionGuard::new(Arc::new(self.clone_inner()), &fingerprint.addr, self.release_sender())
     }
 
     fn is_log_user_enabled(&self) -> bool {

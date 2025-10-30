@@ -8,7 +8,7 @@ use crate::auth::validator_admin;
 use crate::utils::ip_checker::get_ips;
 use crate::{VERSION};
 use axum::response::IntoResponse;
-use shared::model::{InputFetchMethod, IpCheckDto, StatusCheck};
+use shared::model::{default_geoip_url, InputFetchMethod, IpCheckDto, StatusCheck};
 use shared::utils::{concat_path_leading_slash};
 use std::collections::{BTreeMap, HashMap};
 use std::io::{Cursor};
@@ -80,8 +80,9 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
             let geoip_db_path = &*get_geoip_path(&config.working_dir);
             let _file_lock = app_state.app_config.file_locks.write_lock(geoip_db_path);
 
+            let url = if geoip.url.trim().is_empty() { default_geoip_url() } else { geoip.url.clone() };
             let input_source =  InputSource {
-                url: geoip.url.clone(),
+                url,
                 username: None,
                 password: None,
                 method: InputFetchMethod::GET,

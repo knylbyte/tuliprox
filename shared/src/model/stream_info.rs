@@ -13,6 +13,13 @@ pub struct StreamChannel {
     pub url: String,
     pub shared: bool,
 }
+
+pub fn create_stream_channel_with_type(pli: &XtreamPlaylistItem, item_type: PlaylistItemType) -> StreamChannel {
+    let mut stream_channel = pli.to_stream_channel();
+    stream_channel.item_type = item_type;
+    stream_channel
+}
+
 impl XtreamPlaylistItem {
     pub fn to_stream_channel(&self) -> StreamChannel {
         StreamChannel {
@@ -49,6 +56,7 @@ pub struct StreamInfo {
     pub channel: StreamChannel,
     pub provider: String,
     pub addr: String,
+    pub client_ip: String,
     #[serde(default)]
     pub user_agent: String,
     #[serde(default)]
@@ -58,12 +66,13 @@ pub struct StreamInfo {
 }
 
 impl StreamInfo {
-    pub fn new(username: &str, addr: &str, provider: &str, stream_channel: StreamChannel, user_agent: String, country: Option<String>) -> Self {
+    pub fn new(username: &str, addr: &str, client_ip: &str, provider: &str, stream_channel: StreamChannel, user_agent: String, country: Option<String>) -> Self {
         Self {
             username: username.to_string(),
             channel: stream_channel,
             provider: provider.to_string(),
             addr: addr.to_string(),
+            client_ip: client_ip.to_string(),
             user_agent,
             ts: current_time_secs(),
             country,
