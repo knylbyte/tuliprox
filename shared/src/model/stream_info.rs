@@ -13,6 +13,13 @@ pub struct StreamChannel {
     pub url: String,
     pub shared: bool,
 }
+
+pub fn create_stream_channel_with_type(pli: &XtreamPlaylistItem, item_type: PlaylistItemType) -> StreamChannel {
+    let mut stream_channel = pli.to_stream_channel();
+    stream_channel.item_type = item_type;
+    stream_channel
+}
+
 impl XtreamPlaylistItem {
     pub fn to_stream_channel(&self) -> StreamChannel {
         StreamChannel {

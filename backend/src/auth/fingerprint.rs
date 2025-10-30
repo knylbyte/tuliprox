@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::request::Parts;
 use axum::http::StatusCode;
-use log::debug;
 use crate::auth::Rejection;
 
 const MAX_HEADER_LENGTH: usize = 512;
@@ -81,7 +80,7 @@ impl Fingerprint {
         let ua = user_agent.unwrap_or_else(String::new);
         let key = format!("{client_ip}|{ua}");
 
-        debug!("{key}, {client_ip}, {addr}");
+       // debug!("{key}, {client_ip}, {addr}");
 
         Ok(Fingerprint::new(key, client_ip, addr.to_string()))
     }

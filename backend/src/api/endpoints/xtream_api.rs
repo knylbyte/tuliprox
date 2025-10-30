@@ -35,10 +35,7 @@ use serde_json::{Map, Value};
 use shared::error::create_tuliprox_error_result;
 use shared::error::info_err;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
-use shared::model::{
-    get_backdrop_path_value, FieldGetAccessor, PlaylistEntry, PlaylistItemType, ProxyType,
-    TargetType, UserConnectionPermission, XtreamCluster, XtreamPlaylistItem,
-};
+use shared::model::{create_stream_channel_with_type, get_backdrop_path_value, FieldGetAccessor, PlaylistEntry, PlaylistItemType, ProxyType, TargetType, UserConnectionPermission, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::{
     extract_extension_from_url, generate_playlist_uuid, get_u32_from_serde_value, hex_encode,
     sanitize_sensitive_info, trim_slash, HLS_EXT,
@@ -294,8 +291,7 @@ async fn xtream_player_api_stream(
             .into_response();
         }
 
-        let mut stream_channel = pli.to_stream_channel();
-        stream_channel.item_type = item_type;
+        let stream_channel = create_stream_channel_with_type(&pli, item_type);
 
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
@@ -384,8 +380,7 @@ async fn xtream_player_api_stream(
         .into_response();
     }
 
-    let mut stream_channel = pli.to_stream_channel();
-    stream_channel.item_type = item_type;
+    let stream_channel = create_stream_channel_with_type(&pli, item_type);
 
     stream_response(
         fingerprint,

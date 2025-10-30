@@ -16,31 +16,37 @@ pub struct GeoIp {
 
 
 impl GeoIp {
-    pub fn load(path: &Path) -> io::Result<Self> {
-        let mut tree = BPlusTree::load(path)?;
 
-        let private_ranges = vec![
+    fn seed_private_ranges(tree: &mut BPlusTree<u32, (u32, String)>) {
+        const PRIVATE_RANGES: [(&str, &str, &str); 7] = [
             ("127.0.0.0", "127.255.255.255", "Loopback"),
             ("10.0.0.0", "10.255.255.255", "LAN"),
             ("172.16.0.0", "172.31.255.255", "LAN"),
             ("192.168.0.0", "192.168.255.255", "LAN"),
             ("169.254.0.0", "169.254.255.255", "Link-Local"),
             ("172.17.0.0", "172.17.255.255", "Docker"),
-            ("172.18.0.0", "172.31.255.255", "Docker")
+            ("172.18.0.0", "172.31.255.255", "Docker"),
         ];
-
-        for range in private_ranges {
-            if let (Some(start), Some(end)) = (ipv4_to_u32(range.0), ipv4_to_u32(range.1)) {
-                let cc = range.2.to_string();
-                tree.insert(start, (end, cc));
+        for (start, end, cc) in PRIVATE_RANGES {
+            if let (Some(start), Some(end)) = (ipv4_to_u32(start), ipv4_to_u32(end)) {
+                tree.insert(start, (end, cc.to_string()));
             }
         }
+    }
+
+    pub fn load(path: &Path) -> io::Result<Self> {
+        let mut tree = BPlusTree::load(path)?;
+        Self::seed_private_ranges(&mut tree);
 
         Ok(Self { tree })
     }
 
     pub fn new() -> Self {
-        Self { tree: BPlusTree::new() }
+        let mut tree = BPlusTree::new();
+        Self::seed_private_ranges(&mut tree);
+        Self {
+            tree
+        }
     }
 
     pub fn import_ipv4_from_csv(&mut self, mut reader: impl BufRead, db_path: &Path) -> std::io::Result<u64> {

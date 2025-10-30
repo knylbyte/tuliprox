@@ -77,7 +77,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         };
 
         let visible_headers: Vec<&str> = if include_country {
-            HEADERS.to_vec() // alle Header
+            HEADERS.to_vec() // all headers
         } else {
             HEADERS.iter()
                 .filter(|h| **h != "COUNTRY")
@@ -162,7 +162,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                     "PROVIDER" => html! {dto.provider.as_str()},
                     "SHARED" => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
                     "USER_AGENT" => html! { dto.user_agent.as_str() },
-                    "DURATION" => html! { <span class="tp__stream-table__duration" data-ts={dto.ts.to_string()}>{format_duration(dto.ts)}</span> },
+                    "DURATION" => html! { <span class="tp__stream-table__duration" data-ts={dto.ts.to_string()}>{format_duration(current_time_secs() - dto.ts)}</span> },
                     _ => html! {""},
                 }
             })
