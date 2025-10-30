@@ -3,6 +3,7 @@ mod storage;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 use web_sys::window;
+use yew_i18n::YewI18n;
 pub use storage::*;
 
 #[macro_export]
@@ -30,4 +31,14 @@ where
             millis,
         )
         .unwrap();
+}
+
+pub fn t_safe(i18n: &YewI18n, key: &str) -> String {
+    let result = i18n.t(key);
+
+    if result.starts_with("Unable to find the key") {
+        key.to_string()
+    } else {
+        result
+    }
 }

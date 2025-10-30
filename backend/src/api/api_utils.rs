@@ -123,6 +123,7 @@ pub use try_option_bad_request;
 pub use try_result_bad_request;
 pub use try_result_not_found;
 pub use try_unwrap_body;
+use crate::auth::Fingerprint;
 
 pub fn get_server_time() -> String {
     chrono::offset::Local::now()
@@ -382,7 +383,7 @@ struct StreamingStrategy {
 async fn resolve_streaming_strategy(
     app_state: &AppState,
     stream_url: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     input: &ConfigInput,
     force_provider: Option<&str>,
 ) -> StreamingStrategy {
@@ -391,13 +392,13 @@ async fn resolve_streaming_strategy(
         Some(provider) => {
             app_state
                 .active_provider
-                .force_exact_acquire_connection(provider, addr)
+                .force_exact_acquire_connection(provider, &fingerprint.addr)
                 .await
         }
         None => {
             app_state
                 .active_provider
-                .acquire_connection(&input.name, addr)
+                .acquire_connection(&input.name, &fingerprint.addr)
                 .await
         }
     };
@@ -461,7 +462,7 @@ async fn create_stream_response_details(
     app_state: &AppState,
     stream_options: &StreamOptions,
     stream_url: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     req_headers: &HeaderMap,
     input: &ConfigInput,
     item_type: PlaylistItemType,
@@ -469,7 +470,7 @@ async fn create_stream_response_details(
     connection_permission: UserConnectionPermission,
     force_provider: Option<&str>,
 ) -> StreamDetails {
-    let mut streaming_strategy = resolve_streaming_strategy(app_state, stream_url, addr, input, force_provider).await;
+    let mut streaming_strategy = resolve_streaming_strategy(app_state, stream_url, fingerprint, input, force_provider).await;
     let config_grace_period_millis = app_state
         .app_config
         .config
@@ -736,7 +737,7 @@ fn prepare_body_stream(
 
 /// # Panics
 pub async fn force_provider_stream_response(
-    addr: &str,
+    fingerprint: &Fingerprint,
     app_state: &AppState,
     user_session: &UserSession,
     mut stream_channel: StreamChannel,
@@ -753,7 +754,7 @@ pub async fn force_provider_stream_response(
         app_state,
         &stream_options,
         &user_session.stream_url,
-        addr,
+        fingerprint,
         req_headers,
         input,
         item_type,
@@ -770,11 +771,11 @@ pub async fn force_provider_stream_response(
             .map(|(h, sc, url)| (h.clone(), *sc, url.clone()));
         app_state
             .active_users
-            .update_session_addr(&user.username, &user_session.token, addr)
+            .update_session_addr(&user.username, &user_session.token, &fingerprint.addr)
             .await;
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr, stream_channel, req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, req_headers)
                 .await;
 
         let (status_code, header_map) =
@@ -809,7 +810,7 @@ pub async fn force_provider_stream_response(
 /// # Panics
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub async fn stream_response(
-    addr: &str,
+    fingerprint: &Fingerprint,
     app_state: &AppState,
     session_token: &str,
     mut stream_channel: StreamChannel,
@@ -838,7 +839,7 @@ pub async fn stream_response(
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
         if let Some(value) =
-            shared_stream_response(app_state, stream_url, addr, user, connection_permission, stream_channel.clone(), req_headers).await
+            shared_stream_response(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), req_headers).await
         {
             return value.into_response();
         }
@@ -849,7 +850,7 @@ pub async fn stream_response(
         app_state,
         &stream_options,
         stream_url,
-        addr,
+        fingerprint,
         req_headers,
         input,
         item_type,
@@ -873,7 +874,7 @@ pub async fn stream_response(
         };
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr, stream_channel, req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, req_headers)
                 .await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
@@ -889,7 +890,7 @@ pub async fn stream_response(
                 app_state,
                 stream_url,
                 stream,
-                Some(addr),
+                Some(&fingerprint.addr),
                 shared_headers,
                 stream_options.buffer_size,
                 provider_guard,
@@ -952,7 +953,7 @@ pub async fn stream_response(
                             virtual_id,
                             &provider,
                             &session_url,
-                            addr,
+                            &fingerprint.addr,
                             connection_permission,
                         )
                         .await;
@@ -984,14 +985,14 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
 async fn shared_stream_response(
     app_state: &AppState,
     stream_url: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     user: &ProxyUserCredentials,
     connect_permission: UserConnectionPermission,
     mut stream_channel: StreamChannel,
     req_headers: &HeaderMap,
 ) -> Option<impl IntoResponse> {
     if let Some((stream, provider)) =
-        SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)).await
+        SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(&fingerprint.addr)).await
     {
         debug_if_enabled!(
             "Using shared stream {}",
@@ -1010,7 +1011,7 @@ async fn shared_stream_response(
             stream_details.provider_name = provider;
             stream_channel.shared = true;
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr, stream_channel, req_headers)
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, req_headers)
                     .await
                     .boxed();
             let mut response = axum::response::Response::builder().status(status_code);
@@ -1326,6 +1327,6 @@ pub fn json_or_bin_response<T: Serialize>(accept: Option<&String>, data: &T) -> 
     json_response(data).into_response()
 }
 
-pub fn create_fingerprint(fingerprint: &str, username: &str, virtual_id: u32) -> String {
+pub fn create_session_fingerprint(fingerprint: &str, username: &str, virtual_id: u32) -> String {
     format!("{fingerprint}|{username}|{virtual_id}")
 }
