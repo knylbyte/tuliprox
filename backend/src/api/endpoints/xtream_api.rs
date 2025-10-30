@@ -1,7 +1,7 @@
 // https://github.com/tellytv/go.xtream-codes/blob/master/structs.go
 
 use crate::api::api_utils;
-use crate::api::api_utils::{create_fingerprint, try_unwrap_body};
+use crate::api::api_utils::{create_session_fingerprint, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_user_target, get_user_target_by_credentials,
     is_seek_request, redirect_response, resource_response, separate_number_and_remainder,
@@ -211,8 +211,7 @@ async fn get_user_info(user: &ProxyUserCredentials, app_state: &AppState) -> Xtr
 
 #[allow(clippy::too_many_lines)]
 async fn xtream_player_api_stream(
-    fingerprint: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     req_headers: &HeaderMap,
     app_state: &Arc<AppState>,
     api_req: &UserApiRequest,
@@ -269,7 +268,7 @@ async fn xtream_player_api_stream(
         (pli.xtream_cluster, pli.item_type)
     };
 
-    let session_key = create_fingerprint(fingerprint, &user.username, virtual_id);
+    let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &session_key).await;
@@ -295,13 +294,16 @@ async fn xtream_player_api_stream(
             .into_response();
         }
 
+        let mut stream_channel = pli.to_stream_channel();
+        stream_channel.item_type = item_type;
+
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
             return force_provider_stream_response(
-                addr,
+                fingerprint,
                 app_state,
                 session,
-                pli.to_stream_channel(),
+                stream_channel,
                 req_headers,
                 &input,
                 &user,
@@ -369,7 +371,6 @@ async fn xtream_player_api_stream(
     if is_hls_request {
         return handle_hls_stream_request(
             fingerprint,
-            addr,
             app_state,
             &user,
             user_session.as_ref(),
@@ -383,11 +384,14 @@ async fn xtream_player_api_stream(
         .into_response();
     }
 
+    let mut stream_channel = pli.to_stream_channel();
+    stream_channel.item_type = item_type;
+
     stream_response(
-        addr,
+        fingerprint,
         app_state,
         session_key.as_str(),
-        pli.to_stream_channel(),
+        stream_channel,
         &stream_url,
         req_headers,
         &input,
@@ -402,8 +406,7 @@ async fn xtream_player_api_stream(
 #[allow(clippy::too_many_lines)]
 // Used by webui
 async fn xtream_player_api_stream_with_token(
-    fingerprint: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     req_headers: &HeaderMap,
     app_state: &Arc<AppState>,
     target_id: u16,
@@ -439,7 +442,7 @@ async fn xtream_player_api_stream_with_token(
             )
         );
 
-        let session_key = create_fingerprint(fingerprint, "webui", virtual_id);
+        let session_key = create_session_fingerprint(&fingerprint.key, "webui", virtual_id);
 
         let is_hls_request =
             pli.item_type == PlaylistItemType::LiveHls || stream_ext.as_deref() == Some(HLS_EXT);
@@ -472,7 +475,6 @@ async fn xtream_player_api_stream_with_token(
         if is_hls_request {
             return handle_hls_stream_request(
                 fingerprint,
-                addr,
                 app_state,
                 &user,
                 None,
@@ -516,7 +518,7 @@ async fn xtream_player_api_stream_with_token(
             sanitize_sensitive_info(&stream_url)
         );
         stream_response(
-            addr,
+            fingerprint,
             app_state,
             session_key.as_str(),
             pli.to_stream_channel(),
@@ -770,7 +772,7 @@ async fn xtream_player_api_resource(
 macro_rules! create_xtream_player_api_stream {
     ($fn_name:ident, $context:expr) => {
         async fn $fn_name(
-            Fingerprint(fingerprint, addr): Fingerprint,
+            fingerprint: Fingerprint,
             req_headers: HeaderMap,
             axum::extract::Path((username, password, stream_id)): axum::extract::Path<(
                 String,
@@ -782,7 +784,6 @@ macro_rules! create_xtream_player_api_stream {
         ) -> impl IntoResponse + Send {
             xtream_player_api_stream(
                 &fingerprint,
-                &addr,
                 &req_headers,
                 &app_state,
                 &api_req,
@@ -848,7 +849,7 @@ struct XtreamApiTimeShiftRequest {
 }
 
 async fn xtream_player_api_timeshift_stream(
-    Fingerprint(fingerprint, addr): Fingerprint,
+    fingerprint: Fingerprint,
     req_headers: HeaderMap,
     axum::extract::Query(mut api_req): axum::extract::Query<UserApiRequest>,
     axum::extract::Path(timeshift_request): axum::extract::Path<XtreamApiTimeShiftRequest>,
@@ -891,7 +892,6 @@ async fn xtream_player_api_timeshift_stream(
 
     xtream_player_api_stream(
         &fingerprint,
-        &addr,
         &req_headers,
         &app_state,
         &api_req,
@@ -908,7 +908,7 @@ async fn xtream_player_api_timeshift_stream(
 }
 
 async fn xtream_player_api_timeshift_query_stream(
-    Fingerprint(fingerprint, addr): Fingerprint,
+    fingerprint: Fingerprint,
     req_headers: HeaderMap,
     axum::extract::Query(api_query_req): axum::extract::Query<UserApiRequest>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
@@ -933,7 +933,6 @@ async fn xtream_player_api_timeshift_query_stream(
     }
     xtream_player_api_stream(
         &fingerprint,
-        &addr,
         &req_headers,
         &app_state,
         &api_query_req,
@@ -1585,7 +1584,7 @@ macro_rules! register_xtream_api_timeshift {
 }
 
 async fn xtream_player_token_stream(
-    Fingerprint(fingerprint, addr): Fingerprint,
+    fingerprint: Fingerprint,
     axum::extract::Path((token, target_id, cluster, stream_id)): axum::extract::Path<(
         String,
         u16,
@@ -1598,7 +1597,6 @@ async fn xtream_player_token_stream(
     let ctxt = try_result_bad_request!(ApiStreamContext::from_str(cluster.as_str()));
     xtream_player_api_stream_with_token(
         &fingerprint,
-        &addr,
         &req_headers,
         &app_state,
         target_id,

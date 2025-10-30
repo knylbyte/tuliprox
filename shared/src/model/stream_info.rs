@@ -49,6 +49,7 @@ pub struct StreamInfo {
     pub channel: StreamChannel,
     pub provider: String,
     pub addr: String,
+    pub client_ip: String,
     #[serde(default)]
     pub user_agent: String,
     #[serde(default)]
@@ -58,12 +59,13 @@ pub struct StreamInfo {
 }
 
 impl StreamInfo {
-    pub fn new(username: &str, addr: &str, provider: &str, stream_channel: StreamChannel, user_agent: String, country: Option<String>) -> Self {
+    pub fn new(username: &str, addr: &str, client_ip: &str, provider: &str, stream_channel: StreamChannel, user_agent: String, country: Option<String>) -> Self {
         Self {
             username: username.to_string(),
             channel: stream_channel,
             provider: provider.to_string(),
             addr: addr.to_string(),
+            client_ip: client_ip.to_string(),
             user_agent,
             ts: current_time_secs(),
             country,

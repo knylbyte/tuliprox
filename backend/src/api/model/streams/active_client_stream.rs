@@ -18,6 +18,7 @@ use std::task::{Poll};
 use axum::http::header::USER_AGENT;
 use axum::http::HeaderMap;
 use futures::task::AtomicWaker;
+use crate::auth::Fingerprint;
 
 const INNER_STREAM: u8 = 0_u8;
 const GRACE_BLOCK_STREAM: u8 = 1_u8;
@@ -40,7 +41,7 @@ impl ActiveClientStream {
                       app_state: &AppState,
                       user: &ProxyUserCredentials,
                       connection_permission: UserConnectionPermission,
-                      addr: &str,
+                      fingerprint: &Fingerprint,
                       stream_channel: StreamChannel,
                       req_headers: &HeaderMap) -> Self {
         if connection_permission == UserConnectionPermission::Exhausted {
@@ -51,11 +52,11 @@ impl ActiveClientStream {
         let provider_name = stream_details.provider_name.as_ref().map_or_else(String::new, ToString::to_string);
 
         let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
-        let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, addr, &provider_name, stream_channel, user_agent).await);
+        let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent).await);
         let cfg = &app_state.app_config;
         let waker = Some(Arc::new(AtomicWaker::new()));
         let waker_clone = waker.clone();
-        let grace_stop_flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, addr, waker_clone.clone());
+        let grace_stop_flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, &fingerprint.addr, waker_clone.clone());
         let custom_response = cfg.custom_stream_response.load();
         let custom_video = custom_response.as_ref()
             .map_or((None, None), |c|

@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::request::Parts;
 use axum::http::StatusCode;
+use log::debug;
 use crate::auth::Rejection;
 
 const MAX_HEADER_LENGTH: usize = 512;
@@ -16,8 +17,21 @@ fn validate_header(value: &str) -> Option<String> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Fingerprint(pub String, pub String);
+pub struct Fingerprint {
+    pub key: String,
+    pub client_ip: String,
+    pub addr: String,
+}
 
+impl Fingerprint {
+    pub fn new(key: String, client_ip: String, addr: String) -> Self {
+        Self {
+            key,
+            client_ip,
+            addr,
+        }
+    }
+}
 
 impl<B> FromRequestParts<B> for Fingerprint
 where
@@ -67,6 +81,8 @@ impl Fingerprint {
         let ua = user_agent.unwrap_or_else(String::new);
         let key = format!("{client_ip}|{ua}");
 
-        Ok(Fingerprint(key, addr.to_string()))
+        debug!("{key}, {client_ip}, {addr}");
+
+        Ok(Fingerprint::new(key, client_ip, addr.to_string()))
     }
 }
