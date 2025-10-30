@@ -181,7 +181,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         let is_sortable = is_sortable.clone();
         let on_sort = on_sort.clone();
         let num_cols = headers.len();
-        use_memo(props.streams.clone(), move |streams| {
+        use_memo((props.streams.clone(), (*headers).clone()), move |(streams, _)| {
             streams.as_ref().map(|list|
                 Rc::new(TableDefinition::<StreamInfo> {
                     items: if list.is_empty() { None } else { Some(Rc::new(list.clone())) },

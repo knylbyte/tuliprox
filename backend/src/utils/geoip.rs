@@ -18,15 +18,20 @@ pub struct GeoIp {
 impl GeoIp {
 
     fn seed_private_ranges(tree: &mut BPlusTree<u32, (u32, String)>) {
-        const PRIVATE_RANGES: [(&str, &str, &str); 7] = [
+        /// Private and commonly used reserved IPv4 ranges.
+        /// "Docker" subnets reflect typical defaults, not exclusive ownership.
+        const PRIVATE_RANGES: [(&str, &str, &str); 8] = [
             ("127.0.0.0", "127.255.255.255", "Loopback"),
             ("10.0.0.0", "10.255.255.255", "LAN"),
             ("172.16.0.0", "172.31.255.255", "LAN"),
             ("192.168.0.0", "192.168.255.255", "LAN"),
             ("169.254.0.0", "169.254.255.255", "Link-Local"),
+            // Common Docker networks (subset of 172.16.0.0/12)
             ("172.17.0.0", "172.17.255.255", "Docker"),
-            ("172.18.0.0", "172.31.255.255", "Docker"),
+            ("172.18.0.0", "172.18.255.255", "Docker"),
+            ("172.19.0.0", "172.19.255.255", "Docker"),
         ];
+
         for (start, end, cc) in PRIVATE_RANGES {
             if let (Some(start), Some(end)) = (ipv4_to_u32(start), ipv4_to_u32(end)) {
                 tree.insert(start, (end, cc.to_string()));
