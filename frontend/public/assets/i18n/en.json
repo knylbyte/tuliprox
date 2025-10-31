@@ -407,6 +407,15 @@
       "WELCOME": "Welcome to tuliprox setup. This wizard will guide you through the initial setup process."
     }
   },
+  "SOURCE_EDITOR": {
+    "BRICK_InputXtream":  "Xtream",
+    "BRICK_InputM3u":  "M3u",
+    "BRICK_Target":  "Target",
+    "BRICK_OutputM3u":  "M3u",
+    "BRICK_OutputXtream":  "Xtream",
+    "BRICK_OutputHdhomerun":  "HDHR",
+    "BRICK_OutputStrm": "STRM"
+  },
   "COUNTRY" : {
     "Loopback": "Loopback",
     "LAN":"LAN",

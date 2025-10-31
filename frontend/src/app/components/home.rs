@@ -1,4 +1,4 @@
-use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, StreamsView, ToastrView, UserlistView, WebsocketStatus};
+use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, SourceEditor, StatsView, StreamsView, ToastrView, UserlistView, WebsocketStatus};
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
@@ -8,7 +8,7 @@ use std::rc::Rc;
 use yew::prelude::*;
 use yew::suspense::use_future;
 use yew_i18n::use_translation;
-use crate::app::components::config::{ConfigView, SourceEditor};
+use crate::app::components::config::{ConfigView};
 use crate::app::components::loading_indicator::{BusyIndicator};
 use crate::provider::DialogProvider;
 use crate::services::{ToastCloseMode, ToastOptions};

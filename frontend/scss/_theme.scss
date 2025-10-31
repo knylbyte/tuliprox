@@ -319,6 +319,60 @@
   --floating-particle-gradient-color-1: rgba(255,255,255,0.3);
   --floating-particle-gradient-color-2: rgba(255,255,255,0);
 
+
+  /* INPUT BLOCKS — cool blues */
+  --brick-input-border-color: #4a90e2cc;
+  --brick-input-background-color: #4a90e255;
+  --brick-input-shadow-color: #4a90e280;
+
+  /* TARGET BLOCKS — balanced green/teal */
+  --brick-target-border-color: #2aa198cc; /* Solarized teal */
+  --brick-target-background-color: #2aa19855;
+  --brick-target-shadow-color: #2aa19880;
+
+  /* GENERIC OUTPUT — warm amber */
+  --brick-output-border-color: #f39c12cc;
+  --brick-output-background-color: #f39c1255;
+  --brick-output-shadow-color: #f39c1280;
+
+  /* INDIVIDUAL OUTPUT TYPES — distinct but cohesive */
+  --brick-output-xtream-border-color: #0099ffcc; /* vivid sky blue */
+  --brick-output-xtream-background-color: #0099ff44;
+  --brick-output-xtream-shadow-color: #0099ff80;
+
+  --brick-output-m3u-border-color: #8bc34acc; /* light green */
+  --brick-output-m3u-background-color: #8bc34a44;
+  --brick-output-m3u-shadow-color: #8bc34a80;
+
+  --brick-output-hdhomerun-border-color: #9b59b6cc; /* purple */
+  --brick-output-hdhomerun-background-color: #9b59b655;
+  --brick-output-hdhomerun-shadow-color: #9b59b680;
+
+  --brick-output-strm-border-color: #e74c3ccc; /* strong red */
+  --brick-output-strm-background-color: #e74c3c55;
+  --brick-output-strm-shadow-color: #e74c3c80;
+
+  //--brick-input-border-color: #569cd6aa;
+  //--brick-input-background-color: #569cd688;
+  //--brick-target-border-color: #65a181aa;
+  //--brick-target-background-color: #65a18188;
+  //--brick-output-border-color: #FF9D23aa;
+  //--brick-output-background-color: #FF9D2388;
+  //
+  //--brick-output-xtream-border-color: #06b6d4aa;
+  //--brick-output-xtream-background-color: #06b6d488;
+  //--brick-output-m3u-border-color: #10b981aa;
+  //--brick-output-m3u-background-color: #10b98188;
+  //--brick-output-hdhomerun-border-color: #6366f1aa;
+  //--brick-output-hdhomerun-background-color: #6366f188;
+  //--brick-output-strm-border-color: #f43f5eaa;
+  //--brick-output-strm-background-color: #f43f5e88;
+
+  --brick-port-background-color: #486786;
+  --brick-port-valid-background-color: #2ecc71;
+  --brick-port-invalid-background-color: #e74c3c;
+  --source-editor-delete-color: #FF0000FF;
+
 }
 
 

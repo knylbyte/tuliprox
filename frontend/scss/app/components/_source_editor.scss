@@ -4,6 +4,7 @@
    box-sizing: border-box;
    width: 100%;
    height: 100%;
+   gap: var(--gap-default);
 
    &__sidebar {
       display: flex;
@@ -11,27 +12,253 @@
       box-sizing: border-box;
       height: 100%;
       gap: var(--gap-small);
+
+      &-actions {
+         display: flex;
+         flex-flow: row wrap;
+         box-sizing: border-box;
+         gap: var(--gap-small);
+         border-bottom: 2px solid var(--border-color);
+         border-radius: 0;
+
+         &-active {
+            color: var(--text-button-active-color);
+            background-color: var(--text-button-active-background-color);
+         }
+      }
+
+      &-bricks {
+         display: flex;
+         flex-flow: column;
+         box-sizing: border-box;
+         gap: var(--gap-large);
+
+         &-group {
+            display: flex;
+            flex-flow: column;
+            box-sizing: border-box;
+            gap: var(--gap-small);
+         }
+
+         .tp__source-editor__brick {
+            border: 1px solid var(--border-color);
+            cursor: grab;
+            padding: var(--padding-small) var(--padding-default);
+            border-radius: var(--border-radius);
+            text-align: center;
+         }
+      }
    }
 
    &__canvas {
+      position: relative;
       box-sizing: border-box;
       width: 100%;
       height: 100%;
    }
 
-   &__brick {
-      border: 1px solid var(--border-color);
-      cursor: grab;
-      padding: var(--padding-small) var(--padding-default);
+   &__connections {
+       position: absolute;
+       box-sizing: border-box;
+       width:100%;
+       height:100%;
+       border: 1px solid var(--card-border-color);
    }
 
    &__block {
-      width:100px;
-      height:50px;
-      border:1px solid var(--border-color);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      background-color:var(--card-background-color);
+      position: absolute;
+      width: 100px;
+      height: 50px;
+      border: 1px solid var(--border-color);
+      background-color: var(--card-background-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-radius: 6px;
+      border-top-left-radius: 0 !important;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+      cursor: default;
+
+      &-label {
+         flex: 1;
+         text-align: center;
+         pointer-events: none;
+      }
+
+      &-handle {
+         position: absolute;
+         width: 50%;
+         top: -13px;
+         left: 0;
+         height: 12px;
+         cursor: grab;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         border-top-left-radius: 4px;
+         border-top-right-radius: 4px;
+
+         &-label {
+            pointer-events: none;
+         }
+      }
+
+      &-delete {
+         display: flex;
+         justify-content: center;
+         align-items: center;
+         position: absolute;
+         top: -13px;
+         right: 0;
+         height: 12px;
+         width: 12px;
+         border-radius: 50%;
+         cursor: pointer;
+         background-color: var(--source-editor-delete-color);
+      }
    }
+
+   &__port {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      cursor: crosshair;
+
+      &--left {
+         left: -5px;
+         background-color: var(--brick-port-background-color);
+      }
+
+      &--right {
+         right: -5px;
+         background-color: var(--brick-port-background-color);
+      }
+
+      &--valid {
+         background-color: var(--brick-port-valid-background-color);
+      }
+
+      &--invalid {
+         background-color: var(--brick-port-invalid-background-color);
+      }
+   }
+}
+
+.tp__source-editor__brick {
+
+   &-InputXtream,
+   &-InputM3u {
+      border-color: var(--brick-input-border-color);
+      background-color: var(--brick-input-background-color);
+      .tp__source-editor__block-handle {
+         background: repeating-linear-gradient(
+                         -55deg,
+                         var(--brick-input-background-color),
+                         var(--brick-input-background-color) 10px,
+                         var(--brick-input-border-color) 10px,
+                         var(--brick-input-border-color) 20px
+         );
+         border-left: 1px solid var(--brick-input-border-color);
+         border-top: 1px solid var(--brick-input-border-color);
+         border-right: 1px solid var(--brick-input-border-color);
+
+      }
+   }
+   &-Target {
+      border-color: var(--brick-target-border-color);
+      background-color: var(--brick-target-background-color);
+      .tp__source-editor__block-handle {
+         background: repeating-linear-gradient(
+                         -55deg,
+                         var(--brick-target-background-color),
+                         var(--brick-target-background-color) 10px,
+                         var(--brick-target-border-color) 10px,
+                         var(--brick-target-border-color) 20px
+         );
+         border-left: 1px solid var(--brick-target-border-color);
+         border-top: 1px solid var(--brick-target-border-color);
+         border-right: 1px solid var(--brick-target-border-color);
+      }
+   }
+
+   &-OutputM3u {
+      border-color: var(--brick-output-m3u-border-color);
+      background-color: var(--brick-output-m3u-background-color);
+      .tp__source-editor__block-handle {
+         background: repeating-linear-gradient(
+                         -55deg,
+                         var(--brick-output-m3u-background-color),
+                         var(--brick-output-m3u-background-color) 10px,
+                         var(--brick-output-m3u-border-color) 10px,
+                         var(--brick-output-m3u-border-color) 20px
+         );
+         border-left: 1px solid var(--brick-output-m3u-border-color);
+         border-top: 1px solid var(--brick-output-m3u-border-color);
+         border-right: 1px solid var(--brick-output-m3u-border-color);
+      }
+   }
+
+   &-OutputXtream {
+      border-color: var(--brick-output-xtream-border-color);
+      background-color: var(--brick-output-xtream-background-color);
+      .tp__source-editor__block-handle {
+         background: repeating-linear-gradient(
+                         -55deg,
+                         var(--brick-output-xtream-background-color),
+                         var(--brick-output-xtream-background-color) 10px,
+                         var(--brick-output-xtream-border-color) 10px,
+                         var(--brick-output-xtream-border-color) 20px
+         );
+         border-left: 1px solid var(--brick-output-xtream-border-color);
+         border-top: 1px solid var(--brick-output-xtream-border-color);
+         border-right: 1px solid var(--brick-output-xtream-border-color);
+      }
+   }
+   &-OutputHdhomerun {
+      border-color: var(--brick-output-hdhomerun-border-color);
+      background-color: var(--brick-output-hdhomerun-background-color);
+      .tp__source-editor__block-handle {
+         background: repeating-linear-gradient(
+                         -55deg,
+                         var(--brick-output-hdhomerun-background-color),
+                         var(--brick-output-hdhomerun-background-color) 10px,
+                         var(--brick-output-hdhomerun-border-color) 10px,
+                         var(--brick-output-hdhomerun-border-color) 20px
+         );
+         border-left: 1px solid var(--brick-output-hdhomerun-border-color);
+         border-top: 1px solid var(--brick-output-hdhomerun-border-color);
+         border-right: 1px solid var(--brick-output-hdhomerun-border-color);
+      }
+   }
+   &-OutputStrm {
+      border-color: var(--brick-output-strm-border-color);
+      background-color: var(--brick-output-strm-background-color);
+      .tp__source-editor__block-handle {
+         background: repeating-linear-gradient(
+                         -55deg,
+                         var(--brick-output-strm-background-color),
+                         var(--brick-output-strm-background-color) 10px,
+                         var(--brick-output-strm-border-color) 10px,
+                         var(--brick-output-strm-border-color) 20px
+         );
+         border-left: 1px solid var(--brick-output-strm-border-color);
+         border-top: 1px solid var(--brick-output-strm-border-color);
+         border-right: 1px solid var(--brick-output-strm-border-color);
+      }
+   }
+
+}
+
+.graph-paper-advanced {
+   background-image:
+           linear-gradient(#e0e0e060 1px, transparent 1px),
+           linear-gradient(90deg, #e0e0e060 1px, transparent 1px),
+           linear-gradient(#c0c0c044 2px, transparent 2px),        /* horizontal thick */
+           linear-gradient(90deg, #c0c0c044 2px, transparent 2px);  /* vertical thick */
+   background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
+}
+
+.clickable {
+   cursor: pointer;
 }
