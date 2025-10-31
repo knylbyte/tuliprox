@@ -68,7 +68,7 @@ impl ActiveClientStream {
         let stream = match stream_details.stream.take() {
             None => {
                 if let Some(guard) = stream_details.provider_connection_guard.as_ref() {
-                    guard.release();
+                    guard.release().await;
                 }
                 futures::stream::empty::<Result<Bytes, StreamError>>().boxed()
             }
@@ -163,7 +163,6 @@ impl ActiveClientStream {
                 }
 
                 if updated {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                     share_manager.release_connection(&address, true).await;
                     provider_manager.release_connection(&address).await;
                      if let Some(flag) = reconnect_flag {

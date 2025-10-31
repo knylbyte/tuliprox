@@ -1,5 +1,6 @@
 use crate::api::model::{ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper, ProviderConnectionChangeCallback, ProviderConnectionChangeSender};
 use crate::model::{AppConfig, ConfigInput};
+use crate::utils::debug_if_enabled;
 use arc_swap::ArcSwap;
 use log::{debug, error, log_enabled, trace};
 use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs, display_vec, sanitize_sensitive_info};
@@ -9,8 +10,6 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::utils::debug_if_enabled;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
 const CONNECTION_STATE_ACTIVE: u8 = 0;
 const CONNECTION_STATE_SHARED: u8 = 1;
@@ -19,12 +18,11 @@ const CONNECTION_STATE_RELEASED: u8 = 2;
 #[derive(Debug)]
 pub struct ProviderConnectionGuard {
     allocation: ProviderAllocation,
-    release_tx: UnboundedSender<Arc<ProviderConfig>>,
 }
 
 impl ProviderConnectionGuard {
-    pub fn new(allocation: ProviderAllocation, release_tx: UnboundedSender<Arc<ProviderConfig>>) -> Self {
-        Self { allocation, release_tx }
+    pub fn new(allocation: ProviderAllocation) -> Self {
+        Self { allocation }
     }
 
     // for shared streams, we need to disable release
@@ -39,39 +37,37 @@ impl ProviderConnectionGuard {
         }
     }
 
-    fn send_release(&self, config: &Arc<ProviderConfig>) {
-        let provider_config = Arc::clone(config);
-        if let Err(_err) = &self.release_tx.send(provider_config.clone()) {
-            // Fallback
-            tokio::spawn(async move {
-                provider_config.release().await;
-            });
-        }
+    pub(crate) async fn release(&self) {
+        Self::release_allocation(self.allocation.clone()).await;
     }
 
-    pub(crate) fn release(&self) {
-        match &self.allocation {
+    async fn release_allocation(allocation: ProviderAllocation) {
+        match &allocation {
             ProviderAllocation::Exhausted => {}
             ProviderAllocation::Available(state, config) |
             ProviderAllocation::GracePeriod(state, config) => {
                 // we can't release shared state
                 if state.compare_exchange(CONNECTION_STATE_ACTIVE, CONNECTION_STATE_RELEASED, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
-                    self.send_release(config);
+                    config.release().await;
                 }
             }
         }
     }
 
     // we need to ensure the connections is released
-    pub(crate) fn force_release(&self) {
-        match &self.allocation {
+    pub(crate) async fn force_release(&self) {
+        Self::force_release_allocation(self.allocation.clone()).await;
+    }
+
+    async fn force_release_allocation(allocation: ProviderAllocation) {
+        match &allocation {
             ProviderAllocation::Exhausted => {}
             ProviderAllocation::Available(state, config)
             | ProviderAllocation::GracePeriod(state, config) => {
                 if state.load(Ordering::SeqCst) < CONNECTION_STATE_RELEASED {
                     state.store(CONNECTION_STATE_RELEASED, Ordering::SeqCst);
                     trace!("Forced releasing provider connection {:?}", config.name);
-                    self.send_release(config);
+                    config.release().await;
                 }
             }
         }
@@ -106,24 +102,27 @@ impl Deref for ProviderConnectionGuard {
 
 impl Drop for ProviderConnectionGuard {
     fn drop(&mut self) {
-        self.release();
+        let allocation = self.allocation.clone();
+        tokio::spawn(async move {
+            Self::release_allocation(allocation).await;
+        });
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ProviderAllocation {
     Exhausted,
-    Available(AtomicU8, Arc<ProviderConfig>),
-    GracePeriod(AtomicU8, Arc<ProviderConfig>),
+    Available(Arc<AtomicU8>, Arc<ProviderConfig>),
+    GracePeriod(Arc<AtomicU8>, Arc<ProviderConfig>),
 }
 
 impl ProviderAllocation {
     pub fn new_available(config: Arc<ProviderConfig>) -> Self {
-        ProviderAllocation::Available(AtomicU8::new(CONNECTION_STATE_ACTIVE), config)
+        ProviderAllocation::Available(Arc::new(AtomicU8::new(CONNECTION_STATE_ACTIVE)), config)
     }
 
     pub fn new_grace_period(config: Arc<ProviderConfig>) -> Self {
-        ProviderAllocation::GracePeriod(AtomicU8::new(CONNECTION_STATE_ACTIVE), config)
+        ProviderAllocation::GracePeriod(Arc::new(AtomicU8::new(CONNECTION_STATE_ACTIVE)), config)
     }
 }
 
@@ -497,7 +496,7 @@ impl MultiProviderLineup {
             match group {
                 ProviderPriorityGroup::SingleProviderGroup(provider) => {
                     total_connections += provider.get_current_connections().await;
-                },
+                }
                 ProviderPriorityGroup::MultiProviderGroup(_, providers) => {
                     for provider in providers {
                         total_connections += provider.get_current_connections().await;
@@ -685,18 +684,18 @@ impl ProviderLineupManager {
         None
     }
 
-    async fn force_exact_acquire_connection(&self, provider_name: &str, release_tx: UnboundedSender<Arc<ProviderConfig>>) -> Arc<ProviderConnectionGuard> {
+    async fn force_exact_acquire_connection(&self, provider_name: &str) -> Arc<ProviderConnectionGuard> {
         let providers = self.providers.load();
         let allocation = match Self::get_provider_config(provider_name, &providers) {
             None => ProviderAllocation::Exhausted, // No Name matched, we don't have this provider
             Some((_lineup, config)) => config.force_allocate().await,
         };
 
-        Arc::new(ProviderConnectionGuard::new(allocation, release_tx))
+        Arc::new(ProviderConnectionGuard::new(allocation))
     }
 
     // Returns the next available provider connection
-    async fn acquire_connection(&self, input_name: &str, release_tx: UnboundedSender<Arc<ProviderConfig>>) -> Arc<ProviderConnectionGuard> {
+    async fn acquire_connection(&self, input_name: &str) -> Arc<ProviderConnectionGuard> {
         let providers = self.providers.load();
         let allocation = match Self::get_provider_config(input_name, &providers) {
             None => ProviderAllocation::Exhausted, // No Name matched, we don't have this provider
@@ -714,7 +713,7 @@ impl ProviderLineupManager {
             }
         }
 
-        Arc::new(ProviderConnectionGuard::new(allocation, release_tx))
+        Arc::new(ProviderConnectionGuard::new(allocation))
     }
 
     // This method is used for redirects to cycle through provider
@@ -783,34 +782,16 @@ impl ProviderLineupManager {
 pub struct ActiveProviderManager {
     providers: ProviderLineupManager,
     connections: RwLock<HashMap<String, Arc<ProviderConnectionGuard>>>,
-    release_tx: UnboundedSender<Arc<ProviderConfig>>,
 }
 
 impl ActiveProviderManager {
     pub fn new(cfg: &AppConfig, connection_change_sender: ProviderConnectionChangeSender) -> Self {
         let (grace_period_millis, grace_period_timeout_secs) = Self::get_grace_options(cfg);
         let inputs = Self::get_config_inputs(cfg);
-        // Create the cleanup channel
-        let (cleanup_tx, mut cleanup_rx) = unbounded_channel::<Arc<ProviderConfig>>();
-
-        // Spawn the async cleanup worker
-        tokio::spawn(async move {
-            while let Some(cfg) = cleanup_rx.recv().await {
-                debug!("Provider connection releasing {:?}", cfg.name);
-                cfg.release().await;
-            }
-            debug!("Provider cleanup worker terminated");
-        });
-
         Self {
             providers: ProviderLineupManager::new(inputs, grace_period_millis, grace_period_timeout_secs, connection_change_sender),
             connections: RwLock::new(HashMap::new()),
-            release_tx: cleanup_tx,
         }
-    }
-
-    fn release_sender(&self) -> UnboundedSender<Arc<ProviderConfig>> {
-        self.release_tx.clone()
     }
 
     fn get_config_inputs(cfg: &AppConfig) -> Vec<Arc<ConfigInput>> {
@@ -832,14 +813,14 @@ impl ActiveProviderManager {
     }
 
     pub async fn force_exact_acquire_connection(&self, provider_name: &str, addr: &str) -> Arc<ProviderConnectionGuard> {
-        let guard = self.providers.force_exact_acquire_connection(provider_name, self.release_sender()).await;
+        let guard = self.providers.force_exact_acquire_connection(provider_name).await;
         self.register_connection(addr, &guard).await;
         guard
     }
 
     // Returns the next available provider connection
     pub async fn acquire_connection(&self, input_name: &str, addr: &str) -> Arc<ProviderConnectionGuard> {
-        let guard = self.providers.acquire_connection(input_name, self.release_sender()).await;
+        let guard = self.providers.acquire_connection(input_name).await;
         self.register_connection(addr, &guard).await;
         guard
     }
@@ -865,7 +846,13 @@ impl ActiveProviderManager {
     async fn register_connection(&self, addr: &str, guard: &Arc<ProviderConnectionGuard>) {
         if !matches!(guard.allocation, ProviderAllocation::Exhausted) {
             debug!("Added provider connection {:?} for {addr}", guard.get_provider_name().unwrap_or_default());
-            self.connections.write().await.insert(addr.to_string(), Arc::clone(guard));
+            let mut connections = self.connections.write().await;
+            if let Some(old) = connections.insert(addr.to_string(), Arc::clone(guard)) {
+                crate::utils::trace_if_enabled!("register_connection: address {addr} already had a guard for provider {:?} — forcing release on the old guard",
+                   old.get_provider_name().unwrap_or_default());
+                // safe force_release or release depending on semantics — force_release ensures decrement
+                old.force_release().await;
+            }
         }
     }
 
@@ -873,7 +860,7 @@ impl ActiveProviderManager {
         let guard = self.connections.write().await.remove(addr);
         if let Some(guard) = guard {
             debug!("Released provider connection {:?} for {addr}", guard.get_provider_name().unwrap_or_default());
-            guard.release();
+            guard.release().await;
         }
     }
 }
@@ -1127,7 +1114,7 @@ mod tests {
         // Create MultiProviderLineup with the provider and alias
         let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
         let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = MultiProviderLineup::new(&cfg1,  Some(dummy_get_connection), &change_callback);
+        let lineup = MultiProviderLineup::new(&cfg1, Some(dummy_get_connection), &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Test acquiring the first provider

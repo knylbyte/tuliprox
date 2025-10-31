@@ -1,4 +1,3 @@
-use log::trace;
 use std::borrow::Cow;
 use crate::api::model::{ActiveProviderManager};
 use crate::api::model::SharedStreamManager;
@@ -12,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use arc_swap::ArcSwapOption;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use tokio::sync::RwLock;
 use crate::auth::Fingerprint;
 use crate::utils::GeoIp;
@@ -21,21 +20,14 @@ const USER_GC_TTL: u64 = 900;  // 15 Min
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
 const USER_SESSION_LIMIT: usize = 50;
 
-type ActiveUserConnectionChangeSender = tokio::sync::mpsc::UnboundedSender<ActiveUserConnectionChange>;
-pub type ActiveUserConnectionChangeReceiver = tokio::sync::mpsc::UnboundedReceiver<ActiveUserConnectionChange>;
+type ActiveUserConnectionChangeSender = UnboundedSender<ActiveUserConnectionChange>;
+pub type ActiveUserConnectionChangeReceiver = UnboundedReceiver<ActiveUserConnectionChange>;
 
 macro_rules! active_user_manager_shared_impl {
     () => {
        #[inline]
         async fn get_active_connections(user: &Arc<RwLock<HashMap<String, UserConnectionData>>>) -> usize {
             user.read().await.iter().filter(|(_, c)| c.connections > 0).map(|(_, c)| c.connections as usize).sum()
-        }
-
-        #[inline]
-        fn drop_connection(&self, addr: &str) {
-             if let Err(e) = self.close_signal_tx.send(addr.to_string()) {
-                 debug!("No active receivers for close signal ({addr}): {e:?}");
-             }
         }
 
         async fn log_active_user(&self) {
@@ -71,16 +63,19 @@ macro_rules! active_user_manager_shared_impl {
                         connection_data.streams.retain(|c| c.addr != addr);
                     }
                 }
+            }
 
-                self.drop_connection(&addr);
-                self.shared_stream_manager.release_connection(addr, true).await;
-                self.provider_manager.release_connection(addr).await;
+            self.shared_stream_manager.release_connection(addr, true).await;
+            self.provider_manager.release_connection(addr).await;
 
-                if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
-                     error!("Failed to send active user connection change: {err:?}");
-                 }
-                self.log_active_user().await;
-             }
+            if let Err(e) = self.close_socket_signal_tx.send(addr.to_string()) {
+                 debug!("No active receivers for close signal ({addr}): {e:?}");
+            }
+
+            if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
+                 error!("Failed to send active user connection change: {err:?}");
+            }
+            self.log_active_user().await;
         }
     };
 }
@@ -99,7 +94,7 @@ pub struct ConnectionGuardUserManager {
     shared_stream_manager: Arc<SharedStreamManager>,
     provider_manager: Arc<ActiveProviderManager>,
     connection_change_tx: ActiveUserConnectionChangeSender,
-    close_signal_tx: tokio::sync::broadcast::Sender<String>,
+    close_socket_signal_tx: tokio::sync::broadcast::Sender<String>,
 }
 
 impl ConnectionGuardUserManager {
@@ -113,15 +108,13 @@ pub struct UserConnectionGuard {
     manager: Arc<ConnectionGuardUserManager>,
     // username: String,
     addr: String,
-    release_tx: UnboundedSender<String>,
 }
 
 impl UserConnectionGuard {
-    pub fn new(manager: Arc<ConnectionGuardUserManager>, addr: &str, release_tx: UnboundedSender<String>) -> Self {
+    pub fn new(manager: Arc<ConnectionGuardUserManager>, addr: &str) -> Self {
         Self {
             manager,
             addr: addr.to_string(),
-            release_tx,
         }
     }
 }
@@ -129,13 +122,10 @@ impl UserConnectionGuard {
 impl Drop for UserConnectionGuard {
     fn drop(&mut self) {
         let manager = self.manager.clone();
-        if let Err(_err) = self.release_tx.send(self.addr.clone()) {
-            let addr = self.addr.clone();
-            // fallback
-            tokio::spawn(async move {
-                manager.remove_connection(&addr).await;
-            });
-        }
+        let addr = self.addr.clone();
+        tokio::spawn(async move {
+            manager.remove_connection(&addr).await;
+        });
     }
 }
 
@@ -193,12 +183,11 @@ pub struct ActiveUserManager {
     user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
     user_by_addr: Arc<RwLock<HashMap<String, String>>>,
     gc_ts: Option<AtomicU64>,
-    close_signal_tx: tokio::sync::broadcast::Sender<String>,
     shared_stream_manager: Arc<SharedStreamManager>,
     provider_manager: Arc<ActiveProviderManager>,
     geo_ip: Arc<ArcSwapOption<GeoIp>>,
+    close_socket_signal_tx: tokio::sync::broadcast::Sender<String>,
     connection_change_tx: ActiveUserConnectionChangeSender,
-    release_tx: UnboundedSender<String>,
 }
 
 impl ActiveUserManager {
@@ -208,45 +197,24 @@ impl ActiveUserManager {
                connection_change_tx: ActiveUserConnectionChangeSender) -> Arc<Self> {
         let log_active_user: bool = config.log.as_ref().is_some_and(|l| l.log_active_user);
         let (grace_period_millis, grace_period_timeout_secs) = get_grace_options(config);
-        let (close_signal_tx, _) = tokio::sync::broadcast::channel(10);
+        let (close_socket_signal_tx, _) = tokio::sync::broadcast::channel(256);
 
-        // Create the cleanup channel
-        let (cleanup_tx, mut cleanup_rx) = unbounded_channel::<String>();
-
-        let active_user_manager = Arc::new(Self {
+        Arc::new(Self {
             grace_period_millis: AtomicU64::new(grace_period_millis),
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
             log_active_user: AtomicBool::new(log_active_user),
             user: Arc::new(RwLock::new(HashMap::new())),
             user_by_addr: Arc::new(RwLock::new(HashMap::new())),
             gc_ts: Some(AtomicU64::new(current_time_secs())),
-            close_signal_tx,
+            close_socket_signal_tx,
             shared_stream_manager: Arc::clone(shared_stream_manager),
             provider_manager: Arc::clone(provider_manager),
             geo_ip: Arc::clone(geoip),
             connection_change_tx,
-            release_tx: cleanup_tx,
-        });
-
-        let active_user_manager_clone = Arc::clone(&active_user_manager);
-        // Spawn the async cleanup worker
-        tokio::spawn(async move {
-            while let Some(addr) = cleanup_rx.recv().await {
-                trace!("User manager - connection releasing {addr:?}");
-                active_user_manager_clone.remove_connection(&addr).await;
-            }
-            debug!("User manager - cleanup worker terminated");
-        });
-
-
-        active_user_manager
+        })
     }
 
     active_user_manager_shared_impl!();
-
-    pub fn release_sender(&self) -> UnboundedSender<String> {
-        self.release_tx.clone()
-    }
 
     pub fn update_config(&self, config: &Config) {
         let log_active_user = config.log.as_ref().is_some_and(|l| l.log_active_user);
@@ -264,7 +232,7 @@ impl ActiveUserManager {
             shared_stream_manager: Arc::clone(&self.shared_stream_manager),
             provider_manager: Arc::clone(&self.provider_manager),
             connection_change_tx: self.connection_change_tx.clone(),
-            close_signal_tx:  self.close_signal_tx.clone(),
+            close_socket_signal_tx:  self.close_socket_signal_tx.clone(),
         }
     }
 
@@ -374,7 +342,7 @@ impl ActiveUserManager {
         }
         self.log_active_user().await;
 
-        UserConnectionGuard::new(Arc::new(self.clone_inner()), &fingerprint.addr, self.release_sender())
+        UserConnectionGuard::new(Arc::new(self.clone_inner()), &fingerprint.addr)
     }
 
     fn is_log_user_enabled(&self) -> bool {
@@ -450,7 +418,7 @@ impl ActiveUserManager {
     }
 
     pub fn get_close_connection_channel(&self) -> tokio::sync::broadcast::Receiver<String> {
-        self.close_signal_tx.subscribe()
+        self.close_socket_signal_tx.subscribe()
     }
 
     pub async fn get_and_update_user_session(&self, username: &str, token: &str) -> Option<UserSession> {
