@@ -8,7 +8,7 @@ use std::rc::Rc;
 use yew::prelude::*;
 use yew::suspense::use_future;
 use yew_i18n::use_translation;
-use crate::app::components::config::ConfigView;
+use crate::app::components::config::{ConfigView, SourceEditor};
 use crate::app::components::loading_indicator::{BusyIndicator};
 use crate::provider::DialogProvider;
 use crate::services::{ToastCloseMode, ToastOptions};
@@ -180,6 +180,9 @@ pub fn Home() -> Html {
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::Config.to_string()} active={view_visible.to_string()}>
                           <ConfigView/>
+                       </Panel>
+                       <Panel class="tp__full-width tp__full-height" value={ViewType::SourceEditor.to_string()} active={view_visible.to_string()}>
+                          <SourceEditor/>
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::PlaylistUpdate.to_string()} active={view_visible.to_string()}>
                         <PlaylistUpdateView/>

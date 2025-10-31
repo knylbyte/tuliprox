@@ -11,6 +11,7 @@ const PLAYLIST_UPDATE: &str = "playlist_update";
 const PLAYLIST_EDITOR: &str = "playlist_editor";
 const PLAYLIST_EXPLORER: &str = "playlist_explorer";
 const PLAYLIST_EPG: &str = "playlist_epg";
+const SOURCE_EDITOR: &str = "source_editor";
 
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -20,6 +21,7 @@ pub enum ViewType {
     Streams,
     Users,
     Config,
+    SourceEditor,
     PlaylistUpdate,
     PlaylistEditor,
     PlaylistExplorer,
@@ -36,6 +38,7 @@ impl FromStr for ViewType {
             STREAMS => Ok(ViewType::Streams),
             USERS => Ok(ViewType::Users),
             CONFIG => Ok(ViewType::Config),
+            SOURCE_EDITOR => Ok(ViewType::SourceEditor),
             PLAYLIST_UPDATE => Ok(ViewType::PlaylistUpdate),
             PLAYLIST_EDITOR => Ok(ViewType::PlaylistEditor),
             PLAYLIST_EXPLORER => Ok(ViewType::PlaylistExplorer),
@@ -53,6 +56,7 @@ impl fmt::Display for ViewType {
             ViewType::Streams => STREAMS,
             ViewType::Users => USERS,
             ViewType::Config => CONFIG,
+            ViewType::SourceEditor => SOURCE_EDITOR,
             ViewType::PlaylistUpdate => PLAYLIST_UPDATE,
             ViewType::PlaylistEditor => PLAYLIST_EDITOR,
             ViewType::PlaylistExplorer => PLAYLIST_EXPLORER,

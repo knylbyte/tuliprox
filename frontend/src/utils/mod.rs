@@ -33,12 +33,12 @@ where
         .unwrap();
 }
 
-pub fn t_safe(i18n: &YewI18n, key: &str) -> String {
+pub fn t_safe(i18n: &YewI18n, key: &str) -> Option<String> {
     let result = i18n.t(key);
 
     if result.starts_with("Unable to find the key") {
-        key.to_string()
+        None
     } else {
-        result
+        Some(result)
     }
 }
