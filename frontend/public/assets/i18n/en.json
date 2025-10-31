@@ -304,7 +304,8 @@
     "PROPRIETARY_DISCOVERY": "Proprietary Discovery",
     "COUNTRY": "Country",
     "GEOIP": "Geo-IP",
-    "UPDATE_GEOIP_DB": "Update Geo-IP db"
+    "UPDATE_GEOIP_DB": "Update Geo-IP db",
+    "SOURCE_EDITOR": "Sources"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"
@@ -412,6 +413,15 @@
     "MSG": {
       "WELCOME": "Welcome to tuliprox setup. This wizard will guide you through the initial setup process."
     }
+  },
+  "SOURCE_EDITOR": {
+    "BRICK_InputXtream":  "Xtream",
+    "BRICK_InputM3u":  "M3u",
+    "BRICK_Target":  "Target",
+    "BRICK_OutputM3u":  "M3u",
+    "BRICK_OutputXtream":  "Xtream",
+    "BRICK_OutputHdhomerun":  "HDHR",
+    "BRICK_OutputStrm": "STRM"
   },
   "COUNTRY" : {
     "Loopback": "Loopback",

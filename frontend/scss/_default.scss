@@ -92,7 +92,20 @@ li {
   align-items: center;
 }
 
+.tp__full-height  {
+  box-sizing: border-box;
+  height: 100%;
+  align-items: center;
+}
+
 .disabled {
   pointer-events: none;
   color: var(--hint-color);
+}
+
+.no-select {
+  user-select: none;          /* Standard */
+  -webkit-user-select: none;  /* Chrome, Safari, Opera */
+  -moz-user-select: none;     /* Firefox */
+  -ms-user-select: none;      /* IE/Edge */
 }
