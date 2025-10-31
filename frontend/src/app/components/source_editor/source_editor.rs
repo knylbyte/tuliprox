@@ -22,6 +22,7 @@ pub fn SourceEditor() -> Html {
     // Dragging state
     let dragging_block = use_state(|| None as Option<usize>);
     let drag_offset = use_state(|| (0.0f32, 0.0f32));
+    let sidebar_drag_offset = use_state(|| (0.0f32, 0.0f32));
 
     // Pending line for live connection
     let pending_line = use_state(|| None as Option<((f32, f32), (f32, f32))>);
@@ -31,25 +32,35 @@ pub fn SourceEditor() -> Html {
     let delete_mode = use_state(|| false);
 
     // ----------------- Drag Start from Sidebar -----------------
-    let on_drag_start = Callback::from(|e: DragEvent| {
-        if let Some(target) = e.target_dyn_into::<HtmlElement>() {
-            let block_type = target.get_attribute("data-block-type").unwrap_or_default();
-            e.data_transfer().unwrap().set_data("text/plain", &block_type).unwrap();
+    let on_drag_start = {
+        let sidebar_drag_offset = sidebar_drag_offset.clone();
+        Callback::from(move |e: DragEvent| {
+            if let Some(target) = e.target_dyn_into::<HtmlElement>() {
+                let block_type = target.get_attribute("data-block-type").unwrap_or_default();
+                e.data_transfer().unwrap().set_data("text/plain", &block_type).unwrap();
+                // Store mouse offset inside the element
+                let rect = target.get_bounding_client_rect();
+                let offset_x = e.client_x() as f32 - rect.left() as f32;
+                let offset_y = e.client_y() as f32 - rect.top() as f32;
+                sidebar_drag_offset.set((offset_x, offset_y));
+            }
         }
-    });
+    )};
 
     // ----------------- Drop on Canvas -----------------
     let on_drop = {
         let blocks = blocks.clone();
         let next_id = next_id.clone();
         let canvas_ref = canvas_ref.clone();
+        let sidebar_drag_offset = sidebar_drag_offset.clone();
         Callback::from(move |e: DragEvent| {
             e.prevent_default();
             if let Some(canvas) = canvas_ref.cast::<HtmlElement>() {
                 if let Some(data) = e.data_transfer().unwrap().get_data("text/plain").ok() {
                     let rect = canvas.get_bounding_client_rect();
-                    let x = e.client_x() as f32 - rect.left() as f32;
-                    let y = e.client_y() as f32 - rect.top() as f32;
+                    let mouse_x = e.client_x() as f32 - rect.left() as f32;
+                    let mouse_y = e.client_y() as f32 - rect.top() as f32;
+                    let (offset_x, offset_y) = *sidebar_drag_offset;
 
                     let block_type = BlockType::from(data.as_str());
 
@@ -57,7 +68,7 @@ pub fn SourceEditor() -> Html {
                     current_blocks.push(Block {
                         id: *next_id,
                         block_type,
-                        position: (x, y),
+                        position: (mouse_x - offset_x, mouse_y - offset_y),
                     });
                     blocks.set(current_blocks);
                     next_id.set(*next_id + 1);
@@ -239,6 +250,8 @@ pub fn SourceEditor() -> Html {
 
     // ----------------- Render -----------------
     html! {
+        <>
+        <span>{"WORK IN PROGRESS - NOT FINALIZED !!!"}</span>
         <div class="tp__source-editor">
 
             <SourceEditorSidebar
@@ -395,5 +408,6 @@ pub fn SourceEditor() -> Html {
                 }) }
             </div>
         </div>
+        </>
     }
 }
