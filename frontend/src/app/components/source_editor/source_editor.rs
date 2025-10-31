@@ -15,8 +15,8 @@ const PORT_INVALID: u32 = 2;
 pub fn SourceEditor() -> Html {
     let translate = use_translation();
     let canvas_ref = use_node_ref();
-    let blocks = use_state(|| Vec::<Block>::new());
-    let connections = use_state(|| Vec::<Connection>::new());
+    let blocks = use_state(Vec::<Block>::new);
+    let connections = use_state(Vec::<Connection>::new);
     let next_id = use_state(|| 1usize);
 
     // Dragging state
@@ -56,7 +56,7 @@ pub fn SourceEditor() -> Html {
         Callback::from(move |e: DragEvent| {
             e.prevent_default();
             if let Some(canvas) = canvas_ref.cast::<HtmlElement>() {
-                if let Some(data) = e.data_transfer().unwrap().get_data("text/plain").ok() {
+                if let Ok(data) = e.data_transfer().unwrap().get_data("text/plain") {
                     let rect = canvas.get_bounding_client_rect();
                     let mouse_x = e.client_x() as f32 - rect.left() as f32;
                     let mouse_y = e.client_y() as f32 - rect.top() as f32;
