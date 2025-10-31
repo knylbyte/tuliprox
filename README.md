@@ -305,12 +305,16 @@ reverse_proxy:
     burst_size: 10
 ```
 
-#### 1.6.5 `disable_referer_header`
-This option, when set to `true`, prevents tuliprox from sending the Referer header in requests made when acting as a reverse proxy. This can be particularly useful when dealing with certain Xtream Codes providers that might restrict or behave differently based on the Referer header. Default is `false`.
+#### 1.6.5 `disabled_header`
+Controls which headers are removed before tuliprox forwards a request to the upstream provider when acting as a reverse proxy. Use `referer_header` to drop the Referer header, enable `x_header` to strip every header beginning with `X-`, and list any additional headers to remove under `custom_header`.
 
 ```yaml
 reverse_proxy:
-  disable_referer_header: false
+  disabled_header:
+    referer_header: false
+    x_header: false
+    custom_header:
+      - my-custom-header
 ```
 
 ### 1.6.7 `geoip`

@@ -4,7 +4,7 @@ use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
 use crate::api::model::{create_channel_unavailable_stream, get_header_filter_for_item_type};
 use crate::api::model::{BoxedProviderStream, ProviderStreamFactoryResponse};
-use crate::model::AppConfig;
+use crate::model::{AppConfig, ReverseProxyDisabledHeaderConfig};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::utils::debug_if_enabled;
 use crate::utils::request::{classify_content_type, get_request_headers, MimeCategory};
@@ -50,6 +50,7 @@ impl ProviderStreamFactoryOptions {
         stream_url: &Url,
         req_headers: &HeaderMap,
         input_headers: Option<&HashMap<String, String>>,
+        disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     ) -> Self {
         let buffer_size = if stream_options.buffer_enabled {
             stream_options.buffer_size
@@ -63,7 +64,7 @@ impl ProviderStreamFactoryOptions {
         req_headers.remove("range");
 
         // We merge configured input headers with the headers from the request.
-        let headers = get_request_headers(input_headers, Some(&req_headers));
+        let headers = get_request_headers(input_headers, Some(&req_headers), disabled_headers);
 
         let url = stream_url.clone();
         let range_bytes = Arc::new(range_start_bytes.map(AtomicUsize::new));
