@@ -47,7 +47,7 @@ pub fn get_xtream_player_api_info_url(input: &ConfigInput, cluster: XtreamCluste
 
 
 pub async fn get_xtream_stream_info_content(client: Arc<reqwest::Client>, input: &InputSource) -> Result<String, Error> {
-    match request::download_text_content(client, input, None, None).await {
+    match request::download_text_content(client, None, input, None, None).await {
         Ok((content, _response_url)) => Ok(content),
         Err(err) => Err(err)
     }
@@ -136,11 +136,11 @@ const ACTIONS: [(XtreamCluster, &str, &str); 3] = [
     (XtreamCluster::Series, crate::model::XC_ACTION_GET_SERIES_CATEGORIES, crate::model::XC_ACTION_GET_SERIES)];
 
 async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &InputSource, username: &str) -> Result<(), TuliproxError> {
-    let content = if let Ok(content) = request::get_input_json_content(Arc::clone(client), input, None).await {
+    let content = if let Ok(content) = request::get_input_json_content(Arc::clone(client), None, input, None).await {
         content
     } else {
         let input_source_account_info = input.with_url(format!("{}&action={}", &input.url, crate::model::XC_ACTION_GET_ACCOUNT_INFO));
-        match request::get_input_json_content(Arc::clone(client), &input_source_account_info, None).await {
+        match request::get_input_json_content(Arc::clone(client), None, &input_source_account_info, None).await {
             Ok(content) => content,
             Err(err) => {
                 warn!("Failed to login xtream account {username} {err}");
@@ -220,8 +220,8 @@ pub async fn get_xtream_playlist(cfg: &Config, client: Arc<reqwest::Client>, inp
             let stream_file_path = crate::utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{stream}_").as_str());
 
             match futures::join!(
-                request::get_input_json_content(Arc::clone(&client), &input_source_category, category_file_path),
-                request::get_input_json_content(Arc::clone(&client), &input_source_stream, stream_file_path)
+                request::get_input_json_content(Arc::clone(&client), None, &input_source_category, category_file_path),
+                request::get_input_json_content(Arc::clone(&client), None, &input_source_stream, stream_file_path)
             ) {
                 (Ok(category_content), Ok(stream_content)) => {
                     match xtream::parse_xtream(input,

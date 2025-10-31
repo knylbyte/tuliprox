@@ -1071,6 +1071,7 @@ async fn xtream_get_short_epg(
                         let input_source = InputSource::from(&*input).with_url(info_url);
                         return match request::download_text_content(
                             Arc::clone(&app_state.http_client.load()),
+                            None,
                             &input_source,
                             None,
                             None,

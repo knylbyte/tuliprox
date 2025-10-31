@@ -506,6 +506,13 @@ async fn create_stream_response_details(
         | ProviderStreamState::GracePeriod(_provider_name, request_url) => {
             let parsed_url = Url::parse(&request_url);
             let ((stream, stream_info), reconnect_flag) = if let Ok(url) = parsed_url {
+                let disabled_headers = app_state
+                    .app_config
+                    .config
+                    .load()
+                    .reverse_proxy
+                    .as_ref()
+                    .and_then(|r| r.disabled_header.clone());
                 let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
                     item_type,
                     share_stream,
@@ -513,6 +520,7 @@ async fn create_stream_response_details(
                     &url,
                     req_headers,
                     streaming_strategy.input_headers.as_ref(),
+                    disabled_headers.as_ref(),
                 );
                 let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
                 let provider_stream = match create_provider_stream(
@@ -1127,6 +1135,11 @@ async fn fetch_resource_with_retry(
     // TODO: add max_attempts to config
     let max_attempts: u32 = 3; //&app_state.app_config.config.load().max_attempts;
     let backoff_ms: u64 = 250;
+    let config = app_state.app_config.config.load();
+    let disabled_headers = config
+        .reverse_proxy
+        .as_ref()
+        .and_then(|r| r.disabled_header.clone());
     for attempt in 0..max_attempts {
         let client = request::get_client_request(
             &app_state.http_client.load(),
@@ -1134,6 +1147,7 @@ async fn fetch_resource_with_retry(
             input.map(|i| &i.headers),
             url,
             Some(req_headers),
+            disabled_headers.as_ref(),
         );
         match client.send().await {
             Ok(response) => {

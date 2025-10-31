@@ -1,6 +1,6 @@
 use crate::api::model::AppState;
 use crate::api::model::{DownloadQueue, FileDownload, FileDownloadRequest};
-use crate::model::{AppConfig, Config, VideoDownloadConfig};
+use crate::model::{AppConfig, VideoDownloadConfig};
 use crate::utils::request;
 use tokio::sync::RwLock;
 use futures::stream::TryStreamExt;
@@ -11,8 +11,6 @@ use std::io::{Write};
 use std::ops::Deref;
 use std::sync::Arc;
 use std::{fs};
-use arc_swap::access::Access;
-use arc_swap::ArcSwap;
 use axum::response::IntoResponse;
 use shared::utils::bytes_to_megabytes;
 use shared::error::to_io_error;
@@ -76,7 +74,12 @@ async fn run_download_queue(cfg: &AppConfig, download_cfg: &VideoDownloadConfig,
     let next_download = download_queue.as_ref().queue.lock().await.pop_front();
     if next_download.is_some() {
         { *download_queue.as_ref().active.write().await = next_download; }
-        let headers = request::get_request_headers(Some(&download_cfg.headers), None);
+        let config = cfg.config.load();
+        let disabled_headers = config
+            .reverse_proxy
+            .as_ref()
+            .and_then(|r| r.disabled_header.clone());
+        let headers = request::get_request_headers(Some(&download_cfg.headers), None, disabled_headers.as_ref());
         let dq = Arc::clone(download_queue);
 
         match create_client(cfg).default_headers(headers).build() {
@@ -127,7 +130,7 @@ pub async fn queue_download_file(
 ) ->  impl axum::response::IntoResponse + Send {
     let app_config = &*app_state.app_config;
 
-    let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_config.config);
+    let config = app_config.config.load();
     if let Some(video_cfg) = config.video.as_ref() {
         if let Some(download_cfg) = video_cfg.download.as_ref() {
             if download_cfg.directory.is_empty() {
