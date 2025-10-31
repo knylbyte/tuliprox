@@ -158,7 +158,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                     "CHANNEL" => html! {dto.channel.title.as_str()},
                     "GROUP" => html! {dto.channel.group.as_str()},
                     "CLIENT_IP" => html! { strip_port(&dto.client_ip)},
-                    "COUNTRY" => html! { dto.country.as_ref().map_or_else(String::new, |c| t_safe(&translate, &format!("COUNTRY.{c}"))) },
+                    "COUNTRY" => html! { dto.country.as_ref().map_or_else(String::new, |c| t_safe(&translate, &format!("COUNTRY.{c}")).unwrap_or_else(||c.to_string())) },
                     "PROVIDER" => html! {dto.provider.as_str()},
                     "SHARED" => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
                     "USER_AGENT" => html! { dto.user_agent.as_str() },
