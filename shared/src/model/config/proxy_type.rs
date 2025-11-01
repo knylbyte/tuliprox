@@ -6,9 +6,10 @@ use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ClusterFlags, PlaylistItemType};
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 pub enum ProxyType {
     Reverse(Option<ClusterFlags>),
+    #[default]
     Redirect,
 }
 
@@ -57,12 +58,6 @@ impl Hash for ProxyType {
                 flags.hash(state);
             }
         }
-    }
-}
-
-impl Default for ProxyType {
-    fn default() -> Self {
-        Self::Redirect
     }
 }
 

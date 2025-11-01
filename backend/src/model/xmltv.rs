@@ -195,7 +195,7 @@ fn concat_text(t1: &String, t2: &str) -> String {
     if t1.is_empty() {
         t2.to_string()
     } else if t1.ends_with('\\') {
-        let mut t = t1.to_string();
+        let mut t = t1.clone();
         t.pop();
         format!("{t}&apos;{t2}")
     } else {
