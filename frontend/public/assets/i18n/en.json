@@ -305,7 +305,10 @@
     "COUNTRY": "Country",
     "GEOIP": "Geo-IP",
     "UPDATE_GEOIP_DB": "Update Geo-IP db",
-    "SOURCE_EDITOR": "Sources"
+    "SOURCE_EDITOR": "Sources",
+    "SKIP_LIVE":  "Skip Live",
+    "SKIP_VOD":  "Skip VOD",
+    "SKIP_SERIES":  "Skip Series"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"
