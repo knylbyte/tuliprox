@@ -11,11 +11,7 @@ use crate::api::endpoints::xmltv_api::xmltv_api_register;
 use crate::api::endpoints::xtream_api::xtream_api_register;
 use crate::api::hdhomerun_proprietary::spawn_proprietary_tasks;
 use crate::api::hdhomerun_ssdp::spawn_ssdp_discover_task;
-use crate::api::model::{
-    create_cache, create_http_client, ActiveProviderManager, ActiveUserManager, AppState,
-    CancelTokens, DownloadQueue, EventManager, HdHomerunAppState, PlaylistStorageState,
-    SharedStreamManager,
-};
+use crate::api::model::{create_cache, create_http_client, ActiveProviderManager, ActiveUserManager, AppState, CancelTokens, DownloadQueue, EventManager, HdHomerunAppState, PlaylistStorageState, ProviderConnectionGuard, ReleaseTask, SharedStreamManager};
 use crate::api::scheduler::exec_scheduler;
 use crate::api::serve::serve;
 use crate::model::{AppConfig, Config, Healthcheck, ProcessTargets, RateLimitConfig};
@@ -30,6 +26,7 @@ use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use crate::repository::storage::get_geoip_path;
@@ -102,6 +99,8 @@ fn create_shared_data(
     let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx, ));
     let client = create_http_client(app_config);
 
+    let release_tx = create_release_task();
+
     AppState {
         forced_targets: Arc::new(ArcSwap::new(Arc::clone(forced_targets))),
         app_config: Arc::clone(app_config),
@@ -115,7 +114,23 @@ fn create_shared_data(
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
         playlists: Arc::new(PlaylistStorageState::new()),
         geoip,
+        release_tx
     }
+}
+
+fn create_release_task() -> UnboundedSender<ReleaseTask> {
+    let (cleanup_tx, mut cleanup_rx) = unbounded_channel::<ReleaseTask>();
+    // Spawn the async cleanup worker
+    tokio::spawn(async move {
+        while let Some(release) = cleanup_rx.recv().await {
+            match release {
+                ReleaseTask::ForceProvider(guard) => guard.force_release().await,
+                ReleaseTask::ProviderAllocation(allocation) => ProviderConnectionGuard::release_allocation(allocation).await,
+                ReleaseTask::UserConnection(manager, addr) => manager.remove_connection(&addr).await,
+            }
+        }
+    });
+    cleanup_tx
 }
 
 fn exec_update_on_boot(

@@ -252,10 +252,10 @@
 
 .graph-paper-advanced {
    background-image:
-           linear-gradient(#e0e0e060 1px, transparent 1px),
-           linear-gradient(90deg, #e0e0e060 1px, transparent 1px),
-           linear-gradient(#c0c0c044 2px, transparent 2px),        /* horizontal thick */
-           linear-gradient(90deg, #c0c0c044 2px, transparent 2px);  /* vertical thick */
+           linear-gradient(var(--graph-paper-line-color-1) 1px, transparent 1px),
+           linear-gradient(90deg, var(--graph-paper-line-color-1) 1px, transparent 1px),
+           linear-gradient(var(--graph-paper-line-color-2) 2px, transparent 2px),        /* horizontal thick */
+           linear-gradient(90deg, var(--graph-paper-line-color-2) 2px, transparent 2px);  /* vertical thick */
    background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
 }
 

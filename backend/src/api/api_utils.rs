@@ -392,13 +392,13 @@ async fn resolve_streaming_strategy(
         Some(provider) => {
             app_state
                 .active_provider
-                .force_exact_acquire_connection(provider, &fingerprint.addr)
+                .force_exact_acquire_connection(provider, &fingerprint.addr, app_state.get_release_sender())
                 .await
         }
         None => {
             app_state
                 .active_provider
-                .acquire_connection(&input.name, &fingerprint.addr)
+                .acquire_connection(&input.name, &fingerprint.addr, app_state.get_release_sender())
                 .await
         }
     };
@@ -898,7 +898,7 @@ pub async fn stream_response(
                 app_state,
                 stream_url,
                 stream,
-                Some(&fingerprint.addr),
+                &fingerprint.addr,
                 shared_headers,
                 stream_options.buffer_size,
                 provider_guard,
@@ -1000,7 +1000,7 @@ async fn shared_stream_response(
     req_headers: &HeaderMap,
 ) -> Option<impl IntoResponse> {
     if let Some((stream, provider)) =
-        SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(&fingerprint.addr)).await
+        SharedStreamManager::subscribe_shared_stream(app_state, stream_url, &fingerprint.addr).await
     {
         debug_if_enabled!(
             "Using shared stream {}",
