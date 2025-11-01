@@ -49,10 +49,10 @@ macro_rules! active_user_manager_shared_impl {
                 self.user_by_addr.write().await.remove(addr)
             };
 
-            if let Some(username) = username_opt {
+            if let Some(username) = username_opt.as_ref() {
                  {
                     let mut user = self.user.write().await;
-                    if let Some(connection_data) = user.get_mut(&username) {
+                    if let Some(connection_data) = user.get_mut(username) {
                         if connection_data.connections > 0 {
                             connection_data.connections -= 1;
                         }
@@ -76,7 +76,7 @@ macro_rules! active_user_manager_shared_impl {
             if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
                  error!("Failed to send active user connection change: {err:?}");
             }
-            
+
             if username_opt.is_some() {
                 self.log_active_user().await;
             }
@@ -353,7 +353,7 @@ impl ActiveUserManager {
 
         {
             let mut user_by_addr = self.user_by_addr.write().await;
-            user_by_addr.insert(fingerprint.addr.to_string(), username.to_string());
+            user_by_addr.insert(fingerprint.addr.clone(), username.to_string());
         }
 
         if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Connected(stream_info)) {

@@ -150,7 +150,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
 {url}
 #EXT-X-ENDLIST
 ");
-                hls_response(playlist.to_string()).into_response()
+                hls_response(playlist.clone()).into_response()
             } else {
                 axum::http::StatusCode::NOT_FOUND.into_response()
             }
