@@ -1,7 +1,7 @@
-mod source_editor;
+mod editor_view;
 mod editor_model;
 mod sidebar;
 mod rules;
 
-pub use source_editor::*;
+pub use editor_view::*;
 pub(crate) use editor_model::*;

@@ -89,18 +89,12 @@ impl PartialEq for ProviderConfig {
 
 macro_rules! modify_connections {
     ($self:ident, $guard:ident, +1) => {{
-        let cnt = {
-            $guard.current_connections += 1;
-            $guard.current_connections
-        };
-        $self.notify_connection_change(cnt);
+        $guard.current_connections += 1;
+        $self.notify_connection_change($guard.current_connections);
     }};
     ($self:ident, $guard:ident, -1) => {{
-        let cnt = {
-            $guard.current_connections -= 1;
-            $guard.current_connections
-        };
-        $self.notify_connection_change(cnt);
+        $guard.current_connections -= 1;
+        $self.notify_connection_change($guard.current_connections);
     }};
 }
 
@@ -186,8 +180,6 @@ impl ProviderConfig {
     // pub fn has_capacity(&self) -> bool {
     //     !self.is_exhausted()
     // }
-
-
 
     async fn force_allocate(&self) {
         let mut guard = self.connection.write().await;

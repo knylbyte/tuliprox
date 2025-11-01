@@ -52,7 +52,7 @@ impl ActiveClientStream {
         let provider_name = stream_details.provider_name.as_ref().map_or_else(String::new, ToString::to_string);
 
         let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
-        let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent).await);
+        let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent, app_state.get_release_sender()).await);
         let cfg = &app_state.app_config;
         let waker = Some(Arc::new(AtomicWaker::new()));
         let waker_clone = waker.clone();
@@ -68,7 +68,7 @@ impl ActiveClientStream {
         let stream = match stream_details.stream.take() {
             None => {
                 if let Some(guard) = stream_details.provider_connection_guard.as_ref() {
-                    guard.release();
+                    guard.release().await;
                 }
                 futures::stream::empty::<Result<Bytes, StreamError>>().boxed()
             }
@@ -163,7 +163,6 @@ impl ActiveClientStream {
                 }
 
                 if updated {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                     share_manager.release_connection(&address, true).await;
                     provider_manager.release_connection(&address).await;
                      if let Some(flag) = reconnect_flag {

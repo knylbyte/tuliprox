@@ -392,13 +392,13 @@ async fn resolve_streaming_strategy(
         Some(provider) => {
             app_state
                 .active_provider
-                .force_exact_acquire_connection(provider, &fingerprint.addr)
+                .force_exact_acquire_connection(provider, &fingerprint.addr, app_state.get_release_sender())
                 .await
         }
         None => {
             app_state
                 .active_provider
-                .acquire_connection(&input.name, &fingerprint.addr)
+                .acquire_connection(&input.name, &fingerprint.addr, app_state.get_release_sender())
                 .await
         }
     };
@@ -506,6 +506,13 @@ async fn create_stream_response_details(
         | ProviderStreamState::GracePeriod(_provider_name, request_url) => {
             let parsed_url = Url::parse(&request_url);
             let ((stream, stream_info), reconnect_flag) = if let Ok(url) = parsed_url {
+                let disabled_headers = app_state
+                    .app_config
+                    .config
+                    .load()
+                    .reverse_proxy
+                    .as_ref()
+                    .and_then(|r| r.disabled_header.clone());
                 let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
                     item_type,
                     share_stream,
@@ -513,6 +520,7 @@ async fn create_stream_response_details(
                     &url,
                     req_headers,
                     streaming_strategy.input_headers.as_ref(),
+                    disabled_headers.as_ref(),
                 );
                 let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
                 let provider_stream = match create_provider_stream(
@@ -890,7 +898,7 @@ pub async fn stream_response(
                 app_state,
                 stream_url,
                 stream,
-                Some(&fingerprint.addr),
+                &fingerprint.addr,
                 shared_headers,
                 stream_options.buffer_size,
                 provider_guard,
@@ -992,7 +1000,7 @@ async fn shared_stream_response(
     req_headers: &HeaderMap,
 ) -> Option<impl IntoResponse> {
     if let Some((stream, provider)) =
-        SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(&fingerprint.addr)).await
+        SharedStreamManager::subscribe_shared_stream(app_state, stream_url, &fingerprint.addr).await
     {
         debug_if_enabled!(
             "Using shared stream {}",
@@ -1127,6 +1135,11 @@ async fn fetch_resource_with_retry(
     // TODO: add max_attempts to config
     let max_attempts: u32 = 3; //&app_state.app_config.config.load().max_attempts;
     let backoff_ms: u64 = 250;
+    let config = app_state.app_config.config.load();
+    let disabled_headers = config
+        .reverse_proxy
+        .as_ref()
+        .and_then(|r| r.disabled_header.clone());
     for attempt in 0..max_attempts {
         let client = request::get_client_request(
             &app_state.http_client.load(),
@@ -1134,6 +1147,7 @@ async fn fetch_resource_with_retry(
             input.map(|i| &i.headers),
             url,
             Some(req_headers),
+            disabled_headers.as_ref(),
         );
         match client.send().await {
             Ok(response) => {
