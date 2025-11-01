@@ -68,7 +68,7 @@ pub async fn telegram_send_message(
     msg: &str,
     options: Option<&SendMessageOption>,
 ) {
-    let chat_id = instance.chat_id.to_string();
+    let chat_id = instance.chat_id.clone();
     let raw_url_str = format!("https://api.telegram.org/bot{}/sendMessage", instance.bot_token);
     let url = match Url::parse(&raw_url_str) {
         Ok(url) => url,

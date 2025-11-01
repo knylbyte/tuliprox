@@ -79,7 +79,7 @@ impl GeoIp {
         let ip = ipv4_to_u32(ip_str)?;
         if let Some((_, (end, cc))) = self.tree.find_le(&ip) {
             if ip <= *end {
-                return Some(cc.to_string());
+                return Some(cc.clone());
             }
         }
         None

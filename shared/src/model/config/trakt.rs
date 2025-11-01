@@ -7,19 +7,15 @@ fn default_fuzzy_threshold() -> u8 {
     80
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TraktContentType {
     Vod,
     Series,
+    #[default]
     Both,
 }
 
-impl Default for TraktContentType {
-    fn default() -> Self {
-        Self::Both
-    }
-}
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]

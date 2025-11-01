@@ -382,7 +382,7 @@ impl AppState {
                     target_changes.insert(
                         target.name.clone(),
                         TargetChanges {
-                            name: target.name.to_string(),
+                            name: target.name.clone(),
                             status: TargetStatus::Old,
                             cache_status: if target.use_memory_cache {
                                 TargetCacheState::UnchangedTrue
@@ -401,7 +401,7 @@ impl AppState {
                             target_changes.insert(
                                 target.name.clone(),
                                 TargetChanges {
-                                    name: target.name.to_string(),
+                                    name: target.name.clone(),
                                     status: TargetStatus::New,
                                     cache_status: if target.use_memory_cache {
                                         TargetCacheState::ChangedToTrue

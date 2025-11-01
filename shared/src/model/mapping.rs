@@ -27,20 +27,15 @@ use crate::foundation::mapper::MapperScript;
 use crate::info_err;
 use crate::model::PatternTemplate;
 
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq)]
 pub enum CounterModifier {
+    #[default]
     #[serde(rename = "assign")]
     Assign,
     #[serde(rename = "suffix")]
     Suffix,
     #[serde(rename = "prefix")]
     Prefix,
-}
-
-impl Default for CounterModifier {
-    fn default() -> Self {
-        Self::Assign
-    }
 }
 
 impl CounterModifier {
