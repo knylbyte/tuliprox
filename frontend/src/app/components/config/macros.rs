@@ -206,8 +206,8 @@ macro_rules! edit_field_number {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field as u64}
-                    on_change={Callback::from(move |value: Option<u64>| {
+                    value={(*instance).data().$field as i64}
+                    on_change={Callback::from(move |value: Option<i64>| {
                         match value {
                             Some(value) => {
                                 let val = u32::try_from(value).unwrap_or(0);
@@ -231,8 +231,8 @@ macro_rules! edit_field_number_u8 {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field as u64}
-                    on_change={Callback::from(move |value: Option<u64>| {
+                    value={(*instance).data().$field as i64}
+                    on_change={Callback::from(move |value: Option<i64>| {
                         match value {
                             Some(value) => {
                                 let val = u8::try_from(value).unwrap_or(0);
@@ -256,8 +256,8 @@ macro_rules! edit_field_number_u16 {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field as u64}
-                    on_change={Callback::from(move |value: Option<u64>| {
+                    value={(*instance).data().$field as i64}
+                    on_change={Callback::from(move |value: Option<i64>| {
                         match value {
                             Some(value) => {
                                 let val = u16::try_from(value).unwrap_or(0);
@@ -307,11 +307,12 @@ macro_rules! edit_field_number_u64 {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field}
-                    on_change={Callback::from(move |value: Option<u64>| {
+                    value={(*instance).data().$field as i64}
+                    on_change={Callback::from(move |value: Option<i64>| {
                         match value {
                             Some(value) => {
-                                instance.dispatch($action(value))
+                                 let val = u64::try_from(value).unwrap_or(0);
+                                instance.dispatch($action(val))
                             },
                             None => instance.dispatch($action(0)),
                         }
@@ -331,8 +332,8 @@ macro_rules! edit_field_number_option {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field.map(|v| v as u64)}
-                    on_change={Callback::from(move |value: Option<u64>| {
+                    value={(*instance).data().$field.map(|v| v as i64)}
+                    on_change={Callback::from(move |value: Option<i64>| {
                         match value {
                             Some(value) => {
                                 let val = u32::try_from(value).ok();

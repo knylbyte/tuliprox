@@ -6,7 +6,6 @@ use crate::{config_field_empty, config_field_optional, edit_field_text_option, g
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::{ConfigForm};
 use crate::app::components::config::macros::HasFormData;
-
 const LABEL_URL: &str =  "LABEL.URL";
 const LABEL_URL_IPV4: &str =  "LABEL.URL_IPV4";
 const LABEL_URL_IPV6: &str =  "LABEL.URL_IPV6";

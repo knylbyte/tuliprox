@@ -1,3 +1,4 @@
+use log::error;
 use crate::app::components::source_editor::editor_model::{Block, BlockType, Connection};
 use crate::app::components::source_editor::rules::can_connect;
 use crate::app::components::source_editor::sidebar::SourceEditorSidebar;
@@ -5,6 +6,8 @@ use crate::html_if;
 use web_sys::{HtmlElement, MouseEvent};
 use yew::prelude::*;
 use yew_i18n::use_translation;
+use shared::model::ConfigInputDto;
+use crate::app::components::{SourceEditorContext, SourceEditorForm};
 
 const PORT_INACTIVE: u32 = 0;
 const PORT_VALID: u32 = 1;
@@ -247,10 +250,16 @@ pub fn SourceEditor() -> Html {
         })
     };
 
+    let form_changed = Callback::<ConfigInputDto>::from(move |dto| error!("{dto:?}"));
+
+    let editor_context = SourceEditorContext {
+        input: None,
+        on_form_change: form_changed,
+    };
 
     // ----------------- Render -----------------
     html! {
-        <>
+        <ContextProvider<SourceEditorContext> context={editor_context}>
         <span>{"WORK IN PROGRESS - NOT FINALIZED !!!"}</span>
         <div class="tp__source-editor">
 
@@ -407,7 +416,8 @@ pub fn SourceEditor() -> Html {
                     }
                 }) }
             </div>
+            <SourceEditorForm />
         </div>
-        </>
+        </ContextProvider<SourceEditorContext>>
     }
 }

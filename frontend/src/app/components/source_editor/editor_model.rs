@@ -1,9 +1,8 @@
 use std::fmt;
 use std::rc::Rc;
 use serde::{Deserialize, Serialize};
-use yew::{Callback, UseStateHandle};
-use shared::model::{AppConfigDto, ConfigInputDto, SourcesConfigDto};
-use crate::app::components::source_editor::input_form::ConfigInputFormState;
+use yew::{Callback};
+use shared::model::{ConfigInputDto};
 
 // ----------------- Data Models -----------------
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -83,7 +82,7 @@ pub struct Connection {
 #[derive(Clone, PartialEq)]
 pub struct SourceEditorContext {
     pub input: Option<Rc<ConfigInputDto>>,
-    pub on_form_change: Callback<ConfigInputFormState>,
+    pub on_form_change: Callback<ConfigInputDto>,
 }
 
 
