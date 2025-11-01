@@ -39,7 +39,7 @@ fn hls_response(hls_content: String) -> impl IntoResponse + Send {
         .body(hls_content))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(in crate::api) async fn handle_hls_stream_request(
     fingerprint: &Fingerprint,
     app_state: &Arc<AppState>,
@@ -58,7 +58,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
         Some(session) => {
             match app_state
                 .active_provider
-                .force_exact_acquire_connection(&session.provider, &fingerprint.addr)
+                .force_exact_acquire_connection(&session.provider, &fingerprint.addr, app_state.get_release_sender())
                 .await
                 .get_provider_config()
             {

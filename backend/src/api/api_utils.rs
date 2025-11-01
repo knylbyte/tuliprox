@@ -392,13 +392,13 @@ async fn resolve_streaming_strategy(
         Some(provider) => {
             app_state
                 .active_provider
-                .force_exact_acquire_connection(provider, &fingerprint.addr)
+                .force_exact_acquire_connection(provider, &fingerprint.addr, app_state.get_release_sender())
                 .await
         }
         None => {
             app_state
                 .active_provider
-                .acquire_connection(&input.name, &fingerprint.addr)
+                .acquire_connection(&input.name, &fingerprint.addr, app_state.get_release_sender())
                 .await
         }
     };

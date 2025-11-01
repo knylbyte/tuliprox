@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use crate::api::model::{ActiveProviderManager};
+use crate::api::model::{ActiveProviderManager, ReleaseTask};
 use crate::api::model::SharedStreamManager;
 use crate::model::Config;
 use crate::model::ProxyUserCredentials;
@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use arc_swap::ArcSwapOption;
+use tokio::runtime::Handle;
 use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use tokio::sync::RwLock;
 use crate::auth::Fingerprint;
@@ -75,7 +76,10 @@ macro_rules! active_user_manager_shared_impl {
             if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
                  error!("Failed to send active user connection change: {err:?}");
             }
-            self.log_active_user().await;
+            
+            if username_opt.is_some() {
+                self.log_active_user().await;
+            }
         }
     };
 }
@@ -87,6 +91,7 @@ fn get_grace_options(config: &Config) -> (u64, u64) {
     (grace_period_millis, grace_period_timeout_secs)
 }
 
+#[derive(Clone)]
 pub struct ConnectionGuardUserManager {
     log_active_user: bool,
     user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
@@ -108,13 +113,15 @@ pub struct UserConnectionGuard {
     manager: Arc<ConnectionGuardUserManager>,
     // username: String,
     addr: String,
+    release_tx: UnboundedSender<ReleaseTask>,
 }
 
 impl UserConnectionGuard {
-    pub fn new(manager: Arc<ConnectionGuardUserManager>, addr: &str) -> Self {
+    pub fn new(manager: Arc<ConnectionGuardUserManager>, addr: &str, release_tx: UnboundedSender<ReleaseTask>) -> Self {
         Self {
             manager,
             addr: addr.to_string(),
+            release_tx,
         }
     }
 }
@@ -123,9 +130,18 @@ impl Drop for UserConnectionGuard {
     fn drop(&mut self) {
         let manager = self.manager.clone();
         let addr = self.addr.clone();
-        tokio::spawn(async move {
-            manager.remove_connection(&addr).await;
-        });
+        if let Err(_err) = self.release_tx.send(ReleaseTask::UserConnection(manager, addr)) {
+            if let Ok(handle) = Handle::try_current() {
+                let manager = self.manager.clone();
+                let addr = self.addr.clone();
+                handle.spawn(async move {
+                    manager.remove_connection(&addr).await;
+                });
+            } else {
+                // No runtime
+                error!("💥💥💥 Dropping UserConnectionGuard without async runtime — User Connection not freed");
+            }
+        }
     }
 }
 
@@ -300,7 +316,10 @@ impl ActiveUserManager {
         Self::get_active_connections(&self.user).await
     }
 
-    pub async fn add_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint, provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> UserConnectionGuard {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn add_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
+                                provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>,
+                                release_tx: UnboundedSender<ReleaseTask>) -> UserConnectionGuard {
         let country = {
             let geoip = self.geo_ip.load();
             if let Some(geoip_db) = (*geoip).as_ref() {
@@ -342,7 +361,7 @@ impl ActiveUserManager {
         }
         self.log_active_user().await;
 
-        UserConnectionGuard::new(Arc::new(self.clone_inner()), &fingerprint.addr)
+        UserConnectionGuard::new(Arc::new(self.clone_inner()), &fingerprint.addr, release_tx)
     }
 
     fn is_log_user_enabled(&self) -> bool {

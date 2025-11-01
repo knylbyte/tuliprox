@@ -1,4 +1,4 @@
-use crate::api::model::{ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper, ProviderConnectionChangeCallback, ProviderConnectionChangeSender};
+use crate::api::model::{ProviderConfig, ProviderConfigConnection, ProviderConfigWrapper, ProviderConnectionChangeCallback, ProviderConnectionChangeSender, ReleaseTask};
 use crate::model::{AppConfig, ConfigInput};
 use crate::utils::debug_if_enabled;
 use arc_swap::ArcSwap;
@@ -9,6 +9,8 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
+use tokio::runtime::Handle;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::RwLock;
 
 const CONNECTION_STATE_ACTIVE: u8 = 0;
@@ -18,11 +20,12 @@ const CONNECTION_STATE_RELEASED: u8 = 2;
 #[derive(Debug)]
 pub struct ProviderConnectionGuard {
     allocation: ProviderAllocation,
+    release_tx: UnboundedSender<ReleaseTask>,
 }
 
 impl ProviderConnectionGuard {
-    pub fn new(allocation: ProviderAllocation) -> Self {
-        Self { allocation }
+    pub fn new(allocation: ProviderAllocation, release_tx: UnboundedSender<ReleaseTask>) -> Self {
+        Self { allocation, release_tx }
     }
 
     // for shared streams, we need to disable release
@@ -41,7 +44,7 @@ impl ProviderConnectionGuard {
         Self::release_allocation(self.allocation.clone()).await;
     }
 
-    async fn release_allocation(allocation: ProviderAllocation) {
+    pub async fn release_allocation(allocation: ProviderAllocation) {
         match &allocation {
             ProviderAllocation::Exhausted => {}
             ProviderAllocation::Available(state, config) |
@@ -103,9 +106,18 @@ impl Deref for ProviderConnectionGuard {
 impl Drop for ProviderConnectionGuard {
     fn drop(&mut self) {
         let allocation = self.allocation.clone();
-        tokio::spawn(async move {
-            Self::release_allocation(allocation).await;
-        });
+        if let Err(_err) = self.release_tx.send(ReleaseTask::ProviderAllocation(allocation)) {
+            // fallback
+            if let Ok(handle) = Handle::try_current() {
+                let allocation = self.allocation.clone();
+                handle.spawn(async move {
+                    Self::release_allocation(allocation).await;
+                });
+            } else {
+                // No runtime
+                error!("💥💥💥 Dropping ProviderConnectionGuard without async runtime — Provider Connection not freed");
+            }
+        }
     }
 }
 
@@ -684,18 +696,18 @@ impl ProviderLineupManager {
         None
     }
 
-    async fn force_exact_acquire_connection(&self, provider_name: &str) -> Arc<ProviderConnectionGuard> {
+    async fn force_exact_acquire_connection(&self, provider_name: &str, release_tx: UnboundedSender<ReleaseTask>) -> Arc<ProviderConnectionGuard> {
         let providers = self.providers.load();
         let allocation = match Self::get_provider_config(provider_name, &providers) {
             None => ProviderAllocation::Exhausted, // No Name matched, we don't have this provider
             Some((_lineup, config)) => config.force_allocate().await,
         };
 
-        Arc::new(ProviderConnectionGuard::new(allocation))
+        Arc::new(ProviderConnectionGuard::new(allocation, release_tx))
     }
 
     // Returns the next available provider connection
-    async fn acquire_connection(&self, input_name: &str) -> Arc<ProviderConnectionGuard> {
+    async fn acquire_connection(&self, input_name: &str, release_tx: UnboundedSender<ReleaseTask>) -> Arc<ProviderConnectionGuard> {
         let providers = self.providers.load();
         let allocation = match Self::get_provider_config(input_name, &providers) {
             None => ProviderAllocation::Exhausted, // No Name matched, we don't have this provider
@@ -713,7 +725,7 @@ impl ProviderLineupManager {
             }
         }
 
-        Arc::new(ProviderConnectionGuard::new(allocation))
+        Arc::new(ProviderConnectionGuard::new(allocation, release_tx))
     }
 
     // This method is used for redirects to cycle through provider
@@ -812,15 +824,15 @@ impl ActiveProviderManager {
         self.providers.update_config(inputs, grace_period_millis, grace_period_timeout_secs).await;
     }
 
-    pub async fn force_exact_acquire_connection(&self, provider_name: &str, addr: &str) -> Arc<ProviderConnectionGuard> {
-        let guard = self.providers.force_exact_acquire_connection(provider_name).await;
+    pub async fn force_exact_acquire_connection(&self, provider_name: &str, addr: &str, release_tx: UnboundedSender<ReleaseTask>) -> Arc<ProviderConnectionGuard> {
+        let guard = self.providers.force_exact_acquire_connection(provider_name, release_tx).await;
         self.register_connection(addr, &guard).await;
         guard
     }
 
     // Returns the next available provider connection
-    pub async fn acquire_connection(&self, input_name: &str, addr: &str) -> Arc<ProviderConnectionGuard> {
-        let guard = self.providers.acquire_connection(input_name).await;
+    pub async fn acquire_connection(&self, input_name: &str, addr: &str,  release_tx: UnboundedSender<ReleaseTask>) -> Arc<ProviderConnectionGuard> {
+        let guard = self.providers.acquire_connection(input_name, release_tx).await;
         self.register_connection(addr, &guard).await;
         guard
     }
