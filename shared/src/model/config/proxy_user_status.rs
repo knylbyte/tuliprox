@@ -4,21 +4,15 @@ use enum_iterator::Sequence;
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 
-#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Debug, Default, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Ord, PartialOrd)]
 pub enum ProxyUserStatus {
+    #[default]
     Active, // The account is in good standing and can stream content
     Expired, // The account can no longer access content unless it is renewed.
     Banned, // The account is temporarily or permanently disabled. Typically used for users who violate terms of service or abuse the system.
     Trial, // The account is marked as a trial account.
     Disabled, // The account is inactive or deliberately disabled by the administrator.
     Pending,
-}
-
-
-impl Default for ProxyUserStatus {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 impl ProxyUserStatus {

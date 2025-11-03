@@ -217,7 +217,7 @@ Attributes:
 - `buffer`
 - `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
 - `grace_period_millis`  default set to 300 milliseconds.
-- `grace_period_timeout_secs` efault set to 2 seconds.
+- `grace_period_timeout_secs` default set to 2 seconds.
 
 ##### 1.6.1.1 `retry`
 If set to `true` on connection loss to provider, the stream will be reconnected.
@@ -305,12 +305,39 @@ reverse_proxy:
     burst_size: 10
 ```
 
-#### 1.6.5 `disable_referer_header`
-This option, when set to `true`, prevents tuliprox from sending the Referer header in requests made when acting as a reverse proxy. This can be particularly useful when dealing with certain Xtream Codes providers that might restrict or behave differently based on the Referer header. Default is `false`.
+#### 1.6.5 `disabled_header`
+Controls which headers are removed before tuliprox forwards a request to the upstream provider when acting as a reverse proxy. Use `referer_header` to drop the Referer header, enable `x_header` to strip every header beginning with `X-`, and list any additional headers to remove under `custom_header`.
 
 ```yaml
 reverse_proxy:
-  disable_referer_header: false
+  disabled_header:
+    referer_header: false
+    x_header: false
+    custom_header:
+      - my-custom-header
+```
+
+### 1.6.7 `geoip`
+`geoip` is for resolving IP addresses to country names.
+
+Disabled by default.
+Is used to resolve ip addresses to location.
+It has 2 attributes:
+
+```yaml
+  geoip:
+     enabled: true
+     url: <the url> 
+```  
+
+The `url` is optional; default value: `https://raw.githubusercontent.com/sapics/ip-location-db/refs/heads/main/asn-country/asn-country-ipv4.csv`
+The format is CSV with 3 columns: `range_start,range_end,country_code`.
+
+Example:
+```csv
+1.0.0.0,1.0.0.255,AU
+1.0.1.0,1.0.3.255,CN
+1.0.4.0,1.0.7.255,AU
 ```
 
 ### 1.7 `backup_dir`
@@ -330,6 +357,7 @@ if set to true, an update is started when the application starts.
 `log_level` priority  CLI-Argument, Env-Var, Config, Default(`info`).
 
 ```yaml
+                    
 log:
   sanitize_sensitive_info: false
   log_active_user: true
@@ -347,6 +375,7 @@ log:
   - `secret` is used for jwt token generation.
   - `token_ttl_mins`  default 30 minutes, setting it to 0 uses a 100-year expiration (effectively no expiration)—not recommended for production. !!CAUTION SECURITY RISK!!!
   - `userfile` is the file where the ui users are stored. If the filename is not absolute, `tuliprox` will look into the `config_dir`. If `userfile` is not given, the default value is `user.txt`.
+
 ```yaml
 web_ui:
   enabled: true
@@ -450,54 +479,60 @@ It is the storage path for user configurations (f.e. bouquets).
 
 ### 1.16 `hdhomerun`
 
-It is possible to define `hdhomerun` target for output. To use this outputs we need to define HdHomeRun devices.
-Supports now basic auth like <http://user:password@ip:port/lineup.json>.
+This feature allows `tuliprox` to emulate one or more HDHomeRun network tuners, enabling auto-discovery by clients like 
+TVHeadend, Plex, Emby, and Jellyfin. It uses both the standard **SSDP/UPnP protocol (Port 1900)** 
+for broad compatibility and the **proprietary SiliconDust protocol (Port 65001)** for compatibility with official HDHomeRun tools.
 
-The simplest config looks like:
 ```yaml
 hdhomerun:
   enabled: true
-  auth: true
+  auth: false # Set to true to require basic auth on lineup.json
   devices:
-  - name: hdhr1
-  - name: hdhr2
+    - name: hdhr1
+      tuner_count: 4
+      port: 5004 # Each device needs a unique port for its HTTP API
+      device_id: "107ABCDF" # Optional: 8-char hex ID. If invalid, will be corrected. If empty, will be generated.
+    - name: hdhr2
+      port: 5005
+      tuner_count: 2
 ```
 
-The `name` must be unique and is used in the target configuration in `source.yml` like.
+The `name` of each device must correspond to a `device` name in a `hdhomerun` output target in your `source.yml`.
 
 ```yaml
-sources:
-- inputs:
-  - name: ...
-    ...
-  targets:
-  - name: xt_m3u
+# In source.yml
+targets:
+  - name: my-tv-lineup
     output:
-      - type: xtream
       - type: hdhomerun
-        username: xtr
-        output: hdhr1
-    filter: "!ALL_FILTER!"
+        device: hdhr1      # Must match a device name from config.yml
+        username: local    # The user whose playlist will be served
 ```
 
-The HdHomerun config has the following attribute:
-`enabled`:  default is `false`,  you need to set it to `true`
-`devices`: is a list of HdHomeRun Device configuraitons.
-For each output you need to define one device with a unique name. Each output gets his own port to connect.
+**Configuration Fields:**
 
-HdHomeRun device config has the following attributes:
+- `enabled`: `true` or `false`. Enables or disables the entire HDHomeRun emulation feature. Default: `false`.
+- `auth`: `true` or `false`. If `true`, the `/lineup.json` endpoint for each device will require HTTP Basic Authentication using the credentials of the user assigned to the device in `source.yml`. Default: `false`.
+- `devices`: A list of virtual HDHomeRun devices to emulate.
 
-- `name`: _mandatory_ and must be unique
-- `tuner_count`: _optional_, default 1
-- `friendly_name`: _optional_
-- `manufacturer`: _optional_
-- `model_name`: _optional_
-- `model_number`: _optional_
-- `firmware_name`: _optional_
-- `firmware_version`: _optional_
-- `device_type`: _optional_
-- `device_udn`: _optional_
-- `port`: _optional_, if not given the tuliprox-server port is incremented for each device.
+**Device Fields:**
+
+- `name`: (Mandatory) A unique internal name for the device (e.g., `hdhr1`). This name is used in your `source.yml` to link a playlist target to a specific virtual tuner.
+- `tuner_count`: (Optional) The number of virtual tuners this device will report. Default: `1`.
+- `port`: (Optional) The TCP port for this device's HTTP API (`/device.xml`, `/lineup.json`, etc.). Each device must have a unique port. If omitted, `tuliprox` will automatically assign a port, starting from the main API port + 1.
+- `friendly_name`: (Optional) The human-readable name that appears in client applications (e.g., "Tuliprox Living Room"). If not specified, a default name is generated.
+- `device_id`: (Optional) An 8-character hexadecimal string for the proprietary SiliconDust discovery protocol (Port 65001).
+  - If left empty, a valid, random ID will be generated.
+  - If you provide a value that is not a valid HDHomeRun ID, `tuliprox` will automatically correct it by calculating the proper checksum.
+- `device_udn`: (Optional) The Unique Device Name (UDN) for the standard UPnP/SSDP discovery protocol (Port 1900). It must be a UUID.
+  - It is recommended to leave this at its default value. `tuliprox` will automatically append a suffix to ensure it's unique for each device you define.
+- `manufacturer`, `model_name`, `model_number`, `firmware_name`, `firmware_version`: (Optional) These fields allow you to customize the device information that is reported to clients. It is safe to leave them at their default values, which mimic a real HDTC-2US model.
+
+**Important Distinction:**
+- **`device_id`** is used by the proprietary discovery protocol (UDP port 65001).
+- **`device_udn`** is used by the standard SSDP/UPnP discovery protocol (UDP port 1900).
+
+Both are necessary for `tuliprox` to behave like a real HDHomeRun device and ensure maximum compatibility across different client applications.
 
 ### 1.17 `proxy`
 
@@ -524,6 +559,25 @@ ipcheck:
 
 ### 1.19 `config_hot_reload`
 if set to true, `mapping` files and `api_proxy.yml` are hot reloaded.
+
+⚠️ Important Note for Bind-Mounted Directories
+If you are using a bind mount, the file watcher may report the original source path instead of the mount point.
+
+For example, if you have a bind mount like this:
+
+```fstab
+/config /home/tuliprox/config none bind 0 0
+```
+
+```text
+/config                ← your configured mount point
+/home/tuliprox/config  ← original source directory
+```
+
+and you use `/config` in your configuration files, the file watcher will still report events using `/home/tuliprox/config`.
+
+This means that any file paths returned by the watcher might not match the paths in your configuration.
+You need to account for this difference when handling file events, e.g., by mapping the original path to your configured path.
 
 ## 2. `source.yml`
 
@@ -856,7 +910,8 @@ Each format has different properties.
 - cleanup: _optional_, true|false, default false
 - style: _mandatory_, kodi|plex|emby|jellyfin
 - flat: _optional_, true|false, default false
-- strm_props: _optional_, list of strings,
+- strm_props: _optional_, list of strings
+- add_quality_to_filename: _optional_, true|false
 - filter: optional filter
 
 `hdhomerun`
@@ -904,11 +959,12 @@ regardless of the number of clients. Increasing the buffer size above 1024 will 
 For example, with a buffer size of 2024, memory usage is at least 24 MB for **each** shared channel.     
 
 `strm` output has additional options:
-- `underscore_whitespace`: replaces all whitespaces with `_` in the path
-- `cleanup`: deletes the directory given at `filename`. Don't point at existing media folder or everything will be deleted
-- `style`: determines naming convention (kodi, plex, emby, jellyfin)
-- `flat`: creates flat directory structure with category tags in folder names
-- `strm_props`: list of properties written to the strm file
+- `underscore_whitespace`: Replaces all whitespaces with `_` in the path and filename.
+- `cleanup`: If `true`, the directory given at `filename` will be deleted. Don't point at existing media folder or everything will be deleted!
+- `style`: Naming style convention for your media player / server (kodi, plex, emby, jellyfin)
+- `flat`: If `true`, creates flat directory structure with category tags in folder names
+- `strm_props`: List of stream properties placed within .strm file to configure how Kodi's internal player handles the media stream.
+- `add_quality_to_filename`: If `true`, adds media quality tags to the filename (e.g., `Movie Title - [1080p|x265|HDR].strm`).
 
 Supported styles:
 - Kodi: `Movie Name (Year) {tmdb=ID}/Movie Name (Year).strm`
@@ -1120,6 +1176,13 @@ Has the root item `mappings` which has the following top level entries:
 Instead of using a single `mapping.yml` file, you can use multiple mapping files
 when you set `mapping_path` in `config.yml` to a directory.
 
+The files are loaded in **alphanumeric** order.
+**Note:** This is a lexicographic sort — so `m_10.yml` comes before `m_2.yml` unless you name files carefully (e.g., `m_01.yml`, `m_02.yml`, ..., `m_10.yml`).
+
+The filename or path can be given as `-m` argument. (See Mappings section)
+
+Default mapping file is `maping.yml`
+
 ### 2.1 `templates`
 If you have a lot of repeats in you regexps, you can use `templates` to make your regexps cleaner.
 You can reference other templates in templates with `!name!`;
@@ -1178,12 +1241,12 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
   - lowercase(a)
   - capitalize(a)
   - trim(a)
-  - number(a)
   - print(a, b, c)
+  - number(a)
   - first(a)
   - template(a)
   - replace(text, match, replacement)
-Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
+Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `audio_track"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
 When you use Regular expressions it could be that your match contains multiple results. The builtin function `first` returns the first match.
 Example `print(uppercase("hello"))`. output is only visible in `trace` log level you can enable it like `log_level: debug,tuliprox::foundation::mapper=trace` in config
 - Assignment assigns an expression result. variable or field.
@@ -1205,7 +1268,7 @@ result = match {
 - Map block assigns expression results to a variable or field
 
 Mapping over text
-It is possible to define multiple keys with `|` seperated for one case.  
+It is possible to define multiple keys with `|` seperated for one case.
 ```dsl
 result = map variable_name {
     "key1" => result1,
@@ -1234,7 +1297,8 @@ Mapping over number ranges
 ```            
 
 Example `if then else` block
-```
+
+```dsl
   # Maybe there is no station
   station = @Caption ~ "ABC"
   match {
@@ -1251,9 +1315,7 @@ Example `if then else` block
 ```
 
 Example of removing prefix
-```
 `@Caption = replace(@Caption, "UK:",  "EN:"`
-```
 
 Example `mapping.yml`
 
@@ -1480,6 +1542,11 @@ user:
         max_connections: 1
         status: Active
 ```
+
+If you use a reverse proxy in front of Tuliprox, don’t forget to forward:
+- `X-Real-IP`
+- `X-Forwarded-For`
+
 
 Now you can do `nginx`  configuration like
 ```config
@@ -1925,8 +1992,7 @@ sources:
       output:
         - type: xtream
       filter: "!MY_CHANNELS!"
-      ...
-```
+      ...```
 
 The resulting playlist contains all French and German channels except Shopping.
 
@@ -2039,8 +2105,7 @@ Title splitting. As you can see there are 2 captures, the first one is the prefi
 You get something like 
 - title_prefix = 'FR'
 - title_name = 'TV5Monde'
-from "FR: TV5Monde"
-```
+from "FR: TV5Monde"```
 title_match = @Caption ~ "(.*?)\:\s*(.*)"
 title_prefix = title_match.1
 title_name = title_match.2

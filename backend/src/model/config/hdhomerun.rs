@@ -9,7 +9,7 @@ pub struct HdHomeRunDeviceConfig {
     pub model_number: String,
     pub firmware_name: String,
     pub firmware_version: String,
-    // pub device_auth: String,
+    pub device_id: String,
     pub device_type: String,
     pub device_udn: String,
     pub name: String,
@@ -29,6 +29,7 @@ impl From<&HdHomeRunDeviceConfigDto> for HdHomeRunDeviceConfig {
             model_number: dto.model_number.clone(),
             firmware_name: dto.firmware_name.clone(),
             firmware_version: dto.firmware_version.clone(),
+            device_id: dto.device_id.clone(),
             device_type: dto.device_type.clone(),
             device_udn: dto.device_udn.clone(),
             name: dto.name.clone(),
@@ -40,10 +41,13 @@ impl From<&HdHomeRunDeviceConfigDto> for HdHomeRunDeviceConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct HdHomeRunConfig {
     pub enabled: bool,
     pub auth: bool,
+    pub ssdp_discovery: bool,
+    pub proprietary_discovery: bool,
     pub devices: Vec<HdHomeRunDeviceConfig>,
 }
 
@@ -53,6 +57,8 @@ impl From<&HdHomeRunConfigDto> for HdHomeRunConfig {
         Self {
             enabled: dto.enabled,
             auth: dto.auth,
+            ssdp_discovery: dto.ssdp_discovery,
+            proprietary_discovery: dto.proprietary_discovery,
             devices: dto.devices.iter().map(Into::into).collect(),
         }
     }

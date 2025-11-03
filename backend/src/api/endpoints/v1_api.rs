@@ -8,12 +8,18 @@ use crate::auth::validator_admin;
 use crate::utils::ip_checker::get_ips;
 use crate::{VERSION};
 use axum::response::IntoResponse;
-use shared::model::{IpCheckDto,StatusCheck};
+use shared::model::{default_geoip_url, InputFetchMethod, IpCheckDto, StatusCheck};
 use shared::utils::{concat_path_leading_slash};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::io::{Cursor};
 use std::sync::Arc;
+use log::error;
 use crate::api::endpoints::extract_accept_header::ExtractAcceptHeader;
 use crate::api::endpoints::v1_api_config::v1_api_config_register;
+use crate::model::InputSource;
+use crate::repository::storage::get_geoip_path;
+use crate::utils::GeoIp;
+use crate::utils::request::download_text_content;
 
 async fn create_ipinfo_check(app_state: &Arc<AppState>) -> Option<(Option<String>, Option<String>)> {
     let config = app_state.app_config.config.load();
@@ -67,6 +73,63 @@ async fn streams(ExtractAcceptHeader(accept): ExtractAcceptHeader,
     json_or_bin_response(accept.as_ref(), &streams).into_response()
 }
 
+async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<AppState>>) -> axum::response::Response {
+    let config = app_state.app_config.config.load();
+    if let Some(geoip) = config.reverse_proxy.as_ref().and_then(|r| r.geoip.as_ref()) {
+        if geoip.enabled {
+            let geoip_db_path = &*get_geoip_path(&config.working_dir);
+            let _file_lock = app_state.app_config.file_locks.write_lock(geoip_db_path);
+
+            let url = if geoip.url.trim().is_empty() { default_geoip_url() } else { geoip.url.clone() };
+            let input_source =  InputSource {
+                url,
+                username: None,
+                password: None,
+                method: InputFetchMethod::GET,
+                headers: HashMap::default(),
+            };
+            let disabled_headers = config
+                .reverse_proxy
+                .as_ref()
+                .and_then(|r| r.disabled_header.clone());
+            return match download_text_content(Arc::clone(&app_state.http_client.load()), disabled_headers.as_ref(), &input_source, None, None).await {
+                   Ok((content, _)) => {
+                       let reader = Cursor::new(content);
+                       let mut geoip = GeoIp::new();
+                       let result = {
+                           match geoip.import_ipv4_from_csv(reader, geoip_db_path) {
+                           Ok(size) => {
+                               (Some(size), None)
+                           }
+                           Err(err) => (None, Some(err))
+                        }
+                       };
+
+                       return match result {
+                           (Some(_), None) => {
+                               app_state.geoip.store(Some(Arc::new(geoip)));
+                               axum::http::StatusCode::OK.into_response()
+                           },
+                           (None, Some(err)) => {
+                               error!("Failed to process geoip db: {err}");
+                               axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                           },
+                           _ => {
+                               axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                           }
+                       }
+                   }
+                   Err(err) => {
+                       error!("Failed to download geoip db: {err}");
+                       axum::http::StatusCode::BAD_REQUEST.into_response()
+                   }
+            }
+        }
+    }
+    axum::http::StatusCode::BAD_REQUEST.into_response()
+}
+
+
 async fn ipinfo(axum::extract::State(app_state): axum::extract::State<Arc<AppState>>) -> axum::response::Response {
     if let Some((ipv4, ipv6)) = create_ipinfo_check(&app_state).await {
         let ipcheck = IpCheckDto {
@@ -87,6 +150,7 @@ pub fn v1_api_register(web_auth_enabled: bool, app_state: Arc<AppState>, web_ui_
     router = router
         .route("/status", axum::routing::get(status))
         .route("/streams", axum::routing::get(streams))
+        .route("/geoip/update", axum::routing::get(geoip_update))
         .route("/file/download", axum::routing::post(download_api::queue_download_file))
         .route("/file/download/info", axum::routing::get(download_api::download_file_info))
         .route("/ipinfo", axum::routing::get(ipinfo));

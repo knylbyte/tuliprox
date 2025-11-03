@@ -1,25 +1,59 @@
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
 use crate::app::components::{AppIcon, Table, TableDefinition, ToggleSwitch};
+use crate::app::ConfigContext;
 use crate::hooks::use_service_context;
+use gloo_timers::callback::Interval;
+use gloo_utils::window;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use shared::model::{SortOrder, StreamInfo};
+use shared::utils::{current_time_secs, strip_port};
 use std::fmt::Display;
 use std::rc::Rc;
 use std::str::FromStr;
+use wasm_bindgen::JsCast;
+use web_sys::Element;
 use yew::prelude::*;
 use yew_i18n::use_translation;
+use crate::utils::t_safe;
 
-const HEADERS: [&str; 8] = [
-    "LABEL.EMPTY",
-    "LABEL.USERNAME",
-    "LABEL.STREAM_ID",
-    "LABEL.CHANNEL",
-    "LABEL.GROUP",
-    "LABEL.CLIENT_IP",
-    "LABEL.PROVIDER",
-    "LABEL.SHARED"
+const HEADERS: [&str; 12] = [
+    "EMPTY",
+    "USERNAME",
+    "STREAM_ID",
+    "CLUSTER",
+    "CHANNEL",
+    "GROUP",
+    "CLIENT_IP",
+    "COUNTRY",
+    "PROVIDER",
+    "SHARED",
+    "USER_AGENT",
+    "DURATION"
 ];
+
+fn format_duration(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
+}
+
+fn update_timestamps() {
+    let window = window();
+    let document = window.document().unwrap();
+    let spans = document.query_selector_all("span[data-ts]").unwrap();
+    for i in 0..spans.length() {
+        if let Some(node) = spans.item(i) {
+            let el: Element = node.dyn_into().unwrap();
+            if let Some(ts_str) = el.get_attribute("data-ts") {
+                if let Ok(ts) = ts_str.parse::<u64>() {
+                    el.set_inner_html(&format_duration(current_time_secs() - ts));
+                }
+            }
+        }
+    }
+}
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct StreamsTableProps {
@@ -30,9 +64,35 @@ pub struct StreamsTableProps {
 pub fn StreamsTable(props: &StreamsTableProps) -> Html {
     let translate = use_translation();
     let services = use_service_context();
+    let config_ctx = use_context::<ConfigContext>().expect("Config context not found");
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
     let selected_dto = use_state(|| None::<Rc<StreamInfo>>);
+
+    let headers = use_memo(config_ctx, |cfg| {
+        let include_country = if let Some(app_cfg) = &cfg.config {
+            app_cfg.config.is_geoip_enabled()
+        } else {
+            false
+        };
+
+        let visible_headers: Vec<&str> = if include_country {
+            HEADERS.to_vec() // all headers
+        } else {
+            HEADERS.iter()
+                .filter(|h| **h != "COUNTRY")
+                .copied()
+                .collect()
+        };
+        visible_headers
+    });
+
+
+    use_effect_with((), move |_| {
+        let interval = Interval::new(1000, update_timestamps);
+        move || drop(interval)
+    });
+
 
     let handle_popup_close = {
         let set_is_open = popup_is_open.clone();
@@ -56,11 +116,12 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
 
     let render_header_cell = {
         let translator = translate.clone();
+        let headers = headers.clone();
         Callback::<usize, Html>::from(move |col| {
             html! {
                 {
-                    if col < HEADERS.len() {
-                       translator.t(HEADERS[col])
+                    if col < headers.len() {
+                       translator.t(&format!("LABEL.{}", headers[col]))
                     } else {
                       String::new()
                     }
@@ -71,10 +132,12 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
 
     let render_data_cell = {
         let popup_onclick = handle_popup_onclick.clone();
+        let headers = headers.clone();
+        let translate = translate.clone();
         Callback::<(usize, usize, Rc<StreamInfo>), Html>::from(
             move |(row, col, dto): (usize, usize, Rc<StreamInfo>)| {
-                match col {
-                    0 => {
+                match headers[col] {
+                    "EMPTY" => {
                         let popup_onclick = popup_onclick.clone();
                         html! {
                             <button class="tp__icon-button"
@@ -84,18 +147,22 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                             </button>
                         }
                     }
-                    1 => html! {dto.username.as_str()},
-                    2 => html! { <>
+                    "USERNAME" => html! {dto.username.as_str()},
+                    "STREAM_ID" => html! { <>
                             { dto.channel.virtual_id.to_string() }
                             {" ("}
                             { dto.channel.provider_id.to_string() }
                             {")"}
                         </>},
-                    3 => html! {dto.channel.title.as_str()},
-                    4 => html! {dto.channel.group.as_str()},
-                    5 => html! {dto.addr.as_str()},
-                    6 => html! {dto.provider.as_str()},
-                    7 => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
+                    "CLUSTER" => html! {dto.channel.cluster},
+                    "CHANNEL" => html! {dto.channel.title.as_str()},
+                    "GROUP" => html! {dto.channel.group.as_str()},
+                    "CLIENT_IP" => html! { strip_port(&dto.client_ip)},
+                    "COUNTRY" => html! { dto.country.as_ref().map_or_else(String::new, |c| t_safe(&translate, &format!("COUNTRY.{c}")).unwrap_or_else(||c.to_string())) },
+                    "PROVIDER" => html! {dto.provider.as_str()},
+                    "SHARED" => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
+                    "USER_AGENT" => html! { dto.user_agent.as_str() },
+                    "DURATION" => html! { <span class="tp__stream-table__duration" data-ts={dto.ts.to_string()}>{format_duration(current_time_secs() - dto.ts)}</span> },
                     _ => html! {""},
                 }
             })
@@ -105,8 +172,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         false
     });
 
-    let on_sort = Callback::<Option<(usize, SortOrder)>, ()>::from(move |_args| {
-    });
+    let on_sort = Callback::<Option<(usize, SortOrder)>, ()>::from(move |_args| {});
 
     let table_definition = {
         // first register for config update
@@ -114,11 +180,11 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         let render_data_cell_cb = render_data_cell.clone();
         let is_sortable = is_sortable.clone();
         let on_sort = on_sort.clone();
-        let num_cols = HEADERS.len();
-        use_memo(props.streams.clone(), move |streams| {
+        let num_cols = headers.len();
+        use_memo((props.streams.clone(), (*headers).clone()), move |(streams, _)| {
             streams.as_ref().map(|list|
                 Rc::new(TableDefinition::<StreamInfo> {
-                    items: if list.is_empty() {None} else {Some(Rc::new(list.clone()))},
+                    items: if list.is_empty() { None } else { Some(Rc::new(list.clone())) },
                     num_cols,
                     is_sortable,
                     on_sort,

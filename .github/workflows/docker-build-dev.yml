@@ -1,0 +1,420 @@
+name: Docker Build & Push (develop)
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: docker-build-develop
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+  actions: write
+
+env:
+  GHCR_NS: ghcr.io/${{ github.repository }}
+  DOCKERFILE: docker/ci.Dockerfile
+
+jobs:
+  prebuilds:
+    name: Ensure tuliprox build tools exist
+    runs-on: ubuntu-24.04
+    outputs:
+      need_build_tools: ${{ steps.check.outputs.need_build_tools }}
+      archs: ${{ steps.arch.outputs.archs }}
+
+    steps:
+      - name: Step 1.1 - Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Step 1.2 - Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Step 1.3 - Set arch list
+        id: arch
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "archs=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
+
+      - name: Step 1.4 - Check prebuild availability (all archs)
+        id: check
+        shell: bash
+        env:
+          BUILD_TOOLS_IMAGE: ${{ env.GHCR_NS }}/tuliprox-build-tools
+        run: |
+          set -euo pipefail
+          need_build_tools=false
+          for arch in ${{ steps.arch.outputs.archs }}; do
+            if ! docker buildx imagetools inspect "${BUILD_TOOLS_IMAGE}:${arch}" >/dev/null 2>&1; then
+              need_build_tools=true
+            fi
+          done
+          echo "need_build_tools=$need_build_tools" >> "$GITHUB_OUTPUT"
+
+      - name: Step 1.5 - Summary (tuliprox build tools check)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 🛠️ tuliprox-build-tools"
+            if [[ "${{ steps.check.outputs.need_build_tools }}" == "true" ]]; then
+              echo "⚠️ tuliprox-build-tools images missing for at least one architecture."
+              echo "- A dedicated build job will run before the Docker build."
+            else
+              echo "✅ All required prebuilds already present."
+            fi
+            echo ""
+            echo "### 📦 Tags checked"
+            for a in ${{ steps.arch.outputs.archs }}; do
+              echo "- \`${{ env.GHCR_NS }}/tuliprox-build-tools:${a}\`"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Step 1.6 - Build tuliprox-build-tools if needed
+        if: steps.check.outputs.need_build_tools == 'true'
+        run: |
+          gh workflow run docker-build-tuliprox-build-tools.yml --ref ${{ github.ref }} --repo ${{ github.repository }} --field trigger=gh-actions
+          exit 1
+
+  build:
+    name: Build & Publish - Develop
+    needs:
+      - prebuilds
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch_tag: linux-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch_tag: linux-arm64
+          # - platform: linux/arm/v7
+          #   runner: ubuntu-24.04-arm
+          #   arch_tag: linux-armv7
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
+    env:
+      CARGO_HOME: /usr/local/cargo
+      SCCACHE_DIR: /var/cache/sccache
+
+    steps:
+      - name: Step 2.1 - Checkout
+        uses: actions/checkout@v5
+
+      - name: Step 2.2 - Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Step 2.3 - Set up Buildx
+        uses: docker/setup-buildx-action@v3
+        id: setup-buildx
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Step 2.4 - Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Step 2.5 - Read version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(grep -Eom1 '^# [0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | awk '{print $2}')"
+          if [[ -z "${ver:-}" ]]; then
+            echo "Failed to parse version from CHANGELOG.md" >&2
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Step 2.6 - Ensure cache context dir
+        run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
+
+      - name: Step 2.7 - Load cargo chef and sccache directories for Docker build
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: |
+            .ci-cache/${{ matrix.arch_tag }}
+          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
+
+      - name: test cache output
+        run: ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
+
+      - name: Step 2.8 - Resolve Bake targets
+        id: bake-targets
+        shell: bash
+        run: |
+          if [[ "${{ steps.cache.outputs.cache-hit }}" == "true" ]]; then
+            {
+              echo 'targets<<EOF'
+              echo 'scratch-final'
+              echo 'alpine-final'
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo 'targets<<EOF'
+              echo 'cache-export'
+              echo 'scratch-final'
+              echo 'alpine-final'
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Step 2.10 - Build images with docker buildx bake (debug)
+        shell: bash
+        env:
+          GHCR_NS: ${{ env.GHCR_NS }}
+          ARCH_TAG: ${{ matrix.arch_tag }}
+          PLATFORM: ${{ matrix.platform }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
+          CACHE_OUTPUT: /tmp/.ci-cache/${{ matrix.arch_tag }}
+          CARGO_HOME: ${{ env.CARGO_HOME }}
+          SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
+          BUILDKIT_PROGRESS: plain
+        run: |
+          set -euo pipefail
+          echo "Cache contents before build:"
+          ls -al ${CACHE_CONTEXT}
+          
+          targets="${{ steps.bake-targets.outputs.targets }}"
+          echo "Targets (raw):"
+          printf '  %s\n' "$targets"
+          mapfile -t target_list <<<"$targets"
+          
+          echo "Running docker buildx bake with ${#target_list[@]} targets: ${target_list[*]}"
+          docker buildx bake \
+            --file docker/docker-bake.hcl \
+            --load \
+            --progress plain \
+            "${target_list[@]}"
+
+      - name: Print docker images
+        run: |
+          docker image ls
+
+      - name: Step 2.11 - Move cache TARs
+        shell: bash
+        run: |
+          set -euo pipefail
+          find /tmp/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
+          ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
+          rm -rf /tmp/.ci-cache/${{ matrix.arch_tag }}
+
+      - name: Step 2.12 - Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 🧱 Build Summary"
+            echo ""
+            echo "### 🔖 Version"
+            echo "- CHANGELOG version: **${{ steps.version.outputs.version }}**"
+            echo ""
+            echo "### 🏷️ Published tags"
+            echo "- \`${{ env.GHCR_NS }}:dev-slim-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
+            echo "- \`${{ env.GHCR_NS }}:dev-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
+            echo ""
+            echo "### 🧷 Cache"
+            echo "- cache-from: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}\`"
+            echo "- cache-from: \`type=registry,ref=${{ env.GHCR_NS }}:dev\`"
+            echo "- cache-to: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max\`"
+            echo ""
+            echo "### 🧭 Platforms"
+            echo "- ${{ matrix.platform }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+  
+  manifests:
+    name: Manifests
+    needs:
+      - prebuilds
+      - build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Step 3.1 - Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Step 3.2 - GHCR Login
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Step 3.3 - Create manifests
+        id: create
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.build.outputs.version }}"
+
+          if [[ -z "${VERSION:-}" ]]; then
+            echo "Unable to determine version for manifest creation." >&2
+            exit 1
+          fi
+
+          ARCHES_INPUT='${{ needs.prebuilds.outputs.archs }}'
+
+          read -r -a POSSIBLE_ARCHES <<< "${ARCHES_INPUT:-}"
+
+          ARCHES=()
+          for arch in "${POSSIBLE_ARCHES[@]}"; do
+            arch="${arch// }"
+            [[ -n "$arch" ]] || continue
+            if docker buildx imagetools inspect "${GHCR_NS}:dev-${VERSION}-${arch}" >/dev/null 2>&1 \
+              || docker buildx imagetools inspect "${GHCR_NS}:dev-slim-${VERSION}-${arch}" >/dev/null 2>&1; then
+              ARCHES+=("$arch")
+            fi
+          done
+
+          if [[ ${#ARCHES[@]} -eq 0 ]]; then
+            echo "No architecture images detected. Cannot create manifests." >&2
+            exit 1
+          fi
+
+          declare -A MANIFEST_SOURCES=(
+            ["dev"]="dev"
+            ["dev-${VERSION}"]="dev-${VERSION}"
+            ["dev-slim"]="dev-slim"
+            ["dev-slim-${VERSION}"]="dev-slim-${VERSION}"
+          )
+
+          CREATED_TAGS=()
+          declare -A DIGESTS=()
+
+          for manifest_tag in "${!MANIFEST_SOURCES[@]}"; do
+            src_base="${MANIFEST_SOURCES[$manifest_tag]}"
+            src_refs=()
+            for arch in "${ARCHES[@]}"; do
+              candidate="${GHCR_NS}:${src_base}-${arch}"
+              if docker buildx imagetools inspect "$candidate" >/dev/null 2>&1; then
+                src_refs+=("$candidate")
+              else
+                echo "⚠️  Missing architecture image $candidate" >&2
+              fi
+            done
+
+            if [[ ${#src_refs[@]} -eq 0 ]]; then
+              echo "Skipping manifest ${GHCR_NS}:${manifest_tag} (no sources found)." >&2
+              continue
+            fi
+
+            echo "⛏️  Creating manifest ${GHCR_NS}:${manifest_tag}"
+            docker buildx imagetools create -t "${GHCR_NS}:${manifest_tag}" "${src_refs[@]}"
+            CREATED_TAGS+=("$manifest_tag")
+
+            if info="$(docker buildx imagetools inspect "${GHCR_NS}:${manifest_tag}" 2>/dev/null)"; then
+              digest="$(awk '/^Digest:/ {print $2; exit}' <<< "$info")"
+              DIGESTS["$manifest_tag"]="$digest"
+            else
+              DIGESTS["$manifest_tag"]=""
+            fi
+          done
+
+          if [[ ${#CREATED_TAGS[@]} -eq 0 ]]; then
+            echo "No manifests were created." >&2
+            exit 1
+          fi
+
+          {
+            echo 'tags<<EOF'
+            for tag in "${CREATED_TAGS[@]}"; do
+              printf '%s\n' "$tag"
+            done
+            echo 'EOF'
+            echo "arches=${ARCHES[*]}"
+            echo 'digests<<EOF'
+            for tag in "${CREATED_TAGS[@]}"; do
+              printf '%s %s\n' "$tag" "${DIGESTS[$tag]}"
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Step 3.4 - Summary (manifests)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 📚 Multi-arch manifests"
+            echo ""
+            if [[ "${{ steps.create.outcome }}" == "success" ]]; then
+              echo "✅ All requested manifests were created."
+            else
+              echo "❌ Manifest creation encountered an error."
+            fi
+            echo ""
+            echo "### 🔖 Version"
+            if [[ -n "${{ needs.build.outputs.version }}" ]]; then
+              echo "- CHANGELOG version: **${{ needs.build.outputs.version }}**"
+            else
+              echo "- CHANGELOG version: *(unavailable)*"
+            fi
+            echo ""
+            echo "### 🏷️ Final tags"
+            TAGS_INPUT='${{ steps.create.outputs.tags }}'
+            DIGESTS_INPUT='${{ steps.create.outputs.digests }}'
+            declare -A DIGEST_LOOKUP=()
+            if [[ -n "$DIGESTS_INPUT" ]]; then
+              while IFS= read -r line; do
+                [[ -n "${line// }" ]] || continue
+                tag="${line%% *}"
+                digest="${line#* }"
+                DIGEST_LOOKUP["$tag"]="$digest"
+              done <<< "$DIGESTS_INPUT"
+            fi
+            if [[ -n "$TAGS_INPUT" ]]; then
+              while IFS= read -r line; do
+                [[ -n "${line// }" ]] || continue
+                image="${GHCR_NS}:${line}"
+                echo "- \`$image\`"
+                digest="${DIGEST_LOOKUP[$line]:-}"
+                if [[ -n "$digest" ]]; then
+                  if [[ "$digest" == sha256:* ]]; then
+                    echo "  - sha256: \`${digest#sha256:}\`"
+                  else
+                    echo "  - digest: \`$digest\`"
+                  fi
+                else
+                  echo "  - sha256: *(lookup failed)*"
+                fi
+              done <<< "$TAGS_INPUT"
+            else
+              echo "- (none)"
+            fi
+            echo ""
+            echo "### 🧩 Architectures"
+            ARCHES_OUTPUT='${{ steps.create.outputs.arches }}'
+            if [[ -n "$ARCHES_OUTPUT" ]]; then
+              for a in $ARCHES_OUTPUT; do
+                echo "- ${a}"
+              done
+            else
+              echo "- *(not available)*"
+            fi
+            echo ""
+            echo "### 📦 Registry"
+            echo "- ghcr.io"
+          } >> "$GITHUB_STEP_SUMMARY"

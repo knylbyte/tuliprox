@@ -9,8 +9,8 @@ use tokio::sync::RwLock;
 use shared::model::InputType;
 use shared::write_if_some;
 
-pub type ProviderConnectionChangeSender = tokio::sync::mpsc::Sender<(String, usize)>;
-pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::Receiver<(String, usize)>;
+pub type ProviderConnectionChangeSender = tokio::sync::mpsc::UnboundedSender<(String, usize)>;
+pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::UnboundedReceiver<(String, usize)>;
 
 pub type ProviderConnectionChangeCallback = Arc<dyn Fn(&str, usize) + Send + Sync>;
 
@@ -89,18 +89,12 @@ impl PartialEq for ProviderConfig {
 
 macro_rules! modify_connections {
     ($self:ident, $guard:ident, +1) => {{
-        let cnt = {
-            $guard.current_connections += 1;
-            $guard.current_connections
-        };
-        $self.notify_connection_change(cnt);
+        $guard.current_connections += 1;
+        $self.notify_connection_change($guard.current_connections);
     }};
     ($self:ident, $guard:ident, -1) => {{
-        let cnt = {
-            $guard.current_connections -= 1;
-            $guard.current_connections
-        };
-        $self.notify_connection_change(cnt);
+        $guard.current_connections -= 1;
+        $self.notify_connection_change($guard.current_connections);
     }};
 }
 
@@ -187,8 +181,6 @@ impl ProviderConfig {
     //     !self.is_exhausted()
     // }
 
-
-
     async fn force_allocate(&self) {
         let mut guard = self.connection.write().await;
         modify_connections!(self, guard, +1);
@@ -260,13 +252,12 @@ impl ProviderConfig {
 
     pub async fn release(&self) {
         let mut guard = self.connection.write().await;
-        if guard.current_connections > 0 {
-            modify_connections!(self, guard, -1);
-        }
-
-        if guard.current_connections == 0  || guard.current_connections < self.max_connections {
+        if guard.current_connections == 1 || guard.current_connections > self.max_connections {
             guard.granted_grace = false;
             guard.grace_ts = 0;
+        }
+        if guard.current_connections > 0 {
+            modify_connections!(self, guard, -1);
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::api::api_utils::try_unwrap_body;
+use crate::api::api_utils::{create_session_fingerprint, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_stream_alternative_url, is_seek_request,
 };
@@ -39,10 +39,9 @@ fn hls_response(hls_content: String) -> impl IntoResponse + Send {
         .body(hls_content))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(in crate::api) async fn handle_hls_stream_request(
-    fingerprint: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     app_state: &Arc<AppState>,
     user: &ProxyUserCredentials,
     user_session: Option<&UserSession>,
@@ -59,7 +58,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
         Some(session) => {
             match app_state
                 .active_provider
-                .force_exact_acquire_connection(&session.provider, addr)
+                .force_exact_acquire_connection(&session.provider, &fingerprint.addr, app_state.get_release_sender())
                 .await
                 .get_provider_config()
             {
@@ -78,14 +77,14 @@ pub(in crate::api) async fn handle_hls_stream_request(
             {
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
-                    let user_session_token = format!("{fingerprint}{virtual_id}");
+                    let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
                     let session_token = app_state.active_users.create_user_session(
                         user,
                         &user_session_token,
                         virtual_id,
                         &provider_cfg.name,
                         &stream_url,
-                        addr,
+                        &fingerprint.addr,
                         connection_permission,
                     ).await;
                     (stream_url, Some(session_token))
@@ -99,10 +98,16 @@ pub(in crate::api) async fn handle_hls_stream_request(
     // Don't forward Range on playlist fetch; segments use original headers in provider path
     let filter_header: HeaderFilter = Some(Box::new(|name: &str| !name.eq_ignore_ascii_case("range")));
     let forwarded = get_headers_from_request(req_headers, &filter_header);
-    let headers = request::get_request_headers(None, Some(&forwarded));
+    let config = app_state.app_config.config.load();
+    let disabled_headers = config
+        .reverse_proxy
+        .as_ref()
+        .and_then(|r| r.disabled_header.clone());
+    let headers = request::get_request_headers(None, Some(&forwarded), disabled_headers.as_ref());
     let input_source = InputSource::from(input).with_url(request_url);
     match request::download_text_content(
         Arc::clone(&app_state.http_client.load()),
+        disabled_headers.as_ref(),
         &input_source,
         Some(&headers),
         None,
@@ -145,7 +150,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
 {url}
 #EXT-X-ENDLIST
 ");
-                hls_response(playlist.to_string()).into_response()
+                hls_response(playlist.clone()).into_response()
             } else {
                 axum::http::StatusCode::NOT_FOUND.into_response()
             }
@@ -188,7 +193,7 @@ async fn resolve_stream_channel(
 
 #[allow(clippy::too_many_lines)]
 async fn hls_api_stream(
-    Fingerprint(fingerprint, addr): Fingerprint,
+    fingerprint: Fingerprint,
     req_headers: axum::http::HeaderMap,
     axum::extract::Path(params): axum::extract::Path<HlsApiPathParams>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
@@ -218,7 +223,7 @@ async fn hls_api_stream(
         )
     );
 
-    let user_session_token = format!("{fingerprint}{virtual_id}");
+    let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let mut user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &user_session_token).await;
@@ -258,7 +263,7 @@ async fn hls_api_stream(
             if is_seek_request(stream_channel.cluster, &req_headers).await {
                 // partial request means we are in reverse proxy mode, seek happened
                 return force_provider_stream_response(
-                    &addr,
+                    &fingerprint,
                     &app_state,
                     session,
                     stream_channel,
@@ -285,7 +290,6 @@ async fn hls_api_stream(
         if is_hls_url(&session.stream_url) {
             return handle_hls_stream_request(
                 &fingerprint,
-                &addr,
                 &app_state,
                 &user,
                 Some(session),
@@ -301,7 +305,7 @@ async fn hls_api_stream(
 
         let stream_channel = resolve_stream_channel(&app_state, &target, virtual_id, &hls_url).await;
         force_provider_stream_response(
-            &addr,
+            &fingerprint,
             &app_state,
             session,
             stream_channel,

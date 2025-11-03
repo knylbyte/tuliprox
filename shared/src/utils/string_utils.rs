@@ -127,6 +127,10 @@ pub fn humanize_snake_case(s: &str) -> String {
     result
 }
 
+pub fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+   if a.len() >= b.len() { a } else { b }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;

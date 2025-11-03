@@ -3,6 +3,7 @@ use crate::model::WebAuthConfigDto;
 use crate::utils::{default_as_true, is_blank_optional_string};
 
 const RESERVED_PATHS: &[&str] = &[
+    "cvs",
     "live",
     "movie",
     "series",

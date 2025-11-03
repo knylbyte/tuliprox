@@ -29,11 +29,11 @@ macro_rules! apply_batch_aliases {
             if let Some(index) = $index {
                 let mut idx = index;
                 // set to the same id as the first alias, because the first alias is copied into this input
-                $source.id = index + 1;
+                $source.id = idx;
                 if let Some(aliases) = $source.aliases.as_mut() {
                     for alias in aliases {
-                        idx += 1;
                         alias.id = idx;
+                        idx += 1;
                     }
                 }
                 Some(idx)
@@ -301,11 +301,10 @@ impl ConfigInputDto {
 
         self.persist = get_trimmed_string(&self.persist);
 
-
-        let mut current_index = index;
+        let mut current_index = index + 1;
+        self.id = current_index;
         if let Some(aliases) = self.aliases.as_mut() {
             let input_type = &self.input_type;
-            self.id = current_index + 1; // The same id as the first alias
             handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, aliases.iter_mut()
                 .map(|i| match i.prepare(current_index, input_type) {
                     Ok(new_idx) => {
@@ -314,9 +313,7 @@ impl ConfigInputDto {
                     },
                     Err(err) => Err(err)
                 }));
-        } else if !matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch) {
-            current_index += 1;
-            self.id = current_index;
+        //} else if !matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch) {
         }
         Ok(current_index)
     }

@@ -65,7 +65,7 @@ impl ConfigFile {
     async fn load_config(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
         let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&app_state.app_config.paths);
         let config_file = paths.config_file_path.as_str();
-        let config_dto = read_config_file(config_file, true)?;
+        let config_dto = read_config_file(config_file, true, true)?;
         let mapping_changed = paths.mapping_file_path.as_ref() !=  config_dto.mapping_path.as_ref();
         let mut config: Config = Config::from(config_dto);
         config.prepare(paths.config_path.as_str())?;

@@ -1,4 +1,5 @@
 use gloo_timers::callback::Interval;
+use gloo_utils::window;
 use yew::prelude::*;
 
 #[derive(Clone, Debug, Properties, PartialEq)]
@@ -14,8 +15,12 @@ struct Star {
 #[function_component]
 pub fn FloatingBackground() -> Html {
     let stars = use_state(|| {
+        let width = window().inner_width().unwrap().as_f64().unwrap_or(800.0);
+        let height = window().inner_height().unwrap().as_f64().unwrap_or(600.0);
+        let area = width * height;
+        let num_stars = ((area / 50000.0) as usize).clamp(10, 40);
         let mut rng = fastrand::Rng::new();
-        let stars: Vec<Star> = (0..40).map(|_| {
+        let stars: Vec<Star> = (0..num_stars).map(|_| {
             Star {
                 x: rng.f64() * 100.0,
                 y: rng.f64() * 100.0,
@@ -31,7 +36,7 @@ pub fn FloatingBackground() -> Html {
     {
         let stars = stars.clone();
         use_effect(move || {
-            let interval = Interval::new(50, move || {
+            let interval = Interval::new(200, move || {
                 stars.set(
                     stars.iter().map(|s| {
                         let mut star = s.clone();

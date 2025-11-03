@@ -1,7 +1,7 @@
 // https://github.com/tellytv/go.xtream-codes/blob/master/structs.go
 
 use crate::api::api_utils;
-use crate::api::api_utils::try_unwrap_body;
+use crate::api::api_utils::{create_session_fingerprint, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_user_target, get_user_target_by_credentials,
     is_seek_request, redirect_response, resource_response, separate_number_and_remainder,
@@ -35,10 +35,7 @@ use serde_json::{Map, Value};
 use shared::error::create_tuliprox_error_result;
 use shared::error::info_err;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
-use shared::model::{
-    get_backdrop_path_value, FieldGetAccessor, PlaylistEntry, PlaylistItemType, ProxyType,
-    TargetType, UserConnectionPermission, XtreamCluster, XtreamPlaylistItem,
-};
+use shared::model::{create_stream_channel_with_type, get_backdrop_path_value, FieldGetAccessor, PlaylistEntry, PlaylistItemType, ProxyType, TargetType, UserConnectionPermission, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::{
     extract_extension_from_url, generate_playlist_uuid, get_u32_from_serde_value, hex_encode,
     sanitize_sensitive_info, trim_slash, HLS_EXT,
@@ -211,32 +208,35 @@ async fn get_user_info(user: &ProxyUserCredentials, app_state: &AppState) -> Xtr
 
 #[allow(clippy::too_many_lines)]
 async fn xtream_player_api_stream(
-    fingerprint: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     req_headers: &HeaderMap,
     app_state: &Arc<AppState>,
     api_req: &UserApiRequest,
     stream_req: ApiStreamRequest<'_>,
 ) -> impl IntoResponse + Send {
+
+    // if log::log_enabled!(log::Level::Debug) {
+    //     debug!(
+    //         "Stream request ctx={} user={} stream_id={} action_path={}",
+    //         stream_req.context,
+    //         sanitize_sensitive_info(stream_req.username),
+    //         sanitize_sensitive_info(stream_req.stream_id),
+    //         sanitize_sensitive_info(stream_req.action_path),
+    //     );
+    //     let message = format!("Client Request headers {req_headers:?}");
+    //     debug!("{}", sanitize_sensitive_info(&message));
+    //     let message = format!("Client Request headers {req_headers:?}");
+    //     debug!("{}", sanitize_sensitive_info(&message));
+    // }
+
+
     let (user, target) = try_option_bad_request!(
-        get_user_target_by_credentials(
-            stream_req.username,
-            stream_req.password,
-            api_req,
-            app_state
-        ),
+        get_user_target_by_credentials( stream_req.username, stream_req.password, api_req, app_state),
         false,
-        format!(
-            "Could not find any user for xc stream {}",
-            stream_req.username
-        )
+        format!("Could not find any user for xc stream {}", stream_req.username)
     );
     if user.permission_denied(app_state) {
-        return create_custom_video_stream_response(
-            &app_state.app_config,
-            CustomVideoStreamType::UserAccountExpired,
-        )
-        .into_response();
+        return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserAccountExpired,).into_response();
     }
 
     let target_name = &target.name;
@@ -246,26 +246,17 @@ async fn xtream_player_api_stream(
     }
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
-    let virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
+    let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
     let (pli, mapping) = try_result_not_found!(
-        xtream_repository::xtream_get_item_for_stream_id(
-            virtual_id,
-            app_state,
-            &target,
-            None
-        ).await,
+        xtream_repository::xtream_get_item_for_stream_id(req_virtual_id, app_state, &target, None).await,
         true,
-        format!("Failed to read xtream item for stream id {}", virtual_id)
+        format!("Failed to read xtream item for stream id {req_virtual_id}")
     );
+    let virtual_id = pli.virtual_id;
     let input = try_option_bad_request!(
-        app_state
-            .app_config
-            .get_input_by_name(pli.input_name.as_str()),
+        app_state.app_config.get_input_by_name(pli.input_name.as_str()),
         true,
-        format!(
-            "Cant find input for target {target_name}, context {}, stream_id {virtual_id}",
-            stream_req.context
-        )
+        format!( "Cant find input for target {target_name}, context {}, stream_id {virtual_id}", stream_req.context)
     );
 
     let (cluster, item_type) = if stream_req.context == ApiStreamContext::Timeshift {
@@ -274,7 +265,7 @@ async fn xtream_player_api_stream(
         (pli.xtream_cluster, pli.item_type)
     };
 
-    let session_key = format!("{fingerprint}{virtual_id}");
+    let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &session_key).await;
@@ -300,13 +291,15 @@ async fn xtream_player_api_stream(
             .into_response();
         }
 
+        let stream_channel = create_stream_channel_with_type(&pli, item_type);
+
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
             return force_provider_stream_response(
-                addr,
+                fingerprint,
                 app_state,
                 session,
-                pli.to_stream_channel(),
+                stream_channel,
                 req_headers,
                 &input,
                 &user,
@@ -374,7 +367,6 @@ async fn xtream_player_api_stream(
     if is_hls_request {
         return handle_hls_stream_request(
             fingerprint,
-            addr,
             app_state,
             &user,
             user_session.as_ref(),
@@ -388,11 +380,13 @@ async fn xtream_player_api_stream(
         .into_response();
     }
 
+    let stream_channel = create_stream_channel_with_type(&pli, item_type);
+
     stream_response(
-        addr,
+        fingerprint,
         app_state,
         session_key.as_str(),
-        pli.to_stream_channel(),
+        stream_channel,
         &stream_url,
         req_headers,
         &input,
@@ -407,8 +401,7 @@ async fn xtream_player_api_stream(
 #[allow(clippy::too_many_lines)]
 // Used by webui
 async fn xtream_player_api_stream_with_token(
-    fingerprint: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     req_headers: &HeaderMap,
     app_state: &Arc<AppState>,
     target_id: u16,
@@ -421,29 +414,30 @@ async fn xtream_player_api_stream_with_token(
             return axum::http::StatusCode::BAD_REQUEST.into_response();
         }
         let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
-        let virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
+        let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
         let (pli, _mapping) = try_result_bad_request!(
             xtream_repository::xtream_get_item_for_stream_id(
-                virtual_id,
+                req_virtual_id,
                 app_state,
                 &target,
                 None
             ).await,
             true,
-            format!("Failed to read xtream item for stream id {}", virtual_id)
+            format!("Failed to read xtream item for stream id {req_virtual_id}")
         );
+        let virtual_id = pli.virtual_id;
         let input = try_option_bad_request!(
             app_state
                 .app_config
                 .get_input_by_name(pli.input_name.as_str()),
             true,
             format!(
-                "Cant find input for target {target_name}, context {}, stream_id {virtual_id}",
-                stream_req.context
+                "Cant find input for target {target_name}, context {}, stream_id {}",
+                stream_req.context, pli.virtual_id
             )
         );
 
-        let session_key = format!("{fingerprint}{virtual_id}");
+        let session_key = create_session_fingerprint(&fingerprint.key, "webui", virtual_id);
 
         let is_hls_request =
             pli.item_type == PlaylistItemType::LiveHls || stream_ext.as_deref() == Some(HLS_EXT);
@@ -476,12 +470,11 @@ async fn xtream_player_api_stream_with_token(
         if is_hls_request {
             return handle_hls_stream_request(
                 fingerprint,
-                addr,
                 app_state,
                 &user,
                 None,
                 &pli.url,
-                pli.virtual_id,
+                virtual_id,
                 &input,
                 req_headers,
                 UserConnectionPermission::Allowed,
@@ -510,8 +503,8 @@ async fn xtream_player_api_stream_with_token(
             ),
             true,
             format!(
-                "Cant find stream url for target {target_name}, context {}, stream_id {virtual_id}",
-                stream_req.context
+                "Cant find stream url for target {target_name}, context {}, stream_id {}",
+                stream_req.context, virtual_id
             )
         );
 
@@ -520,7 +513,7 @@ async fn xtream_player_api_stream_with_token(
             sanitize_sensitive_info(&stream_url)
         );
         stream_response(
-            addr,
+            fingerprint,
             app_state,
             session_key.as_str(),
             pli.to_stream_channel(),
@@ -722,17 +715,17 @@ async fn xtream_player_api_resource(
         debug!("Target has no xtream output {target_name}");
         return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
-    let virtual_id: u32 = try_result_bad_request!(resource_req.stream_id.trim().parse());
+    let req_virtual_id: u32 = try_result_bad_request!(resource_req.stream_id.trim().parse());
     let resource = resource_req.action_path.trim();
     let (pli, _) = try_result_bad_request!(
         xtream_repository::xtream_get_item_for_stream_id(
-            virtual_id,
+            req_virtual_id,
             app_state,
             &target,
             None
         ).await,
         true,
-        format!("Failed to read xtream item for stream id {}", virtual_id)
+        format!("Failed to read xtream item for stream id {req_virtual_id}")
     );
     let stream_url = if resource.starts_with(crate::model::XC_INFO_RESOURCE_PREFIX) {
         try_result_bad_request!(xtream_get_info_resource_url(
@@ -774,7 +767,7 @@ async fn xtream_player_api_resource(
 macro_rules! create_xtream_player_api_stream {
     ($fn_name:ident, $context:expr) => {
         async fn $fn_name(
-            Fingerprint(fingerprint, addr): Fingerprint,
+            fingerprint: Fingerprint,
             req_headers: HeaderMap,
             axum::extract::Path((username, password, stream_id)): axum::extract::Path<(
                 String,
@@ -786,7 +779,6 @@ macro_rules! create_xtream_player_api_stream {
         ) -> impl IntoResponse + Send {
             xtream_player_api_stream(
                 &fingerprint,
-                &addr,
                 &req_headers,
                 &app_state,
                 &api_req,
@@ -852,7 +844,7 @@ struct XtreamApiTimeShiftRequest {
 }
 
 async fn xtream_player_api_timeshift_stream(
-    Fingerprint(fingerprint, addr): Fingerprint,
+    fingerprint: Fingerprint,
     req_headers: HeaderMap,
     axum::extract::Query(mut api_req): axum::extract::Query<UserApiRequest>,
     axum::extract::Path(timeshift_request): axum::extract::Path<XtreamApiTimeShiftRequest>,
@@ -895,7 +887,6 @@ async fn xtream_player_api_timeshift_stream(
 
     xtream_player_api_stream(
         &fingerprint,
-        &addr,
         &req_headers,
         &app_state,
         &api_req,
@@ -912,7 +903,7 @@ async fn xtream_player_api_timeshift_stream(
 }
 
 async fn xtream_player_api_timeshift_query_stream(
-    Fingerprint(fingerprint, addr): Fingerprint,
+    fingerprint: Fingerprint,
     req_headers: HeaderMap,
     axum::extract::Query(api_query_req): axum::extract::Query<UserApiRequest>,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
@@ -937,7 +928,6 @@ async fn xtream_player_api_timeshift_query_stream(
     }
     xtream_player_api_stream(
         &fingerprint,
-        &addr,
         &req_headers,
         &app_state,
         &api_query_req,
@@ -1081,6 +1071,7 @@ async fn xtream_get_short_epg(
                         let input_source = InputSource::from(&*input).with_url(info_url);
                         return match request::download_text_content(
                             Arc::clone(&app_state.http_client.load()),
+                            None,
                             &input_source,
                             None,
                             None,
@@ -1210,9 +1201,9 @@ async fn xtream_get_catchup_response(
     start: &str,
     end: &str,
 ) -> impl IntoResponse + Send {
-    let virtual_id: u32 = try_result_bad_request!(FromStr::from_str(stream_id));
+    let req_virtual_id: u32 = try_result_bad_request!(FromStr::from_str(stream_id));
     let (pli, _) = try_result_bad_request!(xtream_repository::xtream_get_item_for_stream_id(
-        virtual_id,
+        req_virtual_id,
         app_state,
         target,
         Some(XtreamCluster::Live)
@@ -1589,7 +1580,7 @@ macro_rules! register_xtream_api_timeshift {
 }
 
 async fn xtream_player_token_stream(
-    Fingerprint(fingerprint, addr): Fingerprint,
+    fingerprint: Fingerprint,
     axum::extract::Path((token, target_id, cluster, stream_id)): axum::extract::Path<(
         String,
         u16,
@@ -1602,7 +1593,6 @@ async fn xtream_player_token_stream(
     let ctxt = try_result_bad_request!(ApiStreamContext::from_str(cluster.as_str()));
     xtream_player_api_stream_with_token(
         &fingerprint,
-        &addr,
         &req_headers,
         &app_state,
         target_id,

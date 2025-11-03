@@ -149,7 +149,14 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: Arc<reqwest::C
     for pli in vod_info_iter {
         if let Some(provider_id) = pli.header.get_provider_id() {
             if let Some(content) = xtream_get_input_info(app_config, fpl.input, provider_id, XtreamCluster::Video) {
-                pli.header.additional_properties = from_str::<Map<String, Value>>(&content).ok().and_then(|info_doc| info_doc.get("info").cloned());
+                // Add the "info" section to the playlist item additional properties.
+                pli.header.additional_properties = from_str::<Map<String, Value>>(&content).ok().and_then(|info_doc| {
+                    info_doc.get("info").cloned().map(|info_content| {
+                        let mut wrapped_info = Map::new();
+                        wrapped_info.insert("info".to_string(), info_content);
+                        Value::Object(wrapped_info)
+                    })
+                });
             }
         }
     }

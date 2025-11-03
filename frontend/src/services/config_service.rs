@@ -21,6 +21,7 @@ pub struct ConfigService {
     config_path: String,
     ip_check_path: String,
     batch_input_content_path: String,
+    geoip_path: String,
     event_service: Rc<EventService>
 }
 
@@ -35,6 +36,7 @@ impl ConfigService {
             config_path: concat_path_leading_slash(&base_href, "api/v1/config"),
             ip_check_path: concat_path_leading_slash(&base_href, "api/v1/ipinfo"),
             batch_input_content_path: concat_path_leading_slash(&base_href, "api/v1/config/batchContent"),
+            geoip_path: concat_path_leading_slash(&base_href, "api/v1/geoip/update"),
             event_service
         }
     }
@@ -140,6 +142,10 @@ impl ConfigService {
                 Err(err)
             }
         }
+    }
+
+    pub async fn update_geoip(&self) -> Result<Option<()>, Error> {
+        request_get::<()>(&self.geoip_path, None, None).await
     }
 
 }

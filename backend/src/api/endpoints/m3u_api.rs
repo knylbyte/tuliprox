@@ -1,4 +1,4 @@
-use crate::api::api_utils::try_unwrap_body;
+use crate::api::api_utils::{create_session_fingerprint, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_user_target, get_user_target_by_credentials,
     is_seek_request, redirect, redirect_response, resource_response, separate_number_and_remainder,
@@ -72,8 +72,7 @@ async fn m3u_api_post(
 
 #[allow(clippy::too_many_lines)]
 async fn m3u_api_stream(
-    fingerprint: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     req_headers: &axum::http::HeaderMap,
     app_state: &Arc<AppState>,
     api_req: &UserApiRequest,
@@ -108,12 +107,13 @@ async fn m3u_api_stream(
     }
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
-    let virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
+    let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
     let pli = try_result_not_found!(
-        m3u_get_item_for_stream_id(virtual_id, app_state, &target).await,
+        m3u_get_item_for_stream_id(req_virtual_id, app_state, &target).await,
         true,
-        format!("Failed to read m3u item for stream id {}", virtual_id)
+        format!("Failed to read m3u item for stream id {req_virtual_id}")
     );
+    let virtual_id = pli.virtual_id;
     let input = try_option_bad_request!(
         app_state
             .app_config
@@ -123,7 +123,7 @@ async fn m3u_api_stream(
     );
     let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
 
-    let session_key = format!("{fingerprint}{virtual_id}");
+    let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &session_key).await;
@@ -151,7 +151,7 @@ async fn m3u_api_stream(
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
             return force_provider_stream_response(
-                addr,
+                fingerprint,
                 app_state,
                 session,
                 pli.to_stream_channel(),
@@ -207,7 +207,6 @@ async fn m3u_api_stream(
     if is_hls_request {
         return handle_hls_stream_request(
             fingerprint,
-            addr,
             app_state,
             &user,
             user_session.as_ref(),
@@ -222,7 +221,7 @@ async fn m3u_api_stream(
     }
 
     stream_response(
-        addr,
+        fingerprint,
         app_state,
         &session_key,
         pli.to_stream_channel(),
@@ -301,7 +300,7 @@ async fn m3u_api_resource(
 macro_rules! create_m3u_api_stream {
     ($fn_name:ident, $context:expr) => {
         async fn $fn_name(
-            Fingerprint(fingerprint, addr): Fingerprint,
+            fingerprint: Fingerprint,
             req_headers: axum::http::HeaderMap,
             axum::extract::Query(api_req): axum::extract::Query<UserApiRequest>,
             axum::extract::Path((username, password, stream_id)): axum::extract::Path<(
@@ -314,7 +313,6 @@ macro_rules! create_m3u_api_stream {
         ) -> impl IntoResponse + Send {
             m3u_api_stream(
                 &fingerprint,
-                &addr,
                 &req_headers,
                 &app_state,
                 &api_req,

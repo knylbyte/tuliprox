@@ -62,13 +62,13 @@ pub fn telegram_create_instance(bot_token: &str, chat_id: &str) -> BotInstance {
     }
 }
 
-pub fn telegram_send_message(
+pub async fn telegram_send_message(
     client: &Arc<reqwest::Client>,
     instance: &BotInstance,
     msg: &str,
     options: Option<&SendMessageOption>,
 ) {
-    let chat_id = instance.chat_id.to_string();
+    let chat_id = instance.chat_id.clone();
     let raw_url_str = format!("https://api.telegram.org/bot{}/sendMessage", instance.bot_token);
     let url = match Url::parse(&raw_url_str) {
         Ok(url) => url,
@@ -87,27 +87,25 @@ pub fn telegram_send_message(
             .map(ToString::to_string),
     };
 
-    let the_client = Arc::clone(client);
-    tokio::spawn(async move {
-        let result = the_client
-        .post(url)
-        .json(&request_json_obj)
-        .send()
-        .await;
+    let result = client
+    .post(url)
+    .json(&request_json_obj)
+    .send()
+    .await;
 
-        match result {
-            Ok(response) => {
-                if response.status().is_success() {
-                    debug!("Message sent successfully to {chat_id} telegram api");
-                } else {
-                    match response.json::<TelegramErrorResult>().await {
-                        Ok(json) => error!("Message wasn't sent to {chat_id} telegram api because of: {}", json.description),
-                        Err(_) => error!("Message wasn't sent to {chat_id} telegram api. Telegram response could not be parsed!"),
-                    }
+    match result {
+        Ok(response) => {
+            if response.status().is_success() {
+                debug!("Message sent successfully to {chat_id} telegram api");
+            } else {
+                match response.json::<TelegramErrorResult>().await {
+                    Ok(json) => error!("Message wasn't sent to {chat_id} telegram api because of: {}", json.description),
+                    Err(_) => error!("Message wasn't sent to {chat_id} telegram api. Telegram response could not be parsed!"),
                 }
-            },
-            Err(e) => error!("Message wasn't sent to {chat_id} telegram api because of: {e}"),
-        }
-    });
+            }
+        },
+        Err(e) => error!("Message wasn't sent to {chat_id} telegram api because of: {e}"),
+    }
 }
+
 

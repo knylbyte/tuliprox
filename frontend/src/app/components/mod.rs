@@ -47,7 +47,7 @@ mod theme;
 mod websocket_status;
 
 mod floating_background;
-
+mod source_editor;
 // pub use self::input::*;
 // pub use self::menu_item::*;
 // pub use self::popup_menu::*;
@@ -89,5 +89,7 @@ pub use self::cell_value::*;
 pub use self::key_value_editor::*;
 pub use self::loading_screen::*;
 pub use self::websocket_status::*;
+pub use self::source_editor::*;
+
 //pub use self::number_input::*;
 //pub use self::date_input::*;

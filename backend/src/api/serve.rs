@@ -134,13 +134,8 @@ where
 
         let user_manager_clone = Arc::clone(&user_manager);
         let mut addr_close_rx = user_manager_clone.get_close_connection_channel();
-        let connection_closed = async move || {
-            debug!("Connection closed: {remote_addr}");
-            let addr = remote_addr.to_string();
-            user_manager_clone.remove_connection(&addr).await;
-        };
 
-        debug!("Connection opened: {addr_str}");
+        trace!("Connection opened: {addr_str}");
 
         loop {
             tokio::select! {
@@ -148,15 +143,17 @@ where
                     if let Err(err) = result {
                         trace!("failed to serve connection: {err:#}");
                     }
-                    connection_closed().await;
+                    user_manager_clone.remove_connection(&addr_str).await;
                     break;
                 }
                 () = &mut signal_closed => {
-                    connection_closed().await;
+                    user_manager_clone.remove_connection(&addr_str).await;
                     debug!("Connection gracefully closed: {remote_addr}");
                     conn.as_mut().graceful_shutdown();
                 }
                 Ok(msg) = addr_close_rx.recv() => {
+                    // this comes from user manager itself when a user connection is closed
+                    // no need to call `user_manager.remove_connection()`
                     if msg == addr_str {
                         debug!("Forced client disconnect {msg}");
                         conn.as_mut().graceful_shutdown();

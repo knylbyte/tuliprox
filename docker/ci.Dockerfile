@@ -21,7 +21,8 @@ ARG ALPINE_VER=3.22.2
 ARG RUST_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
 ARG CARGO_HOME=/usr/local/cargo
-ARG SCCACHE_DIR=var/cache/sccache
+ARG SCCACHE_DIR=/var/cache/sccache
+ARG SCCACHE_LOG=info
 # ARG SCCACHE_GHA_ENABLED=off
 # ARG SCCACHE_GHA_CACHE_SIZE
 # ARG SCCACHE_GHA_VERSION
@@ -40,6 +41,7 @@ ARG BUILDPLATFORM_TAG
 ARG RUST_TARGET
 ARG CARGO_HOME
 ARG SCCACHE_DIR
+ARG SCCACHE_LOG
 # ARG SCCACHE_GHA_ENABLED
 # ARG SCCACHE_GHA_CACHE_SIZE
 # ARG SCCACHE_GHA_VERSION
@@ -47,6 +49,7 @@ ARG SCCACHE_DIR
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV CARGO_HOME=${CARGO_HOME}
 ENV SCCACHE_DIR=${SCCACHE_DIR}
+ENV SCCACHE_LOG=${SCCACHE_LOG}
 # ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
 # ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
 # ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
@@ -75,12 +78,10 @@ RUN rustup target add "$(cat /rust-target)" || true
 
 FROM chef AS cache-import
 
-ARG BUILDPLATFORM_TAG
-
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=bind,from=cache,source=.,target=/cache,readonly \
+    --mount=type=bind,from=ctx_cache,target=/cache,readonly \
     SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
     if [[ -s /cache/cargo-registry.tar ]]; then \
     tar -C "${CARGO_HOME}" -xf /cache/cargo-registry.tar; \
@@ -89,9 +90,9 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     tar -C "${CARGO_HOME}" -xf /cache/cargo-git.tar; \
     fi; \
     if [[ -s /cache/sccache.tar ]]; then \
-      ls -l ${SCCACHE_HOME}; \
+      ls -l ${SCCACHE_DIR}; \
       tar -C "${SCCACHE_HOME}" -xf /cache/sccache.tar; \
-      ls -l ${SCCACHE_HOME}; \
+      ls -l ${SCCACHE_DIR}; \
     fi
 
 RUN echo ok > /.build-cache-import
@@ -137,9 +138,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     cargo build --release --target "$(cat /rust-target)" --bin tuliprox
-
-# We need this marker for the cache-export stage
-RUN echo ok > /.built-backend
 
 # =============================================================================
 # Stage 4: frontend-planner (cargo-chef prepare for WASM)
@@ -193,9 +191,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPL
     mkdir -p ./frontend/dist; \
     trunk build --release --config ./frontend/Trunk.toml --dist ./frontend/dist
 
-# We need this marker for the cache-export stage
-RUN echo ok > /.built-frontend
-
 # -----------------------------------------------------------------
 # Stage 6: tzdata/zoneinfo supplier (shared)
 # -----------------------------------------------------------------
@@ -204,21 +199,11 @@ RUN apk add --no-cache tzdata ca-certificates; \
     update-ca-certificates; \
     test -d /usr/share/zoneinfo
 
-RUN echo ok > /.built-tzdata
-
 # -----------------------------------------------------------------
 # Stage 7: Resources (prebuilt ffmpeg outputs)
 # -----------------------------------------------------------------
 FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS resources
 # Expected: /src/resources/*.ts
-
-RUN echo ok > /.built-resources
-
-FROM ${GHCR_NS}/tuliprox-build-tools:${BUILDPLATFORM_TAG} AS cache-marker
-
-RUN echo ok > /.build-scratch-final
-RUN echo ok > /.build-alpine-final
-RUN echo ok > /.build-cache-marker
 
 # =================================================================
 #
@@ -237,9 +222,6 @@ FROM scratch AS scratch-final
 ARG DEFAULT_TZ=UTC
 ENV TZ=${DEFAULT_TZ}
 
-# Put runtime data under /opt/tuliprox/data (default landing dir)
-WORKDIR /opt/tuliprox/data
-
 # Copy zoneinfo + CA store for TLS & timezones
 COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=tzdata /etc/ssl/certs      /etc/ssl/certs
@@ -252,13 +234,12 @@ COPY --from=resources         /src/resources                  /opt/tuliprox/reso
 # In scratch we cannot create symlinks (no shell); duplicate to PATH location
 COPY --from=backend-builder   /src/target/*/release/tuliprox /usr/local/bin/tuliprox
 
+# Put runtime data under /opt/tuliprox/data (default landing dir)
+WORKDIR /opt/tuliprox/data
+
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
 CMD ["-s", "-p", "/opt/tuliprox/data"]
-
-# We need this marker for the cache-export stage and must copy it from cache-marker
-# because scratch has no shell to create it.
-COPY --from=cache-marker /.build-scratch-final /.build-scratch-final
 
 # -----------------------------------------------------------------
 # Final Image #2: Final runtime (FROM Alpine) -> dev-friendly
@@ -272,13 +253,6 @@ ENV TZ=${DEFAULT_TZ}
 # (tshark may require --cap-add NET_ADMIN --cap-add NET_RAW and often --network host)
 RUN apk add --no-cache ca-certificates bash curl tshark; \
     update-ca-certificates
-
-# Layout under /opt (root-owned)
-RUN mkdir -p \
-      /opt/tuliprox/bin \
-      /opt/tuliprox/data \
-      /opt/tuliprox/web \
-      /opt/tuliprox/resources
 
 # Copy zoneinfo & CA store
 COPY --from=tzdata /usr/share/zoneinfo /usr/share/zoneinfo
@@ -299,11 +273,9 @@ EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
 CMD ["-s", "-p", "/opt/tuliprox/data"]
 
-COPY --from=cache-marker /.build-alpine-final /.build-alpine-final
-
 # =================================================================
 #
-# Part 3: Build cache export images
+# Part 3: Build cache export image
 #
 # These stages build the cachable images by ci platform
 # like github actions.
@@ -316,14 +288,15 @@ COPY --from=cache-marker /.build-alpine-final /.build-alpine-final
 
 FROM chef AS cache-pack
 
-# These minimal markers prevent build stages from being skipped for cache export.
-COPY --from=cache-import      /.build-cache-import    /deps/cache-import
-COPY --from=backend-builder   /.built-backend         /deps/backend
-COPY --from=frontend-builder  /.built-frontend        /deps/frontend
-COPY --from=tzdata            /.built-tzdata          /deps/tzdata
-COPY --from=resources         /.built-resources       /deps/resources
-COPY --from=scratch-final     /.build-scratch-final   /deps/scratch-final
-COPY --from=alpine-final      /.build-alpine-final    /deps/alpine-final
+### COPY all relevant files from the build stages to enable the best possible layer caching ###
+# Copy zoneinfo + CA store for TLS & timezones
+COPY --from=tzdata /usr/share/zoneinfo /tmp/tuliprox/usr/share/zoneinfo
+COPY --from=tzdata /etc/ssl/certs      /tmp/tuliprox/etc/ssl/certs
+
+# Copy binary & assets into /opt tree
+COPY --from=backend-builder   /src/target/*/release/tuliprox  /tmp/tuliprox/opt/tuliprox/bin/tuliprox
+COPY --from=frontend-builder  /src/frontend/dist              /tmp/tuliprox/opt/tuliprox/web/dist
+COPY --from=resources         /src/resources                  /tmp/tuliprox/opt/tuliprox/resources
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \

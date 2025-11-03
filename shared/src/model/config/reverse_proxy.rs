@@ -1,32 +1,64 @@
 use crate::error::TuliproxError;
-use crate::model::{CacheConfigDto, RateLimitConfigDto, StreamConfigDto};
+use crate::model::{CacheConfigDto, GeoIpConfigDto, RateLimitConfigDto, StreamConfigDto};
 use log::warn;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ReverseProxyDisabledHeaderConfigDto {
+    #[serde(default)]
+    pub referer_header: bool,
+    #[serde(default)]
+    pub x_header: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub custom_header: Vec<String>,
+}
+
+impl ReverseProxyDisabledHeaderConfigDto {
+    pub fn is_empty(&self) -> bool {
+        !self.referer_header
+            && !self.x_header
+            && self.custom_header.iter().all(|h| h.trim().is_empty())
+    }
+
+    pub fn clean(&mut self) {
+        self.custom_header.retain(|h| !h.trim().is_empty());
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ReverseProxyConfigDto {
     #[serde(default)]
     pub resource_rewrite_disabled: bool,
-    #[serde(default)]
-    pub disable_referer_header: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_header: Option<ReverseProxyDisabledHeaderConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream: Option<StreamConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache: Option<CacheConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate_limit: Option<RateLimitConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geoip: Option<GeoIpConfigDto>,
 }
 
 impl ReverseProxyConfigDto {
     pub fn is_empty(&self) -> bool {
         !self.resource_rewrite_disabled
-            && !self.disable_referer_header
+            && self.disabled_header.as_ref().is_none_or(|d| d.is_empty())
             && (self.stream.is_none() || self.stream.as_ref().is_some_and(|s| s.is_empty()))
             && (self.cache.is_none() || self.cache.as_ref().is_some_and(|c| c.is_empty()))
             && (self.rate_limit.is_none() || self.rate_limit.as_ref().is_some_and(|r| r.is_empty()))
+            && (self.geoip.is_none() || self.geoip.as_ref().is_some_and(|g| g.is_empty()))
     }
 
     pub fn clean(&mut self) {
+        if let Some(disabled) = self.disabled_header.as_mut() {
+            disabled.clean();
+            if disabled.is_empty() {
+                self.disabled_header = None;
+            }
+        }
         if self.stream.as_ref().is_some_and(|s| s.is_empty()) {
             self.stream = None;
         }
@@ -35,6 +67,9 @@ impl ReverseProxyConfigDto {
         }
         if self.rate_limit.as_ref().is_some_and(|s| s.is_empty()) {
             self.rate_limit = None;
+        }
+        if self.geoip.as_ref().is_some_and(|g| g.is_empty()) {
+            self.geoip = None;
         }
     }
 

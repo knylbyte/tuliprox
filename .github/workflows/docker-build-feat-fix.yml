@@ -1,0 +1,475 @@
+name: Docker Build & Push (feature/bugfix/hotfix)
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'bugfix/**'
+      - 'hotfix/**'
+  workflow_dispatch:
+
+concurrency:
+  group: docker-build-feat-fix
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+  actions: write
+
+env:
+  GHCR_NS: ghcr.io/${{ github.repository }}
+  DOCKERFILE: docker/ci.Dockerfile
+
+jobs:
+  prebuilds:
+    name: Ensure tuliprox build tools exist
+    runs-on: ubuntu-24.04
+    outputs:
+      need_build_tools: ${{ steps.check.outputs.need_build_tools }}
+      archs: ${{ steps.arch.outputs.archs }}
+
+    steps:
+      - name: Step 1.1 - Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Step 1.2 - Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Step 1.3 - Set arch list
+        id: arch
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "archs=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
+
+      - name: Step 1.4 - Check prebuild availability (all archs)
+        id: check
+        shell: bash
+        env:
+          BUILD_TOOLS_IMAGE: ${{ env.GHCR_NS }}/tuliprox-build-tools
+        run: |
+          set -euo pipefail
+          need_build_tools=false
+          for a in ${{ steps.arch.outputs.archs }}; do
+            if ! docker buildx imagetools inspect "${BUILD_TOOLS_IMAGE}:${a}" >/dev/null 2>&1; then
+              need_build_tools=true
+            fi
+          done
+          echo "need_build_tools=$need_build_tools" >> "$GITHUB_OUTPUT"
+
+      - name: Step 1.5 - Summary (tuliprox build tools check)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 🛠️ tuliprox-build-tools"
+            if [[ "${{ steps.check.outputs.need_build_tools }}" == "true" ]]; then
+              echo "⚠️ tuliprox-build-tools images missing for at least one architecture."
+              echo "- A dedicated build job will run before the Docker build."
+            else
+              echo "✅ All required prebuilds already present."
+            fi
+            echo ""
+            echo "### 📦 Tags checked"
+            for a in ${{ steps.arch.outputs.archs }}; do
+              echo "- \`${{ env.GHCR_NS }}/tuliprox-build-tools:${a}\`"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Step 1.6 - Build tuliprox-build-tools if needed
+        if: steps.check.outputs.need_build_tools == 'true'
+        run: |
+          gh workflow run docker-build-tuliprox-build-tools.yml --ref ${{ github.ref }} --repo ${{ github.repository }} --field trigger=gh-actions
+          exit 1
+
+  build:
+    name: Build & Publish
+    needs:
+      - prebuilds
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch_tag: linux-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch_tag: linux-arm64
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
+    outputs:
+      plan: ${{ steps.export.outputs.plan }}
+      tags: ${{ steps.export.outputs.tags }}
+      arches: ${{ steps.export.outputs.arches }}
+      display_tags: ${{ steps.export.outputs.display_tags }}
+      tag_aliases: ${{ steps.export.outputs.tag_aliases }}
+    env:
+      CARGO_HOME: /usr/local/cargo
+      SCCACHE_DIR: /var/cache/sccache
+
+    steps:
+      - name: Step 2.1 - Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Step 2.2 - Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Step 2.3 - Set up Buildx
+        uses: docker/setup-buildx-action@v3
+        id: setup-buildx
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - name: Step 2.4 - Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Step 2.5 - Read version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(grep -Eom1 '^# [0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | awk '{print $2}')"
+          if [[ -z "${ver:-}" ]]; then
+            echo "Failed to parse version from CHANGELOG.md" >&2
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Step 2.6 - Configure feature/bugfix/hotfix build plan
+        id: plan
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          ref="${GITHUB_REF_NAME}"
+
+          sanitize_tag() {
+            local value="$1"
+            value="${value// /-}"
+            printf '%s' "${value//[^[:alnum:]._-]/-}"
+          }
+
+          plan=""
+          tag_base=""
+
+          case "$ref" in
+            feature/*)
+              plan="feature"
+              tag_base="feature-$(sanitize_tag "${ref#feature/}")"
+              ;;
+            bugfix/*)
+              plan="bugfix"
+              tag_base="bugfix-$(sanitize_tag "${ref#bugfix/}")"
+              ;;
+            hotfix/*)
+              plan="hotfix"
+              tag_base="hotfix-$(sanitize_tag "${ref#hotfix/}")"
+              ;;
+            *)
+              echo "Unsupported branch '$ref'" >&2
+              exit 1
+              ;;
+          esac
+
+          primary_file="$(mktemp)"
+          printf '%s\n' "$tag_base" > "$primary_file"
+
+          manifest_file="$(mktemp)"
+          cat "$primary_file" > "$manifest_file"
+
+          echo "plan=${plan}" >> "$GITHUB_OUTPUT"
+          echo "target=alpine-final" >> "$GITHUB_OUTPUT"
+          echo "primary_stage=alpine-final" >> "$GITHUB_OUTPUT"
+          echo "primary_tags_file=$primary_file" >> "$GITHUB_OUTPUT"
+          echo "primary_cache_tag=$tag_base" >> "$GITHUB_OUTPUT"
+          echo "secondary_stage=" >> "$GITHUB_OUTPUT"
+          echo "secondary_tags_file=" >> "$GITHUB_OUTPUT"
+          echo "secondary_cache_tag=" >> "$GITHUB_OUTPUT"
+          echo "tags_file=$manifest_file" >> "$GITHUB_OUTPUT"
+          echo "resolved_branch=$ref" >> "$GITHUB_OUTPUT"
+          echo "cache_base_branch=" >> "$GITHUB_OUTPUT"
+          echo "cache_base_plan=" >> "$GITHUB_OUTPUT"
+          echo "cache_base_primary_tag=" >> "$GITHUB_OUTPUT"
+          echo "cache_base_secondary_tag=" >> "$GITHUB_OUTPUT"
+          echo "dispatch_simulated=false" >> "$GITHUB_OUTPUT"
+
+      - name: Step 2.7 - Prepare primary image metadata (${{ matrix.platform }})
+        id: primary_meta
+        shell: bash
+        env:
+          TAGS_FILE: ${{ steps.plan.outputs.primary_tags_file }}
+          CACHE_TAG: ${{ steps.plan.outputs.primary_cache_tag }}
+          ARCH: ${{ matrix.arch_tag }}
+          NS: ${{ env.GHCR_NS }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${TAGS_FILE}" || ! -s "${TAGS_FILE}" ]]; then
+            echo "No tags defined" >&2
+            exit 1
+          fi
+
+          tags_tmp="$(mktemp)"
+          : > "$tags_tmp"
+
+          sanitize_segment() {
+            local value="$1"
+            value="${value// /-}"
+            printf '%s' "${value//[^[:alnum:]._-]/-}"
+          }
+
+          while IFS= read -r tag; do
+            tag="${tag// }"
+            [[ -n "$tag" ]] || continue
+
+            base="$tag"
+            version=""
+            if [[ "$tag" == *@* ]]; then
+              base="${tag%%@*}"
+              version="${tag#*@}"
+            fi
+
+            base="$(sanitize_segment "$base")"
+            [[ -n "$base" ]] || continue
+
+            printf '%s:%s-%s\n' "$NS" "$base" "$ARCH" >> "$tags_tmp"
+
+            if [[ -n "$version" ]]; then
+              version="$(sanitize_segment "$version")"
+              [[ -n "$version" ]] || continue
+              printf '%s:%s-%s-%s\n' "$NS" "$base" "$version" "$ARCH" >> "$tags_tmp"
+            fi
+          done < "$TAGS_FILE"
+
+          sort -u "$tags_tmp" -o "$tags_tmp"
+
+          {
+            echo "tags<<EOF"
+            cat "$tags_tmp"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "cache_from<<EOF"
+            echo "type=gha,scope=dev-cache-export"
+            echo "type=registry,ref=${NS}:dev"
+            if [[ -n "${CACHE_TAG}" ]]; then
+              echo "type=registry,ref=${NS}:${CACHE_TAG}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Step 2.8 - Ensure cache context dir
+        run: mkdir -p .ci-cache/${{ matrix.arch_tag }}
+
+      - name: Step 2.9 - Cache cargo and sccache directories for Docker build
+        uses: actions/cache@v4
+        id: cache
+        with:
+          path: |
+            .ci-cache/${{ matrix.arch_tag }}
+          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
+
+      - name: Step 2.10 - Build alpine-final image (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          platforms: ${{ matrix.platform }}
+          push: true
+          build-contexts: |
+            cache=./.ci-cache/${{ matrix.arch_tag }}
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+            GHCR_NS=${{ env.GHCR_NS }}
+            BUILDPLATFORM_TAG=${{ matrix.arch_tag }}
+            CARGO_HOME=${{ env.CARGO_HOME }}
+            SCCACHE_DIR=${{ env.SCCACHE_DIR }}
+          target: ${{ steps.plan.outputs.primary_stage }}
+          tags: ${{ steps.primary_meta.outputs.tags }}
+          cache-from: ${{ steps.primary_meta.outputs.cache_from }}
+
+      - name: Step 2.11 - Export plan and tags
+        id: export
+        shell: bash
+        env:
+          PLAN: ${{ steps.plan.outputs.plan }}
+          TAGS_FILE: ${{ steps.plan.outputs.tags_file }}
+        run: |
+          set -euo pipefail
+
+          echo "plan=${PLAN}" >> "$GITHUB_OUTPUT"
+          echo "arches=linux-amd64 linux-arm64" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "${TAGS_FILE}" && -s "${TAGS_FILE}" ]]; then
+            tags_tmp="$(mktemp)"
+            sort -u "$TAGS_FILE" -o "$tags_tmp"
+
+            {
+              echo "tags<<EOF"
+              cat "$tags_tmp"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+
+            {
+              echo "display_tags<<EOF"
+              cat "$tags_tmp"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=" >> "$GITHUB_OUTPUT"
+            echo "display_tags=" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "tag_aliases=" >> "$GITHUB_OUTPUT"
+
+      - name: Step 2.12 - Summary
+        if: always()
+        shell: bash
+        env:
+          SUMMARY_TAGS: ${{ steps.export.outputs.tags }}
+          SUMMARY_TAGS_FRIENDLY: ${{ steps.export.outputs.display_tags }}
+        run: |
+          {
+            echo "## 🧱 Build Summary"
+            echo ""
+            echo "### 🔖 Version"
+            echo "- CHANGELOG version: **${{ steps.version.outputs.version }}**"
+            echo ""
+            echo "### 🌿 Branch"
+            echo "- **${{ steps.plan.outputs.resolved_branch }}**"
+            echo ""
+            echo "### 🏷️ Published tags"
+            if [[ -n "${SUMMARY_TAGS_FRIENDLY}" ]]; then
+              while IFS= read -r line; do
+                [[ -n "${line// }" ]] || continue
+                echo "- \`${{ env.GHCR_NS }}:${line}\`"
+              done <<< "${SUMMARY_TAGS_FRIENDLY}"
+            else
+              echo "- (none)"
+            fi
+            echo ""
+            echo "### 🧷 Cache"
+            echo "- cache-from: \`type=gha,scope=dev-cache-export\`"
+            echo "- cache-from: \`type=registry,ref=${{ env.GHCR_NS }}:dev\`"
+            if [[ -n "${{ steps.plan.outputs.primary_cache_tag }}" ]]; then
+              echo "- cache-from: \`type=registry,ref=${{ env.GHCR_NS }}:${{ steps.plan.outputs.primary_cache_tag }}\`"
+            fi
+            echo ""
+            echo "### 🧭 Platforms"
+            echo "- linux/amd64 • linux/arm64"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  manifests:
+    name: Manifests
+    needs: build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Step 3.1 - Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Step 3.2 - GHCR Login
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Step 3.3 - Create manifests
+        id: create
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAGS_INPUT='${{ needs.build.outputs.tags }}'
+          ARCHES_INPUT='${{ needs.build.outputs.arches }}'
+
+          readarray -t TAGS <<< "$TAGS_INPUT"
+          read -r -a ARCHES <<< "$ARCHES_INPUT"
+
+          if [[ ${#TAGS[@]} -eq 0 || -z "${TAGS[0]// }" ]]; then
+            echo "No tags to publish"
+            exit 0
+          fi
+
+          make_manifest() {
+            local tag="$1"
+            local src=()
+            for arch in "${ARCHES[@]}"; do
+              src+=( "${GHCR_NS}:${tag}-${arch}" )
+            done
+            echo "⛏️  Creating manifest ${GHCR_NS}:${tag}"
+            docker buildx imagetools create -t "${GHCR_NS}:${tag}" "${src[@]}"
+          }
+
+          for t in "${TAGS[@]}"; do
+            [[ -n "${t// }" ]] || continue
+            make_manifest "$t"
+          done
+
+      - name: Step 3.4 - Summary (manifests)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 📚 Multi-arch manifests"
+            echo ""
+            if [[ "${{ steps.create.outcome }}" == "success" ]]; then
+              echo "✅ All requested manifests were created."
+            else
+              echo "❌ Manifest creation encountered an error."
+            fi
+            echo ""
+            echo "### 🏷️ Final tags"
+            TAGS_INPUT='${{ needs.build.outputs.tags }}'
+            if [[ -n "$TAGS_INPUT" ]]; then
+              while IFS= read -r line; do
+                [[ -n "${line// }" ]] || continue
+                image="${GHCR_NS}:${line}"
+                digest=""
+                if info="$(docker buildx imagetools inspect "$image" 2>/dev/null)"; then
+                  digest="$(awk '/^Digest:/ {print $2; exit}' <<< "$info")"
+                fi
+                echo "- \`$image\`"
+                if [[ -n "$digest" ]]; then
+                  if [[ "$digest" == sha256:* ]]; then
+                    echo "  - sha256: \`${digest#sha256:}\`"
+                  else
+                    echo "  - digest: \`$digest\`"
+                  fi
+                else
+                  echo "  - sha256: *(lookup failed)*"
+                fi
+              done <<< "$TAGS_INPUT"
+            else
+              echo "- (none)"
+            fi
+            echo ""
+            echo "### 🧩 Architectures"
+            for a in ${{ needs.build.outputs.arches }}; do
+              echo "- ${a}"
+            done
+            echo ""
+            echo "### 📦 Registry"
+            echo "- ghcr.io"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -123,6 +123,7 @@ pub use try_option_bad_request;
 pub use try_result_bad_request;
 pub use try_result_not_found;
 pub use try_unwrap_body;
+use crate::auth::Fingerprint;
 
 pub fn get_server_time() -> String {
     chrono::offset::Local::now()
@@ -329,7 +330,7 @@ enum ProviderStreamState {
 pub struct StreamDetails {
     pub stream: Option<BoxedProviderStream>,
     stream_info: ProviderStreamInfo,
-    pub input_name: Option<String>,
+    pub provider_name: Option<String>,
     pub grace_period_millis: u64,
     pub reconnect_flag: Option<Arc<AtomicOnceFlag>>,
     pub provider_connection_guard: Option<Arc<ProviderConnectionGuard>>,
@@ -340,7 +341,7 @@ impl StreamDetails {
         Self {
             stream: Some(stream),
             stream_info: None,
-            input_name: None,
+            provider_name: None,
             grace_period_millis: default_grace_period_millis(),
             reconnect_flag: None,
             provider_connection_guard: None,
@@ -382,7 +383,7 @@ struct StreamingStrategy {
 async fn resolve_streaming_strategy(
     app_state: &AppState,
     stream_url: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     input: &ConfigInput,
     force_provider: Option<&str>,
 ) -> StreamingStrategy {
@@ -391,13 +392,13 @@ async fn resolve_streaming_strategy(
         Some(provider) => {
             app_state
                 .active_provider
-                .force_exact_acquire_connection(provider, addr)
+                .force_exact_acquire_connection(provider, &fingerprint.addr, app_state.get_release_sender())
                 .await
         }
         None => {
             app_state
                 .active_provider
-                .acquire_connection(&input.name, addr)
+                .acquire_connection(&input.name, &fingerprint.addr, app_state.get_release_sender())
                 .await
         }
     };
@@ -461,7 +462,7 @@ async fn create_stream_response_details(
     app_state: &AppState,
     stream_options: &StreamOptions,
     stream_url: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     req_headers: &HeaderMap,
     input: &ConfigInput,
     item_type: PlaylistItemType,
@@ -469,8 +470,7 @@ async fn create_stream_response_details(
     connection_permission: UserConnectionPermission,
     force_provider: Option<&str>,
 ) -> StreamDetails {
-    let mut streaming_strategy =
-        resolve_streaming_strategy(app_state, stream_url, addr, input, force_provider).await;
+    let mut streaming_strategy = resolve_streaming_strategy(app_state, stream_url, fingerprint, input, force_provider).await;
     let config_grace_period_millis = app_state
         .app_config
         .config
@@ -484,6 +484,11 @@ async fn create_stream_response_details(
         &streaming_strategy.provider_stream_state,
         config_grace_period_millis,
     );
+    let guard_provider_name = streaming_strategy
+        .provider_connection_guard
+        .as_ref()
+        .and_then(|guard| guard.get_provider_name());
+
     match streaming_strategy.provider_stream_state {
         // custom stream means we display our own stream like connection exhausted, channel-unavailable...
         ProviderStreamState::Custom(provider_stream) => {
@@ -491,16 +496,23 @@ async fn create_stream_response_details(
             StreamDetails {
                 stream,
                 stream_info,
-                input_name: None,
+                provider_name: guard_provider_name.clone(),
                 grace_period_millis,
                 reconnect_flag: None,
                 provider_connection_guard: streaming_strategy.provider_connection_guard.clone(),
             }
         }
-        ProviderStreamState::Available(provider_name, request_url)
-        | ProviderStreamState::GracePeriod(provider_name, request_url) => {
+        ProviderStreamState::Available(_provider_name, request_url)
+        | ProviderStreamState::GracePeriod(_provider_name, request_url) => {
             let parsed_url = Url::parse(&request_url);
             let ((stream, stream_info), reconnect_flag) = if let Ok(url) = parsed_url {
+                let disabled_headers = app_state
+                    .app_config
+                    .config
+                    .load()
+                    .reverse_proxy
+                    .as_ref()
+                    .and_then(|r| r.disabled_header.clone());
                 let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
                     item_type,
                     share_stream,
@@ -508,6 +520,7 @@ async fn create_stream_response_details(
                     &url,
                     req_headers,
                     streaming_strategy.input_headers.as_ref(),
+                    disabled_headers.as_ref(),
                 );
                 let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
                 let provider_stream = match create_provider_stream(
@@ -525,14 +538,6 @@ async fn create_stream_response_details(
                 ((None, None), None)
             };
 
-            // if we have no stream, we should release the provider
-            if stream.is_none() {
-                if let Some(guard) = streaming_strategy.provider_connection_guard.take() {
-                    drop(guard);
-                }
-                error!("Cant open stream {}", sanitize_sensitive_info(&request_url));
-            }
-
             if log_enabled!(log::Level::Debug) {
                 if let Some((headers, status_code, response_url)) = stream_info.as_ref() {
                     debug!(
@@ -546,10 +551,18 @@ async fn create_stream_response_details(
                 }
             }
 
+            // if we have no stream, we should release the provider
+            if stream.is_none() {
+                if let Some(guard) = streaming_strategy.provider_connection_guard.take() {
+                    drop(guard);
+                }
+                error!("Cant open stream {}", sanitize_sensitive_info(&request_url));
+            }
+
             StreamDetails {
                 stream,
                 stream_info,
-                input_name: provider_name,
+                provider_name: guard_provider_name.clone(),
                 grace_period_millis,
                 reconnect_flag,
                 provider_connection_guard: streaming_strategy.provider_connection_guard.take(),
@@ -732,7 +745,7 @@ fn prepare_body_stream(
 
 /// # Panics
 pub async fn force_provider_stream_response(
-    addr: &str,
+    fingerprint: &Fingerprint,
     app_state: &AppState,
     user_session: &UserSession,
     mut stream_channel: StreamChannel,
@@ -749,7 +762,7 @@ pub async fn force_provider_stream_response(
         app_state,
         &stream_options,
         &user_session.stream_url,
-        addr,
+        fingerprint,
         req_headers,
         input,
         item_type,
@@ -766,11 +779,11 @@ pub async fn force_provider_stream_response(
             .map(|(h, sc, url)| (h.clone(), *sc, url.clone()));
         app_state
             .active_users
-            .update_session_addr(&user.username, &user_session.token, addr)
+            .update_session_addr(&user.username, &user_session.token, &fingerprint.addr)
             .await;
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr, stream_channel)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, req_headers)
                 .await;
 
         let (status_code, header_map) =
@@ -805,7 +818,7 @@ pub async fn force_provider_stream_response(
 /// # Panics
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub async fn stream_response(
-    addr: &str,
+    fingerprint: &Fingerprint,
     app_state: &AppState,
     session_token: &str,
     mut stream_channel: StreamChannel,
@@ -834,7 +847,7 @@ pub async fn stream_response(
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
         if let Some(value) =
-            shared_stream_response(app_state, stream_url, addr, user, connection_permission, stream_channel.clone()).await
+            shared_stream_response(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), req_headers).await
         {
             return value.into_response();
         }
@@ -845,7 +858,7 @@ pub async fn stream_response(
         app_state,
         &stream_options,
         stream_url,
-        addr,
+        fingerprint,
         req_headers,
         input,
         item_type,
@@ -860,10 +873,7 @@ pub async fn stream_response(
             .stream_info
             .as_ref()
             .map(|(h, sc, response_url)| (h.clone(), *sc, response_url.clone()));
-        let provider_name = stream_details
-            .provider_connection_guard
-            .as_ref()
-            .and_then(|guard| guard.get_provider_name());
+        let provider_name = stream_details.provider_name.clone();
 
         let provider_guard = if share_stream {
             stream_details.provider_connection_guard.take()
@@ -872,7 +882,7 @@ pub async fn stream_response(
         };
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, addr, stream_channel)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, req_headers)
                 .await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
@@ -884,11 +894,11 @@ pub async fn stream_response(
                 .as_ref()
                 .map_or_else(Vec::new, |(h, _, _)| h.clone());
 
-            if let Some(broadcast_stream) = SharedStreamManager::register_shared_stream(
+            if let Some((broadcast_stream, _shared_provider)) = SharedStreamManager::register_shared_stream(
                 app_state,
                 stream_url,
                 stream,
-                Some(addr),
+                &fingerprint.addr,
                 shared_headers,
                 stream_options.buffer_size,
                 provider_guard,
@@ -951,7 +961,7 @@ pub async fn stream_response(
                             virtual_id,
                             &provider,
                             &session_url,
-                            addr,
+                            &fingerprint.addr,
                             connection_permission,
                         )
                         .await;
@@ -983,13 +993,14 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
 async fn shared_stream_response(
     app_state: &AppState,
     stream_url: &str,
-    addr: &str,
+    fingerprint: &Fingerprint,
     user: &ProxyUserCredentials,
     connect_permission: UserConnectionPermission,
-    mut stream_channel: StreamChannel
+    mut stream_channel: StreamChannel,
+    req_headers: &HeaderMap,
 ) -> Option<impl IntoResponse> {
-    if let Some(stream) =
-        SharedStreamManager::subscribe_shared_stream(app_state, stream_url, Some(addr)).await
+    if let Some((stream, provider)) =
+        SharedStreamManager::subscribe_shared_stream(app_state, stream_url, &fingerprint.addr).await
     {
         debug_if_enabled!(
             "Using shared stream {}",
@@ -1004,10 +1015,11 @@ async fn shared_stream_response(
                 headers.clone(),
                 axum::http::StatusCode::OK,
             )));
-            let stream_details = StreamDetails::from_stream(stream);
+            let mut stream_details = StreamDetails::from_stream(stream);
+            stream_details.provider_name = provider;
             stream_channel.shared = true;
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, addr, stream_channel)
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, req_headers)
                     .await
                     .boxed();
             let mut response = axum::response::Response::builder().status(status_code);
@@ -1051,6 +1063,8 @@ fn get_add_cache_content(
     let cache = Arc::clone(cache);
     let add_cache_content: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |size| {
         let res_url = resource_url.clone();
+
+        // todo spawn, replace with unboundchannel
         let cache = Arc::clone(&cache);
         tokio::spawn(async move {
             if let Some(cache) = cache.load().as_ref() {
@@ -1121,6 +1135,11 @@ async fn fetch_resource_with_retry(
     // TODO: add max_attempts to config
     let max_attempts: u32 = 3; //&app_state.app_config.config.load().max_attempts;
     let backoff_ms: u64 = 250;
+    let config = app_state.app_config.config.load();
+    let disabled_headers = config
+        .reverse_proxy
+        .as_ref()
+        .and_then(|r| r.disabled_header.clone());
     for attempt in 0..max_attempts {
         let client = request::get_client_request(
             &app_state.http_client.load(),
@@ -1128,6 +1147,7 @@ async fn fetch_resource_with_retry(
             input.map(|i| &i.headers),
             url,
             Some(req_headers),
+            disabled_headers.as_ref(),
         );
         match client.send().await {
             Ok(response) => {
@@ -1137,7 +1157,7 @@ async fn fetch_resource_with_retry(
                         build_stream_response(app_state, resource_url, response).await,
                     );
                 }
-                // Retry only for 400, 408, 425, 429 and all 5xx statuses
+                // Retry only for 408, 425, 429 and all 5xx statuses
                 let should_retry = status.is_server_error()
                     || matches!(
                         status,
@@ -1319,4 +1339,8 @@ pub fn json_or_bin_response<T: Serialize>(accept: Option<&String>, data: &T) -> 
         return bin_response(data).into_response();
     }
     json_response(data).into_response()
+}
+
+pub fn create_session_fingerprint(fingerprint: &str, username: &str, virtual_id: u32) -> String {
+    format!("{fingerprint}|{username}|{virtual_id}")
 }

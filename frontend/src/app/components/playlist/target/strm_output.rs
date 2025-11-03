@@ -22,6 +22,7 @@ pub fn StrmOutput(props: &StrmOutputProps) -> Html {
                 Rc::new(Tag { class: convert_bool_to_chip_style(output.flat), label: translate.t("LABEL.FLAT") }),
                 Rc::new(Tag { class: convert_bool_to_chip_style(output.cleanup), label: translate.t("LABEL.CLEANUP") }),
                 Rc::new(Tag { class: convert_bool_to_chip_style(output.underscore_whitespace), label: translate.t("LABEL.UNDERSCORE_WHITESPACE") }),
+                Rc::new(Tag { class: convert_bool_to_chip_style(output.add_quality_to_filename), label: translate.t("LABEL.ADD_QUALITY_TO_FILENAME") }),
             ]
         })
     };
