@@ -21,6 +21,7 @@ ARG ALPINE_VER=3.22.2
 ARG DEBUG_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
 ARG SCCACHE_LOG=info
+ARG MOLD_ENABLED=false
 # ARG SCCACHE_GHA_ENABLED=off
 # ARG SCCACHE_GHA_CACHE_SIZE
 # ARG SCCACHE_GHA_VERSION
@@ -39,6 +40,7 @@ ARG BUILDPLATFORM_TAG
 ARG RUST_TARGET
 ARG CARGO_HOME
 ARG SCCACHE_LOG
+ARG MOLD_ENABLED
 # ARG SCCACHE_GHA_ENABLED
 # ARG SCCACHE_GHA_CACHE_SIZE
 # ARG SCCACHE_GHA_VERSION
@@ -52,6 +54,7 @@ ENV SCCACHE_LOG=${SCCACHE_LOG}
 # ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
 # ENV SCCACHE_GHA_VERSION=${SCCACHE_GHA_VERSION}
 
+ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
 ENV RUST_BACKTRACE=1
 
 # Map TARGETPLATFORM -> RUST_TARGET (musl for scratch)
@@ -73,6 +76,10 @@ RUN \
 
 # Ensure the target is available in the toolchain (prebuild already has rustup)
 RUN rustup target add "$(cat /rust-target)" || true
+
+RUN if [ "${MOLD_ENABLED}" = "true" ]; then \
+      export RUSTFLAGS="${RUSTFLAGS} -C link-arg=-fuse-ld=mold"; \
+    fi; \
 
 FROM chef AS cache-import
 
@@ -136,8 +143,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
 # =============================================================================
 FROM chef AS backend-builder
 
-ENV RUSTFLAGS='--remap-path-prefix=/root=~ -C target-feature=+crt-static'
-
 WORKDIR /src
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 
@@ -157,6 +162,10 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     cargo build --release --target "$(cat /rust-target)" --bin tuliprox
+
+# Print sccache stats after build
+RUN --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \    
+    sccache -s
 
 # =============================================================================
 # Stage 4: frontend-planner (cargo-chef prepare for WASM)
@@ -215,6 +224,10 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     mkdir -p ./frontend/dist; \
     trunk build --release --config ./frontend/Trunk.toml --dist ./frontend/dist
+
+# Print sccache stats after build
+RUN --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \    
+    sccache -s
 
 # -----------------------------------------------------------------
 # Stage 6: tzdata/zoneinfo supplier (shared)
@@ -347,18 +360,18 @@ CMD ["tail", "-f", "/dev/null"]
 #
 # Part 3: Build cache export image
 #
-# These stages build the cachable images by ci platform
+# These stages build the cachable images for ci platforms
 # like github actions.
 #
 # =================================================================
 
 # -----------------------------------------------------------------
-# Final Image #1: Final runtime (FROM scratch) -> all musl targets
+# Backup Image #1: Cache TAR Builder (FROM chef) -> build all TARs witch cache directories
 # -----------------------------------------------------------------
-
 FROM chef AS cache-pack
 
-### COPY all relevant files from the build stages to enable the best possible layer caching ###
+# --- COPY all relevant files from build stages to enable the best possible layer caching ---
+
 # Copy zoneinfo + CA store for TLS & timezones
 COPY --from=tzdata /usr/share/zoneinfo /tmp/tuliprox/usr/share/zoneinfo
 COPY --from=tzdata /etc/ssl/certs      /tmp/tuliprox/etc/ssl/certs
@@ -379,3 +392,10 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     tar -C ${CARGO_HOME} -cf /out/cargo-git-db.tar         git/db           || true; \
     tar -C ${CARGO_HOME} -cf /out/cargo-target.tar         target           || true; \
     tar -C ${CARGO_HOME} -cf /out/sccache.tar              sccache          || true
+
+# -----------------------------------------------------------------
+# Final Image #1: Cache Exporter (from scratch) -> for CI caching
+# -----------------------------------------------------------------
+FROM scratch AS cache-export
+
+COPY --from=cache-pack /out/ /out/
