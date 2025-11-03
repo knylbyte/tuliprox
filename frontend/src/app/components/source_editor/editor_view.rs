@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use log::debug;
 use crate::app::components::source_editor::editor_model::{Block, BlockType, Connection};
 use crate::app::components::source_editor::rules::can_connect;
 use crate::app::components::source_editor::sidebar::SourceEditorSidebar;
@@ -38,6 +39,11 @@ pub fn SourceEditor() -> Html {
     let connections = use_state(Vec::<Connection>::new);
     let next_id = use_state(|| 1usize);
 
+    // ----------------- virtual canvas offset -----------------
+    let canvas_offset = use_state(|| (0.0f32, 0.0f32));
+    let is_panning = use_state(|| false);
+    let pan_start = use_state(|| (0.0f32, 0.0f32));
+
     // Dragging state
     let dragging_block = use_state(|| None);
     let drag_offset = use_state(|| (0.0f32, 0.0f32));
@@ -49,6 +55,19 @@ pub fn SourceEditor() -> Html {
 
     // Delete mode toggle
     let delete_mode = use_state(|| false);
+
+    // ----------------- Canvas panning logic -----------------
+    let handle_canvas_mouse_down_pan = {
+        let is_panning = is_panning.clone();
+        let pan_start = pan_start.clone();
+        Callback::from(move |e: MouseEvent| {
+            if e.button() == 1 { // middle mouse button (can change to right if preferred)
+                e.prevent_default();
+                is_panning.set(true);
+                pan_start.set((e.client_x() as f32, e.client_y() as f32));
+            }
+        })
+    };
 
     // ----------------- Drag Start from Sidebar -----------------
     let handle_drag_start = {
@@ -72,6 +91,7 @@ pub fn SourceEditor() -> Html {
         let next_id = next_id.clone();
         let canvas_ref = canvas_ref.clone();
         let sidebar_drag_offset = sidebar_drag_offset.clone();
+        let canvas_offset = canvas_offset.clone(); // <-- add canvas_offset
         Callback::from(move |e: DragEvent| {
             e.prevent_default();
             if let Some(canvas) = canvas_ref.cast::<HtmlElement>() {
@@ -80,6 +100,7 @@ pub fn SourceEditor() -> Html {
                     let mouse_x = e.client_x() as f32 - rect.left() as f32;
                     let mouse_y = e.client_y() as f32 - rect.top() as f32;
                     let (offset_x, offset_y) = *sidebar_drag_offset;
+                    let (ox, oy) = *canvas_offset; // <-- include canvas offset
 
                     let block_type = BlockType::from(data.as_str());
 
@@ -87,7 +108,10 @@ pub fn SourceEditor() -> Html {
                     current_blocks.push(Block {
                         id: *next_id,
                         block_type,
-                        position: (mouse_x - offset_x, mouse_y - offset_y),
+                        position: (
+                            mouse_x - offset_x - ox, // <-- subtract canvas offset
+                            mouse_y - offset_y - oy
+                        ),
                         instance: create_instance(block_type),
                     });
                     blocks.set(current_blocks);
@@ -96,6 +120,7 @@ pub fn SourceEditor() -> Html {
             }
         })
     };
+
     let handle_drag_over = Callback::from(|e: DragEvent| e.prevent_default());
 
     // ----------------- Connection logic -----------------
@@ -103,11 +128,13 @@ pub fn SourceEditor() -> Html {
         let pending_connection = pending_connection.clone();
         let pending_line = pending_line.clone();
         let blocks = blocks.clone();
+        let canvas_offset = canvas_offset.clone();
         Callback::from(move |from_id: usize| {
             pending_connection.set(Some(from_id));
             if let Some(block) = (*blocks).iter().find(|b| b.id == from_id) {
-                let x = block.position.0 + BLOCK_WIDTH;
-                let y = block.position.1 + BLOCK_MIDDLE_Y;
+                let (ox, oy) = *canvas_offset;
+                let x = block.position.0 + BLOCK_WIDTH + ox;
+                let y = block.position.1 + BLOCK_MIDDLE_Y + oy;
                 pending_line.set(Some(((x, y), (x, y))));
             }
         })
@@ -179,14 +206,54 @@ pub fn SourceEditor() -> Html {
         })
     };
 
-    // ----------------- Mouse move for both pending line and block drag -----------------
+    // ----------------- Canvas mouse down (start panning if clicking the canvas itself) -----------------
+    let handle_canvas_mouse_down = {
+        let is_panning = is_panning.clone();
+        let pan_start = pan_start.clone();
+        let canvas_ref = canvas_ref.clone();
+        Callback::from(move |e: MouseEvent| {
+            // Start panning with left mouse button if the click target is exactly the canvas element.
+            if e.button() == 0 {
+                if let Some(target) = e.target_dyn_into::<web_sys::Element>() {
+                    if let Some(canvas) = canvas_ref.cast::<web_sys::Element>() {
+                        let tag = target.tag_name().to_lowercase();
+
+                        // accept both the canvas <div> itself and its <svg> background as valid pan targets
+                        if target.is_same_node(Some(&canvas)) || tag == "svg" {
+                            e.prevent_default();
+                            is_panning.set(true);
+                            pan_start.set((e.client_x() as f32, e.client_y() as f32));
+                        }
+                    }
+                }
+            }
+        })
+    };
+
+    // ----------------- Mouse move for both pending line, block drag, and canvas panning -----------------
     let handle_canvas_mouse_move = {
         let pending_line = pending_line.clone();
         let dragging_block = dragging_block.clone();
         let drag_offset = drag_offset.clone();
         let blocks = blocks.clone();
         let canvas_ref = canvas_ref.clone();
+        let is_panning = is_panning.clone();
+        let pan_start = pan_start.clone();
+        let canvas_offset = canvas_offset.clone();
+
         Callback::from(move |e: MouseEvent| {
+            // If currently panning the canvas, update the canvas offset and exit early.
+            if *is_panning {
+                let (start_x, start_y) = *pan_start;
+                let dx = e.client_x() as f32 - start_x;
+                let dy = e.client_y() as f32 - start_y;
+                let (ox, oy) = *canvas_offset;
+                canvas_offset.set((ox + dx, oy + dy));
+                // Update pan start for smooth continuous panning
+                pan_start.set((e.client_x() as f32, e.client_y() as f32));
+                return;
+            }
+
             if let Some(canvas) = canvas_ref.cast::<HtmlElement>() {
                 let rect = canvas.get_bounding_client_rect();
                 let mouse_x = e.client_x() as f32 - rect.left() as f32;
@@ -195,9 +262,10 @@ pub fn SourceEditor() -> Html {
                 // Update pending line (snap to nearest port if close)
                 if let Some(((from_x, from_y), _)) = *pending_line {
                     let mut snapped = (mouse_x, mouse_y);
+                    let (ox, oy) = *canvas_offset;
                     for block in (*blocks).iter() {
-                        let port_x = block.position.0;
-                        let port_y = block.position.1 + BLOCK_MIDDLE_Y;
+                        let port_x = block.position.0 + ox;
+                        let port_y = block.position.1 + BLOCK_MIDDLE_Y  + oy;;
                         let dx = mouse_x - port_x;
                         let dy = mouse_y - port_y;
                         let dist = (dx * dx + dy * dy).sqrt();
@@ -221,10 +289,14 @@ pub fn SourceEditor() -> Html {
         })
     };
 
+
     let handle_canvas_mouse_up = {
         let dragging_block = dragging_block.clone();
+        let is_panning = is_panning.clone();
         Callback::from(move |_e: MouseEvent| {
+            // Stop any block dragging and stop panning
             dragging_block.set(None);
+            is_panning.set(false);
         })
     };
 
@@ -313,12 +385,12 @@ pub fn SourceEditor() -> Html {
         edit_mode: edit_mode.clone(),
     };
 
+    let grabbed = *is_panning || dragging_block.as_ref().is_some();
     // ----------------- Render -----------------
     html! {
         <ContextProvider<SourceEditorContext> context={editor_context}>
         <span>{"WORK IN PROGRESS - NOT FINALIZED !!!"}</span>
         <div class="tp__source-editor">
-
             <SourceEditorSidebar
                 delete_mode={*delete_mode}
                 on_drag_start={handle_drag_start.clone()}
@@ -328,22 +400,24 @@ pub fn SourceEditor() -> Html {
             <div class="tp__source-editor__canvas-wrapper">
             <div
                 ref={canvas_ref.clone()}
-                class="tp__source-editor__canvas graph-paper-advanced"
+                class={classes!("tp__source-editor__canvas", "graph-paper-advanced", if grabbed {"grabbed"} else {""})}
                 ondrop={handle_drop.clone()}
                 ondragover={handle_drag_over.clone()}
-                onmousemove={handle_canvas_mouse_move}
-                onmouseup={handle_canvas_mouse_up}
-                oncontextmenu={handle_canvas_right_click}>
+                onmousemove={handle_canvas_mouse_move.clone()}
+                onmousedown={handle_canvas_mouse_down.clone()}
+                onmouseup={handle_canvas_mouse_up.clone()}
+                oncontextmenu={handle_canvas_right_click.clone()}>
 
                 // SVG for connections
-                <svg class="tp__source-editor__connections">
+                <svg class={classes!("tp__source-editor__connections", if grabbed {"grabbed"} else {""})}>
                     { for (*connections).iter().filter_map(|c| {
                         let from_block = (*blocks).iter().find(|b| b.id == c.from)?;
                         let to_block = (*blocks).iter().find(|b| b.id == c.to)?;
-                        let from_x = from_block.position.0 + BLOCK_WIDTH;
-                        let from_y = from_block.position.1 + BLOCK_MIDDLE_Y;
-                        let to_x = to_block.position.0;
-                        let to_y = to_block.position.1 + BLOCK_MIDDLE_Y;
+                        let (ox, oy) = *canvas_offset; // Apply virtual canvas offset
+                        let from_x = from_block.position.0 + BLOCK_WIDTH + ox;
+                        let from_y = from_block.position.1 + BLOCK_MIDDLE_Y + oy;
+                        let to_x = to_block.position.0 + ox;
+                        let to_y = to_block.position.1 + BLOCK_MIDDLE_Y + oy;
                         let dx = to_x - from_x;
                         let ctrl = dx * 0.5;
                         let d = format!(
@@ -393,9 +467,12 @@ pub fn SourceEditor() -> Html {
                 // Render blocks
                 { for (*blocks).iter().map(|b|{
                     let port_status = get_port_status(b);
+                    let (ox, oy) = *canvas_offset; // Apply virtual offset to each block
+                    let mut shifted_block = b.clone();
+                    shifted_block.position = (b.position.0 + ox, b.position.1 + oy);
                     html! {
                     <BlockView
-                        block={b.clone()}
+                        block={shifted_block}
                         delete_mode={*delete_mode}
                         delete_block={handle_delete_block.clone()}
                         port_status={port_status}

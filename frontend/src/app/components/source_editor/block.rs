@@ -36,8 +36,8 @@ pub fn BlockView(props: &BlockProps) -> Html {
     let is_output =  !is_input && !is_target;
 
     let port_style = match port_status {
-        PortStatus::Valid =>  "tp__source-editor__port--valid",
-        PortStatus::Invalid =>  "tp__source-editor__port--invalid",
+        PortStatus::Valid =>  "tp__source-editor__block-port--valid",
+        PortStatus::Invalid =>  "tp__source-editor__block-port--invalid",
         _ => "",
     };
 
