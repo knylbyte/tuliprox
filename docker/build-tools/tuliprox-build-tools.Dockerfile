@@ -201,7 +201,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TA
     --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATFORM_TAG},sharing=locked \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-      pkg-config musl-tools \
+      pkg-config musl-tools mold \
       curl ca-certificates \
       libclang-dev binaryen \
       libssl-dev
