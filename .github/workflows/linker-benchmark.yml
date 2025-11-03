@@ -20,7 +20,7 @@ jobs:
 
       - name: Benchmark mold vs GNU linker
         run: |
-          hyperfine --runs 1 --prepare 'docker builder prune -f' \
+          hyperfine --runs 1 --show-output --prepare 'docker builder prune -f' \
             'docker build --progress=plain --build-arg GHCR_NS=ghcr.io/${{ github.repository }} --build-arg USE_MOLD=false --target backend-builder -f docker/ci.Dockerfile .' \
             'docker build --progress=plain --build-arg GHCR_NS=ghcr.io/${{ github.repository }} --build-arg USE_MOLD=true --target backend-builder -f docker/ci.Dockerfile .' \
             'docker build --progress=plain --build-arg GHCR_NS=ghcr.io/${{ github.repository }} --build-arg USE_MOLD=false --target backend-builder -f docker/ci.Dockerfile .' \
