@@ -48,10 +48,12 @@ mod websocket_status;
 
 mod floating_background;
 mod source_editor;
+mod cluster_flags_input;
 // pub use self::input::*;
 // pub use self::menu_item::*;
 // pub use self::popup_menu::*;
 
+pub use self::cluster_flags_input::*;
 pub use self::toggle_switch::*;
 pub use self::svg_icon::*;
 pub use self::icon_button::*;

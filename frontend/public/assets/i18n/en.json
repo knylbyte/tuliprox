@@ -308,7 +308,9 @@
     "SOURCE_EDITOR": "Sources",
     "SKIP_LIVE":  "Skip Live",
     "SKIP_VOD":  "Skip VOD",
-    "SKIP_SERIES":  "Skip Series"
+    "SKIP_SERIES":  "Skip Series",
+    "ADD_WATCH": "Add Watch",
+    "ADD_MAPPING": "Add Mapping"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"
@@ -423,7 +425,7 @@
     "BRICK_Target":  "Target",
     "BRICK_OutputM3u":  "M3u",
     "BRICK_OutputXtream":  "Xtream",
-    "BRICK_OutputHdhomerun":  "HDHR",
+    "BRICK_OutputHdHomeRun":  "HDHR",
     "BRICK_OutputStrm": "STRM"
   },
   "COUNTRY" : {

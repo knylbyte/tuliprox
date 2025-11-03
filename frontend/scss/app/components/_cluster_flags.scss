@@ -1,0 +1,23 @@
+.tp__cluster-flags-input {
+   display: flex;
+   flex-flow: row nowrap;
+
+   span {
+      cursor: pointer;
+   }
+
+   span:not(:first-child) {
+      border-top-left-radius: 0  !important;
+      border-bottom-left-radius: 0  !important;
+   }
+   span:not(:last-child) {
+      border-top-right-radius: 0 !important;
+      border-bottom-right-radius: 0  !important;
+   }
+
+   .tp__chip.active {
+      color: var(--tag-active-color);
+      background-color: var(--tag-active-background-color);
+      border-color: var(--tag-active-border-color);
+   }
+}

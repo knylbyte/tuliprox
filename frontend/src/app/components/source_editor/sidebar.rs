@@ -15,7 +15,7 @@ pub const BLOCK_TYPES_TARGET: [BlockType; 1] = [
 pub const BLOCK_TYPES_OUTPUT: [BlockType; 4] = [
     BlockType::OutputM3u,
     BlockType::OutputXtream,
-    BlockType::OutputHdhomerun,
+    BlockType::OutputHdHomeRun,
     BlockType::OutputStrm];
 
 
@@ -25,6 +25,7 @@ fn create_brick(t: &BlockType, on_drag_start: Callback<DragEvent>, label: String
         draggable={"true"}
         data-block-type={t.to_string()}
         ondragstart={on_drag_start}>
+
             { label }
         </div>
     }
