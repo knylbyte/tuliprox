@@ -245,6 +245,7 @@ RUN trunk --version \
  && wasm-bindgen --version \
  && cargo-chef --version \
  && cargo machete --version \
- && sccache --version
+ && sccache --version \
+ && mold --version
 
 
