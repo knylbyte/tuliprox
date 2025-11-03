@@ -107,9 +107,6 @@ jobs:
           #   runner: ubuntu-24.04-arm
           #   arch_tag: linux-armv7
     runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
-    env:
-      CARGO_HOME: /usr/local/cargo
-      SCCACHE_DIR: /var/cache/sccache
 
     steps:
       - name: Step 2.1 - Checkout
@@ -148,13 +145,13 @@ jobs:
       - name: Step 2.6 - Ensure cache context dir
         run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
 
-      - name: Step 2.7 - Load cargo chef and sccache directories for Docker build
+      - name: Step 2.7 - Load cache directories for Docker build
         uses: actions/cache@v4
         id: cache
         with:
           path: |
             .ci-cache/${{ matrix.arch_tag }}
-          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ github.sha256 }}
           restore-keys: |
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
@@ -165,22 +162,13 @@ jobs:
         id: bake-targets
         shell: bash
         run: |
-          if [[ "${{ steps.cache.outputs.cache-hit }}" == "true" ]]; then
-            {
-              echo 'targets<<EOF'
-              echo 'scratch-final'
-              echo 'alpine-final'
-              echo 'EOF'
-            } >> "$GITHUB_OUTPUT"
-          else
-            {
-              echo 'targets<<EOF'
-              echo 'cache-export'
-              echo 'scratch-final'
-              echo 'alpine-final'
-              echo 'EOF'
-            } >> "$GITHUB_OUTPUT"
-          fi
+          {
+            echo 'targets<<EOF'
+            echo 'cache-export'
+            echo 'scratch-final'
+            echo 'alpine-final'
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Step 2.10 - Build images with docker buildx bake (debug)
         shell: bash
@@ -191,8 +179,6 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           CACHE_OUTPUT: /tmp/.ci-cache/${{ matrix.arch_tag }}
-          CARGO_HOME: ${{ env.CARGO_HOME }}
-          SCCACHE_DIR: ${{ env.SCCACHE_DIR }}
           BUILDKIT_PROGRESS: plain
         run: |
           set -euo pipefail
@@ -210,10 +196,6 @@ jobs:
             --load \
             --progress plain \
             "${target_list[@]}"
-
-      - name: Print docker images
-        run: |
-          docker image ls
 
       - name: Step 2.11 - Move cache TARs
         shell: bash
