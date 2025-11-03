@@ -18,10 +18,8 @@
 ARG GHCR_NS=ghcr.io/euzu/tuliprox
 ARG BUILDPLATFORM_TAG=latest
 ARG ALPINE_VER=3.22.2
-ARG RUST_ALPINE_TAG=alpine
+ARG DEBUG_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
-ARG CARGO_HOME=/usr/local/cargo
-ARG SCCACHE_DIR=/var/cache/sccache
 ARG SCCACHE_LOG=info
 # ARG SCCACHE_GHA_ENABLED=off
 # ARG SCCACHE_GHA_CACHE_SIZE
@@ -40,7 +38,6 @@ ARG TARGETPLATFORM
 ARG BUILDPLATFORM_TAG
 ARG RUST_TARGET
 ARG CARGO_HOME
-ARG SCCACHE_DIR
 ARG SCCACHE_LOG
 # ARG SCCACHE_GHA_ENABLED
 # ARG SCCACHE_GHA_CACHE_SIZE
@@ -48,7 +45,8 @@ ARG SCCACHE_LOG
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV CARGO_HOME=${CARGO_HOME}
-ENV SCCACHE_DIR=${SCCACHE_DIR}
+ENV CARGO_TARGET_DIR=${CARGO_HOME}/target
+ENV SCCACHE_DIR=${CARGO_HOME}/sccache
 ENV SCCACHE_LOG=${SCCACHE_LOG}
 # ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
 # ENV SCCACHE_GHA_CACHE_SIZE=${SCCACHE_GHA_CACHE_SIZE}
@@ -78,21 +76,36 @@ RUN rustup target add "$(cat /rust-target)" || true
 
 FROM chef AS cache-import
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+# see also: https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
+# because of our tuliprox-build-tools base image, we can't cache the $CARGO_HOME/bin directory
+
+RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=bind,from=ctx_cache,target=/cache,readonly \
-    SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
-    if [[ -s /cache/cargo-registry.tar ]]; then \
-    tar -C "${CARGO_HOME}" -xf /cache/cargo-registry.tar; \
+
+    ls -al  /cache/**; \
+
+    if [[ -s /cache/cargo-registry-index.tar ]]; then \
+    tar -C "${CARGO_HOME}/registry" -xf /cache/cargo-registry-index.tar; \
     fi; \
-    if [[ -s /cache/cargo-git.tar ]]; then \
-    tar -C "${CARGO_HOME}" -xf /cache/cargo-git.tar; \
+    
+    if [[ -s /cache/cargo-registry-cache.tar ]]; then \
+    tar -C "${CARGO_HOME}/registry" -xf /cache/cargo-registry-cache.tar; \
     fi; \
+
+    if [[ -s /cache/cargo-git-db.tar ]]; then \
+    tar -C "${CARGO_HOME}/git" -xf /cache/cargo-git-db.tar; \
+    fi; \
+    
+    if [[ -s /cache/cargo-target.tar ]]; then \
+    tar -C "${CARGO_HOME}" -xf /cache/cargo-target.tar; \
+    fi; \
+
     if [[ -s /cache/sccache.tar ]]; then \
-      ls -l ${SCCACHE_DIR}; \
-      tar -C "${SCCACHE_HOME}" -xf /cache/sccache.tar; \
-      ls -l ${SCCACHE_DIR}; \
+      tar -C "${CARGO_HOME}" -xf /cache/sccache.tar; \
     fi
 
 RUN echo ok > /.build-cache-import
@@ -109,9 +122,11 @@ COPY --from=cache-import  /.build-cache-import  /.build-cache-import
 WORKDIR /src
 COPY . .
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     cargo chef prepare --recipe-path backend-recipe.json
 
 # =============================================================================
@@ -127,16 +142,20 @@ WORKDIR /src
 COPY --from=backend-planner /src/backend-recipe.json ./backend-recipe.json
 
 # Build dependencies - this is the caching Docker layer!
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json
 
 COPY . .
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     cargo build --release --target "$(cat /rust-target)" --bin tuliprox
 
 # =============================================================================
@@ -156,9 +175,11 @@ COPY shared ./shared
 
 RUN sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     cargo chef prepare --recipe-path frontend-recipe.json
 
 # =============================================================================
@@ -178,16 +199,20 @@ COPY shared ./shared
 RUN sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
 
 # Build dependencies - this is the caching Docker layer!
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
 
 COPY . .
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     mkdir -p ./frontend/dist; \
     trunk build --release --config ./frontend/Trunk.toml --dist ./frontend/dist
 
@@ -298,15 +323,17 @@ COPY --from=backend-builder   /src/target/*/release/tuliprox  /tmp/tuliprox/opt/
 COPY --from=frontend-builder  /src/frontend/dist              /tmp/tuliprox/opt/tuliprox/web/dist
 COPY --from=resources         /src/resources                  /tmp/tuliprox/opt/tuliprox/resources
 
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${SCCACHE_DIR},id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     mkdir -p /out; \
-    SCCACHE_HOME="$(dirname "${SCCACHE_DIR}")"; \
-    SCCACHE_BASE="$(basename "${SCCACHE_DIR}")"; \
-    tar -C ${CARGO_HOME} -cf /out/cargo-registry.tar registry        || true; \
-    tar -C ${CARGO_HOME} -cf /out/cargo-git.tar      git             || true; \
-    tar -C ${SCCACHE_HOME} -cf /out/sccache.tar      ${SCCACHE_BASE} || true
+    tar -C ${CARGO_HOME} -cf /out/cargo-registry-index.tar registry/index   || true; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-registry-cache.tar registry/cache   || true; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-git-db.tar         git/db           || true; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-target.tar         target           || true; \
+    tar -C ${CARGO_HOME} -cf /out/sccache.tar              sccache          || true
 
 # -----------------------------------------------------------------
 # Final Image #3: Cache Exporter (from scratch) -> for CI caching
@@ -319,7 +346,7 @@ COPY --from=cache-pack /out/ /out/
 # Final Image #4: Debugging Environment (Alpine-based)
 # -----------------------------------------------------------------
 # Allow overriding the rust image tag used for debug (e.g. "1.90-alpine3.20").
-FROM rust:${RUST_ALPINE_TAG} AS debug
+FROM rust:${DEBUG_ALPINE_TAG} AS debug
 
 # For Alpine, the correct target architecture typically uses 'musl'
 ARG RUST_TARGET=x86_64-unknown-linux-musl
