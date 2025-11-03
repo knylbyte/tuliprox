@@ -298,52 +298,8 @@ EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
 CMD ["-s", "-p", "/opt/tuliprox/data"]
 
-# =================================================================
-#
-# Part 3: Build cache export image
-#
-# These stages build the cachable images by ci platform
-# like github actions.
-#
-# =================================================================
-
 # -----------------------------------------------------------------
-# Final Image #1: Final runtime (FROM scratch) -> all musl targets
-# -----------------------------------------------------------------
-
-FROM chef AS cache-pack
-
-### COPY all relevant files from the build stages to enable the best possible layer caching ###
-# Copy zoneinfo + CA store for TLS & timezones
-COPY --from=tzdata /usr/share/zoneinfo /tmp/tuliprox/usr/share/zoneinfo
-COPY --from=tzdata /etc/ssl/certs      /tmp/tuliprox/etc/ssl/certs
-
-# Copy binary & assets into /opt tree
-COPY --from=backend-builder   /src/target/*/release/tuliprox  /tmp/tuliprox/opt/tuliprox/bin/tuliprox
-COPY --from=frontend-builder  /src/frontend/dist              /tmp/tuliprox/opt/tuliprox/web/dist
-COPY --from=resources         /src/resources                  /tmp/tuliprox/opt/tuliprox/resources
-
-RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
-    mkdir -p /out; \
-    tar -C ${CARGO_HOME} -cf /out/cargo-registry-index.tar registry/index   || true; \
-    tar -C ${CARGO_HOME} -cf /out/cargo-registry-cache.tar registry/cache   || true; \
-    tar -C ${CARGO_HOME} -cf /out/cargo-git-db.tar         git/db           || true; \
-    tar -C ${CARGO_HOME} -cf /out/cargo-target.tar         target           || true; \
-    tar -C ${CARGO_HOME} -cf /out/sccache.tar              sccache          || true
-
-# -----------------------------------------------------------------
-# Final Image #3: Cache Exporter (from scratch) -> for CI caching
-# -----------------------------------------------------------------
-FROM scratch AS cache-export
-
-COPY --from=cache-pack /out/ /out/
-
-# -----------------------------------------------------------------
-# Final Image #4: Debugging Environment (Alpine-based)
+# Final Image #3: Debugging Environment (Alpine-based)
 # -----------------------------------------------------------------
 # Allow overriding the rust image tag used for debug (e.g. "1.90-alpine3.20").
 FROM rust:${DEBUG_ALPINE_TAG} AS debug
@@ -386,3 +342,40 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # The CMD will be passed as arguments to the entrypoint script.
 CMD ["tail", "-f", "/dev/null"]
+
+# =================================================================
+#
+# Part 3: Build cache export image
+#
+# These stages build the cachable images by ci platform
+# like github actions.
+#
+# =================================================================
+
+# -----------------------------------------------------------------
+# Final Image #1: Final runtime (FROM scratch) -> all musl targets
+# -----------------------------------------------------------------
+
+FROM chef AS cache-pack
+
+### COPY all relevant files from the build stages to enable the best possible layer caching ###
+# Copy zoneinfo + CA store for TLS & timezones
+COPY --from=tzdata /usr/share/zoneinfo /tmp/tuliprox/usr/share/zoneinfo
+COPY --from=tzdata /etc/ssl/certs      /tmp/tuliprox/etc/ssl/certs
+
+# Copy binary & assets into /opt tree
+COPY --from=backend-builder   /src/target/*/release/tuliprox  /tmp/tuliprox/opt/tuliprox/bin/tuliprox
+COPY --from=frontend-builder  /src/frontend/dist              /tmp/tuliprox/opt/tuliprox/web/dist
+COPY --from=resources         /src/resources                  /tmp/tuliprox/opt/tuliprox/resources
+
+RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+    mkdir -p /out; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-registry-index.tar registry/index   || true; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-registry-cache.tar registry/cache   || true; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-git-db.tar         git/db           || true; \
+    tar -C ${CARGO_HOME} -cf /out/cargo-target.tar         target           || true; \
+    tar -C ${CARGO_HOME} -cf /out/sccache.tar              sccache          || true
