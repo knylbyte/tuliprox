@@ -79,7 +79,7 @@ RUN rustup target add "$(cat /rust-target)" || true
 
 RUN if [ "${MOLD_ENABLED}" = "true" ]; then \
       export RUSTFLAGS="${RUSTFLAGS} -C link-arg=-fuse-ld=mold"; \
-    fi; \
+    fi;
 
 FROM chef AS cache-import
 
