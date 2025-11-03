@@ -20,7 +20,7 @@ ARG BUILDPLATFORM_TAG=latest
 ARG ALPINE_VER=3.22.2
 ARG DEBUG_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
-ARG SCCACHE_LOG=info
+ARG SCCACHE_LOG=debug
 ARG MOLD_ENABLED=false
 # ARG SCCACHE_GHA_ENABLED=off
 # ARG SCCACHE_GHA_CACHE_SIZE
@@ -94,23 +94,18 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     --mount=type=bind,from=ctx_cache,target=/cache,readonly \
 
     ls -al  /cache/**; \
-
     if [[ -s /cache/cargo-registry-index.tar ]]; then \
     tar -C "${CARGO_HOME}/registry" -xf /cache/cargo-registry-index.tar; \
     fi; \
-    
     if [[ -s /cache/cargo-registry-cache.tar ]]; then \
     tar -C "${CARGO_HOME}/registry" -xf /cache/cargo-registry-cache.tar; \
     fi; \
-
     if [[ -s /cache/cargo-git-db.tar ]]; then \
     tar -C "${CARGO_HOME}/git" -xf /cache/cargo-git-db.tar; \
     fi; \
-    
     if [[ -s /cache/cargo-target.tar ]]; then \
     tar -C "${CARGO_HOME}" -xf /cache/cargo-target.tar; \
     fi; \
-
     if [[ -s /cache/sccache.tar ]]; then \
       tar -C "${CARGO_HOME}" -xf /cache/sccache.tar; \
     fi
