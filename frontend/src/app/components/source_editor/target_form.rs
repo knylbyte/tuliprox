@@ -256,8 +256,8 @@ pub fn ConfigTargetView(props: &ConfigTargetViewProps) -> Html {
     };
 
     html! {
-        <div class="tp__target-form tp__config-view-page">
-             <div class="tp__input-form__toolbar tp__form-page__toolbar">
+        <div class="tp__source-editor-form tp__config-view-page">
+             <div class="tp__source-editor-form_toolbar tp__form-page__toolbar">
              <TextButton class="primary" name="apply_input"
                 icon="Accept"
                 title={ translate.t("LABEL.OK")}

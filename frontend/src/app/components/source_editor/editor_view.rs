@@ -1,13 +1,8 @@
 use std::rc::Rc;
-use log::debug;
-use crate::app::components::source_editor::editor_model::{Block, BlockType, Connection};
-use crate::app::components::source_editor::rules::can_connect;
-use crate::app::components::source_editor::sidebar::SourceEditorSidebar;
 use web_sys::{HtmlElement, MouseEvent};
 use yew::prelude::*;
 use shared::model::{ConfigInputDto, ConfigTargetDto, HdHomeRunTargetOutputDto, M3uTargetOutputDto, StrmTargetOutputDto, TargetOutputDto, XtreamTargetOutputDto};
-use crate::app::components::{BlockId, BlockInstance, EditMode, PortStatus, SourceEditorContext, SourceEditorForm};
-use crate::app::components::source_editor::block::BlockView;
+use crate::app::components::{can_connect, Block, BlockId, BlockInstance, BlockType, BlockView, Connection, EditMode, PortStatus, SourceEditorContext, SourceEditorForm, SourceEditorSidebar};
 
 const BLOCK_WIDTH: f32 = 100.0;
 const BLOCK_HEIGHT: f32 = 50.0;
@@ -56,22 +51,13 @@ pub fn SourceEditor() -> Html {
     // Delete mode toggle
     let delete_mode = use_state(|| false);
 
-    // ----------------- Canvas panning logic -----------------
-    let handle_canvas_mouse_down_pan = {
-        let is_panning = is_panning.clone();
-        let pan_start = pan_start.clone();
-        Callback::from(move |e: MouseEvent| {
-            if e.button() == 1 { // middle mouse button (can change to right if preferred)
-                e.prevent_default();
-                is_panning.set(true);
-                pan_start.set((e.client_x() as f32, e.client_y() as f32));
-            }
-        })
-    };
+    let cursor_grabbing = use_state(|| false);
+
 
     // ----------------- Drag Start from Sidebar -----------------
     let handle_drag_start = {
         let sidebar_drag_offset = sidebar_drag_offset.clone();
+        let cursor_grabbing = cursor_grabbing.clone();
         Callback::from(move |e: DragEvent| {
             if let Some(target) = e.target_dyn_into::<HtmlElement>() {
                 let block_type = target.get_attribute("data-block-type").unwrap_or_default();
@@ -81,6 +67,7 @@ pub fn SourceEditor() -> Html {
                 let offset_x = e.client_x() as f32 - rect.left() as f32;
                 let offset_y = e.client_y() as f32 - rect.top() as f32;
                 sidebar_drag_offset.set((offset_x, offset_y));
+                cursor_grabbing.set(true);
             }
         }
     )};
@@ -92,8 +79,11 @@ pub fn SourceEditor() -> Html {
         let canvas_ref = canvas_ref.clone();
         let sidebar_drag_offset = sidebar_drag_offset.clone();
         let canvas_offset = canvas_offset.clone(); // <-- add canvas_offset
+        let cursor_grabbing = cursor_grabbing.clone();
+
         Callback::from(move |e: DragEvent| {
             e.prevent_default();
+            cursor_grabbing.set(false);
             if let Some(canvas) = canvas_ref.cast::<HtmlElement>() {
                 if let Ok(data) = e.data_transfer().unwrap().get_data("text/plain") {
                     let rect = canvas.get_bounding_client_rect();
@@ -192,9 +182,12 @@ pub fn SourceEditor() -> Html {
         let drag_offset = drag_offset.clone();
         let canvas_ref = canvas_ref.clone();
         let blocks = blocks.clone();
+        let cursor_grabbing = cursor_grabbing.clone();
+
         Callback::from(move |(block_id, e): (usize, MouseEvent)| {
             e.prevent_default();
             if let Some(canvas) = canvas_ref.cast::<HtmlElement>() {
+                cursor_grabbing.set(true);
                 let rect = canvas.get_bounding_client_rect();
                 let mouse_x = e.client_x() as f32 - rect.left() as f32;
                 let mouse_y = e.client_y() as f32 - rect.top() as f32;
@@ -211,16 +204,18 @@ pub fn SourceEditor() -> Html {
         let is_panning = is_panning.clone();
         let pan_start = pan_start.clone();
         let canvas_ref = canvas_ref.clone();
+        let cursor_grabbing = cursor_grabbing.clone();
+
         Callback::from(move |e: MouseEvent| {
-            // Start panning with left mouse button if the click target is exactly the canvas element.
-            if e.button() == 0 {
+            // Start panning with right mouse button if the click target is exactly the canvas element.
+            if e.button() == 2 {
                 if let Some(target) = e.target_dyn_into::<web_sys::Element>() {
                     if let Some(canvas) = canvas_ref.cast::<web_sys::Element>() {
                         let tag = target.tag_name().to_lowercase();
-
                         // accept both the canvas <div> itself and its <svg> background as valid pan targets
                         if target.is_same_node(Some(&canvas)) || tag == "svg" {
                             e.prevent_default();
+                            cursor_grabbing.set(true);
                             is_panning.set(true);
                             pan_start.set((e.client_x() as f32, e.client_y() as f32));
                         }
@@ -265,7 +260,7 @@ pub fn SourceEditor() -> Html {
                     let (ox, oy) = *canvas_offset;
                     for block in (*blocks).iter() {
                         let port_x = block.position.0 + ox;
-                        let port_y = block.position.1 + BLOCK_MIDDLE_Y  + oy;;
+                        let port_y = block.position.1 + BLOCK_MIDDLE_Y  + oy;
                         let dx = mouse_x - port_x;
                         let dy = mouse_y - port_y;
                         let dist = (dx * dx + dy * dy).sqrt();
@@ -293,10 +288,12 @@ pub fn SourceEditor() -> Html {
     let handle_canvas_mouse_up = {
         let dragging_block = dragging_block.clone();
         let is_panning = is_panning.clone();
+        let cursor_grabbing = cursor_grabbing.clone();
         Callback::from(move |_e: MouseEvent| {
             // Stop any block dragging and stop panning
             dragging_block.set(None);
             is_panning.set(false);
+            cursor_grabbing.set(false);
         })
     };
 
@@ -385,7 +382,7 @@ pub fn SourceEditor() -> Html {
         edit_mode: edit_mode.clone(),
     };
 
-    let grabbed = *is_panning || dragging_block.as_ref().is_some();
+    let grabbed = *cursor_grabbing;
     // ----------------- Render -----------------
     html! {
         <ContextProvider<SourceEditorContext> context={editor_context}>

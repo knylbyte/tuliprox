@@ -55,17 +55,17 @@ pub fn BlockView(props: &BlockProps) -> Html {
     };
 
     let (title, show_type) = {
-        let dto_title = match &block.instance {
-            BlockInstance::Input(dto) => dto.name.clone(),
-            BlockInstance::Target(dto) => dto.name.clone(),
+        let (dto_title, show_type) = match &block.instance {
+            BlockInstance::Input(dto) => (dto.name.clone(), true),
+            BlockInstance::Target(dto) => (dto.name.clone(), true),
             BlockInstance::Output(_output) => {
-                translate.t(&format!("SOURCE_EDITOR.BRICK_{}", block_type))
+                (translate.t(&format!("SOURCE_EDITOR.BRICK_{}", block_type)), false)
             }
         };
         if dto_title.is_empty() {
             (translate.t(&format!("SOURCE_EDITOR.BRICK_{}", block_type)), false)
         } else {
-            (dto_title, true)
+            (dto_title, show_type)
         }
     };
 

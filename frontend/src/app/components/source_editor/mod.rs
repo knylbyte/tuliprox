@@ -7,7 +7,15 @@ mod target_form;
 mod output_form;
 mod editor_form;
 mod block;
+mod output_xtream_form;
 
-pub use editor_view::*;
-pub use editor_form::*;
+pub(crate) use editor_view::*;
 pub(crate) use editor_model::*;
+pub(crate) use sidebar::*;
+pub(crate) use rules::*;
+pub(crate) use input_form::*;
+pub(crate) use target_form::*;
+pub(crate) use output_form::*;
+pub(crate) use editor_form::*;
+pub(crate) use block::*;
+pub(crate) use output_xtream_form::*;

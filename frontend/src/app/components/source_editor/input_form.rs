@@ -157,8 +157,6 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
             }).collect::<Vec<DropDownOption>>()
     });
 
-
-
     {
         let input_form_state = input_form_state.clone();
         let input_options_state = input_options_state.clone();
@@ -267,10 +265,10 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                { edit_field_text!(input_form_state, translate.t(LABEL_URL),  url, ConfigInputFormAction::Url) }
                { edit_field_text_option!(input_form_state, translate.t(LABEL_USERNAME), username, ConfigInputFormAction::Username) }
                { edit_field_text_option!(input_form_state, translate.t(LABEL_PASSWORD), password, ConfigInputFormAction::Password, true) }
+               { edit_field_number_u16!(input_form_state, translate.t(LABEL_MAX_CONNECTIONS), max_connections, ConfigInputFormAction::MaxConnections) }
+               { edit_field_number_i16!(input_form_state, translate.t(LABEL_PRIORITY), priority, ConfigInputFormAction::Priority) }
                 // pub input_type: InputType,
                //{ edit_field_list!(input_form_state, translate.t(LABEL_HEADERS), headers, ConfigInputFormAction::Headers, translate.t(LABEL_ADD_HEADER)) }
-               { edit_field_number_i16!(input_form_state, translate.t(LABEL_PRIORITY), priority, ConfigInputFormAction::Priority) }
-               { edit_field_number_u16!(input_form_state, translate.t(LABEL_MAX_CONNECTIONS), max_connections, ConfigInputFormAction::MaxConnections) }
                { config_field_child!(translate.t(LABEL_FETCH_METHOD), {
                    html! {
                        <RadioButtonGroup
@@ -284,19 +282,6 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                         selected={input_method_selection}
                     />
                }})}
-               // { config_field_child!(translate.t(LABEL_INPUT_TYPE), {
-               //     html! {
-               //         <RadioButtonGroup
-               //          multi_select={false} none_allowed={false}
-               //          on_select={Callback::from(move |selections: Rc<Vec<String>>| {
-               //              if let Some(first) = selections.first() {
-               //                input_form_state.dispatch(ConfigInputFormAction::InputType(first.parse::<InputType>().unwrap_or(InputType::Xtream)));
-               //             }
-               //          })}
-               //          options={input_types.clone()}
-               //          selected={input_input_type_selection}
-               //      />
-               // }})}
                { edit_field_text_option!(input_form_state, translate.t(LABEL_PERSIST), persist, ConfigInputFormAction::Persist) }
 
                 // pub epg: Option<EpgConfigDto>,
@@ -377,8 +362,8 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
     };
 
     html! {
-        <div class="tp__input-form tp__config-view-page">
-          <div class="tp__input-form__toolbar tp__form-page__toolbar">
+        <div class="tp__source-editor-form tp__config-view-page">
+          <div class="tp__source-editor-form__toolbar tp__form-page__toolbar">
              <TextButton class="primary" name="apply_input"
                 icon="Accept"
                 title={ translate.t("LABEL.OK")}

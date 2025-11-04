@@ -1,8 +1,5 @@
 use yew::{classes, function_component, html, use_context, use_effect_with, use_state, Html};
-use crate::app::components::source_editor::input_form::ConfigInputView;
-use crate::app::components::{BlockInstance, EditMode, SourceEditorContext};
-use crate::app::components::source_editor::output_form::ConfigOutputView;
-use crate::app::components::source_editor::target_form::ConfigTargetView;
+use crate::app::components::{BlockInstance, ConfigInputView, ConfigOutputView, ConfigTargetView, EditMode, SourceEditorContext};
 
 #[function_component]
 pub fn SourceEditorForm() -> Html {
@@ -21,7 +18,7 @@ pub fn SourceEditorForm() -> Html {
     }
 
     html! {
-        <div class={classes!("tp__source-editor-form", if *visible { "active" } else { "" }) }>
+        <div class={classes!("tp__source-editor-form-wrapper", if *visible { "active" } else { "" }) }>
             {
                 if let EditMode::Active(block) = &*source_editor_ctx.edit_mode {
                     match &block.instance {

@@ -1,6 +1,6 @@
 $form-width: 300px;
 
-.tp__source-editor-form {
+.tp__source-editor-form-wrapper {
   position: absolute;
   height: 100%;
   top: 0;
@@ -13,15 +13,29 @@ $form-width: 300px;
   .tp__card {
      background-color: var(--card-background-color);
   }
-
-  //.tp__form-field,
-  //.tp__input {
-  //    flex-flow: row;
-  //    align-items: center;
-  //}
 }
 
-
-.tp__source-editor-form.active {
+.tp__source-editor-form-wrapper.active {
   left: calc(100% - $form-width);
+}
+
+.tp__source-editor-form {
+
+  &__body {
+    background-color: var(--card-background-color);
+    border: 1px solid var(--card-border-color);
+
+    display: flex;
+    flex-flow: column;
+
+    &__pages {
+      display: flex;
+      flex-flow: column;
+      width: 100%;
+
+      .tp__card {
+        border: none;
+      }
+    }
+  }
 }

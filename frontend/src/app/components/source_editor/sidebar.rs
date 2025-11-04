@@ -41,7 +41,6 @@ pub struct SourceEditorSidebarProps {
     pub on_drag_start: Callback<DragEvent>,
 }
 
-
 #[function_component]
 pub fn SourceEditorSidebar(props: &SourceEditorSidebarProps) -> Html {
     let translate = use_translation();
