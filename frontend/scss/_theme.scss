@@ -361,6 +361,8 @@
   --brick-port-invalid-background-color: #e74c3c;
   --source-editor-delete-color: #FF0000FF;
 
+  --source-editor-line-color: #ffffff;
+  --source-editor-pending-line-color: yellow;
 }
 
 
@@ -627,5 +629,8 @@ body[data-theme="bright"] {
   --floating-background-color: #979797;
   --floating-particle-gradient-color-1: rgba(0,0,0,0.3);
   --floating-particle-gradient-color-2: rgba(0,0,0,0);
+
+  --source-editor-line-color: #000000;
+  --source-editor-pending-line-color: yellow;
 
 }

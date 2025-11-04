@@ -427,7 +427,7 @@ pub fn SourceEditor() -> Html {
 
                         Some(html! {
                             <g>
-                                <path d={d} stroke="white" fill="transparent" stroke-width="2"/>
+                                <path d={d} stroke="var(--source-editor-line-color)" fill="transparent" stroke-width="2"/>
                                 { if *delete_mode {
                                     let mid_x = (from_x + to_x) / 2.0;
                                     let mid_y = (from_y + to_y) / 2.0;
@@ -454,7 +454,7 @@ pub fn SourceEditor() -> Html {
                             <line
                                 x1={x1.to_string()} y1={y1.to_string()}
                                 x2={x2.to_string()} y2={y2.to_string()}
-                                stroke="yellow"
+                                stroke="var(--source-editor-pending-line-color)"
                                 stroke-width="2"
                                 stroke-dasharray="4 2" />
                         }

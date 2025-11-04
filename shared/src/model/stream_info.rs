@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use serde::{Deserialize, Serialize};
 use crate::model::{M3uPlaylistItem, PlaylistEntry, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
 use crate::utils::{current_time_secs, longest};
@@ -55,7 +56,7 @@ pub struct StreamInfo {
     pub username: String,
     pub channel: StreamChannel,
     pub provider: String,
-    pub addr: String,
+    pub addr: SocketAddr,
     pub client_ip: String,
     #[serde(default)]
     pub user_agent: String,
@@ -66,12 +67,12 @@ pub struct StreamInfo {
 }
 
 impl StreamInfo {
-    pub fn new(username: &str, addr: &str, client_ip: &str, provider: &str, stream_channel: StreamChannel, user_agent: String, country: Option<String>) -> Self {
+    pub fn new(username: &str, addr: &SocketAddr, client_ip: &str, provider: &str, stream_channel: StreamChannel, user_agent: String, country: Option<String>) -> Self {
         Self {
             username: username.to_string(),
             channel: stream_channel,
             provider: provider.to_string(),
-            addr: addr.to_string(),
+            addr: addr.clone(),
             client_ip: client_ip.to_string(),
             user_agent,
             ts: current_time_secs(),

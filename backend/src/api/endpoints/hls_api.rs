@@ -3,7 +3,7 @@ use crate::api::api_utils::{
     force_provider_stream_response, get_stream_alternative_url, is_seek_request,
 };
 use crate::api::api_utils::{get_headers_from_request, try_option_bad_request, HeaderFilter};
-use crate::api::model::UserSession;
+use crate::api::model::{ProviderAllocation, UserSession};
 use crate::api::model::{create_custom_video_stream_response, CustomVideoStreamType};
 use crate::api::model::AppState;
 use crate::auth::Fingerprint;
@@ -56,15 +56,20 @@ pub(in crate::api) async fn handle_hls_stream_request(
 
     let (request_url, session_token) = match user_session {
         Some(session) => {
-            match app_state
+            let handle = app_state
                 .active_provider
-                .force_exact_acquire_connection(&session.provider, &fingerprint.addr, app_state.get_release_sender())
-                .await
-                .get_provider_config()
-            {
-                Some(provider_cfg) => {
-                    let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
-                    (stream_url, Some(session.token.clone()))
+                .force_exact_acquire_connection(&session.provider, &fingerprint.addr)
+                .await;
+            match handle {
+                Some(provider_handle) => {
+                    match provider_handle.allocation {
+                        ProviderAllocation::Exhausted =>  (url, None),
+                        ProviderAllocation::Available(cfg)
+                        | ProviderAllocation::GracePeriod(cfg) => {
+                            let stream_url = get_stream_alternative_url(&url, input, &cfg);
+                            (stream_url, Some(session.token.clone()))
+                        }
+                    }
                 }
                 None => (url, None),
             }

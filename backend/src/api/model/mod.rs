@@ -11,7 +11,7 @@ mod stream;
 mod provider_config;
 mod event_manager;
 mod playlist_mem_cache;
-mod release_task;
+mod provider_lineup_manager;
 
 pub use self::app_state::*;
 pub use self::playlist_mem_cache::*;
@@ -23,7 +23,7 @@ pub(in crate::api) use self::stream_error::*;
 pub(crate) use self::streams::*;
 pub(in crate::api) use self::active_user_manager::*;
 pub(in crate::api) use self::active_provider_manager::*;
-pub(in crate::api) use self::stream::*;
 pub(in crate::api) use self::provider_config::*;
+pub use self::stream::*;
 pub use self::event_manager::*;
-pub use self::release_task::*;
+pub use self::provider_lineup_manager::*;

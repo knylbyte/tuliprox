@@ -1,10 +1,8 @@
-use crate::api::api_utils::StreamDetails;
-use crate::api::model::AppState;
+use crate::api::model::{AppState, ProviderHandle, StreamDetails};
 use crate::api::model::BoxedProviderStream;
 use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
 use crate::api::model::TransportStreamBuffer;
-use crate::api::model::{ProviderConnectionGuard, UserConnectionGuard};
 use crate::model::ProxyUserCredentials;
 use bytes::Bytes;
 use futures::Stream;
@@ -28,10 +26,8 @@ const PROVIDER_EXHAUSTED_STREAM: u8 = 3_u8;
 pub(in crate::api) struct ActiveClientStream {
     inner: BoxedProviderStream,
     send_custom_stream_flag: Option<Arc<AtomicU8>>,
-    #[allow(unused)]
-    user_connection_guard: Option<UserConnectionGuard>,
     #[allow(dead_code)]
-    provider_connection_guard: Option<Arc<ProviderConnectionGuard>>,
+    provider_handle: Option<ProviderHandle>,
     custom_video: (Option<TransportStreamBuffer>, Option<TransportStreamBuffer>),
     waker: Option<Arc<AtomicWaker>>,
 }
@@ -52,11 +48,11 @@ impl ActiveClientStream {
         let provider_name = stream_details.provider_name.as_ref().map_or_else(String::new, ToString::to_string);
 
         let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
-        let user_connection_guard = Some(app_state.active_users.add_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent, app_state.get_release_sender()).await);
+        app_state.active_users.add_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent).await;
         let cfg = &app_state.app_config;
         let waker = Some(Arc::new(AtomicWaker::new()));
         let waker_clone = waker.clone();
-        let grace_stop_flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, &fingerprint.addr, waker_clone.clone());
+        let grace_stop_flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, &fingerprint, waker_clone.clone());
         let custom_response = cfg.custom_stream_response.load();
         let custom_video = custom_response.as_ref()
             .map_or((None, None), |c|
@@ -67,8 +63,8 @@ impl ActiveClientStream {
 
         let stream = match stream_details.stream.take() {
             None => {
-                if let Some(guard) = stream_details.provider_connection_guard.as_ref() {
-                    guard.release().await;
+                if let Some(guard) = stream_details.provider_handle.as_ref() {
+                    app_state.active_provider.release_handle(guard).await;
                 }
                 futures::stream::empty::<Result<Bytes, StreamError>>().boxed()
             }
@@ -89,8 +85,7 @@ impl ActiveClientStream {
 
         Self {
             inner: stream,
-            user_connection_guard,
-            provider_connection_guard: stream_details.provider_connection_guard,
+            provider_handle: stream_details.provider_handle,
             send_custom_stream_flag: grace_stop_flag,
             custom_video,
             waker,
@@ -101,7 +96,7 @@ impl ActiveClientStream {
                            stream_details: &StreamDetails,
                            user_grace_period: bool,
                            user: &ProxyUserCredentials,
-                           addr: &str,
+                           fingerprint: &Fingerprint,
                            waker: Option<Arc<AtomicWaker>>) -> Option<Arc<AtomicU8>> {
         let active_users = Arc::clone(&app_state.active_users);
         let active_provider = Arc::clone(&app_state.active_provider);
@@ -127,7 +122,7 @@ impl ActiveClientStream {
             let stream_strategy_flag_copy = Arc::clone(&stream_strategy_flag);
             let grace_period_millis = stream_details.grace_period_millis;
 
-            let address = addr.to_string();
+            let address = fingerprint.addr.clone();
             let user_manager = Arc::clone(&active_users);
             let provider_manager = Arc::clone(&active_provider);
             let share_manager = Arc::clone(&shared_stream_manager);

@@ -1,5 +1,5 @@
 use crate::api::config_watch::exec_config_watch;
-use crate::api::model::{ActiveProviderManager, EventManager, PlaylistStorage, PlaylistStorageState, ReleaseTask, SharedStreamManager};
+use crate::api::model::{ActiveProviderManager, EventManager, PlaylistStorage, PlaylistStorageState, SharedStreamManager};
 use crate::api::model::{ActiveUserManager, DownloadQueue};
 use crate::api::scheduler::exec_scheduler;
 use crate::model::{
@@ -19,7 +19,6 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use crate::repository::storage::get_geoip_path;
@@ -261,13 +260,9 @@ pub struct AppState {
     pub cancel_tokens: Arc<ArcSwap<CancelTokens>>,
     pub playlists: Arc<PlaylistStorageState>,
     pub geoip: Arc<ArcSwapOption<GeoIp>>,
-    pub(crate) release_tx: UnboundedSender<ReleaseTask>
 }
 
 impl AppState {
-    pub fn get_release_sender(&self) -> UnboundedSender<ReleaseTask> {
-        self.release_tx.clone()
-    }
 
     pub(in crate::api::model) async fn set_config(&self,config: Config) -> Result<UpdateChanges, TuliproxError> {
         let changes = self.detect_changes_for_config(&config);

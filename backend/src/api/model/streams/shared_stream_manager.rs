@@ -1,4 +1,4 @@
-use crate::api::model::{ReleaseTask, StreamError};
+use crate::api::model::{ActiveProviderManager, ProviderHandle, StreamError};
 use crate::api::model::AppState;
 use crate::utils::debug_if_enabled;
 use bytes::Bytes;
@@ -7,18 +7,17 @@ use futures::{Stream, StreamExt};
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::api::model::streams::buffered_stream::CHANNEL_SIZE;
 use crate::api::model::BoxedProviderStream;
-use crate::api::model::ProviderConnectionGuard;
 use crate::utils::trace_if_enabled;
-use log::{debug, error, trace};
+use log::{debug, trace};
 use shared::utils::sanitize_sensitive_info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::runtime::Handle;
-use tokio::sync::mpsc::{Sender, UnboundedSender};
+use tokio::sync::mpsc::{Sender};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -54,7 +53,7 @@ fn convert_stream(stream: BoxStream<Bytes>) -> BoxStream<Result<Bytes, StreamErr
     ReceiverStreamWrapper { stream }.boxed()
 }
 
-type SubscriberId = String;
+type SubscriberId = SocketAddr;
 
 
 struct BurstBuffer {
@@ -100,6 +99,21 @@ impl BurstBuffer {
     }
 }
 
+
+
+async fn send_burst_buffer(
+    start_buffer: &VecDeque<Bytes>,
+    client_tx: &Sender<Bytes>,
+    cancellation_token: &CancellationToken) {
+    for buf in start_buffer {
+        if cancellation_token.is_cancelled() { return; }
+        if let Err(err) = client_tx.send(buf.clone()).await {
+            debug!("Error sending current chunk: {err}");
+            return; // stop on send error
+        }
+    }
+}
+
 /// Represents the state of a shared provider URL.
 ///
 /// - `headers`: The initial connection headers used during the setup of the shared stream.
@@ -107,40 +121,16 @@ impl BurstBuffer {
 pub struct SharedStreamState {
     headers: Vec<(String, String)>,
     buf_size: usize,
-    provider_guard: Option<Arc<ProviderConnectionGuard>>,
+    provider_guard: Option<ProviderHandle>,
     subscribers: RwLock<HashMap<SubscriberId, CancellationToken>>,
     broadcaster: tokio::sync::broadcast::Sender<Bytes>,
     stop_token: CancellationToken,
     burst_buffer: Arc<Mutex<BurstBuffer>>,
-    release_tx: UnboundedSender<ReleaseTask>,
-}
-
-impl Drop for SharedStreamState {
-    fn drop(&mut self) {
-        if let Some(guard) = self.provider_guard.as_ref() {
-            if let Err(_err) = self.release_tx.send(ReleaseTask::ForceProvider(Arc::clone(guard))) {
-                // fallback
-                if let Ok(handle) = Handle::try_current() {
-                    let guard = guard.clone();
-                    handle.spawn(async move {
-                        guard.force_release().await;
-                    });
-                } else {
-                    // No runtime
-                    error!("💥💥💥 Dropping Shared Stream ProviderConnectionGuard without async runtime — Provider Connection not freed");
-                }
-            }
-        }
-    }
 }
 
 impl SharedStreamState {
     fn new(headers: Vec<(String, String)>, buf_size: usize,
-           provider_guard: Option<Arc<ProviderConnectionGuard>>,
-           release_tx: UnboundedSender<ReleaseTask>) -> Self {
-        if let Some(guard) = &provider_guard {
-            guard.disable_release();
-        }
+           provider_guard: Option<ProviderHandle>) -> Self {
         let (broadcaster, _) = tokio::sync::broadcast::channel(buf_size);
         // TODO channel size versus byte size,  channels are chunk sized, burst_buffer byte sized
         let burst_buffer_size_in_bytes = MIN_SHARED_BUFFER_SIZE.max(buf_size * 1024 * 12);
@@ -152,20 +142,19 @@ impl SharedStreamState {
             broadcaster,
             stop_token: CancellationToken::new(),
             burst_buffer: Arc::new(Mutex::new(BurstBuffer::new(burst_buffer_size_in_bytes))),
-            release_tx
         }
     }
 
-    async fn subscribe(&self, addr: &str, manager: Arc<SharedStreamManager>) -> (BoxedProviderStream, Option<String>) {
+    async fn subscribe(&self, addr: &SocketAddr, manager: Arc<SharedStreamManager>) -> (BoxedProviderStream, Option<String>) {
         let (client_tx, client_rx) = mpsc::channel(self.buf_size);
         let mut broadcast_rx = self.broadcaster.subscribe();
         let cancel_token = CancellationToken::new();
-        self.subscribers.write().await.insert(addr.to_string(), cancel_token.clone());
+        self.subscribers.write().await.insert(addr.clone(), cancel_token.clone());
 
-        let address = addr.to_string();
         let client_tx_clone = client_tx.clone();
         let burst_buffer = self.burst_buffer.clone();
 
+        let address = addr.clone();
         tokio::spawn(async move {
             let snapshot = {
                 let buffer = burst_buffer.lock().await;
@@ -179,14 +168,14 @@ impl SharedStreamState {
                     biased;
 
                     () = cancel_token.cancelled() => {
-                        debug!("Client disconnected from shared stream: {address}");
+                        debug!("Client disconnected from shared stream: {}", address.to_string());
                         break;
                     }
                     result = broadcast_rx.recv() => {
                         match result {
                             Ok(data) => {
                                 if let Err(err) = client_tx.send(data).await {
-                                    debug!("Shared stream client send error: {address} {err}");
+                                    debug!("Shared stream client send error: {} {err}", address.to_string());
                                     break;
                                 }
                                 loop_cnt += 1;
@@ -196,7 +185,7 @@ impl SharedStreamState {
                                  }
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                                trace!("Client lagged behind. Skipped {skipped} messages. {address}");
+                                trace!("Client lagged behind. Skipped {skipped} messages. {}", address.to_string());
                                 loop_cnt += 1;
                                if loop_cnt >= YIELD_COUNTER {
                                    tokio::task::yield_now().await;
@@ -211,10 +200,7 @@ impl SharedStreamState {
             manager.release_connection(&address, false).await;
         });
 
-        let provider = match &self.provider_guard {
-            None => None,
-            Some(connection_guard) => connection_guard.get_provider_name()
-        };
+        let provider = self.provider_guard.as_ref().and_then(|h| h.allocation.get_provider_name());
 
         (convert_stream(ReceiverStream::new(client_rx).boxed()), provider)
     }
@@ -292,17 +278,19 @@ impl SharedStreamState {
 }
 
 type SharedStreamRegister = HashMap<String, Arc<SharedStreamState>>;
-type SharedStreamAddrRegister = HashMap<String, String>;
+type SharedStreamAddrRegister = HashMap<SubscriberId, String>;
 
 
 pub struct SharedStreamManager {
+    provider_manager: Arc<ActiveProviderManager>,
     shared_streams: RwLock<SharedStreamRegister>,
     shared_streams_by_addr: RwLock<SharedStreamAddrRegister>,
 }
 
 impl SharedStreamManager {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(provider_manager: Arc<ActiveProviderManager>) -> Self {
         Self {
+            provider_manager,
             shared_streams: RwLock::new(SharedStreamRegister::new()),
             shared_streams_by_addr: RwLock::new(SharedStreamAddrRegister::new()),
         }
@@ -321,7 +309,7 @@ impl SharedStreamManager {
         let shared_state = self.shared_streams.write().await.remove(stream_url);
         {
             let mut by_addr = self.shared_streams_by_addr.write().await;
-            let remove_keys: Vec<String> = by_addr.iter()
+            let remove_keys: Vec<SocketAddr> = by_addr.iter()
                 .filter_map(|(addr, url)| if url == stream_url { Some(addr.clone()) } else { None })
                 .collect();
             for k in remove_keys {
@@ -332,8 +320,8 @@ impl SharedStreamManager {
         if let Some(shared_state) = shared_state {
             debug_if_enabled!("Unregistering shared stream {}", sanitize_sensitive_info(stream_url));
 
-            if let Some(guard) = &shared_state.provider_guard {
-                guard.force_release().await;
+            if let Some(provider_handle) = &shared_state.provider_guard {
+                self.provider_manager.release_handle(provider_handle).await;
             }
 
             if send_stop_signal {
@@ -343,7 +331,7 @@ impl SharedStreamManager {
         }
     }
 
-    pub async fn release_connection(&self, addr: &str, send_stop_signal: bool) {
+    pub async fn release_connection(&self, addr: &SocketAddr, send_stop_signal: bool) {
         let stream_url = {
             self.shared_streams_by_addr.write().await.remove(addr)
         };
@@ -379,7 +367,7 @@ impl SharedStreamManager {
         }
     }
 
-    async fn subscribe_stream(&self, stream_url: &str, addr: &str, manager: Arc<SharedStreamManager>) -> Option<(BoxedProviderStream, Option<String>)> {
+    async fn subscribe_stream(&self, stream_url: &str, addr: &SocketAddr, manager: Arc<SharedStreamManager>) -> Option<(BoxedProviderStream, Option<String>)> {
         let shared_stream_state = {
             self.shared_streams.read().await.get(stream_url).map(Arc::clone)
         };
@@ -387,7 +375,7 @@ impl SharedStreamManager {
             None => None,
             Some(stream_state) => {
                 debug_if_enabled!("Responding to existing shared client stream {addr} {}",  sanitize_sensitive_info(stream_url));
-                self.shared_streams_by_addr.write().await.insert(addr.to_string(), stream_url.to_owned());
+                self.shared_streams_by_addr.write().await.insert(addr.clone(), stream_url.to_owned());
                 Some(stream_state.subscribe(addr, manager).await)
             }
         }
@@ -401,20 +389,20 @@ impl SharedStreamManager {
         app_state: &AppState,
         stream_url: &str,
         bytes_stream: S,
-        addr: &str,
+        addr: &SocketAddr,
         headers: Vec<(String, String)>,
         buffer_size: usize,
-        provider_guard: Option<Arc<ProviderConnectionGuard>>) -> Option<(BoxedProviderStream, Option<String>)>
+        provider_guard: Option<ProviderHandle>) -> Option<(BoxedProviderStream, Option<String>)>
     where
         S: Stream<Item=Result<Bytes, E>> + Unpin + 'static + Send,
         E: std::fmt::Debug + Send,
     {
         let buf_size = CHANNEL_SIZE.max(buffer_size);
-        let shared_state = Arc::new(SharedStreamState::new(headers, buf_size, provider_guard, app_state.get_release_sender()));
+        let shared_state = Arc::new(SharedStreamState::new(headers, buf_size, provider_guard));
         app_state.shared_stream_manager.register(stream_url, Arc::clone(&shared_state)).await;
-        debug_if_enabled!("Created shared provider stream {}", sanitize_sensitive_info(stream_url));
         let subscribed_stream = Self::subscribe_shared_stream(app_state, stream_url, addr).await;
         shared_state.broadcast(stream_url, bytes_stream, Arc::clone(&app_state.shared_stream_manager));
+        debug_if_enabled!("Created shared provider stream {}", sanitize_sensitive_info(stream_url));
         subscribed_stream
     }
 
@@ -422,23 +410,9 @@ impl SharedStreamManager {
     pub async fn subscribe_shared_stream(
         app_state: &AppState,
         stream_url: &str,
-        addr: &str,
+        addr: &SocketAddr,
     ) -> Option<(BoxedProviderStream, Option<String>)> {
         let manager = Arc::clone(&app_state.shared_stream_manager);
         app_state.shared_stream_manager.subscribe_stream(stream_url, addr, manager).await
-    }
-}
-
-
-async fn send_burst_buffer(
-    start_buffer: &VecDeque<Bytes>,
-    client_tx: &Sender<Bytes>,
-    cancellation_token: &CancellationToken) {
-    for buf in start_buffer {
-        if cancellation_token.is_cancelled() { return; }
-        if let Err(err) = client_tx.send(buf.clone()).await {
-            debug!("Error sending current chunk: {err}");
-            return; // stop on send error
-        }
     }
 }
