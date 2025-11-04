@@ -6,7 +6,6 @@ use crate::app::context::ConfigContext;
 use crate::{config_field_bool, config_field_child, edit_field_bool, generate_form_reducer};
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::{ConfigForm};
-use crate::app::components::config::macros::HasFormData;
 use crate::app::components::{Chip, RadioButtonGroup};
 
 const LABEL_LOG_LEVEL: &str =  "LABEL.LOG_LEVEL";

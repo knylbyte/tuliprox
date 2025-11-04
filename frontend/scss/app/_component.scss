@@ -75,4 +75,8 @@
 @forward "components/websocket_status";
 @forward "components/playlist/epg_view";
 @forward "components/floating_background";
-@forward "components/source_editor";
+@forward "components/source_editor/source_editor";
+@forward "components/source_editor/source_editor_form";
+@forward "components/source_editor/source_editor_block";
+@forward "components/source_editor/input_form";
+@forward "components/cluster_flags";

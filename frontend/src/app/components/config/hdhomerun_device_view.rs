@@ -2,7 +2,6 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{HdHomeRunDeviceConfigDto};
 use crate::app::components::{Card, CollapsePanel, TextButton};
-use crate::app::components::config::macros::HasFormData;
 use crate::{config_field, edit_field_number_u16, edit_field_number_u8, edit_field_text, generate_form_reducer, html_if};
 
 generate_form_reducer!(

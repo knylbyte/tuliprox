@@ -7,6 +7,15 @@ use crate::app::components::{AppIcon, IconButton};
 use crate::app::components::popup_menu::PopupMenu;
 use crate::html_if;
 
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DropDownSelection {
+    Empty,
+    Single(String),
+    Multi(Vec<String>),
+}
+
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct DropDownOption {
     pub(crate) id: String,
@@ -24,10 +33,10 @@ impl DropDownOption {
 pub struct DropDownIconButtonProps {
     pub name: String,
     pub icon: String,
-    pub onselect: Callback<(String, Vec<String>)>,
+    pub on_select: Callback<(String, DropDownSelection)>,
     #[prop_or_default]
     pub class: String,
-    pub options: Vec<Rc<DropDownOption>>,
+    pub options: Rc<Vec<DropDownOption>>,
     #[prop_or_default]
     pub multi_select: bool,
     #[prop_or_default]
@@ -73,7 +82,7 @@ pub fn DropDownIconButton(props: &DropDownIconButtonProps) -> Html {
         let multi_select = props.multi_select;
         let name = props.name.clone();
         let selections = selections.clone();
-        let onselect = props.onselect.clone();
+        let onselect = props.on_select.clone();
         let set_is_open = popup_is_open.clone();
         Callback::from(move |(id, e): (String, MouseEvent)| {
             e.prevent_default();
@@ -83,9 +92,13 @@ pub fn DropDownIconButton(props: &DropDownIconButtonProps) -> Html {
                 selections.insert(id.clone());
             }
             let selected_options = if multi_select {
-                selections.current().iter().map(Clone::clone).collect::<Vec<_>>()
+                if selections.current().is_empty() {
+                    DropDownSelection::Empty
+                }  else {
+                    DropDownSelection::Multi(selections.current().iter().map(Clone::clone).collect::<Vec<_>>())
+                }
             } else {
-                vec![id.clone()]
+                DropDownSelection::Single(id.clone())
             };
             onselect.emit((name.clone(), selected_options));
             if !multi_select {

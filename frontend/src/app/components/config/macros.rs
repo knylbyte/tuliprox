@@ -50,8 +50,8 @@ macro_rules! config_field_bool {
     ($config:expr, $label:expr, $field:ident) => {
         html! {
             <div class="tp__form-field tp__form-field__bool">
-                <label>{$label}</label>
                 <$crate::app::components::ToggleSwitch value={$config.$field} readonly={true} />
+                <label>{$label}</label>
             </div>
         }
     };
@@ -140,7 +140,7 @@ macro_rules! edit_field_text_option {
                     hidden={$hidden}
                     name={stringify!($field)}
                     autocomplete={true}
-                    value={(*instance).data().$field.as_ref().map_or_else(String::new, |v|v.to_string())}
+                    value={instance.form.$field.as_ref().map_or_else(String::new, |v|v.to_string())}
                     on_change={Callback::from(move |value: String| {
                         instance.dispatch($action(if value.is_empty() {
                             None
@@ -171,7 +171,7 @@ macro_rules! edit_field_text {
                     hidden={$hidden}
                     name={stringify!($field)}
                     autocomplete={true}
-                    value={(*instance).data().$field.clone()}
+                    value={instance.form.$field.clone()}
                     on_change={Callback::from(move |value: String| {
                         instance.dispatch($action(value));
                     })}
@@ -187,11 +187,11 @@ macro_rules! edit_field_bool {
         let instance = $instance.clone();
         html! {
             <div class="tp__form-field tp__form-field__bool">
-                <label>{$label}</label>
                 <$crate::app::components::ToggleSwitch
-                     value={(*instance).data().$field}
+                     value={instance.form.$field}
                      readonly={false}
                      on_change={Callback::from(move |value| instance.dispatch($action(value)))} />
+                <label>{$label}</label>
             </div>
         }
     }};
@@ -206,13 +206,13 @@ macro_rules! edit_field_number {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field as u64}
-                    on_change={Callback::from(move |value: Option<u64>| {
+                    value={instance.form.$field as i64}
+                    on_change={Callback::from(move |value: Option<i64>| {
                         match value {
-                            Some(value) => {
-                                let val = u32::try_from(value).unwrap_or(0);
-                                instance.dispatch($action(val));
-                            }
+                            Some(value) => match u32::try_from(value) {
+                                Ok(val) => instance.dispatch($action(val)),
+                                Err(_) => return,
+                            },
                             None => instance.dispatch($action(0)),
                         }
                     })}
@@ -231,8 +231,8 @@ macro_rules! edit_field_number_u8 {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field as u64}
-                    on_change={Callback::from(move |value: Option<u64>| {
+                    value={instance.form.$field as i64}
+                    on_change={Callback::from(move |value: Option<i64>| {
                         match value {
                             Some(value) => {
                                 let val = u8::try_from(value).unwrap_or(0);
@@ -256,12 +256,38 @@ macro_rules! edit_field_number_u16 {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field as u64}
-                    on_change={Callback::from(move |value: Option<u64>| {
+                    value={instance.form.$field as i64}
+                    on_change={Callback::from(move |value: Option<i64>| {
                         match value {
                             Some(value) => {
                                 let val = u16::try_from(value).unwrap_or(0);
                                 instance.dispatch($action(val))
+                            },
+                            None => instance.dispatch($action(0)),
+                        }
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+
+#[macro_export]
+macro_rules! edit_field_number_i16 {
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__number">
+                <$crate::app::components::number_input::NumberInput
+                    label={$label}
+                    name={stringify!($field)}
+                    value={instance.form.$field as i64}
+                    on_change={Callback::from(move |value: Option<i64>| {
+                        match value {
+                            Some(value) => match i16::try_from(value) {
+                                Ok(val) => instance.dispatch($action(val)),
+                                Err(_) => return, // keep the existing value; optionally surface a validation error
                             },
                             None => instance.dispatch($action(0)),
                         }
@@ -281,13 +307,14 @@ macro_rules! edit_field_number_u64 {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field}
-                    on_change={Callback::from(move |value: Option<u64>| {
+                    value={instance.form.$field.min(i64::MAX as u64) as i64}
+                    on_change={Callback::from(move |value: Option<i64>| {
                         match value {
-                            Some(value) => {
-                                instance.dispatch($action(value))
-                            },
-                            None => instance.dispatch($action(0)),
+                          Some(value) => match u64::try_from(value) {
+                            Ok(val) => instance.dispatch($action(val)),
+                            Err(_) => return,
+                          },
+                          None => instance.dispatch($action(0)),
                         }
                     })}
                 />
@@ -305,12 +332,12 @@ macro_rules! edit_field_number_option {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field.map(|v| v as u64)}
-                    on_change={Callback::from(move |value: Option<u64>| {
+                    value={instance.form.$field.map(|v| v as i64)}
+                    on_change={Callback::from(move |value: Option<i64>| {
                         match value {
-                            Some(value) => {
-                                let val = u32::try_from(value).ok();
-                                instance.dispatch($action(val))
+                            Some(value) => match u32::try_from(value) {
+                                Ok(val) => instance.dispatch($action(Some(val))),
+                                Err(_) => return,
                             },
                             None => instance.dispatch($action(None)),
                         }
@@ -330,7 +357,7 @@ macro_rules! edit_field_date {
                 <$crate::app::components::date_input::DateInput
                     label={$label}
                     name={stringify!($field)}
-                    value={(*instance).data().$field.clone()}
+                    value={instance.form.$field.clone()}
                     on_change={Callback::from(move |value: Option<i64>| {
                         instance.dispatch($action(value));
                     })}
@@ -344,7 +371,7 @@ macro_rules! edit_field_date {
 macro_rules! edit_field_list {
     ($instance:expr, $label:expr, $field:ident, $action:path, $placeholder:expr) => {{
         let instance = $instance.clone();
-        let tag_list = (*instance).data().$field.iter()
+        let tag_list = instance.form.$field.iter()
               .map(|s| std::rc::Rc::new($crate::app::components::Tag { label: s.clone(), class: None }))
               .collect::<Vec<std::rc::Rc<$crate::app::components::Tag>>>();
         html! {
@@ -367,7 +394,7 @@ macro_rules! edit_field_list {
 macro_rules! edit_field_list_option {
     ($instance:expr, $label:expr, $field:ident, $action:path, $placeholder:expr) => {{
         let instance = $instance.clone();
-        let tag_list = (*instance).data().$field.as_ref().map_or_else(Vec::new, |f| f.iter()
+        let tag_list = instance.form.$field.as_ref().map_or_else(Vec::new, |f| f.iter()
               .map(|s| std::rc::Rc::new($crate::app::components::Tag { label: s.clone(), class: None }))
               .collect::<Vec<std::rc::Rc<$crate::app::components::Tag>>>());
         html! {
@@ -412,6 +439,7 @@ macro_rules! generate_form_reducer {
             }
         }
 
+        #[allow(clippy::large_enum_variant)]
         #[derive(Clone)]
         pub enum $action_name {
             $(
@@ -425,20 +453,21 @@ macro_rules! generate_form_reducer {
             type Action = $action_name;
 
             fn reduce(self: std::rc::Rc<Self>, action: Self::Action) -> std::rc::Rc<Self> {
-                let mut new_data = self.$data_field.clone();
                 let mut modified = self.modified;
-                match action {
+                let new_data = match action {
                     $(
                         $action_name::$set_name(v) => {
+                            let mut new_data = self.$data_field.clone();
                             new_data.$field_name = v;
                             if !modified { modified = true; }
+                            new_data
                         },
                     )*
                     $action_name::SetAll(v) => {
-                        new_data = v;
                         modified = false;
+                        v
                     },
-                }
+                };
                 $state_name { $data_field: new_data, modified }.into()
             }
         }

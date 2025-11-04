@@ -78,3 +78,52 @@
     overflow: auto;
   }
 }
+
+/* Tabs header */
+.tp__tab-header {
+  display: flex;
+  border-bottom: 2px solid var(--card-border-color);
+  background-color: var(--card-background-color);
+  border-radius: 8px 8px 0 0;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.tp__tab-button {
+  flex: 1;
+  padding: 0.6rem 1.2rem;
+  font-weight: 500;
+  font-size: 0.95rem;
+  text-align: center;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--text-color);
+  transition: all 0.25s ease;
+  position: relative;
+}
+
+.tp__tab-button:hover {
+  color: var(--text-button-hover-color);
+  background-color: var(--text-button-hover-background-color);
+}
+
+.tp__tab-button.active {
+  color: var(--text-button-primary-color);
+  background-color: var(--text-button-primary-background-color);
+  font-weight: 600;
+}
+
+.tp__tab-button.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  border-radius: 2px 2px 0 0;
+}
+
+.tp__tab-button {
+  transition: all 0.25s ease;
+}

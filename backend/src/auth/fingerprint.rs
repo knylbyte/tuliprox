@@ -19,11 +19,11 @@ fn validate_header(value: &str) -> Option<String> {
 pub struct Fingerprint {
     pub key: String,
     pub client_ip: String,
-    pub addr: String,
+    pub addr: SocketAddr,
 }
 
 impl Fingerprint {
-    pub fn new(key: String, client_ip: String, addr: String) -> Self {
+    pub fn new(key: String, client_ip: String, addr: SocketAddr) -> Self {
         Self {
             key,
             client_ip,
@@ -82,6 +82,6 @@ impl Fingerprint {
 
        // debug!("{key}, {client_ip}, {addr}");
 
-        Ok(Fingerprint::new(key, client_ip, addr.to_string()))
+        Ok(Fingerprint::new(key, client_ip, addr))
     }
 }

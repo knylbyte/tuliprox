@@ -17,7 +17,7 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tower::{Service, ServiceExt};
-use crate::api::model::ActiveUserManager;
+use crate::api::model::{ConnectionManager};
 
 #[derive(Debug)]
 struct IncomingStream
@@ -41,7 +41,7 @@ impl axum::extract::connect_info::Connected<IncomingStream> for SocketAddr {
 pub async fn serve(listener: tokio::net::TcpListener,
                    router: axum::Router<()>,
                    cancel_token: Option<CancellationToken>,
-                   user_manager: Arc<ActiveUserManager>) {
+                   connection_manager: &Arc<ConnectionManager>) {
     let (signal_tx, _signal_rx) = watch::channel(());
     let mut make_service = router.into_make_service_with_connect_info::<SocketAddr>();
 
@@ -54,7 +54,7 @@ pub async fn serve(listener: tokio::net::TcpListener,
                     }
                     accept_result = listener.accept() => {
                         let Ok((socket, remote_addr)) = accept_result else { continue };
-                        handle_connection(&mut make_service, &signal_tx, socket, remote_addr, Arc::clone(&user_manager)).await;
+                        handle_connection(&mut make_service, &signal_tx, socket, remote_addr, Arc::clone(connection_manager)).await;
                     }
                 }
             }
@@ -62,7 +62,7 @@ pub async fn serve(listener: tokio::net::TcpListener,
         None => {
             loop {
                 let Ok((socket, remote_addr)) = listener.accept().await else { continue };
-                handle_connection(&mut make_service, &signal_tx, socket, remote_addr, Arc::clone(&user_manager)).await;
+                handle_connection(&mut make_service, &signal_tx, socket, remote_addr, Arc::clone(connection_manager)).await;
             }
         }
     }
@@ -73,7 +73,7 @@ async fn handle_connection<M, S>(
     signal_tx: &watch::Sender<()>,
     socket: tokio::net::TcpStream,
     remote_addr: SocketAddr,
-    user_manager: Arc<ActiveUserManager>,
+    connection_manager: Arc<ConnectionManager>,
 )
 where
     M: for<'a> Service<IncomingStream, Error=Infallible, Response=S> + Send + 'static,
@@ -124,7 +124,7 @@ where
 
     let hyper_service = TowerToHyperService::new(tower_service);
     let signal_tx = signal_tx.clone();
-    let addr_str = remote_addr.to_string();
+    let addr = remote_addr;
 
     tokio::spawn(async move {
         #[allow(unused_mut)]
@@ -132,10 +132,10 @@ where
         let mut conn = pin!(builder.serve_connection_with_upgrades(io, hyper_service));
         let mut signal_closed = pin!(signal_tx.closed().fuse());
 
-        let user_manager_clone = Arc::clone(&user_manager);
-        let mut addr_close_rx = user_manager_clone.get_close_connection_channel();
+        let connection_manager_clone = Arc::clone(&connection_manager);
+        let mut addr_close_rx = connection_manager_clone.get_close_connection_channel();
 
-        trace!("Connection opened: {addr_str}");
+        trace!("Connection opened: {addr}");
 
         loop {
             tokio::select! {
@@ -143,18 +143,19 @@ where
                     if let Err(err) = result {
                         trace!("failed to serve connection: {err:#}");
                     }
-                    user_manager_clone.remove_connection(&addr_str).await;
+                    connection_manager_clone.release_connection(&addr).await;
                     break;
                 }
                 () = &mut signal_closed => {
-                    user_manager_clone.remove_connection(&addr_str).await;
+                    connection_manager_clone.release_connection(&addr).await;
                     debug!("Connection gracefully closed: {remote_addr}");
                     conn.as_mut().graceful_shutdown();
                 }
                 Ok(msg) = addr_close_rx.recv() => {
                     // this comes from user manager itself when a user connection is closed
                     // no need to call `user_manager.remove_connection()`
-                    if msg == addr_str {
+                    if msg == addr {
+                        connection_manager_clone.trigger_release_connection_from_user_manager(&addr).await;
                         debug!("Forced client disconnect {msg}");
                         conn.as_mut().graceful_shutdown();
                         break;

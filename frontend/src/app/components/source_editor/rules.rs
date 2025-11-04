@@ -23,7 +23,7 @@ pub fn can_connect(from_block: &Block, to_block: &Block, connections: &[Connecti
         to_block.block_type,
         BlockType::OutputM3u
             | BlockType::OutputXtream
-            | BlockType::OutputHdhomerun
+            | BlockType::OutputHdHomeRun
             | BlockType::OutputStrm
     );
 
@@ -61,7 +61,7 @@ pub fn can_connect(from_block: &Block, to_block: &Block, connections: &[Connecti
                 match out_block.block_type {
                     BlockType::OutputM3u => count_m3u += 1,
                     BlockType::OutputXtream => count_xtream += 1,
-                    BlockType::OutputHdhomerun => count_hdhomerun += 1,
+                    BlockType::OutputHdHomeRun => count_hdhomerun += 1,
                     BlockType::OutputStrm => count_strm += 1,
                     _ => {}
                 }
@@ -71,7 +71,7 @@ pub fn can_connect(from_block: &Block, to_block: &Block, connections: &[Connecti
         match to_block.block_type {
             BlockType::OutputM3u if count_m3u >= 1 => return false,
             BlockType::OutputXtream if count_xtream >= 1 => return false,
-            BlockType::OutputHdhomerun if count_hdhomerun >= 1 => return false,
+            BlockType::OutputHdHomeRun if count_hdhomerun >= 1 => return false,
             BlockType::OutputStrm if count_strm >= 4 => return false,
             _ => {}
         }

@@ -1,5 +1,4 @@
 use std::fmt;
-use crate::api::model::ProviderAllocation;
 use crate::model::{ConfigInput, ConfigInputAlias, InputUserInfo};
 use jsonwebtoken::get_current_timestamp;
 use log::{debug};
@@ -8,6 +7,7 @@ use std::sync::{Arc};
 use tokio::sync::RwLock;
 use shared::model::InputType;
 use shared::write_if_some;
+use crate::api::model::ProviderAllocation;
 
 pub type ProviderConnectionChangeSender = tokio::sync::mpsc::UnboundedSender<(String, usize)>;
 pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::UnboundedReceiver<(String, usize)>;
@@ -45,7 +45,6 @@ pub struct ProviderConfig {
     max_connections: usize,
     priority: i16,
     connection: RwLock<ProviderConfigConnection>,
-    //connection_change_tx: ProviderConnectionChangeSender,
     on_connection_change: ProviderConnectionChangeCallback,
 }
 

@@ -655,13 +655,19 @@ Each input has the following attributes:
   + `xtream_live_stream_without_extension` default false, if set to true `.ts` extension is not added to the stream link.
   + `xtream_live_stream_use_prefix` default true, if set to true `/live/` prefix is added to the stream link.
 - `aliases`  for alias definitions for the same provider with different credentials
-- `staged` for side loading processed playlists. 
-Instead of fully configuring everything yourself, you can “stage” a source — meaning you provide a ready-made playlist
-from somewhere else. The system will only use that staged playlist when updating.
-For actual streaming and fetching details, it will still use the main provider’s settings.
-In plain words: If you don’t want to deal with Tuliprox mapping, or you already have a playlist in another online tool,
-you can plug that playlist in as a staged input. It won’t replace the main provider — it’s just there to update the list.
-All streaming and proxying and info still come from the original provider configuration.
+- `staged` for side loading processed playlists.
+  If you already have a provider configured but want to load the playlist from a different source — for example, 
+from another playlist editor — you can specify a staged DTO.
+
+Instead of fully configuring everything yourself, you can “stage” a source, meaning you provide a 
+ready-made playlist from somewhere else. During the update process, the playlist will be read from this staged source.
+
+However, regular playlist queries (such as streaming or fetching details) will still go through the 
+main provider. The staged source is only used temporarily — just for updating the playlist.
+
+In plain words: if you already have a playlist in another online tool or don’t want to deal with Tuliprox mapping,
+you can plug that playlist in as a staged input. It won’t replace your main provider — it’s only there to update 
+the list. All streaming, proxying, and metadata still come from the provider’s configuration.
 
 `staged` has the following properties:
 - `type` is optional, default is `m3u`. Valid values are `m3u` and `xtream`

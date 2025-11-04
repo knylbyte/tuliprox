@@ -1,88 +1,23 @@
-use std::borrow::Cow;
-use crate::api::model::{ActiveProviderManager, ReleaseTask};
-use crate::api::model::SharedStreamManager;
+use crate::api::model::{EventManager, EventMessage};
+use crate::auth::Fingerprint;
 use crate::model::Config;
 use crate::model::ProxyUserCredentials;
+use crate::utils::GeoIp;
+use arc_swap::ArcSwapOption;
 use jsonwebtoken::get_current_timestamp;
-use log::{debug, error, info};
+use log::{debug, info};
 use shared::model::{ActiveUserConnectionChange, StreamChannel, StreamInfo, UserConnectionPermission};
 use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info, strip_port};
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use arc_swap::ArcSwapOption;
-use tokio::runtime::Handle;
-use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use tokio::sync::RwLock;
-use crate::auth::Fingerprint;
-use crate::utils::GeoIp;
 
 const USER_GC_TTL: u64 = 900;  // 15 Min
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
 const USER_SESSION_LIMIT: usize = 50;
-
-type ActiveUserConnectionChangeSender = UnboundedSender<ActiveUserConnectionChange>;
-pub type ActiveUserConnectionChangeReceiver = UnboundedReceiver<ActiveUserConnectionChange>;
-
-macro_rules! active_user_manager_shared_impl {
-    () => {
-       #[inline]
-        async fn get_active_connections(user: &Arc<RwLock<HashMap<String, UserConnectionData>>>) -> usize {
-            user.read().await.iter().filter(|(_, c)| c.connections > 0).map(|(_, c)| c.connections as usize).sum()
-        }
-
-        async fn log_active_user(&self) {
-          let user = Arc::clone(&self.user);
-          let is_log_user_enabled = self.is_log_user_enabled();
-          let user_connection_count = Self::get_active_connections(&user).await;
-          let user_count = user.read().await.iter().filter(|(_, c)| c.connections > 0).count();
-          if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Connections(user_count, user_connection_count)) {
-             error!("Failed to send active user connection change: user-count: {user_count}, user-connection-count: {user_connection_count} {err:?}");
-          }
-          if is_log_user_enabled {
-              info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
-          }
-        }
-
-        pub async fn remove_connection(&self, addr: &str) {
-             let username_opt = {
-                self.user_by_addr.write().await.remove(addr)
-            };
-
-            if let Some(username) = username_opt.as_ref() {
-                 {
-                    let mut user = self.user.write().await;
-                    if let Some(connection_data) = user.get_mut(username) {
-                        if connection_data.connections > 0 {
-                            connection_data.connections -= 1;
-                        }
-
-                        if connection_data.connections < connection_data.max_connections {
-                            connection_data.granted_grace = false;
-                            connection_data.grace_ts = 0;
-                        }
-                        connection_data.streams.retain(|c| c.addr != addr);
-                    }
-                }
-            }
-
-            self.shared_stream_manager.release_connection(addr, true).await;
-            self.provider_manager.release_connection(addr).await;
-
-            if let Err(e) = self.close_socket_signal_tx.send(addr.to_string()) {
-                 debug!("No active receivers for close signal ({addr}): {e:?}");
-            }
-
-            if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Disconnected(addr.to_string())) {
-                 error!("Failed to send active user connection change: {err:?}");
-            }
-
-            if username_opt.is_some() {
-                self.log_active_user().await;
-            }
-        }
-    };
-}
 
 fn get_grace_options(config: &Config) -> (u64, u64) {
     let (grace_period_millis, grace_period_timeout_secs) = config.reverse_proxy.as_ref()
@@ -91,67 +26,13 @@ fn get_grace_options(config: &Config) -> (u64, u64) {
     (grace_period_millis, grace_period_timeout_secs)
 }
 
-#[derive(Clone)]
-pub struct ConnectionGuardUserManager {
-    log_active_user: bool,
-    user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
-    user_by_addr: Arc<RwLock<HashMap<String, String>>>,
-    shared_stream_manager: Arc<SharedStreamManager>,
-    provider_manager: Arc<ActiveProviderManager>,
-    connection_change_tx: ActiveUserConnectionChangeSender,
-    close_socket_signal_tx: tokio::sync::broadcast::Sender<String>,
-}
-
-impl ConnectionGuardUserManager {
-    active_user_manager_shared_impl!();
-    fn is_log_user_enabled(&self) -> bool {
-        self.log_active_user
-    }
-}
-
-pub struct UserConnectionGuard {
-    manager: Arc<ConnectionGuardUserManager>,
-    // username: String,
-    addr: String,
-    release_tx: UnboundedSender<ReleaseTask>,
-}
-
-impl UserConnectionGuard {
-    pub fn new(manager: Arc<ConnectionGuardUserManager>, addr: &str, release_tx: UnboundedSender<ReleaseTask>) -> Self {
-        Self {
-            manager,
-            addr: addr.to_string(),
-            release_tx,
-        }
-    }
-}
-
-impl Drop for UserConnectionGuard {
-    fn drop(&mut self) {
-        let manager = self.manager.clone();
-        let addr = self.addr.clone();
-        if let Err(_err) = self.release_tx.send(ReleaseTask::UserConnection(manager, addr)) {
-            if let Ok(handle) = Handle::try_current() {
-                let manager = self.manager.clone();
-                let addr = self.addr.clone();
-                handle.spawn(async move {
-                    manager.remove_connection(&addr).await;
-                });
-            } else {
-                // No runtime
-                error!("💥💥💥 Dropping UserConnectionGuard without async runtime — User Connection not freed");
-            }
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct UserSession {
     pub token: String,
     pub virtual_id: u32,
     pub provider: String,
     pub stream_url: String,
-    pub addr: String,
+    pub addr: SocketAddr,
     pub ts: u64,
     pub permission: UserConnectionPermission,
 }
@@ -197,40 +78,74 @@ pub struct ActiveUserManager {
     grace_period_timeout_secs: AtomicU64,
     log_active_user: AtomicBool,
     user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
-    user_by_addr: Arc<RwLock<HashMap<String, String>>>,
+    user_by_addr: Arc<RwLock<HashMap<SocketAddr, String>>>,
     gc_ts: Option<AtomicU64>,
-    shared_stream_manager: Arc<SharedStreamManager>,
-    provider_manager: Arc<ActiveProviderManager>,
+    event_manager: Arc<EventManager>,
     geo_ip: Arc<ArcSwapOption<GeoIp>>,
-    close_socket_signal_tx: tokio::sync::broadcast::Sender<String>,
-    connection_change_tx: ActiveUserConnectionChangeSender,
+
 }
 
 impl ActiveUserManager {
-    pub fn new(config: &Config, shared_stream_manager: &Arc<SharedStreamManager>,
-               provider_manager: &Arc<ActiveProviderManager>,
+    pub fn new(config: &Config,
                geoip: &Arc<ArcSwapOption<GeoIp>>,
-               connection_change_tx: ActiveUserConnectionChangeSender) -> Arc<Self> {
+               event_manager: &Arc<EventManager>,) -> Self {
         let log_active_user: bool = config.log.as_ref().is_some_and(|l| l.log_active_user);
         let (grace_period_millis, grace_period_timeout_secs) = get_grace_options(config);
-        let (close_socket_signal_tx, _) = tokio::sync::broadcast::channel(256);
 
-        Arc::new(Self {
+        Self {
             grace_period_millis: AtomicU64::new(grace_period_millis),
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
             log_active_user: AtomicBool::new(log_active_user),
             user: Arc::new(RwLock::new(HashMap::new())),
             user_by_addr: Arc::new(RwLock::new(HashMap::new())),
             gc_ts: Some(AtomicU64::new(current_time_secs())),
-            close_socket_signal_tx,
-            shared_stream_manager: Arc::clone(shared_stream_manager),
-            provider_manager: Arc::clone(provider_manager),
             geo_ip: Arc::clone(geoip),
-            connection_change_tx,
-        })
+            event_manager: Arc::clone(event_manager),
+        }
     }
 
-    active_user_manager_shared_impl!();
+    #[inline]
+    async fn get_active_connections(user: &Arc<RwLock<HashMap<String, UserConnectionData>>>) -> usize {
+        user.read().await.iter().filter(|(_, c)| c.connections > 0).map(|(_, c)| c.connections as usize).sum()
+    }
+
+    async fn log_active_user(&self) {
+        let user = Arc::clone(&self.user);
+        let is_log_user_enabled = self.is_log_user_enabled();
+        let user_connection_count = Self::get_active_connections(&user).await;
+        let user_count = user.read().await.iter().filter(|(_, c)| c.connections > 0).count();
+        self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Connections(user_count, user_connection_count)));
+        if is_log_user_enabled {
+            info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
+        }
+    }
+
+    pub async fn release_connection(&self, addr: &SocketAddr) {
+        let username_opt = {
+            self.user_by_addr.write().await.remove(addr)
+        };
+
+        if let Some(username) = username_opt.as_ref() {
+            {
+                let mut user = self.user.write().await;
+                if let Some(connection_data) = user.get_mut(username) {
+                    if connection_data.connections > 0 {
+                        connection_data.connections -= 1;
+                    }
+
+                    if connection_data.connections < connection_data.max_connections {
+                        connection_data.granted_grace = false;
+                        connection_data.grace_ts = 0;
+                    }
+                    connection_data.streams.retain(|c| c.addr != *addr);
+                }
+            }
+        }
+
+        if username_opt.is_some() {
+            self.log_active_user().await;
+        }
+    }
 
     pub fn update_config(&self, config: &Config) {
         let log_active_user = config.log.as_ref().is_some_and(|l| l.log_active_user);
@@ -238,18 +153,6 @@ impl ActiveUserManager {
         self.grace_period_millis.store(grace_period_millis, Ordering::Relaxed);
         self.grace_period_timeout_secs.store(grace_period_timeout_secs, Ordering::Relaxed);
         self.log_active_user.store(log_active_user, Ordering::Relaxed);
-    }
-
-    fn clone_inner(&self) -> ConnectionGuardUserManager {
-        ConnectionGuardUserManager {
-            log_active_user: self.log_active_user.load(Ordering::Relaxed),
-            user: Arc::clone(&self.user),
-            user_by_addr: Arc::clone(&self.user_by_addr),
-            shared_stream_manager: Arc::clone(&self.shared_stream_manager),
-            provider_manager: Arc::clone(&self.provider_manager),
-            connection_change_tx: self.connection_change_tx.clone(),
-            close_socket_signal_tx:  self.close_socket_signal_tx.clone(),
-        }
     }
 
     pub async fn user_connections(&self, username: &str) -> u32 {
@@ -318,8 +221,7 @@ impl ActiveUserManager {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn add_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
-                                provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>,
-                                release_tx: UnboundedSender<ReleaseTask>) -> UserConnectionGuard {
+                                provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> StreamInfo {
         let country = {
             let geoip = self.geo_ip.load();
             if let Some(geoip_db) = (*geoip).as_ref() {
@@ -353,29 +255,26 @@ impl ActiveUserManager {
 
         {
             let mut user_by_addr = self.user_by_addr.write().await;
-            user_by_addr.insert(fingerprint.addr.clone(), username.to_string());
+            user_by_addr.insert(fingerprint.addr, username.to_string());
         }
 
-        if let Err(err) = self.connection_change_tx.send(ActiveUserConnectionChange::Connected(stream_info)) {
-            error!("Failed to send connection change: {err}");
-        }
         self.log_active_user().await;
 
-        UserConnectionGuard::new(Arc::new(self.clone_inner()), &fingerprint.addr, release_tx)
+        stream_info
     }
 
     fn is_log_user_enabled(&self) -> bool {
         self.log_active_user.load(Ordering::Relaxed)
     }
 
-    fn new_user_session(session_token: &str, virtual_id: u32, provider: &str, stream_url: &str, addr: &str,
+    fn new_user_session(session_token: &str, virtual_id: u32, provider: &str, stream_url: &str, addr: &SocketAddr,
                         connection_permission: UserConnectionPermission) -> UserSession {
         UserSession {
             token: session_token.to_string(),
             virtual_id,
             provider: provider.to_string(),
             stream_url: stream_url.to_string(),
-            addr: addr.to_string(),
+            addr: *addr,
             ts: current_time_secs(),
             permission: connection_permission,
         }
@@ -383,7 +282,7 @@ impl ActiveUserManager {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn create_user_session(&self, user: &ProxyUserCredentials, session_token: &str, virtual_id: u32,
-                                     provider: &str, stream_url: &str, addr: &str,
+                                     provider: &str, stream_url: &str, addr: &SocketAddr,
                                      connection_permission: UserConnectionPermission) -> String {
         self.gc();
 
@@ -421,23 +320,29 @@ impl ActiveUserManager {
         token
     }
 
-    pub async fn update_session_addr(&self, username: &str, token: &str, addr: &str) {
-        let mut user_map = self.user.write().await;
-        user_map.get_mut(username).and_then(|connection_data| {
-            connection_data.sessions.iter_mut().find_map(|session| {
-                if session.token == token {
-                    let old_addr = session.addr.clone();
-                    addr.clone_into(&mut session.addr);
-                    Some(old_addr)
-                } else {
-                    None
+    pub async fn update_session_addr(&self, username: &str, token: &str, addr: &SocketAddr) {
+        let mut old_addr = None;
+        {
+            let mut user_map = self.user.write().await;
+            if let Some(connection_data) = user_map.get_mut(username) {
+                if let Some(session) = connection_data.sessions.iter_mut().find(|session| session.token == token) {
+                    let previous_addr = session.addr;
+                    session.addr = *addr;
+                    for stream in &mut connection_data.streams {
+                        if stream.addr == previous_addr {
+                            stream.addr = *addr;
+                        }
+                    }
+                    old_addr = Some(previous_addr);
                 }
-            })
-        });
-    }
+            }
+        }
 
-    pub fn get_close_connection_channel(&self) -> tokio::sync::broadcast::Receiver<String> {
-        self.close_socket_signal_tx.subscribe()
+        if let Some(previous_addr) = old_addr {
+            let mut user_by_addr = self.user_by_addr.write().await;
+            user_by_addr.remove(&previous_addr);
+            user_by_addr.insert(*addr, username.to_string());
+        }
     }
 
     pub async fn get_and_update_user_session(&self, username: &str, token: &str) -> Option<UserSession> {
@@ -459,7 +364,7 @@ impl ActiveUserManager {
                 connection_data.sessions[index].ts = current_time_secs();
                 // Only re-evaluate permission for limited users during grace
                 if connection_data.max_connections > 0
-                   && connection_data.sessions[index].permission == UserConnectionPermission::GracePeriod
+                    && connection_data.sessions[index].permission == UserConnectionPermission::GracePeriod
                 {
                     let new_permission = self.check_connection_permission(username, connection_data);
                     connection_data.sessions[index].permission = new_permission;
