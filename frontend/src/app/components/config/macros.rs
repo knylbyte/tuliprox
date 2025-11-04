@@ -307,7 +307,7 @@ macro_rules! edit_field_number_u64 {
                 <$crate::app::components::number_input::NumberInput
                     label={$label}
                     name={stringify!($field)}
-                    value={instance.form.$field as i64}
+                    value={instance.form.$field.min(i64::MAX as u64) as i64}
                     on_change={Callback::from(move |value: Option<i64>| {
                         match value {
                           Some(value) => match u64::try_from(value) {
@@ -335,9 +335,9 @@ macro_rules! edit_field_number_option {
                     value={instance.form.$field.map(|v| v as i64)}
                     on_change={Callback::from(move |value: Option<i64>| {
                         match value {
-                            Some(value) => {
-                                let val = u32::try_from(value).ok();
-                                instance.dispatch($action(val))
+                            Some(value) => match u32::try_from(value) {
+                                Ok(val) => instance.dispatch($action(Some(val))),
+                                Err(_) => return,
                             },
                             None => instance.dispatch($action(None)),
                         }
