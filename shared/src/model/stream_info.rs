@@ -72,7 +72,7 @@ impl StreamInfo {
             username: username.to_string(),
             channel: stream_channel,
             provider: provider.to_string(),
-            addr: addr.clone(),
+            addr: *addr,
             client_ip: client_ip.to_string(),
             user_agent,
             ts: current_time_secs(),

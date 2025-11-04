@@ -803,7 +803,7 @@ pub async fn stream_response(
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
         if let Some(value) =
-            shared_stream_response(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), req_headers).await
+            try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), req_headers).await
         {
             return value.into_response();
         }
@@ -831,7 +831,7 @@ pub async fn stream_response(
             .map(|(h, sc, response_url)| (h.clone(), *sc, response_url.clone()));
         let provider_name = stream_details.provider_name.clone();
 
-        let provider_guard = if share_stream {
+        let provider_handle = if share_stream {
             stream_details.provider_handle.take()
         } else {
             None
@@ -857,7 +857,7 @@ pub async fn stream_response(
                 &fingerprint.addr,
                 shared_headers,
                 stream_options.buffer_size,
-                provider_guard,
+                provider_handle,
             )
             .await
             {
@@ -946,7 +946,7 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
         .unwrap_or_default()
 }
 
-async fn shared_stream_response(
+async fn try_shared_stream_response_if_any(
     app_state: &AppState,
     stream_url: &str,
     fingerprint: &Fingerprint,

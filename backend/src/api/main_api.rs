@@ -11,7 +11,7 @@ use crate::api::endpoints::xmltv_api::xmltv_api_register;
 use crate::api::endpoints::xtream_api::xtream_api_register;
 use crate::api::hdhomerun_proprietary::spawn_proprietary_tasks;
 use crate::api::hdhomerun_ssdp::spawn_ssdp_discover_task;
-use crate::api::model::{create_cache, create_http_client, ActiveProviderManager, ActiveUserManager, AppState, CancelTokens, DownloadQueue, EventManager, HdHomerunAppState, PlaylistStorageState, SharedStreamManager};
+use crate::api::model::{create_cache, create_http_client, ActiveProviderManager, ActiveUserManager, AppState, CancelTokens, ConnectionManager, DownloadQueue, EventManager, HdHomerunAppState, PlaylistStorageState, SharedStreamManager};
 use crate::api::scheduler::exec_scheduler;
 use crate::api::serve::serve;
 use crate::model::{AppConfig, Config, Healthcheck, ProcessTargets, RateLimitConfig};
@@ -87,17 +87,14 @@ fn create_shared_data(
     let (provider_change_tx, provider_change_rx) = tokio::sync::mpsc::unbounded_channel();
     let active_provider = Arc::new(ActiveProviderManager::new(app_config, provider_change_tx));
     let shared_stream_manager = Arc::new(SharedStreamManager::new(Arc::clone(&active_provider)));
-    let (active_user_change_tx, active_user_change_rx) = tokio::sync::mpsc::unbounded_channel();
-    let active_users = ActiveUserManager::new(
-        &config,
-        &shared_stream_manager,
-        &active_provider,
-        &geoip,
-        active_user_change_tx,
-    );
-    let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx, ));
-    let client = create_http_client(app_config);
+    let active_users = Arc::new(ActiveUserManager::new(&config,&geoip));
 
+    let event_manager = Arc::new(EventManager::new(provider_change_rx, ));
+
+    let connection_manager = Arc::new(ConnectionManager::new(&active_users, &active_provider, &shared_stream_manager, &event_manager));
+    active_users.set_connection_manager(&connection_manager);
+
+    let client = create_http_client(app_config);
 
     AppState {
         forced_targets: Arc::new(ArcSwap::new(Arc::clone(forced_targets))),
@@ -108,6 +105,7 @@ fn create_shared_data(
         shared_stream_manager,
         active_users,
         active_provider,
+        connection_manager,
         event_manager,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
         playlists: Arc::new(PlaylistStorageState::new()),
@@ -209,8 +207,7 @@ pub(in crate::api) fn start_hdhomerun(
                         device.name
                     ));
                     let c_token = cancel_token.clone();
-                    let active_user_manager = Arc::clone(&app_data.active_users);
-                    let active_provider_manager = Arc::clone(&app_data.active_provider);
+                    let connection_manager = Arc::clone(&app_data.connection_manager);
                     tokio::spawn(async move {
                         let router = axum::Router::<Arc<HdHomerunAppState>>::new()
                             .layer(create_cors_layer())
@@ -228,7 +225,7 @@ pub(in crate::api) fn start_hdhomerun(
                             .await
                         {
                             Ok(listener) => {
-                                serve(listener, router, Some(c_token), &active_user_manager, &active_provider_manager).await;
+                                serve(listener, router, Some(c_token), &connection_manager).await;
                             }
                             Err(err) => error!("{err}"),
                         }
@@ -364,7 +361,7 @@ pub async fn start_server(
 
     let router: axum::Router<()> = router.with_state(shared_data.clone());
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
-    serve(listener, router, None, &shared_data.active_users, &shared_data.active_provider).await;
+    serve(listener, router, None, &shared_data.connection_manager).await;
     Ok(())
 }
 

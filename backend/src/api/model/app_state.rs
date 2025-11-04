@@ -1,5 +1,5 @@
 use crate::api::config_watch::exec_config_watch;
-use crate::api::model::{ActiveProviderManager, EventManager, PlaylistStorage, PlaylistStorageState, SharedStreamManager};
+use crate::api::model::{ActiveProviderManager, ConnectionManager, EventManager, PlaylistStorage, PlaylistStorageState, SharedStreamManager};
 use crate::api::model::{ActiveUserManager, DownloadQueue};
 use crate::api::scheduler::exec_scheduler;
 use crate::model::{
@@ -256,6 +256,7 @@ pub struct AppState {
     pub shared_stream_manager: Arc<SharedStreamManager>,
     pub active_users: Arc<ActiveUserManager>,
     pub active_provider: Arc<ActiveProviderManager>,
+    pub connection_manager: Arc<ConnectionManager>,
     pub event_manager: Arc<EventManager>,
     pub cancel_tokens: Arc<ArcSwap<CancelTokens>>,
     pub playlists: Arc<PlaylistStorageState>,

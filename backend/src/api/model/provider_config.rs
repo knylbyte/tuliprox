@@ -45,7 +45,6 @@ pub struct ProviderConfig {
     max_connections: usize,
     priority: i16,
     connection: RwLock<ProviderConfigConnection>,
-    //connection_change_tx: ProviderConnectionChangeSender,
     on_connection_change: ProviderConnectionChangeCallback,
 }
 

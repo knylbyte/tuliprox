@@ -3,7 +3,6 @@ use crate::app::components::select::Select;
 use crate::app::components::{BlockInstance, Card, DropDownOption, DropDownSelection, EditMode, Panel, RadioButtonGroup, SourceEditorContext, TextButton};
 use crate::{config_field_child, edit_field_bool, edit_field_number_i16, edit_field_number_u16, edit_field_text, edit_field_text_option, generate_form_reducer};
 use shared::model::{ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, StagedInputDto};
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::Rc;
 use yew::{classes, function_component, html, use_context, use_effect_with, use_memo, use_reducer, use_state, Callback, Html, Properties, UseReducerHandle};
@@ -78,7 +77,7 @@ generate_form_reducer!(
         Password => password: Option<String>,
         Method => method: InputFetchMethod,
         InputType => input_type: InputType,
-        Headers => headers: HashMap<String, String>,
+        // Headers => headers: HashMap<String, String>,
     }
 );
 
@@ -87,8 +86,8 @@ generate_form_reducer!(
     action_name: ConfigInputFormAction,
     fields {
     Name => name: String,
-    InputType => input_type: InputType,
-    Headers => headers: HashMap<String, String>,
+    //InputType => input_type: InputType,
+    // Headers => headers: HashMap<String, String>,
     Url => url: String,
     Username => username: Option<String>,
     Password => password: Option<String>,
@@ -97,7 +96,6 @@ generate_form_reducer!(
     Priority => priority: i16,
     MaxConnections => max_connections: u16,
     Method => method: InputFetchMethod,
-    Staged => staged: Option<StagedInputDto>,
     }
 );
 

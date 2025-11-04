@@ -48,11 +48,11 @@ impl ActiveClientStream {
         let provider_name = stream_details.provider_name.as_ref().map_or_else(String::new, ToString::to_string);
 
         let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
-        app_state.active_users.add_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent).await;
+        app_state.connection_manager.add_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent).await;
         let cfg = &app_state.app_config;
         let waker = Some(Arc::new(AtomicWaker::new()));
         let waker_clone = waker.clone();
-        let grace_stop_flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, &fingerprint, waker_clone.clone());
+        let grace_stop_flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, fingerprint, waker_clone.clone());
         let custom_response = cfg.custom_stream_response.load();
         let custom_video = custom_response.as_ref()
             .map_or((None, None), |c|
@@ -122,7 +122,7 @@ impl ActiveClientStream {
             let stream_strategy_flag_copy = Arc::clone(&stream_strategy_flag);
             let grace_period_millis = stream_details.grace_period_millis;
 
-            let address = fingerprint.addr.clone();
+            let address = fingerprint.addr;
             let user_manager = Arc::clone(&active_users);
             let provider_manager = Arc::clone(&active_provider);
             let share_manager = Arc::clone(&shared_stream_manager);

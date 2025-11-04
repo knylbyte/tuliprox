@@ -1,6 +1,5 @@
 use log::{info, trace};
 use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState};
-use crate::api::model::{ActiveUserConnectionChangeReceiver};
 use crate::api::model::{ProviderConnectionChangeReceiver};
 
 #[derive(Clone, PartialEq)]
@@ -20,8 +19,7 @@ pub struct EventManager {
 }
 
 impl EventManager {
-    pub fn new(mut active_user_change_rx: ActiveUserConnectionChangeReceiver,
-               mut provider_change_rx: ProviderConnectionChangeReceiver,
+    pub fn new(mut provider_change_rx: ProviderConnectionChangeReceiver,
     ) -> Self {
         let (channel_tx, _channel_rx) = tokio::sync::broadcast::channel(10);
 
@@ -29,11 +27,6 @@ impl EventManager {
         tokio::spawn(async move {
             loop {
                tokio::select! {
-                    Some(event) = active_user_change_rx.recv() => {
-                       if let Err(e) = channel_tx_clone.send(EventMessage::ActiveUser(event)) {
-                                    trace!("Failed to send active user change event: {e}");
-                       }
-                   }
 
                    Some((provider, connection_count)) = provider_change_rx.recv() => {
                         if let Err(e) = channel_tx_clone.send(EventMessage::ActiveProvider(provider, connection_count)) {
