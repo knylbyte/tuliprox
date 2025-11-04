@@ -143,7 +143,7 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
       - name: Step 2.6 - Prepare cache context directory
-        run: mkdir -p ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
+        run: mkdir -p ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }} ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }}
 
       - name: Step 2.7 - Prepare image artifact directory
         run: mkdir -p ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
@@ -154,7 +154,7 @@ jobs:
         with:
           path: |
             .ci-cache/${{ matrix.arch_tag }}
-          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ github.sha256 }}
+          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
@@ -171,6 +171,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Step 2.10 - Build images with docker buildx bake (debug)
+        id: build
         shell: bash
         env:
           GHCR_NS: ${{ env.GHCR_NS }}
@@ -179,7 +180,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           DOCKER_IMAGE_DEST: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
           CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
-          CACHE_DEST: /tmp/.ci-cache/${{ matrix.arch_tag }}
+          CACHE_DEST: ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }}
           BUILDKIT_PROGRESS: plain
         run: |
           set -euo pipefail
@@ -191,12 +192,16 @@ jobs:
           printf '  %s\n' "$targets"
           mapfile -t target_list <<<"$targets"
           
+          metadata_file="${DOCKER_IMAGE_DEST}/metadata.json"
+          echo "Using metadata file: ${metadata_file}"
+          
           echo "Running docker buildx bake with ${#target_list[@]} targets: ${target_list[*]}"
           docker buildx bake \
             --file docker/docker-bake.hcl \
             --allow=fs.write=${DOCKER_IMAGE_DEST} \
             --allow=fs.write=${CACHE_DEST} \
             --allow=fs.read=${CACHE_CONTEXT} \
+            --metadata-file "${metadata_file}" \
             --load \
             --progress plain \
             "${target_list[@]}"
@@ -205,19 +210,94 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          find /tmp/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
+          find ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
           ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
-          rm -rf /tmp/.ci-cache/${{ matrix.arch_tag }}
+          rm -rf ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }}
       
-      - name: print outputs
-        run: ls -al .ci-artifacts/${{ matrix.arch_tag }}
+      # - name: print outputs
+      #   run: ls -al .ci-artifacts/${{ matrix.arch_tag }}
 
-      - name: Step 2.13 - Upload image artifacts
+      # - name: Step 2.13 - Upload image artifacts
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: dev-images-${{ matrix.arch_tag }}
+      #     path: .ci-artifacts/${{ matrix.arch_tag }}
+      #     if-no-files-found: error
+      
+      - name: Step 2.12 - Export digests
+        id: export-digests
+        shell: bash
+        env:
+          GHCR_NS: ${{ env.GHCR_NS }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH_TAG: ${{ matrix.arch_tag }}
+          PLATFORM: ${{ matrix.platform }}
+          METADATA_FILE: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}/metadata.json
+        run: |
+          set -euo pipefail
+          if [[ ! -s "${METADATA_FILE}" ]]; then
+            echo "Metadata file missing or empty: ${METADATA_FILE}" >&2
+            ls -al "$(dirname "${METADATA_FILE}")" >&2 || true
+            exit 1
+          fi
+
+          digest_root="${{ runner.temp }}/digests"
+          mkdir -p "${digest_root}"
+
+          mapfile -t entries < <(
+            jq -r '
+              .target
+              | to_entries[]
+              | select(.value."containerimage.digest")
+              | [.key, .value."containerimage.digest"]
+              | @tsv
+            ' "${METADATA_FILE}"
+          )
+
+          if [[ ${#entries[@]} -eq 0 ]]; then
+            echo "No digest entries discovered in ${METADATA_FILE}" >&2
+            exit 1
+          fi
+
+          for entry in "${entries[@]}"; do
+            IFS=$'\t' read -r target digest <<<"${entry}"
+            case "${target}" in
+              alpine-final) variant="dev" ;;
+              scratch-final) variant="dev-slim" ;;
+              *)
+                echo "Skipping unhandled bake target: ${target}" >&2
+                continue
+                ;;
+            esac
+
+            variant_dir="${digest_root}/${variant}"
+            mkdir -p "${variant_dir}"
+
+            source_tag="${variant}-${VERSION}-${ARCH_TAG}"
+            ref="${GHCR_NS}:${source_tag}@${digest}"
+            cat <<EOF > "${variant_dir}/${ARCH_TAG}.json"
+            {
+              "variant": "${variant}",
+              "arch_tag": "${ARCH_TAG}",
+              "platform": "${PLATFORM}",
+              "version": "${VERSION}",
+              "source_tag": "${source_tag}",
+              "digest": "${digest}",
+              "ref": "${ref}"
+            }
+            EOF
+          done
+
+          echo "Digest metadata files:"
+          find "${digest_root}" -type f -print
+
+      - name: Step 2.13 - Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: dev-images-${{ matrix.arch_tag }}
-          path: .ci-artifacts/${{ matrix.arch_tag }}
+          name: digests-${{ matrix.arch_tag }}
+          path: ${{ runner.temp }}/digests
           if-no-files-found: error
+          retention-days: 1
 
       - name: Step 2.14 - Summary
         if: always()
@@ -260,100 +340,150 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Step 3.3 - Download image artifacts
+      # - name: Step 3.3 - Download image artifacts
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     pattern: dev-images-*
+      #     path: .ci-artifacts
+      #     merge-multiple: false
+
+      - name: Step 3.3 - Download digests
         uses: actions/download-artifact@v4
         with:
-          pattern: dev-images-*
-          path: .ci-artifacts
-          merge-multiple: false
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
 
-      - name: Step 3.4 - Create and publish manifests from ci-artifacts
+      - name: Step 3.4 - Create and publish manifests
         id: create
         shell: bash
+        env:
+          GHCR_NS: ${{ env.GHCR_NS }}
+          VERSION: ${{ needs.build.outputs.version }}
+          DIGEST_ROOT: ${{ runner.temp }}/digests
         run: |
           set -euo pipefail
-          VERSION="${{ needs.build.outputs.version }}"
 
-          if [[ -z "${VERSION:-}" ]]; then
-            echo "Unable to determine version for manifest creation." >&2
+          if [[ ! -d "${DIGEST_ROOT}" ]]; then
+            echo "Digest directory not found: ${DIGEST_ROOT}" >&2
             exit 1
           fi
 
-          ARCHES_INPUT='${{ needs.prebuilds.outputs.archs }}'
-
-
-
-          set -euo pipefail
           shopt -s nullglob
 
-          # --- helpers ---
-          # Map <arch> dir name to manifest annotate args
-          ann_args() {
-            case "$1" in
-              amd64) echo "--os linux --arch amd64" ;;
-              arm64) echo "--os linux --arch arm64 --variant v8" ;;
-              armv7|armhf) echo "--os linux --arch arm --variant v7" ;;
-              *) echo "--os linux --arch $1" ;;
-            esac
-          }
+          declare -A variant_refs=()
+          declare -A platform_seen=()
+          declare -A variant_versions=()
 
-          # Build & push a manifest from parallel arrays (refs[] with plats[])
-          make_manifest() {
-            local target="$1"; shift
-            local -n _refs="$1"; shift
-            local -n _plats="$1"; shift
+          digest_files=("${DIGEST_ROOT}"/*/*.json "${DIGEST_ROOT}"/*.json)
+          if [[ ${#digest_files[@]} -eq 0 ]]; then
+            echo "No digest metadata files located under ${DIGEST_ROOT}" >&2
+            exit 1
+          fi
 
-            ((${# _refs[@]})) || { echo "Skip $target (no entries)"; return 0; }
+          for file in "${digest_files[@]}"; do
+            [[ -f "${file}" ]] || continue
+            variant=$(jq -r '.variant // empty' "${file}")
+            ref=$(jq -r '.ref // empty' "${file}")
+            platform=$(jq -r '.platform // empty' "${file}")
+            file_version=$(jq -r '.version // empty' "${file}")
+            if [[ -z "${variant}" || -z "${ref}" ]]; then
+              echo "Skipping ${file} because variant or ref is missing" >&2
+              continue
+            fi
 
-            echo "Create manifest: $target"
-            docker manifest create "$target" "${_refs[@]}"
+            if [[ -n "${file_version}" ]]; then
+              variant_versions["${variant}"]="${file_version}"
+            fi
 
-            # Annotate each entry with platform
-            for i in "${!_refs[@]}"; do
-              local ref="${_refs[$i]}"
-              local plat="${_plats[$i]}"
-              # shellcheck disable=SC2046
-              docker manifest annotate "$target" "$ref" $(ann_args "$plat")
+            variant_refs["${variant}"]+="${ref} "
+            if [[ -n "${platform}" ]]; then
+              platform_seen["${platform}"]=1
+            fi
+          done
+
+          if [[ ${#variant_refs[@]} -eq 0 ]]; then
+            echo "No variant digests gathered from ${DIGEST_ROOT}" >&2
+            exit 1
+          fi
+
+          tags_output=()
+          digests_output=()
+
+          for variant in "${!variant_refs[@]}"; do
+            ref_string="${variant_refs[$variant]}"
+            read -r -a refs <<<"${ref_string}"
+            if [[ ${#refs[@]} -eq 0 ]]; then
+              echo "Variant ${variant} has no digest refs" >&2
+              exit 1
+            fi
+
+            version_to_use="${VERSION:-${variant_versions[${variant}]:-}}"
+
+            create_args=()
+            create_args+=(--tag "${GHCR_NS}:${variant}")
+            if [[ -n "${version_to_use}" ]]; then
+              create_args+=(--tag "${GHCR_NS}:${variant}-${version_to_use}")
+            fi
+
+            echo "Creating manifest for variant '${variant}' with refs:"
+            printf '  - %s\n' "${refs[@]}"
+
+            docker buildx imagetools create "${create_args[@]}" "${refs[@]}"
+
+            for tag in "${GHCR_NS}:${variant}"; do
+              tags_output+=("${tag#${GHCR_NS}:}")
+              manifest_digest=$(docker buildx imagetools inspect "${tag}" | awk '/^Digest: / { print $2; exit }' || true)
+              if [[ -n "${manifest_digest}" ]]; then
+                digests_output+=("${tag#${GHCR_NS}:} ${manifest_digest}")
+              fi
             done
 
-            echo "Push manifest: $target"
-            docker manifest push --purge "$target"
-          }
-
-          # --- collect scratch-final (dev-slim) ---
-          declare -a SLIM_REFS=()
-          declare -a SLIM_PLATS=()
-
-          for tarf in .ci-artifacts/*/scratch-final/*.docker; do
-            arch="$(basename "$(dirname "$(dirname "$tarf")")")"
-            echo "Load scratch-final ${arch} -> $tarf"
-            out="$(docker load --input "$tarf")"
-            ref="$(echo "$out" | awk -F': ' '/Loaded image:/ {print $3; exit}')"
-            [[ -n "${ref:-}" ]] || { echo "No tag found in $tarf"; exit 1; }
-            SLIM_REFS+=( "$ref" )
-            SLIM_PLATS+=( "$arch" )
+            if [[ -n "${version_to_use}" ]]; then
+              versioned_tag="${GHCR_NS}:${variant}-${version_to_use}"
+              tags_output+=("${versioned_tag#${GHCR_NS}:}")
+              manifest_digest=$(docker buildx imagetools inspect "${versioned_tag}" | awk '/^Digest: / { print $2; exit }' || true)
+              if [[ -n "${manifest_digest}" ]]; then
+                digests_output+=("${versioned_tag#${GHCR_NS}:} ${manifest_digest}")
+              fi
+            fi
           done
 
-          # --- collect alpine-final (dev) ---
-          declare -a NORM_REFS=()
-          declare -a NORM_PLATS=()
-
-          for tarf in .ci-artifacts/*/alpine-final/*.docker; do
-            arch="$(basename "$(dirname "$(dirname "$tarf")")")"
-            echo "Load alpine-final ${arch} -> $tarf"
-            out="$(docker load --input "$tarf")"
-            ref="$(echo "$out" | awk -F': ' '/Loaded image:/ {print $3; exit}')"
-            [[ -n "${ref:-}" ]] || { echo "No tag found in $tarf"; exit 1; }
-            NORM_REFS+=( "$ref" )
-            NORM_PLATS+=( "$arch" )
+          # Unique tags while preserving order
+          uniq_tags=()
+          declare -A seen_tags=()
+          for tag in "${tags_output[@]}"; do
+            if [[ -n "${tag}" && -z "${seen_tags[$tag]:-}" ]]; then
+              uniq_tags+=("${tag}")
+              seen_tags["${tag}"]=1
+            fi
           done
 
-          # --- push manifests (moving + versioned) ---------------------------------
-          make_manifest "${NS}:dev-slim"            SLIM_REFS SLIM_PLATS
-          make_manifest "${NS}:dev-slim-${VERSION}" SLIM_REFS SLIM_PLATS
+          uniq_digests=()
+          declare -A seen_digests=()
+          for entry in "${digests_output[@]}"; do
+            if [[ -n "${entry}" && -z "${seen_digests[$entry]:-}" ]]; then
+              uniq_digests+=("${entry}")
+              seen_digests["${entry}"]=1
+            fi
+          done
 
-          make_manifest "${NS}:dev"            NORM_REFS NORM_PLATS
-          make_manifest "${NS}:dev-${VERSION}" NORM_REFS NORM_PLATS
+          arches_output=()
+          for platform in "${!platform_seen[@]}"; do
+            arches_output+=("${platform}")
+          done
+
+          {
+            echo 'tags<<EOF'
+            printf '%s\n' "${uniq_tags[@]}"
+            echo 'EOF'
+            echo 'digests<<EOF'
+            printf '%s\n' "${uniq_digests[@]}"
+            echo 'EOF'
+            echo 'arches<<EOF'
+            printf '%s\n' "${arches_output[@]}"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Step 3.4 - Summary (manifests)
         if: always()
