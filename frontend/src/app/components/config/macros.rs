@@ -285,9 +285,9 @@ macro_rules! edit_field_number_i16 {
                     value={instance.form.$field as i64}
                     on_change={Callback::from(move |value: Option<i64>| {
                         match value {
-                            Some(value) => {
-                                let val = i16::try_from(value).unwrap_or(0);
-                                instance.dispatch($action(val))
+                            Some(value) => match i16::try_from(value) {
+                                Ok(val) => instance.dispatch($action(val)),
+                                Err(_) => return, // keep the existing value; optionally surface a validation error
                             },
                             None => instance.dispatch($action(0)),
                         }

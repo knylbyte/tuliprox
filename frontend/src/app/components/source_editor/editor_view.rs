@@ -168,14 +168,14 @@ pub fn SourceEditor() -> Html {
                 }
             }
 
-            // Snap pending line end to target port
-            if let Some(to_block) = (*blocks).iter().find(|b| b.id == to_id) {
-                let x = to_block.position.0;
-                let y = to_block.position.1 + BLOCK_MIDDLE_Y;
-                if let Some(((from_x, from_y), _)) = *pending_line {
-                    pending_line.set(Some(((from_x, from_y), (x, y))));
-                }
-            }
+            // // Snap pending line end to target port
+            // if let Some(to_block) = (*blocks).iter().find(|b| b.id == to_id) {
+            //     let x = to_block.position.0;
+            //     let y = to_block.position.1 + BLOCK_MIDDLE_Y;
+            //     if let Some(((from_x, from_y), _)) = *pending_line {
+            //         pending_line.set(Some(((from_x, from_y), (x, y))));
+            //     }
+            // }
 
             pending_connection.set(None);
             pending_line.set(None);
@@ -360,14 +360,11 @@ pub fn SourceEditor() -> Html {
     let form_changed = {
         let blocks = blocks.clone();
         Callback::<(BlockId, BlockInstance)>::from(move |(block_id, instance): (BlockId, BlockInstance)| {
-            if let Some(block) = (*blocks).iter().find(|b| b.id == block_id) {
-                let mut current_blocks = (*blocks).clone();
-                current_blocks.retain(|b| b.id != block_id);
-                let mut new_block = block.clone();
-                new_block.instance = instance;
-                current_blocks.push(new_block);
-                blocks.set(current_blocks);
-            }
+            let mut current_blocks = (*blocks).clone();
+            if let Some(block) = current_blocks.iter_mut().find(|b| b.id == block_id) {
+               block.instance = instance;
+           }
+           blocks.set(current_blocks);
         })
     };
 

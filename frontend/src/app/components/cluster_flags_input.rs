@@ -51,19 +51,14 @@ pub fn ClusterFlagsInput(props: &ClusterFlagsInputProps) -> Html {
         })
     };
 
-    let handle_live_click = {
-        let handle_flag_click= handle_flag_click.clone();
-        Callback::from(move |_| {handle_flag_click.emit(ClusterFlags::Live); })
-    };
-    let handle_vod_click = {
-        let handle_flag_click= handle_flag_click.clone();
-        Callback::from(move |_| {handle_flag_click.emit(ClusterFlags::Vod); })
+    let make_flag_handler = |flag: ClusterFlags| {
+        let handle_flag_click = handle_flag_click.clone();
+        Callback::from(move |_| handle_flag_click.emit(flag))
     };
 
-    let handle_series_click = {
-        let handle_flag_click= handle_flag_click.clone();
-        Callback::from(move |_| {handle_flag_click.emit(ClusterFlags::Series); })
-    };
+    let handle_live_click = make_flag_handler(ClusterFlags::Live);
+    let handle_vod_click = make_flag_handler(ClusterFlags::Vod);
+    let handle_series_click = make_flag_handler(ClusterFlags::Series);
 
     html! {
         <div class="tp__cluster-flags-input">

@@ -278,7 +278,7 @@ impl MultiProviderLineup {
     /// Attempts to acquire the next available provider from a specific priority group.
     ///
     /// # Parameters
-    /// - `priority_group`: Thep rovider group to search within.
+    /// - `priority_group`: The provider group to search within.
     ///
     /// # Returns
     /// - `ProviderAllocation`: A reference to the next available provider in the specified group.
@@ -298,7 +298,7 @@ impl MultiProviderLineup {
     /// match lineup.acquire_next_provider_from_group(priority_group) {
     ///    ProviderAllocation::Exhausted => println!("All providers exhausted"),
     ///    ProviderAllocation::Available(provider) =>  println!("Provider available {}", provider.name),
-    ///    ProviderAllocation::GracePeriodprovider) =>  println!("Provider with grace period {}", provider.name),
+    ///    ProviderAllocation::GracePeriod(provider) =>  println!("Provider with grace period {}", provider.name),
     /// }
     /// }
     /// ```
@@ -349,12 +349,11 @@ impl MultiProviderLineup {
                 let mut idx = start;
 
                 loop {
-                    if let Some(p) = pg.get(idx) {
-                        let result = p.get_next(grace, grace_period_timeout_secs).await;
-                        if result.is_some() {
-                            index.store((idx + 1) % provider_count, Ordering::Relaxed);
-                            return result;
-                        }
+                    let p = &pg[idx];
+                    let result = p.get_next(grace, grace_period_timeout_secs).await;
+                    if result.is_some() {
+                        index.store((idx + 1) % provider_count, Ordering::Relaxed);
+                        return result;
                     }
 
                     idx = (idx + 1) % provider_count;
@@ -393,7 +392,7 @@ impl MultiProviderLineup {
     /// match lineup.acquire() {
     ///    ProviderAllocation::Exhausted => println!("All providers exhausted"),
     ///    ProviderAllocation::Available(provider) =>  println!("Provider available {}", provider.name),
-    ///    ProviderAllocation::GracePeriodprovider) =>  println!("Provider with grace period {}", provider.name),
+    ///    ProviderAllocation::GracePeriod(provider) =>  println!("Provider with grace period {}", provider.name),
     /// }
     /// ```
     async fn acquire(&self, with_grace: bool, grace_period_timeout_secs: u64) -> ProviderAllocation {
@@ -658,37 +657,6 @@ impl ProviderLineupManager {
 
     gen_provider_search!(get_provider_config_by_name, name, &str);
 
-    //
-    // fn get_provider_config<'a>(name: &str, providers: &'a Vec<ProviderLineup>) -> Option<(&'a ProviderLineup, &'a ProviderConfigWrapper)> {
-    //     for lineup in providers {
-    //         match lineup {
-    //             ProviderLineup::Single(single) => {
-    //                 if single.provider.name == name {
-    //                     return Some((lineup, &single.provider));
-    //                 }
-    //             }
-    //             ProviderLineup::Multi(multi) => {
-    //                 for group in &multi.providers {
-    //                     match group {
-    //                         ProviderPriorityGroup::SingleProviderGroup(single) => {
-    //                             if single.name == name {
-    //                                 return Some((lineup, single));
-    //                             }
-    //                         }
-    //                         ProviderPriorityGroup::MultiProviderGroup(_, configs) => {
-    //                             for config in configs {
-    //                                 if config.name == name {
-    //                                     return Some((lineup, config));
-    //                                 }
-    //                             }
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     None
-    // }
 
     fn log_allocation(allocation: &ProviderAllocation) {
         if log_enabled!(log::Level::Debug) {
@@ -777,17 +745,6 @@ impl ProviderLineupManager {
             false
         }
     }
-
-    // gen_provider_search!(get_provider_config_by_id, id, u16);
-
-    // pub async fn get_provider_by_id(&self, provider_id: u16) -> Option<Arc<ProviderConfig>> {
-    //     let providers = self.providers.load();
-    //     if let Some((_, config_wrapper)) = Self::get_provider_config_by_id(provider_id, &providers) {
-    //         Some(config_wrapper.get_provider_config())
-    //     } else {
-    //         None
-    //     }
-    // }
 }
 
 

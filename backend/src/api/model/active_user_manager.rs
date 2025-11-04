@@ -321,19 +321,6 @@ impl ActiveUserManager {
     }
 
     pub async fn update_session_addr(&self, username: &str, token: &str, addr: &SocketAddr) {
-        // let mut user_map = self.user.write().await;
-        // user_map.get_mut(username).and_then(|connection_data| {
-        //     connection_data.sessions.iter_mut().find_map(|session| {
-        //         if session.token == token {
-        //             let old_addr = session.addr;
-        //             session.addr = *addr;
-        //             Some(old_addr)
-        //         } else {
-        //             None
-        //         }
-        //     })
-        // });
-
         let mut old_addr = None;
         {
             let mut user_map = self.user.write().await;

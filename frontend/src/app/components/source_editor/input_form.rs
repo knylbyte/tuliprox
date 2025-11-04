@@ -296,14 +296,20 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
         let block_id = props.block_id;
         Callback::from(move |_| {
             let mut input = input_form_state.data().clone();
+
             let options = input_options_state.data();
-            if !options.is_empty() {
-                input.options = Some(options.clone());
-            }
+            input.options = if options.is_empty() {
+                None
+            } else {
+                Some(options.clone())
+            };
+
             let staged_input = staged_input_state.data();
-            if !staged_input.is_empty() {
-                input.staged = Some(staged_input.clone());
-            }
+            input.staged = if staged_input.is_empty() {
+                None
+            } else {
+                Some(staged_input.clone())
+            };
 
             source_editor_ctx.on_form_change.emit((block_id, BlockInstance::Input(Rc::new(input))));
             source_editor_ctx.edit_mode.set(EditMode::Inactive);
