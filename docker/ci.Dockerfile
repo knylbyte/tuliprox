@@ -20,7 +20,7 @@ ARG BUILDPLATFORM_TAG=latest
 ARG ALPINE_VER=3.22.2
 ARG DEBUG_ALPINE_TAG=alpine
 ARG DEFAULT_TZ=UTC
-ARG SCCACHE_LOG=debug
+ARG SCCACHE_LOG=info
 ARG MOLD_ENABLED=false
 # ARG SCCACHE_GHA_ENABLED=off
 # ARG SCCACHE_GHA_CACHE_SIZE
@@ -79,7 +79,7 @@ RUN rustup target add "$(cat /rust-target)" || true
 
 RUN if [ "${MOLD_ENABLED}" = "true" ]; then \
       export RUSTFLAGS="${RUSTFLAGS} -C link-arg=-fuse-ld=mold"; \
-    fi;
+    fi
 
 FROM chef AS cache-import
 
@@ -122,7 +122,11 @@ FROM chef AS backend-planner
 COPY --from=cache-import  /.build-cache-import  /.build-cache-import
 
 WORKDIR /src
-COPY . .
+
+COPY Cargo.toml Cargo.lock ./
+COPY backend ./backend
+COPY frontend ./frontend
+COPY shared ./shared
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
@@ -149,7 +153,10 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json
 
-COPY . .
+COPY Cargo.toml Cargo.lock ./
+COPY backend ./backend
+COPY frontend ./frontend
+COPY shared ./shared
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
@@ -159,7 +166,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     cargo build --release --target "$(cat /rust-target)" --bin tuliprox
 
 # Print sccache stats after build
-RUN --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \    
+RUN --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     sccache -s
 
 # =============================================================================
@@ -221,7 +228,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     trunk build --release --config ./frontend/Trunk.toml --dist ./frontend/dist
 
 # Print sccache stats after build
-RUN --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \    
+RUN --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     sccache -s
 
 # -----------------------------------------------------------------
