@@ -142,10 +142,13 @@ jobs:
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.6 - Ensure cache context dir
-        run: mkdir -p .ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
+      - name: Step 2.6 - Prepare cache context directory
+        run: mkdir -p ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }} /tmp/.ci-cache/${{ matrix.arch_tag }}
 
-      - name: Step 2.7 - Load cache directories for Docker build
+      - name: Step 2.7 - Prepare image artifact directory
+        run: mkdir -p ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
+
+      - name: Step 2.8 - Load cache directories for Docker build
         uses: actions/cache@v4
         id: cache
         with:
@@ -155,10 +158,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
-      - name: test cache output
-        run: ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
-
-      - name: Step 2.8 - Resolve Bake targets
+      - name: Step 2.9 - Resolve Bake targets
         id: bake-targets
         shell: bash
         run: |
@@ -177,8 +177,9 @@ jobs:
           ARCH_TAG: ${{ matrix.arch_tag }}
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ steps.version.outputs.version }}
+          DOCKER_IMAGE_DEST: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
           CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
-          CACHE_OUTPUT: /tmp/.ci-cache/${{ matrix.arch_tag }}
+          CACHE_DEST: /tmp/.ci-cache/${{ matrix.arch_tag }}
           BUILDKIT_PROGRESS: plain
         run: |
           set -euo pipefail
@@ -193,7 +194,8 @@ jobs:
           echo "Running docker buildx bake with ${#target_list[@]} targets: ${target_list[*]}"
           docker buildx bake \
             --file docker/docker-bake.hcl \
-            --allow=fs.write=${CACHE_OUTPUT} \
+            --allow=fs.write=${DOCKER_IMAGE_DEST} \
+            --allow=fs.write=${CACHE_DEST} \
             --allow=fs.read=${CACHE_CONTEXT} \
             --load \
             --progress plain \
@@ -206,8 +208,18 @@ jobs:
           find /tmp/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
           ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           rm -rf /tmp/.ci-cache/${{ matrix.arch_tag }}
+      
+      - name: print outputs
+        run: ls -al .ci-artifacts/${{ matrix.arch_tag }}
 
-      - name: Step 2.12 - Summary
+      - name: Step 2.13 - Upload image artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-images-${{ matrix.arch_tag }}
+          path: .ci-artifacts/${{ matrix.arch_tag }}
+          if-no-files-found: error
+
+      - name: Step 2.14 - Summary
         if: always()
         shell: bash
         run: |
@@ -217,9 +229,9 @@ jobs:
             echo "### 🔖 Version"
             echo "- CHANGELOG version: **${{ steps.version.outputs.version }}**"
             echo ""
-            echo "### 🏷️ Published tags"
-            echo "- \`${{ env.GHCR_NS }}:dev-slim-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
-            echo "- \`${{ env.GHCR_NS }}:dev-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
+            echo "### 📦 Exported artifacts"
+            echo "- dev-slim-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }} (DOCKER image)"
+            echo "- dev-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }} (DOCKER image)"
             echo ""
             echo "### 🧷 Cache"
             echo "- cache-from: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}\`"
@@ -248,7 +260,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Step 3.3 - Create manifests
+      - name: Step 3.3 - Download image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dev-images-*
+          path: .ci-artifacts
+          merge-multiple: false
+
+      - name: Step 3.4 - Create and publish manifests from ci-artifacts
         id: create
         shell: bash
         run: |
@@ -262,80 +281,79 @@ jobs:
 
           ARCHES_INPUT='${{ needs.prebuilds.outputs.archs }}'
 
-          read -r -a POSSIBLE_ARCHES <<< "${ARCHES_INPUT:-}"
 
-          ARCHES=()
-          for arch in "${POSSIBLE_ARCHES[@]}"; do
-            arch="${arch// }"
-            [[ -n "$arch" ]] || continue
-            if docker buildx imagetools inspect "${GHCR_NS}:dev-${VERSION}-${arch}" >/dev/null 2>&1 \
-              || docker buildx imagetools inspect "${GHCR_NS}:dev-slim-${VERSION}-${arch}" >/dev/null 2>&1; then
-              ARCHES+=("$arch")
-            fi
+
+          set -euo pipefail
+          shopt -s nullglob
+
+          # --- helpers ---
+          # Map <arch> dir name to manifest annotate args
+          ann_args() {
+            case "$1" in
+              amd64) echo "--os linux --arch amd64" ;;
+              arm64) echo "--os linux --arch arm64 --variant v8" ;;
+              armv7|armhf) echo "--os linux --arch arm --variant v7" ;;
+              *) echo "--os linux --arch $1" ;;
+            esac
+          }
+
+          # Build & push a manifest from parallel arrays (refs[] with plats[])
+          make_manifest() {
+            local target="$1"; shift
+            local -n _refs="$1"; shift
+            local -n _plats="$1"; shift
+
+            ((${# _refs[@]})) || { echo "Skip $target (no entries)"; return 0; }
+
+            echo "Create manifest: $target"
+            docker manifest create "$target" "${_refs[@]}"
+
+            # Annotate each entry with platform
+            for i in "${!_refs[@]}"; do
+              local ref="${_refs[$i]}"
+              local plat="${_plats[$i]}"
+              # shellcheck disable=SC2046
+              docker manifest annotate "$target" "$ref" $(ann_args "$plat")
+            done
+
+            echo "Push manifest: $target"
+            docker manifest push --purge "$target"
+          }
+
+          # --- collect scratch-final (dev-slim) ---
+          declare -a SLIM_REFS=()
+          declare -a SLIM_PLATS=()
+
+          for tarf in .ci-artifacts/*/scratch-final/*.docker; do
+            arch="$(basename "$(dirname "$(dirname "$tarf")")")"
+            echo "Load scratch-final ${arch} -> $tarf"
+            out="$(docker load --input "$tarf")"
+            ref="$(echo "$out" | awk -F': ' '/Loaded image:/ {print $3; exit}')"
+            [[ -n "${ref:-}" ]] || { echo "No tag found in $tarf"; exit 1; }
+            SLIM_REFS+=( "$ref" )
+            SLIM_PLATS+=( "$arch" )
           done
 
-          if [[ ${#ARCHES[@]} -eq 0 ]]; then
-            echo "No architecture images detected. Cannot create manifests." >&2
-            exit 1
-          fi
+          # --- collect alpine-final (dev) ---
+          declare -a NORM_REFS=()
+          declare -a NORM_PLATS=()
 
-          declare -A MANIFEST_SOURCES=(
-            ["dev"]="dev"
-            ["dev-${VERSION}"]="dev-${VERSION}"
-            ["dev-slim"]="dev-slim"
-            ["dev-slim-${VERSION}"]="dev-slim-${VERSION}"
-          )
-
-          CREATED_TAGS=()
-          declare -A DIGESTS=()
-
-          for manifest_tag in "${!MANIFEST_SOURCES[@]}"; do
-            src_base="${MANIFEST_SOURCES[$manifest_tag]}"
-            src_refs=()
-            for arch in "${ARCHES[@]}"; do
-              candidate="${GHCR_NS}:${src_base}-${arch}"
-              if docker buildx imagetools inspect "$candidate" >/dev/null 2>&1; then
-                src_refs+=("$candidate")
-              else
-                echo "⚠️  Missing architecture image $candidate" >&2
-              fi
-            done
-
-            if [[ ${#src_refs[@]} -eq 0 ]]; then
-              echo "Skipping manifest ${GHCR_NS}:${manifest_tag} (no sources found)." >&2
-              continue
-            fi
-
-            echo "⛏️  Creating manifest ${GHCR_NS}:${manifest_tag}"
-            docker buildx imagetools create -t "${GHCR_NS}:${manifest_tag}" "${src_refs[@]}"
-            CREATED_TAGS+=("$manifest_tag")
-
-            if info="$(docker buildx imagetools inspect "${GHCR_NS}:${manifest_tag}" 2>/dev/null)"; then
-              digest="$(awk '/^Digest:/ {print $2; exit}' <<< "$info")"
-              DIGESTS["$manifest_tag"]="$digest"
-            else
-              DIGESTS["$manifest_tag"]=""
-            fi
+          for tarf in .ci-artifacts/*/alpine-final/*.docker; do
+            arch="$(basename "$(dirname "$(dirname "$tarf")")")"
+            echo "Load alpine-final ${arch} -> $tarf"
+            out="$(docker load --input "$tarf")"
+            ref="$(echo "$out" | awk -F': ' '/Loaded image:/ {print $3; exit}')"
+            [[ -n "${ref:-}" ]] || { echo "No tag found in $tarf"; exit 1; }
+            NORM_REFS+=( "$ref" )
+            NORM_PLATS+=( "$arch" )
           done
 
-          if [[ ${#CREATED_TAGS[@]} -eq 0 ]]; then
-            echo "No manifests were created." >&2
-            exit 1
-          fi
+          # --- push manifests (moving + versioned) ---------------------------------
+          make_manifest "${NS}:dev-slim"            SLIM_REFS SLIM_PLATS
+          make_manifest "${NS}:dev-slim-${VERSION}" SLIM_REFS SLIM_PLATS
 
-          {
-            echo 'tags<<EOF'
-            for tag in "${CREATED_TAGS[@]}"; do
-              printf '%s\n' "$tag"
-            done
-            echo 'EOF'
-            echo "arches=${ARCHES[*]}"
-            echo 'digests<<EOF'
-            for tag in "${CREATED_TAGS[@]}"; do
-              printf '%s %s\n' "$tag" "${DIGESTS[$tag]}"
-            done
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+          make_manifest "${NS}:dev"            NORM_REFS NORM_PLATS
+          make_manifest "${NS}:dev-${VERSION}" NORM_REFS NORM_PLATS
 
       - name: Step 3.4 - Summary (manifests)
         if: always()
