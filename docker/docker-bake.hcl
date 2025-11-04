@@ -18,8 +18,12 @@ variable "CACHE_CONTEXT" {
   default = "."
 }
 
-variable "CACHE_OUTPUT" {
+variable "CACHE_DEST" {
   default = "/tmp/cache-out"
+}
+
+variable "DOCKER_IMAGE_DEST" {
+  default = "/tmp/oci-artifacts"
 }
 
 variable "CARGO_HOME" {
@@ -67,7 +71,7 @@ target "cache-export" {
   ]
 
   output = [
-    "type=local,dest=${CACHE_OUTPUT}"
+    "type=local,dest=${CACHE_DEST}"
   ]
 }
 
@@ -93,7 +97,7 @@ target "scratch-final" {
   ]
 
   output = [
-    "type=image,push=false"
+    "type=docker,dest=${DOCKER_IMAGE_DEST}/scratch-final"
   ]
 }
 
@@ -119,6 +123,6 @@ target "alpine-final" {
   ]
 
   output = [
-    "type=image,push=false"
+    "type=docker,dest=${DOCKER_IMAGE_DEST}/alpine-final"
   ]
 }
