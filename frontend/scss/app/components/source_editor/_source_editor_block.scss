@@ -166,6 +166,19 @@ $port-size: 10px;
   }
 }
 
+@mixin brick-handle-gradient($bg-color, $border-color) {
+  background: repeating-linear-gradient(
+                  -55deg,
+                  $bg-color,
+                  $bg-color 10px,
+                  $border-color 10px,
+                  $border-color 20px
+  );
+  border-left: 1px solid $border-color;
+  border-top: 1px solid $border-color;
+  border-right: 1px solid $border-color;
+}
+
 .tp__source-editor__block {
   &-InputXtream,
   &-InputM3u {
@@ -175,16 +188,10 @@ $port-size: 10px;
     }
 
     .tp__source-editor__block-handle {
-      background: repeating-linear-gradient(
-                      -55deg,
+      @include brick-handle-gradient(
                       var(--brick-input-background-color),
-                      var(--brick-input-background-color) 10px,
-                      var(--brick-input-border-color) 10px,
-                      var(--brick-input-border-color) 20px
+                      var(--brick-input-border-color)
       );
-      border-left: 1px solid var(--brick-input-border-color);
-      border-top: 1px solid var(--brick-input-border-color);
-      border-right: 1px solid var(--brick-input-border-color);
     }
 
   }
@@ -196,16 +203,10 @@ $port-size: 10px;
     }
 
     .tp__source-editor__block-handle {
-      background: repeating-linear-gradient(
-                      -55deg,
+      @include brick-handle-gradient(
                       var(--brick-target-background-color),
-                      var(--brick-target-background-color) 10px,
-                      var(--brick-target-border-color) 10px,
-                      var(--brick-target-border-color) 20px
+                      var(--brick-target-border-color)
       );
-      border-left: 1px solid var(--brick-target-border-color);
-      border-top: 1px solid var(--brick-target-border-color);
-      border-right: 1px solid var(--brick-target-border-color);
     }
 
   }
@@ -217,16 +218,10 @@ $port-size: 10px;
     }
 
     .tp__source-editor__block-handle {
-      background: repeating-linear-gradient(
-                      -55deg,
+      @include brick-handle-gradient(
                       var(--brick-output-m3u-background-color),
-                      var(--brick-output-m3u-background-color) 10px,
-                      var(--brick-output-m3u-border-color) 10px,
-                      var(--brick-output-m3u-border-color) 20px
+                      var(--brick-output-m3u-border-color)
       );
-      border-left: 1px solid var(--brick-output-m3u-border-color);
-      border-top: 1px solid var(--brick-output-m3u-border-color);
-      border-right: 1px solid var(--brick-output-m3u-border-color);
     }
 
   }
@@ -238,16 +233,10 @@ $port-size: 10px;
     }
 
     .tp__source-editor__block-handle {
-      background: repeating-linear-gradient(
-                      -55deg,
+      @include brick-handle-gradient(
                       var(--brick-output-xtream-background-color),
-                      var(--brick-output-xtream-background-color) 10px,
-                      var(--brick-output-xtream-border-color) 10px,
-                      var(--brick-output-xtream-border-color) 20px
+                      var(--brick-output-xtream-border-color)
       );
-      border-left: 1px solid var(--brick-output-xtream-border-color);
-      border-top: 1px solid var(--brick-output-xtream-border-color);
-      border-right: 1px solid var(--brick-output-xtream-border-color);
     }
   }
 
@@ -258,16 +247,10 @@ $port-size: 10px;
     }
 
     .tp__source-editor__block-handle {
-      background: repeating-linear-gradient(
-                      -55deg,
+      @include brick-handle-gradient(
                       var(--brick-output-hdhomerun-background-color),
-                      var(--brick-output-hdhomerun-background-color) 10px,
-                      var(--brick-output-hdhomerun-border-color) 10px,
-                      var(--brick-output-hdhomerun-border-color) 20px
+                      var(--brick-output-hdhomerun-border-color)
       );
-      border-left: 1px solid var(--brick-output-hdhomerun-border-color);
-      border-top: 1px solid var(--brick-output-hdhomerun-border-color);
-      border-right: 1px solid var(--brick-output-hdhomerun-border-color);
     }
   }
 
@@ -278,16 +261,10 @@ $port-size: 10px;
     }
 
     .tp__source-editor__block-handle {
-      background: repeating-linear-gradient(
-                      -55deg,
+      @include brick-handle-gradient(
                       var(--brick-output-strm-background-color),
-                      var(--brick-output-strm-background-color) 10px,
-                      var(--brick-output-strm-border-color) 10px,
-                      var(--brick-output-strm-border-color) 20px
+                      var(--brick-output-strm-border-color)
       );
-      border-left: 1px solid var(--brick-output-strm-border-color);
-      border-top: 1px solid var(--brick-output-strm-border-color);
-      border-right: 1px solid var(--brick-output-strm-border-color);
     }
   }
 }

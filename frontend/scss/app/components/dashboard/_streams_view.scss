@@ -29,7 +29,18 @@
 .tp__streams-table {
 
   .tp__table__th {
-    $column-widths: 40px, 100px /*username*/, 120px /*stream_id*/, 80px /*type*/, 200px /*channel*/, 120px, 90px, 80px, 90px, 80px;
+    $column-widths:
+            40px,           /*index*/
+            100px,          /*username*/
+            120px,          /*stream_id*/
+            80px,           /*type*/
+            200px,          /*channel*/
+            120px,
+            90px,
+            80px,
+            90px,
+            80px;
+
     @for $i from 1 through length($column-widths) {
       &--#{$i} {
         @include size.fixed-width(nth($column-widths, $i));

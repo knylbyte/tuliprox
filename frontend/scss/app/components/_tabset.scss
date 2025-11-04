@@ -124,7 +124,6 @@
   border-radius: 2px 2px 0 0;
 }
 
-.tp__tab-button,
-.tp__tab-button.active::after {
+.tp__tab-button {
   transition: all 0.25s ease;
 }

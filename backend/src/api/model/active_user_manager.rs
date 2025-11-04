@@ -328,7 +328,7 @@ impl ActiveUserManager {
                 if let Some(session) = connection_data.sessions.iter_mut().find(|session| session.token == token) {
                     let previous_addr = session.addr;
                     session.addr = *addr;
-                    for stream in connection_data.streams.iter_mut() {
+                    for stream in &mut connection_data.streams {
                         if stream.addr == previous_addr {
                             stream.addr = *addr;
                         }

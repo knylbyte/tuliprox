@@ -110,7 +110,7 @@ pub fn VideoConfigView() -> Html {
                 html! {
                     <div class="tp__config-view__tags">
                       <ul>
-                        { for download_state.form.headers.iter().map(|(k,v)| html!{ <li>{"- "}{k}{": "} {v}</li> }) }
+                        { for download_state.form.headers.iter().map(|(k,v)| html!{ <li key={k.clone()}>{"- "}{k}{": "} {v}</li> }) }
                       </ul>
                     </div>
                 }

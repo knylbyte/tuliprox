@@ -337,7 +337,7 @@ impl MultiProviderLineup {
         ProviderAllocation::Exhausted
     }
 
-    // Used for redirect to cylce through provider
+    // Used for redirect to cyclce through provider
     async fn get_next_provider_from_group(priority_group: &ProviderPriorityGroup, grace: bool, grace_period_timeout_secs: u64) -> Option<Arc<ProviderConfig>> {
         match priority_group {
             ProviderPriorityGroup::SingleProviderGroup(p) => {
