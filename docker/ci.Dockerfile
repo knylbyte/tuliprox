@@ -164,8 +164,10 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
-    cargo build --release --target "$(cat /rust-target)" --bin tuliprox; \
-    mv ${CARGO_TARGET_DIR}/*/release/tuliprox ./target/$(cat /rust-target)/release/tuliprox
+    TARGET="$(cat /rust-target)" && \
+    cargo build --release --target "${TARGET}" --bin tuliprox && \
+    mkdir -p ./target/${TARGET}/release && \
+    mv ${CARGO_TARGET_DIR}/${TARGET}/release/tuliprox ./target/${TARGET}/release/tuliprox
 
 # Print sccache stats after build
 RUN --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
