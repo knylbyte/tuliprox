@@ -158,12 +158,14 @@ COPY backend ./backend
 COPY frontend ./frontend
 COPY shared ./shared
 
+# Build the actual backend binary
 RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
-    cargo build --release --target "$(cat /rust-target)" --bin tuliprox
+    cargo build --release --target "$(cat /rust-target)" --bin tuliprox; \
+    mv ${CARGO_TARGET_DIR}/*/release/tuliprox ./target/$(cat /rust-target)/release/tuliprox
 
 # Print sccache stats after build
 RUN --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
@@ -219,6 +221,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
 
 COPY . .
 
+# Build the actual frontend with Trunk
 RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
@@ -274,8 +277,8 @@ COPY --from=resources         /src/resources                  /opt/tuliprox/reso
 # In scratch we cannot create symlinks (no shell); duplicate to PATH location
 COPY --from=backend-builder   /src/target/*/release/tuliprox /usr/local/bin/tuliprox
 
-# Put runtime data under /opt/tuliprox/data (default landing dir)
-WORKDIR /opt/tuliprox/data
+# Put runtime data under /opt/tuliprox (default landing dir)
+WORKDIR /opt/tuliprox
 
 EXPOSE 8901
 ENTRYPOINT ["/opt/tuliprox/bin/tuliprox"]
