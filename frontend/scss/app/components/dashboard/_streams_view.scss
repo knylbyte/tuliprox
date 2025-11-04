@@ -39,7 +39,9 @@
             90px,
             80px,
             90px,
-            80px;
+            80px,
+            100px,
+            100px;
 
     @for $i from 1 through length($column-widths) {
       &--#{$i} {

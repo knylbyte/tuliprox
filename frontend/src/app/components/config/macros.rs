@@ -310,11 +310,11 @@ macro_rules! edit_field_number_u64 {
                     value={instance.form.$field as i64}
                     on_change={Callback::from(move |value: Option<i64>| {
                         match value {
-                            Some(value) => {
-                                 let val = u64::try_from(value).unwrap_or(0);
-                                instance.dispatch($action(val))
-                            },
-                            None => instance.dispatch($action(0)),
+                          Some(value) => match u64::try_from(value) {
+                            Ok(val) => instance.dispatch($action(val)),
+                            Err(_) => return,
+                          },
+                          None => instance.dispatch($action(0)),
                         }
                     })}
                 />
