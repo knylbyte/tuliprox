@@ -84,7 +84,7 @@
   --menu-text-active-color: var(--primary-color);
   --menu-item-active-background-color: rgba(45, 70, 120, 0.55);
   --icon-button-hover-color: #a8a8b3;
-  --card-background-color: rgba(18, 22, 33, 0.55);
+  --card-background-color: rgba(18, 22, 33, 0.9);
   --card-color: var(--modest-text-color);
   --sub-card-background-color: rgba(18, 22, 33, 0.8);
 
@@ -355,11 +355,14 @@
   --brick-output-strm-background-color: #e74c3c88;
   --brick-output-strm-shadow-color: #e74c3c80;
 
-  --brick-port-background-color: #486786;
-  --brick-port-valid-background-color: #2ecc71;
+  --brick-port-background-color: #587293;
+  --brick-port-border-color: #ffffff;
+  --brick-port-valid-background-color: #00ff00;
   --brick-port-invalid-background-color: #e74c3c;
   --source-editor-delete-color: #FF0000FF;
 
+  --source-editor-line-color: #ffffff;
+  --source-editor-pending-line-color: yellow;
 }
 
 
@@ -626,5 +629,8 @@ body[data-theme="bright"] {
   --floating-background-color: #979797;
   --floating-particle-gradient-color-1: rgba(0,0,0,0.3);
   --floating-particle-gradient-color-2: rgba(0,0,0,0);
+
+  --source-editor-line-color: #000000;
+  --source-editor-pending-line-color: yellow;
 
 }

@@ -1,5 +1,5 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::EpgConfigDto;
+use crate::model::{EpgConfigDto};
 use crate::utils::{default_as_true, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info, trim_last_slash};
 use crate::{check_input_credentials, check_input_connections, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use enum_iterator::Sequence;
@@ -169,6 +169,25 @@ impl Default for ConfigInputOptionsDto {
     }
 }
 
+impl ConfigInputOptionsDto {
+    pub fn is_empty(&self) -> bool {
+        !self.xtream_skip_live
+            && !self.xtream_skip_vod
+            && !self.xtream_skip_series
+            && self.xtream_live_stream_use_prefix
+            && !self.xtream_live_stream_without_extension
+    }
+
+    pub fn clean(&mut self) {
+        self.xtream_skip_live = false;
+        self.xtream_skip_vod = false;
+        self.xtream_skip_series = false;
+        self.xtream_live_stream_use_prefix = default_as_true();
+        self.xtream_live_stream_without_extension = false;
+
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StagedInputDto {
@@ -185,6 +204,26 @@ pub struct StagedInputDto {
     pub headers: HashMap<String, String>,
 }
 
+impl StagedInputDto {
+    pub fn is_empty(&self) -> bool {
+        self.url.trim().is_empty()
+            && self.username.as_ref().is_none_or(|u| u.trim().is_empty())
+            && self.password.as_ref().is_none_or(|u| u.trim().is_empty())
+            && self.method == InputFetchMethod::default()
+            && self.input_type == InputType::default()
+            && self.headers.is_empty()
+    }
+
+    pub fn clean(&mut self) {
+        self.url = String::new();
+        self.username = None;
+        self.password = None;
+        self.method = InputFetchMethod::default();
+        self.input_type = InputType::default();
+        self.headers.clear();
+
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]

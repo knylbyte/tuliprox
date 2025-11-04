@@ -4,7 +4,6 @@ use shared::model::ProxyConfigDto;
 use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::ConfigForm;
-use crate::app::components::config::macros::HasFormData;
 use crate::{
     config_field, config_field_optional, config_field_optional_hide,
     edit_field_text, edit_field_text_option, generate_form_reducer,

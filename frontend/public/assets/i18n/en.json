@@ -305,7 +305,19 @@
     "COUNTRY": "Country",
     "GEOIP": "Geo-IP",
     "UPDATE_GEOIP_DB": "Update Geo-IP db",
-    "SOURCE_EDITOR": "Sources"
+    "SOURCE_EDITOR": "Sources",
+    "SKIP_LIVE":  "Skip Live",
+    "SKIP_VOD":  "Skip VOD",
+    "SKIP_SERIES":  "Skip Series",
+    "ADD_WATCH": "Add Watch",
+    "ADD_MAPPING": "Add Mapping",
+    "SKIP_LIVE_DIRECT_SOURCE": "Skip Live Direct Source",
+    "SKIP_VOD_DIRECT_SOURCE": "Skip Vod Direct Source",
+    "SKIP_SERIES_DIRECT_SOURCE": "Skip Series Direct Source",
+    "RESOLVE_VOD": "Resolve Vod",
+    "RESOLVE_VOD_DELAY_SEC": "Resolve Vod Delay  (sec)",
+    "RESOLVE_SERIES": "Resolve Series",
+    "RESOLVE_SERIES_DELAY_SEC": "Resolve Series Delay (sec)"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"
@@ -420,7 +432,7 @@
     "BRICK_Target":  "Target",
     "BRICK_OutputM3u":  "M3u",
     "BRICK_OutputXtream":  "Xtream",
-    "BRICK_OutputHdhomerun":  "HDHR",
+    "BRICK_OutputHdHomeRun":  "HDHR",
     "BRICK_OutputStrm": "STRM"
   },
   "COUNTRY" : {

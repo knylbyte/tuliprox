@@ -17,6 +17,15 @@ pub struct ConfigTargetOptions {
     pub force_redirect: Option<ClusterFlags>,
 }
 
+impl ConfigTargetOptions {
+    pub fn is_empty(&self) -> bool {
+        !self.ignore_logo
+        && !self.share_live_streams
+        && !self.remove_duplicates
+        && (self.force_redirect.is_none() || self.force_redirect.is_some_and(|f| f.has_full_flags() || f.is_empty()))
+    }
+}
+
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -78,7 +87,7 @@ impl XtreamTargetOutputDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct M3uTargetOutputDto {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -102,7 +111,7 @@ impl M3uTargetOutputDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StrmTargetOutputDto {
     pub directory: String,
@@ -132,6 +141,16 @@ pub struct HdHomeRunTargetOutputDto {
     pub username: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub use_output: Option<TargetType>,
+}
+
+impl Default for HdHomeRunTargetOutputDto {
+    fn default() -> Self {
+        Self {
+            device: String::new(),
+            username: String::new(),
+            use_output: Some(TargetType::M3u),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]

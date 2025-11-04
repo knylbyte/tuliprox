@@ -1,15 +1,18 @@
 use std::fmt;
+use std::rc::Rc;
 use serde::{Deserialize, Serialize};
+use yew::{Callback, UseStateHandle};
+use shared::model::{ConfigInputDto, ConfigTargetDto, TargetOutputDto};
 
 // ----------------- Data Models -----------------
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum BlockType {
     InputXtream,
     InputM3u,
     Target,
     OutputM3u,
     OutputXtream,
-    OutputHdhomerun,
+    OutputHdHomeRun,
     OutputStrm,
 }
 
@@ -20,7 +23,7 @@ impl BlockType {
     pub const TARGET: &'static str = "Target";
     pub const OUTPUT_M3U: &'static str = "OutputM3u";
     pub const OUTPUT_XTREAM: &'static str = "OutputXtream";
-    pub const OUTPUT_HDHOMERUN: &'static str = "OutputHdhomerun";
+    pub const OUTPUT_HDHOMERUN: &'static str = "OutputHdHomeRun";
     pub const OUTPUT_STRM: &'static str = "OutputStrm";
 }
 
@@ -33,7 +36,7 @@ impl From<&str> for BlockType {
             BlockType::TARGET => BlockType::Target,
             BlockType::OUTPUT_M3U => BlockType::OutputM3u,
             BlockType::OUTPUT_XTREAM => BlockType::OutputXtream,
-            BlockType::OUTPUT_HDHOMERUN => BlockType::OutputHdhomerun,
+            BlockType::OUTPUT_HDHOMERUN => BlockType::OutputHdHomeRun,
             BlockType::OUTPUT_STRM => BlockType::OutputStrm,
             _ => BlockType::Target, // fallback
         }
@@ -56,22 +59,54 @@ impl fmt::Display for BlockType {
             BlockType::Target => Self::TARGET,
             BlockType::OutputM3u => Self::OUTPUT_M3U,
             BlockType::OutputXtream => Self::OUTPUT_XTREAM,
-            BlockType::OutputHdhomerun => Self::OUTPUT_HDHOMERUN,
+            BlockType::OutputHdHomeRun => Self::OUTPUT_HDHOMERUN,
             BlockType::OutputStrm => Self::OUTPUT_STRM,
         };
         write!(f, "{}", s)
     }
 }
 
+pub(crate) type BlockId = usize;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Block {
-    pub id: usize,
+    pub id: BlockId,
     pub block_type: BlockType,
     pub position: (f32, f32),
+    pub instance: BlockInstance,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Connection {
-    pub from: usize,
-    pub to: usize,
+    pub from: BlockId,
+    pub to: BlockId,
+}
+
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum PortStatus {
+    Valid,
+    Invalid,
+    Inactive
+}
+
+
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum BlockInstance {
+    Input(Rc<ConfigInputDto>),
+    Target(Rc<ConfigTargetDto>),
+    Output(Rc<TargetOutputDto>)
+}
+
+#[derive(Clone, PartialEq)]
+pub enum EditMode {
+    Inactive,
+    Active(Block),
+}
+
+#[derive(Clone, PartialEq)]
+pub struct SourceEditorContext {
+    pub on_form_change: Callback<(BlockId, BlockInstance)>,
+    pub edit_mode: UseStateHandle<EditMode>
 }

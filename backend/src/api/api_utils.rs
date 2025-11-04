@@ -1,17 +1,16 @@
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
-use crate::api::model::ProviderConfig;
+use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
 use crate::api::model::UserSession;
 use crate::api::model::{
     create_channel_unavailable_stream, create_custom_video_stream_response,
     create_provider_connections_exhausted_stream, create_provider_stream,
-    get_stream_response_with_headers, ActiveClientStream, AppState, BoxedProviderStream,
-    CustomVideoStreamType, PersistPipeStream, ProviderAllocation, ProviderConnectionGuard,
-    ProviderStreamFactoryOptions, ProviderStreamInfo, ProviderStreamResponse, SharedStreamManager,
+    get_stream_response_with_headers, ActiveClientStream, AppState,
+    CustomVideoStreamType, PersistPipeStream,
+    ProviderStreamFactoryOptions, SharedStreamManager,
     StreamError, ThrottledStream, UserApiRequest,
 };
 use crate::model::ConfigInput;
 use crate::model::{ConfigTarget, ProxyUserCredentials};
-use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::tools::lru_cache::LRUResourceCache;
 use crate::utils::create_new_file_for_write;
 use crate::utils::request;
@@ -318,51 +317,6 @@ async fn get_redirect_alternative_url<'a>(
     Cow::Borrowed(redirect_url)
 }
 
-type StreamUrl = String;
-type ProviderName = String;
-
-enum ProviderStreamState {
-    Custom(ProviderStreamResponse),
-    Available(Option<ProviderName>, StreamUrl),
-    GracePeriod(Option<ProviderName>, StreamUrl),
-}
-
-pub struct StreamDetails {
-    pub stream: Option<BoxedProviderStream>,
-    stream_info: ProviderStreamInfo,
-    pub provider_name: Option<String>,
-    pub grace_period_millis: u64,
-    pub reconnect_flag: Option<Arc<AtomicOnceFlag>>,
-    pub provider_connection_guard: Option<Arc<ProviderConnectionGuard>>,
-}
-
-impl StreamDetails {
-    pub fn from_stream(stream: BoxedProviderStream) -> Self {
-        Self {
-            stream: Some(stream),
-            stream_info: None,
-            provider_name: None,
-            grace_period_millis: default_grace_period_millis(),
-            reconnect_flag: None,
-            provider_connection_guard: None,
-        }
-    }
-    #[inline]
-    pub fn has_stream(&self) -> bool {
-        self.stream.is_some()
-    }
-
-    #[inline]
-    pub fn has_grace_period(&self) -> bool {
-        self.grace_period_millis > 0
-    }
-}
-
-struct StreamingStrategy {
-    provider_connection_guard: Option<Arc<ProviderConnectionGuard>>,
-    provider_stream_state: ProviderStreamState,
-    input_headers: Option<HashMap<String, String>>,
-}
 
 /// Determines the appropriate streaming strategy for the given input and stream URL.
 ///
@@ -388,52 +342,54 @@ async fn resolve_streaming_strategy(
     force_provider: Option<&str>,
 ) -> StreamingStrategy {
     // allocate a provider connection
-    let provider_connection_guard = match force_provider {
-        Some(provider) => {
-            app_state
-                .active_provider
-                .force_exact_acquire_connection(provider, &fingerprint.addr, app_state.get_release_sender())
-                .await
-        }
-        None => {
-            app_state
-                .active_provider
-                .acquire_connection(&input.name, &fingerprint.addr, app_state.get_release_sender())
-                .await
-        }
+    let provider_connection_handle = match force_provider {
+        Some(provider) => app_state.active_provider.force_exact_acquire_connection(provider, &fingerprint.addr).await,
+        None => app_state.active_provider.acquire_connection(&input.name, &fingerprint.addr).await,
     };
 
-    let stream_response_params = match &**provider_connection_guard {
-        ProviderAllocation::Exhausted => {
-            debug!("Input {} is exhausted. No connections allowed.", input.name);
-            let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
-            ProviderStreamState::Custom(stream)
-        }
-        ProviderAllocation::Available(_, ref provider)
-        | ProviderAllocation::GracePeriod(_, ref provider) => {
-            // force_stream_provider means we keep the url and the provider.
-            // If force_stream_provider or the input is the same as the config we don't need to get new url
-            let (provider, url) = if force_provider.is_some() || provider.id == input.id {
-                (input.name.clone(), stream_url.to_string())
-            } else {
-                (
-                    provider.name.clone(),
-                    get_stream_alternative_url(stream_url, input, provider),
-                )
-            };
+    let stream_response_params =
+        if let Some(allocation) = provider_connection_handle.as_ref().map(|ph| &ph.allocation) {
+            match allocation {
+                ProviderAllocation::Exhausted => {
+                    debug!("Input {} is exhausted. No connections allowed.", input.name);
+                    let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
+                    ProviderStreamState::Custom(stream)
+                }
+                ProviderAllocation::Available(ref provider)
+                | ProviderAllocation::GracePeriod(ref provider) => {
+                    // force_stream_provider means we keep the url and the provider.
+                    // If force_stream_provider or the input is the same as the config we don't need to get new url
+                    let (provider, url) = if force_provider.is_some() || provider.id == input.id {
+                        (input.name.clone(), stream_url.to_string())
+                    } else {
+                        (
+                            provider.name.clone(),
+                            get_stream_alternative_url(stream_url, input, provider),
+                        )
+                    };
 
-            if matches!(
-                &**provider_connection_guard,
-                ProviderAllocation::Available(_, _)
-            ) {
-                ProviderStreamState::Available(Some(provider), url)
-            } else {
-                ProviderStreamState::GracePeriod(Some(provider), url)
+                    let available = match allocation {
+                        ProviderAllocation::Exhausted
+                        | ProviderAllocation::Available(_) => true,
+                        ProviderAllocation::GracePeriod(_) => false,
+                    };
+
+                    if available {
+                        ProviderStreamState::Available(Some(provider), url)
+                    } else {
+                        ProviderStreamState::GracePeriod(Some(provider), url)
+                    }
+                }
             }
-        }
+    } else {
+        debug!("Input {} is exhausted. No connections allowed.", input.name);
+        let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
+        ProviderStreamState::Custom(stream)
     };
+
+
     StreamingStrategy {
-        provider_connection_guard: Some(provider_connection_guard),
+        provider_handle: provider_connection_handle,
         provider_stream_state: stream_response_params,
         input_headers: Some(input.headers.clone()),
     }
@@ -485,9 +441,9 @@ async fn create_stream_response_details(
         config_grace_period_millis,
     );
     let guard_provider_name = streaming_strategy
-        .provider_connection_guard
+        .provider_handle
         .as_ref()
-        .and_then(|guard| guard.get_provider_name());
+        .and_then(|guard| guard.allocation.get_provider_name());
 
     match streaming_strategy.provider_stream_state {
         // custom stream means we display our own stream like connection exhausted, channel-unavailable...
@@ -499,7 +455,7 @@ async fn create_stream_response_details(
                 provider_name: guard_provider_name.clone(),
                 grace_period_millis,
                 reconnect_flag: None,
-                provider_connection_guard: streaming_strategy.provider_connection_guard.clone(),
+                provider_handle: streaming_strategy.provider_handle.clone(),
             }
         }
         ProviderStreamState::Available(_provider_name, request_url)
@@ -553,7 +509,7 @@ async fn create_stream_response_details(
 
             // if we have no stream, we should release the provider
             if stream.is_none() {
-                if let Some(guard) = streaming_strategy.provider_connection_guard.take() {
+                if let Some(guard) = streaming_strategy.provider_handle.take() {
                     drop(guard);
                 }
                 error!("Cant open stream {}", sanitize_sensitive_info(&request_url));
@@ -565,7 +521,7 @@ async fn create_stream_response_details(
                 provider_name: guard_provider_name.clone(),
                 grace_period_millis,
                 reconnect_flag,
-                provider_connection_guard: streaming_strategy.provider_connection_guard.take(),
+                provider_handle: streaming_strategy.provider_handle.take(),
             }
         }
     }
@@ -800,7 +756,7 @@ pub async fn force_provider_stream_response(
         );
         return try_unwrap_body!(response.body(body_stream));
     }
-    drop(stream_details.provider_connection_guard.take());
+    drop(stream_details.provider_handle.take());
     if let (Some(stream), _stream_info) = create_channel_unavailable_stream(
         &app_state.app_config,
         &[],
@@ -847,7 +803,7 @@ pub async fn stream_response(
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
         if let Some(value) =
-            shared_stream_response(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), req_headers).await
+            try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), req_headers).await
         {
             return value.into_response();
         }
@@ -875,8 +831,8 @@ pub async fn stream_response(
             .map(|(h, sc, response_url)| (h.clone(), *sc, response_url.clone()));
         let provider_name = stream_details.provider_name.clone();
 
-        let provider_guard = if share_stream {
-            stream_details.provider_connection_guard.take()
+        let provider_handle = if share_stream {
+            stream_details.provider_handle.take()
         } else {
             None
         };
@@ -901,7 +857,7 @@ pub async fn stream_response(
                 &fingerprint.addr,
                 shared_headers,
                 stream_options.buffer_size,
-                provider_guard,
+                provider_handle,
             )
             .await
             {
@@ -974,7 +930,7 @@ pub async fn stream_response(
 
         return stream_resp.into_response();
     }
-    drop(stream_details.provider_connection_guard.take());
+    drop(stream_details.provider_handle.take());
     axum::http::StatusCode::BAD_REQUEST.into_response()
 }
 
@@ -990,7 +946,7 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
         .unwrap_or_default()
 }
 
-async fn shared_stream_response(
+async fn try_shared_stream_response_if_any(
     app_state: &AppState,
     stream_url: &str,
     fingerprint: &Fingerprint,

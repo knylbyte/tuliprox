@@ -6,7 +6,6 @@ use crate::{config_field, config_field_empty, edit_field_number_u16, edit_field_
 use crate::app::components::AppIcon;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::ConfigForm;
-use crate::app::components::config::macros::HasFormData;
 
 const LABEL_HOST: &str = "LABEL.HOST";
 const LABEL_PORT: &str = "LABEL.PORT";
