@@ -97,7 +97,7 @@ target "scratch-final" {
   ]
 
   output = [
-    "type=docker,dest=${DOCKER_IMAGE_DEST}/scratch-final"
+    "type=image,push-by-digest=true,name-canonical=true,push=true"
   ]
 }
 
@@ -123,6 +123,6 @@ target "alpine-final" {
   ]
 
   output = [
-    "type=docker,dest=${DOCKER_IMAGE_DEST}/alpine-final"
+    "type=image,push-by-digest=true,name-canonical=true,push=true"
   ]
 }
