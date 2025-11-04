@@ -193,6 +193,8 @@ jobs:
           echo "Running docker buildx bake with ${#target_list[@]} targets: ${target_list[*]}"
           docker buildx bake \
             --file docker/docker-bake.hcl \
+            --allow=fs.write=${CACHE_OUTPUT} \
+            --allow=fs.read=${CACHE_CONTEXT} \
             --load \
             --progress plain \
             "${target_list[@]}"
