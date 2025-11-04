@@ -1,4 +1,4 @@
-use crate::api::model::{ConnectionManager};
+use crate::api::model::{EventManager, EventMessage};
 use crate::auth::Fingerprint;
 use crate::model::Config;
 use crate::model::ProxyUserCredentials;
@@ -6,7 +6,7 @@ use crate::utils::GeoIp;
 use arc_swap::ArcSwapOption;
 use jsonwebtoken::get_current_timestamp;
 use log::{debug, info};
-use shared::model::{StreamChannel, StreamInfo, UserConnectionPermission};
+use shared::model::{ActiveUserConnectionChange, StreamChannel, StreamInfo, UserConnectionPermission};
 use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info, strip_port};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -80,14 +80,15 @@ pub struct ActiveUserManager {
     user: Arc<RwLock<HashMap<String, UserConnectionData>>>,
     user_by_addr: Arc<RwLock<HashMap<SocketAddr, String>>>,
     gc_ts: Option<AtomicU64>,
-    connection_manager: Arc<ArcSwapOption<ConnectionManager>>,
+    event_manager: Arc<EventManager>,
     geo_ip: Arc<ArcSwapOption<GeoIp>>,
 
 }
 
 impl ActiveUserManager {
     pub fn new(config: &Config,
-               geoip: &Arc<ArcSwapOption<GeoIp>>) -> Self {
+               geoip: &Arc<ArcSwapOption<GeoIp>>,
+               event_manager: &Arc<EventManager>,) -> Self {
         let log_active_user: bool = config.log.as_ref().is_some_and(|l| l.log_active_user);
         let (grace_period_millis, grace_period_timeout_secs) = get_grace_options(config);
 
@@ -98,13 +99,9 @@ impl ActiveUserManager {
             user: Arc::new(RwLock::new(HashMap::new())),
             user_by_addr: Arc::new(RwLock::new(HashMap::new())),
             gc_ts: Some(AtomicU64::new(current_time_secs())),
-            connection_manager: Arc::new(ArcSwapOption::from(None)),
             geo_ip: Arc::clone(geoip),
+            event_manager: Arc::clone(event_manager),
         }
-    }
-
-    pub fn set_connection_manager(&self, connection_manager: &Arc<ConnectionManager>) {
-        self.connection_manager.store(Some(Arc::clone(connection_manager)));
     }
 
     #[inline]
@@ -117,9 +114,7 @@ impl ActiveUserManager {
         let is_log_user_enabled = self.is_log_user_enabled();
         let user_connection_count = Self::get_active_connections(&user).await;
         let user_count = user.read().await.iter().filter(|(_, c)| c.connections > 0).count();
-        if let Some(connection_manager) = &*self.connection_manager.load() {
-            connection_manager.send_active_user_stats(user_count, user_connection_count);
-        }
+        self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Connections(user_count, user_connection_count)));
         if is_log_user_enabled {
             info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
         }
@@ -145,10 +140,6 @@ impl ActiveUserManager {
                     connection_data.streams.retain(|c| c.addr != *addr);
                 }
             }
-        }
-
-        if let Some(connection_manager) = &*self.connection_manager.load() {
-            connection_manager.trigger_release_connection_from_user_manager(addr).await;
         }
 
         if username_opt.is_some() {
@@ -330,18 +321,41 @@ impl ActiveUserManager {
     }
 
     pub async fn update_session_addr(&self, username: &str, token: &str, addr: &SocketAddr) {
-        let mut user_map = self.user.write().await;
-        user_map.get_mut(username).and_then(|connection_data| {
-            connection_data.sessions.iter_mut().find_map(|session| {
-                if session.token == token {
-                    let old_addr = session.addr;
+        // let mut user_map = self.user.write().await;
+        // user_map.get_mut(username).and_then(|connection_data| {
+        //     connection_data.sessions.iter_mut().find_map(|session| {
+        //         if session.token == token {
+        //             let old_addr = session.addr;
+        //             session.addr = *addr;
+        //             Some(old_addr)
+        //         } else {
+        //             None
+        //         }
+        //     })
+        // });
+
+        let mut old_addr = None;
+        {
+            let mut user_map = self.user.write().await;
+            if let Some(connection_data) = user_map.get_mut(username) {
+                if let Some(session) = connection_data.sessions.iter_mut().find(|session| session.token == token) {
+                    let previous_addr = session.addr;
                     session.addr = *addr;
-                    Some(old_addr)
-                } else {
-                    None
+                    for stream in connection_data.streams.iter_mut() {
+                        if stream.addr == previous_addr {
+                            stream.addr = *addr;
+                        }
+                    }
+                    old_addr = Some(previous_addr);
                 }
-            })
-        });
+            }
+        }
+
+        if let Some(previous_addr) = old_addr {
+            let mut user_by_addr = self.user_by_addr.write().await;
+            user_by_addr.remove(&previous_addr);
+            user_by_addr.insert(*addr, username.to_string());
+        }
     }
 
     pub async fn get_and_update_user_session(&self, username: &str, token: &str) -> Option<UserSession> {

@@ -85,14 +85,11 @@ fn create_shared_data(
 
     let cache = create_cache(&config);
     let (provider_change_tx, provider_change_rx) = tokio::sync::mpsc::unbounded_channel();
+    let event_manager = Arc::new(EventManager::new(provider_change_rx, ));
     let active_provider = Arc::new(ActiveProviderManager::new(app_config, provider_change_tx));
     let shared_stream_manager = Arc::new(SharedStreamManager::new(Arc::clone(&active_provider)));
-    let active_users = Arc::new(ActiveUserManager::new(&config,&geoip));
-
-    let event_manager = Arc::new(EventManager::new(provider_change_rx, ));
-
+    let active_users = Arc::new(ActiveUserManager::new(&config,&geoip, &event_manager));
     let connection_manager = Arc::new(ConnectionManager::new(&active_users, &active_provider, &shared_stream_manager, &event_manager));
-    active_users.set_connection_manager(&connection_manager);
 
     let client = create_http_client(app_config);
 

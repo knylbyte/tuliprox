@@ -15,8 +15,7 @@ fn create_instance(block_type: BlockType) -> BlockInstance {
         BlockType::InputXtream => BlockInstance::Input(Rc::new(ConfigInputDto::default())),
         BlockType::InputM3u => BlockInstance::Input(Rc::new(ConfigInputDto::default())),
         BlockType::Target => {
-            let mut dto = ConfigTargetDto::default();
-            dto.name = String::new();
+            let dto = ConfigTargetDto { name: String::new(), ..Default::default() };
             BlockInstance::Target(Rc::new(dto))
         },
         BlockType::OutputM3u => BlockInstance::Output(Rc::new(TargetOutputDto::M3u(M3uTargetOutputDto::default()))),
@@ -112,6 +111,13 @@ pub fn SourceEditor() -> Html {
     };
 
     let handle_drag_over = Callback::from(|e: DragEvent| e.prevent_default());
+    let handle_drag_end = {
+        let cursor_grabbing = cursor_grabbing.clone();
+        Callback::from(move |e: DragEvent| {
+            cursor_grabbing.set(false);
+            e.prevent_default()
+        })
+    };
 
     // ----------------- Connection logic -----------------
     let handle_connection_start = {
@@ -399,6 +405,7 @@ pub fn SourceEditor() -> Html {
                 ref={canvas_ref.clone()}
                 class={classes!("tp__source-editor__canvas", "graph-paper-advanced", if grabbed {"grabbed"} else {""})}
                 ondrop={handle_drop.clone()}
+                ondragend={handle_drag_end.clone()}
                 ondragover={handle_drag_over.clone()}
                 onmousemove={handle_canvas_mouse_move.clone()}
                 onmousedown={handle_canvas_mouse_down.clone()}

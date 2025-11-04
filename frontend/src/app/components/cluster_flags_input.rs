@@ -15,11 +15,11 @@ pub struct ClusterFlagsInputProps {
 pub fn ClusterFlagsInput(props: &ClusterFlagsInputProps) -> Html {
     let translate = use_translation();
 
-    let flags = use_state(|| props.value.clone().unwrap_or_else(ClusterFlags::all));
+    let flags = use_state(|| props.value.unwrap_or_else(ClusterFlags::all));
     {
         let set_flags = flags.clone();
-        use_effect_with(props.value.clone(), move |val| {
-           set_flags.set(val.clone().unwrap_or_else(ClusterFlags::all));
+        use_effect_with(props.value, move |val| {
+           set_flags.set((*val).unwrap_or_else(ClusterFlags::all));
         });
     }
 
@@ -40,9 +40,9 @@ pub fn ClusterFlagsInput(props: &ClusterFlagsInputProps) -> Html {
     let handle_flag_click = {
         let current_flags = flags.clone();
         Callback::from(move |new_flag| {
-            let mut new_flags = (*current_flags).clone();
+            let mut new_flags = *current_flags;
             new_flags.toggle(new_flag);
-            current_flags.set(new_flags.clone());
+            current_flags.set(new_flags);
             if new_flags.is_empty() {
                 handle_change.emit(None);
             } else {

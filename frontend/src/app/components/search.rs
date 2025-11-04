@@ -113,6 +113,7 @@ pub fn Search(props: &SearchProps) -> Html {
     };
 
     let handle_options_click = {
+        let search_fields = search_fields.clone();
         Callback::from(move |(_name, selections)| {
             match selections {
                 DropDownSelection::Empty => {

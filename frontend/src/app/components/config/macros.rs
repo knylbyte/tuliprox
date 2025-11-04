@@ -439,6 +439,7 @@ macro_rules! generate_form_reducer {
             }
         }
 
+        #[allow(clippy::large_enum_variant)]
         #[derive(Clone)]
         pub enum $action_name {
             $(

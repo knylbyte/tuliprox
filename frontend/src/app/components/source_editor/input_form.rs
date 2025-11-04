@@ -139,8 +139,8 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
             modified: false,
         });
 
-    let staged_input_types = use_memo(staged_input_state.clone(), |staged_state| {
-        let default_it = staged_state.form.input_type;
+    let staged_input_types = use_memo(staged_input_state.form.input_type, |input_type| {
+        let default_it = input_type;
         [
             InputType::M3u,
             InputType::Xtream,
@@ -151,7 +151,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
             .map(|t| DropDownOption {
                 id: t.to_string(),
                 label: html! { t.to_string() },
-                selected: *t == default_it,
+                selected: t == default_it,
             }).collect::<Vec<DropDownOption>>()
     });
 

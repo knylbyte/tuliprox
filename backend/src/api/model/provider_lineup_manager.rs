@@ -312,18 +312,25 @@ impl MultiProviderLineup {
             }
             ProviderPriorityGroup::MultiProviderGroup(index, pg) => {
                 let provider_count = pg.len();
-                let mut idx = index.load(Ordering::Relaxed) % provider_count;
-                let start = idx;
+                let start = index.fetch_add(1, Ordering::AcqRel) % provider_count;
+                let mut idx = start;
 
-                for _ in start..provider_count {
+                loop {
                     let p = &pg[idx];
                     let result = p.try_allocate(grace, grace_period_timeout_secs).await;
                     if !matches!(result, ProviderAllocation::Exhausted) {
                         index.store((idx + 1) % provider_count, Ordering::Relaxed);
                         return result;
                     }
+
                     idx = (idx + 1) % provider_count;
+
+                    // loop finished
+                    if idx == start {
+                        break;
+                    }
                 }
+
                 index.store(idx, Ordering::Relaxed);
             }
         }
@@ -338,9 +345,10 @@ impl MultiProviderLineup {
             }
             ProviderPriorityGroup::MultiProviderGroup(index, pg) => {
                 let provider_count = pg.len();
-                let mut idx = index.load(Ordering::Relaxed) % provider_count;
-                let start = idx;
-                for _ in start..provider_count {
+                let start = index.fetch_add(1, Ordering::AcqRel) % provider_count;
+                let mut idx = start;
+
+                loop {
                     if let Some(p) = pg.get(idx) {
                         let result = p.get_next(grace, grace_period_timeout_secs).await;
                         if result.is_some() {
@@ -348,8 +356,15 @@ impl MultiProviderLineup {
                             return result;
                         }
                     }
+
                     idx = (idx + 1) % provider_count;
+
+                    // loop finished
+                    if idx == start {
+                        break;
+                    }
                 }
+
                 index.store(idx, Ordering::Relaxed);
             }
         }
@@ -382,37 +397,51 @@ impl MultiProviderLineup {
     /// }
     /// ```
     async fn acquire(&self, with_grace: bool, grace_period_timeout_secs: u64) -> ProviderAllocation {
-        let main_idx = self.index.load(Ordering::SeqCst);
         let provider_count = self.providers.len();
+        let start = self.index.fetch_add(1, Ordering::SeqCst) % provider_count;
+        let mut idx = start;
 
-        for index in main_idx..provider_count {
-            let priority_group = &self.providers[index];
+        loop {
+            let priority_group = &self.providers[idx];
             let allocation = {
                 let without_grace_allocation = Self::acquire_next_provider_from_group(priority_group, false, grace_period_timeout_secs).await;
+
                 if with_grace && matches!(without_grace_allocation, ProviderAllocation::Exhausted) {
                     Self::acquire_next_provider_from_group(priority_group, true, grace_period_timeout_secs).await
                 } else {
                     without_grace_allocation
                 }
             };
+
             if !matches!(allocation, ProviderAllocation::Exhausted) {
                 if priority_group.is_exhausted().await {
-                    self.index.store((index + 1) % provider_count, Ordering::SeqCst);
+                    self.index.store((idx + 1) % provider_count, Ordering::SeqCst);
                 }
                 return allocation;
             }
+
+            idx = (idx + 1) % provider_count;
+
+            // loop end
+            if idx == start {
+                break;
+            }
         }
+
 
         ProviderAllocation::Exhausted
     }
 
     // it intended to use with redirects to cycle through provider
     async fn get_next(&self, grace_period_timeout_secs: u64) -> Option<Arc<ProviderConfig>> {
-        let main_idx = self.index.load(Ordering::SeqCst);
         let provider_count = self.providers.len();
 
-        for index in main_idx..provider_count {
-            let priority_group = &self.providers[index];
+        let start = self.index.fetch_add(1, Ordering::SeqCst) % provider_count;
+        let mut idx = start;
+
+        loop {
+            let priority_group = &self.providers[idx];
+
             let allocation = {
                 let config = Self::get_next_provider_from_group(priority_group, false, grace_period_timeout_secs).await;
                 if config.is_none() {
@@ -421,14 +450,19 @@ impl MultiProviderLineup {
                     config
                 }
             };
-            match allocation {
-                None => {}
-                Some(config) => {
-                    if priority_group.is_exhausted().await {
-                        self.index.store((index + 1) % provider_count, Ordering::SeqCst);
-                    }
-                    return Some(config);
+
+            if let Some(config) = allocation {
+                if priority_group.is_exhausted().await {
+                    self.index.store((idx + 1) % provider_count, Ordering::SeqCst);
                 }
+                return Some(config);
+            }
+
+            idx = (idx + 1) % provider_count;
+
+            // loop end
+            if idx == start {
+                break;
             }
         }
 
@@ -771,8 +805,8 @@ mod tests {
             thread::sleep(std::time::Duration::from_millis(200));
             match $lineup.acquire(true, $grace_period_timeout_secs).await {
                 ProviderAllocation::Exhausted => assert!(false, "Should available and not exhausted"),
-                ProviderAllocation::Available(_, provider) => assert_eq!(provider.id, $provider_id),
-                ProviderAllocation::GracePeriod(_, provider) => assert!(false, "Should available and not grace period: {}", provider.id),
+                ProviderAllocation::Available(provider) => assert_eq!(provider.id, $provider_id),
+                ProviderAllocation::GracePeriod(provider) => assert!(false, "Should available and not grace period: {}", provider.id),
             }
         };
     }
@@ -781,8 +815,8 @@ mod tests {
             thread::sleep(std::time::Duration::from_millis(200));
             match $lineup.acquire(true, $grace_period_timeout_secs).await {
                 ProviderAllocation::Exhausted => assert!(false, "Should grace period and not exhausted"),
-                ProviderAllocation::Available(_, provider) => assert!(false, "Should grace period and not available: {}", provider.id),
-                ProviderAllocation::GracePeriod(_, provider) => assert_eq!(provider.id, $provider_id),
+                ProviderAllocation::Available(provider) => assert!(false, "Should grace period and not available: {}", provider.id),
+                ProviderAllocation::GracePeriod(provider) => assert_eq!(provider.id, $provider_id),
             }
         };
     }
@@ -792,8 +826,8 @@ mod tests {
             thread::sleep(std::time::Duration::from_millis(200));
             match $lineup.acquire(true, $grace_period_timeout_secs).await {
                 ProviderAllocation::Exhausted => {},
-                ProviderAllocation::Available(_, provider) => assert!(false, "Should exhausted and not available: {}", provider.id),
-                ProviderAllocation::GracePeriod(_, provider) => assert!(false, "Should exhausted and not grace period: {}", provider.id),
+                ProviderAllocation::Available(provider) => assert!(false, "Should exhausted and not available: {}", provider.id),
+                ProviderAllocation::GracePeriod(provider) => assert!(false, "Should exhausted and not grace period: {}", provider.id),
             }
         };
     }

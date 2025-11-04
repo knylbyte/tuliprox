@@ -243,6 +243,8 @@ pub fn ConfigTargetView(props: &ConfigTargetViewProps) -> Html {
             let target_options = target_options_state.data();
             if !target_options.is_empty() {
                 target.options = Some(target_options.clone());
+            } else {
+                target.options = None;
             }
             source_editor_ctx.on_form_change.emit((block_id, BlockInstance::Target(Rc::new(target))));
             source_editor_ctx.edit_mode.set(EditMode::Inactive);

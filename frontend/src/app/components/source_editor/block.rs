@@ -47,7 +47,6 @@ pub fn BlockView(props: &BlockProps) -> Html {
     };
 
     let handle_edit = {
-        let block_id = block_id;
         let on_edit = props.on_edit.clone();
         Callback::from(move |_| {
            on_edit.emit(block_id)
