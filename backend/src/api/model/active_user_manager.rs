@@ -367,7 +367,7 @@ impl ActiveUserManager {
     pub async fn active_streams(&self) -> Vec<StreamInfo> {
         let user_connections = self.connections.read().await;
         let mut streams = Vec::new();
-        for (_username, connection_data) in user_connections.by_key.iter() {
+        for connection_data in user_connections.by_key.values() {
             for stream in &connection_data.streams {
                 streams.push(stream.clone());
             }
@@ -384,7 +384,7 @@ impl ActiveUserManager {
                 if let Ok(mut user_connections) = self.connections.try_write() {
                     let mut addrs_to_remove = Vec::new();
 
-                    for (username, connection_data) in user_connections.by_key.iter_mut() {
+                    for (username, connection_data) in &mut user_connections.by_key {
                         let old_sessions: Vec<SocketAddr> = connection_data
                             .sessions
                             .iter()
