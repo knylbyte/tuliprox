@@ -1,4 +1,4 @@
-use crate::api::model::{AppState, ProviderHandle, StreamDetails};
+use crate::api::model::{AppState, CustomVideoStreamType, ProviderHandle, StreamDetails};
 use crate::api::model::BoxedProviderStream;
 use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
@@ -101,6 +101,7 @@ impl ActiveClientStream {
         let active_users = Arc::clone(&app_state.active_users);
         let active_provider = Arc::clone(&app_state.active_provider);
         let shared_stream_manager = Arc::clone(&app_state.shared_stream_manager);
+        let connection_manager = Arc::clone(&app_state.connection_manager);
 
         let provider_grace_check = if stream_details.has_grace_period() && stream_details.provider_name.is_some() {
             let provider_name = stream_details.provider_name.as_ref().map_or_else(String::new, ToString::to_string);
@@ -125,8 +126,11 @@ impl ActiveClientStream {
             let address = fingerprint.addr;
             let user_manager = Arc::clone(&active_users);
             let provider_manager = Arc::clone(&active_provider);
+            let connection_manager = Arc::clone(&connection_manager);
             let share_manager = Arc::clone(&shared_stream_manager);
             let reconnect_flag = stream_details.reconnect_flag.clone();
+            let fingerprint = fingerprint.clone();
+            let username = user.username.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(grace_period_millis)).await;
 
@@ -135,6 +139,7 @@ impl ActiveClientStream {
                     let active_connections = user_manager.user_connections(&username).await;
                     if active_connections > max_connections {
                         stream_strategy_flag_copy.store(USER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::Release);
+                        connection_manager.update_stream_detail(&username, &fingerprint, CustomVideoStreamType::UserConnectionsExhausted).await;
                         info!("User connections exhausted for active clients: {username}");
                         updated = true;
                     }
@@ -144,6 +149,7 @@ impl ActiveClientStream {
                     if let Some(provider_name) = provider_grace_check {
                         if provider_manager.is_over_limit(&provider_name).await {
                             stream_strategy_flag_copy.store(PROVIDER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::Release);
+                            connection_manager.update_stream_detail(&username, &fingerprint, CustomVideoStreamType::ProviderConnectionsExhausted).await;
                             info!("Provider connections exhausted for active clients: {provider_name}");
                             updated = true;
                         }
