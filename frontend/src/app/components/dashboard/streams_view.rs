@@ -29,7 +29,7 @@ pub fn StreamsView() -> Html {
                     <StatusCard
                         title={translate.t("LABEL.ACTIVE_PROVIDER_CONNECTIONS")}
                         data={status_ctx.status.as_ref().map_or_else(|| "n/a".to_string(), |status|
-                                status. active_provider_connections.as_ref().map(|map| map.values().sum::<usize>()).unwrap_or(0).to_string())}
+                                status.active_provider_connections.as_ref().map(|map| map.values().sum::<usize>()).unwrap_or(0).to_string())}
                     />
                  </Card>
             </div>
