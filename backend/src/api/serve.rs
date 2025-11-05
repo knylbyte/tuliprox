@@ -152,10 +152,8 @@ where
                     conn.as_mut().graceful_shutdown();
                 }
                 Ok(msg) = addr_close_rx.recv() => {
-                    // this comes from user manager itself when a user connection is closed
-                    // no need to call `user_manager.remove_connection()`
                     if msg == addr {
-                        connection_manager_clone.trigger_release_connection_from_user_manager(&addr).await;
+                        connection_manager_clone.release_connection(&addr).await;
                         debug!("Forced client disconnect {msg}");
                         conn.as_mut().graceful_shutdown();
                         break;

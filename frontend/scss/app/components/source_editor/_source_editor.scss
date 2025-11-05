@@ -18,6 +18,7 @@
       &-actions {
          display: flex;
          flex-flow: row wrap;
+         justify-content: flex-end;
          box-sizing: border-box;
          gap: var(--gap-small);
          border-bottom: 2px solid var(--border-color);
