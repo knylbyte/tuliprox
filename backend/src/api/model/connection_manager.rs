@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::net::SocketAddr;
 use crate::api::model::{ActiveProviderManager, ActiveUserManager, EventManager, EventMessage, SharedStreamManager};
 use std::sync::Arc;
-use log::{debug};
+use log::debug;
 use shared::model::{ActiveUserConnectionChange, StreamChannel};
 use crate::auth::Fingerprint;
 
@@ -36,9 +36,7 @@ impl ConnectionManager {
         self.close_socket_signal_tx.subscribe()
     }
 
-    fn handle_release_connection(&self, addr: &SocketAddr) {
-        self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Disconnected(*addr)));
-
+    pub fn kick_connection(&self, addr: &SocketAddr) {
         if let Err(e) = self.close_socket_signal_tx.send(*addr) {
             debug!("No active receivers for close signal ({addr}): {e:?}");
         }
@@ -48,15 +46,7 @@ impl ConnectionManager {
         self.user_manager.release_connection(addr).await;
         self.provider_manager.release_connection(addr).await;
         self.shared_stream_manager.release_connection(addr, true).await;
-
-        self.handle_release_connection(addr);
-    }
-
-    pub async fn trigger_release_connection_from_user_manager(&self, addr: &SocketAddr) {
-        self.provider_manager.release_connection(addr).await;
-        self.shared_stream_manager.release_connection(addr, true).await;
-
-        self.handle_release_connection(addr);
+        self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Disconnected(*addr)));
     }
 
     #[allow(clippy::too_many_arguments)]

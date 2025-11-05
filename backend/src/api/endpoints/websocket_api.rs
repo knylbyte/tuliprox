@@ -4,7 +4,7 @@ use crate::api::model::EventMessage;
 use crate::auth::{verify_token_admin, verify_token_user};
 use axum::extract::ws::CloseFrame;
 use axum::{extract::ws::{Message, WebSocket, WebSocketUpgrade},response::IntoResponse};
-use log::{error, info};
+use log::{error, trace};
 use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserRole, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
 use shared::utils::{concat_path_leading_slash};
@@ -14,7 +14,7 @@ async fn websocket_handler(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    info!("Websocket connected");
+    trace!("Websocket connected");
     ws.on_upgrade(move |socket| handle_socket(socket, app_state, false))
 }
 
@@ -23,7 +23,7 @@ async fn websocket_handler_auth(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    info!("Websocket connected");
+    trace!("Websocket connected");
     ws.on_upgrade(move |socket| handle_socket(socket, app_state, true))
 }
 
@@ -134,7 +134,7 @@ async fn handle_protocol_message(
                 }
             }
             Ok(_) => {
-                error!("Unexpected protocol message after handshake");
+                trace!("Unexpected protocol message after handshake");
                 None
             }
             Err(e) => {
