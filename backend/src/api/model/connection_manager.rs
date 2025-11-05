@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::net::SocketAddr;
-use crate::api::model::{ActiveProviderManager, ActiveUserManager, EventManager, EventMessage, SharedStreamManager};
+use crate::api::model::{ActiveProviderManager, ActiveUserManager, CustomVideoStreamType, EventManager, EventMessage, SharedStreamManager};
 use std::sync::Arc;
 use log::debug;
 use shared::model::{ActiveUserConnectionChange, StreamChannel};
@@ -56,7 +56,13 @@ impl ConnectionManager {
         self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Connected(stream_info)));
     }
 
-    pub fn send_active_user_stats(&self, user_count: usize, user_connection_count: usize) {
-        self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Connections(user_count, user_connection_count)));
+    // pub fn send_active_user_stats(&self, user_count: usize, user_connection_count: usize) {
+    //     self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Connections(user_count, user_connection_count)));
+    // }
+
+    pub async fn update_stream_detail(&self, username: &str, fingerprint: &Fingerprint, video_type: CustomVideoStreamType) {
+       if let Some(stream_info) = self.user_manager.update_stream_detail(username, fingerprint, video_type).await {
+           self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Connected(stream_info)));
+       }
     }
 }

@@ -83,7 +83,7 @@ Top level entries in the config files are:
 * `reverse_proxy` _optional_
 * `log` _optional
 * `user_access_control` _optional_
-* `connect_timeout_secs`: _optional_ and used for provider requests connection timeout.
+* `connect_timeout_secs`: _optional_ and used for provider requests connection timeout, for only the connect phase.
 * `custom_stream_response_path` _optional_
 * `hdhomerun` _optional_
 * `proxy` _optional_

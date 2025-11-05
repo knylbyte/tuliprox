@@ -386,6 +386,8 @@ async fn xtream_get_item_for_stream_id_from_memory(
                         if let Some(pl_item) = item {
                             let mut xc_item = pl_item.clone();
                             xc_item.provider_id = mapping.provider_id;
+                            xc_item.item_type = PlaylistItemType::Catchup;
+                            xc_item.xtream_cluster = XtreamCluster::Video;
                             Ok(xc_item)
                         } else {
                             Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))
@@ -451,6 +453,8 @@ pub async fn xtream_get_item_for_stream_id(
                 let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
                 let mut item = xtream_read_item_for_stream_id(app_config, mapping.parent_virtual_id, &storage_path, cluster)?;
                 item.provider_id = mapping.provider_id;
+                item.item_type = PlaylistItemType::Catchup;
+                item.xtream_cluster = XtreamCluster::Video;
                 Ok(item)
             }
             _ => {
