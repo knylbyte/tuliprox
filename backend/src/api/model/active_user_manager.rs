@@ -1,4 +1,4 @@
-use crate::api::model::{EventManager, EventMessage};
+use crate::api::model::{CustomVideoStreamType, EventManager, EventMessage};
 use crate::auth::Fingerprint;
 use crate::model::Config;
 use crate::model::ProxyUserCredentials;
@@ -92,7 +92,7 @@ pub struct ActiveUserManager {
 impl ActiveUserManager {
     pub fn new(config: &Config,
                geoip: &Arc<ArcSwapOption<GeoIp>>,
-               event_manager: &Arc<EventManager>,) -> Self {
+               event_manager: &Arc<EventManager>, ) -> Self {
         let log_active_user: bool = config.log.as_ref().is_some_and(|l| l.log_active_user);
         let (grace_period_millis, grace_period_timeout_secs) = get_grace_options(config);
 
@@ -110,9 +110,7 @@ impl ActiveUserManager {
     async fn log_active_user(&self) {
         let is_log_user_enabled = self.is_log_user_enabled();
         let (user_count, user_connection_count) = {
-            let user_connections = self.connections.read().await;
-            (user_connections.by_key.iter().filter(|(_, c)| c.connections > 0).count(),
-             user_connections.key_by_addr.len())
+            self.active_users_and_connections().await
         };
         self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Connections(user_count, user_connection_count)));
         if is_log_user_enabled {
@@ -123,29 +121,24 @@ impl ActiveUserManager {
     pub async fn release_connection(&self, addr: &SocketAddr) {
         let log_active_user = {
             let mut user_connections = self.connections.write().await;
-            let username_opt = {
-                user_connections.key_by_addr.remove(addr)
-            };
 
-            if let Some(username) = username_opt.as_ref() {
-                {
-                    if let Some(connection_data) = user_connections.by_key.get_mut(username) {
-                        if connection_data.connections > 0 {
-                            connection_data.connections -= 1;
-                        }
-
-                        if connection_data.connections < connection_data.max_connections {
-                            connection_data.granted_grace = false;
-                            connection_data.grace_ts = 0;
-                        }
-                        connection_data.streams.retain(|c| c.addr != *addr);
+            if let Some(username) = user_connections.key_by_addr.remove(addr) {
+                if let Some(connection_data) = user_connections.by_key.get_mut(&username) {
+                    if connection_data.connections > 0 {
+                        connection_data.connections -= 1;
                     }
+
+                    if connection_data.connections < connection_data.max_connections {
+                        connection_data.granted_grace = false;
+                        connection_data.grace_ts = 0;
+                    }
+                    connection_data.streams.retain(|c| c.addr != *addr);
                 }
                 true
             } else {
                 false
             }
-         };
+        };
 
         if log_active_user {
             self.log_active_user().await;
@@ -216,49 +209,83 @@ impl ActiveUserManager {
         UserConnectionPermission::Allowed
     }
 
-    pub async fn active_users(&self) -> usize {
-        self.connections.read().await.key_by_addr.len()
+    pub async fn active_users_and_connections(&self) -> (usize, usize) {
+        let connections = self.connections.read().await;
+        (connections.key_by_addr.len(), connections.by_key.values().map(|c| c.connections).sum::<u32>() as usize)
     }
 
-    pub async fn active_connections(&self) -> usize {
-        self.connections.read().await.by_key.values().map(|c| c.connections).sum::<u32>() as usize
+    pub async fn update_stream_detail(&self, username: &str, fingerprint: &Fingerprint, video_type: CustomVideoStreamType) -> Option<StreamInfo> {
+        let mut user_connections = self.connections.write().await;
+        if let Some(connection_data) = user_connections.by_key.get_mut(username) {
+            for stream in &mut connection_data.streams {
+                if stream.addr == fingerprint.addr {
+                    stream.provider = String::from("tuliprox");
+                    stream.channel.title = video_type.to_string();
+                    stream.channel.group = String::new();
+                    return Some(stream.clone());
+                }
+            }
+        }
+        None
     }
 
     #[allow(clippy::too_many_arguments)]
     pub async fn add_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
                                 provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> StreamInfo {
-        let country = {
-            let geoip = self.geo_ip.load();
-            if let Some(geoip_db) = (*geoip).as_ref() {
-                geoip_db.lookup(&strip_port(&fingerprint.client_ip))
+        let stream_info = {
+            let mut user_connections = self.connections.write().await;
+
+            let already_counted = user_connections.key_by_addr.get(&fingerprint.addr).is_some_and(|u| u == username);
+
+            let connection_data = user_connections.by_key
+                .entry(username.to_string())
+                .or_insert_with(|| UserConnectionData::new(0, max_connections));
+            connection_data.max_connections = max_connections;
+
+            let existing_stream_info = if already_counted {
+                if let Some(existing) = connection_data
+                    .streams
+                    .iter_mut()
+                    .find(|s| s.addr == fingerprint.addr)
+                {
+                    existing.channel = stream_channel.clone();
+                    existing.provider = provider.to_string();
+                    Some(existing.clone())
+                } else {
+                    None
+                }
             } else {
                 None
+            };
+            if let Some(stream_info) = existing_stream_info { stream_info } else {
+                let country = {
+                    let geoip = self.geo_ip.load();
+                    if let Some(geoip_db) = (*geoip).as_ref() {
+                        geoip_db.lookup(&strip_port(&fingerprint.client_ip))
+                    } else {
+                        None
+                    }
+                };
+
+                let stream_info = StreamInfo::new(
+                    username,
+                    &fingerprint.addr,
+                    &fingerprint.client_ip,
+                    provider,
+                    stream_channel,
+                    user_agent.to_string(),
+                    country,
+                );
+                connection_data.connections += 1;
+                connection_data.streams.push(stream_info.clone());
+                user_connections
+                    .key_by_addr
+                    .insert(fingerprint.addr, username.to_string());
+                debug!("Added new connection for {username} at {}", fingerprint.addr);
+
+                stream_info
             }
         };
-
-        let stream_info = StreamInfo::new(
-            username,
-            &fingerprint.addr,
-            &fingerprint.client_ip,
-            provider,
-            stream_channel,
-            user_agent.to_string(),
-            country,
-        );
-        {
-            let mut user_connections = self.connections.write().await;
-            if let Some(connection_data) = user_connections.by_key.get_mut(username) {
-                connection_data.connections += 1;
-                connection_data.max_connections = max_connections;
-                connection_data.streams.push(stream_info.clone());
-            } else {
-                let mut connection_data = UserConnectionData::new(1, max_connections);
-                connection_data.streams.push(stream_info.clone());
-                user_connections.by_key.insert(username.to_string(), connection_data);
-            }
-
-            user_connections.key_by_addr.insert(fingerprint.addr, username.to_string());
-        }
 
         self.log_active_user().await;
 
@@ -382,37 +409,10 @@ impl ActiveUserManager {
 
             if now - ts > USER_GC_TTL {
                 if let Ok(mut user_connections) = self.connections.try_write() {
-                    let mut addrs_to_remove = Vec::new();
-
-                    for (username, connection_data) in &mut user_connections.by_key {
-                        let old_sessions: Vec<SocketAddr> = connection_data
-                            .sessions
-                            .iter()
-                            .filter(|s| now - s.ts >= USER_CON_TTL)
-                            .map(|s| s.addr)
-                            .collect();
-
-                        addrs_to_remove.extend(
-                            old_sessions.into_iter().map(|addr| (addr, username.clone()))
-                        );
-
+                    user_connections.by_key.retain(|_k, v| now - v.ts < USER_CON_TTL && v.connections > 0);
+                    for connection_data in user_connections.by_key.values_mut() {
                         connection_data.sessions.retain(|s| now - s.ts < USER_CON_TTL);
                     }
-
-                    user_connections.by_key.retain(|_username, v| {
-                        now - v.ts < USER_CON_TTL && v.connections > 0
-                    });
-
-                    for (addr, username) in addrs_to_remove {
-                        if let Some(current_user) = user_connections.key_by_addr.get(&addr) {
-                            if current_user == &username {
-                                user_connections.key_by_addr.remove(&addr);
-                            }
-                        }
-                    }
-
-                    let valid_users: std::collections::HashSet<_> = user_connections.by_key.keys().cloned().collect();
-                    user_connections.key_by_addr.retain(|_addr, username| valid_users.contains(username));
 
                     gc_ts.store(now, Ordering::Release);
                 }
