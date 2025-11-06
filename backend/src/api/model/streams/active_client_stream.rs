@@ -100,7 +100,6 @@ impl ActiveClientStream {
                            waker: Option<Arc<AtomicWaker>>) -> Option<Arc<AtomicU8>> {
         let active_users = Arc::clone(&app_state.active_users);
         let active_provider = Arc::clone(&app_state.active_provider);
-        let shared_stream_manager = Arc::clone(&app_state.shared_stream_manager);
         let connection_manager = Arc::clone(&app_state.connection_manager);
 
         let provider_grace_check = if stream_details.has_grace_period() && stream_details.provider_name.is_some() {
@@ -127,7 +126,6 @@ impl ActiveClientStream {
             let user_manager = Arc::clone(&active_users);
             let provider_manager = Arc::clone(&active_provider);
             let connection_manager = Arc::clone(&connection_manager);
-            let share_manager = Arc::clone(&shared_stream_manager);
             let reconnect_flag = stream_details.reconnect_flag.clone();
             let fingerprint = fingerprint.clone();
             let username = user.username.clone();
@@ -155,20 +153,20 @@ impl ActiveClientStream {
                         }
                     }
                 }
+
                 if !updated {
                     stream_strategy_flag_copy.store(INNER_STREAM, std::sync::atomic::Ordering::Release);
                 }
 
-                if let Some(w) = waker.as_ref() {
-                    w.wake();
-                }
-
                 if updated {
-                    share_manager.release_connection(&address, true).await;
-                    provider_manager.release_connection(&address).await;
-                     if let Some(flag) = reconnect_flag {
+                    connection_manager.release_provider_connection(&address).await;
+                    if let Some(flag) = reconnect_flag {
                          flag.notify();
                     }
+                }
+
+                if let Some(w) = waker.as_ref() {
+                    w.wake();
                 }
             });
             return Some(stream_strategy_flag);

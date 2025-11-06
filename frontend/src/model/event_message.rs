@@ -2,6 +2,7 @@ use std::rc::Rc;
 use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState, StatusCheck};
 use crate::model::BusyStatus;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum EventMessage {
     Unauthorized,

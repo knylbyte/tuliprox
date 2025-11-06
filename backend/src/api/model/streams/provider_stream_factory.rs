@@ -342,7 +342,7 @@ async fn provider_stream_request(
                             create_channel_unavailable_stream(
                                 cfg,
                                 &get_response_headers(stream_options.get_headers()),
-                                StatusCode::BAD_GATEWAY,
+                                StatusCode::SERVICE_UNAVAILABLE,
                             )
                         {
                             Ok(Some((boxed_provider_stream, response_info)))
