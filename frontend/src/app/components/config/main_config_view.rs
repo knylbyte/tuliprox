@@ -3,7 +3,7 @@ use yew_i18n::use_translation;
 use shared::model::MainConfigDto;
 use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
-use crate::app::components::config::config_page::ConfigForm;
+use crate::app::components::config::config_page::{ConfigForm, LABEL_MAIN_CONFIG};
 use crate::{config_field_optional, config_field_bool, config_field, edit_field_text_option, edit_field_bool, generate_form_reducer, edit_field_number, edit_field_number_option, edit_field_text, edit_field_number_u8};
 
 const LABEL_UPDATE_ON_BOOT: &str = "LABEL.UPDATE_ON_BOOT";
@@ -108,6 +108,7 @@ pub fn MainConfigView() -> Html {
 
     html! {
         <div class="tp__main-config-view tp__config-view-page">
+            <div class="tp__config-view-page__title">{translate.t(LABEL_MAIN_CONFIG)}</div>
             <div class="tp__main-config-view__body tp__config-view-page__body">
                 {
                     if *config_view_ctx.edit_mode {

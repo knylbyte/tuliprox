@@ -1,4 +1,4 @@
-use crate::app::components::config::config_page::{ConfigForm, ConfigPage};
+use crate::app::components::config::config_page::{ConfigForm, ConfigPage, LABEL_API_CONFIG, LABEL_HDHOMERUN_CONFIG, LABEL_IP_CHECK_CONFIG, LABEL_LOG_CONFIG, LABEL_MAIN_CONFIG, LABEL_MESSAGING_CONFIG, LABEL_PROXY_CONFIG, LABEL_REVERSE_PROXY_CONFIG, LABEL_SCHEDULES_CONFIG, LABEL_VIDEO_CONFIG, LABEL_WEB_UI_CONFIG};
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::{ApiConfigView, HdHomerunConfigView, IpCheckConfigView, LogConfigView, MainConfigView, MessagingConfigView, ProxyConfigView, ReverseProxyConfigView, SchedulesConfigView, VideoConfigView, WebUiConfigView};
 use crate::app::components::{Card, TabItem, TabSet, TextButton};
@@ -12,25 +12,11 @@ use crate::app::components::config::config_update::update_config;
 use crate::app::{ConfigContext};
 use crate::hooks::use_service_context;
 
-// ==== Label Konstanten ====
-const LABEL_MAIN: &str = "LABEL.MAIN";
-const LABEL_API: &str = "LABEL.API";
-const LABEL_LOG: &str = "LABEL.LOG";
-const LABEL_SCHEDULES: &str = "LABEL.SCHEDULES";
-const LABEL_MESSAGING: &str = "LABEL.MESSAGING";
-const LABEL_WEB_UI: &str = "LABEL.WEB_UI";
-const LABEL_REVERSE_PROXY: &str = "LABEL.REVERSE_PROXY";
-const LABEL_HDHOMERUN_CONFIG: &str = "LABEL.HDHOMERUN_CONFIG";
-const LABEL_PROXY: &str = "LABEL.PROXY";
-const LABEL_IP_CHECK: &str = "LABEL.IP_CHECK";
-const LABEL_VIDEO: &str = "LABEL.VIDEO";
 const LABEL_CONFIG: &str = "LABEL.CONFIG";
 const LABEL_EDIT: &str = "LABEL.EDIT";
 const LABEL_VIEW: &str = "LABEL.VIEW";
 const LABEL_SAVE: &str = "LABEL.SAVE";
 const LABEL_UPDATE_GEOIP: &str = "LABEL.UPDATE_GEOIP_DB";
-
-// ==========================
 
 macro_rules! collect_modified {
     ($forms:expr, [ $($field:ident),+ $(,)? ]) => {{
@@ -111,17 +97,17 @@ pub fn ConfigView() -> Html {
                 .collect::<Vec<ConfigPage>>();
 
             let tab_configs = vec![
-                (ConfigPage::Main, LABEL_MAIN, html! { <MainConfigView/> }, "MainConfig"),
-                (ConfigPage::Api, LABEL_API, html! { <ApiConfigView/> }, "ApiConfig"),
-                (ConfigPage::Log, LABEL_LOG, html! { <LogConfigView/> }, "Log"),
-                (ConfigPage::Schedules, LABEL_SCHEDULES, html! { <SchedulesConfigView/> }, "SchedulesConfig"),
-                (ConfigPage::Messaging, LABEL_MESSAGING, html! { <MessagingConfigView/> }, "MessagingConfig"),
-                (ConfigPage::WebUi, LABEL_WEB_UI, html! { <WebUiConfigView/> }, "WebUiConfig"),
-                (ConfigPage::ReverseProxy, LABEL_REVERSE_PROXY, html! { <ReverseProxyConfigView/> }, "ReverseProxyConfig"),
+                (ConfigPage::Main, LABEL_MAIN_CONFIG, html! { <MainConfigView/> }, "MainConfig"),
+                (ConfigPage::Api, LABEL_API_CONFIG, html! { <ApiConfigView/> }, "ApiConfig"),
+                (ConfigPage::Log, LABEL_LOG_CONFIG, html! { <LogConfigView/> }, "Log"),
+                (ConfigPage::Schedules, LABEL_SCHEDULES_CONFIG, html! { <SchedulesConfigView/> }, "SchedulesConfig"),
+                (ConfigPage::Messaging, LABEL_MESSAGING_CONFIG, html! { <MessagingConfigView/> }, "MessagingConfig"),
+                (ConfigPage::WebUi, LABEL_WEB_UI_CONFIG, html! { <WebUiConfigView/> }, "WebUiConfig"),
+                (ConfigPage::ReverseProxy, LABEL_REVERSE_PROXY_CONFIG, html! { <ReverseProxyConfigView/> }, "ReverseProxyConfig"),
                 (ConfigPage::HdHomerun, LABEL_HDHOMERUN_CONFIG, html! { <HdHomerunConfigView/> }, "HdHomerunConfig"),
-                (ConfigPage::Proxy, LABEL_PROXY, html! { <ProxyConfigView/> }, "ProxyConfig"),
-                (ConfigPage::IpCheck, LABEL_IP_CHECK, html! { <IpCheckConfigView/> }, "IpCheckConfig"),
-                (ConfigPage::Video, LABEL_VIDEO, html! { <VideoConfigView/> }, "VideoConfig"),
+                (ConfigPage::Proxy, LABEL_PROXY_CONFIG, html! { <ProxyConfigView/> }, "ProxyConfig"),
+                (ConfigPage::IpCheck, LABEL_IP_CHECK_CONFIG, html! { <IpCheckConfigView/> }, "IpCheckConfig"),
+                (ConfigPage::Video, LABEL_VIDEO_CONFIG, html! { <VideoConfigView/> }, "VideoConfig"),
             ];
 
             let editing = *editing;

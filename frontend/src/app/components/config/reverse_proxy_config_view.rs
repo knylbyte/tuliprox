@@ -5,7 +5,7 @@ use yew_i18n::use_translation;
 use shared::model::{CacheConfigDto, GeoIpConfigDto, RateLimitConfigDto, ReverseProxyConfigDto, ReverseProxyDisabledHeaderConfigDto, StreamConfigDto};
 use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
-use crate::app::components::config::config_page::ConfigForm;
+use crate::app::components::config::config_page::{ConfigForm, LABEL_REVERSE_PROXY_CONFIG};
 use crate::app::components::{Card};
 use crate::{config_field, config_field_bool, config_field_custom, config_field_optional, edit_field_bool, edit_field_list, edit_field_number, edit_field_number_u64, edit_field_text, edit_field_text_option, generate_form_reducer};
 
@@ -330,6 +330,7 @@ pub fn ReverseProxyConfigView() -> Html {
 
     html! {
         <div class="tp__reverse-proxy-config-view tp__config-view-page">
+        <div class="tp__config-view-page__title">{translate.t(LABEL_REVERSE_PROXY_CONFIG)}</div>
             {
                 if *config_view_ctx.edit_mode {
                     render_edit_mode()

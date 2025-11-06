@@ -5,7 +5,7 @@ use shared::model::{ConfigApiDto};
 use crate::{config_field, config_field_empty, edit_field_number_u16, edit_field_text, generate_form_reducer, html_if};
 use crate::app::components::AppIcon;
 use crate::app::components::config::config_view_context::ConfigViewContext;
-use crate::app::components::config::config_page::ConfigForm;
+use crate::app::components::config::config_page::{ConfigForm, LABEL_API_CONFIG};
 
 const LABEL_HOST: &str = "LABEL.HOST";
 const LABEL_PORT: &str = "LABEL.PORT";
@@ -96,6 +96,7 @@ pub fn ApiConfigView() -> Html {
 
     html! {
         <div class="tp__api-config-view tp__config-view-page">
+           <div class="tp__config-view-page__title">{translate.t(LABEL_API_CONFIG)}</div>
             {
              html_if!(*config_view_ctx.edit_mode, {
                   <div class="tp__webui-config-view__info tp__config-view-page__info">

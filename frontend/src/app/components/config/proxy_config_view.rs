@@ -3,7 +3,7 @@ use yew_i18n::use_translation;
 use shared::model::ProxyConfigDto;
 use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
-use crate::app::components::config::config_page::ConfigForm;
+use crate::app::components::config::config_page::{ConfigForm, LABEL_PROXY_CONFIG};
 use crate::{
     config_field, config_field_optional, config_field_optional_hide,
     edit_field_text, edit_field_text_option, generate_form_reducer,
@@ -74,6 +74,7 @@ pub fn ProxyConfigView() -> Html {
 
     html! {
         <div class="tp__proxy-config-view tp__config-view-page">
+            <div class="tp__config-view-page__title">{translate.t(LABEL_PROXY_CONFIG)}</div>
             {
                 if *config_view_ctx.edit_mode {
                     render_edit_mode()

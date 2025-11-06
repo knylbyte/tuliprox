@@ -1,7 +1,7 @@
 use crate::app::components::{AppIcon, Card, Chip};
 use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
-use crate::app::components::config::config_page::ConfigForm;
+use crate::app::components::config::config_page::{ConfigForm, LABEL_WEB_UI_CONFIG};
 use crate::{config_field, config_field_bool, config_field_child, config_field_hide, config_field_optional, edit_field_bool, edit_field_list_option, edit_field_number, edit_field_text, edit_field_text_option, generate_form_reducer, html_if};
 use yew::prelude::*;
 use yew_i18n::use_translation;
@@ -182,6 +182,7 @@ pub fn WebUiConfigView() -> Html {
 
     html! {
         <div class="tp__webui-config-view tp__config-view-page">
+            <div class="tp__config-view-page__title">{translate.t(LABEL_WEB_UI_CONFIG)}</div>
             {
              html_if!(*config_view_ctx.edit_mode, {
                   <div class="tp__webui-config-view__info tp__config-view-page__info">

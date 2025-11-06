@@ -6,7 +6,7 @@ use crate::{config_field_bool, config_field_child, config_field_optional, edit_f
 use shared::model::{VideoDownloadConfigDto, VideoConfigDto};
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::app::components::config::config_page::ConfigForm;
+use crate::app::components::config::config_page::{ConfigForm, LABEL_VIDEO_CONFIG};
 use crate::app::components::config::config_view_context::ConfigViewContext;
 
 const LABEL_DOWNLOAD: &str = "LABEL.DOWNLOAD";
@@ -161,6 +161,7 @@ pub fn VideoConfigView() -> Html {
 
     html! {
         <div class="tp__video-config-view tp__config-view-page">
+            <div class="tp__config-view-page__title">{translate.t(LABEL_VIDEO_CONFIG)}</div>
             { if *config_view_ctx.edit_mode { render_edit_mode() } else { render_view_mode() } }
         </div>
     }
