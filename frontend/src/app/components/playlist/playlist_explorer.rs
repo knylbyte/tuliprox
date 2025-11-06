@@ -111,8 +111,14 @@ pub fn PlaylistExplorer() -> Html {
 
     let copy_to_clipboard: Callback<String> = {
         let clipboard = clipboard.clone();
+        let services = service_ctx.clone();
+        let translate = translate.clone();
         Callback::from(move |text: String| {
-            clipboard.write_text(text);
+            if *clipboard.is_supported {
+                clipboard.write_text(text);
+            } else {
+                services.toastr.error(translate.t("MESSAGES.CLIPBOARD_NOT_SUPPORTED"));
+            }
         })
     };
 

@@ -101,13 +101,20 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                     user.server = Some(api_server.name.clone());
                 }
                 user.max_connections = DEFAULT_MAX_CONNECTIONS;
-                user.proxy = ProxyType::Redirect;
+                user.proxy = ProxyType::Reverse(None);
                 user.status = Some(ProxyUserStatus::Active);
                 user.ui_enabled = true;
                 let now = Utc::now();
                 user.created_at = Some(now.timestamp());
                 let in_one_year = now + Duration::days(DEFAULT_EXPIRATION_DAYS);
                 user.exp_date = Some(in_one_year.timestamp());
+
+                if user.username.is_empty(){
+                    user.username = generate_random_string(6).to_uppercase();
+                }
+                if user.password.is_empty(){
+                    user.password = generate_random_string(6).to_uppercase();
+                }
                 user.token = Some(generate_random_string(6));
 
                 form_state.dispatch(UserFormAction::SetAll(user));

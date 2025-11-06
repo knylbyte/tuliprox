@@ -210,8 +210,14 @@ impl ActiveUserManager {
     }
 
     pub async fn active_users_and_connections(&self) -> (usize, usize) {
-        let connections = self.connections.read().await;
-        (connections.key_by_addr.len(), connections.by_key.values().map(|c| c.connections).sum::<u32>() as usize)
+        let user_connections = self.connections.read().await;
+        user_connections
+            .by_key
+            .values()
+            .filter(|c| c.connections > 0)
+            .fold((0usize, 0usize), |(user_count, conn_count), c| {
+                (user_count + 1, conn_count + c.connections as usize)
+            })
     }
 
     pub async fn update_stream_detail(&self, username: &str, fingerprint: &Fingerprint, video_type: CustomVideoStreamType) -> Option<StreamInfo> {
@@ -336,13 +342,13 @@ impl ActiveUserManager {
                     session.provider = provider.to_string();
                 }
                 session.permission = connection_permission;
-                debug!("Using session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
+                debug!("Using session for user {} with token {session_token} for url: {}", user.username, sanitize_sensitive_info(stream_url));
                 return session.token.clone();
             }
         }
 
         // If no session exists, create one
-        debug!("Creating session for user {} with token {session_token} {}", user.username, sanitize_sensitive_info(stream_url));
+        debug!("Creating session for user {} with token {session_token} for url: {}", user.username, sanitize_sensitive_info(stream_url));
         let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
         let token = session.token.clone();
         connection_data.add_session(session);

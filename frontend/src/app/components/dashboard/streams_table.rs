@@ -1,12 +1,13 @@
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{AppIcon, Table, TableDefinition, ToggleSwitch};
+use crate::app::components::{AppIcon, RevealContent, Table, TableDefinition, ToggleSwitch};
 use crate::app::ConfigContext;
 use crate::hooks::use_service_context;
+use crate::utils::t_safe;
 use gloo_timers::callback::Interval;
 use gloo_utils::window;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
-use shared::model::{SortOrder, StreamInfo};
+use shared::model::{PlaylistItemType, ProtocolMessage, SortOrder, StreamChannel, StreamInfo, UserCommand};
 use shared::utils::{current_time_secs, strip_port};
 use std::fmt::Display;
 use std::rc::Rc;
@@ -15,7 +16,13 @@ use wasm_bindgen::JsCast;
 use web_sys::Element;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::utils::t_safe;
+
+const LIVE: &str = "Live";
+const MOVIE: &str = "Movie";
+const SERIES: &str = "Series";
+const CATCHUP: &str = "Archive";
+const HLS: &str = "HLS";
+const DASH: &str = "DASH";
 
 const HEADERS: [&str; 12] = [
     "EMPTY",
@@ -130,6 +137,19 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         })
     };
 
+    let render_cluster = |channel: &StreamChannel| -> &str {
+        match channel.item_type {
+            PlaylistItemType::LiveUnknown
+            | PlaylistItemType::Live => LIVE,
+            PlaylistItemType::Video => MOVIE,
+            PlaylistItemType::Series
+            | PlaylistItemType::SeriesInfo => SERIES,
+            PlaylistItemType::Catchup => CATCHUP,
+            PlaylistItemType::LiveHls => HLS,
+            PlaylistItemType::LiveDash => DASH
+        }
+    };
+
     let render_data_cell = {
         let popup_onclick = handle_popup_onclick.clone();
         let headers = headers.clone();
@@ -154,14 +174,14 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                             { dto.channel.provider_id.to_string() }
                             {")"}
                         </>},
-                    "CLUSTER" => html! {dto.channel.cluster},
+                    "CLUSTER" => html! { render_cluster(&dto.channel) },
                     "CHANNEL" => html! {dto.channel.title.as_str()},
                     "GROUP" => html! {dto.channel.group.as_str()},
                     "CLIENT_IP" => html! { strip_port(&dto.client_ip)},
                     "COUNTRY" => html! { dto.country.as_ref().map_or_else(String::new, |c| t_safe(&translate, &format!("COUNTRY.{c}")).unwrap_or_else(||c.to_string())) },
                     "PROVIDER" => html! {dto.provider.as_str()},
                     "SHARED" => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
-                    "USER_AGENT" => html! { dto.user_agent.as_str() },
+                    "USER_AGENT" => html! { <RevealContent preview={Some(html! { dto.user_agent.as_str() })}>{dto.user_agent.as_str()}</RevealContent> },
                     "DURATION" => html! { <span class="tp__stream-table__duration" data-ts={dto.ts.to_string()}>{format_duration(current_time_secs() - dto.ts)}</span> },
                     _ => html! {""},
                 }
@@ -197,15 +217,18 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
 
     let handle_menu_click = {
         let popup_is_open_state = popup_is_open.clone();
-        //let translate = translate.clone();
+        let translate = translate.clone();
         let services_ctx = services.clone();
-        //let selected_dto = selected_dto.clone();
+        let selected_dto = selected_dto.clone();
         Callback::from(move |(name, _): (String, _)| {
             if let Ok(action) = StreamsTableAction::from_str(&name) {
                 match action {
                     StreamsTableAction::Kick => {
-                        // TODO implement connection kick
-                        services_ctx.toastr.error("Not implemented")
+                        if let Some(dto) = (*selected_dto).as_ref() {
+                            if !services_ctx.websocket.send_message(ProtocolMessage::UserAction(UserCommand::Kick(dto.addr))) {
+                                services_ctx.toastr.error(translate.t("MESSAGES.FAILED_TO_KICK_USER_STREAM"));
+                            }
+                        }
                     }
                 }
             }

@@ -10,43 +10,19 @@ BACKEND_DIR="${WORKING_DIR}/backend"
 
 ./bin/build_resources.sh
 
-if ! command -v cargo-set-version &> /dev/null
-then
-    echo "🧨 cargo-set-version could not be found. Install it with 'cargo install cargo-edit'"
-    exit 1
-fi
-
 cd "$FRONTEND_DIR" || (echo "🧨 Can't find frontend directory" && exit 1)
 
 # Read current version from Cargo.toml
-OLD_VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
+VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
 
-IFS='.' read -r major minor patch <<< "$OLD_VERSION"
+read -rp "Releasing version: '${VERSION}', please confirm? [y/N] " answer
 
-case "$1" in
-  k)
-    ;;
-  m) # Major bump
-     ((major++))
-     minor=0
-     patch=0
-     ;;
-  p) # Minor bump
-     ((minor++))
-     patch=0
-     ;;
-  *) # Patch bump (default)
-     ((patch++))
-     ;;
-esac
+# Default 'N', cancel, if not 'y' or 'Y'
+if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+    echo "Canceled."
+    exit 1
+fi
 
-NEW_VERSION="${major}.${minor}.${patch}"
-
-cd "$WORKING_DIR"
-
-cargo set-version "$NEW_VERSION"
-
-VERSION=v$NEW_VERSION
 echo "🛠️ Building version $VERSION"
 
 declare -A ARCHITECTURES=(

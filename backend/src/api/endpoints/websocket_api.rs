@@ -5,7 +5,7 @@ use crate::auth::{verify_token_admin, verify_token_user};
 use axum::extract::ws::CloseFrame;
 use axum::{extract::ws::{Message, WebSocket, WebSocketUpgrade},response::IntoResponse};
 use log::{error, trace};
-use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserRole, WsCloseCode, PROTOCOL_VERSION};
+use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserCommand, UserRole, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
 use shared::utils::{concat_path_leading_slash};
 
@@ -104,14 +104,14 @@ async fn handle_protocol_message(
     msg: Message,
     mem: &mut ProtocolHandlerMemory,
     app_state: &Arc<AppState>,
-    auth: bool,
+    auth_required: bool,
     secret_key: Option<&Vec<u8>>,
 ) -> Option<ProtocolMessage> {
     if let Message::Binary(bytes) = msg {
         match ProtocolMessage::from_bytes(bytes) {
             Ok(ProtocolMessage::Auth(auth_token)) => {
                  mem.token = None;
-                 if !auth || verify_auth_admin_token(&auth_token, secret_key) {
+                 if !auth_required || verify_auth_admin_token(&auth_token, secret_key) {
                      mem.role = UserRole::Admin;
                      mem.token = Some(auth_token);
                      Some(ProtocolMessage::Authorized)
@@ -124,7 +124,7 @@ async fn handle_protocol_message(
                  }
             },
             Ok(ProtocolMessage::StatusRequest(auth_token)) => {
-                if !auth || verify_auth_admin_token(&auth_token, secret_key) {
+                if !auth_required || verify_auth_admin_token(&auth_token, secret_key) {
                     mem.role = UserRole::Admin;
                     mem.token = Some(auth_token);
                     let status = create_status_check(app_state).await;
@@ -132,7 +132,18 @@ async fn handle_protocol_message(
                 } else {
                     Some(ProtocolMessage::Unauthorized)
                 }
-            }
+            },
+            Ok(ProtocolMessage::UserAction(cmd)) => {
+                if let Some(token) = mem.token.as_ref() {
+                    if !auth_required || verify_auth_admin_token(token, secret_key) {
+                        Some(ProtocolMessage::UserActionResponse(handle_user_action(app_state, cmd)))
+                    } else {
+                        Some(ProtocolMessage::UserActionResponse(false))
+                    }
+                } else {
+                    Some(ProtocolMessage::UserActionResponse(false))
+                }
+            },
             Ok(_) => {
                 trace!("Unexpected protocol message after handshake");
                 None
@@ -154,7 +165,7 @@ async fn handle_incoming_message(
     socket: &mut WebSocket,
     handler: &mut ProtocolHandler,
     app_state: &Arc<AppState>,
-    auth: bool,
+    auth_required: bool,
     secret_key: Option<&Vec<u8>>,
 ) -> Result<(), String> {
     let msg = result.map_err(|e| e.to_string())?;
@@ -166,7 +177,7 @@ async fn handle_incoming_message(
             Ok(())
         }
         ProtocolHandler::Default(mem) => {
-            let msg = handle_protocol_message(msg, mem, app_state, auth, secret_key).await;
+            let msg = handle_protocol_message(msg, mem, app_state, auth_required, secret_key).await;
             match msg {
                 None => Ok(()),
                 Some(protocol_msg) => {
@@ -254,8 +265,8 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage, handl
 }
 
 // WebSocket communication logic
-async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth: bool) {
-    let secret_key = get_secret_key(&app_state, auth);
+async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth_required: bool) {
+    let secret_key = get_secret_key(&app_state, auth_required);
 
     let mut event_rx = app_state.event_manager.get_event_channel();
 
@@ -265,7 +276,7 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth: bo
         tokio::select! {
             maybe_msg = socket.recv() => {
                 if let Some(msg) = maybe_msg {
-                    if let Err(e) = handle_incoming_message(msg, &mut socket, &mut handler, &app_state, auth, secret_key.as_ref()).await {
+                    if let Err(e) = handle_incoming_message(msg, &mut socket, &mut handler, &app_state, auth_required, secret_key.as_ref()).await {
                         error!("WebSocket message handling error: {e}");
                         break;
                     }
@@ -281,5 +292,11 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth: bo
                 }
             }
         }
+    }
+}
+
+fn handle_user_action(app_state: &Arc<AppState>, cmd: UserCommand) -> bool {
+    match cmd {
+        UserCommand::Kick(addr) => app_state.connection_manager.kick_connection(&addr),
     }
 }

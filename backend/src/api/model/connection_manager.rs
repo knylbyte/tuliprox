@@ -36,10 +36,12 @@ impl ConnectionManager {
         self.close_socket_signal_tx.subscribe()
     }
 
-    pub fn kick_connection(&self, addr: &SocketAddr) {
+    pub fn kick_connection(&self, addr: &SocketAddr) -> bool {
         if let Err(e) = self.close_socket_signal_tx.send(*addr) {
             debug!("No active receivers for close signal ({addr}): {e:?}");
+            return false;
         }
+        true
     }
 
     pub async fn release_connection(&self, addr: &SocketAddr) {
