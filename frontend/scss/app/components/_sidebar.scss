@@ -1,3 +1,5 @@
+@use "../../size" as size;
+
 .tp__app-sidebar.expanded {
   min-width: var(--sidebar-width-expaned);
   max-width: var(--sidebar-width-expaned);
@@ -74,5 +76,13 @@
     .tp__collapse-panel {
       margin-top: var(--gap-large);
     }
+  }
+}
+
+@media (max-width: size.$mobile-breakpoint) {
+  .tp__app-sidebar-menu {
+    &--source_editor {
+        display: none !important;
+      }
   }
 }
