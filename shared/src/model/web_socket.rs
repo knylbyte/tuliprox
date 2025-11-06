@@ -2,6 +2,7 @@ use std::io;
 use bytes::Bytes;
 use crate::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState, StatusCheck};
 use serde::{Deserialize, Serialize};
+use crate::model::user_command::UserCommand;
 
 pub const PROTOCOL_VERSION: u8 = 1;
 
@@ -78,12 +79,15 @@ pub enum ProtocolMessage {
     Authorized,
     ServerError(String),
     StatusRequest(String),
+    UserAction(UserCommand),
+    // Responses
     StatusResponse(StatusCheck),
     ActiveUserResponse(ActiveUserConnectionChange),
     ActiveProviderResponse(String, usize),
     ConfigChangeResponse(ConfigType),
     PlaylistUpdateResponse(PlaylistUpdateState),
     PlaylistUpdateProgressResponse(String, String),
+    UserActionResponse(bool),
 }
 
 impl ProtocolMessage {

@@ -317,7 +317,8 @@
     "RESOLVE_VOD": "Resolve Vod",
     "RESOLVE_VOD_DELAY_SEC": "Resolve Vod Delay  (sec)",
     "RESOLVE_SERIES": "Resolve Series",
-    "RESOLVE_SERIES_DELAY_SEC": "Resolve Series Delay (sec)"
+    "RESOLVE_SERIES_DELAY_SEC": "Resolve Series Delay (sec)",
+    "COPY_CREDENTIALS": "Copy Credentials"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "User group editor"
@@ -332,6 +333,7 @@
     "USER_DELETED": "User successfully deleted",
     "SCHEDULE_NOT_SET": "Please enter a schedule before adding",
     "SCHEDULE_EXISTS": "Schedule already exists",
+    "CLIPBOARD_NOT_SUPPORTED": "Clipboard not supported.\nYour browser or current context does not allow clipboard access.\nPlease use HTTPS or localhost.",
     "DOWNLOAD": {
       "SUCCESS": "Successfully downloaded",
       "FAIL": "Failed to download!",

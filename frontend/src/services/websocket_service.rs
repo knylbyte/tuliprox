@@ -101,9 +101,13 @@ impl WebSocketService {
                                             Self::try_send_message(ws_onmessage_clone.borrow().as_ref(), ProtocolMessage::Auth(token));
                                         }
                                     }
-                                    ProtocolMessage::Auth(_)
+                                    ProtocolMessage::UserActionResponse(_success) => {
+                                        // TODO display a kicked successfully message
+                                    }
+                                    | ProtocolMessage::Auth(_)
                                     | ProtocolMessage::Authorized
-                                    | ProtocolMessage::StatusRequest(_) => {}
+                                    | ProtocolMessage::StatusRequest(_)
+                                    | ProtocolMessage::UserAction(_) => {}
                                 }
                             }
                             Err(err) => error!("Failed to decode websocket message: {err}")
@@ -163,21 +167,26 @@ impl WebSocketService {
         }
     }
 
-    fn try_send_message(ws_opt: Option<&WebSocket>, msg: ProtocolMessage) {
+    fn try_send_message(ws_opt: Option<&WebSocket>, msg: ProtocolMessage) -> bool {
         if let Some(ws) = ws_opt {
             match msg.to_bytes() {
                 Ok(bytes) => {
                     if let Err(err) = ws.send_with_u8_array(bytes.as_ref()) {
                         error!("Failed to send a websocket message: {err:?}");
+                    } else {
+                        return true;
                     }
                 },
-                Err(err) => error!("Failed to create WebSocket protocol version message: {err}"),
+                Err(err) => {
+                    error!("Failed to create WebSocket protocol version message: {err}")
+                },
             }
         }
+        false
     }
 
-    pub fn send_message(&self, msg: ProtocolMessage) {
-        Self::try_send_message(self.ws.borrow().as_ref(), msg);
+    pub fn send_message(&self, msg: ProtocolMessage) -> bool {
+        Self::try_send_message(self.ws.borrow().as_ref(), msg)
     }
 
     pub async fn get_server_status(&self) {

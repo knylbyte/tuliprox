@@ -12,6 +12,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use yew::platform::spawn_local;
 use yew::prelude::*;
+use yew_hooks::use_clipboard;
 use yew_i18n::use_translation;
 use crate::app::TargetUserList;
 use crate::hooks::use_service_context;
@@ -58,6 +59,7 @@ enum TableAction {
     Edit,
     Refresh,
     Delete,
+    CopyCredentials,
 }
 
 impl Display for TableAction {
@@ -66,6 +68,7 @@ impl Display for TableAction {
             Self::Edit => "edit",
             Self::Refresh => "refresh",
             Self::Delete => "delete",
+            Self::CopyCredentials => "copy_credentials",
         })
     }
 }
@@ -80,8 +83,10 @@ impl FromStr for TableAction {
             Ok(Self::Refresh)
         } else if s.eq("delete") {
             Ok(Self::Delete)
+        } else if s.eq("copy_credentials") {
+            Ok(Self::CopyCredentials)
         } else {
-            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
+            create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown TableAction: {}", s)
         }
     }
 }
@@ -94,6 +99,7 @@ pub struct UserTableProps {
 #[function_component]
 pub fn UserTable(props: &UserTableProps) -> Html {
     let translate = use_translation();
+    let clipboard = use_clipboard();
     let service_ctx = use_service_context();
     let dialog = use_context::<DialogService>().expect("Dialog service not found");
     let userlist_context = use_context::<UserlistContext>().expect("Userlist context not found");
@@ -246,7 +252,9 @@ pub fn UserTable(props: &UserTableProps) -> Html {
         let services = service_ctx.clone();
         let selected_dto = selected_dto.clone();
         let ul_context = userlist_context.clone();
-        Callback::from(move |(name, _): (String, _)| {
+        let clipboard = clipboard.clone();
+        Callback::from(move |(name, e): (String, MouseEvent)| {
+            e.prevent_default();
             if let Ok(action) = TableAction::from_str(&name) {
                 match action {
                     TableAction::Edit => {
@@ -284,6 +292,17 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                             }
                         });
                     }
+                    TableAction::CopyCredentials => {
+                        if *clipboard.is_supported {
+                            if let Some(dto) = &*selected_dto {
+                                clipboard.write_text(format!("username:{} password:{} token: {}",
+                                                             dto.credentials.username, dto.credentials.password,
+                                                             dto.credentials.token.as_ref().map_or_else(String::new, |t| t.to_string())));
+                            }
+                        } else {
+                            services.toastr.error(translate.t("MESSAGES.CLIPBOARD_NOT_SUPPORTED"));
+                        }
+                    }
                 }
             }
             popup_is_open_state.set(false);
@@ -298,6 +317,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                <Table::<TargetUser> definition={table_definition.clone()} />
                 <PopupMenu is_open={*popup_is_open} anchor_ref={(*popup_anchor_ref).clone()} on_close={handle_popup_close}>
                     <MenuItem icon="Edit" name={TableAction::Edit.to_string()} label={translate.t("LABEL.EDIT")} onclick={&handle_menu_click}></MenuItem>
+                    <MenuItem icon="Clipboard" name={TableAction::CopyCredentials.to_string()} label={translate.t("LABEL.COPY_CREDENTIALS")} onclick={&handle_menu_click}></MenuItem>
                     <hr/>
                     <MenuItem icon="Delete" name={TableAction::Delete.to_string()} label={translate.t("LABEL.DELETE")} onclick={&handle_menu_click} class="tp__delete_action"></MenuItem>
                 </PopupMenu>

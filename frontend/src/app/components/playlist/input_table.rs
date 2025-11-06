@@ -132,7 +132,9 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                                    })}}>
                                       <EpgConfigView epg={ dto.epg.clone() } />
                                    </RevealContent> }),
-                            13 => html! { <InputHeaders headers={dto.headers.clone()} /> },
+                            13 => html! { <RevealContent preview={ html!{ dto.headers.iter().next().map_or_else(String::new, |(key, value)| format!("{key}: {value}")) } }>
+                                        <InputHeaders headers={dto.headers.clone()} />
+                                    </RevealContent> },
                             14 => html_if!(dto.staged.is_some(),
                                  { <RevealContent preview={ html!{ dto.staged.as_ref().map_or_else(String::new, |s| s.url.clone())} }>
                                       <StagedInputView input={ dto.staged.clone() } />
