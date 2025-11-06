@@ -350,7 +350,9 @@ impl SharedStreamManager {
             };
 
             if is_empty {
-                self.unregister(stream_url.as_ref().unwrap(), send_stop_signal).await;
+                if let Some(url) = stream_url.as_ref() {
+                    self.unregister(url, send_stop_signal).await;
+                }
             }
 
             if let Some(client_stop_signal) = tx {
