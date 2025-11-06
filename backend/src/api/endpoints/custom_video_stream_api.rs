@@ -2,8 +2,10 @@ use axum::response::IntoResponse;
 use std::str::FromStr;
 use std::sync::Arc;
 use crate::api::model::{create_custom_video_stream_response, AppState, CustomVideoStreamType};
+use crate::auth::Fingerprint;
 
 async fn cvs_api(
+    fingerprint: Fingerprint,
     axum::extract::Path((username, password, stream_type)): axum::extract::Path<(
         String,
         String,
@@ -26,6 +28,7 @@ async fn cvs_api(
         return axum::http::StatusCode::FORBIDDEN.into_response();
     }
 
+    app_state.connection_manager.update_stream_detail(&user.username, &fingerprint, custom_video_type).await;
     create_custom_video_stream_response(
         &app_state.app_config,
         custom_video_type

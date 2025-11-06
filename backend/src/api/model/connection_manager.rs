@@ -51,6 +51,12 @@ impl ConnectionManager {
         self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Disconnected(*addr)));
     }
 
+    pub async fn release_provider_connection(&self, addr: &SocketAddr) {
+        self.provider_manager.release_connection(addr).await;
+        self.shared_stream_manager.release_connection(addr, false).await;
+    }
+
+
     #[allow(clippy::too_many_arguments)]
     pub async fn add_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
                                 provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) {
@@ -64,7 +70,7 @@ impl ConnectionManager {
 
     pub async fn update_stream_detail(&self, username: &str, fingerprint: &Fingerprint, video_type: CustomVideoStreamType) {
        if let Some(stream_info) = self.user_manager.update_stream_detail(username, fingerprint, video_type).await {
-           self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Connected(stream_info)));
+           self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Updated(stream_info)));
        }
     }
 }

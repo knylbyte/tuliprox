@@ -40,6 +40,17 @@ pub fn use_server_status(
                             ActiveUserConnectionChange::Connected(stream_info) => {
                                 server_status.active_user_streams.push(stream_info);
                             }
+                            ActiveUserConnectionChange::Updated(stream_info) => {
+                                if let Some(pos) = server_status
+                                    .active_user_streams
+                                    .iter()
+                                    .position(|s| s.addr == stream_info.addr)
+                                {
+                                    server_status.active_user_streams[pos] = stream_info;
+                                } else {
+                                    server_status.active_user_streams.push(stream_info);
+                                }
+                            }
                             ActiveUserConnectionChange::Disconnected(addr) => {
                                 server_status.active_user_streams.retain(|stream_info| stream_info.addr != addr);
                             }

@@ -1,6 +1,8 @@
 # Changelog
-# 3.1.8 (2025-10-xx)
+# 3.1.8 (2025-11-18)
 - Fixed HLS streaming issues caused by session eviction and incorrect headers.
+- Catchup stream fix cycling through multiple providers on play.
+- Custom streams fix and update webui stream info
 - Added TimeZone to `epg_timeshift: [-+]hh:mm or TimeZone`, example `Europe/Paris`, `America/New_York`, `-2:30`(-2h30m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m)
 If you use TimeZone the timeshift will change on Summer/Winter time if its applied in the TZ.
 - Fixed: Mappings now automatically reload and reapply after configuration changes, preventing stale settings.
@@ -18,7 +20,10 @@ Output filters are applied after all transformations have been performed, theref
 - Fixed some session handling issue
 - added `reverse_proxy.disabled_header` configuration
   Allows removing selected headers before forwarding requests when acting as a reverse proxy. Configure removal of the referer header, all `X-*` headers, and additional custom headers.
-- !BREAKING_CHANGE! `disble_referer_header` is now part of `reverse_proxy.disabled_header` configuration 
+- !BREAKING_CHANGE! `disble_referer_header` is now part of `reverse_proxy.disabled_header` configuration
+- UserTable: Copy credentials to clipboard from user table
+- UserTable: Kick user action from streams table
+- UserTable: Auto-generated username/password for new proxy users
 
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch

@@ -16,7 +16,6 @@ pub type ProviderStreamResponse = (Option<BoxedProviderStream>, ProviderStreamIn
 
 pub type ProviderStreamFactoryResponse = (BoxedProviderStream, ProviderStreamInfo);
 
-
 type StreamUrl = String;
 type ProviderName = String;
 
