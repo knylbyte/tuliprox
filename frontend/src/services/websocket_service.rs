@@ -102,9 +102,9 @@ impl WebSocketService {
                                         }
                                     }
                                     ProtocolMessage::UserActionResponse(_success) => {
-                                        // TODO display a kicked successfully message
+                                       // Success is already handled in the UI component that initiated the action
                                     }
-                                    | ProtocolMessage::Auth(_)
+                                    ProtocolMessage::Auth(_)
                                     | ProtocolMessage::Authorized
                                     | ProtocolMessage::StatusRequest(_)
                                     | ProtocolMessage::UserAction(_) => {}

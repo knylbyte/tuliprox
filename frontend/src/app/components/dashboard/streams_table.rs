@@ -137,8 +137,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         })
     };
 
-    let render_cluster = |channel: &StreamChannel| {
-        html! {
+    let render_cluster = |channel: &StreamChannel| -> &str {
         match channel.item_type {
             PlaylistItemType::LiveUnknown
             | PlaylistItemType::Live => LIVE,
@@ -148,7 +147,6 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
             PlaylistItemType::Catchup => CATCHUP,
             PlaylistItemType::LiveHls => HLS,
             PlaylistItemType::LiveDash => DASH
-        }
         }
     };
 
@@ -176,7 +174,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                             { dto.channel.provider_id.to_string() }
                             {")"}
                         </>},
-                    "CLUSTER" => html! { render_cluster(&dto.channel)},
+                    "CLUSTER" => html! { render_cluster(&dto.channel) },
                     "CHANNEL" => html! {dto.channel.title.as_str()},
                     "GROUP" => html! {dto.channel.group.as_str()},
                     "CLIENT_IP" => html! { strip_port(&dto.client_ip)},
@@ -219,7 +217,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
 
     let handle_menu_click = {
         let popup_is_open_state = popup_is_open.clone();
-        //let translate = translate.clone();
+        let translate = translate.clone();
         let services_ctx = services.clone();
         let selected_dto = selected_dto.clone();
         Callback::from(move |(name, _): (String, _)| {
@@ -228,7 +226,9 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                     StreamsTableAction::Kick => {
                         if let Some(dto) = (*selected_dto).as_ref() {
                             if services_ctx.websocket.send_message(ProtocolMessage::UserAction(UserCommand::Kick(dto.addr))) {
-                                services_ctx.toastr.success(format!("Stream for user {} kicked! {}", dto.username, dto.channel.title));
+                                services_ctx.toastr.success(translate.t("MESSAGES.SUCCESS_KICK_USER_STREAM"));
+                            } else {
+                                services_ctx.toastr.error(translate.t("MESSAGES.FAILED_TO_KICK_USER_STREAM"));
                             }
                         }
                     }

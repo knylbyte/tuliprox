@@ -216,7 +216,7 @@ impl ActiveUserManager {
             .values()
             .filter(|c| c.connections > 0)
             .fold((0usize, 0usize), |(user_count, conn_count), c| {
-                (user_count + 1, conn_count+ c.connections as usize)
+                (user_count + 1, conn_count + c.connections as usize)
             })
     }
 
@@ -348,7 +348,7 @@ impl ActiveUserManager {
         }
 
         // If no session exists, create one
-        debug!("Creating session for user {} with token {session_token}  for url: {}", user.username, sanitize_sensitive_info(stream_url));
+        debug!("Creating session for user {} with token {session_token} for url: {}", user.username, sanitize_sensitive_info(stream_url));
         let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
         let token = session.token.clone();
         connection_data.add_session(session);
@@ -425,7 +425,6 @@ impl ActiveUserManager {
             }
         }
     }
-
 }
 
 //

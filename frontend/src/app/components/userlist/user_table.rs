@@ -295,7 +295,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                     TableAction::CopyCredentials => {
                         if *clipboard.is_supported {
                             if let Some(dto) = &*selected_dto {
-                                clipboard.write_text(format!("username:{} password:{} token: {}",
+                                clipboard.write_text(format!("username: {} password: {} token: {}",
                                                              dto.credentials.username, dto.credentials.password,
                                                              dto.credentials.token.as_ref().map_or_else(String::new, |t| t.to_string())));
                             }
