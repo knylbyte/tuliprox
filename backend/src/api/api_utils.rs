@@ -1266,9 +1266,9 @@ pub async fn is_seek_request(cluster: XtreamCluster, req_headers: &HeaderMap) ->
         .map(ToString::to_string);
 
     if let Some(range) = range {
-        if range.starts_with("bytes=0-") {
-            return false;
-        }
+        // if range.starts_with("bytes=0-") {
+        //     return false;
+        // }
         if range.starts_with("bytes=") {
             return true;
         }

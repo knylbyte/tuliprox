@@ -19,6 +19,11 @@
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
   animation: fadeIn 0.3s ease-out;
 
+  &__message {
+    display: flex;
+    flex-flow: column;
+  }
+
   .svg-icon {
     width: 1.5rem;
     height: 1.5rem;
