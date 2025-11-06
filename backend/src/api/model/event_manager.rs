@@ -2,6 +2,7 @@ use log::{info, trace};
 use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState};
 use crate::api::model::{ProviderConnectionChangeReceiver};
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq)]
 pub enum EventMessage {
     ServerError(String),

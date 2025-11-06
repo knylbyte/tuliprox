@@ -760,8 +760,9 @@ pub async fn force_provider_stream_response(
     if let (Some(stream), _stream_info) = create_channel_unavailable_stream(
         &app_state.app_config,
         &[],
-        axum::http::StatusCode::BAD_GATEWAY,
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
     ) {
+        app_state.connection_manager.update_stream_detail(&user.username, fingerprint, CustomVideoStreamType::ChannelUnavailable).await;
         debug!("Streaming custom stream");
         try_unwrap_body!(axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
@@ -823,6 +824,7 @@ pub async fn stream_response(
         None,
     )
     .await;
+
     if stream_details.has_stream() {
         // let content_length = get_stream_content_length(provider_response.as_ref());
         let provider_response = stream_details
