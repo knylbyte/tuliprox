@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
+WORKING_DIR=$(pwd)
+BACKEND_DIR="${WORKING_DIR}/backend"
+
 if ! command -v cargo-set-version &> /dev/null
 then
     echo "🧨 cargo-set-version could not be found. Install it with 'cargo install cargo-edit'"
@@ -11,7 +14,10 @@ fi
 # Read current version from Cargo.toml
 OLD_VERSION=$(grep '^version' "${BACKEND_DIR}/Cargo.toml" | head -n1 | cut -d'"' -f2)
 
-IFS='.' read -r major minor patch <<< "$OLD_VERSION"
+# Remove pre-release and build metadata (e.g., 1.0.0-dev → 1.0.0)
+CLEAN_VERSION="${OLD_VERSION%%-*}"
+CLEAN_VERSION="${CLEAN_VERSION%%+*}"
+IFS='.' read -r major minor patch <<< "$CLEAN_VERSION"
 
 case "$1" in
   k)

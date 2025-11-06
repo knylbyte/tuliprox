@@ -225,9 +225,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                 match action {
                     StreamsTableAction::Kick => {
                         if let Some(dto) = (*selected_dto).as_ref() {
-                            if services_ctx.websocket.send_message(ProtocolMessage::UserAction(UserCommand::Kick(dto.addr))) {
-                                services_ctx.toastr.success(translate.t("MESSAGES.SUCCESS_KICK_USER_STREAM"));
-                            } else {
+                            if !services_ctx.websocket.send_message(ProtocolMessage::UserAction(UserCommand::Kick(dto.addr))) {
                                 services_ctx.toastr.error(translate.t("MESSAGES.FAILED_TO_KICK_USER_STREAM"));
                             }
                         }
