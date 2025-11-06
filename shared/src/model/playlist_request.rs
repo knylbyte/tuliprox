@@ -108,49 +108,83 @@ impl From<PlaylistCategoriesResponse> for UiPlaylistCategories {
     }
 }
 
-fn filter_channels(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, text: &str) -> Option<Vec<Rc<CommonPlaylistItem>>> {
+fn filter_channels(
+    groups: &Option<Vec<Rc<UiPlaylistGroup>>>,
+    text: &str,
+) -> Option<Vec<Rc<UiPlaylistGroup>>> {
+    // normalize search text (lowercase)
+    let text = text.to_lowercase();
+
     groups.as_ref().map(|gs| {
         gs.iter()
-            .flat_map(|group| &group.channels)
-            .filter(|&c| c.title.to_lowercase().contains(text)
-                || c.name.to_lowercase().contains(text))
-            .cloned()
+            .filter_map(|group| {
+                let title_lower = group.title.to_lowercase();
+
+                if title_lower.contains(&text) {
+                    return Some(Rc::clone(group));
+                }
+
+                let filtered_channels: Vec<Rc<CommonPlaylistItem>> = group
+                    .channels
+                    .iter()
+                    .filter(|c| {
+                        c.title.to_lowercase().contains(&text)
+                            || c.name.to_lowercase().contains(&text)
+                    })
+                    .cloned()
+                    .collect();
+
+                if filtered_channels.is_empty() {
+                    None
+                } else {
+                    Some(Rc::new(UiPlaylistGroup {
+                        id: group.id,
+                        title: group.title.clone(),
+                        channels: filtered_channels,
+                        xtream_cluster: group.xtream_cluster,
+                    }))
+                }
+            })
             .collect::<Vec<_>>()
     })
 }
 
-fn filter_channels_re(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) -> Option<Vec<Rc<CommonPlaylistItem>>> {
+fn filter_channels_re(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) -> Option<Vec<Rc<UiPlaylistGroup>>> {
     groups.as_ref().map(|gs| {
         gs.iter()
-            .flat_map(|group| &group.channels)
-            .filter(|&c| regex.is_match(&c.title) || regex.is_match(&c.name))
-            .cloned()
+            .filter_map(|group| {
+                if regex.is_match(&group.title) {
+                    return Some(Rc::clone(group));
+                }
+
+                let filtered_channels: Vec<Rc<CommonPlaylistItem>> = group
+                    .channels
+                    .iter()
+                    .filter(|c| regex.is_match(&c.title) || regex.is_match(&c.name))
+                    .cloned()
+                    .collect();
+
+                if filtered_channels.is_empty() {
+                    None
+                } else {
+                    Some(Rc::new(UiPlaylistGroup {
+                        id: group.id,
+                        title: group.title.clone(),
+                        channels: filtered_channels,
+                        xtream_cluster: group.xtream_cluster,
+                    }))
+                }
+            })
             .collect::<Vec<_>>()
     })
 }
 
-fn build_result(live: Option<Vec<Rc<CommonPlaylistItem>>>,
-                video: Option<Vec<Rc<CommonPlaylistItem>>>,
-                series: Option<Vec<Rc<CommonPlaylistItem>>>) -> Option<UiPlaylistCategories> {
-    if live.is_none() && video.is_none() && series.is_none() {
+fn build_result(live: Option<Vec<Rc<UiPlaylistGroup>>>,
+                vod: Option<Vec<Rc<UiPlaylistGroup>>>,
+                series: Option<Vec<Rc<UiPlaylistGroup>>>) -> Option<UiPlaylistCategories> {
+    if live.is_none() && vod.is_none() && series.is_none() {
         None
     } else {
-        let build_group = |xtream_cluster: XtreamCluster, channels: Vec<Rc<CommonPlaylistItem>>, id: u32| {
-            if channels.is_empty() {
-                None
-            } else {
-                Some(vec!(Rc::new(UiPlaylistGroup {
-                    id,
-                    title: format!("{} ({})", xtream_cluster.as_str().to_owned(), channels.len()),
-                    channels,
-                    xtream_cluster,
-                })))
-            }
-        };
-
-        let live = live.and_then(|g| build_group(XtreamCluster::Live, g, 1));
-        let vod = video.and_then(|g| build_group(XtreamCluster::Video, g, 2));
-        let series = series.and_then(|g| build_group(XtreamCluster::Series, g, 3));
         Some(UiPlaylistCategories {
             live,
             vod,

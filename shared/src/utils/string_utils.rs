@@ -99,6 +99,38 @@ pub fn truncate_string(s: &str, max_len: usize) -> String {
     }
 }
 
+pub fn mask_credentials(s: &str) -> String {
+    match s.chars().next() {
+        Some(first) => format!("{}...", first),
+        None => "...".to_string(),
+    }
+}
+
+pub fn humanize_snake_case(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut capitalize_next = true;
+
+    for c in s.chars() {
+        if c == '_' {
+            result.push(' ');
+            capitalize_next = true;
+        } else if capitalize_next {
+            for up in c.to_uppercase() {
+                result.push(up);
+            }
+            capitalize_next = false;
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
+pub fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
+   if a.len() >= b.len() { a } else { b }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;

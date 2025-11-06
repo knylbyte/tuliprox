@@ -1,15 +1,13 @@
+#![allow(clippy::large_enum_variant)]
+
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::{
-    CacheConfigDto, RateLimitConfigDto, StreamConfigDto, ReverseProxyConfigDto,
-};
+use shared::model::{CacheConfigDto, GeoIpConfigDto, RateLimitConfigDto, ReverseProxyConfigDto, ReverseProxyDisabledHeaderConfigDto, StreamConfigDto};
 use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::ConfigForm;
-use crate::app::components::config::macros::HasFormData;
-use crate::app::components::Card;
-use crate::{config_field, config_field_bool, config_field_optional,
-            edit_field_bool, edit_field_number, edit_field_number_u64, edit_field_text_option, generate_form_reducer};
+use crate::app::components::{Card};
+use crate::{config_field, config_field_bool, config_field_custom, config_field_optional, edit_field_bool, edit_field_list, edit_field_number, edit_field_number_u64, edit_field_text, edit_field_text_option, generate_form_reducer};
 
 const LABEL_CACHE: &str = "LABEL.CACHE";
 const LABEL_ENABLED: &str = "LABEL.ENABLED";
@@ -28,8 +26,15 @@ const LABEL_RATE_LIMIT: &str = "LABEL.RATE_LIMIT";
 const LABEL_PERIOD_MILLIS: &str = "LABEL.PERIOD_MILLIS";
 const LABEL_BURST_SIZE: &str = "LABEL.BURST_SIZE";
 
+const LABEL_SETTINGS: &str = "LABEL.SETTINGS";
 const LABEL_RESOURCE_REWRITE_DISABLED: &str = "LABEL.RESOURCE_REWRITE_DISABLED";
-const LABEL_DISABLE_REFERER_HEADER: &str = "LABEL.DISABLE_REFERER_HEADER";
+const LABEL_DISABLED_HEADER: &str = "LABEL.DISABLED_HEADER";
+const LABEL_REFERER_HEADER: &str = "LABEL.REFERER_HEADER";
+const LABEL_X_HEADER: &str = "LABEL.X_HEADER";
+const LABEL_CUSTOM_HEADERS: &str = "LABEL.CUSTOM_HEADERS";
+const LABEL_ADD_HEADER: &str = "LABEL.ADD_HEADER";
+const LABEL_GEOIP: &str = "LABEL.GEOIP";
+const LABEL_URL: &str = "LABEL.URL";
 
 generate_form_reducer!(
     state: CacheConfigFormState { form: CacheConfigDto },
@@ -65,11 +70,29 @@ generate_form_reducer!(
 );
 
 generate_form_reducer!(
+    state: GeoIpConfigFormState { form: GeoIpConfigDto },
+    action_name: GeoIpConfigFormAction,
+    fields {
+        Enabled => enabled: bool,
+        Url => url: String,
+    }
+);
+
+generate_form_reducer!(
     state: ReverseProxyConfigFormState { form: ReverseProxyConfigDto },
     action_name: ReverseProxyConfigFormAction,
     fields {
         ResourceRewriteDisabled => resource_rewrite_disabled: bool,
-        DisableRefererHeader => disable_referer_header: bool,
+    }
+);
+
+generate_form_reducer!(
+    state: ReverseProxyDisabledHeaderConfigFormState { form: ReverseProxyDisabledHeaderConfigDto },
+    action_name: ReverseProxyDisabledHeaderConfigFormAction,
+    fields {
+        RefererHeader => referer_header: bool,
+        XHeader => x_header: bool,
+        CustomHeader => custom_header: Vec<String>,
     }
 );
 
@@ -82,6 +105,9 @@ pub fn ReverseProxyConfigView() -> Html {
     let reverse_proxy_state: UseReducerHandle<ReverseProxyConfigFormState> = use_reducer(|| {
         ReverseProxyConfigFormState { form: ReverseProxyConfigDto::default(), modified: false }
     });
+    let disabled_header_state: UseReducerHandle<ReverseProxyDisabledHeaderConfigFormState> = use_reducer(|| {
+        ReverseProxyDisabledHeaderConfigFormState { form: ReverseProxyDisabledHeaderConfigDto::default(), modified: false }
+    });
     let cache_state: UseReducerHandle<CacheConfigFormState> = use_reducer(|| {
         CacheConfigFormState { form: CacheConfigDto::default(), modified: false }
     });
@@ -92,22 +118,46 @@ pub fn ReverseProxyConfigView() -> Html {
         StreamConfigFormState { form: StreamConfigDto::default(), modified: false }
     });
 
+    let geoip_state: UseReducerHandle<GeoIpConfigFormState> = use_reducer(|| {
+        GeoIpConfigFormState { form: GeoIpConfigDto::default(), modified: false }
+    });
+
     {
         let on_form_change = config_view_ctx.on_form_change.clone();
         let reverse_proxy_state = reverse_proxy_state.clone();
+        let disabled_header_state = disabled_header_state.clone();
         let cache_state = cache_state.clone();
         let rate_limit_state = rate_limit_state.clone();
         let stream_state = stream_state.clone();
+        let geoip_state = geoip_state.clone();
 
         use_effect_with(
-            (reverse_proxy_state, cache_state, rate_limit_state, stream_state),
-            move |(rp, cache, rl, stream)| {
+            (
+                reverse_proxy_state,
+                disabled_header_state,
+                cache_state,
+                rate_limit_state,
+                stream_state,
+                geoip_state,
+            ),
+            move |(rp, disabled_header, cache, rl, stream, geoip)| {
                 let mut form = rp.form.clone();
                 form.cache = Some(cache.form.clone());
                 form.rate_limit = Some(rl.form.clone());
                 form.stream = Some(stream.form.clone());
+                form.geoip = Some(geoip.form.clone());
+                form.disabled_header = if disabled_header.form.is_empty() {
+                    None
+                } else {
+                    Some(disabled_header.form.clone())
+                };
 
-                let modified = rp.modified || cache.modified || rl.modified || stream.modified;
+                let modified = rp.modified
+                    || disabled_header.modified
+                    || cache.modified
+                    || rl.modified
+                    || stream.modified
+                    || geoip.modified;
                 on_form_change.emit(ConfigForm::ReverseProxy(modified, form));
             },
         );
@@ -115,22 +165,28 @@ pub fn ReverseProxyConfigView() -> Html {
 
     {
         let reverse_proxy_state = reverse_proxy_state.clone();
+        let disabled_header_state = disabled_header_state.clone();
         let cache_state = cache_state.clone();
         let rate_limit_state = rate_limit_state.clone();
         let stream_state = stream_state.clone();
+        let geoip_state = geoip_state.clone();
 
         let reverse_proxy_cfg = config_ctx.config.as_ref().and_then(|c| c.config.reverse_proxy.clone());
         use_effect_with((reverse_proxy_cfg, config_view_ctx.edit_mode.clone()), move |(cfg, _mode)| {
             if let Some(rp) = cfg {
                 reverse_proxy_state.dispatch(ReverseProxyConfigFormAction::SetAll((*rp).clone()));
+                disabled_header_state.dispatch(ReverseProxyDisabledHeaderConfigFormAction::SetAll(rp.disabled_header.as_ref().map_or_else(ReverseProxyDisabledHeaderConfigDto::default, |d| d.clone())));
                 cache_state.dispatch(CacheConfigFormAction::SetAll(rp.cache.as_ref().map_or_else(CacheConfigDto::default, |c| c.clone())));
                 rate_limit_state.dispatch(RateLimitConfigFormAction::SetAll(rp.rate_limit.as_ref().map_or_else(RateLimitConfigDto::default, |rl| rl.clone())));
                 stream_state.dispatch(StreamConfigFormAction::SetAll(rp.stream.as_ref().map_or_else(StreamConfigDto::default, |s| s.clone())));
+                geoip_state.dispatch(GeoIpConfigFormAction::SetAll(rp.geoip.as_ref().map_or_else(GeoIpConfigDto::default, |s| s.clone())));
             } else {
                 reverse_proxy_state.dispatch(ReverseProxyConfigFormAction::SetAll(ReverseProxyConfigDto::default()));
+                disabled_header_state.dispatch(ReverseProxyDisabledHeaderConfigFormAction::SetAll(ReverseProxyDisabledHeaderConfigDto::default()));
                 cache_state.dispatch(CacheConfigFormAction::SetAll(CacheConfigDto::default()));
                 rate_limit_state.dispatch(RateLimitConfigFormAction::SetAll(RateLimitConfigDto::default()));
                 stream_state.dispatch(StreamConfigFormAction::SetAll(StreamConfigDto::default()));
+                geoip_state.dispatch(GeoIpConfigFormAction::SetAll(GeoIpConfigDto::default()));
             }
             || ()
         });
@@ -171,29 +227,78 @@ pub fn ReverseProxyConfigView() -> Html {
         }
     };
 
-    let render_view_mode = || {
-       html! {
-            <>
-              <div class="tp__reverse-proxy-config-view__header tp__config-view-page__header">
+    let render_geoip = || {
+        html! {
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_GEOIP)}</h1>
+                { config_field_bool!(geoip_state.form, translate.t(LABEL_ENABLED), enabled) }
+                { config_field!(geoip_state.form, translate.t(LABEL_URL), url) }
+            </Card>
+        }
+    };
+
+    let render_settings_view = || {
+        html! {
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_SETTINGS)}</h1>
                 { config_field_bool!(reverse_proxy_state.form, translate.t(LABEL_RESOURCE_REWRITE_DISABLED), resource_rewrite_disabled) }
-                { config_field_bool!(reverse_proxy_state.form, translate.t(LABEL_DISABLE_REFERER_HEADER), disable_referer_header) }
-              </div>
-              <div class="tp__reverse-proxy-config-view__body tp__config-view-page__body">
+            </Card>
+        }
+    };
+
+    let render_settings_edit = || {
+        html! {
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_SETTINGS)}</h1>
+                { edit_field_bool!(reverse_proxy_state, translate.t(LABEL_RESOURCE_REWRITE_DISABLED), resource_rewrite_disabled, ReverseProxyConfigFormAction::ResourceRewriteDisabled) }
+            </Card>
+        }
+    };
+
+    let render_disabled_header_view = || {
+        let custom_headers = if disabled_header_state.form.custom_header.is_empty() {
+            "-".to_string()
+        } else {
+            disabled_header_state.form.custom_header.join(", ")
+        };
+        html! {
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_DISABLED_HEADER)}</h1>
+                { config_field_bool!(disabled_header_state.form, translate.t(LABEL_REFERER_HEADER), referer_header) }
+                { config_field_bool!(disabled_header_state.form, translate.t(LABEL_X_HEADER), x_header) }
+                { config_field_custom!(translate.t(LABEL_CUSTOM_HEADERS), custom_headers) }
+            </Card>
+        }
+    };
+
+    let render_disabled_header_edit = || {
+        html! {
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_DISABLED_HEADER)}</h1>
+                { edit_field_bool!(disabled_header_state, translate.t(LABEL_REFERER_HEADER), referer_header, ReverseProxyDisabledHeaderConfigFormAction::RefererHeader) }
+                { edit_field_bool!(disabled_header_state, translate.t(LABEL_X_HEADER), x_header, ReverseProxyDisabledHeaderConfigFormAction::XHeader) }
+                { edit_field_list!(disabled_header_state, translate.t(LABEL_CUSTOM_HEADERS), custom_header, ReverseProxyDisabledHeaderConfigFormAction::CustomHeader, translate.t(LABEL_ADD_HEADER)) }
+            </Card>
+        }
+    };
+
+    let render_view_mode = || {
+        html! {
+            <div class="tp__reverse-proxy-config-view__body tp__config-view-page__body">
+                { render_settings_view() }
+                { render_disabled_header_view() }
                 { render_cache() }
                 { render_rate_limit() }
                 { render_stream() }
-              </div>
-            </>
+                { render_geoip() }
+            </div>
         }
     };
 
     let render_edit_mode = || html! {
-        <>
-          <div class="tp__reverse-proxy-config-view__header tp__config-view-page__header">
-            { edit_field_bool!(reverse_proxy_state, translate.t(LABEL_RESOURCE_REWRITE_DISABLED), resource_rewrite_disabled, ReverseProxyConfigFormAction::ResourceRewriteDisabled) }
-            { edit_field_bool!(reverse_proxy_state, translate.t(LABEL_DISABLE_REFERER_HEADER), disable_referer_header, ReverseProxyConfigFormAction::DisableRefererHeader) }
-          </div>
-          <div class="tp__reverse-proxy-config-view__body tp__config-view-page__body">
+        <div class="tp__reverse-proxy-config-view__body tp__config-view-page__body">
+            { render_settings_edit() }
+            { render_disabled_header_edit() }
             <Card class="tp__config-view__card">
                 <h1>{translate.t(LABEL_CACHE)}</h1>
                 { edit_field_bool!(cache_state, translate.t(LABEL_ENABLED), enabled, CacheConfigFormAction::Enabled) }
@@ -215,8 +320,12 @@ pub fn ReverseProxyConfigView() -> Html {
                 { edit_field_number!(stream_state, translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS), forced_retry_interval_secs, StreamConfigFormAction::ForcedRetryIntervalSecs) }
                 { edit_field_number_u64!(stream_state, translate.t(LABEL_THROTTLE_KBPS), throttle_kbps, StreamConfigFormAction::ThrottleKbps) }
             </Card>
-          </div>
-        </>
+            <Card class="tp__config-view__card">
+                <h1>{translate.t(LABEL_GEOIP)}</h1>
+                { edit_field_bool!(geoip_state, translate.t(LABEL_ENABLED), enabled, GeoIpConfigFormAction::Enabled) }
+                { edit_field_text!(geoip_state, translate.t(LABEL_URL), url, GeoIpConfigFormAction::Url) }
+            </Card>
+        </div>
     };
 
     html! {

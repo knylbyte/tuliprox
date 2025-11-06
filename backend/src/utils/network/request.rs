@@ -17,7 +17,7 @@ use url::Url;
 use shared::error::create_tuliprox_error_result;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::{InputFetchMethod, DEFAULT_USER_AGENT};
-use crate::model::{format_elapsed_time, AppConfig, InputSource};
+use crate::model::{format_elapsed_time, AppConfig, InputSource, ReverseProxyDisabledHeaderConfig};
 use crate::model::{ConfigInput};
 use crate::repository::storage::{get_input_storage_path};
 use crate::repository::storage_const;
@@ -104,7 +104,7 @@ pub async fn get_input_text_content(client: Arc<reqwest::Client>, input: &InputS
     debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(&input.url));
 
     if input.url.parse::<url::Url>().is_ok() {
-        match download_text_content(client, input, persist_filepath).await {
+        match download_text_content(client, None, input, None, persist_filepath).await {
             Ok((content, _response_url)) => Ok(content),
             Err(e) => {
                 error!("cant download input url: {}  => {}", sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()));
@@ -151,7 +151,8 @@ pub fn get_client_request<S: ::std::hash::BuildHasher + Default>
          method: InputFetchMethod,
          headers: Option<&HashMap<String, String, S>>,
          url: &Url,
-         custom_headers: Option<&HashMap<String, Vec<u8>, S>>) -> reqwest::RequestBuilder {
+         custom_headers: Option<&HashMap<String, Vec<u8>, S>>,
+         disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> reqwest::RequestBuilder {
     let request = match method {
         InputFetchMethod::GET => client.get(url.clone()),
         InputFetchMethod::POST => {
@@ -164,16 +165,19 @@ pub fn get_client_request<S: ::std::hash::BuildHasher + Default>
             client.post(url.clone()).form(&params)
         }
     };
-    let headers = get_request_headers(headers, custom_headers);
+    let headers = get_request_headers(headers, custom_headers, disabled_headers);
     request.headers(headers)
 }
 
-pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_headers: Option<&HashMap<String, String, S>>, custom_headers: Option<&HashMap<String, Vec<u8>, S>>) -> HeaderMap {
+pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_headers: Option<&HashMap<String, String, S>>, custom_headers: Option<&HashMap<String, Vec<u8>, S>>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> HeaderMap {
     let mut headers = HeaderMap::default();
     if let Some(req_headers) = request_headers {
         for (key, value) in req_headers {
             if let (Ok(key), Ok(value)) = (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_bytes(value.as_bytes())) {
                 if filter_request_header(key.as_str()) {
+                    if disabled_headers.as_ref().is_some_and(|d| d.should_remove(key.as_str())) {
+                        continue;
+                    }
                     headers.insert(key, value);
                 }
             }
@@ -184,6 +188,9 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
         for (key, value) in custom {
             let key_lc = key.to_lowercase();
             if filter_request_header(key_lc.as_str()) {
+                if disabled_headers.as_ref().is_some_and(|d| d.should_remove(key)) {
+                    continue;
+                }
                 if header_keys.contains(key_lc.as_str()) {
                     // debug_if_enabled!("Ignoring request header '{}={}'", key_lc, String::from_utf8_lossy(value));
                 } else if let (Ok(key), Ok(value)) = (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_bytes(value)) {
@@ -226,7 +233,7 @@ pub fn get_local_file_content(file_path: &PathBuf) -> Result<String, Error> {
 
 async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, url: &Url, file_path: &Path) -> Result<PathBuf, std::io::Error> {
     let start_time = Instant::now();
-    let request = get_client_request(&client, input.method, Some(&input.headers), url, None);
+    let request = get_client_request(&client, input.method, Some(&input.headers), url, None, None);
     match request.send().await {
         Ok(response) => {
             if response.status().is_success() {
@@ -266,7 +273,7 @@ pub async fn get_remote_content_as_stream(
     method: InputFetchMethod,
     headers: Option<&HashMap<String, String>>
 ) -> Result<(DynReader, String), Error> {
-    let request = get_client_request(&client, method, headers, url, None);
+    let request = get_client_request(&client, method, headers, url, None, None);
     let response = request.send().await.map_err(std::io::Error::other)?;
 
     if !response.status().is_success() {
@@ -275,7 +282,6 @@ pub async fn get_remote_content_as_stream(
 
     let response_url = response.url().to_string();
     let headers = response.headers();
-    debug!("{headers:?}");
     let header_value = headers.get(CONTENT_ENCODING);
     let mut encoding = header_value.and_then(|encoding_header| encoding_header.to_str().map_or(None, |value| Some(value.to_string())));
     let stream_reader = StreamReader::new(
@@ -303,9 +309,15 @@ pub async fn get_remote_content_as_stream(
     Ok((reader, response_url))
 }
 
-async fn get_remote_content(client: Arc<reqwest::Client>, input: &InputSource, url: &Url) -> Result<(String, String), Error> {
+async fn get_remote_content(client: Arc<reqwest::Client>, input: &InputSource, headers: Option<&HeaderMap>, url: &Url, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> Result<(String, String), Error> {
     let start_time = Instant::now();
-    let (mut stream, response_url) = get_remote_content_as_stream(client.clone(), url, input.method, Some(&input.headers)).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
+
+    let custom_headers = headers.map(|h| {
+        h.iter().map(|(k, v)| (k.as_str().to_string(), v.as_bytes().to_vec())).collect::<HashMap<_, _>>()});
+    let merged = get_request_headers(Some(&input.headers), custom_headers.as_ref(), disabled_headers);
+    let headers: HashMap<String, String> = merged.iter().map(|(k, v)| (k.as_str().to_string(), String::from_utf8_lossy(v.as_bytes()).to_string())).collect();
+
+    let (mut stream, response_url) = get_remote_content_as_stream(client.clone(), url, input.method, Some(&headers)).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
     let mut content = String::new();
     stream.read_to_string(&mut content).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
     debug_if_enabled!("Request took:{} {}", format_elapsed_time(start_time.elapsed().as_secs()), sanitize_sensitive_info(url.as_str()));
@@ -337,14 +349,14 @@ async fn download_epg_content_as_file(client: Arc<reqwest::Client>, input: &Conf
     }
 }
 
-pub async fn download_text_content(client: Arc<reqwest::Client>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<(String, String), Error> {
+pub async fn download_text_content(client: Arc<reqwest::Client>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, headers: Option<&HeaderMap>, persist_filepath: Option<PathBuf>) -> Result<(String, String), Error> {
     if let Ok(url) = input.url.parse::<url::Url>() {
         let result = if url.scheme() == "file" {
             url.to_file_path().map_or_else(|()| Err(str_to_io_error(&format!("Unknown file {}", sanitize_sensitive_info(&input.url)))), |file_path|
                 get_local_file_content(&file_path).map(|c| (c, url.to_string())),
             )
         } else {
-            get_remote_content(client, input, &url).await
+            get_remote_content(client, input, headers, &url, disabled_headers).await
         };
         match result {
             Ok((content, response_url)) => {
@@ -360,9 +372,9 @@ pub async fn download_text_content(client: Arc<reqwest::Client>, input: &InputSo
     }
 }
 
-async fn download_json_content(client: Arc<reqwest::Client>, input: &InputSource,persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, Error> {
+async fn download_json_content(client: Arc<reqwest::Client>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, Error> {
     debug_if_enabled!("downloading json content from {}", sanitize_sensitive_info(&input.url));
-    match download_text_content(client, input, persist_filepath).await {
+    match download_text_content(client, disabled_headers, input, None, persist_filepath).await {
         Ok((content, _response_url)) => {
             match serde_json::from_str::<serde_json::Value>(&content) {
                 Ok(value) => Ok(value),
@@ -373,8 +385,8 @@ async fn download_json_content(client: Arc<reqwest::Client>, input: &InputSource
     }
 }
 
-pub async fn get_input_json_content(client: Arc<reqwest::Client>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, TuliproxError> {
-    match download_json_content(client, input, persist_filepath).await {
+pub async fn get_input_json_content(client: Arc<reqwest::Client>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, TuliproxError> {
+    match download_json_content(client, disabled_headers, input, persist_filepath).await {
         Ok(content) => Ok(content),
         Err(e) => create_tuliprox_error_result!(TuliproxErrorKind::Notify, "cant download input url: {}  => {}", sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()))
     }
@@ -434,7 +446,11 @@ pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
     }
 
     if let Some(rp_config) = config.reverse_proxy.as_ref() {
-        if rp_config.disable_referer_header {
+        if rp_config
+            .disabled_header
+            .as_ref()
+            .is_some_and(|d| d.referer_header)
+        {
             client = client.referer(false);
         }
     }

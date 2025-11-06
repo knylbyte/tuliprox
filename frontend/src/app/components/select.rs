@@ -1,8 +1,8 @@
 use std::rc::Rc;
 use yew::prelude::*;
-use crate::app::components::{DropDownIconButton, DropDownOption};
+use crate::app::components::{DropDownIconButton, DropDownOption, DropDownSelection};
 
-fn map_selection(o: &Rc<DropDownOption>) -> Html  {
+fn map_selection(o: &DropDownOption) -> Html  {
     html! {<span>{o.label.clone()}</span>}
 }
 
@@ -11,10 +11,10 @@ pub struct SelectProps {
     pub name: String,
     #[prop_or_default]
     pub icon: Option<String>,
-    pub onselect: Callback<(String, Vec<Rc<DropDownOption>>)>,
+    pub on_select: Callback<(String, DropDownSelection)>,
     #[prop_or_default]
     pub class: String,
-    pub options: Vec<Rc<DropDownOption>>,
+    pub options: Rc<Vec<DropDownOption>>,
     #[prop_or_default]
     pub multi_select: bool,
 }
@@ -26,23 +26,12 @@ pub fn Select(props: &SelectProps) -> Html {
     let selected_options = use_state(Vec::new);
     {
         let set_selected_options = selected_options.clone();
-        use_effect_with(props.options.clone(), move |options: &Vec<Rc<DropDownOption>>| {
+        use_effect_with(props.options.clone(), move |options: &Rc<Vec<DropDownOption>>| {
             let selections = options.iter().filter(|o| o.selected)
                 .map(map_selection).collect::<Vec<Html>>();
             set_selected_options.set(selections);
         });
     }
-
-    let handle_options_click = {
-        let onselect = props.onselect.clone();
-        let options = props.options.clone();
-        let set_selections = selected_options.clone();
-        Callback::from(move |(name, selections): (String, Vec<String>)| {
-            let selected_options: Vec<Rc<DropDownOption>> = options.iter().filter(|&o| selections.contains(&o.id)).cloned().collect();
-            set_selections.set(selected_options.iter().map(map_selection).collect());
-            onselect.emit((name, selected_options));
-        })
-    };
 
     let handle_click_button = {
         let button_ref = button_ref.clone();
@@ -69,7 +58,7 @@ pub fn Select(props: &SelectProps) -> Html {
                      options={props.options.clone()}
                      name={props.name.clone()}
                      icon={props.icon.as_ref().map_or_else(|| "Popup".to_owned(), |i|i.to_string())}
-                     onselect={handle_options_click} />
+                     on_select={props.on_select.clone()} />
             </div>
         </div>
     }

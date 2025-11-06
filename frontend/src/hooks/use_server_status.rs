@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::collections::BTreeMap;
 use gloo_timers::callback::Interval;
 use yew::prelude::*;
-use shared::model::StatusCheck;
+use shared::model::{ActiveUserConnectionChange, StatusCheck};
 use crate::hooks::use_service_context;
 use yew::platform::spawn_local;
 use crate::model::EventMessage;
@@ -27,7 +27,7 @@ pub fn use_server_status(
                         *status_holder_signal.borrow_mut() = Some(Rc::clone(&server_status));
                         status_signal.set(Some(server_status));
                     }
-                    EventMessage::ActiveUser(user_count, connections) => {
+                    EventMessage::ActiveUser(event) => {
                         let mut server_status = {
                             if let Some(old_status) = status_holder_signal.borrow().as_ref() {
                                 (**old_status).clone()
@@ -35,8 +35,31 @@ pub fn use_server_status(
                                 StatusCheck::default()
                             }
                         };
-                        server_status.active_users = user_count;
-                        server_status.active_user_connections = connections;
+
+                        match event {
+                            ActiveUserConnectionChange::Connected(stream_info) => {
+                                server_status.active_user_streams.push(stream_info);
+                            }
+                            ActiveUserConnectionChange::Updated(stream_info) => {
+                                if let Some(pos) = server_status
+                                    .active_user_streams
+                                    .iter()
+                                    .position(|s| s.addr == stream_info.addr)
+                                {
+                                    server_status.active_user_streams[pos] = stream_info;
+                                } else {
+                                    server_status.active_user_streams.push(stream_info);
+                                }
+                            }
+                            ActiveUserConnectionChange::Disconnected(addr) => {
+                                server_status.active_user_streams.retain(|stream_info| stream_info.addr != addr);
+                            }
+                            ActiveUserConnectionChange::Connections(user_count, connections) => {
+                                server_status.active_users = user_count;
+                                server_status.active_user_connections = connections;
+                            }
+                        }
+
                         let new_status = Rc::new(server_status);
                         *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));
                         status_signal.set(Some(new_status));

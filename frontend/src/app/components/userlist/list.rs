@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use crate::app::components::{DropDownOption, Search, TextButton, UserlistContext, UserlistPage};
 use yew::prelude::*;
 use yew_i18n::use_translation;
@@ -9,9 +8,9 @@ pub fn UserlistList() -> Html {
     let translate = use_translation();
     let userlist_ctx = use_context::<UserlistContext>().expect("Userlist context not found");
     let search_fields = use_memo((), |_| vec![
-        Rc::new(DropDownOption::new("username", html! { translate.t("LABEL.NAME") }, true)),
-        Rc::new(DropDownOption::new("playlist", html! { translate.t("LABEL.PLAYLIST") }, false)),
-        Rc::new(DropDownOption::new("server", html! { translate.t("LABEL.SERVER") }, false)),
+        DropDownOption::new("username", html! { translate.t("LABEL.NAME") }, true),
+        DropDownOption::new("playlist", html! { translate.t("LABEL.PLAYLIST") }, false),
+        DropDownOption::new("server", html! { translate.t("LABEL.SERVER") }, false),
     ]);
 
 
@@ -44,7 +43,7 @@ pub fn UserlistList() -> Html {
         <div class="tp__userlist-list__header tp__list-list__header">
           <h1>{ translate.t("LABEL.USERS")}</h1>
           <div class="tp__userlist-list__header-toolbar">
-              <Search min_length={1} onsearch={handle_search} options={(*search_fields).clone()}/>
+              <Search min_length={1} onsearch={handle_search} options={search_fields.clone()}/>
               <TextButton class="primary" name="new_userlist"
                 icon="PersonAdd"
                 title={ translate.t("LABEL.NEW_USER")}

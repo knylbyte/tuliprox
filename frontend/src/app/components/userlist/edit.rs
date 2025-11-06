@@ -37,11 +37,18 @@ pub fn UserEdit() -> Html {
         }
     });
 
-    let handle_back = {
+    let handle_cancel = {
         let userlist_ctx = userlist_ctx.clone();
         Callback::from(move |_| {
             userlist_ctx.active_page.set(UserlistPage::List);
             userlist_ctx.selected_user.set(None);
+        })
+    };
+
+    let handle_back = {
+        let handle_cancel = handle_cancel.clone();
+        Callback::from(move |_| {
+            handle_cancel.emit(());
         })
     };
 
@@ -56,16 +63,22 @@ pub fn UserEdit() -> Html {
             let userlist = userlist.clone();
             let translate = translate.clone();
             spawn_local(async move {
-                match if is_update { services.user.update_user(target.clone(), user.clone()).await } else { services.user.create_user(target.clone(), user.clone()).await } {
+                let save_result = if is_update {
+                    services.user.update_user(target.clone(), user.clone()).await
+                } else {
+                    services.user.create_user(target.clone(), user.clone()).await
+                };
+                match save_result {
                     Ok(()) => {
                         let new_user = Rc::new(TargetUser {target: target.clone(), credentials: Rc::new(user.clone()) });
                         let new_user_list = if let Some(user_list) = userlist.users.as_ref() {
-                             let mut new_list: Vec<Rc<TargetUser>> = user_list.iter().map(|target_user| {
-                               let mut cloned = target_user.as_ref().clone();
-                               if is_update && cloned.target == target && cloned.credentials.username == user.username {
-                                   cloned.credentials = Rc::new(user.clone());
-                               }
-                               Rc::new(cloned)
+                            let mut new_list: Vec<Rc<TargetUser>> = user_list.iter().map(|target_user| {
+                                let mut cloned_target = target_user.as_ref().clone();
+                                if is_update && cloned_target.credentials.username == user.username {
+                                    cloned_target.credentials = Rc::new(user.clone());
+                                    cloned_target.target = target.clone();
+                                }
+                                Rc::new(cloned_target)
                             }).collect();
 
                             if !is_update {
@@ -98,7 +111,7 @@ pub fn UserEdit() -> Html {
         </div>
         <div class="tp__userlist-edit__body tp__list-create__body">
             <Card>
-               <ProxyUserCredentialsForm server={server.clone()} targets={targets.clone()} user={(*userlist_ctx.selected_user).clone()} on_save={handle_user_save}/>
+               <ProxyUserCredentialsForm server={server.clone()} targets={targets.clone()} user={(*userlist_ctx.selected_user).clone()} on_save={handle_user_save} on_cancel={handle_cancel}/>
             </Card>
         </div>
       </div>

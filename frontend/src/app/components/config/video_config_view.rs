@@ -8,7 +8,6 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 use crate::app::components::config::config_page::ConfigForm;
 use crate::app::components::config::config_view_context::ConfigViewContext;
-use crate::app::components::config::macros::HasFormData;
 
 const LABEL_DOWNLOAD: &str = "LABEL.DOWNLOAD";
 const LABEL_ORGANIZE_INTO_DIRECTORIES: &str = "LABEL.ORGANIZE_INTO_DIRECTORIES";
@@ -111,7 +110,7 @@ pub fn VideoConfigView() -> Html {
                 html! {
                     <div class="tp__config-view__tags">
                       <ul>
-                        { for download_state.form.headers.iter().map(|(k,v)| html!{ <li>{k}{":"} {v}</li> }) }
+                        { for download_state.form.headers.iter().map(|(k,v)| html!{ <li key={k.clone()}>{"- "}{k}{": "} {v}</li> }) }
                       </ul>
                     </div>
                 }

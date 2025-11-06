@@ -1,13 +1,12 @@
-use log::{error, info, trace};
-use tokio::task;
-use shared::model::{ConfigType, PlaylistUpdateState};
-use crate::api::model::{ActiveUserConnectionChangeReceiver};
+use log::{info, trace};
+use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState};
 use crate::api::model::{ProviderConnectionChangeReceiver};
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq)]
 pub enum EventMessage {
     ServerError(String),
-    ActiveUser(usize, usize), // user_count, connection count
+    ActiveUser(ActiveUserConnectionChange), // user_count, connection count
     ActiveProvider(String, usize), // provider name, connections
     ConfigChange(ConfigType),
     PlaylistUpdate(PlaylistUpdateState),
@@ -21,31 +20,25 @@ pub struct EventManager {
 }
 
 impl EventManager {
-    pub fn new(mut active_user_change_rx: ActiveUserConnectionChangeReceiver,
-               mut provider_change_rx: ProviderConnectionChangeReceiver,
+    pub fn new(mut provider_change_rx: ProviderConnectionChangeReceiver,
     ) -> Self {
         let (channel_tx, _channel_rx) = tokio::sync::broadcast::channel(10);
 
         let channel_tx_clone = channel_tx.clone();
-        task::spawn(async move {
+        tokio::spawn(async move {
             loop {
                tokio::select! {
-                    Some((user_count, connection_count)) = active_user_change_rx.recv() => {
-                        if let Err(e) = channel_tx_clone.send(EventMessage::ActiveUser(user_count, connection_count)) {
-                            trace!("Failed to send active user change event: {e}");
-                        }
-                    }
 
-                    Some((provider, connection_count)) = provider_change_rx.recv() => {
+                   Some((provider, connection_count)) = provider_change_rx.recv() => {
                         if let Err(e) = channel_tx_clone.send(EventMessage::ActiveProvider(provider, connection_count)) {
                             trace!("Failed to send active provider change event: {e}");
                         }
-                    }
-                    else => {
+                   }
+                   else => {
                         // Both channels are closed, exit gracefully
                         info!("All input channels closed, terminating event manager task");
                         break;
-                    }
+                   }
                }
            }
         });
@@ -62,7 +55,7 @@ impl EventManager {
 
     pub fn send_event(&self, event: EventMessage) {
         if let Err(err) = self.channel_tx.send(event) {
-            error!("Failed to send event: {err}");
+           trace!("Failed to send event: {err}");
         }
     }
 

@@ -83,7 +83,7 @@ pub fn Table<T: PartialEq + Clone>(props: &TableProps<T>) -> Html {
 
                             html!{
                                <th
-                                 class={classes!(
+                                 class={classes!(format!("tp__table__th--{}", col_index+1),
                                      if sortable { Some("tp__table__th--sortable") } else { None }
                                  )}
                                  onclick={if sortable { Some(on_click_col) } else { None }}

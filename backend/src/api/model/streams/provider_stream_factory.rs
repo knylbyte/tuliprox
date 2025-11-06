@@ -4,7 +4,7 @@ use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
 use crate::api::model::{create_channel_unavailable_stream, get_header_filter_for_item_type};
 use crate::api::model::{BoxedProviderStream, ProviderStreamFactoryResponse};
-use crate::model::AppConfig;
+use crate::model::{AppConfig, ReverseProxyDisabledHeaderConfig};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::utils::debug_if_enabled;
 use crate::utils::request::{classify_content_type, get_request_headers, MimeCategory};
@@ -23,8 +23,6 @@ use url::Url;
 use crate::api::model::streams::buffered_stream::BufferedStream;
 use crate::api::model::streams::client_stream::ClientStream;
 
-// TODO make this configurable
-pub const STREAM_QUEUE_SIZE: usize = 4096; // mpsc channel holding messages. with possible 8192byte chunks
 const RETRY_SECONDS: u64 = 5;
 const ERR_MAX_RETRY_COUNT: u32 = 5;
 
@@ -52,11 +50,12 @@ impl ProviderStreamFactoryOptions {
         stream_url: &Url,
         req_headers: &HeaderMap,
         input_headers: Option<&HashMap<String, String>>,
+        disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     ) -> Self {
         let buffer_size = if stream_options.buffer_enabled {
             stream_options.buffer_size
         } else {
-            STREAM_QUEUE_SIZE
+            0
         };
         let filter_header = get_header_filter_for_item_type(item_type);
         let mut req_headers = get_headers_from_request(req_headers, &filter_header);
@@ -65,7 +64,7 @@ impl ProviderStreamFactoryOptions {
         req_headers.remove("range");
 
         // We merge configured input headers with the headers from the request.
-        let headers = get_request_headers(input_headers, Some(&req_headers));
+        let headers = get_request_headers(input_headers, Some(&req_headers), disabled_headers);
 
         let url = stream_url.clone();
         let range_bytes = Arc::new(range_start_bytes.map(AtomicUsize::new));
@@ -197,7 +196,7 @@ fn prepare_client(
     let original_headers = stream_options.get_headers();
 
     if log_enabled!(log::Level::Debug) {
-        let message = format!("original_headers {original_headers:?}");
+        let message = format!("original headers {original_headers:?}");
         debug!("{}", sanitize_sensitive_info(&message));
     }
 
@@ -343,7 +342,7 @@ async fn provider_stream_request(
                             create_channel_unavailable_stream(
                                 cfg,
                                 &get_response_headers(stream_options.get_headers()),
-                                StatusCode::BAD_GATEWAY,
+                                StatusCode::SERVICE_UNAVAILABLE,
                             )
                         {
                             Ok(Some((boxed_provider_stream, response_info)))

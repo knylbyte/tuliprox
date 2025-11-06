@@ -24,7 +24,7 @@ pub struct VirtualIdRecord {
 }
 
 impl VirtualIdRecord {
-    fn new(provider_id: u32, virtual_id: u32, item_type: PlaylistItemType, parent_virtual_id: u32, uuid: UUIDType) -> Self {
+    pub(crate) fn new(provider_id: u32, virtual_id: u32, item_type: PlaylistItemType, parent_virtual_id: u32, uuid: UUIDType) -> Self {
         let last_updated = Local::now().timestamp();
         Self { virtual_id, provider_id, uuid, item_type, parent_virtual_id, last_updated }
     }

@@ -1,6 +1,6 @@
 use crate::model::WebConfig;
 use crate::services::{get_base_href, request_get, request_post, EventService};
-use shared::model::{AppConfigDto, ConfigDto, ConfigInputDto, IpCheckDto};
+use shared::model::{AppConfigDto, ConfigDto, ConfigInputDto, IpCheckDto, TargetOutputDto};
 use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
@@ -21,6 +21,7 @@ pub struct ConfigService {
     config_path: String,
     ip_check_path: String,
     batch_input_content_path: String,
+    geoip_path: String,
     event_service: Rc<EventService>
 }
 
@@ -35,6 +36,7 @@ impl ConfigService {
             config_path: concat_path_leading_slash(&base_href, "api/v1/config"),
             ip_check_path: concat_path_leading_slash(&base_href, "api/v1/ipinfo"),
             batch_input_content_path: concat_path_leading_slash(&base_href, "api/v1/config/batchContent"),
+            geoip_path: concat_path_leading_slash(&base_href, "api/v1/geoip/update"),
             event_service
         }
     }
@@ -70,6 +72,17 @@ impl ConfigService {
                 for source in app_config.sources.sources.iter_mut() {
                     for target in source.targets.iter_mut() {
                         target.t_filter = get_filter(target.filter.as_str(), templates.as_ref()).ok();
+                        for output in target.output.iter_mut() {
+                            match output {
+                                TargetOutputDto::Xtream(o) =>
+                                    o.t_filter = o.filter.as_ref().and_then(|flt| get_filter(flt, templates.as_ref()).map_err(|e| error!("Failed to parse Xtream output filter: {}", e)).ok()),
+                                TargetOutputDto::M3u(o) =>
+                                    o.t_filter = o.filter.as_ref().and_then(|flt| get_filter(flt, templates.as_ref()).map_err(|e| error!("Failed to parse M3U output filter: {}", e)).ok()),
+                                TargetOutputDto::Strm(o) =>
+                                    o.t_filter = o.filter.as_ref().and_then(|flt| get_filter(flt, templates.as_ref()).map_err(|e| error!("Failed to parse Strm output filter: {}", e)).ok()),
+                                TargetOutputDto::HdHomeRun(_) => {}
+                            }
+                        }
                     }
                 }
 
@@ -129,6 +142,10 @@ impl ConfigService {
                 Err(err)
             }
         }
+    }
+
+    pub async fn update_geoip(&self) -> Result<Option<()>, Error> {
+        request_get::<()>(&self.geoip_path, None, None).await
     }
 
 }

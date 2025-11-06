@@ -85,7 +85,6 @@ impl SourcesConfig {
         None
     }
 
-
     /// Returns the targets that were specified as parameters.
     /// If invalid targets are found, the program will be terminated.
     /// The return value has `enabled` set to true, if selective targets should be processed, otherwise false.

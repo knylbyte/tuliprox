@@ -1,5 +1,6 @@
 use crate::api::api_utils::{get_build_time, get_server_time};
 use crate::api::config_watch::exec_config_watch;
+use crate::api::endpoints::custom_video_stream_api::cvs_api_register;
 use crate::api::endpoints::hdhomerun_api::hdhr_api_register;
 use crate::api::endpoints::hls_api::hls_api_register;
 use crate::api::endpoints::m3u_api::m3u_api_register;
@@ -8,29 +9,27 @@ use crate::api::endpoints::web_index::{index_register_with_path, index_register_
 use crate::api::endpoints::websocket_api::ws_api_register;
 use crate::api::endpoints::xmltv_api::xmltv_api_register;
 use crate::api::endpoints::xtream_api::xtream_api_register;
-use crate::api::model::ActiveProviderManager;
-use crate::api::model::ActiveUserManager;
-use crate::api::model::DownloadQueue;
-use crate::api::model::EventManager;
-use crate::api::model::SharedStreamManager;
-use crate::api::model::{
-    create_cache, create_http_client, AppState, CancelTokens, HdHomerunAppState,
-};
+use crate::api::hdhomerun_proprietary::spawn_proprietary_tasks;
+use crate::api::hdhomerun_ssdp::spawn_ssdp_discover_task;
+use crate::api::model::{create_cache, create_http_client, ActiveProviderManager, ActiveUserManager, AppState, CancelTokens, ConnectionManager, DownloadQueue, EventManager, HdHomerunAppState, PlaylistStorageState, SharedStreamManager};
 use crate::api::scheduler::exec_scheduler;
 use crate::api::serve::serve;
-use crate::model::Healthcheck;
-use crate::model::{AppConfig, Config, ProcessTargets, RateLimitConfig};
+use crate::model::{AppConfig, Config, Healthcheck, ProcessTargets, RateLimitConfig};
 use crate::processing::processor::playlist;
+use crate::repository::playlist_repository::load_playlists_into_memory_cache;
 use crate::VERSION;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use axum::Router;
 use log::{error, info};
+use shared::utils::concat_path_leading_slash;
 use std::io::ErrorKind;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
-use shared::utils::{concat_path_leading_slash};
+use crate::repository::storage::get_geoip_path;
+use crate::utils::GeoIp;
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -65,18 +64,33 @@ fn create_shared_data(
     forced_targets: &Arc<ProcessTargets>,
 ) -> AppState {
     let config = app_config.config.load();
+
+    let use_geoip = config.is_geoip_enabled();
+    let geoip = if use_geoip {
+        let path = get_geoip_path(&config.working_dir);
+        let _file_lock = app_config.file_locks.read_lock(&path);
+        match GeoIp::load(&path) {
+            Ok(db) => {
+                info!("GeoIp db loaded");
+                Arc::new(ArcSwapOption::from(Some(Arc::new(db))))
+            }
+            Err(err) => {
+                error!("Failed to load GeoIp db: {err}");
+                Arc::new(ArcSwapOption::from(None))
+            }
+        }
+    } else {
+        Arc::new(ArcSwapOption::from(None))
+    };
+
     let cache = create_cache(&config);
-    let shared_stream_manager = Arc::new(SharedStreamManager::new());
-    let (provider_change_tx, provider_change_rx) = tokio::sync::mpsc::channel(10);
+    let (provider_change_tx, provider_change_rx) = tokio::sync::mpsc::unbounded_channel();
+    let event_manager = Arc::new(EventManager::new(provider_change_rx, ));
     let active_provider = Arc::new(ActiveProviderManager::new(app_config, provider_change_tx));
-    let (active_user_change_tx, active_user_change_rx) = tokio::sync::mpsc::channel(10);
-    let active_users = Arc::new(ActiveUserManager::new(
-        &config,
-        &shared_stream_manager,
-        &active_provider,
-        active_user_change_tx,
-    ));
-    let event_manager = Arc::new(EventManager::new(active_user_change_rx, provider_change_rx, ));
+    let shared_stream_manager = Arc::new(SharedStreamManager::new(Arc::clone(&active_provider)));
+    let active_users = Arc::new(ActiveUserManager::new(&config,&geoip, &event_manager));
+    let connection_manager = Arc::new(ConnectionManager::new(&active_users, &active_provider, &shared_stream_manager, &event_manager));
+
     let client = create_http_client(app_config);
 
     AppState {
@@ -88,8 +102,11 @@ fn create_shared_data(
         shared_stream_manager,
         active_users,
         active_provider,
+        connection_manager,
         event_manager,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
+        playlists: Arc::new(PlaylistStorageState::new()),
+        geoip
     }
 }
 
@@ -106,9 +123,10 @@ fn exec_update_on_boot(
     if update_on_boot {
         let app_state_clone = Arc::clone(&app_state.app_config);
         let targets_clone = Arc::clone(targets);
-        tokio::spawn(
-            async move { playlist::exec_processing(client, app_state_clone, targets_clone, None).await },
-        );
+        let playlist_state = Arc::clone(&app_state.playlists);
+        tokio::spawn(async move {
+            playlist::exec_processing(client, app_state_clone, targets_clone, None, Some(playlist_state)).await;
+        });
     }
 }
 
@@ -123,7 +141,6 @@ fn is_web_auth_enabled(cfg: &Arc<Config>, web_ui_enabled: bool) -> bool {
 
 fn create_cors_layer() -> tower_http::cors::CorsLayer {
     tower_http::cors::CorsLayer::new()
-        // .allow_credentials(true)
         .allow_origin(tower_http::cors::Any)
         .allow_methods([
             axum::http::Method::GET,
@@ -153,6 +170,28 @@ pub(in crate::api) fn start_hdhomerun(
     let guard = app_config.hdhomerun.load();
     if let Some(hdhomerun) = &*guard {
         if hdhomerun.enabled {
+            if hdhomerun.ssdp_discovery {
+                info!("HDHomeRun SSDP discovery is enabled.");
+                spawn_ssdp_discover_task(
+                    Arc::clone(app_config),
+                    host.clone(),
+                    cancel_token.clone(),
+                );
+            } else {
+                info!("HDHomeRun SSDP discovery is disabled.");
+            }
+
+            if hdhomerun.proprietary_discovery {
+                info!("HDHomeRun proprietary discovery is enabled.");
+                spawn_proprietary_tasks(
+                    Arc::clone(app_state),
+                    host.clone(),
+                    cancel_token.clone(),
+                );
+            } else {
+                info!("HDHomeRun proprietary discovery is disabled.");
+            }
+
             for device in &hdhomerun.devices {
                 if device.t_enabled {
                     let app_data = Arc::clone(app_state);
@@ -165,32 +204,25 @@ pub(in crate::api) fn start_hdhomerun(
                         device.name
                     ));
                     let c_token = cancel_token.clone();
-                    let active_user_manager = Arc::clone(&app_data.active_users);
+                    let connection_manager = Arc::clone(&app_data.connection_manager);
                     tokio::spawn(async move {
                         let router = axum::Router::<Arc<HdHomerunAppState>>::new()
                             .layer(create_cors_layer())
                             .layer(create_compression_layer())
-                            //.layer(tower_http::trace::TraceLayer::new_for_http()) // `Logger::default()`
                             .merge(hdhr_api_register(basic_auth));
 
                         let router: axum::Router<()> =
                             router.with_state(Arc::new(HdHomerunAppState {
                                 app_state: Arc::clone(&app_data),
                                 device: Arc::clone(&device_clone),
+                                hd_scan_state: Arc::new(AtomicI8::new(-1)),
                             }));
 
-                        match tokio::net::TcpListener::bind(format!(
-                            "{}:{}",
-                            app_host.clone(),
-                            port
-                        ))
-                        .await
+                        match tokio::net::TcpListener::bind(format!("{}:{}", app_host.clone(), port))
+                            .await
                         {
                             Ok(listener) => {
-                                serve(listener, router, Some(c_token), active_user_manager).await;
-                                // if let Err(err) = axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await {
-                                //     error!("{err}");
-                                // }
+                                serve(listener, router, Some(c_token), &connection_manager).await;
                             }
                             Err(err) => error!("{err}"),
                         }
@@ -200,11 +232,6 @@ pub(in crate::api) fn start_hdhomerun(
         }
     }
 }
-
-// async fn log_routes(request: axum::extract::Request, next: axum::middleware::Next) -> axum::response::Response {
-//     println!("Route : {}", request.uri().path());
-//     next.run(request).await
-// }
 
 #[allow(clippy::too_many_lines)]
 pub async fn start_server(
@@ -236,17 +263,23 @@ pub async fn start_server(
         )
     };
 
+    if let Err(err) = load_playlists_into_memory_cache(&app_state).await {
+        error!("Failed to load playlists into memory cache: {err}");
+    }
+
     exec_scheduler(
         &Arc::clone(&shared_data.http_client.load()),
         &app_state,
         &targets,
         &cancel_token_scheduler,
     );
+
     exec_update_on_boot(
         Arc::clone(&shared_data.http_client.load()),
         &app_state,
         &targets,
     );
+
     exec_config_watch(&app_state, &cancel_token_file_watch);
 
     let web_auth_enabled = is_web_auth_enabled(&cfg, web_ui_enabled);
@@ -272,7 +305,10 @@ pub async fn start_server(
     // Web Server
     let mut router = axum::Router::new()
         .route("/healthcheck", axum::routing::get(healthcheck))
-        .merge(ws_api_register(web_auth_enabled, web_ui_path.as_str()));
+        .merge(ws_api_register(
+            web_auth_enabled,
+            web_ui_path.as_str(),
+        ));
     if web_ui_enabled {
         router = router
             .nest_service(
@@ -300,14 +336,13 @@ pub async fn start_server(
         .merge(xtream_api_register())
         .merge(m3u_api_register())
         .merge(xmltv_api_register())
-        .merge(hls_api_register());
-    // let mut rate_limiting = false;
+        .merge(hls_api_register())
+        .merge(cvs_api_register());
     if let Some(rate_limiter) = cfg
         .reverse_proxy
         .as_ref()
         .and_then(|r| r.rate_limit.clone())
     {
-        // rate_limiting = rate_limiter.enabled;
         api_router = add_rate_limiter(api_router, &rate_limiter);
     }
 
@@ -320,15 +355,11 @@ pub async fn start_server(
     router = router
         .layer(create_cors_layer())
         .layer(create_compression_layer());
-    //.layer(tower_http::trace::TraceLayer::new_for_http()); // `Logger::default()`
-    // router = router.layer(axum::middleware::from_fn(log_routes));
 
     let router: axum::Router<()> = router.with_state(shared_data.clone());
     let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
-    let active_user_manager = Arc::clone(&shared_data.active_users);
-    serve(listener, router, None, active_user_manager).await;
+    serve(listener, router, None, &shared_data.connection_manager).await;
     Ok(())
-    //axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).into_future().await
 }
 
 fn add_rate_limiter(

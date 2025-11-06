@@ -18,6 +18,9 @@ mod search_request;
 mod webplayer_url_request;
 mod epg;
 mod epg_request;
+mod stream_info;
+mod active_user_connection_change;
+mod user_command;
 
 pub use self::cluster_flags::*;
 pub use self::playlist::*;
@@ -38,3 +41,6 @@ pub use self::search_request::*;
 pub use self::webplayer_url_request::*;
 pub use self::epg::*;
 pub use self::epg_request::*;
+pub use self::stream_info::*;
+pub use self::active_user_connection_change::*;
+pub use self::user_command::*;

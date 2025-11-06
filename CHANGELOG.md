@@ -1,4 +1,30 @@
 # Changelog
+# 3.1.8 (2025-11-18)
+- Fixed HLS streaming issues caused by session eviction and incorrect headers.
+- Catchup stream fix cycling through multiple providers on play.
+- Custom streams fix and update webui stream info
+- Added TimeZone to `epg_timeshift: [-+]hh:mm or TimeZone`, example `Europe/Paris`, `America/New_York`, `-2:30`(-2h30m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m)
+If you use TimeZone the timeshift will change on Summer/Winter time if its applied in the TZ.
+- Fixed: Mappings now automatically reload and reapply after configuration changes, preventing stale settings.
+- Search in Playlist Explorer now returns groups instead of matching flat channel list.
+- Added `use_memory_cache` attribute to target definition to hold playlist in memory to reduce disc access.
+Placing playlist into memory causes more RAM usage but reduces disk access.
+- Added optional `filter` attribute to Output (except HDHomerun-Output). 
+Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
+- Added burst buffer to shared stream
+- Telegram message thread support. thread id can now be appended to chat-id like `chat-id:thread-id`.
+- Telegram supports markdown generation for structured json messages. simply set `markdown: true` in telegram config.
+- Added User-Stream-Connections Table to WebUI
+- Enhanced STRM output filenames to include detailed media quality info (e.g., 4K, HDR, x265, 5.1) for easy version distinction.
+- Added standardized SSDP (Simple Service Discovery Protocol) and the Proprietary HDHomeRun UDP Discovery Protocol (Port 65001)
+- Fixed some session handling issue
+- added `reverse_proxy.disabled_header` configuration
+  Allows removing selected headers before forwarding requests when acting as a reverse proxy. Configure removal of the referer header, all `X-*` headers, and additional custom headers.
+- !BREAKING_CHANGE! `disble_referer_header` is now part of `reverse_proxy.disabled_header` configuration
+- UserTable: Copy credentials to clipboard from user table
+- UserTable: Kick user action from streams table
+- UserTable: Auto-generated username/password for new proxy users
+
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch
 - Resource proxy retries failed requests up to three times and respects the `Retry-After` header (falls back to 100 ms wait)

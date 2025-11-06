@@ -3,7 +3,7 @@ use gloo_timers::callback::Timeout;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use shared::model::SearchRequest;
-use crate::app::components::{AppIcon, DropDownIconButton, DropDownOption, IconButton};
+use crate::app::components::{AppIcon, DropDownIconButton, DropDownOption, DropDownSelection, IconButton};
 use crate::html_if;
 
 const DEBOUNCE_TIMEOUT_MS:  u32 = 500;
@@ -19,7 +19,7 @@ pub struct SearchProps {
     #[prop_or_default]
     pub class: String,
     #[prop_or_default]
-    pub options: Option<Vec<Rc<DropDownOption>>>,
+    pub options: Option<Rc<Vec<DropDownOption>>>,
     pub onsearch: Option<Callback<SearchRequest>>,
     #[prop_or(3)]
     pub min_length: usize,
@@ -113,8 +113,19 @@ pub fn Search(props: &SearchProps) -> Html {
     };
 
     let handle_options_click = {
+        let search_fields = search_fields.clone();
         Callback::from(move |(_name, selections)| {
-            search_fields.set(Some(Rc::new(selections)));
+            match selections {
+                DropDownSelection::Empty => {
+                    search_fields.set(None);
+                }
+                DropDownSelection::Multi(options) => {
+                    search_fields.set(Some(Rc::new(options)));
+                }
+                DropDownSelection::Single(option) => {
+                    search_fields.set(Some(Rc::new(vec![option])));
+                }
+            }
         })
     };
 
@@ -136,7 +147,7 @@ pub fn Search(props: &SearchProps) -> Html {
                   html_if!(
                     props.options.is_some(),
                      {
-                      <DropDownIconButton multi_select={true} options={props.options.as_ref().unwrap().clone()} name="fields" icon="Popup" onselect={handle_options_click} />
+                      <DropDownIconButton multi_select={true} options={props.options.as_ref().unwrap().clone()} name="fields" icon="Popup" on_select={handle_options_click} />
                      }
                   )
                 }

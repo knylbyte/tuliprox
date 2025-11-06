@@ -1,16 +1,16 @@
-use std::rc::Rc;
+use crate::app::components::config::HasFormData;
+use crate::app::components::select::Select;
+use crate::app::components::userlist::proxy_type_input::ProxyTypeInput;
+use crate::app::components::{DropDownOption, DropDownSelection, TextButton, UserStatus};
+use crate::app::TargetUser;
+use crate::hooks::use_service_context;
+use crate::{config_field_child, config_field_custom, edit_field_bool, edit_field_date, edit_field_number, edit_field_text, edit_field_text_option, generate_form_reducer};
 use chrono::{Duration, Utc};
-use yew::prelude::*;
-use yew_i18n::use_translation;
 use shared::model::{ApiProxyServerInfoDto, ConfigTargetDto, ProxyType, ProxyUserCredentialsDto, ProxyUserStatus};
 use shared::utils::generate_random_string;
-use crate::app::TargetUser;
-use crate::{config_field_child, config_field_custom, edit_field_bool, edit_field_date, edit_field_number, edit_field_text, edit_field_text_option, generate_form_reducer};
-use crate::app::components::select::Select;
-use crate::app::components::{DropDownOption, TextButton, UserStatus};
-use crate::app::components::config::HasFormData;
-use crate::app::components::userlist::proxy_type_input::ProxyTypeInput;
-use crate::hooks::use_service_context;
+use std::rc::Rc;
+use yew::prelude::*;
+use yew_i18n::use_translation;
 
 const DEFAULT_MAX_CONNECTIONS: u32 = 1;
 const DEFAULT_EXPIRATION_DAYS: i64 = 365;
@@ -39,6 +39,7 @@ pub struct ProxyUserCredentialsFormProps {
     pub targets: Rc<Vec<Rc<ConfigTargetDto>>>,
     pub server: Rc<Vec<ApiProxyServerInfoDto>>,
     pub on_save: Callback<(bool, String, ProxyUserCredentialsDto)>,
+    pub on_cancel: Callback<()>,
 }
 
 #[function_component]
@@ -58,29 +59,29 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
             ProxyUserStatus::Banned,
             ProxyUserStatus::Trial,
             ProxyUserStatus::Disabled,
-            ProxyUserStatus::Pending].iter().map(|s| Rc::new(DropDownOption {
+            ProxyUserStatus::Pending].iter().map(|s| DropDownOption {
             id: s.to_string(),
             label: html! { <UserStatus status={Some(*s)} /> },
             selected: status.as_ref() == Some(s),
-        })).collect::<Vec<Rc<DropDownOption>>>(),
+        }).collect::<Vec<DropDownOption>>(),
     );
 
     let targets = use_memo((props.targets.clone(), (*selected_target).clone()),
                            |(targets, selected)|
-        targets.iter().map(|t| Rc::new(DropDownOption {
-            id: t.name.clone(),
-            label: html! { t.name.clone() },
-            selected: selected.as_ref().is_some_and(|ut: &String| ut == &t.name),
-        })).collect::<Vec<Rc<DropDownOption>>>(),
+                               targets.iter().map(|t| DropDownOption {
+                                   id: t.name.clone(),
+                                   label: html! { t.name.clone() },
+                                   selected: selected.as_ref().is_some_and(|ut: &String| ut == &t.name),
+                               }).collect::<Vec<DropDownOption>>(),
     );
 
     let server = use_memo((props.server.clone(), form_state.data().server.clone()),
                           |(server_list, user_server)|
-        server_list.iter().map(|s| Rc::new(DropDownOption {
-            id: s.name.to_string(),
-            label: html! { s.name.clone() },
-            selected: user_server.as_ref() == Some(&s.name),
-        })).collect::<Vec<Rc<DropDownOption>>>(),
+                              server_list.iter().map(|s| DropDownOption {
+                                  id: s.name.to_string(),
+                                  label: html! { s.name.clone() },
+                                  selected: user_server.as_ref() == Some(&s.name),
+                              }).collect::<Vec<DropDownOption>>(),
     );
 
     {
@@ -100,13 +101,20 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                     user.server = Some(api_server.name.clone());
                 }
                 user.max_connections = DEFAULT_MAX_CONNECTIONS;
-                user.proxy = ProxyType::Redirect;
+                user.proxy = ProxyType::Reverse(None);
                 user.status = Some(ProxyUserStatus::Active);
                 user.ui_enabled = true;
                 let now = Utc::now();
                 user.created_at = Some(now.timestamp());
                 let in_one_year = now + Duration::days(DEFAULT_EXPIRATION_DAYS);
                 user.exp_date = Some(in_one_year.timestamp());
+
+                if user.username.is_empty(){
+                    user.username = generate_random_string(6).to_uppercase();
+                }
+                if user.password.is_empty(){
+                    user.password = generate_random_string(6).to_uppercase();
+                }
                 user.token = Some(generate_random_string(6));
 
                 form_state.dispatch(UserFormAction::SetAll(user));
@@ -115,6 +123,13 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
         },
         );
     }
+
+    let handle_cancel = {
+        let oncancel = props.on_cancel.clone();
+        Callback::from(move |_| {
+            oncancel.emit(());
+        })
+    };
 
     let handle_save_user = {
         let user = form_state.clone();
@@ -125,8 +140,11 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
         let onsave = props.on_save.clone();
         let is_update = update.clone();
         Callback::from(move |_| {
+            let nothing_to_save = || services.toastr.warning(translate_clone.t("MESSAGES.SAVE.USER.NOTHING_TO_SAVE"));
             if let Some(target_name) = (*target).as_ref().cloned() {
-                if user.modified() {
+                let original_target = original.as_ref().map(|u| u.target.clone()).unwrap_or_default();
+                let target_changed = target_name != original_target;
+                if target_changed || user.modified() {
                     let user = user.data();
                     if let Err(err) = user.validate() {
                         services.toastr.error(err.to_string());
@@ -134,14 +152,16 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                         match original.as_ref().map(|t| t.credentials.clone()) {
                             None => onsave.emit((*is_update, target_name, user.clone())),
                             Some(original_user) => {
-                                if &(*original_user) != user {
+                                if target_changed || &(*original_user) != user {
                                     onsave.emit((*is_update, target_name, user.clone()));
+                                } else {
+                                    nothing_to_save();
                                 }
                             }
                         };
                     }
                 } else {
-                    services.toastr.warning(translate_clone.t("MESSAGES.SAVE.USER.NOTHING_TO_SAVE"));
+                    nothing_to_save();
                 }
             } else {
                 services.toastr.error(translate_clone.t("MESSAGES.SAVE.USER.TARGET_NOT_SELECTED"));
@@ -157,32 +177,34 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
     html! {
         <div class="tp__proxy-user-credentials-form tp__form-page">
           <div class="tp__proxy-user-credentials-form__body tp__form-page__body">
-            { if *update {
+            { /*if *update {
                  config_field_custom!(translate.t("LABEL.PLAYLIST"), (*set_selected_target).as_ref().map_or_else(String::new, |t| t.clone()))
-               } else { config_field_child!(translate.t("LABEL.PLAYLIST"), {
+               } else {*/ config_field_child!(translate.t("LABEL.PLAYLIST"), {
                html! { <Select name="target"
                     multi_select={false}
-                    onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
-                        if let Some(target_option) =  selections.first() {
-                            set_selected_target.set(Some(target_option.id.clone()));
-                        } else {
-                            set_selected_target.set(None);
-                        }
+                    on_select={Callback::from(move |(_name, selections):(String, DropDownSelection)| {
+                      let target = match selections {
+                        DropDownSelection::Empty => None,
+                        DropDownSelection::Single(option) => Some(option),
+                        DropDownSelection::Multi(options) => options.first().cloned(),
+                        };
+                        set_selected_target.set(target);
                     })}
-                    options={(*targets).clone()}
+                    options={targets.clone()}
                 />
-            }})}}
+            }})} //}
             { config_field_child!(translate.t("LABEL.STATUS"), {
                html! { <Select name="status"
                     multi_select={false}
-                    onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
-                        if let Some(status_option) =  selections.first() {
-                            if let Ok(status) = status_option.id.parse::<ProxyUserStatus>() {
-                                instance_status.dispatch(UserFormAction::Status(Some(status)));
-                            }
-                        }
+                    on_select={Callback::from(move |(_name, selections):(String, DropDownSelection)| {
+                        let status = match selections {
+                            DropDownSelection::Empty => None,
+                            DropDownSelection::Single(option) => option.parse::<ProxyUserStatus>().ok(),
+                            DropDownSelection::Multi(options) => options.first().as_ref().and_then(|f| f.parse::<ProxyUserStatus>().ok())
+                           };
+                        instance_status.dispatch(UserFormAction::Status(status));
                     })}
-                    options={(*proxy_user_status).clone()}
+                    options={proxy_user_status.clone()}
                 />
             }})}
             { if *update {
@@ -205,14 +227,15 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                html! {
                 <Select name="server"
                     multi_select={false}
-                    onselect={Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
-                        if let Some(server_option) =  selections.first() {
-                            instance_server.dispatch(UserFormAction::Server(Some(server_option.id.clone())));
-                        } else {
-                            instance_server.dispatch(UserFormAction::Server(None));
-                        };
+                    on_select={Callback::from(move |(_name, selections):(String, DropDownSelection)| {
+                        let server = match selections {
+                            DropDownSelection::Empty => None,
+                            DropDownSelection::Single(option) => Some(option.clone()),
+                            DropDownSelection::Multi(options) => options.first().cloned(),
+                           };
+                        instance_server.dispatch(UserFormAction::Server(server));
                     })}
-                    options={(*server_list).clone()}
+                    options={server_list.clone()}
                 />
             }})}
             { edit_field_number!(form_state,  translate.t("LABEL.MAX_CONNECTIONS"), max_connections, UserFormAction::MaxConnections) }
@@ -227,6 +250,10 @@ pub fn ProxyUserCredentialsForm(props: &ProxyUserCredentialsFormProps) -> Html {
                 icon="Save"
                 title={ translate.t("LABEL.SAVE")}
                 onclick={handle_save_user}></TextButton>
+             <TextButton class="secondary" name="cancel_user"
+                icon="Cancel"
+                title={ translate.t("LABEL.CANCEL")}
+                onclick={handle_cancel}></TextButton>
           </div>
         </div>
     }

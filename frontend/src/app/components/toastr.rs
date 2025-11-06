@@ -18,6 +18,14 @@ pub fn ToastrView() -> Html {
         }));
     }
 
+    let render_message = |msg: &str| {
+        html! {
+        <>
+            { for msg.split('\n').map(|line| html! { <span>{ line }</span> }) }
+        </>
+       }
+    };
+
     if toasts.is_empty() {
         html! {}
     } else {
@@ -60,7 +68,9 @@ pub fn ToastrView() -> Html {
 
                             html! {
                                 <div key={toast.id} class={classes!("tp__toast", type_class)}>
-                                    <span class="tp__toast__message">{ toast.message.clone() }</span>
+                                    <span class="tp__toast__message">
+                                        { render_message(&toast.message) }
+                                    </span>
                                     { close_btn }
                                 </div>
                             }

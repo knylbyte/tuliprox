@@ -1,0 +1,52 @@
+@use '../../../size' as size;
+
+.tp__streams {
+  display: flex;
+  flex-flow: column;
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--max-view-width);
+  overflow: hidden;
+
+  &__header {
+    display: flex;
+    flex-flow: row nowrap;
+  }
+
+  &__body {
+    display: flex;
+    flex-flow: column;
+    gap: var(--gap-larger);
+    overflow: auto;
+  }
+}
+
+.tp__stream-table__duration {
+  letter-spacing: 2px;
+}
+
+.tp__streams-table {
+
+  .tp__table__th {
+    $column-widths:
+            40px,           /*index*/
+            100px,          /*username*/
+            120px,          /*stream_id*/
+            80px,           /*type*/
+            200px,          /*channel*/
+            120px,
+            90px,
+            80px,
+            90px,
+            80px,
+            100px,
+            100px;
+
+    @for $i from 1 through length($column-widths) {
+      &--#{$i} {
+        @include size.fixed-width(nth($column-widths, $i));
+      }
+    }
+  }
+}

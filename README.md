@@ -83,7 +83,7 @@ Top level entries in the config files are:
 * `reverse_proxy` _optional_
 * `log` _optional
 * `user_access_control` _optional_
-* `connect_timeout_secs`: _optional_ and used for provider requests connection timeout.
+* `connect_timeout_secs`: _optional_ and used for provider requests connection timeout, for only the connect phase.
 * `custom_stream_response_path` _optional_
 * `hdhomerun` _optional_
 * `proxy` _optional_
@@ -121,6 +121,9 @@ Messaging is Opt-In, you need to set the `notify_on` message types which are
 
 `telegram`, `rest` and `pushover.net` configurations are optional.
 
+`telegram` supports markdown generation for structured json messages.
+`telegram` supports `message_thread_id` for group chats. Simply put thread_id behind chat_id separated by `:`. `'<telegram chat id>:<message thread id>'`
+
 ```yaml
 messaging:
   notify_on:
@@ -128,9 +131,11 @@ messaging:
     - stats
     - error
   telegram:
+    markdown: true
     bot_token: '<telegram bot token>'
     chat_ids:
       - '<telegram chat id>'
+      - '<telegram chat id>:<message thread id>'
   rest:
     url: '<api url as POST endpoint for json data>'
 
@@ -212,7 +217,7 @@ Attributes:
 - `buffer`
 - `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
 - `grace_period_millis`  default set to 300 milliseconds.
-- `grace_period_timeout_secs` efault set to 2 seconds.
+- `grace_period_timeout_secs` default set to 2 seconds.
 
 ##### 1.6.1.1 `retry`
 If set to `true` on connection loss to provider, the stream will be reconnected.
@@ -223,8 +228,18 @@ Has 2 attributes
 - `size`
 
 If `enabled` = true The stream is buffered. This is only possible if the provider stream is faster than the consumer.
+
 The stream is buffered with the configured `size`.
 `size` is the amount of `8192 byte` chunks. In this case the value `1024` means approx `8MB` for `2Mbit/s` stream.
+
+If you enable `share_live_streams`, each shared channel consumes at least 12 MB of memory,
+regardless of the number of clients. Increasing the buffer `size` above `1024` will increase memory usage.
+For example, with a buffer size of `2024`, memory usage is at least `24 MB` for **each** shared channel.
+
+This works differently for a BufferedStream. In this case, the buffer size refers to the number of data chunks received 
+from the provider. Each chunk can be up to `8 KB` in size. For `1024` chunks, the maximum memory usage would 
+be `1024 × 8 KB`, which is approximately `8 MB`  as stated above.
+
 
 - *a.* if `retry` is `false` and `buffer.enabled` is `false`  the provider stream is piped as is to the client.
 - *b.* if `retry` is `true` or  `buffer.enabled` is `true` the provider stream is processed and send to the client.
@@ -290,12 +305,39 @@ reverse_proxy:
     burst_size: 10
 ```
 
-#### 1.6.5 `disable_referer_header`
-This option, when set to `true`, prevents tuliprox from sending the Referer header in requests made when acting as a reverse proxy. This can be particularly useful when dealing with certain Xtream Codes providers that might restrict or behave differently based on the Referer header. Default is `false`.
+#### 1.6.5 `disabled_header`
+Controls which headers are removed before tuliprox forwards a request to the upstream provider when acting as a reverse proxy. Use `referer_header` to drop the Referer header, enable `x_header` to strip every header beginning with `X-`, and list any additional headers to remove under `custom_header`.
 
 ```yaml
 reverse_proxy:
-  disable_referer_header: false
+  disabled_header:
+    referer_header: false
+    x_header: false
+    custom_header:
+      - my-custom-header
+```
+
+### 1.6.7 `geoip`
+`geoip` is for resolving IP addresses to country names.
+
+Disabled by default.
+Is used to resolve ip addresses to location.
+It has 2 attributes:
+
+```yaml
+  geoip:
+     enabled: true
+     url: <the url> 
+```  
+
+The `url` is optional; default value: `https://raw.githubusercontent.com/sapics/ip-location-db/refs/heads/main/asn-country/asn-country-ipv4.csv`
+The format is CSV with 3 columns: `range_start,range_end,country_code`.
+
+Example:
+```csv
+1.0.0.0,1.0.0.255,AU
+1.0.1.0,1.0.3.255,CN
+1.0.4.0,1.0.7.255,AU
 ```
 
 ### 1.7 `backup_dir`
@@ -315,6 +357,7 @@ if set to true, an update is started when the application starts.
 `log_level` priority  CLI-Argument, Env-Var, Config, Default(`info`).
 
 ```yaml
+                    
 log:
   sanitize_sensitive_info: false
   log_active_user: true
@@ -332,6 +375,7 @@ log:
   - `secret` is used for jwt token generation.
   - `token_ttl_mins`  default 30 minutes, setting it to 0 uses a 100-year expiration (effectively no expiration)—not recommended for production. !!CAUTION SECURITY RISK!!!
   - `userfile` is the file where the ui users are stored. If the filename is not absolute, `tuliprox` will look into the `config_dir`. If `userfile` is not given, the default value is `user.txt`.
+
 ```yaml
 web_ui:
   enabled: true
@@ -435,54 +479,60 @@ It is the storage path for user configurations (f.e. bouquets).
 
 ### 1.16 `hdhomerun`
 
-It is possible to define `hdhomerun` target for output. To use this outputs we need to define HdHomeRun devices.
-Supports now basic auth like <http://user:password@ip:port/lineup.json>.
+This feature allows `tuliprox` to emulate one or more HDHomeRun network tuners, enabling auto-discovery by clients like 
+TVHeadend, Plex, Emby, and Jellyfin. It uses both the standard **SSDP/UPnP protocol (Port 1900)** 
+for broad compatibility and the **proprietary SiliconDust protocol (Port 65001)** for compatibility with official HDHomeRun tools.
 
-The simplest config looks like:
 ```yaml
 hdhomerun:
   enabled: true
-  auth: true
+  auth: false # Set to true to require basic auth on lineup.json
   devices:
-  - name: hdhr1
-  - name: hdhr2
+    - name: hdhr1
+      tuner_count: 4
+      port: 5004 # Each device needs a unique port for its HTTP API
+      device_id: "107ABCDF" # Optional: 8-char hex ID. If invalid, will be corrected. If empty, will be generated.
+    - name: hdhr2
+      port: 5005
+      tuner_count: 2
 ```
 
-The `name` must be unique and is used in the target configuration in `source.yml` like.
+The `name` of each device must correspond to a `device` name in a `hdhomerun` output target in your `source.yml`.
 
 ```yaml
-sources:
-- inputs:
-  - name: ...
-    ...
-  targets:
-  - name: xt_m3u
+# In source.yml
+targets:
+  - name: my-tv-lineup
     output:
-      - type: xtream
       - type: hdhomerun
-        username: xtr
-        output: hdhr1
-    filter: "!ALL_FILTER!"
+        device: hdhr1      # Must match a device name from config.yml
+        username: local    # The user whose playlist will be served
 ```
 
-The HdHomerun config has the following attribute:
-`enabled`:  default is `false`,  you need to set it to `true`
-`devices`: is a list of HdHomeRun Device configuraitons.
-For each output you need to define one device with a unique name. Each output gets his own port to connect.
+**Configuration Fields:**
 
-HdHomeRun device config has the following attributes:
+- `enabled`: `true` or `false`. Enables or disables the entire HDHomeRun emulation feature. Default: `false`.
+- `auth`: `true` or `false`. If `true`, the `/lineup.json` endpoint for each device will require HTTP Basic Authentication using the credentials of the user assigned to the device in `source.yml`. Default: `false`.
+- `devices`: A list of virtual HDHomeRun devices to emulate.
 
-- `name`: _mandatory_ and must be unique
-- `tuner_count`: _optional_, default 1
-- `friendly_name`: _optional_
-- `manufacturer`: _optional_
-- `model_name`: _optional_
-- `model_number`: _optional_
-- `firmware_name`: _optional_
-- `firmware_version`: _optional_
-- `device_type`: _optional_
-- `device_udn`: _optional_
-- `port`: _optional_, if not given the tuliprox-server port is incremented for each device.
+**Device Fields:**
+
+- `name`: (Mandatory) A unique internal name for the device (e.g., `hdhr1`). This name is used in your `source.yml` to link a playlist target to a specific virtual tuner.
+- `tuner_count`: (Optional) The number of virtual tuners this device will report. Default: `1`.
+- `port`: (Optional) The TCP port for this device's HTTP API (`/device.xml`, `/lineup.json`, etc.). Each device must have a unique port. If omitted, `tuliprox` will automatically assign a port, starting from the main API port + 1.
+- `friendly_name`: (Optional) The human-readable name that appears in client applications (e.g., "Tuliprox Living Room"). If not specified, a default name is generated.
+- `device_id`: (Optional) An 8-character hexadecimal string for the proprietary SiliconDust discovery protocol (Port 65001).
+  - If left empty, a valid, random ID will be generated.
+  - If you provide a value that is not a valid HDHomeRun ID, `tuliprox` will automatically correct it by calculating the proper checksum.
+- `device_udn`: (Optional) The Unique Device Name (UDN) for the standard UPnP/SSDP discovery protocol (Port 1900). It must be a UUID.
+  - It is recommended to leave this at its default value. `tuliprox` will automatically append a suffix to ensure it's unique for each device you define.
+- `manufacturer`, `model_name`, `model_number`, `firmware_name`, `firmware_version`: (Optional) These fields allow you to customize the device information that is reported to clients. It is safe to leave them at their default values, which mimic a real HDTC-2US model.
+
+**Important Distinction:**
+- **`device_id`** is used by the proprietary discovery protocol (UDP port 65001).
+- **`device_udn`** is used by the standard SSDP/UPnP discovery protocol (UDP port 1900).
+
+Both are necessary for `tuliprox` to behave like a real HDHomeRun device and ensure maximum compatibility across different client applications.
 
 ### 1.17 `proxy`
 
@@ -509,6 +559,25 @@ ipcheck:
 
 ### 1.19 `config_hot_reload`
 if set to true, `mapping` files and `api_proxy.yml` are hot reloaded.
+
+⚠️ Important Note for Bind-Mounted Directories
+If you are using a bind mount, the file watcher may report the original source path instead of the mount point.
+
+For example, if you have a bind mount like this:
+
+```fstab
+/config /home/tuliprox/config none bind 0 0
+```
+
+```text
+/config                ← your configured mount point
+/home/tuliprox/config  ← original source directory
+```
+
+and you use `/config` in your configuration files, the file watcher will still report events using `/home/tuliprox/config`.
+
+This means that any file paths returned by the watcher might not match the paths in your configuration.
+You need to account for this difference when handling file events, e.g., by mapping the original path to your configured path.
 
 ## 2. `source.yml`
 
@@ -586,13 +655,19 @@ Each input has the following attributes:
   + `xtream_live_stream_without_extension` default false, if set to true `.ts` extension is not added to the stream link.
   + `xtream_live_stream_use_prefix` default true, if set to true `/live/` prefix is added to the stream link.
 - `aliases`  for alias definitions for the same provider with different credentials
-- `staged` for side loading processed playlists. 
-Instead of fully configuring everything yourself, you can “stage” a source — meaning you provide a ready-made playlist
-from somewhere else. The system will only use that staged playlist when updating.
-For actual streaming and fetching details, it will still use the main provider’s settings.
-In plain words: If you don’t want to deal with Tuliprox mapping, or you already have a playlist in another online tool,
-you can plug that playlist in as a staged input. It won’t replace the main provider — it’s just there to update the list.
-All streaming and proxying and info still come from the original provider configuration.
+- `staged` for side loading processed playlists.
+  If you already have a provider configured but want to load the playlist from a different source — for example, 
+from another playlist editor — you can specify a staged DTO.
+
+Instead of fully configuring everything yourself, you can “stage” a source, meaning you provide a 
+ready-made playlist from somewhere else. During the update process, the playlist will be read from this staged source.
+
+However, regular playlist queries (such as streaming or fetching details) will still go through the 
+main provider. The staged source is only used temporarily — just for updating the playlist.
+
+In plain words: if you already have a playlist in another online tool or don’t want to deal with Tuliprox mapping,
+you can plug that playlist in as a staged input. It won’t replace your main provider — it’s only there to update 
+the list. All streaming, proxying, and metadata still come from the provider’s configuration.
 
 `staged` has the following properties:
 - `type` is optional, default is `m3u`. Valid values are `m3u` and `xtream`
@@ -761,6 +836,8 @@ Has the following top level entries:
 - `rename` _optional_
 - `mapping` _optional_
 - `watch` _optional_
+- `use_memory_cache`, default is false. If set to `true` playlist is cached into memory to reduce disc access.
+Placing playlist into memory causes more RAM usage but reduces disk access.
 
 ### 2.2.2.1 `sort`
 Has three top level attributes
@@ -769,13 +846,15 @@ Has three top level attributes
 - `channels`
 
 #### `groups`
-has one top level attribute `order` which can be set to `asc`or `desc`.
+Used for sorting at the group (category) level.
+It has one top-level attribute `order` which can be set to `asc`or `desc`.
 #### `channels`
-is a list of sort configurations for groups. Each configuration has 3 top level entries.
-- `field` can be  `group`, `title`, `name`, `caption` or `url`.
-- `group_pattern` is a regular expression like `'^TR.:\s?(.*)'` which is matched against group title.
-- `order` can be `asc` or `desc`
-- `sequence` _optional_  is a list of regexp matching field values (based on `field`) which are used to sort based on index. The `order` is ignored for this entries.
+Used for sorting the channels within a group/category.
+This is a list of sort configurations for groups. Each configuration has the following top-level entries:
+- `field` - can be  `title`, `name`, `caption` or `url`.
+- `group_pattern` - a regular expression like `'^TR.:\s?(.*)'` matched against group title.
+- `order` - can be `asc` or `desc`
+- `sequence` _optional_  - a list of regexp matching field values (based on `field`). These are used to sort based on index. The `order` is ignored for this entries.
 
 The pattern should be selected taking into account the processing sequence.
 
@@ -807,7 +886,8 @@ The numeric suffix indicates the priority: `c1` is evaluated first, followed by 
 ### 2.2.2.2 `output`
 
 Is a list of output format:
-Each format has different properties
+Each format has different properties.
+`Attention:` Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
 
 #### 'Target types':
 `xtream`
@@ -820,12 +900,14 @@ Each format has different properties
 - resolve_vod: true|false,
 - resolve_vod_delay: true|false,
 - trakt: Trakt Configuration
+- filter: optional filter
 
 `m3u`
 - type: m3u
 - filename: _optional_
 - include_type_in_url: _optional_, true|false, default false
 - mask_redirect_url: _optional_,  true|false, default false
+- filter: optional filter
 
 `strm`
 - directory: _mandatory_,
@@ -834,7 +916,9 @@ Each format has different properties
 - cleanup: _optional_, true|false, default false
 - style: _mandatory_, kodi|plex|emby|jellyfin
 - flat: _optional_, true|false, default false
-- strm_props: _optional_, list of strings,
+- strm_props: _optional_, list of strings
+- add_quality_to_filename: _optional_, true|false
+- filter: optional filter
 
 `hdhomerun`
 - device: _mandatory_,
@@ -876,12 +960,17 @@ Target options are:
 - `share_live_streams` to share live stream connections  in reverse proxy mode.
 - `remove_duplicates` tries to remove duplicates by `url`.
 
+If you enable share_live_streams, each shared channel consumes at least 12 MB of memory,
+regardless of the number of clients. Increasing the buffer size above 1024 will increase memory usage. 
+For example, with a buffer size of 2024, memory usage is at least 24 MB for **each** shared channel.     
+
 `strm` output has additional options:
-- `underscore_whitespace`: replaces all whitespaces with `_` in the path
-- `cleanup`: deletes the directory given at `filename`. Don't point at existing media folder or everything will be deleted
-- `style`: determines naming convention (kodi, plex, emby, jellyfin)
-- `flat`: creates flat directory structure with category tags in folder names
-- `strm_props`: list of properties written to the strm file
+- `underscore_whitespace`: Replaces all whitespaces with `_` in the path and filename.
+- `cleanup`: If `true`, the directory given at `filename` will be deleted. Don't point at existing media folder or everything will be deleted!
+- `style`: Naming style convention for your media player / server (kodi, plex, emby, jellyfin)
+- `flat`: If `true`, creates flat directory structure with category tags in folder names
+- `strm_props`: List of stream properties placed within .strm file to configure how Kodi's internal player handles the media stream.
+- `add_quality_to_filename`: If `true`, adds media quality tags to the filename (e.g., `Movie Title - [1080p|x265|HDR].strm`).
 
 Supported styles:
 - Kodi: `Movie Name (Year) {tmdb=ID}/Movie Name (Year).strm`
@@ -1093,6 +1182,13 @@ Has the root item `mappings` which has the following top level entries:
 Instead of using a single `mapping.yml` file, you can use multiple mapping files
 when you set `mapping_path` in `config.yml` to a directory.
 
+The files are loaded in **alphanumeric** order.
+**Note:** This is a lexicographic sort — so `m_10.yml` comes before `m_2.yml` unless you name files carefully (e.g., `m_01.yml`, `m_02.yml`, ..., `m_10.yml`).
+
+The filename or path can be given as `-m` argument. (See Mappings section)
+
+Default mapping file is `maping.yml`
+
 ### 2.1 `templates`
 If you have a lot of repeats in you regexps, you can use `templates` to make your regexps cleaner.
 You can reference other templates in templates with `!name!`;
@@ -1144,19 +1240,19 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
 - Strings / Text: Enclosed in double quotes. "example string" 
 - Null value `null`
 - Regex Matching:   `@FieldName ~ "Regex"` like in filter statements. You can match a `FieldName` or a existing `variable`.
-- Access a field in a regex match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at 1.
+- Access a field in a regex match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at `1` like `result.1`, `result.2`.
 - Builtin functions: 
   - concat(a, b, ...)
   - uppercase(a)
   - lowercase(a)
   - capitalize(a)
   - trim(a)
-  - number(a)
   - print(a, b, c)
+  - number(a)
   - first(a)
   - template(a)
   - replace(text, match, replacement)
-Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
+Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `audio_track"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
 When you use Regular expressions it could be that your match contains multiple results. The builtin function `first` returns the first match.
 Example `print(uppercase("hello"))`. output is only visible in `trace` log level you can enable it like `log_level: debug,tuliprox::foundation::mapper=trace` in config
 - Assignment assigns an expression result. variable or field.
@@ -1178,7 +1274,7 @@ result = match {
 - Map block assigns expression results to a variable or field
 
 Mapping over text
-It is possible to define multiple keys with `|` seperated for one case.  
+It is possible to define multiple keys with `|` seperated for one case.
 ```dsl
 result = map variable_name {
     "key1" => result1,
@@ -1207,7 +1303,8 @@ Mapping over number ranges
 ```            
 
 Example `if then else` block
-```
+
+```dsl
   # Maybe there is no station
   station = @Caption ~ "ABC"
   match {
@@ -1224,9 +1321,7 @@ Example `if then else` block
 ```
 
 Example of removing prefix
-```
 `@Caption = replace(@Caption, "UK:",  "EN:"`
-```
 
 Example `mapping.yml`
 
@@ -1381,8 +1476,8 @@ Reverse Proxy mode for user can be a subset
   - `reverse[live,vod]` -> series redirect, others reverse
 
 `server` is _optional_. It should match one server definition, if not given the server with the name `default` is used or the first one.  
-`epg_timeshift` is _optional_. It is only applied when source has `epg_url` configured. `epg_timeshift: [-+]hh:mm`, example  
-`-2:30`(-2h30m), `1:45` (1h45m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m), `2:` (3h)
+`epg_timeshift` is _optional_. It is only applied when source has `epg_url` configured. `epg_timeshift: [-+]hh:mm or TimeZone`, example  
+`-2:30`(-2h30m), `1:45` (1h45m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m), `2:` (2h), `Europe/Paris`, `America/New_York` 
 - `max_connections` is _optional_
 - `status` is _optional_
 - `exp_date` is _optional_
@@ -1454,6 +1549,11 @@ user:
         status: Active
 ```
 
+If you use a reverse proxy in front of Tuliprox, don’t forget to forward:
+- `X-Real-IP`
+- `X-Forwarded-For`
+
+
 Now you can do `nginx`  configuration like
 ```config
    location /tuliprox {
@@ -1462,11 +1562,26 @@ Now you can do `nginx`  configuration like
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-NginX-Proxy true;
       proxy_pass http://192.169.1.9:8901/;
-      proxy_ssl_session_reuse off;
       proxy_set_header Host $http_host;
       proxy_redirect off;
+      proxy_buffering off;
+      proxy_request_buffering off;
+      proxy_cache off;
+      tcp_nopush on;
+      tcp_nodelay on;
    }
 ```
+When you use nginx be sure to have 
+```nginx
+      proxy_redirect off;
+      proxy_buffering off;
+      proxy_request_buffering off;
+      proxy_cache off;
+      tcp_nopush on;
+      tcp_nodelay on;
+```
+because without this config you could get very high cpu peaks.
+
 You can also use traefik as reverse proxy server in front of your tuliprox instance. However if you wan't to use paths, you must note that the path for web-ui and api-proxy must be different. In this short example used paths are:
 * web-ui: tuliprox
 * api-proxy: tv
@@ -1883,8 +1998,7 @@ sources:
       output:
         - type: xtream
       filter: "!MY_CHANNELS!"
-      ...
-```
+      ...```
 
 The resulting playlist contains all French and German channels except Shopping.
 
@@ -1997,8 +2111,7 @@ Title splitting. As you can see there are 2 captures, the first one is the prefi
 You get something like 
 - title_prefix = 'FR'
 - title_name = 'TV5Monde'
-from "FR: TV5Monde"
-```
+from "FR: TV5Monde"```
 title_match = @Caption ~ "(.*?)\:\s*(.*)"
 title_prefix = title_match.1
 title_name = title_match.2

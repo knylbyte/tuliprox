@@ -21,6 +21,7 @@ const COPY_LINK_TULIPROX_VIRTUAL_ID: &str = "copy_link_tuliprox_virtual_id";
 const COPY_LINK_TULIPROX_WEBPLAYER_URL: &str = "copy_link_tuliprox_webplayer_url";
 const COPY_LINK_PROVIDER_URL: &str = "copy_link_provider_url";
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum ExplorerAction {
     CopyLinkTuliproxVirtualId,
@@ -110,8 +111,14 @@ pub fn PlaylistExplorer() -> Html {
 
     let copy_to_clipboard: Callback<String> = {
         let clipboard = clipboard.clone();
+        let services = service_ctx.clone();
+        let translate = translate.clone();
         Callback::from(move |text: String| {
-            clipboard.write_text(text);
+            if *clipboard.is_supported {
+                clipboard.write_text(text);
+            } else {
+                services.toastr.error(translate.t("MESSAGES.CLIPBOARD_NOT_SUPPORTED"));
+            }
         })
     };
 

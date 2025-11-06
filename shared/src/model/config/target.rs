@@ -2,7 +2,7 @@ use log::warn;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use crate::foundation::filter::{get_filter, Filter};
-use crate::model::{ClusterFlags, ConfigRenameDto, ConfigSortDto, HdHomeRunDeviceOverview, PatternTemplate, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
+use crate::model::{ClusterFlags, ConfigFavouritesDto, ConfigRenameDto, ConfigSortDto, HdHomeRunDeviceOverview, PatternTemplate, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
 use crate::utils::{default_as_true, default_resolve_delay_secs, default_as_default};
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -15,6 +15,15 @@ pub struct ConfigTargetOptions {
     pub remove_duplicates: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub force_redirect: Option<ClusterFlags>,
+}
+
+impl ConfigTargetOptions {
+    pub fn is_empty(&self) -> bool {
+        !self.ignore_logo
+        && !self.share_live_streams
+        && !self.remove_duplicates
+        && (self.force_redirect.is_none() || self.force_redirect.is_some_and(|f| f.has_full_flags() || f.is_empty()))
+    }
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -37,6 +46,10 @@ pub struct XtreamTargetOutputDto {
     pub resolve_vod_delay: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trakt: Option<TraktConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(skip)]
+    pub t_filter: Option<Filter>,
 }
 
 impl Default for XtreamTargetOutputDto {
@@ -50,6 +63,8 @@ impl Default for XtreamTargetOutputDto {
             resolve_vod: false,
             resolve_vod_delay: default_resolve_delay_secs(),
             trakt: None,
+            filter: None,
+            t_filter: None,
         }
     }
 }
@@ -68,10 +83,11 @@ impl XtreamTargetOutputDto {
             || self.resolve_series
             || self.resolve_vod
             || self.trakt.is_some()
+            || self.filter.is_some()
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct M3uTargetOutputDto {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,6 +96,10 @@ pub struct M3uTargetOutputDto {
     pub include_type_in_url: bool,
     #[serde(default)]
     pub mask_redirect_url: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(skip)]
+    pub t_filter: Option<Filter>,
 }
 
 impl M3uTargetOutputDto {
@@ -87,10 +107,11 @@ impl M3uTargetOutputDto {
         self.filename.is_some()
             || self.include_type_in_url
             || self.mask_redirect_url
+            || self.filter.is_some()
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StrmTargetOutputDto {
     pub directory: String,
@@ -106,6 +127,12 @@ pub struct StrmTargetOutputDto {
     pub cleanup: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strm_props: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(skip)]
+    pub t_filter: Option<Filter>,
+    #[serde(default)]
+    pub add_quality_to_filename: bool,
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -114,6 +141,16 @@ pub struct HdHomeRunTargetOutputDto {
     pub username: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub use_output: Option<TargetType>,
+}
+
+impl Default for HdHomeRunTargetOutputDto {
+    fn default() -> Self {
+        Self {
+            device: String::new(),
+            username: String::new(),
+            use_output: Some(TargetType::M3u),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -156,10 +193,14 @@ pub struct ConfigTargetDto {
     pub rename: Option<Vec<ConfigRenameDto>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mapping: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub favourites: Option<Vec<ConfigFavouritesDto>>,
     #[serde(default)]
     pub processing_order: ProcessingOrder,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<Vec<String>>,
+    #[serde(default)]
+    pub use_memory_cache: bool,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
 }
@@ -176,8 +217,10 @@ impl Default for ConfigTargetDto {
             output: Vec::new(),
             rename: None,
             mapping: None,
+            favourites: None,
             processing_order: ProcessingOrder::default(),
             watch: None,
+            use_memory_cache: false,
             t_filter: None,
         }
     }
@@ -293,6 +336,12 @@ impl ConfigTargetDto {
                 if !hdhr_devices.enabled {
                     warn!("You have defined an HDHomeRun output, but HDHomeRun devices are disabled.");
                 }
+            }
+        }
+
+        if let Some(favourites) = self.favourites.as_mut() {
+            for favourite in favourites {
+                favourite.prepare(templates)?;
             }
         }
 

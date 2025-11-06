@@ -33,6 +33,9 @@ impl M3uPlaylistIterator {
         target: &ConfigTarget,
         user: &ProxyUserCredentials,
     ) -> Result<Self, TuliproxError> {
+
+        // TODO use playlist memory cache, but be aware of sorting !
+
         let m3u_output = target.get_m3u_output().ok_or_else(|| info_err!(format!("Unexpected failure, missing m3u target output for target {}",  target.name)))?;
         let config = cfg.config.load();
         let target_path = ensure_target_storage_path(&config, target.name.as_str())?;
@@ -147,7 +150,6 @@ impl Iterator for M3uPlaylistIterator {
 pub struct M3uPlaylistM3uTextIterator {
     inner: M3uPlaylistIterator,
     started: bool,
-
 }
 
 impl M3uPlaylistM3uTextIterator {

@@ -9,6 +9,7 @@ mod user_api;
 pub(in crate::api) mod hdhomerun_api;
 mod api_playlist_utils;
 pub(in crate::api) mod websocket_api;
+pub(in crate::api) mod custom_video_stream_api;
 mod v1_api_playlist;
 mod v1_api_user;
 mod v1_api_config;

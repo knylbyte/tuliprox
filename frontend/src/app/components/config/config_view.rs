@@ -28,6 +28,8 @@ const LABEL_CONFIG: &str = "LABEL.CONFIG";
 const LABEL_EDIT: &str = "LABEL.EDIT";
 const LABEL_VIEW: &str = "LABEL.VIEW";
 const LABEL_SAVE: &str = "LABEL.SAVE";
+const LABEL_UPDATE_GEOIP: &str = "LABEL.UPDATE_GEOIP_DB";
+
 // ==========================
 
 macro_rules! collect_modified {
@@ -162,7 +164,7 @@ pub fn ConfigView() -> Html {
                 let mut config_dto = config_ctx.config.as_ref().map_or_else(ConfigDto::default,
                                                                             |app_cfg| app_cfg.config.clone());
                 update_config(&mut config_dto, modified_forms);
-                match config_dto.prepare() {
+                match config_dto.prepare(false) {
                     Ok(_) => {
                         let services = services.clone();
                         let translate = translate.clone();
@@ -214,6 +216,22 @@ pub fn ConfigView() -> Html {
     };
 
 
+    let handle_update_geoip = {
+        let services = services_ctx.clone();
+        let translate = translate.clone();
+        Callback::from(move |_| {
+            let services = services.clone();
+            let translate = translate.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                match services.config.update_geoip().await {
+                    Ok(_) => services.toastr.success(translate.t("MESSAGES.DOWNLOAD.GEOIP.SUCCESS")),
+                    Err(_err) => services.toastr.error(translate.t("MESSAGES.DOWNLOAD.GEOIP.FAIL")),
+                }
+            });
+        })
+    };
+
+
     let context = ConfigViewContext {
         edit_mode: edit_mode.clone(),
         on_form_change: on_form_change.clone(),
@@ -224,11 +242,18 @@ pub fn ConfigView() -> Html {
         <div class="tp__config-view">
             <div class="tp__config-view__header">
                 <h1>{ translate.t(LABEL_CONFIG) } </h1>
-                <TextButton name="config_edit"
+                {html_if!(config_ctx.config.is_some_and(|c| c.config.is_geoip_enabled()), {
+                    <TextButton class="tertiary" name="update_geo_ip"
+                        icon="Refresh"
+                        title={ translate.t(LABEL_UPDATE_GEOIP)}
+                        onclick={handle_update_geoip}></TextButton>
+                })}
+               <TextButton name="config_edit"
                     class={ if *edit_mode { "secondary" } else { "primary" }}
                     icon={ if *edit_mode { "Unlocked" } else { "Locked" }}
                     title={ if *edit_mode { translate.t(LABEL_EDIT) } else { translate.t(LABEL_VIEW) }}
                     onclick={handle_config_edit}></TextButton>
+
             </div>
             <div class="tp__config-view__body">
             <Card>

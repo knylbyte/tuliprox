@@ -16,8 +16,21 @@ fn validate_header(value: &str) -> Option<String> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Fingerprint(pub String, pub String);
+pub struct Fingerprint {
+    pub key: String,
+    pub client_ip: String,
+    pub addr: SocketAddr,
+}
 
+impl Fingerprint {
+    pub fn new(key: String, client_ip: String, addr: SocketAddr) -> Self {
+        Self {
+            key,
+            client_ip,
+            addr,
+        }
+    }
+}
 
 impl<B> FromRequestParts<B> for Fingerprint
 where
@@ -59,12 +72,16 @@ impl Fingerprint {
             }
         }
 
-        let ua = user_agent.unwrap_or_else(String::new);
-        let key = match real_ip.or(forwarded_for) {
-            Some(xff) => format!("{}{xff}{ua}", addr.ip()),
-            None => format!("{}{ua}", addr.ip()),
-        };
+        let client_ip = real_ip.as_ref()
+            .map(ToString::to_string)
+            .or(forwarded_for.as_ref().map(ToString::to_string))
+            .unwrap_or_else(|| addr.ip().to_string());
 
-        Ok(Fingerprint(key, addr.to_string()))
+        let ua = user_agent.unwrap_or_else(String::new);
+        let key = format!("{client_ip}|{ua}");
+
+       // debug!("{key}, {client_ip}, {addr}");
+
+        Ok(Fingerprint::new(key, client_ip, addr))
     }
 }

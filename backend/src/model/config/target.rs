@@ -8,7 +8,7 @@ use regex::Regex;
 use shared::foundation::filter::Filter;
 use shared::foundation::filter::ValueProvider;
 use crate::model::{macros, ConfigRename, ConfigSort};
-
+use crate::model::config::favourites::ConfigFavourites;
 
 #[derive(Clone, Debug)]
 pub struct ProcessTargets {
@@ -39,6 +39,7 @@ pub struct XtreamTargetOutput {
     pub resolve_vod: bool,
     pub resolve_vod_delay: u16,
     pub trakt: Option<TraktConfig>,
+    pub filter: Option<Filter>,
 }
 
 macros::from_impl!(XtreamTargetOutput);
@@ -53,6 +54,7 @@ impl From<&XtreamTargetOutputDto> for XtreamTargetOutput {
             resolve_vod: dto.resolve_vod,
             resolve_vod_delay: dto.resolve_vod_delay,
             trakt: dto.trakt.as_ref().map(Into::into),
+            filter: dto.t_filter.clone(),
         }
     }
 }
@@ -68,16 +70,18 @@ impl From<&XtreamTargetOutput> for XtreamTargetOutputDto {
             resolve_vod: instance.resolve_vod,
             resolve_vod_delay: instance.resolve_vod_delay,
             trakt: instance.trakt.as_ref().map(TraktConfigDto::from),
+            filter: instance.filter.as_ref().map(ToString::to_string),
+            t_filter: instance.filter.clone(),
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct M3uTargetOutput {
     pub filename: Option<String>,
     pub include_type_in_url: bool,
     pub mask_redirect_url: bool,
+    pub filter: Option<Filter>,
 }
 
 macros::from_impl!(M3uTargetOutput);
@@ -87,6 +91,7 @@ impl From<&M3uTargetOutputDto> for M3uTargetOutput {
             filename: dto.filename.clone(),
             include_type_in_url: dto.include_type_in_url,
             mask_redirect_url: dto.mask_redirect_url,
+            filter: dto.t_filter.clone(),
         }
     }
 }
@@ -96,12 +101,15 @@ impl From<&M3uTargetOutput> for M3uTargetOutputDto {
             filename: instance.filename.clone(),
             include_type_in_url: instance.include_type_in_url,
             mask_redirect_url: instance.mask_redirect_url,
+            filter: instance.filter.as_ref().map(ToString::to_string),
+            t_filter: instance.filter.clone(),
         }
     }
 }
 
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct StrmTargetOutput {
     pub directory: String,
     pub username: Option<String>,
@@ -110,6 +118,9 @@ pub struct StrmTargetOutput {
     pub underscore_whitespace: bool,
     pub cleanup: bool,
     pub strm_props: Option<Vec<String>>,
+    pub filter: Option<Filter>,
+    // boolean flag to enable or disable quality info in filenames.
+    pub add_quality_to_filename: bool,
 }
 
 macros::from_impl!(StrmTargetOutput);
@@ -123,6 +134,8 @@ impl From<&StrmTargetOutputDto> for StrmTargetOutput {
             underscore_whitespace: dto.underscore_whitespace,
             cleanup: dto.cleanup,
             strm_props: dto.strm_props.clone(),
+            filter: dto.t_filter.clone(),
+            add_quality_to_filename: dto.add_quality_to_filename,
         }
     }
 }
@@ -136,6 +149,9 @@ impl From<&StrmTargetOutput> for StrmTargetOutputDto {
             underscore_whitespace: instance.underscore_whitespace,
             cleanup: instance.cleanup,
             strm_props: instance.strm_props.clone(),
+            filter: instance.filter.as_ref().map(ToString::to_string),
+            t_filter: instance.filter.clone(),
+            add_quality_to_filename: instance.add_quality_to_filename,
         }
     }
 }
@@ -210,8 +226,10 @@ pub struct ConfigTarget {
     pub rename: Option<Vec<ConfigRename>>,
     pub mapping_ids: Option<Vec<String>>,
     pub mapping: Arc<ArcSwapOption<Vec<Mapping>>>,
+    pub favourites: Option<Vec<ConfigFavourites>>,
     pub processing_order: ProcessingOrder,
     pub watch: Option<Vec<regex::Regex>>,
+    pub use_memory_cache: bool,
 }
 
 impl ConfigTarget {
@@ -252,13 +270,13 @@ impl ConfigTarget {
         }
     }
 
-    pub fn has_output(&self, tt: &TargetType) -> bool {
+    pub fn has_output(&self, tt: TargetType) -> bool {
         for target_output in &self.output {
             match target_output {
-                TargetOutput::Xtream(_) => { if tt == &TargetType::Xtream { return true; } }
-                TargetOutput::M3u(_) => { if tt == &TargetType::M3u { return true; } }
-                TargetOutput::Strm(_) => { if tt == &TargetType::Strm { return true; } }
-                TargetOutput::HdHomeRun(_) => { if tt == &TargetType::HdHomeRun { return true; } }
+                TargetOutput::Xtream(_) => { if tt == TargetType::Xtream { return true; } }
+                TargetOutput::M3u(_) => { if tt == TargetType::M3u { return true; } }
+                TargetOutput::Strm(_) => { if tt == TargetType::Strm { return true; } }
+                TargetOutput::HdHomeRun(_) => { if tt == TargetType::HdHomeRun { return true; } }
             }
         }
         false
@@ -287,8 +305,10 @@ impl From<&ConfigTargetDto> for ConfigTarget {
             rename: dto.rename.as_ref().map(|l| l.iter().map(Into::into).collect()),
             mapping_ids: dto.mapping.clone(),
             mapping: Arc::new(ArcSwapOption::new(None)),
+            favourites: dto.favourites.as_ref().map(|f| f.iter().map(Into::into).collect()),
             processing_order: dto.processing_order,
-            watch: dto.watch.as_ref().map(|list| list.iter().filter_map(|s| Regex::new(s).ok()).collect())
+            watch: dto.watch.as_ref().map(|list| list.iter().filter_map(|s| Regex::new(s).ok()).collect()),
+            use_memory_cache: dto.use_memory_cache,
         }
     }
 }

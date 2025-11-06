@@ -32,6 +32,8 @@ mod playlist_update_state;
 mod proxy_type;
 
 mod proxy_user_status;
+mod favourites;
+mod geoip;
 
 pub use proxy_type::*;
 pub use proxy_user_status::*;
@@ -57,6 +59,7 @@ pub use epg::*;
 pub use cache::*;
 pub use rate_limit::*;
 pub use reverse_proxy::*;
+pub use geoip::*;
 pub use proxy::*;
 pub use trakt::*;
 pub use rename::*;
@@ -65,4 +68,5 @@ pub use paths::*;
 pub use app_config::*;
 pub use config_type::*;
 pub use playlist_update_state::*;
+pub use favourites::*;
 pub use crate::apply_batch_aliases;

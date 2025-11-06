@@ -7,7 +7,7 @@ const MAX_PTS_DTS: u64 = 1 << 33;    // 33 bit PTS/DTS cycle
 
 const TS_PACKET_SIZE: usize = 188;
 const SYNC_BYTE: u8 = 0x47;
-const PACKET_COUNT: usize = 7;
+const PACKET_COUNT: usize = 250;
 const CHUNK_SIZE: usize = TS_PACKET_SIZE * PACKET_COUNT;
 
 const ADAPTATION_FIELD_FLAG_PCR: u8 = 0x10; // PCR flag bit in adaptation field flags

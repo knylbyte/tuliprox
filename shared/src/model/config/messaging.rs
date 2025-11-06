@@ -6,6 +6,8 @@ use crate::utils::is_blank_optional_string;
 pub struct TelegramMessagingConfigDto {
     pub bot_token: String,
     pub chat_ids: Vec<String>,
+    #[serde(default)]
+    pub markdown: bool,
 }
 
 impl TelegramMessagingConfigDto {

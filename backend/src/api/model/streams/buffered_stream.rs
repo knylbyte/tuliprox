@@ -3,12 +3,14 @@ use std::{
     pin::Pin,
     sync::Arc,
 };
-use std::cmp::min;
+use std::cmp::{max};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio_stream::wrappers::ReceiverStream;
-use crate::api::model::BoxedProviderStream;
+use crate::api::model::{BoxedProviderStream};
 use crate::api::model::StreamError;
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
+
+pub const CHANNEL_SIZE: usize = 1024;
 
 pub(in crate::api::model) struct BufferedStream {
     stream: ReceiverStream<Result<bytes::Bytes, StreamError>>,
@@ -17,7 +19,8 @@ pub(in crate::api::model) struct BufferedStream {
 
 impl BufferedStream {
     pub fn new(stream: BoxedProviderStream, buffer_size: usize, client_close_signal: Arc<AtomicOnceFlag>, _url: &str) -> Self {
-        let (tx, rx) = channel(min(buffer_size, 1024));
+        // TODO make channel_size  based on bytes not entries
+        let (tx, rx) = channel(max(buffer_size, CHANNEL_SIZE));
         tokio::spawn(Self::buffer_stream(tx, stream, Arc::clone(&client_close_signal)));
         Self {
             stream: ReceiverStream::new(rx),
@@ -33,22 +36,12 @@ impl BufferedStream {
         while client_close_signal.is_active() {
             match stream.next().await {
                 Some(Ok(chunk)) => {
-                  match tx.reserve().await {
-                    Ok(permit) => {
-                        permit.send(Ok(chunk));
-                        tokio::task::yield_now().await;
-                    },
-                    Err(_err) => {
-                        // Receiver dropped, notify and exit
-                        client_close_signal.notify();
-                        break;
-                    }
+                  if tx.send(Ok(chunk)).await.is_err() {
+                      client_close_signal.notify();
+                      break;
                   }
                 }
                 Some(Err(err)) => {
-                    //trace!("Buffered Stream Error: {err:?}");
-                    // tokio::time::sleep(sleep_duration).await;
-                    // Attempt to send error to client
                     if tx.send(Err(err)).await.is_err() {
                         client_close_signal.notify();
                     }

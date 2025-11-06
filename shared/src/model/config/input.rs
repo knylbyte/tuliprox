@@ -1,5 +1,5 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::EpgConfigDto;
+use crate::model::{EpgConfigDto};
 use crate::utils::{default_as_true, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info, trim_last_slash};
 use crate::{check_input_credentials, check_input_connections, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use enum_iterator::Sequence;
@@ -29,11 +29,11 @@ macro_rules! apply_batch_aliases {
             if let Some(index) = $index {
                 let mut idx = index;
                 // set to the same id as the first alias, because the first alias is copied into this input
-                $source.id = index + 1;
+                $source.id = idx;
                 if let Some(aliases) = $source.aliases.as_mut() {
                     for alias in aliases {
-                        idx += 1;
                         alias.id = idx;
+                        idx += 1;
                     }
                 }
                 Some(idx)
@@ -169,6 +169,25 @@ impl Default for ConfigInputOptionsDto {
     }
 }
 
+impl ConfigInputOptionsDto {
+    pub fn is_empty(&self) -> bool {
+        !self.xtream_skip_live
+            && !self.xtream_skip_vod
+            && !self.xtream_skip_series
+            && self.xtream_live_stream_use_prefix
+            && !self.xtream_live_stream_without_extension
+    }
+
+    pub fn clean(&mut self) {
+        self.xtream_skip_live = false;
+        self.xtream_skip_vod = false;
+        self.xtream_skip_series = false;
+        self.xtream_live_stream_use_prefix = default_as_true();
+        self.xtream_live_stream_without_extension = false;
+
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StagedInputDto {
@@ -185,6 +204,26 @@ pub struct StagedInputDto {
     pub headers: HashMap<String, String>,
 }
 
+impl StagedInputDto {
+    pub fn is_empty(&self) -> bool {
+        self.url.trim().is_empty()
+            && self.username.as_ref().is_none_or(|u| u.trim().is_empty())
+            && self.password.as_ref().is_none_or(|u| u.trim().is_empty())
+            && self.method == InputFetchMethod::default()
+            && self.input_type == InputType::default()
+            && self.headers.is_empty()
+    }
+
+    pub fn clean(&mut self) {
+        self.url = String::new();
+        self.username = None;
+        self.password = None;
+        self.method = InputFetchMethod::default();
+        self.input_type = InputType::default();
+        self.headers.clear();
+
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -301,11 +340,10 @@ impl ConfigInputDto {
 
         self.persist = get_trimmed_string(&self.persist);
 
-
-        let mut current_index = index;
+        let mut current_index = index + 1;
+        self.id = current_index;
         if let Some(aliases) = self.aliases.as_mut() {
             let input_type = &self.input_type;
-            self.id = current_index + 1; // The same id as the first alias
             handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, aliases.iter_mut()
                 .map(|i| match i.prepare(current_index, input_type) {
                     Ok(new_idx) => {
@@ -314,9 +352,7 @@ impl ConfigInputDto {
                     },
                     Err(err) => Err(err)
                 }));
-        } else if !matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch) {
-            current_index += 1;
-            self.id = current_index;
+        //} else if !matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch) {
         }
         Ok(current_index)
     }

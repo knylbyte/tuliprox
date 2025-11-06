@@ -1,7 +1,6 @@
-use std::rc::Rc;
 use std::str::FromStr;
-use cron::Schedule;
-use crate::app::components::{Card, Chip, DropDownOption, IconButton, NoContent};
+use cron::{Schedule};
+use crate::app::components::{Card, Chip, DropDownOption, DropDownSelection, IconButton, NoContent};
 use crate::app::ConfigContext;
 use yew::prelude::*;
 use yew_i18n::use_translation;
@@ -48,11 +47,11 @@ pub fn SchedulesConfigView() -> Html {
     let target_options = use_memo((selected_targets.clone(), all_targets.clone()),
                      move |(selected, all_targets)| all_targets
                         .iter()
-                        .map(|t| Rc::new(DropDownOption {
+                        .map(|t| DropDownOption {
                            id: t.clone(),
                            label: html! { t.clone() },
                            selected: (*selected).as_ref().is_some_and(|s| s.contains(t)),
-                       })).collect::<Vec<Rc<DropDownOption>>>(),
+                       }).collect::<Vec<DropDownOption>>(),
     );
 
     let form_state: UseReducerHandle<SchedulesConfigFormState> = use_reducer(|| {
@@ -95,11 +94,11 @@ pub fn SchedulesConfigView() -> Html {
 
     let handle_target_selection = {
         let set_selected_targets = selected_targets.clone();
-        Callback::from(move |(_name, selections):(String, Vec<Rc<DropDownOption>>)| {
-            if selections.is_empty() {
-                set_selected_targets.set(None);
-            } else {
-                set_selected_targets.set(Some(selections.iter().map(|t| t.id.clone()).collect()));
+        Callback::from(move |(_name, selections):(String, DropDownSelection)| {
+            match selections {
+                DropDownSelection::Empty => set_selected_targets.set(None),
+                DropDownSelection::Single(options) => set_selected_targets.set(Some(vec![options])),
+                DropDownSelection::Multi(options) => set_selected_targets.set(Some(options)),
             }
         })
     };
@@ -221,8 +220,8 @@ pub fn SchedulesConfigView() -> Html {
           {config_field_child!(translate.t(LABEL_TARGETS), {
                html!{ <Select name="target"
                     multi_select={true}
-                    onselect={handle_target_selection}
-                    options={(*target_options).clone()}
+                    on_select={handle_target_selection}
+                    options={target_options.clone()}
                 />
            }})}
           <IconButton name="AddSchedule" icon="ScheduleAdd" class="tp__button-primary" onclick={handle_add_schedule} />

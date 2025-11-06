@@ -1,86 +1,83 @@
 # =================================================================
 #
-# Part 1: Prerequisite Build Stages
-#
-# These stages are used as building blocks for the final images.
-# They prepare the Rust binary and other resources.
+# Dockerfile für LOKALE Builds (nativ, ohne Cross-Compilation)
 #
 # =================================================================
 
 # -----------------------------------------------------------------
 # Stage 1: Build the Rust binary for production
 # -----------------------------------------------------------------
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main AS rust-build
+FROM rust:bookworm AS rust-build
 
-# Get target architecture
-ARG RUST_TARGET
+# Get target architecture from build argument
+ARG RUST_TARGET=x86_64-unknown-linux-musl
 
-RUN apt-get update && apt-get install -y --no-install-recommends pkg-config musl-tools libssl-dev
+# Install build dependencies for Debian (bookworm)
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    pkg-config libssl-dev musl-tools && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Update Rust toolchain and add necessary target
-RUN rustup update && rustup target add $RUST_TARGET
+# Set Rust compiler flags for static linking against musl
+ENV RUSTFLAGS='-C target-feature=+crt-static'
 
-# Set Rust compiler flags for better optimization and reproducibility
-ENV RUSTFLAGS='--remap-path-prefix $HOME=~ -C target-feature=+crt-static'
-
-# Copy dependency files first for better layer caching
+# Copy dependency files and the full 'shared' crate for dependency caching
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
+COPY shared ./shared/
 COPY backend/Cargo.toml ./backend/
 COPY frontend/Cargo.toml ./frontend/
-COPY shared/Cargo.toml ./shared/
 
-# Create dummy source files to build dependencies only
-RUN mkdir -p src backend/src frontend/src shared/src && \
-    echo "fn main() {}" > src/main.rs && \
+# Create dummy main.rs for other crates to allow dependency build
+RUN mkdir -p backend/src frontend/src && \
     echo "fn main() {}" > backend/src/main.rs && \
-    echo "fn main() {}" > frontend/src/main.rs && \
-    echo "pub fn dummy() {}" > shared/src/lib.rs
+    echo "fn main() {}" > frontend/src/main.rs
 
-# Build dependencies (this layer will be cached unless dependencies change)
-RUN cargo build -p tuliprox --target $RUST_TARGET --release || true
-RUN cargo build -p shared --target $RUST_TARGET --release || true
+# Build dependencies (this layer will be cached unless dependencies or 'shared' change)
+RUN rustup target add ${RUST_TARGET}
+RUN cargo build -p tuliprox --target ${RUST_TARGET} --release || true
 
-# Now copy the actual source code and build the project
-COPY . .
-
-RUN cargo build -p tuliprox --target $RUST_TARGET --release
+# Now copy the rest of the source code and build the project
+COPY backend ./backend/
+COPY frontend ./frontend/
+RUN cargo build -p tuliprox --target ${RUST_TARGET} --release
 
 # -----------------------------------------------------------------
 # Stage 2: Build the rust frontend
 # -----------------------------------------------------------------
-FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main AS trunk-build
-
-ARG RUST_TARGET=wasm32-unknown-unknown
-
-# Set working directory
-WORKDIR /src
+FROM rust:bookworm AS trunk-build
 
 # Install dependencies for Trunk and WebAssembly
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  pkg-config libssl-dev curl libclang-dev binaryen
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    pkg-config libssl-dev curl binaryen && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Add wasm target & install trunk
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install --locked trunk wasm-bindgen-cli
 
-# Copy dependency files first for better layer caching
-COPY Cargo.toml Cargo.lock ./
-COPY frontend/Cargo.toml frontend/Trunk.toml ./frontend/
-COPY shared/Cargo.toml ./shared/
+# Set working directory
+WORKDIR /src
 
-# Create dummy source files
-RUN mkdir -p frontend/src shared/src && \
+# Copy dependency files and the full 'shared' crate for dependency caching
+COPY Cargo.toml Cargo.lock ./
+COPY shared ./shared/
+COPY backend/Cargo.toml ./backend/
+COPY frontend/Cargo.toml frontend/Trunk.toml ./frontend/
+
+# Create dummy main.rs for BOTH frontend AND backend to satisfy workspace requirements
+RUN mkdir -p frontend/src backend/src && \
     echo "fn main() {}" > frontend/src/main.rs && \
-    echo "pub fn dummy() {}" > shared/src/lib.rs
+    echo "fn main() {}" > backend/src/main.rs
 
 # Pre-build dependencies
 WORKDIR /src/frontend
 RUN cargo build --target wasm32-unknown-unknown --release || true
 
-# Now copy the actual source code and build the project
+# Now copy the rest of the source code and build the project
 WORKDIR /src
-COPY . .
+COPY frontend ./frontend/
 
 WORKDIR /src/frontend
 
@@ -132,9 +129,6 @@ RUN apk add --no-cache tzdata \
 #
 # Part 2: Final Image Stages
 #
-# These stages build the final, runnable images by assembling
-# the artifacts from the prerequisite stages above.
-#
 # =================================================================
 
 # -----------------------------------------------------------------
@@ -142,7 +136,7 @@ RUN apk add --no-cache tzdata \
 # -----------------------------------------------------------------
 FROM rust:alpine AS debug
 
-# For Alpine, the correct target architecture uses 'musl'
+# Make the build-time argument available as a run-time environment variable
 ARG RUST_TARGET=x86_64-unknown-linux-musl
 ARG TZ=UTC
 
@@ -150,14 +144,15 @@ ARG TZ=UTC
 ENV RUST_TARGET=${RUST_TARGET}
 ENV TZ=${TZ}
 
-# Install build dependencies and the lldb debugger for Alpine
-# Added 'perl' which is required to build the native OpenSSL library.
-RUN apk add --no-cache bash build-base openssl-dev lldb gdb perl
+# Install build dependencies and debugger for Alpine.
+# 'build-base' contains gcc, make, etc.
+# 'gdb' is required for the debugger (lldb is often more complicated in Alpine repos)
+RUN apk add --no-cache bash build-base openssl-dev perl lldb gdb
 
 # Update Rust toolchain and add the necessary target
 RUN rustup update && rustup target add $RUST_TARGET
 
-# Create the final application layout to mimic production
+# Create the app layout to simulate the production environment
 WORKDIR /app
 COPY --from=trunk-build /src/frontend/dist ./web
 COPY --from=resource-build /src/resources ./resources
@@ -166,13 +161,15 @@ COPY --from=resource-build /src/resources ./resources
 WORKDIR /usr/src/tuliprox
 COPY . .
 
-# Copy the entrypoint script and set it as the entrypoint for the container.
+# Copy the entrypoint script and set it as the entry point for the container
 COPY ./docker/debug/debug-entrypoint.sh /usr/local/bin/entrypoint.sh
+
 # Ensure the script is executable
 RUN chmod +x /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
-# The CMD will be passed as arguments to the entrypoint script.
+# The CMD is passed as an argument to the Entrypoint script. 
+# This keeps the container running indefinitely for interactive debugging.
 CMD ["tail", "-f", "/dev/null"]
 
 # -----------------------------------------------------------------
@@ -180,16 +177,14 @@ CMD ["tail", "-f", "/dev/null"]
 # -----------------------------------------------------------------
 FROM scratch AS scratch-final
 
-ARG RUST_TARGET
+ARG RUST_TARGET=x86_64-unknown-linux-musl
 
 # Copy timezone data and localtime from tz-prep
 COPY --from=tz-prep /output/usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=tz-prep /output/etc/localtime /etc/localtime
 
-# Certificates
+# Copy SSL certificates from a builder stage that has them
 COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-# RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
 
 # App
 WORKDIR /app
@@ -205,14 +200,18 @@ CMD ["-s", "-p", "/app/config"]
 # -----------------------------------------------------------------
 FROM alpine:latest AS alpine-final
 
-ARG RUST_TARGET
+ARG RUST_TARGET=x86_64-unknown-linux-musl
 ARG TZ=UTC
 ENV TZ=${TZ}
 
 RUN apk add --no-cache bash curl ca-certificates tini
 
-COPY --from=rust-build /usr/share/zoneinfo /usr/share/zoneinfo
-COPY --from=rust-build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Copy timezone data and localtime from tz-prep
+COPY --from=tz-prep /output/usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=tz-prep /output/etc/localtime /etc/localtime
+
+# Copy SSL certificates `ca-certificates` from Alpine-based Stage (tz-prep ist Alpine)
+COPY --from=tz-prep /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # Default timezone fallback
 RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime

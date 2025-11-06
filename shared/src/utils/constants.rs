@@ -21,6 +21,7 @@ pub const HLS_EXT: &str = ".m3u8";
 pub const DASH_EXT: &str = ".mpd";
 
 pub const HLS_PREFIX: &str = "hls";
+pub const CUSTOM_VIDEO_PREFIX: &str = "cvs";
 
 pub const HLS_EXT_QUERY: &str = ".m3u8?";
 pub const HLS_EXT_FRAGMENT: &str = ".m3u8#";

@@ -1,13 +1,14 @@
 use std::rc::Rc;
-use shared::model::{ConfigType, PlaylistUpdateState, StatusCheck};
+use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState, StatusCheck};
 use crate::model::BusyStatus;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum EventMessage {
     Unauthorized,
     ServerError(String),
     ServerStatus(Rc<StatusCheck>),
-    ActiveUser(usize, usize),
+    ActiveUser(ActiveUserConnectionChange),
     ActiveProvider(String, usize),
     ConfigChange(ConfigType),
     Busy(BusyStatus),

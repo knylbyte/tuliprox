@@ -1,0 +1,110 @@
+.tp__source-editor {
+   position: relative;
+   display: flex;
+   flex-flow: row nowrap;
+   box-sizing: border-box;
+   width: 100%;
+   height: 100%;
+   gap: var(--gap-default);
+   font-size: 1rem;
+
+   &__sidebar {
+      display: flex;
+      flex-flow: column;
+      box-sizing: border-box;
+      height: 100%;
+      gap: var(--gap-small);
+
+      &-actions {
+         display: flex;
+         flex-flow: row wrap;
+         justify-content: flex-end;
+         box-sizing: border-box;
+         gap: var(--gap-small);
+         border-bottom: 2px solid var(--border-color);
+         border-radius: 0;
+
+         &-active {
+            color: var(--text-button-active-color);
+            background-color: var(--text-button-active-background-color);
+         }
+      }
+
+      &-bricks {
+         display: flex;
+         flex-flow: column;
+         box-sizing: border-box;
+         gap: var(--gap-large);
+
+         &-group {
+            display: flex;
+            flex-flow: column;
+            box-sizing: border-box;
+            gap: var(--gap-small);
+         }
+
+         .tp__source-editor__brick {
+            border: 1px solid var(--border-color);
+            cursor: grab;
+            padding: var(--padding-small) var(--padding-default);
+            border-radius: var(--border-radius);
+            text-align: center;
+         }
+      }
+   }
+
+   &__canvas-wrapper {
+      position: relative;
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border: 1px solid var(--card-border-color);
+   }
+
+   &__canvas,
+   &__connections {
+      position: absolute;
+      left: 0;
+      top: 0;
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+   }
+
+   &__canvas {
+   }
+
+   &__connections {
+   }
+
+}
+
+.graph-paper-advanced {
+   background-image:
+           linear-gradient(var(--graph-paper-line-color-1) 1px, transparent 1px),
+           linear-gradient(90deg, var(--graph-paper-line-color-1) 1px, transparent 1px),
+           linear-gradient(var(--graph-paper-line-color-2) 2px, transparent 2px),        /* horizontal thick */
+           linear-gradient(90deg, var(--graph-paper-line-color-2) 2px, transparent 2px);  /* vertical thick */
+   background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
+}
+
+.grabbed {
+   cursor: grabbing;
+}
+
+.clickable {
+   cursor: pointer;
+}
+
+.tp__form-page__toolbar {
+   margin-top: var(--padding-default);
+   padding-top: var(--padding-default);
+   display: flex;
+   flex-flow: row;
+   gap: var(--gap-large);
+   box-sizing: border-box;
+   width: 100%;
+   border-top: 1px solid var(--card-border-color);
+}

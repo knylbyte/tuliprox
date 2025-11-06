@@ -11,6 +11,8 @@
   color: var(--popup-color);
   box-shadow: var(--popup-shadow);
   z-index: 9999;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 
   hr {
     border: none;

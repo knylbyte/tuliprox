@@ -1,10 +1,10 @@
+use crate::model::{xtream_const, CommonPlaylistItem, ConfigTargetOptions};
+use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id, get_string_from_serde_value, get_u32_from_serde_value, get_u64_from_serde_value};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use crate::model::{ConfigTargetOptions, xtream_const, CommonPlaylistItem};
-use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id, get_string_from_serde_value, get_u32_from_serde_value, get_u64_from_serde_value};
 
 // https://de.wikipedia.org/wiki/M3U
 // https://siptv.eu/howto/playlist.html
@@ -428,7 +428,6 @@ pub struct XtreamPlaylistItem {
 }
 
 impl XtreamPlaylistItem {
-
     pub fn get_additional_property(&self, field: &str) -> Option<Value> {
         if let Some(json) = self.additional_properties.as_ref() {
             if let Ok(Value::Object(props)) = serde_json::from_str(json) {
@@ -461,7 +460,6 @@ impl XtreamPlaylistItem {
             category_id: Some(self.category_id),
         }
     }
-
 }
 
 impl PlaylistEntry for XtreamPlaylistItem {
@@ -703,7 +701,6 @@ impl PlaylistItem {
             chno: header.chno.clone(),
         }
     }
-    
 }
 
 impl PlaylistEntry for PlaylistItem {

@@ -82,14 +82,14 @@ pub fn read_sources_file(sources_file: &str, resolve_env: bool, include_computed
     }
 }
 
-pub fn read_config_file(config_file: &str, resolve_env: bool) -> Result<ConfigDto, TuliproxError> {
+pub fn read_config_file(config_file: &str, resolve_env: bool, include_computed: bool) -> Result<ConfigDto, TuliproxError> {
     match open_file(&std::path::PathBuf::from(config_file)) {
         Ok(file) => {
             let maybe_config: Result<ConfigDto, _> = serde_yaml::from_reader(config_file_reader(file, resolve_env));
             match maybe_config {
                 Ok(mut config) => {
                     if resolve_env {
-                        config.prepare()?;
+                        config.prepare(include_computed)?;
                     }
                     Ok(config)
                 }
@@ -107,7 +107,7 @@ pub fn read_app_config_dto(paths: &ConfigPaths,
     let sources_file = paths.sources_file_path.as_str();
     let api_proxy_file = paths.api_proxy_file_path.as_str();
 
-    let config = read_config_file(config_file, resolve_env)?;
+    let config = read_config_file(config_file, resolve_env, include_computed)?;
     let sources = read_sources_file(sources_file, resolve_env, include_computed, config.get_hdhr_device_overview().as_ref())?;
     let mappings = if let Some(mappings_file) = paths.mapping_file_path.as_ref() {
         read_mappings_file(mappings_file, resolve_env).unwrap_or(None)
@@ -211,7 +211,7 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
     let config_file = paths.config_file_path.as_str();
     let sources_file = paths.sources_file_path.as_str();
 
-    let config_dto = read_config_file(config_file, resolve_env)?;
+    let config_dto = read_config_file(config_file, resolve_env, include_computed)?;
     let mut sources_dto = read_sources_file(sources_file, resolve_env, include_computed, config_dto.get_hdhr_device_overview().as_ref())?;
     prepare_sources_batch(&mut  sources_dto, include_computed)?;
     let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
@@ -243,7 +243,7 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
 
     if let Some(mappings_file) = &paths.mapping_file_path {
         match utils::read_mappings(mappings_file.as_str(), resolve_env) {
-            Ok(Some(mappings)) => app_config.set_mappings(&mappings),
+            Ok(Some(mappings)) => app_config.set_mappings(mappings_file, &mappings),
             Ok(None) => info!("Mapping file: not used"),
             Err(err) => exit!("{err}"),
         }

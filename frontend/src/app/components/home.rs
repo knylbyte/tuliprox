@@ -1,4 +1,4 @@
-use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, StatsView, ToastrView, UserlistView, WebsocketStatus};
+use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, SourceEditor, StatsView, StreamsView, ToastrView, UserlistView, WebsocketStatus};
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
@@ -8,7 +8,7 @@ use std::rc::Rc;
 use yew::prelude::*;
 use yew::suspense::use_future;
 use yew_i18n::use_translation;
-use crate::app::components::config::ConfigView;
+use crate::app::components::config::{ConfigView};
 use crate::app::components::loading_indicator::{BusyIndicator};
 use crate::provider::DialogProvider;
 use crate::services::{ToastCloseMode, ToastOptions};
@@ -135,6 +135,7 @@ pub fn Home() -> Html {
         sources: sources.clone(),
     };
 
+
     //<div class={"app-header__toolbar"}><select onchange={handle_language} defaultValue={i18next.language}>{services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
 
     html! {
@@ -171,11 +172,17 @@ pub fn Home() -> Html {
                        <Panel class="tp__full-width" value={ViewType::Stats.to_string()} active={view_visible.to_string()}>
                         <StatsView/>
                        </Panel>
+                       <Panel class="tp__full-width" value={ViewType::Streams.to_string()} active={view_visible.to_string()}>
+                        <StreamsView/>
+                       </Panel>
                        <Panel class="tp__full-width" value={ViewType::Users.to_string()} active={view_visible.to_string()}>
                           <UserlistView/>
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::Config.to_string()} active={view_visible.to_string()}>
                           <ConfigView/>
+                       </Panel>
+                       <Panel class="tp__full-width tp__full-height" value={ViewType::SourceEditor.to_string()} active={view_visible.to_string()}>
+                          <SourceEditor/>
                        </Panel>
                        <Panel class="tp__full-width" value={ViewType::PlaylistUpdate.to_string()} active={view_visible.to_string()}>
                         <PlaylistUpdateView/>

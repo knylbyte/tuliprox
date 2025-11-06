@@ -5,6 +5,7 @@
   align-items: center;
   padding: var(--padding-default);
   width: 100%;
+  box-sizing: border-box;
 
   &__indicator {
     display: flex;
