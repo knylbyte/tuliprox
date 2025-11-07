@@ -82,7 +82,7 @@
 @media (max-width: size.$mobile-breakpoint) {
   .tp__app-sidebar-menu {
     &--source_editor {
-        display: none !important;
+        display: none;
       }
   }
 }

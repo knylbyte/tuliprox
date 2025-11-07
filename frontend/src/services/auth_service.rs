@@ -1,12 +1,12 @@
 use std::cell::RefCell;
-use super::{check_dummy_token, get_base_href, get_token, request_post, set_token};
+use super::{check_dummy_token, get_base_href, request_post, set_token};
 use futures_signals::signal::Mutable;
 use futures_signals::signal::SignalExt;
 use shared::model::{Claims, TokenResponse, UserCredential, ROLE_ADMIN, ROLE_USER, TOKEN_NO_AUTH};
 use std::future::Future;
 use shared::utils::{concat_path, concat_path_leading_slash};
 use base64::{engine::general_purpose, Engine as _};
-use log::{debug, warn};
+use log::{warn};
 use crate::error::{Error, Error::Unauthorized, Error::NotFound};
 
 fn decode_jwt_payload(token: &str) -> Option<Claims> {
