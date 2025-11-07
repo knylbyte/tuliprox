@@ -1,14 +1,13 @@
 use std::cell::RefCell;
-use super::{get_base_href, request_post};
-use crate::services::requests::set_token;
+use super::{check_dummy_token, get_base_href, get_token, request_post, set_token};
 use futures_signals::signal::Mutable;
 use futures_signals::signal::SignalExt;
 use shared::model::{Claims, TokenResponse, UserCredential, ROLE_ADMIN, ROLE_USER, TOKEN_NO_AUTH};
 use std::future::Future;
 use shared::utils::{concat_path, concat_path_leading_slash};
 use base64::{engine::general_purpose, Engine as _};
-use log::warn;
-use crate::error::{Error, Error::BadRequest, Error::NotFound};
+use log::{debug, warn};
+use crate::error::{Error, Error::Unauthorized, Error::NotFound};
 
 fn decode_jwt_payload(token: &str) -> Option<Claims> {
     let payload_enc = token.split('.').nth(1)?;
@@ -65,7 +64,7 @@ impl AuthService {
     }
 
     fn no_auth(&self, err: Error) -> Result<TokenResponse, Error> {
-        if matches!(err, BadRequest(_)) {
+        if matches!(err, Unauthorized) {
             self.username.replace("admin".to_string());
             self.auth_channel.set(true);
             set_token(Some(TOKEN_NO_AUTH));
@@ -100,6 +99,7 @@ impl AuthService {
     }
 
     pub async fn refresh(&self) -> Result<TokenResponse, Error> {
+        check_dummy_token();
         match request_post::<(), TokenResponse>(&concat_path(&self.auth_path, "refresh"), (), None, None).await {
             Ok(Some(token)) => {
                 self.username.replace(token.username.to_string());
@@ -120,7 +120,7 @@ impl AuthService {
         if token == TOKEN_NO_AUTH {
             roles.push(ROLE_ADMIN.to_string());
         }
-        
+
         if let Some(claims) = decode_jwt_payload(token) {
             for role in claims.roles.iter() {
                 roles.push(role.clone());
