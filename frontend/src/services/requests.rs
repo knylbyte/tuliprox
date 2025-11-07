@@ -1,11 +1,11 @@
 use crate::error::{Error, ErrorInfo, ErrorSetInfo};
 use gloo_storage::{LocalStorage, Storage};
-use log::{error};
+use log::error;
 use reqwasm::http::Request;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
-use web_sys::window;
 use shared::utils::bin_deserialize;
+use web_sys::window;
 
 const CONTENT_TYPE_BIN: &str = "application/cbor";
 const CONTENT_TYPE_JSON: &str = "application/json";
@@ -32,6 +32,16 @@ pub fn set_token(token: Option<&str>) {
     }
 }
 
+const DUMMY_TOKEN: &str = "eyJraWQiOiJkZWZhdWx0IiwiYWxnIjoiUlMyNTYifQ.eyJsb2dpbiI6ImR1bW15In0.WWzZP0hICmJeIgMLVYNOpayriEC08J_lYssk9z8GglHXfZ6oJUDv3svlJDA8sQG025VA_LR5UzyyiWeQDCdpWyrCI_nI2Xd-3ga3JwWtxHE9NWFalgq0Q9jjxoB4LYWCXsAkqoZqk6s7b3F5Fi_h5oYHfwM4h8hXEbrgnJ_Z1wpSc7HNh6SUnOllxcaJOxYlRrlUn3XulSSf2NhHe3XotvFguiIV1-RIns3cSIL29bvMUEFw84w7BfJn-joynZsWlfJBvzyOiuDqduXa0deH7b962unM2wPpbvTgliJhFFOUBHClRhBOmoo0cijuMZB4K7NjgjGmU5eVfHG6pVWs_b0ikS4V_P6RJcNS6Alcc_HB_YXv0yCD3pjcBbuRXAskivEhgXuecdRMGQgohAhXplLuu5SR0K6Bcrt7UFFnBi2qN6fbw1i4s8PDXqiTu4rIg9agCkVNfplRvj8Szl6egF0Vd1TN1WGEarkdINEUyfNQkAihFY5BKxfaPun1-a0VydRMZElu6VzrrUMxXt4T7zybuJZI63C3mKLEHZixdSC76c9AE-zGom5LZYE4mqwd4dW3QHtWFZgGZiL9C_VBIf63WzjTYhWVuO2U8O9bsKkSEl5L-Ww9j8ccDHp5nc7y6yUgSYd600TBRI7WblFovLsl2tjElvUqfJZhj6JmX_Q";
+
+// The Authorization header is for the Backend Authenticator mandatory.
+// If we don't set a dummy token the backend api cant be called.
+pub fn check_dummy_token() {
+    if get_token().is_none() {
+        set_token(Some(DUMMY_TOKEN));
+    }
+}
+
 /// build all kinds of http request: post/get/delete etc.
 async fn request<B, T>(method: RequestMethod, url: &str, body: B, content_type: Option<String>,
                        response_type: Option<String>) -> Result<Option<T>, Error>
@@ -43,14 +53,14 @@ where
     let r_type = response_type.as_ref().map_or(CONTENT_TYPE_JSON, |c| c.as_str());
     let mut request = match method {
         RequestMethod::Get => Request::get(url),
-        RequestMethod::Post =>  {
+        RequestMethod::Post => {
             let json = serde_json::to_string(&body).map_err(|_| Error::RequestError)?;
             Request::post(url).body(json).header("Content-Type", c_type)
-        },
+        }
         RequestMethod::Put => {
             let json = serde_json::to_string(&body).map_err(|_| Error::RequestError)?;
             Request::put(url).body(json).header("Content-Type", c_type)
-        },
+        }
         // RequestMethod::PATCH =>  Request::patch(&url).body(serde_json::to_string(&body).unwrap()),
         RequestMethod::Delete => Request::delete(url),
     };
@@ -85,7 +95,7 @@ where
                                     Err(err) => {
                                         error!("Failed to deserialize {err}");
                                         Err(Error::DeserializeError)
-                                    },
+                                    }
                                 }
                             }
                             Err(err) => {

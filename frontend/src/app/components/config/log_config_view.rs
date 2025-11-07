@@ -5,7 +5,7 @@ use shared::model::{LogConfigDto};
 use crate::app::context::ConfigContext;
 use crate::{config_field_bool, config_field_child, edit_field_bool, generate_form_reducer};
 use crate::app::components::config::config_view_context::ConfigViewContext;
-use crate::app::components::config::config_page::{ConfigForm};
+use crate::app::components::config::config_page::{ConfigForm, LABEL_LOG_CONFIG};
 use crate::app::components::{Chip, RadioButtonGroup};
 
 const LABEL_LOG_LEVEL: &str =  "LABEL.LOG_LEVEL";
@@ -105,6 +105,7 @@ pub fn LogConfigView() -> Html {
 
     html! {
       <div class="tp__log-config-view tp__config-view-page">
+        <div class="tp__config-view-page__title">{translate.t(LABEL_LOG_CONFIG)}</div>
         <div class="tp__log-config-view__body tp__config-view-page__body">
         {
            if *config_view_ctx.edit_mode {

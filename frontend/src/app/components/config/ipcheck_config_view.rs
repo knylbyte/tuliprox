@@ -4,7 +4,7 @@ use shared::model::{IpCheckConfigDto};
 use crate::app::context::ConfigContext;
 use crate::{config_field_empty, config_field_optional, edit_field_text_option, generate_form_reducer};
 use crate::app::components::config::config_view_context::ConfigViewContext;
-use crate::app::components::config::config_page::{ConfigForm};
+use crate::app::components::config::config_page::{ConfigForm, LABEL_IP_CHECK_CONFIG};
 const LABEL_URL: &str =  "LABEL.URL";
 const LABEL_URL_IPV4: &str =  "LABEL.URL_IPV4";
 const LABEL_URL_IPV6: &str =  "LABEL.URL_IPV6";
@@ -104,6 +104,7 @@ pub fn IpCheckConfigView() -> Html {
 
     html! {
       <div class="tp__ipcheck-config-view tp__config-view-page">
+        <div class="tp__config-view-page__title">{translate.t(LABEL_IP_CHECK_CONFIG)}</div>
         <div class="tp__ipcheck-config-view__body tp__config-view-page__body">
         {
            if *config_view_ctx.edit_mode {

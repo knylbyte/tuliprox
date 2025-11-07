@@ -1,5 +1,5 @@
 # Changelog
-# 3.1.8 (2025-11-18)
+# 3.1.8 (2025-11-06)
 - Fixed HLS streaming issues caused by session eviction and incorrect headers.
 - Catchup stream fix cycling through multiple providers on play.
 - Custom streams fix and update webui stream info

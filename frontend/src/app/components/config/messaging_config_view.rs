@@ -1,4 +1,4 @@
-use crate::app::components::config::config_page::ConfigForm;
+use crate::app::components::config::config_page::{ConfigForm, LABEL_MESSAGING_CONFIG};
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::{Card, Chip, RadioButtonGroup};
 use crate::{config_field, config_field_bool, config_field_bool_empty, config_field_child, config_field_empty, config_field_hide, config_field_optional, edit_field_bool, edit_field_list, edit_field_text, edit_field_text_option, generate_form_reducer};
@@ -305,6 +305,7 @@ pub fn MessagingConfigView() -> Html {
 
     html! {
         <div class="tp__messaging-config-view tp__config-view-page">
+           <div class="tp__config-view-page__title">{translate.t(LABEL_MESSAGING_CONFIG)}</div>
             { if *config_view_ctx.edit_mode { render_edit_mode() } else { render_view_mode() } }
         </div>
     }
