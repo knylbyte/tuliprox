@@ -3,7 +3,7 @@ use crate::api::api_utils::try_unwrap_body;
 use crate::api::model::AppState;
 use crate::auth::{create_jwt_admin, create_jwt_user, is_admin, verify_password, verify_token, AuthBearer};
 use axum::response::IntoResponse;
-use log::error;
+use log::{error};
 use serde_json::json;
 use shared::model::{TokenResponse, UserCredential, TOKEN_NO_AUTH};
 use shared::utils::{concat_path_leading_slash, CONSTANTS};

@@ -125,7 +125,7 @@ pub fn parse_xtream(input: &ConfigInput,
                     streams: &Value) -> Result<Option<Vec<PlaylistGroup>>, TuliproxError> {
     match map_to_xtream_category(categories) {
         Ok(xtream_categories) => {
-            let input_name = Arc::new(input.name.clone());
+            let input_name = input.name.clone();
             let url = input.url.as_str();
             let username = input.username.as_ref().map_or("", |v| v);
             let password = input.password.as_ref().map_or("", |v| v);
@@ -173,7 +173,7 @@ pub fn parse_xtream(input: &ConfigInput,
                                 xtream_cluster,
                                 additional_properties: stream.get_additional_properties(),
                                 category_id: 0,
-                                input_name: input_name.to_string(),
+                                input_name: input_name.clone(),
                                 ..Default::default()
                             },
                         };
