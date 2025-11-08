@@ -4,7 +4,8 @@ use shared::model::MainConfigDto;
 use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::{ConfigForm, LABEL_MAIN_CONFIG};
-use crate::{config_field_optional, config_field_bool, config_field, edit_field_text_option, edit_field_bool, generate_form_reducer, edit_field_number, edit_field_number_option, edit_field_text, edit_field_number_u8};
+use crate::{config_field_optional, config_field_bool, config_field, edit_field_text_option, edit_field_bool,
+            generate_form_reducer, edit_field_number, edit_field_number_option, edit_field_text, edit_field_number_u8};
 
 const LABEL_UPDATE_ON_BOOT: &str = "LABEL.UPDATE_ON_BOOT";
 const LABEL_CONFIG_HOT_RELOAD: &str = "LABEL.CONFIG_HOT_RELOAD";
@@ -94,7 +95,7 @@ pub fn MainConfigView() -> Html {
             { edit_field_bool!(form_state, translate.t(LABEL_UPDATE_ON_BOOT), update_on_boot, MainConfigFormAction::UpdateOnBoot) }
             { edit_field_bool!(form_state, translate.t(LABEL_CONFIG_HOT_RELOAD), config_hot_reload, MainConfigFormAction::ConfigHotReload) }
             { edit_field_bool!(form_state, translate.t(LABEL_USER_ACCESS_CONTROL), user_access_control, MainConfigFormAction::UserAccessControl) }
-            { edit_field_bool!(form_state, translate.t(LABEL_ACCEPT_INSECURE_SSL_CERTIFICATES), user_access_control, MainConfigFormAction::AcceptInsecureSslCertificates) }
+            { edit_field_bool!(form_state, translate.t(LABEL_ACCEPT_INSECURE_SSL_CERTIFICATES), accept_insecure_ssl_certificates, MainConfigFormAction::AcceptInsecureSslCertificates) }
             { edit_field_number_u8!(form_state, translate.t(LABEL_THREADS), threads, MainConfigFormAction::Threads) }
             { edit_field_text!(form_state, translate.t(LABEL_WORKING_DIR), working_dir, MainConfigFormAction::WorkingDir) }
             { edit_field_text_option!(form_state, translate.t(LABEL_MAPPING_PATH), mapping_path, MainConfigFormAction::MappingPath) }

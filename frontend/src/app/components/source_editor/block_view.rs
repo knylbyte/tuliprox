@@ -2,17 +2,18 @@ use web_sys::MouseEvent;
 use yew::{classes, function_component, html, Callback, Html, Properties};
 use yew_i18n::use_translation;
 use crate::html_if;
-use crate::app::components::{Block, BlockInstance, BlockType, PortStatus};
+use crate::app::components::{Block, BlockId, BlockInstance, BlockType, PortStatus};
 #[derive(Properties, PartialEq)]
 pub struct BlockProps {
     pub(crate) block: Block,
+    pub(crate) selected:bool,
     pub(crate) delete_mode: bool,
-    pub(crate) delete_block: Callback<usize>,
+    pub(crate) delete_block: Callback<BlockId>,
     pub(crate) port_status: PortStatus,
-    pub(crate) on_edit: Callback<usize>,
-    pub(crate) on_mouse_down: Callback<(usize, MouseEvent)>,
-    pub(crate) on_connection_drop: Callback<usize>, // to_id
-    pub(crate) on_connection_start:  Callback<usize>, // from_id
+    pub(crate) on_edit: Callback<BlockId>,
+    pub(crate) on_mouse_down: Callback<(BlockId, MouseEvent)>,
+    pub(crate) on_connection_drop: Callback<BlockId>, // to_id
+    pub(crate) on_connection_start:  Callback<BlockId>, // from_id
 }
 
 #[function_component]
@@ -69,7 +70,8 @@ pub fn BlockView(props: &BlockProps) -> Html {
     };
 
     html! {
-        <div class={format!("tp__source-editor__block no-select tp__source-editor__block-{}", block_type)} style={style}>
+        <div class={format!("tp__source-editor__block no-select tp__source-editor__block-{}{}", block_type, if props.selected {" tp__source-editor__block-selected"} else {""})}
+              style={style}>
             <div class={"tp__source-editor__block-header"}>
                 // Block handle (drag)
                 <div class="tp__source-editor__block-handle" onmousedown={handle_mouse_down}/>

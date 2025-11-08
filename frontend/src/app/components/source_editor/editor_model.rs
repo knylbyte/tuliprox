@@ -2,7 +2,7 @@ use std::fmt;
 use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 use yew::{Callback, UseStateHandle};
-use shared::model::{ConfigInputDto, ConfigTargetDto, TargetOutputDto};
+use shared::model::{ConfigInputDto, ConfigTargetDto, InputType, TargetOutputDto};
 
 // ----------------- Data Models -----------------
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -49,6 +49,17 @@ impl From<String> for BlockType {
     }
 }
 
+impl From<InputType> for BlockType {
+    fn from(s: InputType) -> Self {
+        match s {
+            InputType::M3uBatch
+            | InputType::M3u => BlockType::InputM3u,
+            InputType::XtreamBatch
+            | InputType::Xtream => BlockType::InputXtream,
+        }
+    }
+}
+
 
 // Display trait using constants
 impl fmt::Display for BlockType {
@@ -65,8 +76,7 @@ impl fmt::Display for BlockType {
         write!(f, "{}", s)
     }
 }
-
-pub(crate) type BlockId = usize;
+pub(crate) type BlockId = u16;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Block {

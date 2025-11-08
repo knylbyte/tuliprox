@@ -1,6 +1,6 @@
 use crate::app::components::config::HasFormData;
 use crate::app::components::select::Select;
-use crate::app::components::{BlockInstance, Card, DropDownOption, DropDownSelection, EditMode, Panel, RadioButtonGroup, SourceEditorContext, TextButton};
+use crate::app::components::{BlockId, BlockInstance, Card, DropDownOption, DropDownSelection, EditMode, Panel, RadioButtonGroup, SourceEditorContext, TextButton};
 use crate::{config_field_child, edit_field_bool, edit_field_number_i16, edit_field_number_u16, edit_field_text, edit_field_text_option, generate_form_reducer};
 use shared::model::{ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, StagedInputDto};
 use std::fmt::Display;
@@ -101,7 +101,7 @@ generate_form_reducer!(
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct ConfigInputViewProps {
-    pub(crate) block_id: usize,
+    pub(crate) block_id: BlockId,
     pub(crate) input: Option<Rc<ConfigInputDto>>,
 }
 
