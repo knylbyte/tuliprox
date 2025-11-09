@@ -1,106 +1,190 @@
-use std::collections::{HashMap};
-use crate::app::components::{Block, BlockId, Connection};
+use std::collections::{HashMap, HashSet};
+use crate::app::components::{BlockId, BlockType, Block, Connection};
 
-const LAYER_DISTANCE: f32 = 200.0; // X Distance
-const NODE_DISTANCE: f32 = 100.0; // Y distance
+const BLOCK_SIZE: f32 = 50.0;
+const GAP: f32 = 20.0;
+const LAYER_DISTANCE: f32 = BLOCK_SIZE * 3.0;
 const CANVAS_OFFSET: f32 = 10.0;
+const ITERATIONS: usize = 5;
 
-/// Computes layers so that `from` nodes are always left of `to` nodes
-fn compute_layers_from_to(blocks: &[Block], connections: &[Connection]) -> HashMap<BlockId, usize> {
-    let mut layers: HashMap<BlockId, usize> = HashMap::new();
-
-    // Start with all blocks in layer 0
-    for block in blocks {
-        layers.insert(block.id, 0);
-    }
-
-    // Propagate layer constraints: to >= from + 1
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for conn in connections {
-            let from_layer = *layers.get(&conn.from).unwrap();
-            let to_layer = *layers.get(&conn.to).unwrap();
-            if to_layer <= from_layer {
-                layers.insert(conn.to, from_layer + 1);
-                changed = true;
-            }
-        }
-    }
-
-    layers
+/// Cluster structure
+struct Cluster {
+    targets: Vec<BlockId>,
+    inputs: Vec<BlockId>,
+    outputs_per_target: HashMap<BlockId, Vec<BlockId>>,
 }
 
-pub fn hierarchical_layout(blocks: &mut [Block], connections: &[Connection]) {
-    let block_layers = compute_layers_from_to(blocks, connections);
+/// Build clusters from connections
+fn build_clusters(blocks: &[Block], connections: &[Connection]) -> Vec<Cluster> {
+    let mut clusters = Vec::new();
+    let mut visited_targets = HashSet::new();
+    let block_map: HashMap<BlockId, &Block> = blocks.iter().map(|b| (b.id, b)).collect();
 
-    // Build layers -> block IDs map
-    let mut layers_map: HashMap<usize, Vec<BlockId>> = HashMap::new();
-    for (&block_id, &layer_index) in block_layers.iter() {
-        layers_map.entry(layer_index).or_default().push(block_id);
+    for block in blocks {
+        if block.block_type != BlockType::Target || visited_targets.contains(&block.id) {
+            continue;
+        }
+
+        let mut cluster = Cluster {
+            targets: vec![block.id],
+            inputs: Vec::new(),
+            outputs_per_target: HashMap::new(),
+        };
+        visited_targets.insert(block.id);
+
+        // Collect inputs connected to this target
+        for conn in connections.iter().filter(|c| c.to == block.id) {
+            if let Some(input) = block_map.get(&conn.from) {
+                if matches!(input.block_type, BlockType::InputXtream | BlockType::InputM3u) {
+                    cluster.inputs.push(input.id);
+                }
+            }
+        }
+
+        // Collect outputs for this target
+        let outputs: Vec<BlockId> = connections.iter()
+            .filter(|c| c.from == block.id)
+            .filter_map(|c| block_map.get(&c.to).filter(|b| matches!(b.block_type,
+                BlockType::OutputXtream |
+                BlockType::OutputM3u |
+                BlockType::OutputHdHomeRun |
+                BlockType::OutputStrm)).map(|b| b.id))
+            .collect();
+
+        cluster.outputs_per_target.insert(block.id, outputs);
+        clusters.push(cluster);
     }
 
-    // Temporary map to store Y positions
-    let mut block_y: HashMap<BlockId, f32> = HashMap::new();
+    clusters
+}
 
-    // Sort layers
-    let mut sorted_layers: Vec<_> = layers_map.keys().cloned().collect();
-    sorted_layers.sort_unstable();
+/// Main hierarchical cluster layout function
+pub fn cluster_layout(blocks: &mut [Block], connections: &[Connection]) {
+    let clusters = build_clusters(blocks, connections);
+    let mut block_map: HashMap<BlockId, &mut Block> = blocks.iter_mut().map(|b| (b.id, b)).collect();
+    let mut y_offset = CANVAS_OFFSET;
+    let mut placed_inputs = HashSet::new();
 
-    // Top-down pass: initial Y based on parent average
-    for &layer_index in &sorted_layers {
-        let block_ids = &layers_map[&layer_index];
-        for &block_id in block_ids {
-            let from_blocks: Vec<&Block> = connections
-                .iter()
-                .filter(|c| c.to == block_id)
-                .filter_map(|c| blocks.iter().find(|b| b.id == c.from))
+    for cluster in clusters {
+        // Compute cluster height based on max(column heights)
+        let num_targets = cluster.targets.len();
+        let num_inputs = cluster.inputs.len();
+        let max_outputs = cluster.outputs_per_target.values().map(|v| v.len()).max().unwrap_or(0);
+        let cluster_height = ((num_targets.max(num_inputs).max(max_outputs)) as f32 * BLOCK_SIZE) +
+            (((num_targets.max(num_inputs).max(max_outputs)) -1) as f32 * GAP);
+
+        // --- Step 1: Place Targets (raw Y, ignore outputs for now)
+        let target_start_y = y_offset + (cluster_height - (num_targets as f32 * BLOCK_SIZE + (num_targets-1) as f32*GAP))/2.0;
+        let mut target_y_map = HashMap::new();
+        for (i, &target_id) in cluster.targets.iter().enumerate() {
+            let y = target_start_y + i as f32 * (BLOCK_SIZE + GAP) + BLOCK_SIZE/2.0;
+            if let Some(t) = block_map.get_mut(&target_id) {
+                t.position = (LAYER_DISTANCE + CANVAS_OFFSET, y);
+                target_y_map.insert(target_id, y);
+            }
+        }
+
+        // --- Step 2: Place Inputs (centered on connected targets)
+        let mut input_positions: HashMap<BlockId, f32> = HashMap::new();
+        let mut input_to_targets: HashMap<BlockId, Vec<BlockId>> = HashMap::new();
+
+        for &input_id in &cluster.inputs {
+            let connected_targets: Vec<BlockId> = connections.iter()
+                .filter(|c| c.to == input_id && cluster.targets.contains(&c.from))
+                .map(|c| c.from)
                 .collect();
 
-            let y = if !from_blocks.is_empty() {
-                let sum: f32 = from_blocks.iter()
-                    .map(|b| block_y.get(&b.id).copied().unwrap_or(0.0))
-                    .sum();
-                sum / from_blocks.len() as f32
+            input_to_targets.insert(input_id, connected_targets.clone());
+
+            // Average Y of connected targets
+            let y = if !connected_targets.is_empty() {
+                connected_targets.iter().map(|t| target_y_map[t]).sum::<f32>() / connected_targets.len() as f32
             } else {
-                block_ids.iter().position(|&id| id == block_id).unwrap() as f32 * NODE_DISTANCE
+                cluster_height / 2.0 + y_offset
             };
-
-            block_y.insert(block_id, y);
+            input_positions.insert(input_id, y);
         }
+
+        // --- Step 3: Spread inputs exclusive to a single target
+        for &target_id in &cluster.targets {
+            let exclusive_inputs: Vec<BlockId> = input_to_targets.iter()
+                .filter(|(_, targets)| targets.len() == 1 && targets[0] == target_id)
+                .map(|(&id, _)| id)
+                .collect();
+
+            let count = exclusive_inputs.len();
+            if count > 1 {
+                let target_y = target_y_map[&target_id];
+                let total_height = count as f32 * BLOCK_SIZE + (count-1) as f32 * GAP;
+                let start_y = target_y - total_height / 2.0 + BLOCK_SIZE / 2.0;
+
+                for (i, input_id) in exclusive_inputs.iter().enumerate() {
+                    input_positions.insert(*input_id, start_y + i as f32 * (BLOCK_SIZE + GAP));
+                }
+            }
+        }
+
+        // --- Step 4: Resolve overlaps iteratively
+        for _ in 0..ITERATIONS {
+            let mut sorted_inputs: Vec<(BlockId, f32)> = input_positions.iter().map(|(id, y)| (*id, *y)).collect();
+            sorted_inputs.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap());
+
+            for i in 1..sorted_inputs.len() {
+                let prev_y = sorted_inputs[i-1].1;
+                let curr_id = sorted_inputs[i].0;
+                let curr_y = sorted_inputs[i].1;
+                if curr_y - prev_y < BLOCK_SIZE + GAP {
+                    let new_y = prev_y + BLOCK_SIZE + GAP;
+                    if let Some(y_val) = input_positions.get_mut(&curr_id) {
+                        *y_val = new_y;
+                    }
+                }
+            }
+        }
+
+        // --- Step 5: Commit final input positions
+        for (&input_id, &y) in input_positions.iter() {
+            if let Some(b) = block_map.get_mut(&input_id) {
+                b.position = (CANVAS_OFFSET, y);
+                placed_inputs.insert(input_id);
+            }
+        }
+
+        // --- Step 6: Place Outputs (centered under target)
+        for (&target_id, outputs) in cluster.outputs_per_target.iter() {
+            let target_y = target_y_map[&target_id];
+            let output_count = outputs.len();
+            if output_count == 0 { continue; }
+
+            let outputs_height = output_count as f32 * BLOCK_SIZE + (output_count as f32 -1.0)*GAP;
+            let output_start_y = target_y - outputs_height / 2.0;
+
+            for (i, &out_id) in outputs.iter().enumerate() {
+                if let Some(b) = block_map.get_mut(&out_id) {
+                    let y = output_start_y + i as f32 * (BLOCK_SIZE + GAP) + BLOCK_SIZE/2.0;
+                    b.position = (2.0*LAYER_DISTANCE + CANVAS_OFFSET, y);
+                }
+            }
+        }
+
+        // --- Step 7: Update y_offset for next cluster
+        y_offset += cluster_height + GAP*2.0;
     }
 
-    // Resolve overlaps within each layer & propagate adjustments to parents
-    for &layer_index in &sorted_layers {
-        let block_ids = &layers_map[&layer_index];
-        let mut sorted_blocks: Vec<_> = block_ids.to_vec();
-        sorted_blocks.sort_by(|a, b| block_y[a].partial_cmp(&block_y[b]).unwrap());
+    // --- Step 8: Place orphan inputs in a separate column
+    let orphan_inputs: Vec<BlockId> = block_map.keys()
+        .filter(|id| {
+            let b = block_map.get(id).unwrap();
+            matches!(b.block_type, BlockType::InputXtream | BlockType::InputM3u)
+                && !placed_inputs.contains(id)
+        })
+        .cloned()
+        .collect();
 
-        // Determine min/max Y of this layer based on parent positions
-        let min_y = sorted_blocks.iter().map(|id| block_y[id]).fold(f32::INFINITY, f32::min);
-        let max_y = sorted_blocks.iter().map(|id| block_y[id]).fold(f32::NEG_INFINITY, f32::max);
-
-        let available_height = max_y - min_y;
-        let required_height = (sorted_blocks.len() - 1) as f32 * NODE_DISTANCE;
-
-        let offset = if available_height > required_height {
-            // Center nodes in the available span
-            (available_height - required_height) / 2.0
-        } else {
-            0.0
-        };
-
-        let mut current_y = min_y + offset;
-        for &block_id in &sorted_blocks {
-            block_y.insert(block_id, current_y);
-            current_y += NODE_DISTANCE;
+    for (i, input_id) in orphan_inputs.iter().enumerate() {
+        if let Some(b) = block_map.get_mut(input_id) {
+            let y = CANVAS_OFFSET + i as f32 * (BLOCK_SIZE + GAP) + BLOCK_SIZE / 2.0;
+            b.position = (CANVAS_OFFSET, y);
         }
-    }
-
-    // Assign final positions
-    for block in blocks.iter_mut() {
-        let x = block_layers[&block.id] as f32 * LAYER_DISTANCE + CANVAS_OFFSET;
-        let y = block_y[&block.id] + CANVAS_OFFSET;
-        block.position = (x, y);
     }
 }
