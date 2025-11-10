@@ -169,7 +169,6 @@ async fn m3u_api_stream(
 
     let connection_permission = user.connection_permission(app_state).await;
     if connection_permission == UserConnectionPermission::Exhausted {
-        app_state.connection_manager.update_stream_detail(&fingerprint.addr, CustomVideoStreamType::UserConnectionsExhausted).await;
         return create_custom_video_stream_response(
             app_state, &fingerprint.addr,
             CustomVideoStreamType::UserConnectionsExhausted,

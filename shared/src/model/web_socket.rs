@@ -83,7 +83,7 @@ pub enum ProtocolMessage {
     // Responses
     StatusResponse(StatusCheck),
     ActiveUserResponse(ActiveUserConnectionChange),
-    ActiveProviderResponse(Option<String>, usize), // single provider
+    ActiveProviderResponse(String, usize), // single provider
     ActiveProviderCountRequest(String),
     ActiveProviderCountResponse(usize),
     ConfigChangeResponse(ConfigType),

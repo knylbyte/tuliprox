@@ -1,4 +1,4 @@
-use log::{error, trace};
+use log::{trace};
 use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState};
 
 #[allow(clippy::large_enum_variant)]
@@ -6,7 +6,7 @@ use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState}
 pub enum EventMessage {
     ServerError(String),
     ActiveUser(ActiveUserConnectionChange), // user_count, connection count
-    ActiveProvider(Option<String>, usize), // provider name, connections
+    ActiveProvider(String, usize), // provider name, connections
     ConfigChange(ConfigType),
     PlaylistUpdate(PlaylistUpdateState),
     PlaylistUpdateProgress(String, String),
@@ -42,8 +42,8 @@ impl EventManager {
     }
 
     pub fn send_provider_event(&self, provider: &str, connection_count: usize) {
-        if !self.send_event(EventMessage::ActiveProvider(Some(String::from(provider)), connection_count)) {
-            error!("Failed to send connection change: {provider}: {connection_count}");
+        if !self.send_event(EventMessage::ActiveProvider(String::from(provider), connection_count)) {
+            trace!("Failed to send connection change: {provider}: {connection_count}");
         }
     }
 }

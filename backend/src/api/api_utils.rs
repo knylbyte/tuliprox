@@ -509,7 +509,7 @@ async fn create_stream_response_details(
             }
 
             // if we have no stream, we should release the provider
-            if stream.is_none() {
+            let provider_handle = if stream.is_none() {
                 let provider_handle = streaming_strategy.provider_handle.take();
                 app_state.connection_manager.release_provider_handle(provider_handle).await;
                 error!("Cant open stream {}", sanitize_sensitive_info(&request_url));
@@ -524,7 +524,7 @@ async fn create_stream_response_details(
                 provider_name: guard_provider_name.clone(),
                 grace_period_millis,
                 reconnect_flag,
-                provider_handle: streaming_strategy.provider_handle,
+                provider_handle,
             }
         }
     }

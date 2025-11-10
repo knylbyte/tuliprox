@@ -61,7 +61,7 @@ pub fn use_server_status(
                         *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));
                         status_signal.set(Some(new_status));
                     }
-                    EventMessage::ActiveProvider(Some(provider), connections) => {
+                    EventMessage::ActiveProvider(provider, connections) => {
                         let mut server_status = {
                             if let Some(old_status) = status_holder_signal.borrow().as_ref() {
                                 (**old_status).clone()

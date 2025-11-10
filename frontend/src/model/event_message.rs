@@ -9,7 +9,7 @@ pub enum EventMessage {
     ServerError(String),
     ServerStatus(Rc<StatusCheck>),
     ActiveUser(ActiveUserConnectionChange),
-    ActiveProvider(Option<String>, usize), // single provider
+    ActiveProvider(String, usize), // single provider
     ActiveProviderCount(usize), // all provider
     ConfigChange(ConfigType),
     Busy(BusyStatus),

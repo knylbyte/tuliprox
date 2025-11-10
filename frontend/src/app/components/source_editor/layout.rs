@@ -90,8 +90,8 @@ pub fn cluster_layout(blocks: &mut [Block], connections: &[Connection]) {
 
         for &input_id in &cluster.inputs {
             let connected_targets: Vec<BlockId> = connections.iter()
-                .filter(|c| c.to == input_id && cluster.targets.contains(&c.from))
-                .map(|c| c.from)
+                .filter(|c| c.from == input_id && cluster.targets.contains(&c.to))
+                .map(|c| c.to)
                 .collect();
 
             input_to_targets.insert(input_id, connected_targets.clone());
