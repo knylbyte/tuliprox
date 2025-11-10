@@ -22,10 +22,6 @@ variable "CACHE_DEST" {
   default = "/tmp/cache-out"
 }
 
-variable "DOCKER_IMAGE_DEST" {
-  default = "/tmp/oci-artifacts"
-}
-
 variable "CARGO_HOME" {
   default = "/usr/local/cargo"
 }
