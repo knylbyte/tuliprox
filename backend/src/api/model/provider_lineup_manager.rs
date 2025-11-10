@@ -1,9 +1,9 @@
 use crate::api::model::provider_config::ProviderConfigWrapper;
-use crate::api::model::{ProviderConfig, ProviderConfigConnection, ProviderConnectionChangeCallback, ProviderConnectionChangeSender};
+use crate::api::model::{EventManager, ProviderConfig, ProviderConfigConnection, ProviderConnectionChangeCallback};
 use crate::utils::debug_if_enabled;
 use crate::model::ConfigInput;
 use arc_swap::ArcSwap;
-use log::{debug, error, log_enabled};
+use log::{debug, log_enabled};
 use shared::utils::{display_vec, sanitize_sensitive_info};
 use std::collections::HashMap;
 use std::fmt;
@@ -516,34 +516,29 @@ pub(in crate::api::model) struct ProviderLineupManager {
     grace_period_timeout_secs: AtomicU64,
     inputs: Arc<ArcSwap<Vec<Arc<ConfigInput>>>>,
     providers: Arc<ArcSwap<Vec<ProviderLineup>>>,
-    connection_change_tx: ProviderConnectionChangeSender,
+    event_manager: Arc<EventManager>,
 }
 
 impl ProviderLineupManager {
-    pub fn new(inputs: Vec<Arc<ConfigInput>>, grace_period_millis: u64, grace_period_timeout_secs: u64, connection_change_tx: ProviderConnectionChangeSender) -> Self {
-        let lineups = inputs.iter().map(|i| Self::create_lineup(i, None, connection_change_tx.clone())).collect();
+    pub fn new(inputs: Vec<Arc<ConfigInput>>, grace_period_millis: u64, grace_period_timeout_secs: u64, event_manager: &Arc<EventManager>) -> Self {
+        let lineups = inputs.iter().map(|i| Self::create_lineup(i, None, event_manager)).collect();
         Self {
             grace_period_millis: AtomicU64::new(grace_period_millis),
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
             inputs: Arc::new(ArcSwap::from_pointee(inputs)),
             providers: Arc::new(ArcSwap::from_pointee(lineups)),
-            connection_change_tx,
+            event_manager: Arc::clone(event_manager),
         }
     }
 
-    fn create_lineup(cfg_input: &ConfigInput, provider_connections: Option<&HashMap<&str, ProviderConfigConnection>>, connection_change_sender: ProviderConnectionChangeSender) -> ProviderLineup {
+    fn create_lineup(cfg_input: &ConfigInput, provider_connections: Option<&HashMap<&str, ProviderConfigConnection>>, event_manager: &Arc<EventManager>) -> ProviderLineup {
         let get_connections = provider_connections.map(|c| |name: &str| c.get(name));
 
-        let cfg_name = cfg_input.name.clone();
-        let on_connection_change: ProviderConnectionChangeCallback = Arc::new(move |_name: &str, connections: usize| {
-            let connection_change_sender = connection_change_sender.clone();
-            let provider_cfg_name = cfg_name.clone();
-            if let Err(err) = connection_change_sender.send((provider_cfg_name.clone(), connections)) {
-                error!("Failed to send connection change: {provider_cfg_name}: {connections}, {err}");
-            }
+        //let cfg_name = cfg_input.name.clone();
+        let event_manager = Arc::clone(event_manager);
+        let on_connection_change: ProviderConnectionChangeCallback = Arc::new(move |name: &str, connections: usize| {
+            event_manager.send_provider_event(name, connections);
         });
-
-        let on_connection_change = Arc::new(on_connection_change);
 
         if cfg_input.aliases.as_ref().is_some_and(|a| !a.is_empty()) {
             ProviderLineup::Multi(MultiProviderLineup::new(cfg_input, get_connections, &on_connection_change))
@@ -645,7 +640,7 @@ impl ProviderLineupManager {
         let mut new_lineups: Vec<ProviderLineup> = Vec::with_capacity(new_inputs.len());
         let connections = Some(provider_connections);
         for input in &new_inputs {
-            new_lineups.push(Self::create_lineup(input, connections.as_ref(), self.connection_change_tx.clone()));
+            new_lineups.push(Self::create_lineup(input, connections.as_ref(), &self.event_manager));
         }
 
         debug_if_enabled!("inputs {}", sanitize_sensitive_info(&display_vec(&new_inputs)));
@@ -735,6 +730,22 @@ impl ProviderLineupManager {
         } else {
             Some(result)
         }
+    }
+
+    pub async fn active_connection_count(&self) -> usize {
+        let mut count = 0;
+        let providers = self.providers.load();
+        for lineup in providers.iter() {
+            match lineup {
+                ProviderLineup::Single(provider_lineup) => {
+                    count += provider_lineup.provider.get_current_connections().await;
+                }
+                ProviderLineup::Multi(provider_lineup) => {
+                    count += provider_lineup.get_total_connections().await;
+                }
+            }
+        }
+        count
     }
 
     pub async fn is_over_limit(&self, provider_name: &str) -> bool {

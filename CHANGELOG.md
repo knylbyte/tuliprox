@@ -1,4 +1,7 @@
 # Changelog
+# 3.1.9 (2025-11-xx)
+- Added `name` attribute to Staged Input.
+
 # 3.1.8 (2025-11-06)
 - Fixed HLS streaming issues caused by session eviction and incorrect headers.
 - Catchup stream fix cycling through multiple providers on play.

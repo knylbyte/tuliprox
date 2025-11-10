@@ -83,6 +83,7 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
 
             let url = if geoip.url.trim().is_empty() { default_geoip_url() } else { geoip.url.clone() };
             let input_source =  InputSource {
+                name: String::from("GeoIP"),
                 url,
                 username: None,
                 password: None,

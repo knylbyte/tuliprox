@@ -1,10 +1,10 @@
 use crate::api::api_utils::{get_headers_from_request, StreamOptions};
-use crate::api::model::get_response_headers;
+use crate::api::model::{get_response_headers, AppState, CustomVideoStreamType};
 use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
 use crate::api::model::{create_channel_unavailable_stream, get_header_filter_for_item_type};
 use crate::api::model::{BoxedProviderStream, ProviderStreamFactoryResponse};
-use crate::model::{AppConfig, ReverseProxyDisabledHeaderConfig};
+use crate::model::{ReverseProxyDisabledHeaderConfig};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::utils::debug_if_enabled;
 use crate::utils::request::{classify_content_type, get_request_headers, MimeCategory};
@@ -16,6 +16,7 @@ use reqwest::StatusCode;
 use shared::model::{PlaylistItemType, DEFAULT_USER_AGENT};
 use shared::utils::{filter_request_header, sanitize_sensitive_info};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -29,6 +30,7 @@ const ERR_MAX_RETRY_COUNT: u32 = 5;
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 pub struct ProviderStreamFactoryOptions {
+    addr: SocketAddr,
     // item_type: PlaylistItemType,
     reconnect_enabled: bool,
     force_reconnect_secs: u32,
@@ -43,7 +45,9 @@ pub struct ProviderStreamFactoryOptions {
 }
 
 impl ProviderStreamFactoryOptions {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        addr: SocketAddr,
         item_type: PlaylistItemType,
         share_stream: bool,
         stream_options: &StreamOptions,
@@ -71,6 +75,7 @@ impl ProviderStreamFactoryOptions {
 
         Self {
             // item_type,
+            addr,
             reconnect_enabled: stream_options.stream_retry,
             force_reconnect_secs: stream_options.stream_force_retry_secs,
             pipe_stream: stream_options.pipe_provider_stream,
@@ -257,11 +262,11 @@ fn prepare_client(
 }
 
 async fn provider_stream_request(
-    cfg: &AppConfig,
-    request_client: Arc<reqwest::Client>,
+    app_state: &Arc<AppState>,
+    request_client: &Arc<reqwest::Client>,
     stream_options: &ProviderStreamFactoryOptions,
 ) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
-    let (client, _partial_content) = prepare_client(&request_client, stream_options);
+    let (client, _partial_content) = prepare_client(request_client, stream_options);
     match client.send().await {
         Ok(mut response) => {
             let status = response.status();
@@ -286,6 +291,7 @@ async fn provider_stream_request(
                         response_headers,
                         response.status(),
                         Some(response.url().clone()),
+                        None,
                     ))
                 };
 
@@ -316,17 +322,7 @@ async fn provider_stream_request(
                     | StatusCode::UNAUTHORIZED
                     | StatusCode::METHOD_NOT_ALLOWED
                     | StatusCode::BAD_REQUEST => {
-                        if let (Some(boxed_provider_stream), response_info) =
-                            create_channel_unavailable_stream(
-                                cfg,
-                                &get_response_headers(stream_options.get_headers()),
-                                StatusCode::BAD_GATEWAY,
-                            )
-                        {
-                            Ok(Some((boxed_provider_stream, response_info)))
-                        } else {
-                            Err(StatusCode::SERVICE_UNAVAILABLE)
-                        }
+                        handle_channel_unavailable_stream(app_state, stream_options).await
                     }
                     _ => Err(status),
                 };
@@ -338,17 +334,7 @@ async fn provider_stream_request(
                     | StatusCode::BAD_GATEWAY
                     | StatusCode::SERVICE_UNAVAILABLE
                     | StatusCode::GATEWAY_TIMEOUT => {
-                        if let (Some(boxed_provider_stream), response_info) =
-                            create_channel_unavailable_stream(
-                                cfg,
-                                &get_response_headers(stream_options.get_headers()),
-                                StatusCode::SERVICE_UNAVAILABLE,
-                            )
-                        {
-                            Ok(Some((boxed_provider_stream, response_info)))
-                        } else {
-                            Err(StatusCode::SERVICE_UNAVAILABLE)
-                        }
+                        handle_channel_unavailable_stream(app_state, stream_options).await
                     }
                     _ => Err(status),
                 };
@@ -356,22 +342,33 @@ async fn provider_stream_request(
             Err(status)
         }
         Err(_err) => {
-            if let (Some(boxed_provider_stream), response_info) = create_channel_unavailable_stream(
-                cfg,
-                &get_response_headers(stream_options.get_headers()),
-                StatusCode::BAD_GATEWAY,
-            ) {
-                Ok(Some((boxed_provider_stream, response_info)))
-            } else {
-                Err(StatusCode::SERVICE_UNAVAILABLE)
-            }
+            handle_channel_unavailable_stream(app_state, stream_options).await
         }
     }
 }
 
+async fn handle_channel_unavailable_stream(app_state: &Arc<AppState>,
+                                               stream_options: &ProviderStreamFactoryOptions
+) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
+    app_state.connection_manager.update_stream_detail(&stream_options.addr, CustomVideoStreamType::ChannelUnavailable).await;
+    app_state.connection_manager.release_provider_connection(&stream_options.addr).await;
+
+    if let (Some(boxed_provider_stream), response_info) =
+        create_channel_unavailable_stream(
+            &app_state.app_config,
+            &get_response_headers(stream_options.get_headers()),
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
+    {
+        Ok(Some((boxed_provider_stream, response_info)))
+    } else {
+        Err(StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+
 async fn get_provider_stream(
-    cfg: &AppConfig,
-    client: Arc<reqwest::Client>,
+    app_state: &Arc<AppState>,
+    client: &Arc<reqwest::Client>,
     stream_options: &ProviderStreamFactoryOptions,
 ) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
     let url = stream_options.get_url();
@@ -380,7 +377,7 @@ async fn get_provider_stream(
     let mut connect_err: u32 = 1;
 
     while stream_options.should_continue() {
-        match provider_stream_request(cfg, Arc::clone(&client), stream_options).await {
+        match provider_stream_request(app_state, client, stream_options).await {
             Ok(Some(stream_response)) => {
                 return Ok(Some(stream_response));
             }
@@ -443,8 +440,8 @@ async fn get_provider_stream(
 
 #[allow(clippy::too_many_lines)]
 pub async fn create_provider_stream(
-    cfg: Arc<AppConfig>,
-    client: Arc<reqwest::Client>,
+    app_state: &Arc<AppState>,
+    client: &Arc<reqwest::Client>,
     stream_options: ProviderStreamFactoryOptions,
 ) -> Option<ProviderStreamFactoryResponse> {
     let client_stream_factory = |stream, reconnect_flag, range_cnt| {
@@ -471,9 +468,9 @@ pub async fn create_provider_stream(
         .boxed()
     };
 
-    match get_provider_stream(&cfg, Arc::clone(&client), &stream_options).await {
+    match get_provider_stream(app_state, client, &stream_options).await {
         Ok(Some((init_stream, info))) => {
-            let is_media_stream_or_not_piped = if let Some((headers, _, _)) = &info {
+            let is_media_stream_or_not_piped = if let Some((headers, _, _, _custom_video_type)) = &info {
                 // if it is piped or no video stream, then we don't reconnect
                 !stream_options.pipe_stream && classify_content_type(headers) == MimeCategory::Video
             } else {
@@ -485,22 +482,24 @@ pub async fn create_provider_stream(
                 let continue_client_signal = Arc::clone(&continue_signal);
                 let continue_streaming_signal = continue_client_signal.clone();
                 let stream_options_provider = stream_options.clone();
-                let config = Arc::clone(&cfg);
+                let app_state_clone = Arc::clone(app_state);
+                let client = Arc::clone(client);
                 let unfold: BoxedProviderStream = stream::unfold((), move |()| {
                     let client = Arc::clone(&client);
                     let stream_opts = stream_options_provider.clone();
                     let continue_streaming = continue_streaming_signal.clone();
-                    let config_clone = Arc::clone(&config);
+                    let app_state_clone = Arc::clone(&app_state_clone);
                     async move {
                         if continue_streaming.is_active() {
-                            match get_provider_stream(&config_clone, client, &stream_opts).await {
+                            match get_provider_stream(&app_state_clone, &client, &stream_opts).await {
                                 Ok(Some((stream, _info))) => Some((stream, ())),
                                 Ok(None) => None,
                                 Err(status) => {
+                                    app_state_clone.connection_manager.release_provider_connection(&stream_opts.addr).await;
                                     continue_streaming.notify();
                                     if let (Some(boxed_provider_stream), _response_info) =
                                         create_channel_unavailable_stream(
-                                            &config_clone,
+                                            &app_state_clone.app_config,
                                             &get_response_headers(stream_opts.get_headers()),
                                             status,
                                         )
@@ -540,8 +539,9 @@ pub async fn create_provider_stream(
         }
         Ok(None) => None,
         Err(status) => {
+            app_state.connection_manager.release_provider_connection(&stream_options.addr).await;
             if let (Some(boxed_provider_stream), response_info) = create_channel_unavailable_stream(
-                &cfg,
+                &app_state.app_config,
                 &get_response_headers(stream_options.get_headers()),
                 status,
             ) {

@@ -83,7 +83,9 @@ pub enum ProtocolMessage {
     // Responses
     StatusResponse(StatusCheck),
     ActiveUserResponse(ActiveUserConnectionChange),
-    ActiveProviderResponse(String, usize),
+    ActiveProviderResponse(String, usize), // single provider
+    ActiveProviderCountRequest(String),
+    ActiveProviderCountResponse(usize),
     ConfigChangeResponse(ConfigType),
     PlaylistUpdateResponse(PlaylistUpdateState),
     PlaylistUpdateProgressResponse(String, String),

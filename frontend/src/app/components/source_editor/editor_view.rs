@@ -2,7 +2,9 @@ use std::rc::Rc;
 use web_sys::{HtmlElement, MouseEvent};
 use yew::prelude::*;
 use shared::model::{ConfigInputDto, ConfigTargetDto, HdHomeRunTargetOutputDto, M3uTargetOutputDto, StrmTargetOutputDto, TargetOutputDto, XtreamTargetOutputDto};
-use crate::app::components::{can_connect, Block, BlockId, BlockInstance, BlockType, BlockView, Connection, EditMode, PortStatus, SourceEditorContext, SourceEditorForm, SourceEditorSidebar};
+use crate::app::components::{can_connect, Block, BlockId, BlockInstance, BlockType, BlockView, Connection, EditMode, InputRow, PortStatus, SourceEditorContext, SourceEditorForm, SourceEditorSidebar};
+use crate::app::{PlaylistContext};
+use crate::app::components::source_editor::layout::cluster_layout;
 
 const BLOCK_WIDTH: f32 = 100.0;
 const BLOCK_HEIGHT: f32 = 50.0;
@@ -29,9 +31,10 @@ fn create_instance(block_type: BlockType) -> BlockInstance {
 #[function_component]
 pub fn SourceEditor() -> Html {
     let canvas_ref = use_node_ref();
+    let playlist_ctx = use_context::<PlaylistContext>().expect("Playlist context not found");
     let blocks = use_state(Vec::<Block>::new);
     let connections = use_state(Vec::<Connection>::new);
-    let next_id = use_state(|| 1usize);
+    let next_id = use_state(|| 1 as BlockId);
 
     // ----------------- virtual canvas offset -----------------
     let canvas_offset = use_state(|| (0.0f32, 0.0f32));
@@ -52,6 +55,79 @@ pub fn SourceEditor() -> Html {
 
     let cursor_grabbing = use_state(|| false);
 
+    {
+        let playlists = playlist_ctx.clone();
+        let get_next_id = next_id.clone();
+        let blocks_set = blocks.clone();
+        let connections_set = connections.clone();
+        use_effect_with(playlists.sources.clone(), move |sources| {
+            if let Some(entries) = sources.as_ref() {
+                let mut gen_blocks = vec![];
+                let mut gen_connections = vec![];
+                let mut current_id = *get_next_id;
+                for (inputs, targets) in entries.as_ref() {
+                    let mut input_ids = vec![];
+                    for input_row in inputs {
+                        match input_row.as_ref() {
+                            InputRow::Input(input_config) => {
+                                let input_id = current_id;
+                                current_id += 1;
+                                let block = Block {
+                                    id: input_id,
+                                    block_type: BlockType::from(input_config.input_type),
+                                    position: (0.0, 0.0),
+                                    instance: BlockInstance::Input(input_config.clone()),
+                                };
+                                input_ids.push(input_id);
+                                gen_blocks.push(block);
+                            }
+                            InputRow::Alias(_, _) => {}
+                        }
+                    }
+                    for target_config in targets {
+                        let target_id =  current_id;
+                        current_id += 1;
+                        let block = Block {
+                            id: target_id,
+                            block_type: BlockType::Target,
+                            position: (0.0, 0.0),
+                            instance: BlockInstance::Target(target_config.clone()),
+                        };
+                        gen_blocks.push(block);
+                        input_ids.iter().for_each(|input_id| gen_connections.push(Connection { from: *input_id, to: target_id }));
+
+                        for output in &target_config.output {
+
+                           let (block_instance, block_type) = match output {
+                                TargetOutputDto::Xtream(dto) => (BlockInstance::Output(Rc::new(TargetOutputDto::Xtream(dto.clone()))), BlockType::OutputXtream),
+                                TargetOutputDto::M3u(dto) => (BlockInstance::Output(Rc::new(TargetOutputDto::M3u(dto.clone()))), BlockType::OutputM3u),
+                                TargetOutputDto::Strm(dto) => (BlockInstance::Output(Rc::new(TargetOutputDto::Strm(dto.clone()))), BlockType::OutputStrm),
+                                TargetOutputDto::HdHomeRun(dto) => (BlockInstance::Output(Rc::new(TargetOutputDto::HdHomeRun(dto.clone()))), BlockType::OutputHdHomeRun),
+                            };
+                            let output_id =  current_id;
+                            current_id += 1;
+
+                            let block = Block {
+                                id: output_id,
+                                block_type,
+                                position: (0.0, 0.0),
+                                instance: block_instance,
+                            };
+                            gen_blocks.push(block);
+                            gen_connections.push(Connection { from: target_id, to: output_id });
+                        }
+                    }
+
+                }
+                cluster_layout(&mut gen_blocks, &gen_connections);
+                get_next_id.set(current_id);
+                blocks_set.set(gen_blocks);
+                connections_set.set(gen_connections);
+            }
+
+            ||{}
+        });
+    }
 
     // ----------------- Drag Start from Sidebar -----------------
     let handle_drag_start = {
@@ -125,9 +201,9 @@ pub fn SourceEditor() -> Html {
         let pending_line = pending_line.clone();
         let blocks = blocks.clone();
         let canvas_offset = canvas_offset.clone();
-        Callback::from(move |from_id: usize| {
+        Callback::from(move |from_id: BlockId| {
             pending_connection.set(Some(from_id));
-            if let Some(block) = (*blocks).iter().find(|b| b.id == from_id) {
+            if let Some(block) = (*blocks).get(from_id as usize -1) {
                 let (ox, oy) = *canvas_offset;
                 let x = block.position.0 + BLOCK_WIDTH + ox;
                 let y = block.position.1 + BLOCK_MIDDLE_Y + oy;
@@ -141,28 +217,27 @@ pub fn SourceEditor() -> Html {
         let connections = connections.clone();
         let pending_line = pending_line.clone();
         let blocks = blocks.clone();
-        Callback::from(move |to_id: usize| {
+        Callback::from(move |to_id: BlockId| {
             if let Some(from_id) = *pending_connection {
                 if from_id != to_id {
                     let current_blocks = (*blocks).clone();
                     if let (Some(from_block), Some(to_block)) = (
-                        current_blocks.iter().find(|b| b.id == from_id),
-                        current_blocks.iter().find(|b| b.id == to_id),
+                        current_blocks.get(from_id as usize -1),
+                        current_blocks.get(to_id as usize -1),
                     ) {
                         // ✅ Check connection rules before adding
                         if can_connect(from_block, to_block, &connections, &blocks) {
                             let mut current_connections = (*connections).clone();
                             current_connections.push(Connection { from: from_id, to: to_id });
                             connections.set(current_connections);
-                        } else {
-                            // ❌ (Optional) visual feedback
-                            web_sys::console::log_1(
-                                &format!(
-                                    "Connection from {:?} to {:?} not allowed",
-                                    from_block.block_type, to_block.block_type
-                                )
-                                    .into(),
-                            );
+                        //} else {
+                           // web_sys::console::log_1(
+                           //     &format!(
+                           //         "Connection from {:?} to {:?} not allowed",
+                           //         from_block.block_type, to_block.block_type
+                           //     )
+                           //         .into(),
+                           // );
                         }
                     }
                 }
@@ -190,14 +265,14 @@ pub fn SourceEditor() -> Html {
         let blocks = blocks.clone();
         let cursor_grabbing = cursor_grabbing.clone();
 
-        Callback::from(move |(block_id, e): (usize, MouseEvent)| {
+        Callback::from(move |(block_id, e): (BlockId, MouseEvent)| {
             e.prevent_default();
             if let Some(canvas) = canvas_ref.cast::<HtmlElement>() {
                 cursor_grabbing.set(true);
                 let rect = canvas.get_bounding_client_rect();
                 let mouse_x = e.client_x() as f32 - rect.left() as f32;
                 let mouse_y = e.client_y() as f32 - rect.top() as f32;
-                if let Some(block) = (*blocks).iter().find(|b| b.id == block_id) {
+                if let Some(block) = (*blocks).get(block_id as usize -1) {
                     drag_offset.set((mouse_x - block.position.0, mouse_y - block.position.1));
                     dragging_block.set(Some(block_id));
                 }
@@ -281,7 +356,7 @@ pub fn SourceEditor() -> Html {
                 if let Some(block_id) = *dragging_block {
                     let (offset_x, offset_y) = *drag_offset;
                     let mut current_blocks = (*blocks).clone();
-                    if let Some(block) = current_blocks.iter_mut().find(|b| b.id == block_id) {
+                    if let Some(block) = current_blocks.get_mut(block_id as usize -1) {
                         block.position = (mouse_x - offset_x, mouse_y - offset_y);
                     }
                     blocks.set(current_blocks);
@@ -322,20 +397,40 @@ pub fn SourceEditor() -> Html {
     let handle_delete_block = {
         let blocks = blocks.clone();
         let connections = connections.clone();
-        Callback::from(move |block_id: usize| {
+        let next_id = next_id.clone();
+        Callback::from(move |block_id: BlockId| {
             let mut current_blocks = (*blocks).clone();
             current_blocks.retain(|b| b.id != block_id);
-            blocks.set(current_blocks);
 
             let mut current_connections = (*connections).clone();
             current_connections.retain(|c| c.from != block_id && c.to != block_id);
+
+            for block in &mut current_blocks {
+                if block.id >= block_id {
+                    block.id -= 1;
+                }
+            }
+
+            // Schritt 2: Connections anpassen
+            for conn in &mut current_connections {
+                if conn.from >= block_id {
+                    conn.from -= 1;
+                }
+                if conn.to >= block_id {
+                    conn.to -= 1;
+                }
+            }
+
+            let max_id = current_blocks.iter().map(|b| b.id).max().unwrap_or(0);
+            next_id.set(max_id+1);
+            blocks.set(current_blocks);
             connections.set(current_connections);
         })
     };
 
     let handle_delete_connection = {
         let connections = connections.clone();
-        Callback::from(move |(from, to): (usize, usize)| {
+        Callback::from(move |(from, to): (BlockId, BlockId)| {
             let mut current_connections = (*connections).clone();
             current_connections.retain(|c| !(c.from == from && c.to == to));
             connections.set(current_connections);
@@ -345,7 +440,7 @@ pub fn SourceEditor() -> Html {
     let get_port_status = {
         |block: &Block| {
             if let Some(from_id) = *pending_connection {
-                if let Some(from_block) = (*blocks).iter().find(|b| b.id == from_id) {
+                if let Some(from_block) = (*blocks).get(from_id as usize -1) {
                     return if can_connect(from_block, block, &connections, &blocks) {
                         PortStatus::Valid
                     } else {
@@ -361,7 +456,7 @@ pub fn SourceEditor() -> Html {
         let blocks = blocks.clone();
         Callback::<(BlockId, BlockInstance)>::from(move |(block_id, instance): (BlockId, BlockInstance)| {
             let mut current_blocks = (*blocks).clone();
-            if let Some(block) = current_blocks.iter_mut().find(|b| b.id == block_id) {
+            if let Some(block) = current_blocks.get_mut(block_id as usize -1) {
                block.instance = instance;
            }
            blocks.set(current_blocks);
@@ -373,8 +468,8 @@ pub fn SourceEditor() -> Html {
     let handle_block_edit = {
         let edit_mode_set = edit_mode.clone();
         let blocks = blocks.clone();
-        Callback::from(move |block_id: usize| {
-            if let Some(block) = (*blocks).iter().find(|b| b.id == block_id) {
+        Callback::from(move |block_id: BlockId| {
+            if let Some(block) = (*blocks).get(block_id as usize -1 ) {
                 edit_mode_set.set(EditMode::Active(block.clone()));
             }
         })
@@ -385,6 +480,10 @@ pub fn SourceEditor() -> Html {
         edit_mode: edit_mode.clone(),
     };
 
+    let selected_block_id = match *edit_mode {
+        EditMode::Inactive => 0,
+        EditMode::Active(ref b) => b.id,
+    };
     let grabbed = *cursor_grabbing;
     // ----------------- Render -----------------
     html! {
@@ -470,10 +569,12 @@ pub fn SourceEditor() -> Html {
                     let port_status = get_port_status(b);
                     let (ox, oy) = *canvas_offset; // Apply virtual offset to each block
                     let mut shifted_block = b.clone();
+                    let block_id = shifted_block.id;
                     shifted_block.position = (b.position.0 + ox, b.position.1 + oy);
                     html! {
                     <BlockView
                         block={shifted_block}
+                        selected={selected_block_id == block_id}
                         delete_mode={*delete_mode}
                         delete_block={handle_delete_block.clone()}
                         port_status={port_status}

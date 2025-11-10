@@ -1,5 +1,5 @@
 use crate::api::model::provider_lineup_manager::{ProviderAllocation, ProviderLineupManager};
-use crate::api::model::{ProviderConfig, ProviderConnectionChangeSender};
+use crate::api::model::{EventManager, ProviderConfig};
 use crate::model::{AppConfig, ConfigInput};
 use log::{debug, error};
 use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info};
@@ -46,11 +46,11 @@ pub struct ActiveProviderManager {
 }
 
 impl ActiveProviderManager {
-    pub fn new(cfg: &AppConfig, connection_change_sender: ProviderConnectionChangeSender) -> Self {
+    pub fn new(cfg: &AppConfig, event_manager: &Arc<EventManager>) -> Self {
         let (grace_period_millis, grace_period_timeout_secs) = Self::get_grace_options(cfg);
         let inputs = Self::get_config_inputs(cfg);
         Self {
-            providers: ProviderLineupManager::new(inputs, grace_period_millis, grace_period_timeout_secs, connection_change_sender),
+            providers: ProviderLineupManager::new(inputs, grace_period_millis, grace_period_timeout_secs, event_manager),
             connections: RwLock::new(Connections::default()),
         }
     }
@@ -178,5 +178,9 @@ impl ActiveProviderManager {
         if let Some(shared_allocation) = connections.shared.by_key.get_mut(&key) {
             shared_allocation.connections.insert(*addr);
         }
+    }
+
+    pub async fn get_provider_connections_count(&self) -> usize {
+        self.providers.active_connection_count().await
     }
 }

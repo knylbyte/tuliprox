@@ -1,6 +1,6 @@
 use crate::app::components::config::HasFormData;
 use crate::app::components::select::Select;
-use crate::app::components::{BlockInstance, Card, ClusterFlagsInput, DropDownOption, DropDownSelection, EditMode, Panel, SourceEditorContext, TextButton};
+use crate::app::components::{BlockId, BlockInstance, Card, ClusterFlagsInput, DropDownOption, DropDownSelection, EditMode, Panel, SourceEditorContext, TextButton};
 use crate::{config_field_child, edit_field_bool, edit_field_list_option, edit_field_text, generate_form_reducer};
 use shared::model::{ClusterFlags, ConfigTargetDto, ConfigTargetOptions, ProcessingOrder};
 use std::fmt::Display;
@@ -69,7 +69,7 @@ generate_form_reducer!(
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct ConfigTargetViewProps {
-    pub(crate) block_id: usize,
+    pub(crate) block_id: BlockId,
     pub(crate) target: Option<Rc<ConfigTargetDto>>,
 }
 

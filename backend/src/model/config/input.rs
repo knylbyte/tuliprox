@@ -68,6 +68,7 @@ impl InputUserInfo {
 
 #[derive(Debug, Clone, Default)]
 pub struct StagedInput {
+    pub name: String,
     pub url: String,
     pub username: Option<String>,
     pub password: Option<String>,
@@ -80,6 +81,7 @@ macros::from_impl!(StagedInput);
 impl From<&StagedInputDto> for StagedInput {
     fn from(dto: &StagedInputDto) -> Self {
         Self {
+            name: dto.name.clone(),
             input_type: dto.input_type,
             url: dto.url.clone(),
             username: dto.username.clone(),

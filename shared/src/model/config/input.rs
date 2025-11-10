@@ -191,6 +191,7 @@ impl ConfigInputOptionsDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct StagedInputDto {
+    pub name: String,
     pub url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,

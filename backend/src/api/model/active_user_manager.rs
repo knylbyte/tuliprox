@@ -220,11 +220,17 @@ impl ActiveUserManager {
             })
     }
 
-    pub async fn update_stream_detail(&self, username: &str, fingerprint: &Fingerprint, video_type: CustomVideoStreamType) -> Option<StreamInfo> {
+    pub async fn update_stream_detail(&self, addr: &SocketAddr, video_type: CustomVideoStreamType) -> Option<StreamInfo> {
         let mut user_connections = self.connections.write().await;
-        if let Some(connection_data) = user_connections.by_key.get_mut(username) {
+        let username = {
+            match user_connections.key_by_addr.get(addr) {
+                Some(username) => username.clone(),
+                None => return None,
+            }
+        };
+        if let Some(connection_data) = user_connections.by_key.get_mut(&username) {
             for stream in &mut connection_data.streams {
-                if stream.addr == fingerprint.addr {
+                if &stream.addr == addr {
                     stream.provider = String::from("tuliprox");
                     stream.channel.title = video_type.to_string();
                     stream.channel.group = String::new();
@@ -236,33 +242,44 @@ impl ActiveUserManager {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn add_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
-                                provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> StreamInfo {
+    pub async fn add_connection(&self, addr: &SocketAddr) {
+        let mut user_connections = self.connections.write().await;
+        if !user_connections.key_by_addr.contains_key(addr) {
+            user_connections.key_by_addr.insert(*addr, String::new());
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
+                                   provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> Option<StreamInfo> {
         let stream_info = {
             let mut user_connections = self.connections.write().await;
 
-            let already_counted = user_connections.key_by_addr.get(&fingerprint.addr).is_some_and(|u| u == username);
+            // needs to be registered through socket connection to avoid race time conditions through short disconnect
+            if !user_connections
+                .key_by_addr
+                .contains_key(&fingerprint.addr) {
+                return None;
+            }
+
+            user_connections
+                .key_by_addr.insert(fingerprint.addr, username.to_string());
 
             let connection_data = user_connections.by_key
                 .entry(username.to_string())
                 .or_insert_with(|| UserConnectionData::new(0, max_connections));
             connection_data.max_connections = max_connections;
 
-            let existing_stream_info = if already_counted {
-                if let Some(existing) = connection_data
-                    .streams
-                    .iter_mut()
-                    .find(|s| s.addr == fingerprint.addr)
-                {
-                    existing.channel = stream_channel.clone();
-                    existing.provider = provider.to_string();
-                    Some(existing.clone())
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+            let existing_stream_info = connection_data
+                .streams
+                .iter_mut()
+                .find(|s| s.addr == fingerprint.addr)
+                .map(|stream_info| {
+                    stream_info.channel = stream_channel.clone();
+                    stream_info.provider = provider.to_string();
+                    stream_info.clone()
+                });
+
             if let Some(stream_info) = existing_stream_info { stream_info } else {
                 let country = {
                     let geoip = self.geo_ip.load();
@@ -295,7 +312,7 @@ impl ActiveUserManager {
 
         self.log_active_user().await;
 
-        stream_info
+        Some(stream_info)
     }
 
     fn is_log_user_enabled(&self) -> bool {

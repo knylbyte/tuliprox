@@ -75,9 +75,15 @@ impl WebSocketService {
                                     ProtocolMessage::ActiveUserResponse(event) => {
                                         event_service.broadcast(EventMessage::ActiveUser(event));
                                     },
-                                    ProtocolMessage::ActiveProviderResponse(user_count, connections) => {
-                                        event_service.broadcast(EventMessage::ActiveProvider(user_count, connections));
+                                    ProtocolMessage::ActiveProviderResponse(provider_name, connections) => {
+                                        event_service.broadcast(EventMessage::ActiveProvider(provider_name, connections));
+                                        if let Some(token) = get_token() {
+                                            Self::try_send_message(ws_onmessage_clone.borrow().as_ref(), ProtocolMessage::ActiveProviderCountRequest(token));
+                                        }
                                     },
+                                    ProtocolMessage::ActiveProviderCountResponse(connections) => {
+                                        event_service.broadcast(EventMessage::ActiveProviderCount(connections));
+                                    }
                                     ProtocolMessage::StatusResponse(status) => {
                                         let data = Rc::new(status);
                                         event_service.broadcast(EventMessage::ServerStatus(data));
@@ -106,6 +112,7 @@ impl WebSocketService {
                                     }
                                     ProtocolMessage::Auth(_)
                                     | ProtocolMessage::Authorized
+                                    | ProtocolMessage::ActiveProviderCountRequest(_)
                                     | ProtocolMessage::StatusRequest(_)
                                     | ProtocolMessage::UserAction(_) => {}
                                 }
