@@ -178,7 +178,7 @@ jobs:
           ARCH_TAG: ${{ matrix.arch_tag }}
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ steps.version.outputs.version }}
-          DOCKER_IMAGE_DEST: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
+          DOCKER_BAKE_METADATA_DEST: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
           CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           CACHE_DEST: ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }}
           BUILDKIT_PROGRESS: plain
@@ -192,16 +192,13 @@ jobs:
           printf '  %s\n' "$targets"
           mapfile -t target_list <<<"$targets"
           
-          metadata_file="${DOCKER_IMAGE_DEST}/metadata.json"
-          echo "Using metadata file: ${metadata_file}"
-          
           echo "Running docker buildx bake with ${#target_list[@]} targets: ${target_list[*]}"
           docker buildx bake \
             --file docker/docker-bake.hcl \
             --allow=fs.write=${DOCKER_IMAGE_DEST} \
             --allow=fs.write=${CACHE_DEST} \
             --allow=fs.read=${CACHE_CONTEXT} \
-            --metadata-file "${metadata_file}" \
+            --metadata-file "${DOCKER_BAKE_METADATA_DEST}/metadata.json" \
             --load \
             --progress plain \
             "${target_list[@]}"
