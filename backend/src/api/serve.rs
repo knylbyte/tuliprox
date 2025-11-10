@@ -136,6 +136,7 @@ where
         let mut addr_close_rx = connection_manager_clone.get_close_connection_channel();
 
         trace!("Connection opened: {addr}");
+        connection_manager.add_connection(&addr).await;
 
         loop {
             tokio::select! {

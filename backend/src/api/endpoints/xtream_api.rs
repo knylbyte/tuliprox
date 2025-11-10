@@ -236,8 +236,7 @@ async fn xtream_player_api_stream(
         format!("Could not find any user for xc stream {}", stream_req.username)
     );
     if user.permission_denied(app_state) {
-        app_state.connection_manager.update_stream_detail(&user.username, fingerprint, CustomVideoStreamType::UserAccountExpired).await;
-        return create_custom_video_stream_response(&app_state.app_config, CustomVideoStreamType::UserAccountExpired,).into_response();
+        return create_custom_video_stream_response(app_state, &fingerprint.addr, CustomVideoStreamType::UserAccountExpired).await.into_response();
     }
 
     let target_name = &target.name;
@@ -273,11 +272,10 @@ async fn xtream_player_api_stream(
 
     let session_url = if let Some(session) = &user_session {
         if session.permission == UserConnectionPermission::Exhausted {
-            app_state.connection_manager.update_stream_detail(&user.username, fingerprint, CustomVideoStreamType::UserConnectionsExhausted).await;
             return create_custom_video_stream_response(
-                &app_state.app_config,
+                app_state, &fingerprint.addr,
                 CustomVideoStreamType::UserConnectionsExhausted,
-            )
+            ).await
             .into_response();
         }
 
@@ -286,11 +284,10 @@ async fn xtream_player_api_stream(
             .is_over_limit(&session.provider)
             .await
         {
-            app_state.connection_manager.update_stream_detail(&user.username, fingerprint, CustomVideoStreamType::ProviderConnectionsExhausted).await;
             return create_custom_video_stream_response(
-                &app_state.app_config,
+                app_state, &fingerprint.addr,
                 CustomVideoStreamType::ProviderConnectionsExhausted,
-            )
+            ).await
             .into_response();
         }
 
@@ -318,11 +315,10 @@ async fn xtream_player_api_stream(
 
     let connection_permission = user.connection_permission(app_state).await;
     if connection_permission == UserConnectionPermission::Exhausted {
-        app_state.connection_manager.update_stream_detail(&user.username, fingerprint, CustomVideoStreamType::UserConnectionsExhausted).await;
         return create_custom_video_stream_response(
-            &app_state.app_config,
+            app_state, &fingerprint.addr,
             CustomVideoStreamType::UserConnectionsExhausted,
-        )
+        ).await
         .into_response();
     }
 

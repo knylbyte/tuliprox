@@ -415,7 +415,7 @@ fn get_grace_period_millis(
 
 #[allow(clippy::too_many_arguments)]
 async fn create_stream_response_details(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     stream_options: &StreamOptions,
     stream_url: &str,
     fingerprint: &Fingerprint,
@@ -470,6 +470,7 @@ async fn create_stream_response_details(
                     .as_ref()
                     .and_then(|r| r.disabled_header.clone());
                 let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
+                    fingerprint.addr,
                     item_type,
                     share_stream,
                     stream_options,
@@ -480,8 +481,8 @@ async fn create_stream_response_details(
                 );
                 let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
                 let provider_stream = match create_provider_stream(
-                    Arc::clone(&app_state.app_config),
-                    Arc::clone(&app_state.http_client.load()),
+                    app_state,
+                    &app_state.http_client.load(),
                     provider_stream_factory_options,
                 )
                 .await
@@ -495,7 +496,7 @@ async fn create_stream_response_details(
             };
 
             if log_enabled!(log::Level::Debug) {
-                if let Some((headers, status_code, response_url)) = stream_info.as_ref() {
+                if let Some((headers, status_code, response_url, _custom_video_type)) = stream_info.as_ref() {
                     debug!(
                         "Responding stream request {} with status {}, headers {:?}",
                         sanitize_sensitive_info(
@@ -509,11 +510,13 @@ async fn create_stream_response_details(
 
             // if we have no stream, we should release the provider
             if stream.is_none() {
-                if let Some(guard) = streaming_strategy.provider_handle.take() {
-                    drop(guard);
-                }
+                let provider_handle = streaming_strategy.provider_handle.take();
+                app_state.connection_manager.release_provider_handle(provider_handle).await;
                 error!("Cant open stream {}", sanitize_sensitive_info(&request_url));
-            }
+                None
+            } else {
+                streaming_strategy.provider_handle.take()
+            };
 
             StreamDetails {
                 stream,
@@ -521,7 +524,7 @@ async fn create_stream_response_details(
                 provider_name: guard_provider_name.clone(),
                 grace_period_millis,
                 reconnect_flag,
-                provider_handle: streaming_strategy.provider_handle.take(),
+                provider_handle: streaming_strategy.provider_handle,
             }
         }
     }
@@ -702,7 +705,7 @@ fn prepare_body_stream(
 /// # Panics
 pub async fn force_provider_stream_response(
     fingerprint: &Fingerprint,
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     user_session: &UserSession,
     mut stream_channel: StreamChannel,
     req_headers: &HeaderMap,
@@ -714,7 +717,7 @@ pub async fn force_provider_stream_response(
     let connection_permission = UserConnectionPermission::Allowed;
     let item_type = stream_channel.item_type;
 
-    let mut stream_details = create_stream_response_details(
+    let stream_details = create_stream_response_details(
         app_state,
         &stream_options,
         &user_session.stream_url,
@@ -732,7 +735,7 @@ pub async fn force_provider_stream_response(
         let provider_response = stream_details
             .stream_info
             .as_ref()
-            .map(|(h, sc, url)| (h.clone(), *sc, url.clone()));
+            .map(|(h, sc, url, cvt)| (h.clone(), *sc, url.clone(), *cvt));
         app_state
             .active_users
             .update_session_addr(&user.username, &user_session.token, &fingerprint.addr)
@@ -743,7 +746,7 @@ pub async fn force_provider_stream_response(
                 .await;
 
         let (status_code, header_map) =
-            get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
+            get_stream_response_with_headers(provider_response.map(|(h, s, _, _)| (h, s)));
         let mut response = axum::response::Response::builder().status(status_code);
         for (key, value) in &header_map {
             response = response.header(key, value);
@@ -756,13 +759,14 @@ pub async fn force_provider_stream_response(
         );
         return try_unwrap_body!(response.body(body_stream));
     }
-    drop(stream_details.provider_handle.take());
+
+    app_state.connection_manager.release_provider_handle(stream_details.provider_handle).await;
     if let (Some(stream), _stream_info) = create_channel_unavailable_stream(
         &app_state.app_config,
         &[],
         axum::http::StatusCode::SERVICE_UNAVAILABLE,
     ) {
-        app_state.connection_manager.update_stream_detail(&user.username, fingerprint, CustomVideoStreamType::ChannelUnavailable).await;
+        app_state.connection_manager.update_stream_detail(&fingerprint.addr, CustomVideoStreamType::ChannelUnavailable).await;
         debug!("Streaming custom stream");
         try_unwrap_body!(axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
@@ -776,7 +780,7 @@ pub async fn force_provider_stream_response(
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub async fn stream_response(
     fingerprint: &Fingerprint,
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     session_token: &str,
     mut stream_channel: StreamChannel,
     stream_url: &str,
@@ -792,9 +796,10 @@ pub async fn stream_response(
 
     if connection_permission == UserConnectionPermission::Exhausted {
         return create_custom_video_stream_response(
-            &app_state.app_config,
+            app_state,
+            &fingerprint.addr,
             CustomVideoStreamType::UserConnectionsExhausted,
-        )
+        ).await
         .into_response();
     }
 
@@ -830,7 +835,7 @@ pub async fn stream_response(
         let provider_response = stream_details
             .stream_info
             .as_ref()
-            .map(|(h, sc, response_url)| (h.clone(), *sc, response_url.clone()));
+            .map(|(h, sc, response_url, cvt)| (h.clone(), *sc, response_url.clone(), *cvt));
         let provider_name = stream_details.provider_name.clone();
 
         let provider_handle = if share_stream {
@@ -850,7 +855,7 @@ pub async fn stream_response(
             // Shared Stream response
             let shared_headers = provider_response
                 .as_ref()
-                .map_or_else(Vec::new, |(h, _, _)| h.clone());
+                .map_or_else(Vec::new, |(h, _, _, _)| h.clone());
 
             if let Some((broadcast_stream, _shared_provider)) = SharedStreamManager::register_shared_stream(
                 app_state,
@@ -864,7 +869,7 @@ pub async fn stream_response(
             .await
             {
                 let (status_code, header_map) =
-                    get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
+                    get_stream_response_with_headers(provider_response.map(|(h, s, _, _)| (h, s)));
                 let mut response = axum::response::Response::builder().status(status_code);
                 for (key, value) in &header_map {
                     response = response.header(key, value);
@@ -876,7 +881,7 @@ pub async fn stream_response(
         } else {
             let session_url = provider_response
                 .as_ref()
-                .and_then(|(_, _, u)| u.as_ref())
+                .and_then(|(_, _, u, _)| u.as_ref())
                 .map_or_else(
                     || Cow::Borrowed(stream_url),
                     |url| Cow::Owned(url.to_string()),
@@ -896,7 +901,7 @@ pub async fn stream_response(
                 }
             }
             let (status_code, header_map) =
-                get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
+                get_stream_response_with_headers(provider_response.map(|(h, s, _, _)| (h, s)));
             let mut response = axum::response::Response::builder().status(status_code);
             for (key, value) in &header_map {
                 response = response.header(key, value);
@@ -932,7 +937,7 @@ pub async fn stream_response(
 
         return stream_resp.into_response();
     }
-    drop(stream_details.provider_handle.take());
+    app_state.connection_manager.release_provider_handle(stream_details.provider_handle).await;
     axum::http::StatusCode::BAD_REQUEST.into_response()
 }
 

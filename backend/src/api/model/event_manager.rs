@@ -1,13 +1,12 @@
-use log::{info, trace};
+use log::{error, trace};
 use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState};
-use crate::api::model::{ProviderConnectionChangeReceiver};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq)]
 pub enum EventMessage {
     ServerError(String),
     ActiveUser(ActiveUserConnectionChange), // user_count, connection count
-    ActiveProvider(String, usize), // provider name, connections
+    ActiveProvider(Option<String>, usize), // provider name, connections
     ConfigChange(ConfigType),
     PlaylistUpdate(PlaylistUpdateState),
     PlaylistUpdateProgress(String, String),
@@ -20,28 +19,8 @@ pub struct EventManager {
 }
 
 impl EventManager {
-    pub fn new(mut provider_change_rx: ProviderConnectionChangeReceiver,
-    ) -> Self {
+    pub fn new() -> Self {
         let (channel_tx, _channel_rx) = tokio::sync::broadcast::channel(10);
-
-        let channel_tx_clone = channel_tx.clone();
-        tokio::spawn(async move {
-            loop {
-               tokio::select! {
-
-                   Some((provider, connection_count)) = provider_change_rx.recv() => {
-                        if let Err(e) = channel_tx_clone.send(EventMessage::ActiveProvider(provider, connection_count)) {
-                            trace!("Failed to send active provider change event: {e}");
-                        }
-                   }
-                   else => {
-                        // Both channels are closed, exit gracefully
-                        info!("All input channels closed, terminating event manager task");
-                        break;
-                   }
-               }
-           }
-        });
 
         Self {
             channel_tx,
@@ -53,11 +32,24 @@ impl EventManager {
         self.channel_tx.subscribe()
     }
 
-    pub fn send_event(&self, event: EventMessage) {
+    pub fn send_event(&self, event: EventMessage) -> bool {
         if let Err(err) = self.channel_tx.send(event) {
-           trace!("Failed to send event: {err}");
+            trace!("Failed to send event: {err}");
+            false
+        } else {
+            true
         }
     }
 
+    pub fn send_provider_event(&self, provider: &str, connection_count: usize) {
+        if !self.send_event(EventMessage::ActiveProvider(Some(String::from(provider)), connection_count)) {
+            error!("Failed to send connection change: {provider}: {connection_count}");
+        }
+    }
 }
 
+impl Default for EventManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}

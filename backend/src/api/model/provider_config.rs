@@ -9,8 +9,6 @@ use shared::model::InputType;
 use shared::write_if_some;
 use crate::api::model::ProviderAllocation;
 
-pub type ProviderConnectionChangeSender = tokio::sync::mpsc::UnboundedSender<(String, usize)>;
-pub type ProviderConnectionChangeReceiver = tokio::sync::mpsc::UnboundedReceiver<(String, usize)>;
 
 pub type ProviderConnectionChangeCallback = Arc<dyn Fn(&str, usize) + Send + Sync>;
 

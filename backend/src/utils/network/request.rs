@@ -107,7 +107,7 @@ pub async fn get_input_text_content(client: Arc<reqwest::Client>, input: &InputS
         match download_text_content(client, None, input, None, persist_filepath).await {
             Ok((content, _response_url)) => Ok(content),
             Err(e) => {
-                error!("cant download input url: {}  => {}", sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()));
+                error!("cant download input url: {}  => {}", sanitize_sensitive_info(&input.name), sanitize_sensitive_info(e.to_string().as_str()));
                 create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to download")
             }
         }

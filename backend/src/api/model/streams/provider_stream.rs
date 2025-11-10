@@ -1,5 +1,5 @@
 use crate::api::api_utils::{HeaderFilter};
-use crate::api::model::{CustomVideoStream, ThrottledStream};
+use crate::api::model::{AppState, CustomVideoStream, ThrottledStream};
 use crate::model::{AppConfig};
 use shared::model::PlaylistItemType;
 use log::{trace};
@@ -10,6 +10,8 @@ use crate::api::model::TransportStreamBuffer;
 use crate::api::api_utils::try_unwrap_body;
 use std::str::FromStr;
 use std::fmt;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
 #[derive(Debug, Copy, Clone)]
@@ -64,14 +66,14 @@ impl<'de> Deserialize<'de> for CustomVideoStreamType {
     }
 }
 
-fn create_video_stream(video_buffer: Option<&TransportStreamBuffer>, headers: &[(String, String)], log_message: &str) -> ProviderStreamResponse {
+fn create_video_stream(stream_type: CustomVideoStreamType, video_buffer: Option<&TransportStreamBuffer>, headers: &[(String, String)], log_message: &str) -> ProviderStreamResponse {
     if let Some(video) = video_buffer {
         trace!("{log_message}");
         let mut response_headers: Vec<(String, String)> = headers.iter()
             .filter(|(key, _)| !(key.eq("content-type") || key.eq("content-length") || key.contains("range")))
             .map(|(key, value)| (key.clone(), value.clone())).collect();
         response_headers.push(("content-type".to_string(), "video/mp2t".to_string()));
-        (Some(Box::pin(ThrottledStream::new(CustomVideoStream::new(video.clone()), 8000))), Some((response_headers, StatusCode::OK, None)))
+        (Some(Box::pin(ThrottledStream::new(CustomVideoStream::new(video.clone()), 8000))), Some((response_headers, StatusCode::OK, None, Some(stream_type))))
     } else {
         (None, None)
     }
@@ -80,34 +82,37 @@ fn create_video_stream(video_buffer: Option<&TransportStreamBuffer>, headers: &[
 pub fn create_channel_unavailable_stream(cfg: &AppConfig, headers: &[(String, String)], status: StatusCode) -> ProviderStreamResponse {
     let custom_stream_response = cfg.custom_stream_response.load();
     let video = custom_stream_response.as_ref().and_then(|c| c.channel_unavailable.as_ref());
-    create_video_stream(video, headers, &format!("Streaming response channel unavailable for status {status}"))
+    create_video_stream(CustomVideoStreamType::ChannelUnavailable, video, headers, &format!("Streaming response channel unavailable for status {status}"))
 }
 
 pub fn create_user_connections_exhausted_stream(cfg: &AppConfig, headers: &[(String, String)]) -> ProviderStreamResponse {
     let custom_stream_response = cfg.custom_stream_response.load();
     let video = custom_stream_response.as_ref().and_then(|c| c.user_connections_exhausted.as_ref());
-    create_video_stream(video, headers, "Streaming response user connections exhausted")
+    create_video_stream(CustomVideoStreamType::UserConnectionsExhausted,  video, headers, "Streaming response user connections exhausted")
 }
 
 pub fn create_provider_connections_exhausted_stream(cfg: &AppConfig, headers: &[(String, String)]) -> ProviderStreamResponse {
     let custom_stream_response = cfg.custom_stream_response.load();
     let video = custom_stream_response.as_ref().and_then(|c| c.provider_connections_exhausted.as_ref());
-    create_video_stream(video, headers, "Streaming response provider connections exhausted")
+    create_video_stream(CustomVideoStreamType::ProviderConnectionsExhausted, video, headers, "Streaming response provider connections exhausted")
 }
 
 pub fn create_user_account_expired_stream(cfg: &AppConfig, headers: &[(String, String)]) -> ProviderStreamResponse {
     let custom_stream_response = cfg.custom_stream_response.load();
     let video = custom_stream_response.as_ref().and_then(|c| c.user_account_expired.as_ref());
-    create_video_stream(video, headers, "Streaming response user account expired")
+    create_video_stream(CustomVideoStreamType::UserAccountExpired, video, headers, "Streaming response user account expired")
 }
 
-pub fn create_custom_video_stream_response(config: &AppConfig, video_response: CustomVideoStreamType) -> impl axum::response::IntoResponse + Send {
-    if let (Some(stream), Some((headers, status_code, _))) = match video_response {
+pub async fn create_custom_video_stream_response(app_state: &Arc<AppState>, addr: &SocketAddr, video_response: CustomVideoStreamType) -> impl axum::response::IntoResponse + Send {
+    let config = &app_state.app_config;
+    if let (Some(stream), Some((headers, status_code, _, _))) = match video_response {
         CustomVideoStreamType::ChannelUnavailable => create_channel_unavailable_stream(config, &[], StatusCode::BAD_REQUEST),
         CustomVideoStreamType::UserConnectionsExhausted => create_user_connections_exhausted_stream(config, &[]),
         CustomVideoStreamType::ProviderConnectionsExhausted => create_provider_connections_exhausted_stream(config, &[]),
         CustomVideoStreamType::UserAccountExpired => create_user_account_expired_stream(config, &[]),
     } {
+        app_state.connection_manager.update_stream_detail(addr, video_response).await;
+        app_state.connection_manager.release_provider_connection(addr).await;
         let mut builder = axum::response::Response::builder()
             .status(status_code);
         for (key, value) in headers {

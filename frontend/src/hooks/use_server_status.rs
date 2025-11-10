@@ -37,9 +37,6 @@ pub fn use_server_status(
                         };
 
                         match event {
-                            ActiveUserConnectionChange::Connected(stream_info) => {
-                                server_status.active_user_streams.push(stream_info);
-                            }
                             ActiveUserConnectionChange::Updated(stream_info) => {
                                 if let Some(pos) = server_status
                                     .active_user_streams
@@ -64,7 +61,7 @@ pub fn use_server_status(
                         *status_holder_signal.borrow_mut() = Some(Rc::clone(&new_status));
                         status_signal.set(Some(new_status));
                     }
-                    EventMessage::ActiveProvider(provider, connections) => {
+                    EventMessage::ActiveProvider(Some(provider), connections) => {
                         let mut server_status = {
                             if let Some(old_status) = status_holder_signal.borrow().as_ref() {
                                 (**old_status).clone()
