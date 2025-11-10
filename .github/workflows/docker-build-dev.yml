@@ -210,6 +210,7 @@ jobs:
           find ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
           ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           rm -rf ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }}
+          cat ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}/metadata.json
       
       # - name: print outputs
       #   run: ls -al .ci-artifacts/${{ matrix.arch_tag }}
