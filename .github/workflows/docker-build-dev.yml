@@ -195,7 +195,7 @@ jobs:
           echo "Running docker buildx bake with ${#target_list[@]} targets: ${target_list[*]}"
           docker buildx bake \
             --file docker/docker-bake.hcl \
-            --allow=fs.write=${DOCKER_IMAGE_DEST} \
+            --allow=fs.write=${DOCKER_BAKE_METADATA_DEST} \
             --allow=fs.write=${CACHE_DEST} \
             --allow=fs.read=${CACHE_CONTEXT} \
             --metadata-file "${DOCKER_BAKE_METADATA_DEST}/metadata.json" \
