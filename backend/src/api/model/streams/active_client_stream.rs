@@ -48,7 +48,11 @@ impl ActiveClientStream {
         let provider_name = stream_details.provider_name.as_ref().map_or_else(String::new, ToString::to_string);
 
         let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
-        app_state.connection_manager.add_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent).await;
+
+        app_state.connection_manager.update_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent).await;
+        if let Some((_,_,_m_, Some(cvt))) = stream_details.stream_info.as_ref() {
+            app_state.connection_manager.update_stream_detail(&fingerprint.addr, *cvt).await;
+        }
         let cfg = &app_state.app_config;
         let waker = Some(Arc::new(AtomicWaker::new()));
         let waker_clone = waker.clone();
@@ -63,9 +67,8 @@ impl ActiveClientStream {
 
         let stream = match stream_details.stream.take() {
             None => {
-                if let Some(guard) = stream_details.provider_handle.as_ref() {
-                    app_state.active_provider.release_handle(guard).await;
-                }
+                let provider_handle = stream_details.provider_handle.take();
+                app_state.connection_manager.release_provider_handle(provider_handle).await;
                 futures::stream::empty::<Result<Bytes, StreamError>>().boxed()
             }
             Some(stream) => {
@@ -128,7 +131,6 @@ impl ActiveClientStream {
             let connection_manager = Arc::clone(&connection_manager);
             let reconnect_flag = stream_details.reconnect_flag.clone();
             let fingerprint = fingerprint.clone();
-            let username = user.username.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_millis(grace_period_millis)).await;
 
@@ -137,7 +139,7 @@ impl ActiveClientStream {
                     let active_connections = user_manager.user_connections(&username).await;
                     if active_connections > max_connections {
                         stream_strategy_flag_copy.store(USER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::Release);
-                        connection_manager.update_stream_detail(&username, &fingerprint, CustomVideoStreamType::UserConnectionsExhausted).await;
+                        connection_manager.update_stream_detail(&fingerprint.addr, CustomVideoStreamType::UserConnectionsExhausted).await;
                         info!("User connections exhausted for active clients: {username}");
                         updated = true;
                     }
@@ -147,7 +149,7 @@ impl ActiveClientStream {
                     if let Some(provider_name) = provider_grace_check {
                         if provider_manager.is_over_limit(&provider_name).await {
                             stream_strategy_flag_copy.store(PROVIDER_EXHAUSTED_STREAM, std::sync::atomic::Ordering::Release);
-                            connection_manager.update_stream_detail(&username, &fingerprint, CustomVideoStreamType::ProviderConnectionsExhausted).await;
+                            connection_manager.update_stream_detail(&fingerprint.addr, CustomVideoStreamType::ProviderConnectionsExhausted).await;
                             info!("Provider connections exhausted for active clients: {provider_name}");
                             updated = true;
                         }

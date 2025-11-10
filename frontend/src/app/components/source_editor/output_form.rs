@@ -1,11 +1,11 @@
-use crate::app::components::{BlockType, EditMode, SourceEditorContext, XtreamTargetOutputView};
+use crate::app::components::{BlockId, BlockType, EditMode, SourceEditorContext, XtreamTargetOutputView};
 use shared::model::TargetOutputDto;
 use std::rc::Rc;
 use yew::{function_component, html, use_context, Html, Properties};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct ConfigOutputViewProps {
-    pub(crate) block_id: usize,
+    pub(crate) block_id: BlockId,
     pub(crate) output: Option<Rc<TargetOutputDto>>,
 }
 

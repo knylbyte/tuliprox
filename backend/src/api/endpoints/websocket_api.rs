@@ -144,6 +144,16 @@ async fn handle_protocol_message(
                     Some(ProtocolMessage::UserActionResponse(false))
                 }
             },
+            Ok(ProtocolMessage::ActiveProviderCountRequest(auth_token)) => {
+                if !auth_required || verify_auth_admin_token(&auth_token, secret_key) {
+                    mem.role = UserRole::Admin;
+                    mem.token = Some(auth_token);
+                    let connections = app_state.active_provider.get_provider_connections_count().await;
+                    Some(ProtocolMessage::ActiveProviderCountResponse(connections))
+                } else {
+                    Some(ProtocolMessage::Unauthorized)
+                }
+            },
             Ok(_) => {
                 trace!("Unexpected protocol message after handshake");
                 None

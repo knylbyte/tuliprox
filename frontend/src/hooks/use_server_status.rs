@@ -37,9 +37,6 @@ pub fn use_server_status(
                         };
 
                         match event {
-                            ActiveUserConnectionChange::Connected(stream_info) => {
-                                server_status.active_user_streams.push(stream_info);
-                            }
                             ActiveUserConnectionChange::Updated(stream_info) => {
                                 if let Some(pos) = server_status
                                     .active_user_streams
