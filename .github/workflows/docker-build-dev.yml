@@ -143,23 +143,14 @@ jobs:
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.6 - Prepare cache context directory
-        run: mkdir -p ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }} ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }}
-
-      - name: Step 2.7 - Prepare image artifact directory
-        run: mkdir -p ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
-
-      - name: Step 2.8 - Load cache directories for Docker build
-        uses: actions/cache@v4
-        id: cache
+      - name: Step 2.6 - Download cache artifacts
+        uses: actions/download-artifact@v5
         with:
-          path: |
-            .ci-cache/${{ matrix.arch_tag }}
-          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
+          pattern: cache-artifacts-*
+          path: .ci-cache
+          merge-multiple: true
 
-      - name: Step 2.9 - Resolve Bake targets
+      - name: Step 2.7 - Resolve Bake targets
         id: bake-targets
         shell: bash
         run: |
@@ -171,7 +162,7 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.10 - Build images with docker buildx bake (debug)
+      - name: Step 2.8 - Build images with docker buildx bake (debug)
         id: build
         shell: bash
         env:
@@ -189,8 +180,9 @@ jobs:
           ls -al ${CACHE_CONTEXT}
           
           targets="${{ steps.bake-targets.outputs.targets }}"
+          echo ""
           echo "Targets (raw):"
-          printf '  %s\n' "$targets"
+          printf '%s\n\n' "$targets"
           mapfile -t target_list <<<"$targets"
           
           echo "Running docker buildx bake with ${#target_list[@]} targets: ${target_list[*]}"
@@ -203,27 +195,33 @@ jobs:
             --progress plain \
             "${target_list[@]}"
 
-      - name: Step 2.11 - Move cache TARs
+      - name: Step 2.9 - Move cache TARs
         shell: bash
         run: |
           set -euo pipefail
           find ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
           ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
-          rm -rf ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }}
       
       - name: print outputs
         run: |
           ls -al ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}/**
           ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
 
-      - name: Step 2.13 - Upload image artifacts
+      - name: Step 2.10 - Upload image artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dev-images-${{ matrix.arch_tag }}
           path: .ci-artifacts
-          if-no-files-found: error
+          overwrite: true
+      
+      - name: Step 2.11 - Upload cache artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cache-artifacts-${{ matrix.arch_tag }}
+          path: .ci-cache
+          overwrite: true
 
-      - name: Step 2.14 - Summary
+      - name: Step 2.12 - Summary
         if: always()
         shell: bash
         run: |
