@@ -220,7 +220,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dev-images-${{ matrix.arch_tag }}
-          path: .ci-artifacts/${{ matrix.arch_tag }}
+          path: .ci-artifacts
           if-no-files-found: error
 
       - name: Step 2.14 - Summary
@@ -265,12 +265,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Step 3.3 - Download image artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: dev-images-*
           path: .ci-artifacts
           merge-multiple: true
-          include-hidden-files: true
 
       - name: Step 3.4 - Load images
         shell: bash
