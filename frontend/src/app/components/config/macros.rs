@@ -262,8 +262,7 @@ macro_rules! edit_field_number_f64 {
                         Callback::from(move |value: Option<f64>| {
                             if let Some(value) = value {
                                 if value.is_finite() {
-                                    let clamped = value.max(1.0);
-                                    instance.dispatch($action(clamped));
+                                    instance.dispatch($action(value));
                                 }
                             }
                         })
