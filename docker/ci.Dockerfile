@@ -108,7 +108,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     fi; \
     if [[ -s /cache/sccache.tar ]]; then \
       tar -C "${CARGO_HOME}" -xf /cache/sccache.tar; \
-    fi
+    fi;
 
 RUN echo ok > /.build-cache-import
 
