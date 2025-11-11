@@ -16,6 +16,7 @@ use crate::error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_resul
 use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Number, Undefined, Value};
 use crate::model::{PatternTemplate, TemplateValue};
 use crate::utils::Capitalize;
+use std::fmt::Write;
 
 #[derive(Parser)]
 #[grammar_inline = r##"
@@ -39,7 +40,7 @@ block_expr = { "{" ~ statements ~ "}" }
 condition = { function_call | var_access | field_access }
 assignment = { (field_access | identifier) ~ "=" ~ expression }
 expression = { assignment | map_block | match_block | function_call | regex_expr | string_literal | number | var_access | field_access | null | block_expr }
-function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" | "template" | "replace" }
+function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" | "template" | "replace" | "pad" | "format" }
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
 match_case_key = { any_match | identifier }
@@ -118,6 +119,8 @@ pub enum BuiltInFunction {
     First,
     Template,
     Replace,
+    Pad,
+    Format,
 }
 
 impl FromStr for BuiltInFunction {
@@ -135,6 +138,8 @@ impl FromStr for BuiltInFunction {
             "first" => Ok(Self::First),
             "template" => Ok(Self::Template),
             "replace" => Ok(Self::Replace),
+            "pad" => Ok(Self::Pad),
+            "format" => Ok(Self::Format),
             _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown function {s}"),
         }
     }
@@ -153,6 +158,8 @@ impl Display for BuiltInFunction {
             Self::First => "first",
             Self::Template => "template",
             Self::Replace => "replace",
+            Self::Pad => "pad",
+            Self::Format => "format",
         }.to_owned();
         write!(f, "{str}")
     }
@@ -702,6 +709,11 @@ impl<'a> MapperContext<'a> {
                             return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Function accepts three arguments {:?}, {} given", name, args.len());
                         }
                     }
+                    BuiltInFunction::Pad => {
+                        if args.len() != 3  {
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Function accepts three arguments {:?}, {} given", name, args.len());
+                        }
+                    }
                         _ => {}
                 }
                 for expr_id in args {
@@ -931,8 +943,22 @@ fn concat_args(args: &Vec<EvalResult>) -> Vec<Cow<'_, str>> {
 
 macro_rules! extract_evaluated_arg_value {
     ($evaluated_args:expr, $index:expr) => {{
-        let evaluated_arg = &$evaluated_args[$index];
-        match evaluated_arg {
+        if $index >= $evaluated_args.len() {
+            None
+        } else {
+            let evaluated_arg = &$evaluated_args[$index];
+            match evaluated_arg {
+                Value(value) => Some(value),
+                Named(values) => values.first().map(|(_key, val)| val),
+                _ => None,
+            }
+        }
+    }};
+}
+
+macro_rules! extract_arg_value {
+    ($evaluated_arg:expr) => {{
+        match $evaluated_arg {
             Value(value) => Some(value),
             Named(values) => values.first().map(|(_key, val)| val),
             _ => None,
@@ -1120,6 +1146,92 @@ impl Expression {
                                 Value(text.replace(pat, subst))
                             } else {
                                 evaluated_args[0].clone()
+                            }
+                        }
+                        BuiltInFunction::Pad => {
+                            let value = match &evaluated_args[0] {
+                                Number(value) => Some(value.to_string()),
+                                Value(value) => Some(value.clone()),
+                                Named(values) => values.first().map(|(_key, val)| val.clone()),
+                                _ => None,
+                            };
+                            let width = match &evaluated_args[1] {
+                                Number(value) => value.abs() as usize,
+                                Value(value) => value.parse::<usize>().ok().unwrap_or(0),
+                                Named(values) => values.first().and_then(|(_key, val)| val.parse::<usize>().ok()).unwrap_or(0),
+                                _ => 0,
+                            };
+
+                            let fill =  match &evaluated_args[2] {
+                                Number(value) => Some(value.to_string()),
+                                Value(value) => Some(value.clone()),
+                                Named(values) => values.first().map(|(_key, val)| val.clone()),
+                                _ => None,
+                            };
+
+                            let align = extract_evaluated_arg_value!(evaluated_args, 3); // "<", ">", "^"
+
+                            if let Some(text) = value {
+                                let fill_char = fill.and_then(|s| s.chars().next()).unwrap_or(' ');
+
+                                let padded = if width <= text.len() {
+                                    text.clone()
+                                } else {
+                                    let pad = width - text.len();
+                                    if let Some(al) = align {
+                                        match al.as_str() {
+                                            "^" => {
+                                                let left = pad / 2;
+                                                let right = pad - left;
+                                                format!(
+                                                    "{}{}{}",
+                                                    fill_char.to_string().repeat(left),
+                                                    text,
+                                                    fill_char.to_string().repeat(right)
+                                                )
+                                            },
+                                            "<"  => format!("{}{}", text, fill_char.to_string().repeat(pad)),
+                                            _ => format!("{}{}", fill_char.to_string().repeat(pad), text),
+                                        }
+                                    } else {
+                                        format!("{}{}", fill_char.to_string().repeat(pad), text)
+                                    }
+                                };
+
+                                Value(padded)
+                            } else {
+                                Undefined
+                            }
+                        }
+                        BuiltInFunction::Format => {
+                            let fmt_pattern = extract_evaluated_arg_value!(evaluated_args, 0);
+
+                            if let Some(fmt_str) = fmt_pattern {
+                                let args: Vec<Option<&String>> = evaluated_args.iter()
+                                    .skip(1)
+                                    .map(|v| extract_arg_value!(v))
+                                    .collect();
+
+                                let mut formatted = String::new();
+                                let mut arg_iter = args.iter();
+                                let mut chars = fmt_str.chars().peekable();
+
+                                while let Some(ch) = chars.next() {
+                                    if ch == '{' && chars.peek() == Some(&'}') {
+                                        chars.next();
+                                        if let Some(Some(arg)) = arg_iter.next() {
+                                            write!(formatted, "{}", arg).unwrap();
+                                        } else {
+                                            formatted.push_str("{}");
+                                        }
+                                    } else {
+                                        formatted.push(ch);
+                                    }
+                                }
+
+                                Value(formatted)
+                            } else {
+                                Undefined
                             }
                         }
                     }
@@ -1381,6 +1493,29 @@ mod tests {
             }
         "#;
         let mapper = MapperScript::parse(script, None).expect("Parsing failed");
-        println!("Program: {mapper:?}");
+        println!("Program: {mapper:?}")
     }
+
+    #[test]
+    fn test_mapper_format() {
+        let dsl = r#"
+            @Name = pad(1000, 10, 0);
+            @Title = format("Hello {} how {}", "a", "b");
+        "#;
+
+        let mapper = MapperScript::parse(dsl, None).expect("Parsing failed");
+        let mut channels: Vec<PlaylistItem> = vec![
+            ("D", "HD"),
+        ].into_iter().map(|(name, quality)| PlaylistItem { header: PlaylistItemHeader { title: format!("Chanel {name} [{quality}]"), ..Default::default() } }).collect::<Vec<PlaylistItem>>();
+
+        for pli in &mut channels {
+            let mut accessor = ValueAccessor {
+                pli,
+            };
+            mapper.eval(&mut accessor, None);
+            println!("Result: {pli:?}");
+        }
+
+    }
+
 }

@@ -246,7 +246,7 @@ impl ConfigTargetDto {
         let mut hdhomerun_needs_m3u = false;
         let mut hdhomerun_needs_xtream = false;
 
-        let mut strm_export_styles = vec![];
+        //let mut strm_export_styles = vec![];
         let mut strm_directories: Vec<&str> = vec![];
 
         for target_output in &mut self.output {
@@ -276,10 +276,10 @@ impl ConfigTargetDto {
                     if has_username {
                         strm_needs_xtream = true;
                     }
-                    if strm_export_styles.contains(&strm_output.style) {
-                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "strm outputs with same export style are not allowed: {}", self.name);
-                    }
-                    strm_export_styles.push(strm_output.style);
+                    // if strm_export_styles.contains(&strm_output.style) {
+                    //     return create_tuliprox_error_result!(TuliproxErrorKind::Info, "strm outputs with same export style are not allowed: {}", self.name);
+                    // }
+                    // strm_export_styles.push(strm_output.style);
                     if strm_directories.contains(&strm_output.directory.as_str()) {
                         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "strm outputs with same export directory are not allowed: {}", self.name);
                     }

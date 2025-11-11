@@ -7,6 +7,9 @@
 - More robust connection-state and provider-handle management
 - Streamlined event notifications and provider-count reporting
 - Added configurable `reverse_proxy.resource_retry` (UI + server) to tune max attempts, base delay, and exponential backoff multiplier for proxied resources.
+- Multi Strm outputs with same type is now allowed. 
+- Added new mapper function `pad(text | number, number, char, optional position: "<" | ">" | "^")`
+- Added new mapper function `format`, it is very simple and only supports in text replacement like  `format("Hello {}! Hello {}!", "Bob", "World")`
 
 # 3.1.8 (2025-11-06)
 - Fixed HLS streaming issues caused by session eviction and incorrect headers.

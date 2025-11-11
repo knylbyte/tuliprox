@@ -1268,7 +1268,10 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
   - first(a)
   - template(a)
   - replace(text, match, replacement)
+  - pad(text | number, number, char, optional position: "<" | ">" | "^")
+  - format(fmt_text, ...args)
 Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `audio_track"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
+Format is very simple and only suports in text replacement like  `format("Hello {}! Hello {}!", "Bob", "World")` 
 When you use Regular expressions it could be that your match contains multiple results. The builtin function `first` returns the first match.
 Example `print(uppercase("hello"))`. output is only visible in `trace` log level you can enable it like `log_level: debug,tuliprox::foundation::mapper=trace` in config
 - Assignment assigns an expression result. variable or field.
