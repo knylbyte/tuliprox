@@ -1,6 +1,12 @@
 # Changelog
 # 3.1.9 (2025-11-xx)
 - Added `name` attribute to Staged Input.
+- Real-time active provider connection monitoring (dashboard + websocket)
+- Source editor: block selection, batch-mode UI and automatic layout
+- Fixed SSL certificate field binding in configuration view
+- More robust connection-state and provider-handle management
+- Streamlined event notifications and provider-count reporting
+- Added configurable `reverse_proxy.resource_retry` (UI + server) to tune max attempts, base delay, and exponential backoff multiplier for proxied resources.
 
 # 3.1.8 (2025-11-06)
 - Fixed HLS streaming issues caused by session eviction and incorrect headers.

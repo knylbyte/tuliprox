@@ -25,6 +25,18 @@ impl BlockType {
     pub const OUTPUT_XTREAM: &'static str = "OutputXtream";
     pub const OUTPUT_HDHOMERUN: &'static str = "OutputHdHomeRun";
     pub const OUTPUT_STRM: &'static str = "OutputStrm";
+
+    pub fn is_input(&self) -> bool {
+        matches!(self, Self::InputXtream | Self::InputM3u)
+    }
+
+    pub fn is_target(&self) -> bool {
+        matches!(self, Self::Target)
+    }
+
+    // pub fn is_output(&self) -> bool {
+    //     matches!(self, Self::OutputXtream | Self::OutputM3u | Self::OutputHdHomeRun | Self::OutputStrm)
+    // }
 }
 
 // Convert from String to BlockType

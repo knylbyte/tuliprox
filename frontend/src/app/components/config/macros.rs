@@ -248,6 +248,32 @@ macro_rules! edit_field_number_u8 {
 }
 
 #[macro_export]
+macro_rules! edit_field_number_f64 {
+    ($instance:expr, $label:expr, $field:ident, $action:path) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__number">
+                <$crate::app::components::number_input::NumberInput
+                    label={$label}
+                    name={stringify!($field)}
+                    float_value={Some(instance.form.$field)}
+                    on_change_float={Some({
+                        let instance = instance.clone();
+                        Callback::from(move |value: Option<f64>| {
+                            if let Some(value) = value {
+                                if value.is_finite() {
+                                    instance.dispatch($action(value));
+                                }
+                            }
+                        })
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
 macro_rules! edit_field_number_u16 {
     ($instance:expr, $label:expr, $field:ident, $action:path) => {{
         let instance = $instance.clone();

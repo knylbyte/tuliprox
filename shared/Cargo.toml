@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 bitflags = "2"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 regex = "1"
 enum-iterator = "2"
 log = "0"
