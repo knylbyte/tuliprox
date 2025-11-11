@@ -17,7 +17,6 @@ permissions:
 
 env:
   GHCR_NS: ghcr.io/${{ github.repository }}
-  DOCKERFILE: docker/ci.Dockerfile
 
 jobs:
   prebuilds:
@@ -177,6 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Cache contents before build:"
+          mkdir -p ${CACHE_CONTEXT}
           ls -al ${CACHE_CONTEXT}
           
           targets="${{ steps.bake-targets.outputs.targets }}"
