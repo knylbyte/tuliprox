@@ -3,6 +3,7 @@
 use yew::prelude::*;
 use yew_i18n::use_translation;
 use shared::model::{CacheConfigDto, GeoIpConfigDto, RateLimitConfigDto, ResourceRetryConfigDto, ReverseProxyConfigDto, ReverseProxyDisabledHeaderConfigDto, StreamConfigDto};
+use shared::utils::format_float_localized;
 use crate::app::context::ConfigContext;
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::config::config_page::{ConfigForm, LABEL_REVERSE_PROXY_CONFIG};
@@ -288,7 +289,7 @@ pub fn ReverseProxyConfigView() -> Html {
                 {
                     config_field_custom!(
                         translate.t(LABEL_BACKOFF_MULTIPLIER),
-                        format!("{:.4}", resource_retry_state.form.backoff_multiplier)
+                        format_float_localized(resource_retry_state.form.backoff_multiplier, 4, true)
                     )
                 }
             </Card>

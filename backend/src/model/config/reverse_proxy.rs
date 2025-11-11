@@ -1,7 +1,8 @@
-use shared::model::{ReverseProxyConfigDto, ReverseProxyDisabledHeaderConfigDto, ResourceRetryConfigDto};
 use crate::model::config::cache::CacheConfig;
 use crate::model::{macros, GeoIpConfig, RateLimitConfig, StreamConfig};
+use shared::model::{ResourceRetryConfigDto, ReverseProxyConfigDto, ReverseProxyDisabledHeaderConfigDto};
 use shared::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier};
+use std::cmp::max;
 
 #[derive(Debug, Clone)]
 pub struct ReverseProxyDisabledHeaderConfig {
@@ -41,6 +42,30 @@ impl Default for ResourceRetryConfig {
         }
     }
 }
+
+impl ResourceRetryConfig {
+    pub fn get_retry_values(&self) -> (u32, u64, f64) {
+        (
+            max(1, self.max_attempts),
+            self.backoff_millis.max(1),
+            if self.backoff_multiplier.is_finite() {
+                self.backoff_multiplier.max(1.0)
+            } else {
+                1.0
+            },
+        )
+    }
+
+    pub fn get_default_retry_values() -> (u32, u64, f64) {
+        (
+            default_resource_retry_attempts(),
+            default_resource_retry_backoff_ms(),
+            default_resource_retry_backoff_multiplier(),
+        )
+    }
+}
+
+macros::from_impl!(ResourceRetryConfig);
 
 impl From<&ResourceRetryConfigDto> for ResourceRetryConfig {
     fn from(dto: &ResourceRetryConfigDto) -> Self {

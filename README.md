@@ -323,7 +323,7 @@ It has three attributes:
 
 - `max_attempts`: How many times a failing request should be retried. Defaults to `3`, minimum `1`.
 - `backoff_millis`: The wait time between attempts (unless the upstream responds with a `Retry-After` header). Defaults to `250`.
-- `backoff_multiplier`: Multiplies the base backoff after each failed attempt. Values `<= 1` keep a linear delay.
+- `backoff_multiplier`: Multiplies the base backoff after each failed attempt. Values `<= 1.0` result in constant (linear) delay; values `> 1.0` produce exponential backoff.
 
 ```yaml
 reverse_proxy:

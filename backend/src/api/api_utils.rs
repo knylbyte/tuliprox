@@ -1,5 +1,4 @@
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
-use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
 use crate::api::model::UserSession;
 use crate::api::model::{
     create_channel_unavailable_stream, create_custom_video_stream_response,
@@ -9,7 +8,8 @@ use crate::api::model::{
     ProviderStreamFactoryOptions, SharedStreamManager,
     StreamError, ThrottledStream, UserApiRequest,
 };
-use crate::model::ConfigInput;
+use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
+use crate::model::{ConfigInput, ResourceRetryConfig};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::lru_cache::LRUResourceCache;
 use crate::utils::create_new_file_for_write;
@@ -24,8 +24,9 @@ use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, log_enabled, trace};
 use reqwest::header::RETRY_AFTER;
+use serde::Serialize;
 use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{bin_serialize, default_grace_period_millis, default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier, human_readable_byte_size, trim_slash};
+use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_byte_size, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
@@ -35,8 +36,6 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use std::cmp::max;
-use serde::Serialize;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -382,11 +381,11 @@ async fn resolve_streaming_strategy(
                     }
                 }
             }
-    } else {
-        debug!("Input {} is exhausted. No connections allowed.", input.name);
-        let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
-        ProviderStreamState::Custom(stream)
-    };
+        } else {
+            debug!("Input {} is exhausted. No connections allowed.", input.name);
+            let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
+            ProviderStreamState::Custom(stream)
+        };
 
 
     StreamingStrategy {
@@ -403,10 +402,10 @@ fn get_grace_period_millis(
 ) -> u64 {
     if config_grace_period_millis > 0
         && (
-            matches!(stream_response_params, ProviderStreamState::GracePeriod(_, _)) // provider grace period
+        matches!(stream_response_params, ProviderStreamState::GracePeriod(_, _)) // provider grace period
             || connection_permission == UserConnectionPermission::GracePeriod
-            // user grace period
-        )
+        // user grace period
+    )
     {
         config_grace_period_millis
     } else {
@@ -486,7 +485,7 @@ async fn create_stream_response_details(
                     &app_state.http_client.load(),
                     provider_stream_factory_options,
                 )
-                .await
+                    .await
                 {
                     None => (None, None),
                     Some((stream, info)) => (Some(stream), info),
@@ -730,7 +729,7 @@ pub async fn force_provider_stream_response(
         connection_permission,
         Some(&user_session.provider),
     )
-    .await;
+        .await;
 
     if stream_details.has_stream() {
         let provider_response = stream_details
@@ -801,7 +800,7 @@ pub async fn stream_response(
             &fingerprint.addr,
             CustomVideoStreamType::UserConnectionsExhausted,
         ).await
-        .into_response();
+            .into_response();
     }
 
     let virtual_id = stream_channel.virtual_id;
@@ -829,7 +828,7 @@ pub async fn stream_response(
         connection_permission,
         None,
     )
-    .await;
+        .await;
 
     if stream_details.has_stream() {
         // let content_length = get_stream_content_length(provider_response.as_ref());
@@ -867,7 +866,7 @@ pub async fn stream_response(
                 stream_options.buffer_size,
                 provider_handle,
             )
-            .await
+                .await
             {
                 let (status_code, header_map) =
                     get_stream_response_with_headers(provider_response.map(|(h, s, _, _)| (h, s)));
@@ -999,9 +998,9 @@ async fn try_shared_stream_response_if_any(
 pub fn is_stream_share_enabled(item_type: PlaylistItemType, target: &ConfigTarget) -> bool {
     (item_type == PlaylistItemType::Live/* || item_type == PlaylistItemType::LiveHls */)
         && target
-            .options
-            .as_ref()
-            .is_some_and(|opt| opt.share_live_streams)
+        .options
+        .as_ref()
+        .is_some_and(|opt| opt.share_live_streams)
 }
 
 pub type HeaderFilter = Option<Box<dyn Fn(&str) -> bool + Send>>;
@@ -1100,22 +1099,7 @@ async fn fetch_resource_with_retry(
     let (max_attempts, backoff_ms, backoff_multiplier) = config
         .reverse_proxy
         .as_ref()
-        .map(|rp| {
-            (
-                max(1, rp.resource_retry.max_attempts),
-                rp.resource_retry.backoff_millis.max(1),
-                if rp.resource_retry.backoff_multiplier.is_finite() {
-                    rp.resource_retry.backoff_multiplier.max(1.0)
-                } else {
-                    1.0
-                },
-            )
-        })
-        .unwrap_or((
-            default_resource_retry_attempts(),
-            default_resource_retry_backoff_ms(),
-            default_resource_retry_backoff_multiplier(),
-        ));
+        .map_or_else(ResourceRetryConfig::get_default_retry_values, |rp| rp.resource_retry.get_retry_values());
     let disabled_headers = config
         .reverse_proxy
         .as_ref()
@@ -1147,7 +1131,7 @@ async fn fetch_resource_with_retry(
                             | reqwest::StatusCode::TOO_MANY_REQUESTS
                     );
 
-                if attempt < max_attempts -   1 && should_retry {
+                if attempt < max_attempts - 1 && should_retry {
                     let wait_dur = response
                         .headers()
                         .get(RETRY_AFTER)
@@ -1182,8 +1166,9 @@ async fn fetch_resource_with_retry(
             }
             Err(err) => {
                 if attempt < max_attempts - 1 {
-                   tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
-                   continue;
+                    let delay = calculate_retry_backoff(backoff_ms, backoff_multiplier, attempt);
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    continue;
                 }
                 error!("Received failure from server {}:  {err}", sanitize_sensitive_info(resource_url));
             }
@@ -1193,6 +1178,7 @@ async fn fetch_resource_with_retry(
     None
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
 fn calculate_retry_backoff(base_delay_ms: u64, multiplier: f64, attempt: u32) -> u64 {
     let base = base_delay_ms.max(1);
     if multiplier <= 1.0 {

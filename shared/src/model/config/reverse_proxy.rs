@@ -1,7 +1,6 @@
 use crate::error::TuliproxError;
 use crate::model::{CacheConfigDto, GeoIpConfigDto, RateLimitConfigDto, StreamConfigDto};
 use crate::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier};
-use std::f64;
 use log::warn;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -74,16 +73,16 @@ impl ReverseProxyConfigDto {
         {
             self.resource_retry = None;
         }
-        if self.stream.as_ref().is_some_and(|s| s.is_empty()) {
+        if self.stream.as_ref().is_some_and(StreamConfigDto::is_empty) {
             self.stream = None;
         }
-        if self.cache.as_ref().is_some_and(|s| s.is_empty()) {
+        if self.cache.as_ref().is_some_and(CacheConfigDto::is_empty) {
             self.cache = None;
         }
-        if self.rate_limit.as_ref().is_some_and(|s| s.is_empty()) {
+        if self.rate_limit.as_ref().is_some_and(RateLimitConfigDto::is_empty) {
             self.rate_limit = None;
         }
-        if self.geoip.as_ref().is_some_and(|g| g.is_empty()) {
+        if self.geoip.as_ref().is_some_and(GeoIpConfigDto::is_empty) {
             self.geoip = None;
         }
     }

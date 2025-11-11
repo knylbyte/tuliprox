@@ -1,6 +1,7 @@
 use web_sys::{HtmlInputElement, KeyboardEvent};
 use yew::prelude::*;
 use yew::TargetCast;
+use shared::utils::{format_float_localized, parse_localized_float};
 
 #[derive(Properties, Clone, PartialEq)]
 pub struct NumberInputProps {
@@ -30,7 +31,7 @@ pub fn NumberInput(props: &NumberInputProps) -> Html {
         use_effect_with(deps, move |(int_val, float_val)| {
             if let Some(input) = input_ref.cast::<HtmlInputElement>() {
                 let new_value = float_val
-                    .map(|v| v.to_string())
+                    .map(|f| format_float_localized(f, 4, true))
                     .or_else(|| int_val.map(|v| v.to_string()))
                     .unwrap_or_default();
                 input.set_value(&new_value);
@@ -45,8 +46,8 @@ pub fn NumberInput(props: &NumberInputProps) -> Html {
         let onchange_float = props.on_change_float.clone();
         Callback::from(move |e: InputEvent| {
             if let Some(input) = e.target_dyn_into::<HtmlInputElement>() {
-                let raw = input.value();
-                if raw.trim().is_empty() {
+                let raw = input.value().trim().to_string();
+                if raw.is_empty() {
                     if prefers_float {
                         if let Some(cb) = onchange_float.as_ref() {
                             cb.emit(None);
@@ -56,9 +57,10 @@ pub fn NumberInput(props: &NumberInputProps) -> Html {
                     }
                     return;
                 }
+
                 if prefers_float {
                     if let Some(cb) = onchange_float.as_ref() {
-                        let parsed = raw.parse::<f64>().ok();
+                        let parsed = parse_localized_float(&raw);
                         cb.emit(parsed);
                     }
                 } else {
@@ -91,21 +93,18 @@ pub fn NumberInput(props: &NumberInputProps) -> Html {
 
     html! {
         <div class="tp__input">
-            { if props.label.is_some() {
-                   html! {
-                       <label>{props.label.clone().unwrap_or_default()}</label>
-                   }
-                } else { html!{} }
-            }
+            { if let Some(label) = &props.label {
+                html! { <label>{ label }</label> }
+            } else { html!{} } }
             <div class="tp__input-wrapper">
                 <input
                     ref={input_ref.clone()}
-                    type="text" // type is text to avoid browser validation
+                    type="text"
                     name={props.name.clone()}
                     placeholder={props.placeholder.clone()}
                     onkeydown={handle_keydown.clone()}
                     oninput={on_input.clone()}
-                    />
+                />
             </div>
         </div>
     }
