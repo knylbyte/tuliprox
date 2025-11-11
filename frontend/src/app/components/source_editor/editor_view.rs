@@ -4,7 +4,7 @@ use yew::prelude::*;
 use shared::model::{ConfigInputDto, ConfigTargetDto, HdHomeRunTargetOutputDto, M3uTargetOutputDto, StrmTargetOutputDto, TargetOutputDto, XtreamTargetOutputDto};
 use crate::app::components::{can_connect, Block, BlockId, BlockInstance, BlockType, BlockView, Connection, EditMode, InputRow, PortStatus, SourceEditorContext, SourceEditorForm, SourceEditorSidebar};
 use crate::app::{PlaylistContext};
-use crate::app::components::source_editor::layout::cluster_layout;
+use crate::app::components::source_editor::layout::layout;
 
 const BLOCK_WIDTH: f32 = 100.0;
 const BLOCK_HEIGHT: f32 = 50.0;
@@ -95,6 +95,10 @@ pub fn SourceEditor() -> Html {
                         };
                         gen_blocks.push(block);
                         input_ids.iter().for_each(|input_id| gen_connections.push(Connection { from: *input_id, to: target_id }));
+                        // Test connections
+                        // gen_connections.push(Connection {from: 1, to: 14});
+                        // gen_connections.push(Connection {from: 17, to: 2});
+
 
                         for output in &target_config.output {
 
@@ -119,7 +123,7 @@ pub fn SourceEditor() -> Html {
                     }
 
                 }
-                cluster_layout(&mut gen_blocks, &gen_connections);
+                layout(&mut gen_blocks, &gen_connections);
                 get_next_id.set(current_id);
                 blocks_set.set(gen_blocks);
                 connections_set.set(gen_connections);
