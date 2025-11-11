@@ -175,8 +175,12 @@ jobs:
           BUILDKIT_PROGRESS: plain
         run: |
           set -euo pipefail
-          echo "Cache contents before build:"
+          echo "Create build directories..."
           mkdir -p ${CACHE_CONTEXT}
+          mkdir -p ${CACHE_DEST}
+          mkdir -p ${DOCKER_TAR_DEST}
+
+          echo "Cache contents before build:"
           ls -al ${CACHE_CONTEXT}
           
           targets="${{ steps.bake-targets.outputs.targets }}"
