@@ -246,6 +246,6 @@ pub fn layout(blocks: &mut [Block], connections: &[Connection]) {
 
         let block = &mut blocks[*block_id as usize -1];
         block.position = (CANVAS_OFFSET, final_y);
-        last_input_y = final_y + BLOCK_HEIGHT + Y_GAP;
+        last_input_y = final_y + BLOCK_HEIGHT + Y_GAP*2.0;
     }
 }
