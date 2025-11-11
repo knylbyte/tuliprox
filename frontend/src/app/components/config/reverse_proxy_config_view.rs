@@ -26,6 +26,7 @@ const LABEL_THROTTLE_KBPS: &str = "LABEL.THROTTLE_KBPS";
 const LABEL_RATE_LIMIT: &str = "LABEL.RATE_LIMIT";
 const LABEL_PERIOD_MILLIS: &str = "LABEL.PERIOD_MILLIS";
 const LABEL_BURST_SIZE: &str = "LABEL.BURST_SIZE";
+const LABEL_SHARED_BURST_BUFFER_MB: &str = "LABEL.SHARED_BURST_BUFFER_BYTES";
 
 const LABEL_SETTINGS: &str = "LABEL.SETTINGS";
 const LABEL_RESOURCE_REWRITE_DISABLED: &str = "LABEL.RESOURCE_REWRITE_DISABLED";
@@ -81,6 +82,7 @@ generate_form_reducer!(
         GracePeriodTimeoutSecs => grace_period_timeout_secs: u64,
         //ForcedRetryIntervalSecs => forced_retry_interval_secs: u32,
         ThrottleKbps => throttle_kbps: u64,
+        SharedBurstBufferMb => shared_burst_buffer_mb: u64,
     }
 );
 
@@ -237,6 +239,7 @@ pub fn ReverseProxyConfigView() -> Html {
                 { config_field!(stream_state.form, translate.t(LABEL_GRACE_PERIOD_TIMEOUT_SECS), grace_period_timeout_secs) }
                 //{ config_field!(stream_state.form, translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS), forced_retry_interval_secs) }
                 { config_field!(stream_state.form, translate.t(LABEL_THROTTLE_KBPS), throttle_kbps) }
+                { config_field!(stream_state.form, translate.t(LABEL_SHARED_BURST_BUFFER_MB), shared_burst_buffer_mb) }
             </Card>
         }
     };
@@ -373,6 +376,7 @@ pub fn ReverseProxyConfigView() -> Html {
                 { edit_field_number_u64!(stream_state, translate.t(LABEL_GRACE_PERIOD_TIMEOUT_SECS), grace_period_timeout_secs, StreamConfigFormAction::GracePeriodTimeoutSecs) }
                 //{ edit_field_number!(stream_state, translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS), forced_retry_interval_secs, StreamConfigFormAction::ForcedRetryIntervalSecs) }
                 { edit_field_number_u64!(stream_state, translate.t(LABEL_THROTTLE_KBPS), throttle_kbps, StreamConfigFormAction::ThrottleKbps) }
+                { edit_field_number_u64!(stream_state, translate.t(LABEL_SHARED_BURST_BUFFER_MB), shared_burst_buffer_mb, StreamConfigFormAction::SharedBurstBufferMb) }
             </Card>
             <Card class="tp__config-view__card">
                 <h1>{translate.t(LABEL_GEOIP)}</h1>
