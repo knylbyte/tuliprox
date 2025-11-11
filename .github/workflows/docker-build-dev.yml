@@ -295,11 +295,11 @@ jobs:
             echo "::endgroup::"
 
           done
-          
+
           docker image ls
 
-      - id: Step 3.5 - Export arch_tags
-        name: Export arch_tags as job output (JSON)
+      - name: Step 3.5 - Export arch_tags
+        id: export_arch_tags
         shell: bash
         run: |
           set -euo pipefail
