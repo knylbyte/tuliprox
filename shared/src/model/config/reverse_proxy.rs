@@ -1,5 +1,7 @@
 use crate::error::TuliproxError;
 use crate::model::{CacheConfigDto, GeoIpConfigDto, RateLimitConfigDto, StreamConfigDto};
+use crate::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier};
+use std::f64;
 use log::warn;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -31,6 +33,8 @@ pub struct ReverseProxyConfigDto {
     #[serde(default)]
     pub resource_rewrite_disabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_retry: Option<ResourceRetryConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disabled_header: Option<ReverseProxyDisabledHeaderConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream: Option<StreamConfigDto>,
@@ -46,6 +50,10 @@ impl ReverseProxyConfigDto {
     pub fn is_empty(&self) -> bool {
         !self.resource_rewrite_disabled
             && self.disabled_header.as_ref().is_none_or(|d| d.is_empty())
+            && self
+                .resource_retry
+                .as_ref()
+                .is_none_or(ResourceRetryConfigDto::is_default)
             && (self.stream.is_none() || self.stream.as_ref().is_some_and(|s| s.is_empty()))
             && (self.cache.is_none() || self.cache.as_ref().is_some_and(|c| c.is_empty()))
             && (self.rate_limit.is_none() || self.rate_limit.as_ref().is_some_and(|r| r.is_empty()))
@@ -58,6 +66,13 @@ impl ReverseProxyConfigDto {
             if disabled.is_empty() {
                 self.disabled_header = None;
             }
+        }
+        if self
+            .resource_retry
+            .as_ref()
+            .is_some_and(ResourceRetryConfigDto::is_default)
+        {
+            self.resource_retry = None;
         }
         if self.stream.as_ref().is_some_and(|s| s.is_empty()) {
             self.stream = None;
@@ -91,5 +106,34 @@ impl ReverseProxyConfigDto {
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceRetryConfigDto {
+    #[serde(default = "default_resource_retry_attempts")]
+    pub max_attempts: u32,
+    #[serde(default = "default_resource_retry_backoff_ms")]
+    pub backoff_millis: u64,
+    #[serde(default = "default_resource_retry_backoff_multiplier")]
+    pub backoff_multiplier: f64,
+}
+
+impl Default for ResourceRetryConfigDto {
+    fn default() -> Self {
+        Self {
+            max_attempts: default_resource_retry_attempts(),
+            backoff_millis: default_resource_retry_backoff_ms(),
+            backoff_multiplier: default_resource_retry_backoff_multiplier(),
+        }
+    }
+}
+
+impl ResourceRetryConfigDto {
+    pub fn is_default(&self) -> bool {
+        self.max_attempts == default_resource_retry_attempts()
+            && self.backoff_millis == default_resource_retry_backoff_ms()
+            && (self.backoff_multiplier - default_resource_retry_backoff_multiplier()).abs() < f64::EPSILON
     }
 }

@@ -25,7 +25,7 @@ use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, log_enabled, trace};
 use reqwest::header::RETRY_AFTER;
 use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_byte_size, trim_slash};
+use shared::utils::{bin_serialize, default_grace_period_millis, default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier, human_readable_byte_size, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
@@ -35,6 +35,7 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use std::cmp::max;
 use serde::Serialize;
 use tokio::sync::Mutex;
 use url::Url;
@@ -1095,10 +1096,26 @@ async fn fetch_resource_with_retry(
     req_headers: &HashMap<String, Vec<u8>>,
     input: Option<&ConfigInput>,
 ) -> Option<axum::response::Response> {
-    // TODO: add max_attempts to config
-    let max_attempts: u32 = 3; //&app_state.app_config.config.load().max_attempts;
-    let backoff_ms: u64 = 250;
     let config = app_state.app_config.config.load();
+    let (max_attempts, backoff_ms, backoff_multiplier) = config
+        .reverse_proxy
+        .as_ref()
+        .map(|rp| {
+            (
+                max(1, rp.resource_retry.max_attempts),
+                rp.resource_retry.backoff_millis.max(1),
+                if rp.resource_retry.backoff_multiplier.is_finite() {
+                    rp.resource_retry.backoff_multiplier.max(1.0)
+                } else {
+                    1.0
+                },
+            )
+        })
+        .unwrap_or((
+            default_resource_retry_attempts(),
+            default_resource_retry_backoff_ms(),
+            default_resource_retry_backoff_multiplier(),
+        ));
     let disabled_headers = config
         .reverse_proxy
         .as_ref()
@@ -1136,7 +1153,13 @@ async fn fetch_resource_with_retry(
                         .get(RETRY_AFTER)
                         .and_then(|h| h.to_str().ok())
                         .and_then(|s| s.parse::<u64>().ok())
-                        .map_or(Duration::from_millis(backoff_ms), Duration::from_secs);
+                        .map_or_else(
+                            || {
+                                let delay = calculate_retry_backoff(backoff_ms, backoff_multiplier, attempt);
+                                Duration::from_millis(delay)
+                            },
+                            Duration::from_secs,
+                        );
                     tokio::time::sleep(wait_dur).await;
                     continue;
                 }
@@ -1168,6 +1191,21 @@ async fn fetch_resource_with_retry(
         break;
     }
     None
+}
+
+fn calculate_retry_backoff(base_delay_ms: u64, multiplier: f64, attempt: u32) -> u64 {
+    let base = base_delay_ms.max(1);
+    if multiplier <= 1.0 {
+        return base;
+    }
+    let delay = (base as f64) * multiplier.powi(i32::try_from(attempt).unwrap_or(i32::MAX));
+    if !delay.is_finite() || delay < 1.0 {
+        base
+    } else if delay >= u64::MAX as f64 {
+        u64::MAX
+    } else {
+        delay as u64
+    }
 }
 
 /// # Panics

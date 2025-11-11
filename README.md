@@ -317,6 +317,22 @@ reverse_proxy:
       - my-custom-header
 ```
 
+#### 1.6.6 `resource_retry`
+Controls how aggressively tuliprox retries upstream resource (logo, EPG, stream) downloads whenever it proxies requests for clients.  
+It has three attributes:
+
+- `max_attempts`: How many times a failing request should be retried. Defaults to `3`, minimum `1`.
+- `backoff_millis`: The wait time between attempts (unless the upstream responds with a `Retry-After` header). Defaults to `250`.
+- `backoff_multiplier`: Multiplies the base backoff after each failed attempt. Values `<= 1` keep a linear delay.
+
+```yaml
+reverse_proxy:
+  resource_retry:
+    max_attempts: 5
+    backoff_millis: 500
+    backoff_multiplier: 1.5
+```
+
 ### 1.6.7 `geoip`
 `geoip` is for resolving IP addresses to country names.
 
