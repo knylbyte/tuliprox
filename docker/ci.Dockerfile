@@ -92,7 +92,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=bind,from=ctx_cache,target=/cache,readonly \
-
     ls -al  /cache/**; \
     if [[ -s /cache/cargo-registry-index.tar ]]; then \
     tar -C "${CARGO_HOME}/registry" -xf /cache/cargo-registry-index.tar; \
