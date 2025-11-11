@@ -22,6 +22,10 @@ variable "CACHE_DEST" {
   default = "/tmp/cache-out"
 }
 
+variable "DOCKER_TAR_DEST" {
+  default = "/tmp/tar-artifacts"
+}
+
 variable "CARGO_HOME" {
   default = "/usr/local/cargo"
 }
@@ -89,10 +93,11 @@ target "scratch-final" {
   ]
 
   tags = [
+    "${GHCR_NS}:dev-slim-${VERSION}-${ARCH_TAG}"
   ]
 
   output = [
-    "type=image,push-by-digest=true,name-canonical=true,push=true"
+    "type=tar,dest=${DOCKER_TAR_DEST}/scratch-final"
   ]
 }
 
@@ -114,9 +119,10 @@ target "alpine-final" {
   ]
 
   tags = [
+    "${GHCR_NS}:dev-${VERSION}-${ARCH_TAG}"
   ]
 
   output = [
-    "type=image,push-by-digest=true,name-canonical=true,push=true"
+    "type=tar,dest=${DOCKER_TAR_DEST}/alpine-final"
   ]
 }

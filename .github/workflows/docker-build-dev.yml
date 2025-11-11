@@ -93,6 +93,7 @@ jobs:
       - prebuilds
     outputs:
       version: ${{ steps.version.outputs.version }}
+      archs: ${{ steps.build.outputs.archs }}
     strategy:
       fail-fast: false
       matrix:
@@ -178,7 +179,7 @@ jobs:
           ARCH_TAG: ${{ matrix.arch_tag }}
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ steps.version.outputs.version }}
-          DOCKER_BAKE_METADATA_DEST: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
+          DOCKER_TAR_DEST: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
           CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           CACHE_DEST: ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }}
           BUILDKIT_PROGRESS: plain
@@ -195,10 +196,9 @@ jobs:
           echo "Running docker buildx bake with ${#target_list[@]} targets: ${target_list[*]}"
           docker buildx bake \
             --file docker/docker-bake.hcl \
-            --allow=fs.write=${DOCKER_BAKE_METADATA_DEST} \
+            --allow=fs.write=${DOCKER_TAR_DEST} \
             --allow=fs.write=${CACHE_DEST} \
             --allow=fs.read=${CACHE_CONTEXT} \
-            --metadata-file "${DOCKER_BAKE_METADATA_DEST}/metadata.json" \
             --load \
             --progress plain \
             "${target_list[@]}"
@@ -210,92 +210,18 @@ jobs:
           find ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
           ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
           rm -rf ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }}
-          cat ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}/metadata.json
       
-      # - name: print outputs
-      #   run: ls -al .ci-artifacts/${{ matrix.arch_tag }}
-
-      # - name: Step 2.13 - Upload image artifacts
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: dev-images-${{ matrix.arch_tag }}
-      #     path: .ci-artifacts/${{ matrix.arch_tag }}
-      #     if-no-files-found: error
-      
-      - name: Step 2.12 - Export digests
-        id: export-digests
-        shell: bash
-        env:
-          GHCR_NS: ${{ env.GHCR_NS }}
-          VERSION: ${{ steps.version.outputs.version }}
-          ARCH_TAG: ${{ matrix.arch_tag }}
-          PLATFORM: ${{ matrix.platform }}
-          METADATA_FILE: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}/metadata.json
+      - name: print outputs
         run: |
-          set -euo pipefail
-          if [[ ! -s "${METADATA_FILE}" ]]; then
-            echo "Metadata file missing or empty: ${METADATA_FILE}" >&2
-            ls -al "$(dirname "${METADATA_FILE}")" >&2 || true
-            exit 1
-          fi
+          ls -al ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
+          ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
 
-          digest_root="${{ runner.temp }}/digests"
-          mkdir -p "${digest_root}"
-
-          mapfile -t entries < <(
-            jq -r '
-              .target
-              | to_entries[]
-              | select(.value."containerimage.digest")
-              | [.key, .value."containerimage.digest"]
-              | @tsv
-            ' "${METADATA_FILE}"
-          )
-
-          if [[ ${#entries[@]} -eq 0 ]]; then
-            echo "No digest entries discovered in ${METADATA_FILE}" >&2
-            exit 1
-          fi
-
-          for entry in "${entries[@]}"; do
-            IFS=$'\t' read -r target digest <<<"${entry}"
-            case "${target}" in
-              alpine-final) variant="dev" ;;
-              scratch-final) variant="dev-slim" ;;
-              *)
-                echo "Skipping unhandled bake target: ${target}" >&2
-                continue
-                ;;
-            esac
-
-            variant_dir="${digest_root}/${variant}"
-            mkdir -p "${variant_dir}"
-
-            source_tag="${variant}-${VERSION}-${ARCH_TAG}"
-            ref="${GHCR_NS}:${source_tag}@${digest}"
-            cat <<EOF > "${variant_dir}/${ARCH_TAG}.json"
-            {
-              "variant": "${variant}",
-              "arch_tag": "${ARCH_TAG}",
-              "platform": "${PLATFORM}",
-              "version": "${VERSION}",
-              "source_tag": "${source_tag}",
-              "digest": "${digest}",
-              "ref": "${ref}"
-            }
-            EOF
-          done
-
-          echo "Digest metadata files:"
-          find "${digest_root}" -type f -print
-
-      - name: Step 2.13 - Upload digest
+      - name: Step 2.13 - Upload image artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ matrix.arch_tag }}
-          path: ${{ runner.temp }}/digests
+          name: dev-images-${{ matrix.arch_tag }}
+          path: .ci-artifacts/${{ matrix.arch_tag }}
           if-no-files-found: error
-          retention-days: 1
 
       - name: Step 2.14 - Summary
         if: always()
@@ -308,8 +234,8 @@ jobs:
             echo "- CHANGELOG version: **${{ steps.version.outputs.version }}**"
             echo ""
             echo "### 📦 Exported artifacts"
-            echo "- dev-slim-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }} (DOCKER image)"
-            echo "- dev-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }} (DOCKER image)"
+            echo "- dev-slim-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}"
+            echo "- dev-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}"
             echo ""
             echo "### 🧷 Cache"
             echo "- cache-from: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}\`"
@@ -338,19 +264,49 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Step 3.3 - Download image artifacts
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     pattern: dev-images-*
-      #     path: .ci-artifacts
-      #     merge-multiple: false
-
-      - name: Step 3.3 - Download digests
+      - name: Step 3.3 - Download image artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ${{ runner.temp }}/digests
-          pattern: digests-*
+          pattern: dev-images-*
+          path: .
           merge-multiple: true
+
+      - name: Step 3.4 - Load images
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          for archdir in .ci-artifacts/*; do
+            [ -d "$archdir" ] || continue
+
+            arch_tag="$(basename "$archdir")"
+            echo "::group::Loading images for ${arch_tag}"
+
+            for enddir in "$archdir"/alpine-final "$archdir"/scratch-final; do
+              [ -d "$enddir" ] || continue
+
+              for img in "$enddir"/*.tar; do
+                [ -f "$img" ] || continue
+                docker image load -i "$img"
+              done
+
+            done
+            echo "::endgroup::"
+
+          done
+          
+          docker image ls
+
+      - id: Step 3.5 - Export arch_tags
+        name: Export arch_tags as job output (JSON)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t arr < <(find .ci-artifacts -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
+          json="$(printf '%s\n' "${arr[@]}" | jq -R . | jq -s .)"
+          echo "arch_tags_json=${json}" >> "$GITHUB_OUTPUT"
+
 
       - name: Step 3.4 - Create and publish manifests
         id: create
@@ -358,130 +314,7 @@ jobs:
         env:
           GHCR_NS: ${{ env.GHCR_NS }}
           VERSION: ${{ needs.build.outputs.version }}
-          DIGEST_ROOT: ${{ runner.temp }}/digests
-        run: |
-          set -euo pipefail
-
-          if [[ ! -d "${DIGEST_ROOT}" ]]; then
-            echo "Digest directory not found: ${DIGEST_ROOT}" >&2
-            exit 1
-          fi
-
-          shopt -s nullglob
-
-          declare -A variant_refs=()
-          declare -A platform_seen=()
-          declare -A variant_versions=()
-
-          digest_files=("${DIGEST_ROOT}"/*/*.json "${DIGEST_ROOT}"/*.json)
-          if [[ ${#digest_files[@]} -eq 0 ]]; then
-            echo "No digest metadata files located under ${DIGEST_ROOT}" >&2
-            exit 1
-          fi
-
-          for file in "${digest_files[@]}"; do
-            [[ -f "${file}" ]] || continue
-            variant=$(jq -r '.variant // empty' "${file}")
-            ref=$(jq -r '.ref // empty' "${file}")
-            platform=$(jq -r '.platform // empty' "${file}")
-            file_version=$(jq -r '.version // empty' "${file}")
-            if [[ -z "${variant}" || -z "${ref}" ]]; then
-              echo "Skipping ${file} because variant or ref is missing" >&2
-              continue
-            fi
-
-            if [[ -n "${file_version}" ]]; then
-              variant_versions["${variant}"]="${file_version}"
-            fi
-
-            variant_refs["${variant}"]+="${ref} "
-            if [[ -n "${platform}" ]]; then
-              platform_seen["${platform}"]=1
-            fi
-          done
-
-          if [[ ${#variant_refs[@]} -eq 0 ]]; then
-            echo "No variant digests gathered from ${DIGEST_ROOT}" >&2
-            exit 1
-          fi
-
-          tags_output=()
-          digests_output=()
-
-          for variant in "${!variant_refs[@]}"; do
-            ref_string="${variant_refs[$variant]}"
-            read -r -a refs <<<"${ref_string}"
-            if [[ ${#refs[@]} -eq 0 ]]; then
-              echo "Variant ${variant} has no digest refs" >&2
-              exit 1
-            fi
-
-            version_to_use="${VERSION:-${variant_versions[${variant}]:-}}"
-
-            create_args=()
-            create_args+=(--tag "${GHCR_NS}:${variant}")
-            if [[ -n "${version_to_use}" ]]; then
-              create_args+=(--tag "${GHCR_NS}:${variant}-${version_to_use}")
-            fi
-
-            echo "Creating manifest for variant '${variant}' with refs:"
-            printf '  - %s\n' "${refs[@]}"
-
-            docker buildx imagetools create "${create_args[@]}" "${refs[@]}"
-
-            for tag in "${GHCR_NS}:${variant}"; do
-              tags_output+=("${tag#${GHCR_NS}:}")
-              manifest_digest=$(docker buildx imagetools inspect "${tag}" | awk '/^Digest: / { print $2; exit }' || true)
-              if [[ -n "${manifest_digest}" ]]; then
-                digests_output+=("${tag#${GHCR_NS}:} ${manifest_digest}")
-              fi
-            done
-
-            if [[ -n "${version_to_use}" ]]; then
-              versioned_tag="${GHCR_NS}:${variant}-${version_to_use}"
-              tags_output+=("${versioned_tag#${GHCR_NS}:}")
-              manifest_digest=$(docker buildx imagetools inspect "${versioned_tag}" | awk '/^Digest: / { print $2; exit }' || true)
-              if [[ -n "${manifest_digest}" ]]; then
-                digests_output+=("${versioned_tag#${GHCR_NS}:} ${manifest_digest}")
-              fi
-            fi
-          done
-
-          # Unique tags while preserving order
-          uniq_tags=()
-          declare -A seen_tags=()
-          for tag in "${tags_output[@]}"; do
-            if [[ -n "${tag}" && -z "${seen_tags[$tag]:-}" ]]; then
-              uniq_tags+=("${tag}")
-              seen_tags["${tag}"]=1
-            fi
-          done
-
-          uniq_digests=()
-          declare -A seen_digests=()
-          for entry in "${digests_output[@]}"; do
-            if [[ -n "${entry}" && -z "${seen_digests[$entry]:-}" ]]; then
-              uniq_digests+=("${entry}")
-              seen_digests["${entry}"]=1
-            fi
-          done
-
-          arches_output=()
-          for platform in "${!platform_seen[@]}"; do
-            arches_output+=("${platform}")
-          done
-
-          {
-            echo 'tags<<EOF'
-            printf '%s\n' "${uniq_tags[@]}"
-            echo 'EOF'
-            echo 'digests<<EOF'
-            printf '%s\n' "${uniq_digests[@]}"
-            echo 'EOF'
-            echo 'arches<<EOF'
-            printf '%s\n' "${arches_output[@]}"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+        run: echo "tba"
 
       - name: Step 3.4 - Summary (manifests)
         if: always()
