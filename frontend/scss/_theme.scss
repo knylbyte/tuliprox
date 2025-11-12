@@ -363,8 +363,10 @@
 
   --source-editor-line-color: #ffffff;
   --source-editor-pending-line-color: yellow;
-}
 
+  --selection-area-border-color: rgba(0, 120, 215, 0.9);
+  --selection-area-background-color: rgba(0, 120, 215, 0.12);
+}
 
 body[data-theme="bright"] {
   --primary-color: rgba(10, 120, 255, 0.95);
