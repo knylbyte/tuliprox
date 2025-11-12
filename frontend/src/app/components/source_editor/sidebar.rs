@@ -39,6 +39,8 @@ pub struct SourceEditorSidebarProps {
     pub on_toggle_delete: Callback<(String, MouseEvent)>,
     #[prop_or_default]
     pub on_drag_start: Callback<DragEvent>,
+    #[prop_or_default]
+    pub on_layout: Callback<(String, MouseEvent)>,
 }
 
 #[function_component]
@@ -49,6 +51,7 @@ pub fn SourceEditorSidebar(props: &SourceEditorSidebarProps) -> Html {
         // Sidebar
         <div class="tp__source-editor__sidebar">
             <div class="tp__source-editor__sidebar-actions">
+                <IconButton name="layout" icon="Nodes" onclick={props.on_layout.clone()} />
                 // Delete mode toggle button
                 <IconButton class={if props.delete_mode {"tp__source-editor__sidebar-actions-active"} else {""} } name="toggle_delete" icon="Delete" onclick={props.on_toggle_delete.clone()} />
             </div>

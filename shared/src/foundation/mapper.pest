@@ -18,7 +18,7 @@ block_expr = { "{" ~ statements ~ "}" }
 condition = { function_call | var_access | field_access }
 assignment = { (field_access | identifier) ~ "=" ~ expression }
 expression = { assignment | map_block | match_block | function_call | regex_expr | string_literal | number | var_access | field_access | null | block_expr }
-function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" | "template" | "replace" }
+function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" | "template" | "replace" | "pad" | "format"}
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
 match_case_key = { any_match | identifier }
