@@ -129,6 +129,10 @@ $port-size: 10px;
     cursor: crosshair;
     z-index: 2;
 
+    &:hover {
+      background-color: var(--brick-port-hover-color);
+    }
+
     &--left {
       left: -5px;
       background-color: var(--brick-port-background-color);
