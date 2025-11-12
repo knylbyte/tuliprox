@@ -143,11 +143,26 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
 
       - name: Step 2.6 - Download cache artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
-          pattern: cache-artifacts-*
-          path: .ci-cache
-          merge-multiple: true
+          pattern: cache-artifacts-${{ matrix.arch_tag }}
+          path: ${{ github.workspace}}/.ci-cache
+
+      - name: Step 2.7 - Extract cache artifacts
+        shell: bash
+        working-directory: ${{ github.workspace }}/.ci-cache
+        run: |
+          set -euo pipefail
+          
+          if [ -f ${{ matrix.arch_tag }}.tar.gz ]; then
+            tar -xzvf ${{ matrix.arch_tag }}.tar.gz
+            ls -al ${{ matrix.arch_tag }}/**
+          else
+            echo "Cache TAR file not found!"
+            ls -al
+          fi;
+
+          rm -rf *.tar.gz
 
       - name: Step 2.7 - Resolve Bake targets
         id: bake-targets
@@ -161,7 +176,7 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.8 - Build images with docker buildx bake (debug)
+      - name: Step 2.8 - Build images with docker buildx bake
         id: build
         shell: bash
         env:
@@ -180,9 +195,6 @@ jobs:
           mkdir -p ${CACHE_DEST}
           mkdir -p ${DOCKER_TAR_DEST}
 
-          echo "Cache contents before build:"
-          ls -al ${CACHE_CONTEXT}
-          
           targets="${{ steps.bake-targets.outputs.targets }}"
           echo ""
           echo "Targets (raw):"
@@ -199,31 +211,40 @@ jobs:
             --progress plain \
             "${target_list[@]}"
 
-      - name: Step 2.9 - Move cache TARs
+      - name: Step 2.9 - Compress cache artifacts for upload
         shell: bash
+        working-directory: ${{ github.workspace }}/.ci-cache
         run: |
           set -euo pipefail
-          find ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} .ci-cache/${{ matrix.arch_tag }}/ \;
-          ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
-      
-      - name: print outputs
+
+          find ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} ${{ matrix.arch_tag }}/ \;
+          tar -czvf ${{ matrix.arch_tag}}.tar.gz ${{ matrix.arch_tag }}
+          ls -al
+
+      - name: Step 2.10 - Compress image artifacts for upload
+        shell: bash
+        working-directory: ${{ github.workspace }}/.ci-artifacts
         run: |
-          ls -al ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}/**
-          ls -al ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
+          set -euo pipefail
+
+          tar -czvf ${{ matrix.arch_tag}}.tar.gz ${{ matrix.arch_tag }}
+          ls -al 
 
       - name: Step 2.10 - Upload image artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dev-images-${{ matrix.arch_tag }}
-          path: .ci-artifacts
+          path: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}.tar.gz
           overwrite: true
+          compression-level: 0
       
       - name: Step 2.11 - Upload cache artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cache-artifacts-${{ matrix.arch_tag }}
-          path: .ci-cache
+          path: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}.tar.gz
           overwrite: true
+          compression-level: 0
 
       - name: Step 2.12 - Summary
         if: always()
@@ -270,8 +291,8 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           pattern: dev-images-*
-          path: .ci-artifacts
-          merge-multiple: true
+          path: ${{ github.workspace }}/.ci-artifacts/
+          merge-multiple: false
 
       - name: Step 3.4 - Load images
         shell: bash
@@ -279,9 +300,9 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          ls -al .ci-artifacts/**/**
+          ls -al ${{ github.workspace }}/.ci-artifacts/
 
-          for archdir in .ci-artifacts/*; do
+          for archdir in ${{ github.workspace }}/.ci-artifacts/*; do
             [ -d "$archdir" ] || continue
 
             arch_tag="$(basename "$archdir")"
