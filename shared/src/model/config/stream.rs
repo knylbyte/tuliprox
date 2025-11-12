@@ -3,6 +3,8 @@ use crate::info_err;
 use crate::utils::{default_grace_period_millis, default_grace_period_timeout_secs, parse_to_kbps};
 
 const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with 8192byte chunks and 2Mbit/s approx 8MB
+const MIN_SHARED_BURST_BUFFER_MB: u64 = 1;
+const fn default_shared_burst_buffer_mb() -> u64 { 12 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -42,6 +44,8 @@ pub struct StreamConfigDto {
     pub forced_retry_interval_secs: u32,
     #[serde(default, skip)]
     pub throttle_kbps: u64,
+    #[serde(default = "default_shared_burst_buffer_mb")]
+    pub shared_burst_buffer_mb: u64,
 }
 
 impl Default for StreamConfigDto {
@@ -54,6 +58,7 @@ impl Default for StreamConfigDto {
             grace_period_timeout_secs: default_grace_period_timeout_secs(),
             forced_retry_interval_secs: 0,
             throttle_kbps: 0,
+            shared_burst_buffer_mb: default_shared_burst_buffer_mb(),
         }
     }
 }
@@ -68,6 +73,7 @@ impl StreamConfigDto {
         && self.grace_period_timeout_secs == empty.grace_period_timeout_secs
         && self.forced_retry_interval_secs == empty.forced_retry_interval_secs
         && self.throttle_kbps == empty.throttle_kbps
+        && self.shared_burst_buffer_mb == default_shared_burst_buffer_mb()
     }
 
 
@@ -88,6 +94,15 @@ impl StreamConfigDto {
             } else if self.grace_period_millis / 1000 > self.grace_period_timeout_secs {
                 return Err(info_err!(format!("Grace time period timeout {} sec should be more than grace time period {} ms", self.grace_period_timeout_secs, self.grace_period_millis)));
             }
+        }
+
+        if self.shared_burst_buffer_mb < MIN_SHARED_BURST_BUFFER_MB {
+            return Err(TuliproxError::new(
+                TuliproxErrorKind::Info,
+                format!(
+                    "`shared_burst_buffer_mb` must be at least {MIN_SHARED_BURST_BUFFER_MB} MB"
+                ),
+            ));
         }
 
         Ok(())

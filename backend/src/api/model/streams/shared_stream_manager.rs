@@ -1,5 +1,6 @@
 use crate::api::model::AppState;
 use crate::api::model::{ActiveProviderManager, ProviderHandle, StreamError};
+use crate::model::Config;
 use crate::utils::debug_if_enabled;
 use bytes::Bytes;
 use futures::stream::BoxStream;
@@ -22,8 +23,7 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
-// TODO make this configurable
-const MIN_SHARED_BUFFER_SIZE: usize = 1024 * 1024 * 12; // 12 MB
+const DEFAULT_SHARED_BUFFER_SIZE_BYTES: usize = 1024 * 1024 * 12; // 12 MB
 
 const YIELD_COUNTER: usize = 200;
 
@@ -47,6 +47,16 @@ where
             Poll::Pending => Poll::Pending,
         }
     }
+}
+
+fn resolve_min_burst_buffer_bytes(config: &Config) -> usize {
+    config
+        .reverse_proxy
+        .as_ref()
+        .and_then(|rp| rp.stream.as_ref())
+        .and_then(|stream| usize::try_from(stream.shared_burst_buffer_mb.saturating_mul(1024 * 1024)).ok())
+        .unwrap_or(DEFAULT_SHARED_BUFFER_SIZE_BYTES)
+        .max(1)
 }
 
 fn convert_stream(stream: BoxStream<Bytes>) -> BoxStream<Result<Bytes, StreamError>> {
@@ -129,10 +139,10 @@ pub struct SharedStreamState {
 
 impl SharedStreamState {
     fn new(headers: Vec<(String, String)>, buf_size: usize,
-           provider_guard: Option<ProviderHandle>) -> Self {
+           provider_guard: Option<ProviderHandle>, min_burst_buffer_size: usize) -> Self {
         let (broadcaster, _) = tokio::sync::broadcast::channel(buf_size);
         // TODO channel size versus byte size,  channels are chunk sized, burst_buffer byte sized
-        let burst_buffer_size_in_bytes = MIN_SHARED_BUFFER_SIZE.max(buf_size * 1024 * 12);
+        let burst_buffer_size_in_bytes = min_burst_buffer_size.max(buf_size * 1024 * 12);
         Self {
             headers,
             buf_size,
@@ -393,7 +403,9 @@ impl SharedStreamManager {
         E: std::fmt::Debug + Send,
     {
         let buf_size = CHANNEL_SIZE.max(buffer_size);
-        let shared_state = Arc::new(SharedStreamState::new(headers, buf_size, provider_handle));
+        let config = app_state.app_config.config.load();
+        let min_buffer_bytes = resolve_min_burst_buffer_bytes(&config);
+        let shared_state = Arc::new(SharedStreamState::new(headers, buf_size, provider_handle, min_buffer_bytes));
         app_state.shared_stream_manager.register(addr, stream_url, Arc::clone(&shared_state)).await;
         app_state.active_provider.make_shared_connection(addr, stream_url).await;
         let subscribed_stream = Self::subscribe_shared_stream(app_state, stream_url, addr).await;
