@@ -152,8 +152,6 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}/.ci-cache
         run: |
-          set -euo pipefail
-          
           if [ -f ${{ matrix.arch_tag }}.tar.gz ]; then
             tar -xzvf ${{ matrix.arch_tag }}.tar.gz
             ls -al ${{ matrix.arch_tag }}/**
@@ -298,8 +296,6 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}/.ci-artifacts
         run: |
-          set -euo pipefail
-
           for img in *.tar.gz; do
             tar -xzvf $img
           done;
