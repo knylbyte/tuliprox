@@ -314,33 +314,42 @@ jobs:
             tar -xvf $tar_arch
           done;
 
-          rm -rf *.tar || true
+          for archdir in ./*; do
+            [ -d "$archdir" ] || continue
+            
+            arch_tag="$(basename "$archdir")"
+            echo "::group::Clear tarballs for ${arch_tag}"
+            
+            rm -rf "$arch_tag.tar" || true
+            ls -al .
+          done
+          echo "::endgroup::"
+          
           ls -al ./**
 
       - name: Step 3.4 - Load images
         shell: bash
+        working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
         run: |
           set -euo pipefail
           shopt -s nullglob
 
-          for archdir in ${{ env.BUILD_ARTIFACTS_DEST }}/*; do
+          for archdir in ./*; do
             [ -d "$archdir" ] || continue
-
+            
             arch_tag="$(basename "$archdir")"
             echo "::group::Loading images for ${arch_tag}"
+            ls -al .
 
-            for enddir in "$archdir"/alpine-final "$archdir"/scratch-final; do
-              [ -d "$enddir" ] || continue
+            for img in "$archdir"/*.tar; do
+              [ -f "$img" ] || continue
 
-              for img in "$enddir"/*.tar; do
-                [ -f "$img" ] || continue
-                docker image load -i "$img"
-              done
-
+              ls -al "$archdir/$img"
+              docker image load -i "$archdir/$img"
             done
-            echo "::endgroup::"
-
+          
           done
+          echo "::endgroup::"
 
           docker image ls
 
