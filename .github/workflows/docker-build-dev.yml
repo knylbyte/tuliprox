@@ -312,19 +312,9 @@ jobs:
 
           for tar_arch in *.tar; do
             tar -xvf $tar_arch
+            rm -rf $tar_arch
           done;
 
-          for archdir in ./*; do
-            [ -d "$archdir" ] || continue
-            
-            arch_tag="$(basename "$archdir")"
-            echo "::group::Clear tarballs for ${arch_tag}"
-            
-            rm -rf "$arch_tag.tar" || true
-            ls -al .
-          done
-          echo "::endgroup::"
-          
           ls -al ./**
 
       - name: Step 3.4 - Load images
@@ -344,8 +334,8 @@ jobs:
             for img in "$archdir"/*.tar; do
               [ -f "$img" ] || continue
 
-              ls -al "$archdir/$img"
-              docker image load -i "$archdir/$img"
+              ls -al $img
+              docker image load -i $img
             done
           
           done
