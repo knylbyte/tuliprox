@@ -150,12 +150,13 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
-    cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json
+    cargo chef cook --release --target "$(cat /rust-target)" --recipe-path backend-recipe.json; \
+    sccache -s
 
 COPY Cargo.toml Cargo.lock ./
-COPY backend ./backend
+COPY backend  ./backend
 COPY frontend ./frontend
-COPY shared ./shared
+COPY shared   ./shared
 
 # Build the actual backend binary
 RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
@@ -163,14 +164,11 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
-    TARGET="$(cat /rust-target)" && \
-    cargo build --release --target "${TARGET}" --bin tuliprox && \
-    mkdir -p ./target/${TARGET}/release && \
+    TARGET="$(cat /rust-target)"; \
+    cargo build --release --target "${TARGET}" --bin tuliprox; \
+    sccache -s; \
+    mkdir -p ./target/${TARGET}/release; \
     mv ${CARGO_TARGET_DIR}/${TARGET}/release/tuliprox ./target/${TARGET}/release/tuliprox
-
-# Print sccache stats after build
-RUN --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
-    sccache -s
 
 # =============================================================================
 # Stage 4: frontend-planner (cargo-chef prepare for WASM)
@@ -184,10 +182,11 @@ COPY --from=cache-import  /.build-cache-import  /.build-cache-import
 WORKDIR /src
 
 COPY Cargo.toml Cargo.lock ./
+COPY backend  ./backend
 COPY frontend ./frontend
-COPY shared ./shared
+COPY shared   ./shared
 
-RUN sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
+# RUN sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
@@ -218,7 +217,8 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     --mount=type=cache,target=${CARGO_HOME}/git/db,id=cargo-git-db-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
-    cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json
+    cargo chef cook --release --target wasm32-unknown-unknown --recipe-path frontend-recipe.json; \
+    sccache -s
 
 COPY . .
 
@@ -229,10 +229,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     --mount=type=cache,target=${CARGO_HOME}/target,id=cargo-target-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
     mkdir -p ./frontend/dist; \
-    trunk build --release --config ./frontend/Trunk.toml --dist ./frontend/dist
-
-# Print sccache stats after build
-RUN --mount=type=cache,target=${CARGO_HOME}/sccache,id=sccache-${BUILDPLATFORM_TAG},sharing=locked \
+    trunk build --release --config ./frontend/Trunk.toml --dist ./frontend/dist; \
     sccache -s
 
 # -----------------------------------------------------------------
