@@ -261,13 +261,13 @@ jobs:
             echo "- CHANGELOG version: **${{ steps.version.outputs.version }}**"
             echo ""
             echo "### 📦 Exported artifacts"
-            echo "- dev-slim-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}"
-            echo "- dev-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}"
+            echo "- scratch-final:  \`dev-slim-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
+            echo "- alpine-final:   \`dev-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
             echo ""
             echo "### 🧷 Cache"
             echo "- cache-from: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}\`"
             echo "- cache-from: \`type=registry,ref=${{ env.GHCR_NS }}:dev\`"
-            echo "- cache-to: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max\`"
+            echo "- cache-to:   \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }},mode=max\`"
             echo ""
             echo "### 🧭 Platforms"
             echo "- ${{ matrix.platform }}"
@@ -314,7 +314,7 @@ jobs:
 
           ls -al ./**
 
-      - name: Step 3.4 - Load images
+      - name: Step 3.5 - Load images
         shell: bash
         working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
         run: |
@@ -324,7 +324,7 @@ jobs:
           for archdir in ./*; do
             [ -d "$archdir" ] || continue
             
-            arch_tag="$(basename "$archdir")"
+            arch_tag=$(basename $archdir)
             echo "::group::Loading images for ${arch_tag}"
             ls -al .
 
@@ -340,22 +340,95 @@ jobs:
 
           docker image ls
 
-      - name: Step 3.5 - Export arch_tags
-        id: export_arch_tags
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t arr < <(find .ci-artifacts -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
-          json="$(printf '%s\n' "${arr[@]}" | jq -R . | jq -s .)"
-          echo "arch_tags_json=${json}" >> "$GITHUB_OUTPUT"
-
-      - name: Step 3.4 - Create and publish manifests
+      - name: Step 3.6 - Create and publish manifests
         id: create
         shell: bash
+        working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
         env:
           GHCR_NS: ${{ env.GHCR_NS }}
           VERSION: ${{ needs.build.outputs.version }}
-        run: echo "tba"
+        run: |
+          declare -a dev_images=()
+          declare -a dev_slim_images=()
+          declare -a manifest_summaries=()
+
+          build_summary_block() {
+            local ref="$1"
+            local inspect_json
+            inspect_json="$(docker manifest inspect --verbose "$ref")"
+
+            local arches digest
+            arches="$(jq -r '
+              (.manifests // [])
+              | map(
+                  (.platform.os // "linux")
+                  + "/"
+                  + (.platform.architecture // "unknown")
+                  + (if (.platform.variant // "") != "" then "/" + .platform.variant else "")
+                )
+              | unique
+              | join(", ")
+            ' <<<"$inspect_json")"
+
+            digest="$(jq -r '.Descriptor.digest // empty' <<<"$inspect_json")"
+
+            if [[ -z "$arches" ]]; then
+              arches="N/A"
+            fi
+            if [[ -z "$digest" ]]; then
+              digest="N/A"
+            fi
+
+            manifest_summaries+=("<Image> ${ref}"$'\n'"- Architectures: ${arches}"$'\n'"- Digest: ${digest}")
+          }
+
+          for archdir in ./*; do
+            [ -d "$archdir" ] || continue
+            arch_tag=$(basename $archdir)
+
+            for img in "$archdir"/*.docker; do
+              [ -f "$img" ] || continue
+              build_target=$(basename "$img")
+              
+              if [ "$build_target" == "scratch-final.docker" ]; then
+                dev_slim_images+=("${{ env.GHCR_NS }}:dev-slim-${{ env.VERSION }}-${arch_tag}")
+              fi;
+              
+              if [ "$build_target" == "alpine-final.docker" ]; then
+                dev_images+=("${{ env.GHCR_NS }}:dev-${{ env.VERSION }}-${arch_tag}")
+              fi;
+            done;
+          done;
+
+          if (( ${#dev_slim_images[@]} > 0 )); then 
+            docker manifest create --amend "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev-slim" "${dev_slim_images[@]}"
+            docker manifest create --amend "${{ env.GHCR_NS }}:dev-slim" "${dev_slim_images[@]}"
+
+            docker manifest push "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev-slim"
+            docker manifest push "${{ env.GHCR_NS }}:dev-slim"
+
+            build_summary_block "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev-slim"
+            build_summary_block "${{ env.GHCR_NS }}:dev-slim"
+          fi
+
+          if (( ${#dev_images[@]} > 0 )); then
+            docker manifest create --amend "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev" "${dev_images[@]}"
+            docker manifest create --amend "${{ env.GHCR_NS }}:dev" "${dev_images[@]}"
+              
+            docker manifest push "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev"
+            docker manifest push "${{ env.GHCR_NS }}:dev"
+
+            build_summary_block "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev"
+            build_summary_block "${{ env.GHCR_NS }}:dev"
+          fi
+
+          if (( ${#manifest_summaries[@]} > 0 )); then
+            {
+              echo 'manifest_summary<<EOF'
+              printf '%s\n\n' "${manifest_summaries[@]}"
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Step 3.4 - Summary (manifests)
         if: always()
@@ -378,45 +451,12 @@ jobs:
             fi
             echo ""
             echo "### 🏷️ Final tags"
-            TAGS_INPUT='${{ steps.create.outputs.tags }}'
-            DIGESTS_INPUT='${{ steps.create.outputs.digests }}'
-            declare -A DIGEST_LOOKUP=()
-            if [[ -n "$DIGESTS_INPUT" ]]; then
-              while IFS= read -r line; do
-                [[ -n "${line// }" ]] || continue
-                tag="${line%% *}"
-                digest="${line#* }"
-                DIGEST_LOOKUP["$tag"]="$digest"
-              done <<< "$DIGESTS_INPUT"
-            fi
-            if [[ -n "$TAGS_INPUT" ]]; then
-              while IFS= read -r line; do
-                [[ -n "${line// }" ]] || continue
-                image="${GHCR_NS}:${line}"
-                echo "- \`$image\`"
-                digest="${DIGEST_LOOKUP[$line]:-}"
-                if [[ -n "$digest" ]]; then
-                  if [[ "$digest" == sha256:* ]]; then
-                    echo "  - sha256: \`${digest#sha256:}\`"
-                  else
-                    echo "  - digest: \`$digest\`"
-                  fi
-                else
-                  echo "  - sha256: *(lookup failed)*"
-                fi
-              done <<< "$TAGS_INPUT"
-            else
-              echo "- (none)"
-            fi
             echo ""
-            echo "### 🧩 Architectures"
-            ARCHES_OUTPUT='${{ steps.create.outputs.arches }}'
-            if [[ -n "$ARCHES_OUTPUT" ]]; then
-              for a in $ARCHES_OUTPUT; do
-                echo "- ${a}"
-              done
+            SUMMARY_OUTPUT='${{ steps.create.outputs.manifest_summary }}'
+            if [[ -n "$SUMMARY_OUTPUT" ]]; then
+              printf '%s\n' "$SUMMARY_OUTPUT"
             else
-              echo "- *(not available)*"
+              echo "- *(no manifest information available)*"
             fi
             echo ""
             echo "### 📦 Registry"
