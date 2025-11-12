@@ -38,6 +38,10 @@ variable "INLINE_CACHE" {
   default = "1"
 }
 
+variable "TAGS" {
+  default = "feature-${ARCH_TAG}"
+}
+
 target "common" {
   context    = "."
   dockerfile = "docker/ci.Dockerfile"

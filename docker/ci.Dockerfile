@@ -182,11 +182,10 @@ COPY --from=cache-import  /.build-cache-import  /.build-cache-import
 WORKDIR /src
 
 COPY Cargo.toml Cargo.lock ./
-COPY backend  ./backend
 COPY frontend ./frontend
 COPY shared   ./shared
 
-# RUN sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
+RUN sed -i 's/members = \["backend", "frontend", "shared"\]/members = ["frontend", "shared"]/' Cargo.toml
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-index-${BUILDPLATFORM_TAG},sharing=locked \
     --mount=type=cache,target=${CARGO_HOME}/registry/cache,id=cargo-registry-cache-${BUILDPLATFORM_TAG},sharing=locked \
