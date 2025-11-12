@@ -291,8 +291,21 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           pattern: dev-images-*
-          path: ${{ github.workspace }}/.ci-artifacts/
-          merge-multiple: false
+          path: ${{ github.workspace }}/.ci-artifacts
+          merge-multiple: true
+      
+      - name: Step 3.4 - Extract build artefacts
+        shell: bash
+        working-directory: ${{ github.workspace }}/.ci-artifacts
+        run: |
+          set -euo pipefail
+
+          for img in *.tar.gz; do
+            tar -xzvf $img
+          done;
+
+          rm -rf *.tar.gz
+          ls -al ./**
 
       - name: Step 3.4 - Load images
         shell: bash
@@ -300,7 +313,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          ls -al ${{ github.workspace }}/.ci-artifacts/
+          ls -al ${{ github.workspace }}/.ci-artifacts
 
           for archdir in ${{ github.workspace }}/.ci-artifacts/*; do
             [ -d "$archdir" ] || continue
