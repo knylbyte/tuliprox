@@ -250,15 +250,8 @@ jobs:
           name: dev-images-${{ matrix.arch_tag }}
           path: ${{ env.BUILD_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}.tar
           overwrite: true
-      
-      - name: Step 2.13 - Upload cache artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: cache-artifacts-${{ matrix.arch_tag }}
-          path: ${{ env.CACHE_CONTEXT }}/${{ matrix.arch_tag }}.tar
-          overwrite: true
 
-      - name: Step 2.14 - Summary
+      - name: Step 2.13 - Summary
         if: always()
         shell: bash
         run: |
