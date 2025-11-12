@@ -1,22 +1,22 @@
 #![allow(clippy::empty_docs)]
 
-use crate::foundation::filter::{ValueAccessor};
+use crate::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
+use crate::foundation::filter::ValueAccessor;
+use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Number, Undefined, Value};
+use crate::model::{PatternTemplate, TemplateValue};
+use crate::utils::Capitalize;
 use log::{debug, trace};
 use pest::iterators::{Pair, Pairs};
+use pest::Parser;
 use pest_derive::Parser;
 use regex::Regex;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
+use std::fmt::Write;
 use std::ops::Deref;
 use std::str::FromStr;
-use pest::Parser;
-use crate::error::{TuliproxError, TuliproxErrorKind, create_tuliprox_error_result, info_err};
-use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Number, Undefined, Value};
-use crate::model::{PatternTemplate, TemplateValue};
-use crate::utils::Capitalize;
-use std::fmt::Write;
 
 #[derive(Parser)]
 #[grammar_inline = r##"
@@ -627,7 +627,7 @@ impl<'a> MapperContext<'a> {
                     }
                     Some(hash_map)
                 }
-            })
+            }),
         }
     }
 
@@ -703,18 +703,18 @@ impl<'a> MapperContext<'a> {
                         if args.len() > 1 {
                             return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Function accepts only one argument {:?}, {} given", name, args.len());
                         }
-                    },
+                    }
                     BuiltInFunction::Replace => {
-                        if args.len() != 3  {
+                        if args.len() != 3 {
                             return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Function accepts three arguments {:?}, {} given", name, args.len());
                         }
                     }
                     BuiltInFunction::Pad => {
-                        if args.len() != 3  {
-                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Function accepts three arguments {:?}, {} given", name, args.len());
+                        if !(args.len() == 3 || args.len() == 4) {
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Function accepts three or four arguments {:?}, {} given", name, args.len());
                         }
                     }
-                        _ => {}
+                    _ => {}
                 }
                 for expr_id in args {
                     self.validate_expr(*expr_id, identifiers)?;
@@ -1156,13 +1156,19 @@ impl Expression {
                                 _ => None,
                             };
                             let width = match &evaluated_args[1] {
-                                Number(value) => value.abs() as usize,
+                                Number(value) => {
+                                    if value.is_nan() || value.is_infinite() {
+                                        0
+                                    } else {
+                                        value.abs().min(usize::MAX as f64) as usize
+                                    }
+                                }
                                 Value(value) => value.parse::<usize>().ok().unwrap_or(0),
                                 Named(values) => values.first().and_then(|(_key, val)| val.parse::<usize>().ok()).unwrap_or(0),
                                 _ => 0,
                             };
 
-                            let fill =  match &evaluated_args[2] {
+                            let fill = match &evaluated_args[2] {
                                 Number(value) => Some(value.to_string()),
                                 Value(value) => Some(value.clone()),
                                 Named(values) => values.first().map(|(_key, val)| val.clone()),
@@ -1189,8 +1195,8 @@ impl Expression {
                                                     text,
                                                     fill_char.to_string().repeat(right)
                                                 )
-                                            },
-                                            "<"  => format!("{}{}", text, fill_char.to_string().repeat(pad)),
+                                            }
+                                            "<" => format!("{}{}", text, fill_char.to_string().repeat(pad)),
                                             _ => format!("{}{}", fill_char.to_string().repeat(pad), text),
                                         }
                                     } else {
@@ -1515,7 +1521,5 @@ mod tests {
             mapper.eval(&mut accessor, None);
             println!("Result: {pli:?}");
         }
-
     }
-
 }

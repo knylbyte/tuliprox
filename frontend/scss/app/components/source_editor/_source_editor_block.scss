@@ -6,6 +6,8 @@ $port-size: 10px;
 .tp__source-editor__block {
   position: absolute;
   display: flex;
+  left: 0;
+  top: 0;
   flex-flow: column;
   align-items: center;
   background-color: transparent;
@@ -13,6 +15,13 @@ $port-size: 10px;
   min-width: $block-width;
   max-width: $block-width;
   width: $block-width;
+  box-sizing: border-box;
+
+  &-editing {
+    .tp__source-editor__block-content {
+      border-color: red !important;
+    }
+  }
 
   &-selected {
     filter: sepia(1);

@@ -6,6 +6,7 @@ use crate::app::components::{Block, BlockId, BlockInstance, BlockType, PortStatu
 #[derive(Properties, PartialEq)]
 pub struct BlockProps {
     pub(crate) block: Block,
+    pub(crate) edited:bool,
     pub(crate) selected:bool,
     pub(crate) delete_mode: bool,
     pub(crate) delete_block: Callback<BlockId>,
@@ -28,7 +29,7 @@ pub fn BlockView(props: &BlockProps) -> Html {
 
     let block_id = block.id;
     let block_type = block.block_type;
-    let style = format!("position:absolute; left:{}px; top:{}px;", block.position.0, block.position.1);
+    let style = format!("transform: translate({}px, {}px)", block.position.0, block.position.1);
     let from_id = block_id;
     let to_id = block_id;
 
@@ -81,11 +82,11 @@ pub fn BlockView(props: &BlockProps) -> Html {
     };
 
     html! {
-        <div class={format!("tp__source-editor__block no-select tp__source-editor__block-{}{}", block_type, if props.selected {" tp__source-editor__block-selected"} else {""})}
+        <div id={format!("block-{block_id}")} class={format!("tp__source-editor__block no-select tp__source-editor__block-{}{}{}", block_type, if props.edited {" tp__source-editor__block-editing"} else {""}, if props.selected {" tp__source-editor__block-selected"} else {""})}
               style={style}>
             <div class={"tp__source-editor__block-header"}>
                 // Block handle (drag)
-                <div class="tp__source-editor__block-handle" onmousedown={handle_mouse_down} />
+                <div class="tp__source-editor__block-handle" onmousedown={handle_mouse_down.clone()} />
                 // Delete button for block
                 {
                     html_if!(delete_mode, {
@@ -97,7 +98,7 @@ pub fn BlockView(props: &BlockProps) -> Html {
                     })
                 }
             </div>
-            <div class={if is_batch { "tp__source-editor__block-content  tp__source-editor__block-batch" } else { "tp__source-editor__block-content" }} ondblclick={handle_edit}>
+            <div class={if is_batch { "tp__source-editor__block-content  tp__source-editor__block-batch" } else { "tp__source-editor__block-content" }} onmousedown={handle_mouse_down} ondblclick={handle_edit}>
                 <div class={"tp__source-editor__block-content-body"}>
                     <div class="tp__source-editor__block-label">
                         { title }
