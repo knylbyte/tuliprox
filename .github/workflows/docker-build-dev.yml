@@ -95,7 +95,7 @@ jobs:
       archs: ${{ steps.build.outputs.archs }}
     env: 
       CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache
-      CACHE_ARTIFACTS_DEST: ${{ runner.temp }}/.ci-cache
+      CACHE_ARTIFACTS_DEST: ${{ github.workspace }}/.ci-cache-tmp
       BUILD_ARTIFACTS_DEST: ${{ github.workspace }}/.ci-artifacts
     strategy:
       fail-fast: false
