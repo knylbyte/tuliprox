@@ -173,7 +173,6 @@ jobs:
           if [ -f ${{ matrix.arch_tag }}.tar ]; then
             rm -rf ${{ matrix.arch_tag }} || true
             tar -xvf ${{ matrix.arch_tag }}.tar
-            ls -al ${{ matrix.arch_tag }}/**
           else
             echo "Cache TAR file not found!"
             ls -al .
