@@ -292,14 +292,6 @@ pub fn SourceEditor() -> Html {
                                 editor_state.block_elements.insert(*block_id, div);
                             }
 
-
-                            if let std::collections::hash_map::Entry::Vacant(e) = editor_state.block_elements.entry(*block_id) {
-                                if let Some(el) = document.get_element_by_id(&format!("block-{block_id}")) {
-                                    let div = el.dyn_into::<HtmlElement>().unwrap();
-                                    e.insert(div);
-                                }
-                            }
-
                             // find connections
                             let connections = {
                                 let mut connections = HashMap::new();
