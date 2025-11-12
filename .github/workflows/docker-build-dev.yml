@@ -93,6 +93,10 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       archs: ${{ steps.build.outputs.archs }}
+    env: 
+      CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache
+      CACHE_ARTIFACTS_DEST: ${{ runner.temp }}/.ci-cache
+      BUILD_ARTIFACTS_DEST: ${{ github.workspace }}/.ci-artifacts
     strategy:
       fail-fast: false
       matrix:
@@ -141,28 +145,40 @@ jobs:
             exit 1
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
+      
+      - name: Step 2.6 - Create build directories
+        env: 
+        run: |
+          echo "Create build directories..."
+          mkdir -p ${{ env.CACHE_CONTEXT }}/${{ matrix.arch_tag }}
+          mkdir -p ${{ env.CACHE_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
+          mkdir -p ${{ env.DOCKER_TAR_DEST }}/${{ matrix.arch_tag }}
 
-      - name: Step 2.6 - Download cache artifacts
+      - name: Step 2.7 - Download cache artifacts
         uses: actions/download-artifact@v6
         with:
           pattern: cache-artifacts-${{ matrix.arch_tag }}
-          path: ${{ github.workspace}}/.ci-cache
+          path: ${{ env.CACHE_CONTEXT }}
 
-      - name: Step 2.7 - Extract cache artifacts
+      - name: Step 2.8 - Extract cache artifacts
         shell: bash
-        working-directory: ${{ github.workspace }}/.ci-cache
+        working-directory: ${{ env.CACHE_CONTEXT }}
         run: |
+          set -euo pipefail
+          shopt -s nullglob
+          
           if [ -f ${{ matrix.arch_tag }}.tar.gz ]; then
+            rm -rf ${{ matrix.arch_tag }} || true
             tar -xzvf ${{ matrix.arch_tag }}.tar.gz
             ls -al ${{ matrix.arch_tag }}/**
           else
             echo "Cache TAR file not found!"
-            ls -al
+            ls -al .
           fi;
 
-          rm -rf *.tar.gz
+          rm -rf *.tar.gz || true
 
-      - name: Step 2.7 - Resolve Bake targets
+      - name: Step 2.9 - Resolve Bake targets
         id: bake-targets
         shell: bash
         run: |
@@ -174,7 +190,7 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.8 - Build images with docker buildx bake
+      - name: Step 2.10 - Build images with docker buildx bake
         id: build
         shell: bash
         env:
@@ -182,16 +198,12 @@ jobs:
           ARCH_TAG: ${{ matrix.arch_tag }}
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ steps.version.outputs.version }}
-          DOCKER_TAR_DEST: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}
-          CACHE_CONTEXT: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}
-          CACHE_DEST: ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }}
+          DOCKER_TAR_DEST: ${{ env.BUILD_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
+          CACHE_CONTEXT: ${{ env.CACHE_CONTEXT }}/${{ matrix.arch_tag }}
+          CACHE_DEST: ${{ env.CACHE_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
           BUILDKIT_PROGRESS: plain
         run: |
           set -euo pipefail
-          echo "Create build directories..."
-          mkdir -p ${CACHE_CONTEXT}
-          mkdir -p ${CACHE_DEST}
-          mkdir -p ${DOCKER_TAR_DEST}
 
           targets="${{ steps.bake-targets.outputs.targets }}"
           echo ""
@@ -209,42 +221,42 @@ jobs:
             --progress plain \
             "${target_list[@]}"
 
-      - name: Step 2.9 - Compress cache artifacts for upload
+      - name: Step 2.10 - Compress cache artifacts for upload
         shell: bash
-        working-directory: ${{ github.workspace }}/.ci-cache
+        working-directory: ${{ env.CACHE_CONTEXT }}
         run: |
           set -euo pipefail
 
-          find ${{ runner.temp }}/.ci-cache/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} ${{ matrix.arch_tag }}/ \;
+          find ${{ env.CACHE_ARTIFACTS_DEST }}/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} ${{ matrix.arch_tag }}/ \;
           tar -czvf ${{ matrix.arch_tag}}.tar.gz ${{ matrix.arch_tag }}
           ls -al
 
-      - name: Step 2.10 - Compress image artifacts for upload
+      - name: Step 2.11 - Compress image artifacts for upload
         shell: bash
-        working-directory: ${{ github.workspace }}/.ci-artifacts
+        working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
         run: |
           set -euo pipefail
 
           tar -czvf ${{ matrix.arch_tag}}.tar.gz ${{ matrix.arch_tag }}
           ls -al 
 
-      - name: Step 2.10 - Upload image artifacts
+      - name: Step 2.12 - Upload image artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dev-images-${{ matrix.arch_tag }}
-          path: ${{ github.workspace }}/.ci-artifacts/${{ matrix.arch_tag }}.tar.gz
+          path: ${{ env.BUILD_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}.tar.gz
           overwrite: true
           compression-level: 0
       
-      - name: Step 2.11 - Upload cache artifacts
+      - name: Step 2.13 - Upload cache artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cache-artifacts-${{ matrix.arch_tag }}
-          path: ${{ github.workspace }}/.ci-cache/${{ matrix.arch_tag }}.tar.gz
+          path: ${{ env.CACHE_CONTEXT }}/${{ matrix.arch_tag }}.tar.gz
           overwrite: true
           compression-level: 0
 
-      - name: Step 2.12 - Summary
+      - name: Step 2.14 - Summary
         if: always()
         shell: bash
         run: |
@@ -272,6 +284,8 @@ jobs:
     needs:
       - prebuilds
       - build
+    env:
+      BUILD_ARTIFACTS_DEST: ${{ github.workspace }}/.ci-artifacts
     runs-on: ubuntu-24.04
 
     steps:
@@ -289,18 +303,21 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           pattern: dev-images-*
-          path: ${{ github.workspace }}/.ci-artifacts
+          path: ${{ env.BUILD_ARTIFACTS_DEST }}
           merge-multiple: true
       
       - name: Step 3.4 - Extract build artefacts
         shell: bash
-        working-directory: ${{ github.workspace }}/.ci-artifacts
+        working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
         run: |
+          set -euo pipefail
+          shopt -s nullglob
+
           for img in *.tar.gz; do
             tar -xzvf $img
           done;
 
-          rm -rf *.tar.gz
+          rm -rf *.tar.gz || true
           ls -al ./**
 
       - name: Step 3.4 - Load images
@@ -309,9 +326,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          ls -al ${{ github.workspace }}/.ci-artifacts
-
-          for archdir in ${{ github.workspace }}/.ci-artifacts/*; do
+          for archdir in ${{ env.BUILD_ARTIFACTS_DEST }}/*; do
             [ -d "$archdir" ] || continue
 
             arch_tag="$(basename "$archdir")"
