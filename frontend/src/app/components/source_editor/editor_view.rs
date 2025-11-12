@@ -432,7 +432,7 @@ pub fn SourceEditor() -> Html {
     let handle_connection_drop = {
         let editor_state_ref = editor_state_ref.clone();
         Callback::from(move |to_id: BlockId| {
-            let pending_connection = editor_state_ref.borrow().pending_connection.clone();
+            let pending_connection = editor_state_ref.borrow().pending_connection;
             if let Some(from_id) = pending_connection {
                 if from_id != to_id {
                     if let (Some(from_block), Some(to_block)) = {
