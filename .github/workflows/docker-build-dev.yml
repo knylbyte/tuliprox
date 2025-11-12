@@ -352,6 +352,21 @@ jobs:
           declare -a dev_slim_images=()
           declare -a manifest_summaries=()
 
+          create_or_replace_manifest() {
+            local ref="$1"
+            shift
+            local -a images=("$@")
+
+            if docker manifest inspect "$ref" >/dev/null 2>&1; then
+              docker manifest create --amend "$ref" "${images[@]}"
+            else
+              docker manifest create "$ref" "${images[@]}"
+            fi
+
+            docker manifest push "$ref"
+            build_summary_block "$ref"
+          }
+
           build_summary_block() {
             local ref="$1"
             local inspect_json
@@ -401,25 +416,13 @@ jobs:
           done;
 
           if (( ${#dev_slim_images[@]} > 0 )); then 
-            docker manifest create --amend "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev-slim" "${dev_slim_images[@]}"
-            docker manifest create --amend "${{ env.GHCR_NS }}:dev-slim" "${dev_slim_images[@]}"
-
-            docker manifest push "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev-slim"
-            docker manifest push "${{ env.GHCR_NS }}:dev-slim"
-
-            build_summary_block "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev-slim"
-            build_summary_block "${{ env.GHCR_NS }}:dev-slim"
+            create_or_replace_manifest "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev-slim" "${dev_slim_images[@]}"
+            create_or_replace_manifest "${{ env.GHCR_NS }}:dev-slim" "${dev_slim_images[@]}"
           fi
 
           if (( ${#dev_images[@]} > 0 )); then
-            docker manifest create --amend "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev" "${dev_images[@]}"
-            docker manifest create --amend "${{ env.GHCR_NS }}:dev" "${dev_images[@]}"
-              
-            docker manifest push "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev"
-            docker manifest push "${{ env.GHCR_NS }}:dev"
-
-            build_summary_block "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev"
-            build_summary_block "${{ env.GHCR_NS }}:dev"
+            create_or_replace_manifest "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev" "${dev_images[@]}"
+            create_or_replace_manifest "${{ env.GHCR_NS }}:dev" "${dev_images[@]}"
           fi
 
           if (( ${#manifest_summaries[@]} > 0 )); then
