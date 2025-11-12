@@ -328,7 +328,7 @@ jobs:
             echo "::group::Loading images for ${arch_tag}"
             ls -al .
 
-            for img in "$archdir"/*.tar; do
+            for img in "$archdir"/*.docker; do
               [ -f "$img" ] || continue
 
               ls -al $img

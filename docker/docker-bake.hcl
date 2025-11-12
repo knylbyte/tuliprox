@@ -101,7 +101,7 @@ target "scratch-final" {
   ]
 
   output = [
-    "type=tar,dest=${DOCKER_TAR_DEST}/scratch-final.tar"
+    "type=docker,dest=${DOCKER_TAR_DEST}/scratch-final.docker"
   ]
 }
 
@@ -127,6 +127,6 @@ target "alpine-final" {
   ]
 
   output = [
-    "type=tar,dest=${DOCKER_TAR_DEST}/alpine-final.tar"
+    "type=docker,dest=${DOCKER_TAR_DEST}/alpine-final.docker"
   ]
 }
