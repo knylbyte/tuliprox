@@ -148,10 +148,10 @@ jobs:
       
       - name: Step 2.6 - Create build directories
         run: |
-          echo "Create build directories..."
+          echo "Create build and cache directories..."
           mkdir -p ${{ env.CACHE_CONTEXT }}/${{ matrix.arch_tag }}
           mkdir -p ${{ env.CACHE_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
-          mkdir -p ${{ env.DOCKER_TAR_DEST }}/${{ matrix.arch_tag }}
+          mkdir -p ${{ env.BUILD_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
 
       - name: Step 2.7 - Download cache artifacts
         uses: actions/download-artifact@v6
