@@ -153,11 +153,15 @@ jobs:
           mkdir -p ${{ env.CACHE_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
           mkdir -p ${{ env.BUILD_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
 
-      - name: Step 2.7 - Download cache artifacts
-        uses: actions/download-artifact@v6
+      - name: Step 2.7 - Load cache artifacts
+        uses: actions/cache@v4
+        id: cache
         with:
-          pattern: cache-artifacts-${{ matrix.arch_tag }}
-          path: ${{ env.CACHE_CONTEXT }}
+          path: |
+            ${{ env.CACHE_CONTEXT }}
+          key: ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
       - name: Step 2.8 - Extract cache artifacts
         shell: bash
