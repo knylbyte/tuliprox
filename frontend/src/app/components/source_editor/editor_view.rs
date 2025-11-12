@@ -16,7 +16,7 @@ struct DragState {
     pub block_id: Option<BlockId>,
     pub drag_offset: (f32, f32),
     pub sidebar_drag_offset: (f32, f32),
-    pub dragging_group: Vec::<BlockId>,
+    pub dragging_group: HashSet::<BlockId>,
 }
 
 impl Default for DragState {
@@ -24,32 +24,33 @@ impl Default for DragState {
         Self {
             block_id: None,
             drag_offset: (0.0f32, 0.0f32),
-            dragging_group: Vec::<BlockId>::new(),
+            dragging_group: HashSet::<BlockId>::new(),
             sidebar_drag_offset: (0.0f32, 0.0f32),
         }
     }
 }
 
 impl DragState {
-    pub fn with_sidebar_drag_offset(&self, x: f32, y: f32) -> Self {
-        Self { sidebar_drag_offset: (x, y), ..self.clone() }
+    pub fn with_drag_block_offset(&mut self, block_id: BlockId, drag_offset: (f32, f32)) {
+        self.block_id = Some(block_id);
+        self.drag_offset = (drag_offset.0, drag_offset.1);
     }
 
-    pub fn with_drag_block_offset_and_group(&self, block_id: BlockId, drag_offset: (f32, f32), dragging_group: Vec<BlockId>) -> Self {
-        Self { block_id: Some(block_id), drag_offset, dragging_group, sidebar_drag_offset: self.sidebar_drag_offset }
-    }
-
-    pub(crate) fn reset_dragging(&self) -> DragState {
-        Self::default()
+    pub(crate) fn reset_dragging(&mut self) {
+        self.block_id = None;
+        self.drag_offset = (0.0f32, 0.0f32);
+        self.dragging_group.clear();
+        self.sidebar_drag_offset = (0.0f32, 0.0f32);
     }
 }
 
 #[derive(Clone, PartialEq)]
 struct SelectionState {
     pub is_selecting: bool,
+    pub select_rect_elem: Option<HtmlElement>,
     pub selection_rect: Option<(f32, f32, f32, f32)>, // x,y,w,h relative to canva;
     pub selection_start: (f32, f32),
-    pub selected_blocks: Vec::<BlockId>,
+    pub selected_blocks: HashSet::<BlockId>,
     pub group_initial_positions: Vec::<(BlockId, (f32, f32))>,
     pub group_anchor_mouse: (f32, f32),
 }
@@ -59,8 +60,9 @@ impl Default for SelectionState {
         Self {
             is_selecting: false,
             selection_rect: None,
+            select_rect_elem: None,
             selection_start: (0.0f32, 0.0f32),
-            selected_blocks: Vec::<BlockId>::new(),
+            selected_blocks: HashSet::<BlockId>::new(),
             group_initial_positions: Vec::<(BlockId, (f32, f32))>::new(),
             group_anchor_mouse: (0.0f32, 0.0f32),
         }
@@ -68,90 +70,54 @@ impl Default for SelectionState {
 }
 
 impl SelectionState {
-    pub fn reset_selection(&self) -> Self {
-        Self::default()
-    }
-    pub fn with_blocks_group_initial_pos_and_group_anchor_mouse(&self, selected_blocks: Vec<BlockId>,
-                                                                group_initial_positions: Vec<(BlockId, (f32, f32))>,
-                                                                group_anchor_mouse: (f32, f32)) -> Self {
-        Self {
-            is_selecting: self.is_selecting,
-            selection_rect: self.selection_rect,
-            selection_start: self.selection_start,
-            selected_blocks,
-            group_initial_positions,
-            group_anchor_mouse,
+    pub fn reset_selection(&mut self) {
+        self.is_selecting = false;
+        if let Some(rect_elem) = &self.select_rect_elem {
+            rect_elem.style().set_property("display", "none").unwrap();
         }
+        self.select_rect_elem = None;
+        self.selection_rect = None;
+        self.selection_start = (0.0f32, 0.0f32);
+        self.selected_blocks.clear();
+        self.group_initial_positions.clear();
+        self.group_anchor_mouse = (0.0f32, 0.0f32);
     }
 
-    pub fn with_selecting_start_rect_and_blocks(&self, is_selecting: bool,
-                                                selection_start: (f32, f32),
-                                                selection_rect: Option<(f32, f32, f32, f32)>,
-                                                selected_blocks: Vec::<BlockId>) -> Self {
-        Self {
-            is_selecting,
-            selection_rect,
-            selection_start,
-            selected_blocks,
-            group_initial_positions: self.group_initial_positions.clone(),
-            group_anchor_mouse: self.group_anchor_mouse,
+    pub fn stop_selection(&mut self) {
+        self.is_selecting = false;
+        if let Some(rect_elem) = &self.select_rect_elem {
+            rect_elem.style().set_property("display", "none").unwrap();
         }
+        self.select_rect_elem = None;
+        self.selection_rect = None;
+        self.selection_start = (0.0f32, 0.0f32);
     }
 
-    pub fn with_selecting_start_and_rect(&self, is_selecting: bool,
+    pub fn with_selecting_start_rect_and_clear_blocks(&mut self, is_selecting: bool,
+                                                      selection_start: (f32, f32),
+                                                      selection_rect: Option<(f32, f32, f32, f32)>) {
+        self.is_selecting = is_selecting;
+        self.selection_rect = selection_rect;
+        self.selection_start = selection_start;
+        self.selected_blocks.clear();
+    }
+
+    pub fn with_selecting_start_and_rect(&mut self, is_selecting: bool,
                                          selection_start: (f32, f32),
-                                         selection_rect: Option<(f32, f32, f32, f32)>) -> Self {
-        Self {
-            is_selecting,
-            selection_rect,
-            selection_start,
-            selected_blocks: self.selected_blocks.clone(),
-            group_initial_positions: self.group_initial_positions.clone(),
-            group_anchor_mouse: self.group_anchor_mouse,
-        }
+                                         selection_rect: Option<(f32, f32, f32, f32)>) {
+        self.is_selecting = is_selecting;
+        self.selection_rect = selection_rect;
+        self.selection_start = selection_start;
     }
 
-
-    pub fn with_rect_and_blocks(&self, selection_rect: Option<(f32, f32, f32, f32)>,
-                                selected_blocks: Vec::<BlockId>) -> Self {
-        Self {
-            is_selecting: self.is_selecting,
-            selection_rect,
-            selection_start: self.selection_start,
-            selected_blocks,
-            group_initial_positions: self.group_initial_positions.clone(),
-            group_anchor_mouse: self.group_anchor_mouse,
-        }
-    }
-
-    pub fn with_selecting_rect_and_group_initial_positions(&self, is_selecting: bool,
-                                                           selection_rect: Option<(f32, f32, f32, f32)>,
-                                                           group_initial_positions: Vec<(BlockId, (f32, f32))>) -> Self {
-        Self {
-            is_selecting,
-            selection_rect,
-            selection_start: self.selection_start,
-            selected_blocks: self.selected_blocks.clone(),
-            group_initial_positions,
-            group_anchor_mouse: self.group_anchor_mouse,
-        }
-    }
-
-    pub(crate) fn with_cleared_blocks(&self, block_id: BlockId) -> Self {
-        let updated_selections: Vec<BlockId> = self.selected_blocks
+    pub(crate) fn with_cleared_blocks(&mut self, block_id: BlockId) {
+        let updated_selections: HashSet<BlockId> = self.selected_blocks
             .iter()
             .filter(|&&id| id != block_id)
             .map(|&id| if id > block_id { id - 1 } else { id })
             .collect();
 
-        Self {
-            is_selecting: self.is_selecting,
-            selection_rect: self.selection_rect,
-            selection_start: self.selection_start,
-            selected_blocks: updated_selections,
-            group_initial_positions: self.group_initial_positions.clone(),
-            group_anchor_mouse: self.group_anchor_mouse,
-        }
+        self.selected_blocks = updated_selections;
     }
 }
 
@@ -186,9 +152,9 @@ pub fn SourceEditor() -> Html {
     let is_panning = use_state(|| false);
     let pan_start = use_state(|| (0.0f32, 0.0f32));
     // Dragging state
-    let drag_state = use_state(DragState::default);
+    let drag_state = use_mut_ref(DragState::default);
     // Selection / marquee states
-    let selection_state = use_state(SelectionState::default);
+    let selection_state_ref = use_mut_ref(SelectionState::default);
     // Pending line for live connection
     let pending_line = use_state(|| None);
     let pending_connection = use_state(|| None);
@@ -284,9 +250,9 @@ pub fn SourceEditor() -> Html {
     let handle_drag_start = {
         let drag_state = drag_state.clone();
         let cursor_grabbing = cursor_grabbing.clone();
-        let selection_state = selection_state.clone();
+        let selection_state_ref = selection_state_ref.clone();
         Callback::from(move |e: DragEvent| {
-            selection_state.set((*selection_state).reset_selection());
+            selection_state_ref.borrow_mut().reset_selection();
             if let Some(target) = e.target_dyn_into::<HtmlElement>() {
                 let block_type = target.get_attribute("data-block-type").unwrap_or_default();
                 e.data_transfer().unwrap().set_data("text/plain", &block_type).unwrap();
@@ -294,7 +260,7 @@ pub fn SourceEditor() -> Html {
                 let rect = target.get_bounding_client_rect();
                 let offset_x = e.client_x() as f32 - rect.left() as f32;
                 let offset_y = e.client_y() as f32 - rect.top() as f32;
-                drag_state.set((*drag_state).with_sidebar_drag_offset(offset_x, offset_y));
+                drag_state.borrow_mut().sidebar_drag_offset = (offset_x, offset_y);
                 cursor_grabbing.set(true);
             }
         }
@@ -318,7 +284,7 @@ pub fn SourceEditor() -> Html {
                     let rect = canvas.get_bounding_client_rect();
                     let mouse_x = e.client_x() as f32 - rect.left() as f32;
                     let mouse_y = e.client_y() as f32 - rect.top() as f32;
-                    let (offset_x, offset_y) = drag_state.sidebar_drag_offset;
+                    let (offset_x, offset_y) = drag_state.borrow().sidebar_drag_offset;
                     let (ox, oy) = *canvas_offset; // <-- include canvas offset
 
                     let block_type = BlockType::from(data.as_str());
@@ -394,11 +360,11 @@ pub fn SourceEditor() -> Html {
 
     // ----------------- Drag block logic  -----------------
     let handle_block_mouse_down = {
-        let drag_state = drag_state.clone();
+        let drag_state_ref = drag_state.clone();
         let canvas_ref = canvas_ref.clone();
         let blocks = blocks.clone();
         let cursor_grabbing = cursor_grabbing.clone();
-        let selection_state = selection_state.clone();
+        let selection_state_ref = selection_state_ref.clone();
 
         Callback::from(move |(block_id, e): (BlockId, MouseEvent)| {
             e.prevent_default();
@@ -408,36 +374,37 @@ pub fn SourceEditor() -> Html {
                 let rect = canvas.get_bounding_client_rect();
                 let mouse_x = e.client_x() as f32 - rect.left() as f32;
                 let mouse_y = e.client_y() as f32 - rect.top() as f32;
+                let mut selection_state = selection_state_ref.borrow_mut();
                 if let Some(block) = blocks.borrow().get(block_id as usize - 1) {
+                    let mut drag_state = drag_state_ref.borrow_mut();
                     // For Group-Drag: save all blocks
-                    let mut initials = vec![];
-                    let mut group_ids = vec![];
-
+                    selection_state.group_initial_positions.clear();
+                    drag_state.dragging_group.clear();
                     // if block is not in selection list, than only select this block
                     let mut new_selection = None;
                     if !selection_state.selected_blocks.contains(&block_id) {
                         new_selection = Some(block_id);
                     } else {
+                        let mut initial_pos = Vec::new();
                         let current_blocks = blocks.borrow();
                         for id in &selection_state.selected_blocks {
                             if let Some(b) = current_blocks.get(*id as usize - 1) {
-                                initials.push((*id, b.position));
-                                group_ids.push(*id);
+                                initial_pos.push((*id, b.position));
+                                drag_state.dragging_group.insert(*id);
                             }
                         }
+                        initial_pos.iter().for_each(|p| selection_state.group_initial_positions.push(*p));
                     }
 
-                    drag_state.set((*drag_state).with_drag_block_offset_and_group(block_id, (mouse_x - block.position.0, mouse_y - block.position.1), group_ids));
+                    drag_state.with_drag_block_offset(block_id, (mouse_x - block.position.0, mouse_y - block.position.1));
 
-                    let new_blocks = match new_selection {
-                        Some(block) => if ctrl_key {
-                            let mut new_list = selection_state.selected_blocks.clone();
-                            new_list.push(block);
-                            new_list
-                        } else { vec![block] },
-                        None => selection_state.selected_blocks.clone(),
+                    if let Some(block) = new_selection {
+                        if !ctrl_key {
+                            selection_state.selected_blocks.clear();
+                        }
+                        selection_state.selected_blocks.insert(block);
                     };
-                    selection_state.set((*selection_state).with_blocks_group_initial_pos_and_group_anchor_mouse(new_blocks, initials, (mouse_x, mouse_y)));
+                    selection_state.group_anchor_mouse = (mouse_x, mouse_y);
                 }
             }
         })
@@ -446,7 +413,7 @@ pub fn SourceEditor() -> Html {
     // ----------------- Canvas mouse down (start panning or marquee selection) -----------------
     let handle_canvas_mouse_down = {
         let is_panning = is_panning.clone();
-        let selection_state = selection_state.clone();
+        let selection_state_ref = selection_state_ref.clone();
         let pan_start = pan_start.clone();
         let canvas_ref = canvas_ref.clone();
         let cursor_grabbing = cursor_grabbing.clone();
@@ -461,10 +428,10 @@ pub fn SourceEditor() -> Html {
                     let tag = target.tag_name().to_lowercase();
                     if target.is_same_node(Some(&canvas)) || tag == "svg" {
                         e.prevent_default();
-
+                        let mut selection_state = selection_state_ref.borrow_mut();
                         if e.button() == 0 { // left button
                             if selection_state.is_selecting {
-                                selection_state.set((*selection_state).reset_selection());
+                                selection_state.reset_selection();
                             } else {
                                 // selection area mode
                                 if let Some(rect_el) = canvas_ref.cast::<HtmlElement>() {
@@ -472,16 +439,16 @@ pub fn SourceEditor() -> Html {
                                     let mouse_x = e.client_x() as f32 - rect.left() as f32;
                                     let mouse_y = e.client_y() as f32 - rect.top() as f32;
                                     if e.ctrl_key() {
-                                        selection_state.set((*selection_state)
-                                            .with_selecting_start_and_rect(true, (mouse_x, mouse_y), Some((mouse_x, mouse_y, 0.0, 0.0))));
+                                        selection_state
+                                            .with_selecting_start_and_rect(true, (mouse_x, mouse_y), Some((mouse_x, mouse_y, 0.0, 0.0)));
                                     } else {
-                                        selection_state.set((*selection_state)
-                                            .with_selecting_start_rect_and_blocks(true, (mouse_x, mouse_y), Some((mouse_x, mouse_y, 0.0, 0.0)), vec![]));
+                                        selection_state
+                                            .with_selecting_start_rect_and_clear_blocks(true, (mouse_x, mouse_y), Some((mouse_x, mouse_y, 0.0, 0.0)));
                                     }
                                 }
                             }
                         } else if e.button() == 2 { // right button
-                            selection_state.set((*selection_state).reset_selection());
+                            selection_state.reset_selection();
                             // Right button panning
                             cursor_grabbing.set(true);
                             is_panning.set(true);
@@ -496,12 +463,12 @@ pub fn SourceEditor() -> Html {
     // ----------------- Mouse move for pending line, block drag, canvas panning, marquee update -----------------
     let handle_canvas_mouse_move = {
         let pending_line = pending_line.clone();
-        let drag_state = drag_state.clone();
+        let drag_state_ref = drag_state.clone();
         let blocks = blocks.clone();
         let connections = connections.clone();
         let canvas_ref = canvas_ref.clone();
         let is_panning = is_panning.clone();
-        let selection_state = selection_state.clone();
+        let selection_state_ref = selection_state_ref.clone();
         let pan_start = pan_start.clone();
         let canvas_offset = canvas_offset.clone();
         let last_frame = RefCell::new(0.0);
@@ -549,6 +516,8 @@ pub fn SourceEditor() -> Html {
                     pending_line.set(Some(((from_x, from_y), snapped)));
                 }
 
+                let mut selection_state = selection_state_ref.borrow_mut();
+
                 if selection_state.is_selecting {
                     // compute normalized rect
                     let (start_x, start_y) = selection_state.selection_start;
@@ -559,17 +528,34 @@ pub fn SourceEditor() -> Html {
                     let ctrl_key = e.ctrl_key();
 
                     // Update selected_blocks: block intersects rect?
-                    let mut sel = Vec::new();
-                    if ctrl_key {
-                        selection_state.selected_blocks.iter().for_each(|b| sel.push(*b));
+                    if !ctrl_key {
+                        selection_state.selected_blocks.clear();
                     }
                     blocks.borrow().iter().filter(|b| b.intersects_rect((x, y), (x + w, y + h), *canvas_offset))
-                        .for_each(|b| sel.push(b.id));
+                        .for_each(|b| { selection_state.selected_blocks.insert(b.id); });
 
-                    selection_state.set((*selection_state).with_rect_and_blocks(Some((x, y, w, h)), sel));
+                    selection_state.selection_rect = Some((x, y, w, h));
+                    if selection_state.select_rect_elem.is_none() {
+                        if let Some(window) = web_sys::window() {
+                            if let Some(document) = window.document() {
+                                if let Some(el) = document.get_element_by_id("selection-rect") {
+                                    selection_state.select_rect_elem = el.dyn_into::<HtmlElement>().ok();
+                                }
+                            }
+                        }
+                    };
+                    if let Some(rect_div) = selection_state.select_rect_elem.as_ref() {
+                        let div_style = rect_div.style();
+                        div_style.set_property("display", "block").unwrap();
+                        div_style.set_property("left", &format!("{x}px")).unwrap();
+                        div_style.set_property("top", &format!("{y}px")).unwrap();
+                        div_style.set_property("width", &format!("{w}px")).unwrap();
+                        div_style.set_property("height", &format!("{h}px")).unwrap();
+                    }
                 }
 
                 // Update dragging block (Single or Group)
+                let drag_state = drag_state_ref.borrow();
                 if let Some(block_id) = drag_state.block_id {
                     let mut block_elements = block_elements_ref.borrow_mut();
                     if block_elements.is_empty() {
@@ -607,7 +593,7 @@ pub fn SourceEditor() -> Html {
                     let mut moved_blocks = HashSet::new();
 
                     // If the dragged block is member of a selection  -> move group
-                    if (*drag_state.dragging_group).contains(&block_id) && !selection_state.group_initial_positions.is_empty() {
+                    if drag_state.dragging_group.contains(&block_id) && !selection_state.group_initial_positions.is_empty() {
                         let (anchor_x, anchor_y) = selection_state.group_anchor_mouse;
                         let dx = mouse_x - anchor_x;
                         let dy = mouse_y - anchor_y;
@@ -651,20 +637,8 @@ pub fn SourceEditor() -> Html {
                             if let Some(path_el) = conn_elements.get(&(*from, *to)) {
                                 if let (Some(from_block), Some(to_block)) =
                                     (&current_blocks.get(*from as usize - 1), &current_blocks.get(*to as usize - 1)) {
-                                    let from_x = from_block.position.0 + BLOCK_WIDTH + ox;
-                                    let from_y = from_block.position.1 + BLOCK_MIDDLE_Y + oy;
-                                    let to_x = to_block.position.0 + ox;
-                                    let to_y = to_block.position.1 + BLOCK_MIDDLE_Y + oy;
-                                    let dx = to_x - from_x;
-                                    let ctrl = dx * 0.5;
-                                    let new_d = format!(
-                                        "M {} {} C {} {}, {} {}, {} {}",
-                                        from_x, from_y,
-                                        from_x + ctrl, from_y,
-                                        to_x - ctrl, to_y,
-                                        to_x, to_y
-                                    );
-                                    path_el.set_attribute("d", &new_d).unwrap();
+                                    let (d, _) = update_connection(ox, oy, from_block, to_block);
+                                    path_el.set_attribute("d", &d).unwrap();
                                 }
                             }
                         }
@@ -675,9 +649,9 @@ pub fn SourceEditor() -> Html {
     };
 
     let handle_canvas_mouse_up = {
-        let drag_state = drag_state.clone();
+        let drag_state_ref = drag_state.clone();
         let is_panning = is_panning.clone();
-        let selection_state = selection_state.clone();
+        let selection_state = selection_state_ref.clone();
         let cursor_grabbing = cursor_grabbing.clone();
         let block_elements = block_elements.clone();
         let connection_elements = connection_elements.clone();
@@ -685,12 +659,13 @@ pub fn SourceEditor() -> Html {
             block_elements.borrow_mut().clear();
             connection_elements.borrow_mut().clear();
             // Stop any block dragging and stop panning
+            let mut drag_state = drag_state_ref.borrow_mut();
             if drag_state.block_id.is_some() {
-                drag_state.set((*drag_state).reset_dragging());
+                drag_state.reset_dragging();
             }
             is_panning.set(false);
             cursor_grabbing.set(false);
-            selection_state.set((*selection_state).with_selecting_rect_and_group_initial_positions(false, None, vec![]));
+            selection_state.borrow_mut().stop_selection();
         })
     };
 
@@ -716,7 +691,7 @@ pub fn SourceEditor() -> Html {
         let blocks = blocks.clone();
         let connections = connections.clone();
         let next_id = next_id.clone();
-        let selection_state = selection_state.clone();
+        let selection_state = selection_state_ref.clone();
         Callback::from(move |block_id: BlockId| {
             let mut current_blocks = blocks.borrow_mut();
             current_blocks.retain(|b| b.id != block_id);
@@ -743,7 +718,7 @@ pub fn SourceEditor() -> Html {
             let max_id = current_blocks.iter().map(|b| b.id).max().unwrap_or(0);
             next_id.set(max_id + 1);
 
-            selection_state.set((*selection_state).with_cleared_blocks(block_id));
+            selection_state.borrow_mut().with_cleared_blocks(block_id);
         })
     };
 
@@ -784,11 +759,11 @@ pub fn SourceEditor() -> Html {
     let handle_block_edit = {
         let edit_mode_set = edit_mode.clone();
         let blocks = blocks.clone();
-        let selection_state = selection_state.clone();
+        let selection_state = selection_state_ref.clone();
         Callback::from(move |block_id: BlockId| {
             if let Some(block) = blocks.borrow().get(block_id as usize - 1) {
                 edit_mode_set.set(EditMode::Active(block.clone()));
-                selection_state.set((*selection_state).reset_selection());
+                selection_state.borrow_mut().reset_selection();
             }
         })
     };
@@ -803,7 +778,11 @@ pub fn SourceEditor() -> Html {
         EditMode::Active(ref b) => b.id,
     };
     let grabbed = *cursor_grabbing;
-    let selection_mode = selection_state.is_selecting;
+    let selection_state = selection_state_ref.borrow();
+    let (ox, oy) = *canvas_offset; // Apply virtual canvas offset
+    let select_rect_style = selection_state.selection_rect.as_ref().map(
+        |(x, y, w, h)| format!("left:{x}px; top:{y}px; width:{w}px; height:{h}px;"));
+
     // ----------------- Render -----------------
     html! {
         <ContextProvider<SourceEditorContext> context={editor_context}>
@@ -819,7 +798,7 @@ pub fn SourceEditor() -> Html {
             <div class="tp__source-editor__canvas-wrapper">
             <div
                 ref={canvas_ref.clone()}
-                class={classes!("tp__source-editor__canvas", "graph-paper-advanced", if grabbed {"grabbed"} else {""}, if selection_mode {"selection_mode"} else {""})}
+                class={classes!("tp__source-editor__canvas", "graph-paper-advanced", if grabbed {"grabbed"} else {""}, if selection_state.is_selecting {"selection_mode"} else {""})}
                 ondrop={handle_drop.clone()}
                 ondragend={handle_drag_end.clone()}
                 ondragover={handle_drag_over.clone()}
@@ -829,25 +808,12 @@ pub fn SourceEditor() -> Html {
                 oncontextmenu={handle_canvas_right_click.clone()}>
 
                 // SVG for connections
-                <svg class={classes!("tp__source-editor__connections", if grabbed {"grabbed"} else {""}, if selection_mode {"selection_mode"} else {""})}>
+                <svg class={classes!("tp__source-editor__connections", if grabbed {"grabbed"} else {""}, if selection_state.is_selecting {"selection_mode"} else {""})}>
                     { for connections.borrow().iter().filter_map(|c| {
                         let current_blocks = blocks.borrow();
                         let from_block = current_blocks.get(c.from as usize -1)?;
                         let to_block = current_blocks.get(c.to as usize -1)?;
-                        let (ox, oy) = *canvas_offset; // Apply virtual canvas offset
-                        let from_x = from_block.position.0 + BLOCK_WIDTH + ox;
-                        let from_y = from_block.position.1 + BLOCK_MIDDLE_Y + oy;
-                        let to_x = to_block.position.0 + ox;
-                        let to_y = to_block.position.1 + BLOCK_MIDDLE_Y + oy;
-                        let dx = to_x - from_x;
-                        let ctrl = dx * 0.5;
-                        let d = format!(
-                            "M {} {} C {} {}, {} {}, {} {}",
-                            from_x, from_y,
-                            from_x + ctrl, from_y,
-                            to_x - ctrl, to_y,
-                            to_x, to_y
-                        );
+                        let (d, (from_x, from_y, to_x, to_y)) = update_connection(ox, oy, from_block, to_block);
 
                         Some(html! {
                             <g>
@@ -886,16 +852,8 @@ pub fn SourceEditor() -> Html {
                 </svg>
 
                 // Selection rectangle overlay
-                {
-                    if let Some((x, y, w, h)) = selection_state.selection_rect {
-                        let style = format!("position:absolute; left:{}px; top:{}px; width:{}px; height:{}px; pointer-events:none;", x, y, w, h);
-                        html! {
-                            <div class="tp__source-editor__selection-rect" style={style}></div>
-                        }
-                    } else {
-                        html! {}
-                    }
-                }
+
+                <div id="selection-rect" class="tp__source-editor__selection-rect" style={select_rect_style}></div>
 
                 // Render blocks with canvas offset
                 { for blocks.borrow().iter().map(|b|{
@@ -926,5 +884,21 @@ pub fn SourceEditor() -> Html {
         </div>
         </ContextProvider<SourceEditorContext>>
     }
+}
+
+fn update_connection(ox: f32, oy: f32, from_block: &Block, to_block: &Block) -> (String, (f32, f32, f32, f32)) {
+    let from_x = from_block.position.0 + BLOCK_WIDTH + ox;
+    let from_y = from_block.position.1 + BLOCK_MIDDLE_Y + oy;
+    let to_x = to_block.position.0 + ox;
+    let to_y = to_block.position.1 + BLOCK_MIDDLE_Y + oy;
+    let dx = to_x - from_x;
+    let ctrl = dx * 0.5;
+    (format!(
+        "M {} {} C {} {}, {} {}, {} {}",
+        from_x, from_y,
+        from_x + ctrl, from_y,
+        to_x - ctrl, to_y,
+        to_x, to_y
+    ), (from_x, from_y, to_x, to_y))
 }
 

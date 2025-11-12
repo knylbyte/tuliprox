@@ -80,6 +80,8 @@
    }
 
    &__selection-rect {
+      position:absolute;
+      display: none;
       border: 1px dashed var(--selection-area-border-color);
       background: var(--selection-area-background-color);
       z-index: 9999;
