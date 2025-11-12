@@ -166,16 +166,16 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           
-          if [ -f ${{ matrix.arch_tag }}.tar.gz ]; then
+          if [ -f ${{ matrix.arch_tag }}.tar ]; then
             rm -rf ${{ matrix.arch_tag }} || true
-            tar -xzvf ${{ matrix.arch_tag }}.tar.gz
+            tar -xvf ${{ matrix.arch_tag }}.tar
             ls -al ${{ matrix.arch_tag }}/**
           else
             echo "Cache TAR file not found!"
             ls -al .
           fi;
 
-          rm -rf *.tar.gz || true
+          rm -rf *.tar || true
 
       - name: Step 2.9 - Resolve Bake targets
         id: bake-targets
@@ -227,7 +227,7 @@ jobs:
           set -euo pipefail
 
           find ${{ env.CACHE_ARTIFACTS_DEST }}/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} ${{ matrix.arch_tag }}/ \;
-          tar -czvf ${{ matrix.arch_tag}}.tar.gz ${{ matrix.arch_tag }}
+          tar -cvf ${{ matrix.arch_tag}}.tar ${{ matrix.arch_tag }}
           ls -al
 
       - name: Step 2.11 - Compress image artifacts for upload
@@ -236,24 +236,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          tar -czvf ${{ matrix.arch_tag}}.tar.gz ${{ matrix.arch_tag }}
+          tar -cvf ${{ matrix.arch_tag}}.tar ${{ matrix.arch_tag }}
           ls -al 
 
       - name: Step 2.12 - Upload image artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dev-images-${{ matrix.arch_tag }}
-          path: ${{ env.BUILD_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}.tar.gz
+          path: ${{ env.BUILD_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}.tar
           overwrite: true
-          compression-level: 0
       
       - name: Step 2.13 - Upload cache artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cache-artifacts-${{ matrix.arch_tag }}
-          path: ${{ env.CACHE_CONTEXT }}/${{ matrix.arch_tag }}.tar.gz
+          path: ${{ env.CACHE_CONTEXT }}/${{ matrix.arch_tag }}.tar
           overwrite: true
-          compression-level: 0
 
       - name: Step 2.14 - Summary
         if: always()
@@ -312,11 +310,11 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          for img in *.tar.gz; do
-            tar -xzvf $img
+          for tar_arch in *.tar; do
+            tar -xvf $tar_arch
           done;
 
-          rm -rf *.tar.gz || true
+          rm -rf *.tar || true
           ls -al ./**
 
       - name: Step 3.4 - Load images
