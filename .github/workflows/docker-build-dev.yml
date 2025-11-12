@@ -232,6 +232,7 @@ jobs:
 
           find ${{ env.CACHE_ARTIFACTS_DEST }}/${{ matrix.arch_tag }} -name '*.tar' -maxdepth 3 -exec mv {} ${{ matrix.arch_tag }}/ \;
           tar -cvf ${{ matrix.arch_tag}}.tar ${{ matrix.arch_tag }}
+          rm -rf ${{ matrix.arch_tag }}
           ls -al
 
       - name: Step 2.11 - Compress image artifacts for upload
