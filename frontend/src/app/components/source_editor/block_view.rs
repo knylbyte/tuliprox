@@ -1,5 +1,5 @@
 use web_sys::MouseEvent;
-use yew::{classes, function_component, html, Callback, Html, Properties};
+use yew::{classes, function_component, html, Callback, Html, Properties, TargetCast};
 use yew_i18n::use_translation;
 use crate::html_if;
 use crate::app::components::{Block, BlockId, BlockInstance, BlockType, PortStatus};
@@ -45,7 +45,17 @@ pub fn BlockView(props: &BlockProps) -> Html {
 
     let handle_mouse_down = {
         let on_block_mouse_down = props.on_mouse_down.clone();
-        Callback::from(move |e| on_block_mouse_down.emit((block_id, e)))
+        Callback::from(move |e: MouseEvent| {
+            e.prevent_default();
+            if let Some(target) = e.target_dyn_into::<web_sys::Element>() {
+                let tag = target.tag_name().to_lowercase();
+                if &tag == "span" {
+                    return;
+                }
+            }
+            e.stop_propagation();
+            on_block_mouse_down.emit((block_id, e))
+        })
     };
 
     let handle_edit = {
@@ -112,21 +122,27 @@ pub fn BlockView(props: &BlockProps) -> Html {
 
                {html_if!(is_target || is_output, {
                 // Left port
-                <div
+                <span
                     class={classes!("tp__source-editor__block-port", "tp__source-editor__block-port--left", port_style)}
                     onmouseup={{
                         let on_connection_drop = props.on_connection_drop.clone();
-                        Callback::from(move |_| on_connection_drop.emit(to_id))
+                        Callback::from(move |e: MouseEvent| {
+                           e.prevent_default();
+                           on_connection_drop.emit(to_id)
+                       })
                     }} />
                 })}
 
                {html_if!(is_target || is_input, {
                 // Right port
-                <div
+                <span
                     class="tp__source-editor__block-port tp__source-editor__block-port--right"
                     onmousedown={{
                         let on_connection_start = props.on_connection_start.clone();
-                        Callback::from(move |_| on_connection_start.emit(from_id))
+                        Callback::from(move |e: MouseEvent| {
+                           e.prevent_default();
+                           on_connection_start.emit(from_id);
+                        })
                     }} />
                 })}
             </div>
