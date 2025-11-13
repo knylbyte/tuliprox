@@ -93,7 +93,7 @@ and = { ^"and" }
 or = { ^"or" }
 not = { ^"not" }
 regexp = @{ "\"" ~ ( "\\\"" | (!"\"" ~ ANY) )* ~ "\"" }
-type_value = { ^"live" | ^"vod" | ^"series" }
+type_value = { ^"live" | ^"vod" | ^"movie" | ^"series" }
 type_comparison = { ^"type" ~ "=" ~ type_value }
 field_comparison_value = _{ regexp }
 field_comparison = { field ~ "~" ~ field_comparison_value }
@@ -216,6 +216,7 @@ impl Filter {
 impl Filter {
     const LIVE: &'static str = "live";
     const VOD: &'static str = "vod";
+    const MOVIE: &'static str = "movie";
     const SERIES: &'static str = "series";
     const UNSUPPORTED: &'static str = "unsupported";
 }
@@ -229,7 +230,7 @@ impl std::fmt::Display for Filter {
             Self::TypeComparison(field, item_type) => {
                 write!(f, "{} = {}", field, match item_type {
                     PlaylistItemType::Live => Self::LIVE,
-                    PlaylistItemType::Video => Self::VOD,
+                    PlaylistItemType::Video => Self::MOVIE,
                     PlaylistItemType::Series | PlaylistItemType::SeriesInfo => Self::SERIES, // yes series-info is handled as series in filter
                     _ => Self::UNSUPPORTED
                 })
@@ -304,9 +305,9 @@ fn get_parser_field_comparison(
 fn get_filter_item_type(text_item_type: &str) -> Option<PlaylistItemType> {
     if text_item_type.eq_ignore_ascii_case("live") {
         Some(PlaylistItemType::Live)
-    } else if text_item_type.eq_ignore_ascii_case("vod")
+    } else if text_item_type.eq_ignore_ascii_case(Filter::VOD)
         || text_item_type.eq_ignore_ascii_case("video")
-        || text_item_type.eq_ignore_ascii_case("movie")
+        || text_item_type.eq_ignore_ascii_case(Filter::MOVIE)
     {
         Some(PlaylistItemType::Video)
     } else if text_item_type.eq_ignore_ascii_case("series") {
