@@ -70,10 +70,17 @@ impl Default for XtreamTargetOutputDto {
 }
 
 impl XtreamTargetOutputDto {
-    pub fn prepare(&mut self) {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
+        if let Some(raw_filter) = &self.filter {
+            match get_filter(raw_filter, templates) {
+                Ok(filter) => self.t_filter = Some(filter),
+                Err(err) => return Err(err),
+            }
+        }
         if let Some(trakt) = &mut self.trakt {
             trakt.prepare();
         }
+        Ok(())
     }
 
     pub fn has_any_option(&self) -> bool {
@@ -103,6 +110,17 @@ pub struct M3uTargetOutputDto {
 }
 
 impl M3uTargetOutputDto {
+
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
+        if let Some(raw_filter) = &self.filter {
+            match get_filter(raw_filter, templates) {
+                Ok(filter) => self.t_filter = Some(filter),
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(())
+    }
+
     pub fn has_any_option(&self) -> bool {
         self.filename.is_some()
             || self.include_type_in_url
@@ -134,6 +152,19 @@ pub struct StrmTargetOutputDto {
     #[serde(default)]
     pub add_quality_to_filename: bool,
 }
+
+impl StrmTargetOutputDto {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
+        if let Some(raw_filter) = &self.filter {
+            match get_filter(raw_filter, templates) {
+                Ok(filter) => self.t_filter = Some(filter),
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HdHomeRunTargetOutputDto {
@@ -163,12 +194,12 @@ pub enum TargetOutputDto {
 }
 
 impl TargetOutputDto {
-    pub fn prepare(&mut self) {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         match self {
-            TargetOutputDto::Xtream(output) => output.prepare(),
-            TargetOutputDto::M3u(_)
-            | TargetOutputDto::Strm(_)
-            | TargetOutputDto::HdHomeRun(_) => {}
+            TargetOutputDto::Xtream(output) => output.prepare(templates),
+            TargetOutputDto::M3u(output) => output.prepare(templates),
+            TargetOutputDto::Strm(output) => output.prepare(templates),
+            TargetOutputDto::HdHomeRun(_) => Ok(())
         }
     }
 }
@@ -250,7 +281,7 @@ impl ConfigTargetDto {
         let mut strm_directories: Vec<&str> = vec![];
 
         for target_output in &mut self.output {
-            target_output.prepare();
+            target_output.prepare(templates)?;
             match target_output {
                 TargetOutputDto::Xtream(_) => {
                     xtream_cnt += 1;

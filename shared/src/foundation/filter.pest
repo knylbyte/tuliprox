@@ -4,7 +4,7 @@ and = { ^"and" }
 or = { ^"or" }
 not = { ^"not" }
 regexp = @{ "\"" ~ ( "\\\"" | (!"\"" ~ ANY) )* ~ "\"" }
-type_value = { ^"live" | ^"vod" | ^"series" }
+type_value = { ^"live" | ^"vod" | ^"movie" | ^"series" }
 type_comparison = { ^"type" ~ "=" ~ type_value }
 field_comparison_value = _{ regexp }
 field_comparison = { field ~ "~" ~ field_comparison_value }

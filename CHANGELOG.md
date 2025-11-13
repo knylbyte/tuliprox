@@ -11,6 +11,7 @@
 - Added new mapper function `pad(text | number, number, char, optional position: "<" | ">" | "^")`
 - Added new mapper function `format` for simple in-text replacement like `format("Hello {}! Hello {}!", "Bob", "World")`
 - Added `reverse_proxy.stream.shared_burst_buffer_mb` to control shared-stream burst buffer size (default 12 MB).
+- Added `movie` as alias for `vod` for type filter. You can use now alternative to `Type = vod` the filter `Type = movie`.   
 
 # 3.1.8 (2025-11-06)
 - Fixed HLS streaming issues caused by session eviction and incorrect headers.
