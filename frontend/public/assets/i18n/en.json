@@ -54,6 +54,7 @@
     "GRACE_PERIOD_TIMEOUT": "Grace period timeout sec",
     "BUFFER_ENABLED": "Buffer Enabled",
     "BUFFER_SIZE": "Buffer Size",
+    "SHARED_BURST_BUFFER_BYTES": "Shared burst buffer (MB)",
     "ENABLED": "Enabled",
     "SIZE": "Size",
     "CACHE_DIR": "Cache dir",

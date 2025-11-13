@@ -37,6 +37,7 @@ pub struct StreamConfig {
     pub forced_retry_interval_secs: u32,
     pub throttle_str: Option<String>,
     pub throttle_kbps: u64,
+    pub shared_burst_buffer_mb: u64,
 }
 
 macros::from_impl!(StreamConfig);
@@ -50,6 +51,7 @@ impl From<&StreamConfigDto> for StreamConfig {
             forced_retry_interval_secs: dto.forced_retry_interval_secs,
             throttle_str: dto.throttle.clone(),
             throttle_kbps: dto.throttle.as_ref().map_or(0u64, |throttle| parse_to_kbps(throttle).unwrap_or(0u64)),
+            shared_burst_buffer_mb: dto.shared_burst_buffer_mb,
         }
     }
 }
@@ -64,6 +66,7 @@ impl From<&StreamConfig> for StreamConfigDto {
             forced_retry_interval_secs: instance.forced_retry_interval_secs,
             throttle: instance.throttle_str.clone(),
             throttle_kbps: instance.throttle_kbps,
+            shared_burst_buffer_mb: instance.shared_burst_buffer_mb,
         }
     }
 }
