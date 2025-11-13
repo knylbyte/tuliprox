@@ -126,7 +126,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
     # Use incremental compilation and enable cache-friendly flags
     env RUSTFLAGS="--remap-path-prefix $HOME=~ -C incremental=/tmp/rust-incremental-${ARCHITECTURE}" \
         CARGO_INCREMENTAL=1 \
-        cross build -p tuliprox --release --target "$ARCHITECTURE"
+        cross build -p tuliprox --release --target "$ARCHITECTURE" --locked
     
     BINARY_PATH="${WORKING_DIR}/target/${ARCHITECTURE}/release/tuliprox"
     if [ ! -f "$BINARY_PATH" ]; then

@@ -14,10 +14,7 @@ pub struct ConfigFavouritesDto {
 
 impl ConfigFavouritesDto {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
-        match get_filter(&self.filter, templates) {
-            Ok(filter) => self.t_filter = Some(filter),
-            Err(err) => return Err(err),
-        }
+        self.t_filter = Some(get_filter(&self.filter, templates)?);
         Ok(())
     }
 }

@@ -362,3 +362,51 @@ pub fn truncate_filename(path: &Path, max_len: usize) -> PathBuf {
 
     path.with_file_name(truncated_name)
 }
+
+pub fn normalize_string_path(path: &str) -> String {
+    std::path::PathBuf::from(path)
+        .components()
+        .collect::<std::path::PathBuf>()
+        .to_string_lossy()
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_string_path;
+
+    #[test]
+    fn test_simple_relative_path() {
+        let input = "foo/bar/baz";
+        let normalized = normalize_string_path(input);
+        assert_eq!(normalized, "foo/bar/baz");
+    }
+
+    #[test]
+    fn test_redundant_slashes() {
+        let input = "foo//bar///baz";
+        let normalized = normalize_string_path(input);
+        assert_eq!(normalized, "foo/bar/baz");
+    }
+
+    #[test]
+    fn test_dot_components() {
+        let input = "./foo/./bar/./baz";
+        let normalized = normalize_string_path(input);
+        assert_eq!(normalized, "./foo/bar/baz");
+    }
+
+    #[test]
+    fn test_parent_components() {
+        let input = "foo/bar/../baz";
+        let normalized = normalize_string_path(input);
+        assert_eq!(normalized, "foo/bar/../baz");
+    }
+
+    #[test]
+    fn test_empty_path() {
+        let input = "";
+        let normalized = normalize_string_path(input);
+        assert_eq!(normalized, "");
+    }
+}
