@@ -1,3 +1,4 @@
+use log::debug;
 use web_sys::HtmlInputElement;
 
 use crate::app::components::svg_icon::AppIcon;
@@ -38,32 +39,31 @@ pub fn Login() -> Html {
             let username = username_input.value();
             let password = password_input.value();
             let result = services_ctx.auth.authenticate(username, password).await;
-            let success = result.is_ok();
-            authorized_state.set(success);
+            match &result  {
+                Ok(token) => {
+                    debug!("{token:?}");
+                    authorized_state.set(true)
+                }
+                Err(_) => {authorized_state.set(false);}
+            }
             result
         })
     };
 
-    let do_login = {
+
+    let handle_login = {
         let authenticator = authenticate.clone();
-        Callback::from(move |_| {
+        Callback::from(move |_: String| {
             authenticator.run();
         })
     };
 
-    let handle_login = {
-        let login = do_login.clone();
-        Callback::from(move |_: String| {
-            login.emit(());
-        })
-    };
-
     let handle_key_down = {
-        let login = do_login.clone();
+        let authenticator = authenticate.clone();
         Callback::from(move |e: KeyboardEvent| {
             if e.key() == "Enter" {
                 e.prevent_default();
-                login.emit(());
+                authenticator.run();
             }
         })
     };
