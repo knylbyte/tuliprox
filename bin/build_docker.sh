@@ -123,6 +123,7 @@ for PLATFORM in "${!ARCHITECTURES[@]}"; do
         cargo clean || true
     fi
 
+    cross tree --locked --target "$ARCHITECTURE"
     # Use incremental compilation and enable cache-friendly flags
     env RUSTFLAGS="--remap-path-prefix $HOME=~ -C incremental=/tmp/rust-incremental-${ARCHITECTURE}" \
         CARGO_INCREMENTAL=1 \
