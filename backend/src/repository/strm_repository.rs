@@ -837,7 +837,11 @@ pub async fn write_strm_playlist(
     };
 
     let user_and_server_info = get_credentials_and_server_info(app_config, target_output.username.as_ref());
-    let strm_file_prefix = hash_string_as_hex(&target_output.directory);
+    let normalized_dir = std::path::PathBuf::from(&target_output.directory)
+        .to_string_lossy()
+        .trim_end_matches('/')
+        .to_string();
+    let strm_file_prefix = hash_string_as_hex(&normalized_dir);
     let strm_index_path =
         strm_get_file_paths(&strm_file_prefix, &ensure_target_storage_path(&config, target.name.as_str())?);
     let existing_strm = {

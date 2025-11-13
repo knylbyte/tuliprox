@@ -72,10 +72,7 @@ impl Default for XtreamTargetOutputDto {
 impl XtreamTargetOutputDto {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         if let Some(raw_filter) = &self.filter {
-            match get_filter(raw_filter, templates) {
-                Ok(filter) => self.t_filter = Some(filter),
-                Err(err) => return Err(err),
-            }
+            self.t_filter = Some(get_filter(raw_filter, templates)?);
         }
         if let Some(trakt) = &mut self.trakt {
             trakt.prepare();
@@ -113,10 +110,7 @@ impl M3uTargetOutputDto {
 
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         if let Some(raw_filter) = &self.filter {
-            match get_filter(raw_filter, templates) {
-                Ok(filter) => self.t_filter = Some(filter),
-                Err(err) => return Err(err),
-            }
+            self.t_filter = Some(get_filter(raw_filter, templates)?);
         }
         Ok(())
     }
@@ -156,10 +150,7 @@ pub struct StrmTargetOutputDto {
 impl StrmTargetOutputDto {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         if let Some(raw_filter) = &self.filter {
-            match get_filter(raw_filter, templates) {
-                Ok(filter) => self.t_filter = Some(filter),
-                Err(err) => return Err(err),
-            }
+            self.t_filter = Some(get_filter(raw_filter, templates)?);
         }
         Ok(())
     }
