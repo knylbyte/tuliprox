@@ -8,7 +8,7 @@ use crate::repository::storage::{ensure_target_storage_path, get_input_storage_p
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::{xtream_get_record_file_path, InputVodInfoRecord};
 use shared::utils::{extract_extension_from_url, hash_bytes, hash_string_as_hex, truncate_string, ExportStyleConfig, CONSTANTS};
-use crate::utils::{truncate_filename, FileReadGuard};
+use crate::utils::{normalize_string_path, truncate_filename, FileReadGuard};
 use chrono::Datelike;
 use filetime::{set_file_times, FileTime};
 use log::{error, trace};
@@ -837,10 +837,7 @@ pub async fn write_strm_playlist(
     };
 
     let user_and_server_info = get_credentials_and_server_info(app_config, target_output.username.as_ref());
-    let normalized_dir = std::path::PathBuf::from(&target_output.directory)
-        .to_string_lossy()
-        .trim_end_matches('/')
-        .to_string();
+    let normalized_dir = normalize_string_path(&target_output.directory);
     let strm_file_prefix = hash_string_as_hex(&normalized_dir);
     let strm_index_path =
         strm_get_file_paths(&strm_file_prefix, &ensure_target_storage_path(&config, target.name.as_str())?);
