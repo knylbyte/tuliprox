@@ -60,7 +60,7 @@ pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: 
         match download_epg_content_as_file(client, input, url_str, working_dir, persist_filepath).await {
             Ok(content) => Ok(content),
             Err(e) => {
-                error!("cant download input epg url: {}  => {}", sanitize_sensitive_info(url_str), sanitize_sensitive_info(e.to_string().as_str()));
+                error!("cant download input {} epg url: {}  => {}", input.name, sanitize_sensitive_info(url_str), sanitize_sensitive_info(e.to_string().as_str()));
                 create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to download")
             }
         }
