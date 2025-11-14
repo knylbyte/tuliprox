@@ -67,7 +67,7 @@ type SubscriberId = SocketAddr;
 
 
 struct BurstBuffer {
-    buffer: VecDeque<Bytes>,
+    buffer: VecDeque<Arc<Bytes>>,
     buffer_size: usize,
     current_bytes: usize,
 }
@@ -91,11 +91,11 @@ impl BurstBuffer {
         }
     }
 
-    pub fn snapshot(&self) -> VecDeque<Bytes> {
-        self.buffer.iter().cloned().collect::<VecDeque<Bytes>>()
+    pub fn snapshot(&self) -> VecDeque<Arc<Bytes>> {
+        self.buffer.iter().cloned().collect::<VecDeque<Arc<Bytes>>>()
     }
 
-    pub fn push(&mut self, packet: &Bytes) {
+    pub fn push(&mut self, packet: Arc<Bytes>) {
         while self.current_bytes > self.buffer_size {
             if let Some(popped) = self.buffer.pop_front() {
                 self.current_bytes -= popped.len();
@@ -105,18 +105,18 @@ impl BurstBuffer {
             }
         }
         self.current_bytes += packet.len();
-        self.buffer.push_back(packet.clone());
+        self.buffer.push_back(packet);
     }
 }
 
 
 async fn send_burst_buffer(
-    start_buffer: &VecDeque<Bytes>,
+    start_buffer: &VecDeque<Arc<Bytes>>,
     client_tx: &Sender<Bytes>,
     cancellation_token: &CancellationToken) {
     for buf in start_buffer {
         if cancellation_token.is_cancelled() { return; }
-        if let Err(err) = client_tx.send(buf.clone()).await {
+        if let Err(err) = client_tx.send(buf.as_ref().clone()).await {
             debug!("Error sending current chunk: {err}");
             return; // stop on send error
         }
@@ -244,12 +244,13 @@ impl SharedStreamState {
                   item = source_stream.next() => {
                      match item {
                         Some(Ok(data)) => {
+                          let arc_data = Arc::new(data);
                           {
                             let mut buffer = burst_buffer.lock().await;
-                            buffer.push(&data);
+                            buffer.push(arc_data.clone());
                           }
 
-                          match sender.send(data) {
+                          match sender.send(arc_data.as_ref().clone()) {
                             Ok(clients) =>  {
                                 if clients == 0 {
                                    debug_if_enabled!("No shared stream subscribers closing {}", sanitize_sensitive_info(&streaming_url));
