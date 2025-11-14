@@ -82,7 +82,7 @@ impl ConfigFile {
         let sources_file = paths.sources_file_path.as_str();
         let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.app_config.config);
         let mut sources_dto = read_sources_file(sources_file, true, true, config.get_hdhr_device_overview().as_ref())?;
-        prepare_sources_batch(&mut sources_dto, true)?;
+        prepare_sources_batch(&mut sources_dto, true).await?;
         let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
         info!("Loaded sources file {sources_file}");
         update_app_state_sources(app_state, sources).await?;
