@@ -125,7 +125,7 @@ pub fn read_app_config_dto(paths: &ConfigPaths,
     })
 }
 
-pub fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_computed: bool) -> Result<(), TuliproxError> {
+pub async fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_computed: bool) -> Result<(), TuliproxError> {
 
     let mut current_index = 0;
 
@@ -148,7 +148,7 @@ pub fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_computed: b
 
     for source in &mut sources.sources {
         for input in &mut source.inputs {
-            match get_batch_aliases(input.input_type, input.url.as_str()) {
+            match get_batch_aliases(input.input_type, input.url.as_str()).await {
                 Ok(Some((_, aliases))) => {
                     if let Some(idx) = input.prepare_batch(aliases, current_index)? {
                         current_index = idx;
@@ -167,9 +167,9 @@ pub fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_computed: b
     Ok(())
 }
 
-pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(PathBuf, Vec<ConfigInputAliasDto>)>, TuliproxError> {
+pub async fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(PathBuf, Vec<ConfigInputAliasDto>)>, TuliproxError> {
     if input_type == InputType::M3uBatch || input_type == InputType::XtreamBatch {
-        return match utils::csv_read_inputs(input_type, url) {
+        return match utils::csv_read_inputs(input_type, url).await {
             Ok((file_path, batch_aliases)) => {
                 Ok(Some((file_path, batch_aliases)))
             }
@@ -213,7 +213,7 @@ pub async fn read_initial_app_config(paths: &mut ConfigPaths,
 
     let config_dto = read_config_file(config_file, resolve_env, include_computed)?;
     let mut sources_dto = read_sources_file(sources_file, resolve_env, include_computed, config_dto.get_hdhr_device_overview().as_ref())?;
-    prepare_sources_batch(&mut  sources_dto, include_computed)?;
+    prepare_sources_batch(&mut  sources_dto, include_computed).await?;
     let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
     let mut config: Config = Config::from(config_dto);
     config.prepare(config_path)?;

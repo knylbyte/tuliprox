@@ -129,15 +129,12 @@ pub fn open_file(file_name: &Path) -> Result<File, std::io::Error> {
     File::open(file_name)
 }
 
-pub fn persist_file(persist_file: Option<PathBuf>, text: &str) {
+pub async fn persist_file(persist_file: Option<PathBuf>, text: &str) {
     if let Some(path_buf) = persist_file {
         let filename = &path_buf.to_str().unwrap_or("?");
-        match File::create(&path_buf) {
-            Ok(mut file) => match file.write_all(text.as_bytes()) {
-                Ok(()) => debug!("persisted: {filename}"),
-                Err(e) => error!("failed to persist file {filename}, {e}")
-            },
-            Err(e) => error!("failed to persist file {filename}, {e}")
+        match tokio::fs::write(&path_buf, text).await {
+            Ok(()) => debug!("persisted: {filename}"),
+            Err(e) => error!("failed to persist file {filename}, {e}"),
         }
     }
 }
