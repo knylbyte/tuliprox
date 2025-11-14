@@ -87,9 +87,10 @@ pub async fn m3u_write_playlist(
             .collect::<Vec<M3uPlaylistItem>>(),
     );
 
+    let file_lock = cfg.file_locks.write_lock(&m3u_path).await;
+
     let persist_result = persist_m3u_playlist_as_text(&cfg.config.load(), target, target_output, Arc::clone(&m3u_playlist)).await;
 
-    let file_lock = cfg.file_locks.write_lock(&m3u_path).await;
     let playlist = Arc::clone(&m3u_playlist);
     let m3u_path_clone = m3u_path.clone();
     let idx_path_clone = idx_path.clone();
