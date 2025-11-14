@@ -13,6 +13,7 @@ use shared::model::{M3uPlaylistItem, PlaylistGroup, PlaylistItem};
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use log::error;
 use tokio::fs;
 use tokio::io::{AsyncWriteExt, BufWriter as AsyncBufWriter};
 use tokio::task;
@@ -89,7 +90,9 @@ pub async fn m3u_write_playlist(
 
     let file_lock = cfg.file_locks.write_lock(&m3u_path).await;
 
-    let persist_result = persist_m3u_playlist_as_text(&cfg.config.load(), target, target_output, Arc::clone(&m3u_playlist)).await;
+    if let Err(err) = persist_m3u_playlist_as_text(&cfg.config.load(), target, target_output, Arc::clone(&m3u_playlist)).await {
+        error!("Persisting m3u playlist failed: {err}");
+    }
 
     let playlist = Arc::clone(&m3u_playlist);
     let m3u_path_clone = m3u_path.clone();
@@ -114,7 +117,7 @@ pub async fn m3u_write_playlist(
         .await
         .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Notify, "failed to write m3u playlist: {} - {err}", m3u_path.display()))??;
 
-    persist_result
+    Ok(())
 }
 
 pub async fn m3u_load_rewrite_playlist(

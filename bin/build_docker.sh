@@ -16,8 +16,8 @@ print_usage() {
     echo "  branch    Git branch name (only 'master' and 'develop' are supported)"
     echo
     echo "Examples:"
-    echo "  $(basename "$0") master    # Builds and pushes with :latest tag"
-    echo "  $(basename "$0") develop   # Builds and pushes with :dev tag"
+    echo "  $(basename "$0") master    # Builds and pushes with :VERSION and :latest tags"
+    echo "  $(basename "$0") develop   # Builds and pushes with :VERSION and :dev tags"
     exit 1
 }
 
