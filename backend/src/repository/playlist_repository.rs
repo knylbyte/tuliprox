@@ -98,12 +98,12 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
             for output in &target.output {
                 match output {
                     TargetOutput::Xtream(_) => {
-                        if let Ok(storage) = load_xtream_target_storage(app_config, target) {
+                        if let Ok(storage) = load_xtream_target_storage(app_config, target).await {
                             playlist_storage.cache_playlist(&target.name, PlaylistStorage::XtreamPlaylist(Box::new(storage))).await;
                         }
                     },
                     TargetOutput::M3u(_) => {
-                        if let Ok(storage) = load_m3u_target_storage(app_config, target) {
+                        if let Ok(storage) = load_m3u_target_storage(app_config, target).await {
                             playlist_storage.cache_playlist(&target.name, PlaylistStorage::M3uPlaylist(Box::new(storage))).await;
                         }
                     },
@@ -123,9 +123,9 @@ pub async fn get_target_id_mapping(cfg: &AppConfig, target_path: &Path) -> (Targ
 }
 
 
-fn load_target_id_mapping_as_tree(app_config: &AppConfig, target_path: &Path, target: &ConfigTarget) -> Result<BPlusTree<u32, VirtualIdRecord>, TuliproxError> {
+async fn load_target_id_mapping_as_tree(app_config: &AppConfig, target_path: &Path, target: &ConfigTarget) -> Result<BPlusTree<u32, VirtualIdRecord>, TuliproxError> {
     let target_id_mapping_file = get_target_id_mapping_file(target_path);
-    let _file_lock = app_config.file_locks.read_lock(&target_id_mapping_file);
+    let _file_lock = app_config.file_locks.read_lock(&target_id_mapping_file).await;
 
     BPlusTree::<u32, VirtualIdRecord>::load(&target_id_mapping_file).map_err(|err|
         create_tuliprox_error!(
@@ -134,9 +134,9 @@ fn load_target_id_mapping_as_tree(app_config: &AppConfig, target_path: &Path, ta
                             ))
 }
 
-fn load_xtream_playlist_as_tree(app_config: &AppConfig, storage_path: &Path, cluster: XtreamCluster) -> BPlusTree<u32, XtreamPlaylistItem> {
+async fn load_xtream_playlist_as_tree(app_config: &AppConfig, storage_path: &Path, cluster: XtreamCluster) -> BPlusTree<u32, XtreamPlaylistItem> {
     let (main_path, index_path) = xtream_get_file_paths(storage_path, cluster);
-    let _file_lock = app_config.file_locks.read_lock(&main_path);
+    let _file_lock = app_config.file_locks.read_lock(&main_path).await;
     let mut tree = BPlusTree::<u32, XtreamPlaylistItem>::new();
     if let Ok(reader) = IndexedDocumentIterator::<u32, XtreamPlaylistItem>::new(&main_path, &index_path) {
         for (doc, _has_next) in reader {
@@ -146,7 +146,7 @@ fn load_xtream_playlist_as_tree(app_config: &AppConfig, storage_path: &Path, clu
     tree
 }
 
-fn load_xtream_target_storage(app_config: &AppConfig, target: &ConfigTarget) -> Result<PlaylistXtreamStorage, TuliproxError> {
+async fn load_xtream_target_storage(app_config: &AppConfig, target: &ConfigTarget) -> Result<PlaylistXtreamStorage, TuliproxError> {
     let config = app_config.config.load();
     let target_path = get_target_storage_path(&config, target.name.as_str()).ok_or_else(||
         create_tuliprox_error!(
@@ -159,10 +159,10 @@ fn load_xtream_target_storage(app_config: &AppConfig, target: &ConfigTarget) -> 
                                 TuliproxErrorKind::Info,
                             "Could not find path for target {} xtream output", &target.name))?;
 
-    let target_id_mapping = load_target_id_mapping_as_tree(app_config, &target_path, target)?;
-    let live_storage = load_xtream_playlist_as_tree(app_config, &storage_path, XtreamCluster::Live);
-    let vod_storage = load_xtream_playlist_as_tree(app_config, &storage_path, XtreamCluster::Video);
-    let series_storage = load_xtream_playlist_as_tree(app_config, &storage_path, XtreamCluster::Series);
+    let target_id_mapping = load_target_id_mapping_as_tree(app_config, &target_path, target).await?;
+    let live_storage = load_xtream_playlist_as_tree(app_config, &storage_path, XtreamCluster::Live).await;
+    let vod_storage = load_xtream_playlist_as_tree(app_config, &storage_path, XtreamCluster::Video).await;
+    let series_storage = load_xtream_playlist_as_tree(app_config, &storage_path, XtreamCluster::Series).await;
 
     Ok(PlaylistXtreamStorage {
         id_mapping: target_id_mapping,
@@ -172,7 +172,7 @@ fn load_xtream_target_storage(app_config: &AppConfig, target: &ConfigTarget) -> 
     })
 }
 
-fn load_m3u_target_storage(app_config: &AppConfig, target: &ConfigTarget) -> Result<PlaylistM3uStorage, TuliproxError> {
+async fn load_m3u_target_storage(app_config: &AppConfig, target: &ConfigTarget) -> Result<PlaylistM3uStorage, TuliproxError> {
     let config = app_config.config.load();
     let target_path = get_target_storage_path(&config, target.name.as_str()).ok_or_else(||
         create_tuliprox_error!(
@@ -181,7 +181,7 @@ fn load_m3u_target_storage(app_config: &AppConfig, target: &ConfigTarget) -> Res
                             ))?;
 
     let (main_path, index_path) = m3u_get_file_paths(&target_path);
-    let _file_lock = app_config.file_locks.read_lock(&main_path);
+    let _file_lock = app_config.file_locks.read_lock(&main_path).await;
     let mut tree = BPlusTree::<u32, M3uPlaylistItem>::new();
     if let Ok(reader) = IndexedDocumentIterator::<u32, M3uPlaylistItem>::new(&main_path, &index_path) {
         for (doc, _has_next) in reader {
@@ -207,12 +207,12 @@ pub async fn load_target_into_memory_cache(app_state: &AppState, target: &Arc<Co
         for output in &target.output {
             match output {
                 TargetOutput::Xtream(_) => {
-                    if let Ok(storage) = load_xtream_target_storage(&app_state.app_config, target) {
+                    if let Ok(storage) = load_xtream_target_storage(&app_state.app_config, target).await {
                         app_state.cache_playlist(&target.name, PlaylistStorage::XtreamPlaylist(Box::new(storage))).await;
                     }
                 }
                 TargetOutput::M3u(_) => {
-                    if let Ok(storage) = load_m3u_target_storage(&app_state.app_config, target) {
+                    if let Ok(storage) = load_m3u_target_storage(&app_state.app_config, target).await {
                         app_state.cache_playlist(&target.name, PlaylistStorage::M3uPlaylist(Box::new(storage))).await;
                     }
                 }

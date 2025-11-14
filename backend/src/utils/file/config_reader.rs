@@ -43,13 +43,13 @@ pub fn config_file_reader(file: File, resolve_env: bool) -> impl Read
     }
 }
 
-pub fn read_api_proxy_config(config: &AppConfig, resolve_env: bool) -> Result<Option<ApiProxyConfig>, TuliproxError> {
+pub async fn read_api_proxy_config(config: &AppConfig, resolve_env: bool) -> Result<Option<ApiProxyConfig>, TuliproxError> {
     let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&config.paths);
     let api_proxy_file_path = paths.api_proxy_file_path.as_str();
     if let Some(api_proxy_dto) = read_api_proxy_file(api_proxy_file_path, resolve_env)? {
         let mut errors = vec![];
         let mut api_proxy: ApiProxyConfig = ApiProxyConfig::from(&api_proxy_dto);
-        api_proxy.migrate_api_user(config, &mut errors);
+        api_proxy.migrate_api_user(config, &mut errors).await;
         if !errors.is_empty() {
             for error in errors {
                 error!("{error}");
@@ -181,7 +181,7 @@ pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(Pat
     Ok(None)
 }
 
-pub fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppConfig) -> Result<(), TuliproxError> {
+pub async fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppConfig) -> Result<(), TuliproxError> {
     let use_user_db = app_config_dto
         .api_proxy
         .as_ref()
@@ -190,7 +190,7 @@ pub fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppConfig) 
     if use_user_db {
         let user_db_path = get_api_user_db_path(app_config);
         if user_db_path.exists() {
-            match load_api_user(app_config) {
+            match load_api_user(app_config).await {
                 Ok(stored_users) => if let Some(api_proxy) = app_config_dto.api_proxy.as_mut() {
                     api_proxy.user.extend(stored_users.iter().map(TargetUserDto::from));
                 },
@@ -203,7 +203,7 @@ pub fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppConfig) 
     Ok(())
 }
 
-pub fn read_initial_app_config(paths: &mut ConfigPaths,
+pub async fn read_initial_app_config(paths: &mut ConfigPaths,
                        resolve_env: bool,
                        include_computed: bool,
                        server_mode: bool) -> Result<AppConfig, TuliproxError> {
@@ -250,7 +250,7 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
     }
 
     if server_mode {
-        match read_api_proxy_config(&app_config, resolve_env) {
+        match read_api_proxy_config(&app_config, resolve_env).await {
             Ok(Some(api_proxy)) => app_config.set_api_proxy(api_proxy)?,
             Ok(None) => info!("Api-Proxy file: not used"),
             Err(err) => exit!("{err}"),
@@ -279,13 +279,13 @@ pub fn read_api_proxy_file(api_proxy_file: &str, resolve_env: bool) -> Result<Op
     })
 }
 
-pub fn read_api_proxy(config: &AppConfig, resolve_env: bool) -> Option<ApiProxyConfig> {
+pub async fn read_api_proxy(config: &AppConfig, resolve_env: bool) -> Option<ApiProxyConfig> {
     let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&config.paths);
     match read_api_proxy_file(paths.api_proxy_file_path.as_str(), resolve_env) {
         Ok(Some(api_proxy_dto)) => {
             let mut errors = vec![];
             let mut api_proxy: ApiProxyConfig = api_proxy_dto.into();
-            api_proxy.migrate_api_user(config, &mut errors);
+            api_proxy.migrate_api_user(config, &mut errors).await;
             if !errors.is_empty() {
                 for error in errors {
                     error!("{error}");

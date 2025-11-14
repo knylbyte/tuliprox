@@ -113,7 +113,7 @@ async fn save_config_api_proxy_user(
     let new_api_proxy = Arc::new(api_proxy);
 
     if new_api_proxy.use_user_db {
-        if let Err(err) = store_api_user(&app_state.app_config, &new_api_proxy.user) {
+        if let Err(err) = store_api_user(&app_state.app_config, &new_api_proxy.user).await {
             return (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 axum::Json(json!({"error": err.to_string()}))
@@ -160,7 +160,7 @@ async fn delete_config_api_proxy_user(
         if modified {
             let new_api_proxy = Arc::new(api_proxy);
             if new_api_proxy.use_user_db {
-                if let Err(err) = store_api_user(&app_state.app_config, &new_api_proxy.user) {
+                if let Err(err) = store_api_user(&app_state.app_config, &new_api_proxy.user).await {
                     return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
                 }
             } else {

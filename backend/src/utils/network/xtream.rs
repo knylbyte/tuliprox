@@ -70,7 +70,7 @@ where
     let app_config = &app_state.app_config;
 
     if cluster == XtreamCluster::Series {
-        if let Some(content) = xtream_repository::xtream_load_series_info(app_config, target.name.as_str(), pli.get_virtual_id()) {
+        if let Some(content) = xtream_repository::xtream_load_series_info(app_config, target.name.as_str(), pli.get_virtual_id()).await {
             // Deliver existing target content
             return rewrite_xtream_series_info_content(app_state, target, xtream_output, pli, user, &content).await;
         }
@@ -78,20 +78,20 @@ where
         // Check if the content has been resolved
         if xtream_output.resolve_series {
             if let Some(provider_id) = pli.get_provider_id() {
-                if let Some(content) = xtream_get_input_info(app_config, input, provider_id, XtreamCluster::Series) {
+                if let Some(content) = xtream_get_input_info(app_config, input, provider_id, XtreamCluster::Series).await {
                     return xtream_repository::write_and_get_xtream_series_info(app_state, target, xtream_output, pli, user, &content).await;
                 }
             }
         }
     } else if cluster == XtreamCluster::Video {
-        if let Some(content) = xtream_repository::xtream_load_vod_info(app_config, target.name.as_str(), pli.get_virtual_id()) {
+        if let Some(content) = xtream_repository::xtream_load_vod_info(app_config, target.name.as_str(), pli.get_virtual_id()).await {
             // Deliver existing target content
             return rewrite_xtream_vod_info_content(app_config, target, xtream_output, pli, user, &content);
         }
         // Check if the content has been resolved
         if xtream_output.resolve_vod {
             if let Some(provider_id) = pli.get_provider_id() {
-                if let Some(content) = xtream_get_input_info(app_config, input, provider_id, XtreamCluster::Video) {
+                if let Some(content) = xtream_get_input_info(app_config, input, provider_id, XtreamCluster::Video).await {
                     return xtream_repository::write_and_get_xtream_vod_info(app_config, target, xtream_output, pli, user, &content).await;
                 }
             }

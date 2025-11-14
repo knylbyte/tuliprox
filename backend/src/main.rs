@@ -106,15 +106,15 @@ fn main() {
     if let Some(bts) = BUILD_TIMESTAMP.to_string().parse::<DateTime<Utc>>().ok().map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string()) {
         info!("Build time: {bts}");
     }
-
-    let app_config = utils::read_initial_app_config(&mut config_paths, true, true, args.server).unwrap_or_else(|err| exit!("{}", err));
-    print_info(&app_config);
-
-    let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&app_config.sources);
-    let targets = sources.validate_targets(args.target.as_ref()).unwrap_or_else(|err| exit!("{}", err));
-
     let rt = tokio::runtime::Runtime::new().unwrap();
     let () = rt.block_on(async {
+
+        let app_config = utils::read_initial_app_config(&mut config_paths, true, true, args.server).await.unwrap_or_else(|err| exit!("{}", err));
+        print_info(&app_config);
+
+        let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&app_config.sources);
+        let targets = sources.validate_targets(args.target.as_ref()).unwrap_or_else(|err| exit!("{}", err));
+
         if args.server {
             start_in_server_mode(Arc::new(app_config), Arc::new(targets)).await;
         } else {

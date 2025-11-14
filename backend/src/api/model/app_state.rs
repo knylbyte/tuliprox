@@ -282,7 +282,7 @@ impl AppState {
         if changes.geoip {
             let new_geoip = if use_geoip {
                 let path = get_geoip_path(&working_dir);
-                let _file_lock = self.app_config.file_locks.read_lock(&path);
+                let _file_lock = self.app_config.file_locks.read_lock(&path).await;
                 GeoIp::load(&path).ok().map(Arc::new)
             } else {
                 None
