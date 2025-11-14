@@ -64,3 +64,11 @@ video:
     directory: ${env:TULIPROX_HOME}/downloads
     organize_into_directories: false
     episode_pattern: .*(?P<episode>[Ss]\d{1,2}(.*?)[Ee]\d{1,2}).*
+
+reverse_proxy:
+  resource_retry:
+    max_attempts: 3
+    backoff_millis: 250
+    backoff_multiplier: 1.0
+  stream:
+    shared_burst_buffer_mb: 12 # default 12 MB

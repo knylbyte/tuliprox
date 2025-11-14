@@ -70,10 +70,14 @@ impl Default for XtreamTargetOutputDto {
 }
 
 impl XtreamTargetOutputDto {
-    pub fn prepare(&mut self) {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
+        if let Some(raw_filter) = &self.filter {
+            self.t_filter = Some(get_filter(raw_filter, templates)?);
+        }
         if let Some(trakt) = &mut self.trakt {
             trakt.prepare();
         }
+        Ok(())
     }
 
     pub fn has_any_option(&self) -> bool {
@@ -103,6 +107,14 @@ pub struct M3uTargetOutputDto {
 }
 
 impl M3uTargetOutputDto {
+
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
+        if let Some(raw_filter) = &self.filter {
+            self.t_filter = Some(get_filter(raw_filter, templates)?);
+        }
+        Ok(())
+    }
+
     pub fn has_any_option(&self) -> bool {
         self.filename.is_some()
             || self.include_type_in_url
@@ -134,6 +146,16 @@ pub struct StrmTargetOutputDto {
     #[serde(default)]
     pub add_quality_to_filename: bool,
 }
+
+impl StrmTargetOutputDto {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
+        if let Some(raw_filter) = &self.filter {
+            self.t_filter = Some(get_filter(raw_filter, templates)?);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HdHomeRunTargetOutputDto {
@@ -163,12 +185,12 @@ pub enum TargetOutputDto {
 }
 
 impl TargetOutputDto {
-    pub fn prepare(&mut self) {
+    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         match self {
-            TargetOutputDto::Xtream(output) => output.prepare(),
-            TargetOutputDto::M3u(_)
-            | TargetOutputDto::Strm(_)
-            | TargetOutputDto::HdHomeRun(_) => {}
+            TargetOutputDto::Xtream(output) => output.prepare(templates),
+            TargetOutputDto::M3u(output) => output.prepare(templates),
+            TargetOutputDto::Strm(output) => output.prepare(templates),
+            TargetOutputDto::HdHomeRun(_) => Ok(())
         }
     }
 }
@@ -246,11 +268,11 @@ impl ConfigTargetDto {
         let mut hdhomerun_needs_m3u = false;
         let mut hdhomerun_needs_xtream = false;
 
-        let mut strm_export_styles = vec![];
+        //let mut strm_export_styles = vec![];
         let mut strm_directories: Vec<&str> = vec![];
 
         for target_output in &mut self.output {
-            target_output.prepare();
+            target_output.prepare(templates)?;
             match target_output {
                 TargetOutputDto::Xtream(_) => {
                     xtream_cnt += 1;
@@ -276,10 +298,10 @@ impl ConfigTargetDto {
                     if has_username {
                         strm_needs_xtream = true;
                     }
-                    if strm_export_styles.contains(&strm_output.style) {
-                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "strm outputs with same export style are not allowed: {}", self.name);
-                    }
-                    strm_export_styles.push(strm_output.style);
+                    // if strm_export_styles.contains(&strm_output.style) {
+                    //     return create_tuliprox_error_result!(TuliproxErrorKind::Info, "strm outputs with same export style are not allowed: {}", self.name);
+                    // }
+                    // strm_export_styles.push(strm_output.style);
                     if strm_directories.contains(&strm_output.directory.as_str()) {
                         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "strm outputs with same export directory are not allowed: {}", self.name);
                     }

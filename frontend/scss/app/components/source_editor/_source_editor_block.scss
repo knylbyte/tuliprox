@@ -6,6 +6,8 @@ $port-size: 10px;
 .tp__source-editor__block {
   position: absolute;
   display: flex;
+  left: 0;
+  top: 0;
   flex-flow: column;
   align-items: center;
   background-color: transparent;
@@ -13,6 +15,17 @@ $port-size: 10px;
   min-width: $block-width;
   max-width: $block-width;
   width: $block-width;
+  box-sizing: border-box;
+
+  &-editing {
+    .tp__source-editor__block-content {
+      border-color: red !important;
+    }
+  }
+
+  &-selected {
+    filter: sepia(1);
+  }
 
   &-header {
     position: relative;
@@ -41,7 +54,6 @@ $port-size: 10px;
     justify-content: center;
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
-
   }
 
   &-content {
@@ -69,6 +81,10 @@ $port-size: 10px;
       height: 100%;
       width: 100%;
     }
+  }
+
+  &-batch {
+    border-bottom-right-radius: 0;
   }
 
   &-label {
@@ -112,6 +128,10 @@ $port-size: 10px;
     border: 1px solid var(--brick-port-border-color);
     cursor: crosshair;
     z-index: 2;
+
+    &:hover {
+      background-color: var(--brick-port-hover-color);
+    }
 
     &--left {
       left: -5px;
@@ -180,8 +200,35 @@ $port-size: 10px;
 }
 
 .tp__source-editor__block {
+
+    &-batch-banner {
+      display: flex;
+      flex-flow: row;
+      justify-content: flex-end;
+      width: 100%;
+      &-label {
+        color: var(--modest-text-color);
+        font-size: 0.7rem;
+        font-weight: bold;
+        width: 50%;
+        height: 100%;
+        cursor: grab;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-bottom-left-radius: 4px;
+        border-bottom-right-radius: 4px;
+      }
+    }
+
   &-InputXtream,
   &-InputM3u {
+    .tp__source-editor__block-batch-banner-label {
+      border: 1px solid var(--brick-input-border-color);
+      border-top-color: transparent;
+      background-color: var(--brick-input-background-color);
+    }
+
     .tp__source-editor__block-content {
       border-color: var(--brick-input-border-color);
       background-color: var(--brick-input-background-color);

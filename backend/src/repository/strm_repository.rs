@@ -7,8 +7,8 @@ use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage::{ensure_target_storage_path, get_input_storage_path};
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::{xtream_get_record_file_path, InputVodInfoRecord};
-use shared::utils::{extract_extension_from_url, hash_bytes, truncate_string, ExportStyleConfig, CONSTANTS};
-use crate::utils::{truncate_filename, FileReadGuard};
+use shared::utils::{extract_extension_from_url, hash_bytes, hash_string_as_hex, truncate_string, ExportStyleConfig, CONSTANTS};
+use crate::utils::{normalize_string_path, truncate_filename, FileReadGuard};
 use chrono::Datelike;
 use filetime::{set_file_times, FileTime};
 use log::{error, trace};
@@ -242,8 +242,8 @@ async fn get_tmdb_value(
     }
 }
 
-pub fn strm_get_file_paths(target_path: &Path) -> PathBuf {
-    target_path.join(PathBuf::from(format!("{}.{}", storage_const::FILE_STRM, storage_const::FILE_SUFFIX_DB)))
+pub fn strm_get_file_paths(file_prefix: &str, target_path: &Path) -> PathBuf {
+    target_path.join(PathBuf::from(format!("{file_prefix}_{}.{}", storage_const::FILE_STRM, storage_const::FILE_SUFFIX_DB)))
 }
 
 #[derive(Serialize)]
@@ -837,12 +837,14 @@ pub async fn write_strm_playlist(
     };
 
     let user_and_server_info = get_credentials_and_server_info(app_config, target_output.username.as_ref());
+    let normalized_dir = normalize_string_path(&target_output.directory);
+    let strm_file_prefix = hash_string_as_hex(&normalized_dir);
     let strm_index_path =
-        strm_get_file_paths(&ensure_target_storage_path(&config, target.name.as_str())?);
+        strm_get_file_paths(&strm_file_prefix, &ensure_target_storage_path(&config, target.name.as_str())?);
     let existing_strm = {
         let _file_lock = app_config
             .file_locks
-            .read_lock(&strm_index_path);
+            .read_lock(&strm_index_path).await;
         read_strm_file_index(&strm_index_path)
             .await
             .unwrap_or_else(|_| HashSet::with_capacity(4096))
@@ -926,7 +928,7 @@ async fn write_strm_index_file(
 ) -> Result<(), String> {
     let _file_lock = cfg
         .file_locks
-        .write_lock(index_file_path);
+        .write_lock(index_file_path).await;
     let file = File::create(index_file_path)
         .await
         .map_err(|err| format!("Failed to create strm index file: {} {err}", index_file_path.display()))?;

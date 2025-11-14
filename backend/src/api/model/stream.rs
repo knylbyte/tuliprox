@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::api::model::{ProviderHandle, StreamError};
+use crate::api::model::{CustomVideoStreamType, ProviderHandle, StreamError};
 use axum::http::StatusCode;
 use bytes::Bytes;
 use futures::stream::BoxStream;
@@ -10,7 +10,7 @@ use crate::tools::atomic_once_flag::AtomicOnceFlag;
 
 pub type BoxedProviderStream = BoxStream<'static, Result<Bytes, StreamError>>;
 pub type ProviderStreamHeader = Vec<(String, String)>;
-pub type ProviderStreamInfo = Option<(ProviderStreamHeader, StatusCode, Option<Url>)>;
+pub type ProviderStreamInfo = Option<(ProviderStreamHeader, StatusCode, Option<Url>, Option<CustomVideoStreamType>)>;
 
 pub type ProviderStreamResponse = (Option<BoxedProviderStream>, ProviderStreamInfo);
 

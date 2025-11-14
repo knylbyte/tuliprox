@@ -11,3 +11,6 @@ pub const fn default_resolve_delay_secs() -> u16 { 2 }
 pub const fn default_grace_period_millis() -> u64 { 2000 }
 pub const fn default_grace_period_timeout_secs() -> u64 { 4 }
 pub const fn default_connect_timeout_secs() -> u32 { 6 }
+pub const fn default_resource_retry_attempts() -> u32 { 3 }
+pub const fn default_resource_retry_backoff_ms() -> u64 { 250 }
+pub const fn default_resource_retry_backoff_multiplier() -> f64 { 1.0 }

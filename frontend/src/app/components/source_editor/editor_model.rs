@@ -2,7 +2,12 @@ use std::fmt;
 use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 use yew::{Callback, UseStateHandle};
-use shared::model::{ConfigInputDto, ConfigTargetDto, TargetOutputDto};
+use shared::model::{ConfigInputDto, ConfigTargetDto, InputType, TargetOutputDto};
+
+pub const BLOCK_WIDTH: f32 = 100.0;
+pub const BLOCK_HEIGHT: f32 = 50.0;
+pub const BLOCK_HEADER_HEIGHT: f32 = 12.0;
+pub const BLOCK_PORT_HEIGHT: f32 = 10.0;
 
 // ----------------- Data Models -----------------
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -25,6 +30,18 @@ impl BlockType {
     pub const OUTPUT_XTREAM: &'static str = "OutputXtream";
     pub const OUTPUT_HDHOMERUN: &'static str = "OutputHdHomeRun";
     pub const OUTPUT_STRM: &'static str = "OutputStrm";
+
+    pub fn is_input(&self) -> bool {
+        matches!(self, Self::InputXtream | Self::InputM3u)
+    }
+
+    pub fn is_target(&self) -> bool {
+        matches!(self, Self::Target)
+    }
+
+    // pub fn is_output(&self) -> bool {
+    //     matches!(self, Self::OutputXtream | Self::OutputM3u | Self::OutputHdHomeRun | Self::OutputStrm)
+    // }
 }
 
 // Convert from String to BlockType
@@ -49,6 +66,17 @@ impl From<String> for BlockType {
     }
 }
 
+impl From<InputType> for BlockType {
+    fn from(s: InputType) -> Self {
+        match s {
+            InputType::M3uBatch
+            | InputType::M3u => BlockType::InputM3u,
+            InputType::XtreamBatch
+            | InputType::Xtream => BlockType::InputXtream,
+        }
+    }
+}
+
 
 // Display trait using constants
 impl fmt::Display for BlockType {
@@ -65,8 +93,7 @@ impl fmt::Display for BlockType {
         write!(f, "{}", s)
     }
 }
-
-pub(crate) type BlockId = usize;
+pub(crate) type BlockId = u16;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Block {
@@ -76,12 +103,49 @@ pub struct Block {
     pub instance: BlockInstance,
 }
 
+impl Block {
+    /// Liefert die Bounding-Box des Blocks unter Berücksichtigung der Canvas-Verschiebung.
+    pub fn bounds(&self, canvas_offset: (f32, f32)) -> (f32, f32, f32, f32) {
+        let (ox, oy) = canvas_offset;
+        let bx = self.position.0 + ox;
+        let by = self.position.1 + oy;
+        let b_left = bx;
+        let b_top = by;
+        let b_right = bx + BLOCK_WIDTH;
+        let b_bottom = by + (BLOCK_HEIGHT + BLOCK_HEADER_HEIGHT + BLOCK_PORT_HEIGHT);
+        (b_left, b_top, b_right, b_bottom)
+    }
+
+    /// Prüft, ob der Block von einem Auswahlrechteck getroffen wird.
+    pub fn intersects_rect(
+        &self,
+        rect_start: (f32, f32),
+        rect_end: (f32, f32),
+        canvas_offset: (f32, f32),
+    ) -> bool {
+        let (b_left, b_top, b_right, b_bottom) = self.bounds(canvas_offset);
+
+        // Rechteck normalisieren
+        let (x1, y1) = rect_start;
+        let (x2, y2) = rect_end;
+        let r_left = x1.min(x2);
+        let r_top = y1.min(y2);
+        let r_right = x1.max(x2);
+        let r_bottom = y1.max(y2);
+
+        b_right >= r_left &&
+            b_left <= r_right &&
+            b_bottom >= r_top &&
+            b_top <= r_bottom
+    }
+}
+
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Connection {
     pub from: BlockId,
     pub to: BlockId,
 }
-
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum PortStatus {
@@ -89,8 +153,6 @@ pub enum PortStatus {
     Invalid,
     Inactive
 }
-
-
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BlockInstance {

@@ -1,5 +1,4 @@
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
-use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
 use crate::api::model::UserSession;
 use crate::api::model::{
     create_channel_unavailable_stream, create_custom_video_stream_response,
@@ -9,7 +8,8 @@ use crate::api::model::{
     ProviderStreamFactoryOptions, SharedStreamManager,
     StreamError, ThrottledStream, UserApiRequest,
 };
-use crate::model::ConfigInput;
+use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
+use crate::model::{ConfigInput, ResourceRetryConfig};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::lru_cache::LRUResourceCache;
 use crate::utils::create_new_file_for_write;
@@ -24,6 +24,7 @@ use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, log_enabled, trace};
 use reqwest::header::RETRY_AFTER;
+use serde::Serialize;
 use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
 use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_byte_size, trim_slash};
 use shared::utils::{
@@ -35,7 +36,6 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use serde::Serialize;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -381,11 +381,11 @@ async fn resolve_streaming_strategy(
                     }
                 }
             }
-    } else {
-        debug!("Input {} is exhausted. No connections allowed.", input.name);
-        let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
-        ProviderStreamState::Custom(stream)
-    };
+        } else {
+            debug!("Input {} is exhausted. No connections allowed.", input.name);
+            let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
+            ProviderStreamState::Custom(stream)
+        };
 
 
     StreamingStrategy {
@@ -402,10 +402,10 @@ fn get_grace_period_millis(
 ) -> u64 {
     if config_grace_period_millis > 0
         && (
-            matches!(stream_response_params, ProviderStreamState::GracePeriod(_, _)) // provider grace period
+        matches!(stream_response_params, ProviderStreamState::GracePeriod(_, _)) // provider grace period
             || connection_permission == UserConnectionPermission::GracePeriod
-            // user grace period
-        )
+        // user grace period
+    )
     {
         config_grace_period_millis
     } else {
@@ -415,7 +415,7 @@ fn get_grace_period_millis(
 
 #[allow(clippy::too_many_arguments)]
 async fn create_stream_response_details(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     stream_options: &StreamOptions,
     stream_url: &str,
     fingerprint: &Fingerprint,
@@ -470,6 +470,7 @@ async fn create_stream_response_details(
                     .as_ref()
                     .and_then(|r| r.disabled_header.clone());
                 let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
+                    fingerprint.addr,
                     item_type,
                     share_stream,
                     stream_options,
@@ -480,11 +481,11 @@ async fn create_stream_response_details(
                 );
                 let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
                 let provider_stream = match create_provider_stream(
-                    Arc::clone(&app_state.app_config),
-                    Arc::clone(&app_state.http_client.load()),
+                    app_state,
+                    &app_state.http_client.load(),
                     provider_stream_factory_options,
                 )
-                .await
+                    .await
                 {
                     None => (None, None),
                     Some((stream, info)) => (Some(stream), info),
@@ -495,7 +496,7 @@ async fn create_stream_response_details(
             };
 
             if log_enabled!(log::Level::Debug) {
-                if let Some((headers, status_code, response_url)) = stream_info.as_ref() {
+                if let Some((headers, status_code, response_url, _custom_video_type)) = stream_info.as_ref() {
                     debug!(
                         "Responding stream request {} with status {}, headers {:?}",
                         sanitize_sensitive_info(
@@ -508,12 +509,14 @@ async fn create_stream_response_details(
             }
 
             // if we have no stream, we should release the provider
-            if stream.is_none() {
-                if let Some(guard) = streaming_strategy.provider_handle.take() {
-                    drop(guard);
-                }
+            let provider_handle = if stream.is_none() {
+                let provider_handle = streaming_strategy.provider_handle.take();
+                app_state.connection_manager.release_provider_handle(provider_handle).await;
                 error!("Cant open stream {}", sanitize_sensitive_info(&request_url));
-            }
+                None
+            } else {
+                streaming_strategy.provider_handle.take()
+            };
 
             StreamDetails {
                 stream,
@@ -521,7 +524,7 @@ async fn create_stream_response_details(
                 provider_name: guard_provider_name.clone(),
                 grace_period_millis,
                 reconnect_flag,
-                provider_handle: streaming_strategy.provider_handle.take(),
+                provider_handle,
             }
         }
     }
@@ -702,7 +705,7 @@ fn prepare_body_stream(
 /// # Panics
 pub async fn force_provider_stream_response(
     fingerprint: &Fingerprint,
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     user_session: &UserSession,
     mut stream_channel: StreamChannel,
     req_headers: &HeaderMap,
@@ -714,7 +717,7 @@ pub async fn force_provider_stream_response(
     let connection_permission = UserConnectionPermission::Allowed;
     let item_type = stream_channel.item_type;
 
-    let mut stream_details = create_stream_response_details(
+    let stream_details = create_stream_response_details(
         app_state,
         &stream_options,
         &user_session.stream_url,
@@ -726,13 +729,13 @@ pub async fn force_provider_stream_response(
         connection_permission,
         Some(&user_session.provider),
     )
-    .await;
+        .await;
 
     if stream_details.has_stream() {
         let provider_response = stream_details
             .stream_info
             .as_ref()
-            .map(|(h, sc, url)| (h.clone(), *sc, url.clone()));
+            .map(|(h, sc, url, cvt)| (h.clone(), *sc, url.clone(), *cvt));
         app_state
             .active_users
             .update_session_addr(&user.username, &user_session.token, &fingerprint.addr)
@@ -743,7 +746,7 @@ pub async fn force_provider_stream_response(
                 .await;
 
         let (status_code, header_map) =
-            get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
+            get_stream_response_with_headers(provider_response.map(|(h, s, _, _)| (h, s)));
         let mut response = axum::response::Response::builder().status(status_code);
         for (key, value) in &header_map {
             response = response.header(key, value);
@@ -756,13 +759,14 @@ pub async fn force_provider_stream_response(
         );
         return try_unwrap_body!(response.body(body_stream));
     }
-    drop(stream_details.provider_handle.take());
+
+    app_state.connection_manager.release_provider_handle(stream_details.provider_handle).await;
     if let (Some(stream), _stream_info) = create_channel_unavailable_stream(
         &app_state.app_config,
         &[],
         axum::http::StatusCode::SERVICE_UNAVAILABLE,
     ) {
-        app_state.connection_manager.update_stream_detail(&user.username, fingerprint, CustomVideoStreamType::ChannelUnavailable).await;
+        app_state.connection_manager.update_stream_detail(&fingerprint.addr, CustomVideoStreamType::ChannelUnavailable).await;
         debug!("Streaming custom stream");
         try_unwrap_body!(axum::response::Response::builder()
             .status(axum::http::StatusCode::OK)
@@ -776,7 +780,7 @@ pub async fn force_provider_stream_response(
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub async fn stream_response(
     fingerprint: &Fingerprint,
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     session_token: &str,
     mut stream_channel: StreamChannel,
     stream_url: &str,
@@ -792,10 +796,11 @@ pub async fn stream_response(
 
     if connection_permission == UserConnectionPermission::Exhausted {
         return create_custom_video_stream_response(
-            &app_state.app_config,
+            app_state,
+            &fingerprint.addr,
             CustomVideoStreamType::UserConnectionsExhausted,
-        )
-        .into_response();
+        ).await
+            .into_response();
     }
 
     let virtual_id = stream_channel.virtual_id;
@@ -823,14 +828,14 @@ pub async fn stream_response(
         connection_permission,
         None,
     )
-    .await;
+        .await;
 
     if stream_details.has_stream() {
         // let content_length = get_stream_content_length(provider_response.as_ref());
         let provider_response = stream_details
             .stream_info
             .as_ref()
-            .map(|(h, sc, response_url)| (h.clone(), *sc, response_url.clone()));
+            .map(|(h, sc, response_url, cvt)| (h.clone(), *sc, response_url.clone(), *cvt));
         let provider_name = stream_details.provider_name.clone();
 
         let provider_handle = if share_stream {
@@ -850,7 +855,7 @@ pub async fn stream_response(
             // Shared Stream response
             let shared_headers = provider_response
                 .as_ref()
-                .map_or_else(Vec::new, |(h, _, _)| h.clone());
+                .map_or_else(Vec::new, |(h, _, _, _)| h.clone());
 
             if let Some((broadcast_stream, _shared_provider)) = SharedStreamManager::register_shared_stream(
                 app_state,
@@ -861,10 +866,10 @@ pub async fn stream_response(
                 stream_options.buffer_size,
                 provider_handle,
             )
-            .await
+                .await
             {
                 let (status_code, header_map) =
-                    get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
+                    get_stream_response_with_headers(provider_response.map(|(h, s, _, _)| (h, s)));
                 let mut response = axum::response::Response::builder().status(status_code);
                 for (key, value) in &header_map {
                     response = response.header(key, value);
@@ -876,7 +881,7 @@ pub async fn stream_response(
         } else {
             let session_url = provider_response
                 .as_ref()
-                .and_then(|(_, _, u)| u.as_ref())
+                .and_then(|(_, _, u, _)| u.as_ref())
                 .map_or_else(
                     || Cow::Borrowed(stream_url),
                     |url| Cow::Owned(url.to_string()),
@@ -896,7 +901,7 @@ pub async fn stream_response(
                 }
             }
             let (status_code, header_map) =
-                get_stream_response_with_headers(provider_response.map(|(h, s, _)| (h, s)));
+                get_stream_response_with_headers(provider_response.map(|(h, s, _, _)| (h, s)));
             let mut response = axum::response::Response::builder().status(status_code);
             for (key, value) in &header_map {
                 response = response.header(key, value);
@@ -932,7 +937,7 @@ pub async fn stream_response(
 
         return stream_resp.into_response();
     }
-    drop(stream_details.provider_handle.take());
+    app_state.connection_manager.release_provider_handle(stream_details.provider_handle).await;
     axum::http::StatusCode::BAD_REQUEST.into_response()
 }
 
@@ -993,9 +998,9 @@ async fn try_shared_stream_response_if_any(
 pub fn is_stream_share_enabled(item_type: PlaylistItemType, target: &ConfigTarget) -> bool {
     (item_type == PlaylistItemType::Live/* || item_type == PlaylistItemType::LiveHls */)
         && target
-            .options
-            .as_ref()
-            .is_some_and(|opt| opt.share_live_streams)
+        .options
+        .as_ref()
+        .is_some_and(|opt| opt.share_live_streams)
 }
 
 pub type HeaderFilter = Option<Box<dyn Fn(&str) -> bool + Send>>;
@@ -1090,10 +1095,11 @@ async fn fetch_resource_with_retry(
     req_headers: &HashMap<String, Vec<u8>>,
     input: Option<&ConfigInput>,
 ) -> Option<axum::response::Response> {
-    // TODO: add max_attempts to config
-    let max_attempts: u32 = 3; //&app_state.app_config.config.load().max_attempts;
-    let backoff_ms: u64 = 250;
     let config = app_state.app_config.config.load();
+    let (max_attempts, backoff_ms, backoff_multiplier) = config
+        .reverse_proxy
+        .as_ref()
+        .map_or_else(ResourceRetryConfig::get_default_retry_values, |rp| rp.resource_retry.get_retry_values());
     let disabled_headers = config
         .reverse_proxy
         .as_ref()
@@ -1125,13 +1131,19 @@ async fn fetch_resource_with_retry(
                             | reqwest::StatusCode::TOO_MANY_REQUESTS
                     );
 
-                if attempt < max_attempts -   1 && should_retry {
+                if attempt < max_attempts - 1 && should_retry {
                     let wait_dur = response
                         .headers()
                         .get(RETRY_AFTER)
                         .and_then(|h| h.to_str().ok())
                         .and_then(|s| s.parse::<u64>().ok())
-                        .map_or(Duration::from_millis(backoff_ms), Duration::from_secs);
+                        .map_or_else(
+                            || {
+                                let delay = calculate_retry_backoff(backoff_ms, backoff_multiplier, attempt);
+                                Duration::from_millis(delay)
+                            },
+                            Duration::from_secs,
+                        );
                     tokio::time::sleep(wait_dur).await;
                     continue;
                 }
@@ -1154,8 +1166,9 @@ async fn fetch_resource_with_retry(
             }
             Err(err) => {
                 if attempt < max_attempts - 1 {
-                   tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
-                   continue;
+                    let delay = calculate_retry_backoff(backoff_ms, backoff_multiplier, attempt);
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    continue;
                 }
                 error!("Received failure from server {}:  {err}", sanitize_sensitive_info(resource_url));
             }
@@ -1163,6 +1176,22 @@ async fn fetch_resource_with_retry(
         break;
     }
     None
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+fn calculate_retry_backoff(base_delay_ms: u64, multiplier: f64, attempt: u32) -> u64 {
+    let base = base_delay_ms.max(1);
+    if multiplier <= 1.0 {
+        return base;
+    }
+    let delay = (base as f64) * multiplier.powi(i32::try_from(attempt).unwrap_or(i32::MAX));
+    if !delay.is_finite() || delay < 1.0 {
+        base
+    } else if delay >= u64::MAX as f64 {
+        u64::MAX
+    } else {
+        delay as u64
+    }
 }
 
 /// # Panics

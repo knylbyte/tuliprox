@@ -43,8 +43,8 @@ impl ConfigFile {
         Ok(())
     }
 
-    fn load_api_proxy(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
-        match utils::read_api_proxy_config(&app_state.app_config, true) {
+    async fn load_api_proxy(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+        match utils::read_api_proxy_config(&app_state.app_config, true).await {
             Ok(Some(api_proxy)) => {
                 app_state.app_config.set_api_proxy(api_proxy)?;
                 let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&app_state.app_config.paths);
@@ -101,7 +101,7 @@ impl ConfigFile {
         match self {
             ConfigFile::ApiProxy => {
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::ApiProxy));
-                ConfigFile::load_api_proxy(app_state)
+                ConfigFile::load_api_proxy(app_state).await
             }
             ConfigFile::Mapping => {
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Mapping));

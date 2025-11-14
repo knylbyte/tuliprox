@@ -5,7 +5,7 @@ use shared::model::{HdHomeRunDeviceConfigDto, HdHomeRunConfigDto};
 use crate::app::components::{Card, NoContent, TextButton};
 use crate::app::context::ConfigContext;
 use crate::{config_field_bool, edit_field_bool, generate_form_reducer, html_if};
-use crate::app::components::config::config_page::ConfigForm;
+use crate::app::components::config::config_page::{ConfigForm, LABEL_HDHOMERUN_CONFIG};
 use crate::app::components::config::hdhomerun_device_view::{HdHomerunDeviceView};
 use crate::app::components::config::config_view_context::ConfigViewContext;
 
@@ -128,6 +128,7 @@ pub fn HdHomerunConfigView() -> Html {
 
     html! {
         <div class="tp__hdhomerun-config-view tp__config-view-page">
+            <div class="tp__config-view-page__title">{translate.t(LABEL_HDHOMERUN_CONFIG)}</div>
             <div class="hdhomerun-config-view__body tp__config-view-page__header">
               {if  edit_mode {
                  html! {

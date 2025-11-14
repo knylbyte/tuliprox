@@ -218,6 +218,7 @@ Attributes:
 - `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
 - `grace_period_millis`  default set to 300 milliseconds.
 - `grace_period_timeout_secs` default set to 2 seconds.
+- `shared_burst_buffer_mb` optional (default `12`). Minimum burst buffer size (in MB) used for shared streams.
 
 ##### 1.6.1.1 `retry`
 If set to `true` on connection loss to provider, the stream will be reconnected.
@@ -315,6 +316,22 @@ reverse_proxy:
     x_header: false
     custom_header:
       - my-custom-header
+```
+
+#### 1.6.6 `resource_retry`
+Controls how aggressively tuliprox retries upstream resource (logo, EPG, stream) downloads whenever it proxies requests for clients.  
+It has three attributes:
+
+- `max_attempts`: How many times a failing request should be retried. Defaults to `3`, minimum `1`.
+- `backoff_millis`: The wait time between attempts (unless the upstream responds with a `Retry-After` header). Defaults to `250`.
+- `backoff_multiplier`: Multiplies the base backoff after each failed attempt. Values `<= 1.0` result in constant (linear) delay; values `> 1.0` produce exponential backoff.
+
+```yaml
+reverse_proxy:
+  resource_retry:
+    max_attempts: 5
+    backoff_millis: 500
+    backoff_multiplier: 1.5
 ```
 
 ### 1.6.7 `geoip`
@@ -1252,8 +1269,12 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
   - first(a)
   - template(a)
   - replace(text, match, replacement)
+  - pad(text | number, number, char, optional position: "<" | ">" | "^")
+  - format(fmt_text, ...args)
 Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `audio_track"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
-When you use Regular expressions it could be that your match contains multiple results. The builtin function `first` returns the first match.
+Format is very simple and only supports in text replacement like  `format("Hello {}! Hello {}!", "Bob", "World")`  
+When you use Regular expressions it could be that your match contains multiple results.
+The builtin function `first` returns the first match.
 Example `print(uppercase("hello"))`. output is only visible in `trace` log level you can enable it like `log_level: debug,tuliprox::foundation::mapper=trace` in config
 - Assignment assigns an expression result. variable or field.
 ```dsl

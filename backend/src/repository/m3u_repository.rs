@@ -62,7 +62,7 @@ pub async fn m3u_write_playlist(cfg: &AppConfig, target: &ConfigTarget, target_o
 
         persist_m3u_playlist_as_text(&cfg.config.load(), target, target_output, &m3u_playlist);
         {
-            let _file_lock = cfg.file_locks.write_lock(&m3u_path);
+            let _file_lock = cfg.file_locks.write_lock(&m3u_path).await;
             match IndexedDocumentWriter::new(m3u_path.clone(), idx_path) {
                 Ok(mut writer) => {
                     for m3u in m3u_playlist {
@@ -105,7 +105,7 @@ pub async fn m3u_get_item_for_stream_id(stream_id: u32, app_state: &AppState, ta
         let cfg: &AppConfig = &app_state.app_config;
         let target_path = get_target_storage_path(&cfg.config.load(), target.name.as_str()).ok_or_else(|| str_to_io_error(&format!("Could not find path for target {}", &target.name)))?;
         let (m3u_path, idx_path) = m3u_get_file_paths(&target_path);
-        let _file_lock = cfg.file_locks.read_lock(&m3u_path);
+        let _file_lock = cfg.file_locks.read_lock(&m3u_path).await;
         IndexedDocumentDirectAccess::read_indexed_item::<u32, M3uPlaylistItem>(&m3u_path, &idx_path, &stream_id)
     }
 }

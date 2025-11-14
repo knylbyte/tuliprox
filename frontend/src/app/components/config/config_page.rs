@@ -4,6 +4,18 @@ use shared::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfi
 use std::fmt;
 use std::str::FromStr;
 
+pub const LABEL_MAIN_CONFIG: &str = "LABEL.MAIN";
+pub const LABEL_API_CONFIG: &str = "LABEL.API";
+pub const LABEL_LOG_CONFIG: &str = "LABEL.LOG";
+pub const LABEL_SCHEDULES_CONFIG: &str = "LABEL.SCHEDULES";
+pub const LABEL_MESSAGING_CONFIG: &str = "LABEL.MESSAGING";
+pub const LABEL_WEB_UI_CONFIG: &str = "LABEL.WEB_UI";
+pub const LABEL_REVERSE_PROXY_CONFIG: &str = "LABEL.REVERSE_PROXY";
+pub const LABEL_HDHOMERUN_CONFIG: &str = "LABEL.HDHOMERUN_CONFIG";
+pub const LABEL_PROXY_CONFIG: &str = "LABEL.PROXY";
+pub const LABEL_IP_CHECK_CONFIG: &str = "LABEL.IP_CHECK";
+pub const LABEL_VIDEO_CONFIG: &str = "LABEL.VIDEO";
+
 const MAIN_PAGE: &str = "main";
 const API_PAGE: &str = "api";
 const LOG_PAGE: &str = "log";

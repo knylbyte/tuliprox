@@ -1,5 +1,20 @@
 # Changelog
-# 3.1.8 (2025-11-18)
+# 3.2.0 (2025-11-14)
+- Added `name` attribute to Staged Input.
+- Real-time active provider connection monitoring (dashboard + websocket)
+- Source editor: block selection, batch-mode UI and automatic layout
+- Fixed SSL certificate field binding in configuration view
+- More robust connection-state and provider-handle management
+- Streamlined event notifications and provider-count reporting
+- Added configurable `reverse_proxy.resource_retry` (UI + server) to tune max attempts, base delay, and exponential backoff multiplier for proxied resources.
+- Multi Strm outputs with same type is now allowed. 
+- Added new mapper function `pad(text | number, number, char, optional position: "<" | ">" | "^")`
+- Added new mapper function `format` for simple in-text replacement like `format("Hello {}! Hello {}!", "Bob", "World")`
+- Added `reverse_proxy.stream.shared_burst_buffer_mb` to control shared-stream burst buffer size (default 12 MB).
+- Added `movie` as alias for `vod` for type filter. You can now use `Type = movie` as an alternative to `Type = vod`.
+- Fixed file locks to avoid race conditions on file operations
+
+# 3.1.8 (2025-11-06)
 - Fixed HLS streaming issues caused by session eviction and incorrect headers.
 - Catchup stream fix cycling through multiple providers on play.
 - Custom streams fix and update webui stream info

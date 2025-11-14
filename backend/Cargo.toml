@@ -1,6 +1,6 @@
 [package]
 name = "tuliprox"
-version = "3.1.8"
+version = "3.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -22,7 +22,7 @@ axum = { version = "0.8" , features = ["macros", "default", "ws"]}
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "auth", "fs", "compression-full", "trace"] }
 tower_governor = { version = "0.8", features = ["axum"] }
-jsonwebtoken = { version = "10.1", features = ["rust_crypto"] }
+jsonwebtoken = { version = "10.2", features = ["rust_crypto"] }
 rust-argon2 = "3"
 futures = "0.3"
 path-clean = "1.0"
@@ -60,7 +60,7 @@ indexmap = "2"
 notify = "8.2"
 arc-swap = "1.7"
 dashmap = "6.1"
-hyper = "1.7"
+hyper = "1.8"
 hyper-util = "0.1"
 socket2 = { version = "0.6", features = ["all"] }
 async-compression = { version = "0.4", features = ["tokio"] }

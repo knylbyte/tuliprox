@@ -79,6 +79,15 @@
    &__connections {
    }
 
+   &__selection-rect {
+      position:absolute;
+      display: none;
+      border: 1px dashed var(--selection-area-border-color);
+      background: var(--selection-area-background-color);
+      z-index: 9999;
+      pointer-events: none;
+   }
+
 }
 
 .graph-paper-advanced {
@@ -93,6 +102,11 @@
 .grabbed {
    cursor: grabbing;
 }
+
+.selection_mode * {
+   cursor: crosshair !important;
+}
+
 
 .clickable {
    cursor: pointer;
