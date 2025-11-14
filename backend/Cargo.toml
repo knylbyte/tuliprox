@@ -1,6 +1,6 @@
 [package]
 name = "tuliprox"
-version = "3.2.2"
+version = "3.2.3"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -40,7 +40,7 @@ fastrand = "2"
 rpassword = "7.4"
 flate2 = "1.1"
 blake3 = "1.8"
-bytes = "1.10"
+bytes = "1.11"
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio = { version = "1.48", features = ["rt-multi-thread", "parking_lot", "fs"] }
 #tokio = { version = "1.46", features = ["rt-multi-thread", "parking_lot", "fs", "tracing"] }

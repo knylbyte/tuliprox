@@ -217,12 +217,12 @@ async fn decode_local_file_bytes(content: Vec<u8>) -> Result<String, Error> {
     }
 }
 
-fn local_file_not_found(path: &PathBuf) -> Error {
+fn local_file_not_found(path: &Path) -> Error {
     let file_str = path.to_str().unwrap_or("?");
     Error::new(ErrorKind::InvalidData, format!("Cant find file {file_str}"))
 }
 
-pub async fn get_local_file_content(file_path: &PathBuf) -> Result<String, Error> {
+pub async fn get_local_file_content(file_path: &Path) -> Result<String, Error> {
     match tokio::fs::read(file_path).await {
         Ok(content) => decode_local_file_bytes(content).await,
         Err(_) => Err(local_file_not_found(file_path)),

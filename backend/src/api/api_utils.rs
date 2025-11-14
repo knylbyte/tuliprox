@@ -32,7 +32,7 @@ use shared::utils::{
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::io::BufWriter;
+use tokio::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -1076,7 +1076,7 @@ async fn build_stream_response(
             None
         };
         if let Some(resource_path) = cache_resource_path {
-            if let Ok(file) = create_new_file_for_write(&resource_path) {
+            if let Ok(file) = create_new_file_for_write(&resource_path).await {
                 let writer = BufWriter::new(file);
                 let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
                 let stream = PersistPipeStream::new(byte_stream, writer, add_cache_content);
