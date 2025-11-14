@@ -1,4 +1,4 @@
-use crate::api::model::{AppState};
+use crate::api::model::AppState;
 use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{Config, ConfigTarget, M3uTargetOutput};
 use crate::repository::indexed_document::{IndexedDocumentDirectAccess, IndexedDocumentIterator, IndexedDocumentWriter};
@@ -6,7 +6,6 @@ use crate::repository::m3u_playlist_iterator::M3uPlaylistM3uTextIterator;
 use crate::repository::storage::get_target_storage_path;
 use crate::repository::storage_const;
 use crate::utils;
-use log::error;
 use shared::error::{create_tuliprox_error, info_err};
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::PlaylistItemType;
@@ -35,33 +34,36 @@ pub fn m3u_get_epg_file_path(target_path: &Path) -> PathBuf {
     utils::add_prefix_to_filename(&path, "epg_", Some("xml"))
 }
 
+macro_rules! await_playlist_write {
+    ($expr:expr, $fmt:literal $(, $args:expr)* ) => {{
+        $expr.await.map_err(|err| {
+            create_tuliprox_error!(TuliproxErrorKind::Notify, $fmt $(, $args)*, err)
+        })?
+    }};
+}
+
 async fn persist_m3u_playlist_as_text(
     cfg: &Config,
     target: &ConfigTarget,
     target_output: &M3uTargetOutput,
     m3u_playlist: Arc<Vec<M3uPlaylistItem>>,
-) {
-    let Some(filename) = target_output.filename.as_ref() else { return };
-    let Some(m3u_filename) = utils::get_file_path(&cfg.working_dir, Some(PathBuf::from(filename))) else { return };
+) -> Result<(), TuliproxError> {
+    let Some(filename) = target_output.filename.as_ref() else { return Ok(()); };
+    let Some(m3u_filename) = utils::get_file_path(&cfg.working_dir, Some(PathBuf::from(filename))) else { return Ok(()); };
 
-    match fs::File::create(&m3u_filename).await {
-        Ok(file) => {
-            let mut writer = AsyncBufWriter::new(file);
-            if writer.write_all(b"#EXTM3U\n").await.is_ok() {
-                for m3u in m3u_playlist.iter() {
-                    let line = m3u.to_m3u(target.options.as_ref(), false);
-                    if writer.write_all(line.as_bytes()).await.is_err()
-                        || writer.write_all(b"\n").await.is_err()
-                    {
-                        error!("Failed to write entry to {}", m3u_filename.display());
-                        break;
-                    }
-                }
-                let _ = writer.flush().await;
-            }
-        }
-        Err(_) => error!("Can't write m3u plain playlist {}", &m3u_filename.display()),
+    let file = await_playlist_write!(fs::File::create(&m3u_filename), "Can't write m3u plain playlist {} - {}", m3u_filename.display());
+    let mut writer = AsyncBufWriter::new(file);
+    await_playlist_write!(writer.write_all(b"#EXTM3U\n"), "Failed to write header to {} - {}", m3u_filename.display());
+
+    for m3u in m3u_playlist.iter() {
+        let line = m3u.to_m3u(target.options.as_ref(), false);
+        await_playlist_write!(writer.write_all(line.as_bytes()), "Failed to write entry to {} - {}", m3u_filename.display());
+        await_playlist_write!(writer.write_all(b"\n"), "Failed to write newline to {} - {}", m3u_filename.display());
     }
+
+    await_playlist_write!(writer.flush(), "Failed to flush {} - {}", m3u_filename.display());
+
+    Ok(())
 }
 
 pub async fn m3u_write_playlist(
@@ -85,7 +87,7 @@ pub async fn m3u_write_playlist(
             .collect::<Vec<M3uPlaylistItem>>(),
     );
 
-    persist_m3u_playlist_as_text(&cfg.config.load(), target, target_output, Arc::clone(&m3u_playlist)).await;
+    let persist_result = persist_m3u_playlist_as_text(&cfg.config.load(), target, target_output, Arc::clone(&m3u_playlist)).await;
 
     let file_lock = cfg.file_locks.write_lock(&m3u_path).await;
     let playlist = Arc::clone(&m3u_playlist);
@@ -111,7 +113,7 @@ pub async fn m3u_write_playlist(
         .await
         .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Notify, "failed to write m3u playlist: {} - {err}", m3u_path.display()))??;
 
-    Ok(())
+    persist_result
 }
 
 pub async fn m3u_load_rewrite_playlist(
