@@ -1,13 +1,13 @@
-use std::collections::VecDeque;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::task::{Context, Poll};
+use crate::api::model::StreamError;
 use bytes::Bytes;
 use log::error;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use std::collections::VecDeque;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::task::{Context, Poll};
+use tokio::io::AsyncWrite;
 use tokio_stream::Stream;
-use crate::api::model::StreamError;
 
 /// `PersistPipeStream`
 ///
@@ -99,7 +99,7 @@ where
 
 impl<S, W> Stream for PersistPipeStream<S, W>
 where
-    S: Stream<Item = Result<bytes::Bytes, StreamError>> + Unpin,
+    S: Stream<Item=Result<bytes::Bytes, StreamError>> + Unpin,
     W: AsyncWrite + Unpin + 'static,
 {
     type Item = Result<Bytes, StreamError>;
@@ -107,19 +107,17 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
 
-        if !this.pending_writes.is_empty() {
-            if let Poll::Pending = this.poll_pending_writes(cx) {
-                return Poll::Pending;
-            }
+        if !this.pending_writes.is_empty() && this.poll_pending_writes(cx).is_pending() {
+            return Poll::Pending;
         }
 
         match Pin::new(&mut this.inner).poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => {
-                if let Poll::Pending = this.poll_pending_writes(cx) {
+                if this.poll_pending_writes(cx).is_pending() {
                     return Poll::Pending;
                 }
-                if let Poll::Pending = this.poll_flush(cx) {
+                if this.poll_flush(cx).is_pending() {
                     return Poll::Pending;
                 }
                 this.finalize();
@@ -130,17 +128,11 @@ where
                     this.enqueue_chunk(bytes.clone());
                 }
                 // Try to drain pending bytes after queuing new data.
-                if let Poll::Pending = this.poll_pending_writes(cx) {
+                if this.poll_pending_writes(cx).is_pending() {
                     // fall through: we still return the chunk to the caller even if persistence is pending
                 }
                 Poll::Ready(Some(item))
             }
         }
-    }
-}
-
-impl<S, W> Drop for PersistPipeStream<S, W> {
-    fn drop(&mut self) {
-        self.finalize();
     }
 }

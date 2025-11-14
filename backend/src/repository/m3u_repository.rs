@@ -108,8 +108,8 @@ pub async fn m3u_write_playlist(
             Err(err) => Err(cant_write_result!(&m3u_path_clone, err)),
         }
     })
-    .await
-    .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Notify, "failed to write m3u playlist: {} - {err}", m3u_path.display()))??;
+        .await
+        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Notify, "failed to write m3u playlist: {} - {err}", m3u_path.display()))??;
 
     Ok(())
 }
