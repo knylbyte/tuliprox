@@ -70,12 +70,9 @@ pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: 
                 if filepath.exists() {
                     if let Some(persist_file_value) = persist_filepath {
                         let to_file = &persist_file_value;
-                        match fs::copy(&filepath, to_file) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!("cant persist to: {}  => {}", to_file.to_str().unwrap_or("?"), e);
-                                return create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to persist: {}  => {}", to_file.to_str().unwrap_or("?"), e);
-                            }
+                        if let Err(e) = tokio::fs::copy(&filepath, to_file).await {
+                            error!("cant persist to: {}  => {}", to_file.to_str().unwrap_or("?"), e);
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to persist: {}  => {}", to_file.to_str().unwrap_or("?"), e);
                         }
                     }
 
@@ -117,16 +114,13 @@ pub async fn get_input_text_content(client: Arc<reqwest::Client>, input: &InputS
                 if filepath.exists() {
                     if let Some(persist_file_value) = persist_filepath {
                         let to_file = &persist_file_value;
-                        match fs::copy(&filepath, to_file) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!("cant persist to: {}  => {}", to_file.to_str().unwrap_or("?"), e);
-                                return create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to persist: {}  => {}", to_file.to_str().unwrap_or("?"), e);
-                            }
+                        if let Err(e) = tokio::fs::copy(&filepath, to_file).await {
+                            error!("cant persist to: {}  => {}", to_file.to_str().unwrap_or("?"), e);
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to persist: {}  => {}", to_file.to_str().unwrap_or("?"), e);
                         }
                     }
 
-                    match get_local_file_content(&filepath) {
+                    match get_local_file_content(&filepath).await {
                         Ok(content) => Some(content),
                         Err(err) => {
                             return create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed : {}", err);
@@ -211,23 +205,36 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
     headers
 }
 
-pub fn get_local_file_content(file_path: &PathBuf) -> Result<String, Error> {
-    // Check if the file is accessible
-    if file_path.exists() && file_path.is_file() {
-        if let Ok(content) = fs::read(file_path) {
-            if content.len() >= 2 && is_gzip(&content[0..2]) {
-                let mut decoder = flate2::read::GzDecoder::new(&content[..]);
-                let mut decode_buffer = String::new();
-                return match decoder.read_to_string(&mut decode_buffer) {
-                    Ok(_) => Ok(decode_buffer),
-                    Err(err) => Err(str_to_io_error(&format!("failed to decode gzip content {err}")))
-                };
-            }
-            return Ok(String::from_utf8_lossy(&content).parse().unwrap_or_default());
-        }
+fn decode_local_file_bytes(content: Vec<u8>) -> Result<String, Error> {
+    if content.len() >= 2 && is_gzip(&content[0..2]) {
+        let mut decoder = flate2::read::GzDecoder::new(&content[..]);
+        let mut decode_buffer = String::new();
+        decoder
+            .read_to_string(&mut decode_buffer)
+            .map_err(|err| str_to_io_error(&format!("failed to decode gzip content {err}")))?;
+        Ok(decode_buffer)
+    } else {
+        Ok(String::from_utf8_lossy(&content).parse().unwrap_or_default())
     }
-    let file_str = file_path.to_str().unwrap_or("?");
-    Err(Error::new(ErrorKind::InvalidData, format!("Cant find file {file_str}")))
+}
+
+fn local_file_not_found(path: &PathBuf) -> Error {
+    let file_str = path.to_str().unwrap_or("?");
+    Error::new(ErrorKind::InvalidData, format!("Cant find file {file_str}"))
+}
+
+pub async fn get_local_file_content(file_path: &PathBuf) -> Result<String, Error> {
+    match tokio::fs::read(file_path).await {
+        Ok(content) => decode_local_file_bytes(content),
+        Err(_) => Err(local_file_not_found(file_path)),
+    }
+}
+
+pub fn get_local_file_content_blocking(file_path: &PathBuf) -> Result<String, Error> {
+    match fs::read(file_path) {
+        Ok(content) => decode_local_file_bytes(content),
+        Err(_) => Err(local_file_not_found(file_path)),
+    }
 }
 
 
@@ -349,26 +356,39 @@ async fn download_epg_content_as_file(client: Arc<reqwest::Client>, input: &Conf
     }
 }
 
-pub async fn download_text_content(client: Arc<reqwest::Client>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, headers: Option<&HeaderMap>, persist_filepath: Option<PathBuf>) -> Result<(String, String), Error> {
+pub async fn download_text_content(
+    client: Arc<reqwest::Client>,
+    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
+    input: &InputSource,
+    headers: Option<&HeaderMap>,
+    persist_filepath: Option<PathBuf>,
+) -> Result<(String, String), Error> {
     if let Ok(url) = input.url.parse::<url::Url>() {
         let result = if url.scheme() == "file" {
-            url.to_file_path().map_or_else(|()| Err(str_to_io_error(&format!("Unknown file {}", sanitize_sensitive_info(&input.url)))), |file_path|
-                get_local_file_content(&file_path).map(|c| (c, url.to_string())),
-            )
+            match url.to_file_path() {
+                Ok(file_path) => get_local_file_content(&file_path).await.map(|c| (c, url.to_string())),
+                Err(()) => Err(str_to_io_error(&format!(
+                    "Unknown file {}",
+                    sanitize_sensitive_info(&input.url)
+                ))),
+            }
         } else {
             get_remote_content(client, input, headers, &url, disabled_headers).await
         };
         match result {
             Ok((content, response_url)) => {
                 if persist_filepath.is_some() {
-                    persist_file(persist_filepath, &content);
+                    persist_file(persist_filepath, &content).await;
                 }
                 Ok((content, response_url))
             }
-            Err(err) => Err(err)
+            Err(err) => Err(err),
         }
     } else {
-        Err(str_to_io_error(&format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
+        Err(str_to_io_error(&format!(
+            "Malformed URL {}",
+            sanitize_sensitive_info(&input.url)
+        )))
     }
 }
 

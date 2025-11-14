@@ -1,5 +1,5 @@
 use shared::error::{str_to_io_error, to_io_error};
-use crate::utils::request::{get_local_file_content};
+use crate::utils::request::get_local_file_content_blocking;
 use crate::utils::EnvResolvingReader;
 use crate::utils::{file_reader, resolve_relative_path};
 use log::error;
@@ -152,7 +152,7 @@ pub fn csv_read_inputs_from_reader(batch_input_type: InputType, reader: impl Buf
 
 pub fn csv_read_inputs(input_type: InputType, file_uri: &str) -> Result<(PathBuf, Vec<ConfigInputAliasDto>), Error> {
     let file_path = get_csv_file_path(file_uri)?;
-    match get_local_file_content(&file_path) {
+    match get_local_file_content_blocking(&file_path) {
         Ok(content) => {
             Ok((file_path, csv_read_inputs_from_reader(input_type, EnvResolvingReader::new(file_reader(Cursor::new(content))))?))
         }
