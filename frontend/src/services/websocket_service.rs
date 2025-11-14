@@ -1,4 +1,3 @@
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{WebSocket, MessageEvent, Event, ErrorEvent, CloseEvent};
 use std::cell::RefCell;
@@ -13,9 +12,23 @@ use crate::services::{get_base_href, get_token, EventService, StatusService};
 use crate::utils::set_timeout;
 use wasm_bindgen::closure::Closure;
 
-const WS_RECONNECT_BASE_MS: u32 = 3000;
-const WS_RECONNECT_MAX_MS: u32 = 30_000;
+const WS_RECONNECT_BASE_MS: u32 = 300;
+const WS_RECONNECT_MAX_MS: u32 = 2000;
 const WS_RECONNECT_MAX_ATTEMPTS: u32 = 20;
+
+fn reconnect_delay(attempt: u32) -> u32 {
+    if attempt < 6 {
+        let d = WS_RECONNECT_BASE_MS * (attempt+1);
+        d.min(WS_RECONNECT_MAX_MS)
+    } else {
+        WS_RECONNECT_MAX_MS
+    }
+}
+
+type JsOnMessageCallback = Option<Closure<dyn FnMut(MessageEvent)>>;
+type JsOnCloseCallback = Option<Closure<dyn FnMut(CloseEvent)>>;
+type JsOnErrorCallback = Option<Closure<dyn FnMut(ErrorEvent)>>;
+type JsOnOpenCallback = Option<Closure<dyn FnMut(Event)>>;
 
 pub struct WebSocketService {
     connected: Rc<AtomicBool>,
@@ -26,10 +39,10 @@ pub struct WebSocketService {
     ws_path: String,
 
     // store closures so they live as long as we want and can be dropped on close
-    ws_onmessage: Rc<RefCell<Option<Closure<dyn FnMut(MessageEvent)>>>>,
-    ws_onopen: Rc<RefCell<Option<Closure<dyn FnMut(Event)>>>>,
-    ws_onclose: Rc<RefCell<Option<Closure<dyn FnMut(CloseEvent)>>>>,
-    ws_onerror: Rc<RefCell<Option<Closure<dyn FnMut(ErrorEvent)>>>>,
+    ws_onmessage: Rc<RefCell<JsOnMessageCallback>>,
+    ws_onopen: Rc<RefCell<JsOnOpenCallback>>,
+    ws_onclose: Rc<RefCell<JsOnCloseCallback>>,
+    ws_onerror: Rc<RefCell<JsOnErrorCallback>>,
 }
 
 impl WebSocketService {
@@ -75,16 +88,16 @@ impl WebSocketService {
                 socket.set_binary_type(web_sys::BinaryType::Arraybuffer);
                 let ws_clone = self.ws.clone();
                 *ws_clone.borrow_mut() = Some(socket.clone());
-                let event_service = self.event_service.clone();
 
                 // onmessage
                 {
                     let ws_onmessage_ref = self.ws_onmessage.clone();
                     let ws_onmessage_clone = ws_clone.clone();
-                    let event_service_clone = event_service.clone();
+                    let event_service = self.event_service.clone();
+                    let attempt_counter = self.attempt_counter.clone();
                     let onmessage_callback = Closure::<dyn FnMut(MessageEvent)>::wrap(Box::new(move |event: MessageEvent| {
                         trace!("WebSocket received message: {event:?}");
-                        if let Some(response) = handle_socket_protocol_msg(event, &event_service_clone) {
+                        if let Some(response) = handle_socket_protocol_msg(event, &event_service, &attempt_counter) {
                             Self::try_send_message(ws_onmessage_clone.borrow().as_ref(), response);
                         }
                     }));
@@ -98,14 +111,12 @@ impl WebSocketService {
                     let ws_onopen_ref = self.ws_onopen.clone();
                     let ws_open_clone = ws_clone.clone();
                     let connected_clone = self.connected.clone();
-                    let attempt_counter = self.attempt_counter.clone();
-                    let event_service_clone = Rc::clone(&self.event_service);
                     let onopen_callback = Closure::<dyn FnMut(Event)>::wrap(Box::new(move |_event: Event| {
+                        // on open is called on a connect attempt, it does not mean it is connected!
                         trace!("WebSocket connection opened.");
-                        connected_clone.store(true, Ordering::SeqCst);
-                        attempt_counter.store(0, Ordering::SeqCst);
-                        Self::try_send_message(ws_open_clone.borrow().as_ref(), ProtocolMessage::Version(PROTOCOL_VERSION));
-                        event_service_clone.broadcast(EventMessage::WebSocketStatus(true));
+                        if Self::try_send_message(ws_open_clone.borrow().as_ref(), ProtocolMessage::Version(PROTOCOL_VERSION)) {
+                            connected_clone.store(true, Ordering::SeqCst);
+                        }
                     }));
                     socket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
                     ws_onopen_ref.borrow_mut().replace(onopen_callback);
@@ -186,8 +197,7 @@ impl WebSocketService {
             warn!("WebSocket reconnect attempts exceeded ({attempt}). Giving up.");
             return;
         }
-
-        let delay = (WS_RECONNECT_BASE_MS as f64 * 2f64.powi(attempt as i32)).min(WS_RECONNECT_MAX_MS as f64) as u32;
+        let delay = reconnect_delay(attempt);
 
         warn!("WebSocket reconnect attempt #{attempt} scheduled in {} ms", delay);
 
@@ -239,7 +249,7 @@ impl WebSocketService {
     }
 }
 
-fn handle_socket_protocol_msg(event: MessageEvent, event_service: &Rc<EventService>) -> Option<ProtocolMessage>{
+fn handle_socket_protocol_msg(event: MessageEvent, event_service: &Rc<EventService>, attempt_counter: &Rc<AtomicU16>) -> Option<ProtocolMessage>{
     if let Ok(buf) = event.data().dyn_into::<ArrayBuffer>() {
         let array = Uint8Array::new(&buf);
         let bytes = bytes::Bytes::from(array.to_vec());
@@ -283,6 +293,8 @@ fn handle_socket_protocol_msg(event: MessageEvent, event_service: &Rc<EventServi
                         event_service.broadcast(EventMessage::PlaylistUpdateProgress(target, msg));
                     }
                     ProtocolMessage::Version(_) => {
+                        attempt_counter.store(0, Ordering::SeqCst);
+                        event_service.broadcast(EventMessage::WebSocketStatus(true));
                         if let Some(token) = get_token() {
                             return Some(ProtocolMessage::Auth(token));
                         }

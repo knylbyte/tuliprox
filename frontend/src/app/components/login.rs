@@ -39,7 +39,7 @@ pub fn Login() -> Html {
             let password = password_input.value();
             let result = services_ctx.auth.authenticate(username, password).await;
             match &result  {
-                Ok(token) => {
+                Ok(_token) => {
                     authorized_state.set(true)
                 }
                 Err(_) => {authorized_state.set(false);}
