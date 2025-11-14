@@ -20,6 +20,7 @@ use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio::task;
 use tokio_util::sync::CancellationToken;
 use crate::repository::storage::get_geoip_path;
 use crate::utils::GeoIp;
@@ -210,8 +211,11 @@ pub fn create_cache(config: &Config) -> Option<Arc<Mutex<LRUResourceCache>>> {
             let cache = Arc::new(Mutex::new(res_cache));
             let cache_scanner = Arc::clone(&cache);
             tokio::spawn(async move {
-                let mut c = cache_scanner.lock().await;
-                if let Err(err) = (*c).scan() {
+                let scan_result = {
+                    let mut cache = cache_scanner.lock().await;
+                    task::block_in_place(|| cache.scan())
+                };
+                if let Err(err) = scan_result {
                     error!("Failed to scan cache {err}");
                 }
             });

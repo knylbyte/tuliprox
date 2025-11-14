@@ -1,4 +1,8 @@
 # Changelog
+# 3.3.0 (2025-11-xx)
+- Avoid blocking the runtime when warming cache
+- Normalize FileLockManager paths so aliases share the same lock
+
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
 - Real-time active provider connection monitoring (dashboard + websocket)
@@ -7,7 +11,7 @@
 - More robust connection-state and provider-handle management
 - Streamlined event notifications and provider-count reporting
 - Added configurable `reverse_proxy.resource_retry` (UI + server) to tune max attempts, base delay, and exponential backoff multiplier for proxied resources.
-- Multi Strm outputs with same type is now allowed. 
+- Multi Strm outputs with same type is now allowed.
 - Added new mapper function `pad(text | number, number, char, optional position: "<" | ">" | "^")`
 - Added new mapper function `format` for simple in-text replacement like `format("Hello {}! Hello {}!", "Bob", "World")`
 - Added `reverse_proxy.stream.shared_burst_buffer_mb` to control shared-stream burst buffer size (default 12 MB).
@@ -19,13 +23,13 @@
 - Catchup stream fix cycling through multiple providers on play.
 - Custom streams fix and update webui stream info
 - Added TimeZone to `epg_timeshift: [-+]hh:mm or TimeZone`, example `Europe/Paris`, `America/New_York`, `-2:30`(-2h30m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m)
-If you use TimeZone the timeshift will change on Summer/Winter time if its applied in the TZ.
+  If you use TimeZone the timeshift will change on Summer/Winter time if its applied in the TZ.
 - Fixed: Mappings now automatically reload and reapply after configuration changes, preventing stale settings.
 - Search in Playlist Explorer now returns groups instead of matching flat channel list.
 - Added `use_memory_cache` attribute to target definition to hold playlist in memory to reduce disc access.
-Placing playlist into memory causes more RAM usage but reduces disk access.
-- Added optional `filter` attribute to Output (except HDHomerun-Output). 
-Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
+  Placing playlist into memory causes more RAM usage but reduces disk access.
+- Added optional `filter` attribute to Output (except HDHomerun-Output).
+  Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
 - Added burst buffer to shared stream
 - Telegram message thread support. thread id can now be appended to chat-id like `chat-id:thread-id`.
 - Telegram supports markdown generation for structured json messages. simply set `markdown: true` in telegram config.
@@ -43,7 +47,7 @@ Output filters are applied after all transformations have been performed, theref
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch
 - Resource proxy retries failed requests up to three times and respects the `Retry-After` header (falls back to 100 ms wait)
-to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
+  to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
 - Added `accept_insecure_ssl_certificates` option in `config.yml` (for serving images over HTTPS without a valid SSL certificate)
 - VOD streams now use tmdbid from `get_vod_streams` if available, removing the need for `resolve_vod` in STRM generation
 - Fixed file length issue in STRM generation
@@ -63,14 +67,14 @@ to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
 - Fixed auto EPG for batch inputs
 - Fixed EPG URL prepare
 - Content Security Policies configurable via config, default OFF
-- WebUI Config View editor for config.yml added 
+- WebUI Config View editor for config.yml added
 
 # 3.1.5 (2025-08-14)
 - Hot reload for config
 - New WebUI (currently only readonly)
 - Fixed shared stream provider connection count
 - Added hanging client connection release
-- Added `replace` built-in function for mapper scripts 
+- Added `replace` built-in function for mapper scripts
 - Added `token_ttl_mins` to web_auth config to define auth token expiration duration.
 - Staged sources. Side-loading playlist. Load from staged, serve from provider.
 - Fixed proxy config
@@ -87,7 +91,7 @@ to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
 ```
    station_prefix = template(concat("US_", station, "_PREFIX")),
 ```
-If we assume the variable `station` contains the value `WINK`, 
+If we assume the variable `station` contains the value `WINK`,
 this script receives the template with the concatenated name `US_WINK_PREFIX` which should be defined in `templates` section,
 and assigns it to the variable `station_prefix`.
 - Extended STRM export functionality with:
