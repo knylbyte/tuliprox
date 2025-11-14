@@ -162,16 +162,17 @@ for IMAGE_NAME in "${!MULTI_PLATFORM_IMAGES[@]}"; do
     
     # Prepare tags based on branch
     DOCKER_TAGS=""
-    if [ "$BRANCH" = "master" ]; then
+    #if [ "$BRANCH" = "master" ]; then
         # For master branch: create both version and latest tags
         DOCKER_TAGS="-t ghcr.io/euzu/${IMAGE_NAME}:${VERSION} -t ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}"
         BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${VERSION}")
         BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}")
-    elif [ "$BRANCH" = "develop" ]; then
-        # For develop branch: create only dev tag (no version tag)
-        DOCKER_TAGS="-t ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}"
-        BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}")
-    fi
+    #elif [ "$BRANCH" = "develop" ]; then
+    #    # For develop branch: create only dev tag (no version tag)
+    #    DOCKER_TAGS="-t ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}"
+    #    BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${VERSION}")
+    #    BUILT_IMAGES+=("ghcr.io/euzu/${IMAGE_NAME}:${TAG_SUFFIX}")
+    #fi
     
     # Build and push multi-platform image directly with cache
     BUILDX_CACHE_ARGS=()
