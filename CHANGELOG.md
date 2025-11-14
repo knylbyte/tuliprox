@@ -1,5 +1,5 @@
 # Changelog
-# 3.1.9 (2025-11-xx)
+# 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
 - Real-time active provider connection monitoring (dashboard + websocket)
 - Source editor: block selection, batch-mode UI and automatic layout
@@ -12,6 +12,7 @@
 - Added new mapper function `format` for simple in-text replacement like `format("Hello {}! Hello {}!", "Bob", "World")`
 - Added `reverse_proxy.stream.shared_burst_buffer_mb` to control shared-stream burst buffer size (default 12 MB).
 - Added `movie` as alias for `vod` for type filter. You can now use `Type = movie` as an alternative to `Type = vod`.
+- Fixed file locks to avoid race conditions on file operations
 
 # 3.1.8 (2025-11-06)
 - Fixed HLS streaming issues caused by session eviction and incorrect headers.
