@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use web_sys::js_sys::{Uint8Array, ArrayBuffer};
-use log::{debug, error, trace, warn};
+use log::{error, trace, warn};
 use shared::model::{ProtocolMessage, PROTOCOL_VERSION};
 use shared::utils::{concat_path_leading_slash};
 use crate::model::EventMessage;
@@ -137,7 +137,7 @@ impl WebSocketService {
                     let ws_service_reconnect_clone = Rc::clone(&ws_service_reconnect);
 
                     let onclose_callback = Closure::<dyn FnMut(CloseEvent)>::wrap(Box::new(move |e: CloseEvent| {
-                        debug!(
+                        trace!(
                             "WebSocket closed (Code {}, Reason: {}, Clean: {})",
                             e.code(), e.reason(), e.was_clean()
                         );
@@ -173,14 +173,13 @@ impl WebSocketService {
                     let ws_onerror_ref = self.ws_onerror.clone();
                     let connected_clone = self.connected.clone();
                     let event_service_clone = Rc::clone(&self.event_service);
-                    let ws_service_reconnect_clone = Rc::clone(&ws_service_reconnect);
+                    //let ws_service_reconnect_clone = Rc::clone(&ws_service_reconnect);
 
                     let onerror_callback = Closure::<dyn FnMut(ErrorEvent)>::wrap(Box::new(move |e: ErrorEvent| {
                         error!("WebSocket error: {:?}", e);
                         connected_clone.store(false, Ordering::SeqCst);
                         event_service_clone.broadcast(EventMessage::WebSocketStatus(false));
-                        // schedule reconnect
-                        ws_service_reconnect_clone.schedule_reconnect();
+                        // ws_service_reconnect_clone.schedule_reconnect();
                     }));
                     socket.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
                     ws_onerror_ref.borrow_mut().replace(onerror_callback);
