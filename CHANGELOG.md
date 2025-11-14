@@ -3,6 +3,7 @@
 - Avoid blocking the runtime when warming cache
 - Normalize FileLockManager paths so aliases share the same lock
 - Use async file operations for playlist persistence to avoid blocking async paths
+- Persist cache write pipe using `tokio::fs` so response caching no longer blocks the async runtime
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.

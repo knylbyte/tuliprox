@@ -10,6 +10,7 @@ use crate::utils::debug_if_enabled;
 use shared::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE};
 use log::{debug, error};
 use path_clean::PathClean;
+use tokio::fs as tokio_fs;
 
 pub fn file_writer<W>(w: W) -> BufWriter<W>
 where
@@ -198,8 +199,13 @@ pub fn append_or_crate_file(path: &Path) -> std::io::Result<File> {
 }
 
 #[inline]
-pub fn create_new_file_for_write(path: &Path) -> std::io::Result<File> {
-    OpenOptions::new().write(true).create(true).truncate(true).open(path)
+pub async fn create_new_file_for_write(path: &Path) -> tokio::io::Result<tokio_fs::File> {
+    tokio_fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .await
 }
 
 #[inline]
