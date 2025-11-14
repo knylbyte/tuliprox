@@ -138,3 +138,9 @@ where
         }
     }
 }
+
+impl<S, W> Drop for PersistPipeStream<S, W> {
+    fn drop(&mut self) {
+        self.finalize();
+    }
+}
