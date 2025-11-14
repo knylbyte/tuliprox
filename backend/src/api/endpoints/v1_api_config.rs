@@ -96,7 +96,7 @@ async fn config(
             if let Err(err) = prepare_sources_batch(&mut app_config.sources, false) {
                 error!("Failed to prepare sources batch: {err}");
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
-            } else if let Err(err) = prepare_users(&mut app_config, &app_state.app_config) {
+            } else if let Err(err) = prepare_users(&mut app_config, &app_state.app_config).await {
                 error!("Failed to prepare users: {err}");
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
             } else {

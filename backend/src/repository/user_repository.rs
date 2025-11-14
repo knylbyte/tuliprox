@@ -120,23 +120,23 @@ fn add_target_user_to_user_tree(target_users: &[TargetUser], user_tree: &mut BPl
     }
 }
 
-pub fn merge_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
+pub async fn merge_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
     let path = get_api_user_db_path(cfg);
-    let lock = cfg.file_locks.read_lock(&path);
+    let lock = cfg.file_locks.read_lock(&path).await;
     let mut user_tree: BPlusTree<String, StoredProxyUserCredentials> = BPlusTree::load(&path).unwrap_or_else(|_| BPlusTree::new());
     drop(lock);
     add_target_user_to_user_tree(target_users, &mut user_tree);
-    let _lock = cfg.file_locks.write_lock(&path);
+    let _lock = cfg.file_locks.write_lock(&path).await;
     user_tree.store(&path)
 }
 
 /// # Panics
 ///
 /// Will panic if `backup_dir` is not given
-pub fn backup_api_user_db_file(cfg: &AppConfig, path: &Path) {
+pub async fn backup_api_user_db_file(cfg: &AppConfig, path: &Path) {
     if let Some(backup_dir) = cfg.config.load().backup_dir.as_ref() {
         let backup_path = PathBuf::from(backup_dir).join(format!("{}_{}", storage_const::API_USER_DB_FILE, Local::now().format("%Y%m%d_%H%M%S")));
-        let _lock = cfg.file_locks.read_lock(path);
+        let _lock = cfg.file_locks.read_lock(path).await;
         match std::fs::copy(path, &backup_path) {
             Ok(_) => {}
             Err(err) => { error!("Could not backup file {}:{}", &backup_path.to_str().unwrap_or("?"), err) }
@@ -144,19 +144,19 @@ pub fn backup_api_user_db_file(cfg: &AppConfig, path: &Path) {
     }
 }
 
-pub fn store_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
+pub async fn store_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
     let mut user_tree = BPlusTree::<String, StoredProxyUserCredentials>::new();
     add_target_user_to_user_tree(target_users, &mut user_tree);
     let path = get_api_user_db_path(cfg);
-    backup_api_user_db_file(cfg, &path);
-    let _lock = cfg.file_locks.write_lock(&path);
+    backup_api_user_db_file(cfg, &path).await;
+    let _lock = cfg.file_locks.write_lock(&path).await;
     user_tree.store(&path)
 }
 
 // TODO remove me if we get stable on user_db
-pub fn load_api_user_deprecated(cfg: &AppConfig) -> Result<Vec<TargetUser>, Error> {
+pub async fn load_api_user_deprecated(cfg: &AppConfig) -> Result<Vec<TargetUser>, Error> {
     let path = get_api_user_db_path(cfg);
-    let lock = cfg.file_locks.read_lock(&path);
+    let lock = cfg.file_locks.read_lock(&path).await;
     let user_tree = BPlusTree::<String, StoredProxyUserCredentialsDeprecated>::load(&path)?;
     drop(lock);
     let mut target_users: HashMap<String, TargetUser> = HashMap::new();
@@ -180,10 +180,10 @@ pub fn load_api_user_deprecated(cfg: &AppConfig) -> Result<Vec<TargetUser>, Erro
 }
 
 
-pub fn load_api_user(cfg: &AppConfig) -> Result<Vec<TargetUser>, Error> {
+pub async fn load_api_user(cfg: &AppConfig) -> Result<Vec<TargetUser>, Error> {
     let path = get_api_user_db_path(cfg);
-    let lock = cfg.file_locks.read_lock(&path);
-    let Ok(user_tree) = BPlusTree::<String, StoredProxyUserCredentials>::load(&path) else { return load_api_user_deprecated(cfg) };
+    let lock = cfg.file_locks.read_lock(&path).await;
+    let Ok(user_tree) = BPlusTree::<String, StoredProxyUserCredentials>::load(&path) else { return load_api_user_deprecated(cfg).await };
     drop(lock);
     let mut target_users: HashMap<String, TargetUser> = HashMap::new();
     for (_uname, stored_user) in &user_tree {

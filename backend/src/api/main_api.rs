@@ -59,7 +59,7 @@ async fn healthcheck() -> impl axum::response::IntoResponse {
     axum::Json(create_healthcheck())
 }
 
-fn create_shared_data(
+async fn create_shared_data(
     app_config: &Arc<AppConfig>,
     forced_targets: &Arc<ProcessTargets>,
 ) -> AppState {
@@ -68,7 +68,7 @@ fn create_shared_data(
     let use_geoip = config.is_geoip_enabled();
     let geoip = if use_geoip {
         let path = get_geoip_path(&config.working_dir);
-        let _file_lock = app_config.file_locks.read_lock(&path);
+        let _file_lock = app_config.file_locks.read_lock(&path).await;
         match GeoIp::load(&path) {
             Ok(db) => {
                 info!("GeoIp db loaded");
@@ -249,7 +249,7 @@ pub async fn start_server(
     if web_ui_enabled {
         infos.push(format!("Web root: {}", web_dir_path.display()));
     }
-    let app_shared_data = create_shared_data(&app_config, &targets);
+    let app_shared_data = create_shared_data(&app_config, &targets).await;
     let app_state = Arc::new(app_shared_data);
     let shared_data = Arc::clone(&app_state);
 
