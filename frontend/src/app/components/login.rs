@@ -1,4 +1,3 @@
-use log::debug;
 use web_sys::HtmlInputElement;
 
 use crate::app::components::svg_icon::AppIcon;
@@ -41,7 +40,6 @@ pub fn Login() -> Html {
             let result = services_ctx.auth.authenticate(username, password).await;
             match &result  {
                 Ok(token) => {
-                    debug!("{token:?}");
                     authorized_state.set(true)
                 }
                 Err(_) => {authorized_state.set(false);}
