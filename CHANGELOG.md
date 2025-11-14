@@ -1,6 +1,7 @@
 # Changelog
 # 3.3.0 (2025-11-xx)
 - Avoid blocking the runtime when warming cache
+- Normalize FileLockManager paths so aliases share the same lock
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
