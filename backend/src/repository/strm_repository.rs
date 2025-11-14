@@ -844,7 +844,7 @@ pub async fn write_strm_playlist(
     let existing_strm = {
         let _file_lock = app_config
             .file_locks
-            .read_lock(&strm_index_path);
+            .read_lock(&strm_index_path).await;
         read_strm_file_index(&strm_index_path)
             .await
             .unwrap_or_else(|_| HashSet::with_capacity(4096))
@@ -928,7 +928,7 @@ async fn write_strm_index_file(
 ) -> Result<(), String> {
     let _file_lock = cfg
         .file_locks
-        .write_lock(index_file_path);
+        .write_lock(index_file_path).await;
     let file = File::create(index_file_path)
         .await
         .map_err(|err| format!("Failed to create strm index file: {} {err}", index_file_path.display()))?;
