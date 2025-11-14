@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, io};
 use tokio::sync::{Mutex, RwLock};
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard};
 use shared::error::str_to_io_error;
+use path_clean::PathClean;
 
 #[derive(Clone)]
 pub struct FileLockManager {
@@ -44,14 +46,15 @@ impl FileLockManager {
 
     // Helper function: retrieves or creates a lock for a file.
     async fn get_or_create_lock(&self, path: &Path) -> Arc<RwLock<()>> {
+        let normalized_path = normalize_path(path);
         let mut locks = self.locks.lock().await;
 
-        if let Some(lock) = locks.get(path) {
+        if let Some(lock) = locks.get(&normalized_path) {
             return lock.clone();
         }
 
         let file_lock = Arc::new(RwLock::new(()));
-        locks.insert(path.to_path_buf(), file_lock.clone());
+        locks.insert(normalized_path, file_lock.clone());
         drop(locks);
         file_lock
     }
@@ -93,4 +96,18 @@ impl FileWriteGuard {
     fn new(guard: OwnedRwLockWriteGuard<()>) -> Self {
         Self { _guard: guard }
     }
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical;
+    }
+
+    let base = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir().unwrap_or_else(|_| PathBuf::from("./")).join(path)
+    };
+
+    base.clean()
 }
