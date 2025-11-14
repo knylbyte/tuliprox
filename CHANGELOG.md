@@ -1,5 +1,8 @@
 # Changelog
-# 3.1.9 (2025-11-xx)
+# 3.3.0 (2025-11-xx)
+- Avoid blocking the runtime when warming cache
+
+# 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
 - Real-time active provider connection monitoring (dashboard + websocket)
 - Source editor: block selection, batch-mode UI and automatic layout
