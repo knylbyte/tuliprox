@@ -1,12 +1,10 @@
----
 name: Docker Build and Push
 
 on:
-  workflow_dispatch:
-  # push:
-  #   branches:
-  #     - master
-  #     - develop
+  push:
+    branches:
+      - master
+      - develop
 
 jobs:
   docker-build:
@@ -15,7 +13,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -58,7 +56,7 @@ jobs:
       - name: Install trunk
         run: |
           if ! command -v trunk &> /dev/null; then
-            cargo install trunk
+            RUSTFLAGS="" cargo install trunk --locked
           fi
 
       - name: Install wasm-bindgen-cli
