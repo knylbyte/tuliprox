@@ -317,16 +317,19 @@ impl SharedStreamManager {
 
     async fn unregister(&self, stream_url: &str, send_stop_signal: bool)
     {
-        let mut shared_streams = self.shared_streams.write().await;
-        let shared_state = shared_streams.by_key.remove(stream_url);
-        {
-            let remove_keys: Vec<SocketAddr> = shared_streams.key_by_addr.iter()
-                .filter_map(|(addr, url)| if url == stream_url { Some(*addr) } else { None })
-                .collect();
-            for k in remove_keys {
-                shared_streams.key_by_addr.remove(&k);
+        let shared_state = {
+            let mut shared_streams = self.shared_streams.write().await;
+            let shared_state = shared_streams.by_key.remove(stream_url);
+            {
+                let remove_keys: Vec<SocketAddr> = shared_streams.key_by_addr.iter()
+                    .filter_map(|(addr, url)| if url == stream_url { Some(*addr) } else { None })
+                    .collect();
+                for k in remove_keys {
+                    shared_streams.key_by_addr.remove(&k);
+                }
             }
-        }
+            shared_state
+        };
 
         if let Some(shared_state) = shared_state {
             debug_if_enabled!("Unregistering shared stream {}", sanitize_sensitive_info(stream_url));

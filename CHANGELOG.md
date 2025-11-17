@@ -6,6 +6,7 @@
 - Async persist cache write pipe so response caching no longer blocks the async runtime
 - M3U playlist exports now stream async to keep the runtime responsive
 - Shared stream burst buffer zero copy data buffer to reduce memory usage.
+- Shared stream shutdown now drops registry locks before releasing provider handles to prevent cross-lock stalls.
 
 
 # 3.2.0 (2025-11-14)
