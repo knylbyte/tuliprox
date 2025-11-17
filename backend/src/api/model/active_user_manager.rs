@@ -251,15 +251,19 @@ impl ActiveUserManager {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn update_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
-                                   provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> Option<StreamInfo> {
-        let stream_info = {
+                                   provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> (Option<StreamInfo>, Vec<SocketAddr>) {
+        debug!("[DEBUG] update_connection called for user={}, addr={}, shared={}, url={}",
+               username, fingerprint.addr, stream_channel.shared, sanitize_sensitive_info(&stream_channel.url));
+
+        let (stream_info, old_connections) = {
             let mut user_connections = self.connections.write().await;
 
             // needs to be registered through socket connection to avoid race time conditions through short disconnect
             if !user_connections
                 .key_by_addr
                 .contains_key(&fingerprint.addr) {
-                return None;
+                debug!("[DEBUG] addr {} not found in key_by_addr, returning None", fingerprint.addr);
+                return (None, Vec::new());
             }
 
             user_connections
@@ -275,12 +279,39 @@ impl ActiveUserManager {
                 .iter_mut()
                 .find(|s| s.addr == fingerprint.addr)
                 .map(|stream_info| {
+                    debug!("[DEBUG] Found existing stream for addr {}, updating", fingerprint.addr);
                     stream_info.channel = stream_channel.clone();
                     stream_info.provider = provider.to_string();
                     stream_info.clone()
                 });
 
-            if let Some(stream_info) = existing_stream_info { stream_info } else {
+            if let Some(stream_info) = existing_stream_info {
+                debug!("[DEBUG] Returning existing stream_info for addr {}", fingerprint.addr);
+                (stream_info, Vec::new())
+            } else {
+                // New stream - check if there are other streams from the same client IP with different URL
+                // and close them automatically to prevent connection leaks when zapping
+                let old_connections: Vec<SocketAddr> = connection_data
+                    .streams
+                    .iter()
+                    .filter(|s| {
+                        // Same client IP but different stream URL
+                        s.client_ip == fingerprint.client_ip && s.channel.url != stream_channel.url
+                    })
+                    .map(|s| {
+                        info!("[AUTO-CLEANUP] User {} client_ip {} is zapping from stream {} to {} - will auto-close old connection at {}",
+                              username, fingerprint.client_ip,
+                              sanitize_sensitive_info(&s.channel.url),
+                              sanitize_sensitive_info(&stream_channel.url),
+                              s.addr);
+                        s.addr
+                    })
+                    .collect();
+
+                if !old_connections.is_empty() {
+                    info!("[AUTO-CLEANUP] Found {} old connections to auto-close for user {} client_ip {}",
+                          old_connections.len(), username, fingerprint.client_ip);
+                }
                 let country = {
                     let geoip = self.geo_ip.load();
                     if let Some(geoip_db) = (*geoip).as_ref() {
@@ -295,24 +326,34 @@ impl ActiveUserManager {
                     &fingerprint.addr,
                     &fingerprint.client_ip,
                     provider,
-                    stream_channel,
+                    stream_channel.clone(),
                     user_agent.to_string(),
                     country,
                 );
-                connection_data.connections += 1;
+                debug!("[DEBUG] Creating new stream_info for addr {}, shared={}, current_connections={}",
+                       fingerprint.addr, stream_channel.shared, connection_data.connections);
+
+                // Only increment connection count for non-shared streams
+                // Shared streams represent a single provider connection shared by multiple clients
+                if !stream_channel.shared {
+                    connection_data.connections += 1;
+                    debug!("[DEBUG] Incremented connections to {} for user {} (non-shared stream)", connection_data.connections, username);
+                } else {
+                    debug!("[DEBUG] NOT incrementing connections for user {} (shared stream)", username);
+                }
                 connection_data.streams.push(stream_info.clone());
                 user_connections
                     .key_by_addr
                     .insert(fingerprint.addr, username.to_string());
                 debug!("Added new connection for {username} at {}", fingerprint.addr);
 
-                stream_info
+                (stream_info, old_connections)
             }
         };
 
         self.log_active_user().await;
 
-        Some(stream_info)
+        (Some(stream_info), old_connections)
     }
 
     fn is_log_user_enabled(&self) -> bool {

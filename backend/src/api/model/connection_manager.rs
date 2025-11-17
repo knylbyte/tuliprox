@@ -70,7 +70,18 @@ impl ConnectionManager {
     #[allow(clippy::too_many_arguments)]
     pub async fn update_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
                                 provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) {
-        if let Some(stream_info) = self.user_manager.update_connection(username, max_connections, fingerprint, provider, stream_channel, user_agent).await {
+        let (stream_info_opt, old_connections) = self.user_manager.update_connection(username, max_connections, fingerprint, provider, stream_channel, user_agent).await;
+
+        // Auto-close old connections when user zaps to new stream
+        if !old_connections.is_empty() {
+            for old_addr in &old_connections {
+                log::info!("[AUTO-CLEANUP] Sending close signal for old connection {}", old_addr);
+                // Send close signal - this will trigger graceful shutdown of the old connection
+                let _ = self.close_socket_signal_tx.send(*old_addr);
+            }
+        }
+
+        if let Some(stream_info) = stream_info_opt {
             self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Updated(stream_info)));
         } else {
             // TODO what do we do here ?
