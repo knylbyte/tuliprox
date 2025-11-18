@@ -1,6 +1,6 @@
 use crate::api::model::StreamError;
 use bytes::Bytes;
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -97,7 +97,7 @@ where
         if !self.completed {
             self.completed = true;
             let size = self.size.load(Ordering::SeqCst);
-            debug!("Persisted {} bytes to cache resource", size);
+            debug!("Persisted {size} bytes to cache resource");
             (self.callback)(size);
         }
     }

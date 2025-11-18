@@ -260,14 +260,11 @@ impl ActiveUserManager {
             let mut user_connections = self.connections.write().await;
 
             // needs to be registered through socket connection to avoid race time conditions through short disconnect
-            if !user_connections
-                .key_by_addr
-                .contains_key(&fingerprint.addr) {
+            if !user_connections.key_by_addr.contains_key(&fingerprint.addr) {
                 return None;
             }
 
-            user_connections
-                .key_by_addr.insert(fingerprint.addr, username.to_string());
+            user_connections.key_by_addr.insert(fingerprint.addr, username.to_string());
 
             let connection_data = user_connections.by_key
                 .entry(username.to_string())
@@ -304,12 +301,10 @@ impl ActiveUserManager {
                     country,
                 );
                 connection_data.connections += 1;
+                let connections = connection_data.connections;
                 connection_data.streams.push(stream_info.clone());
-                user_connections
-                    .key_by_addr
-                    .insert(fingerprint.addr, username.to_string());
-                debug!( "Added new connection for {username} at {} (active_user_connections={})",
-                    fingerprint.addr, connection_data.connections);
+                user_connections.key_by_addr.insert(fingerprint.addr, username.to_string());
+                debug!( "Added new connection for {username} at {} (active_user_connections={connections})", fingerprint.addr);
 
                 stream_info
             }

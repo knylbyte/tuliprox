@@ -74,7 +74,7 @@ impl ConnectionManager {
             self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Updated(stream_info)));
         } else {
             warn!("Failed to register connection for user {username} at {}; disconnecting client", fingerprint.addr);
-            let _ = self.kick_connection(&fingerprint.addr).await;
+            let _ = self.kick_connection(&fingerprint.addr);
         }
     }
 
