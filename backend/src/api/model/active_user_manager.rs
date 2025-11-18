@@ -124,8 +124,18 @@ impl ActiveUserManager {
 
             if let Some(username) = user_connections.key_by_addr.remove(addr) {
                 if let Some(connection_data) = user_connections.by_key.get_mut(&username) {
-                    if connection_data.connections > 0 {
+                    // Check if the stream being released was a shared stream
+                    let is_shared = connection_data.streams.iter()
+                        .find(|s| s.addr == *addr)
+                        .map(|s| s.channel.shared)
+                        .unwrap_or(false);
+
+                    // Only decrement for non-shared streams
+                    if !is_shared && connection_data.connections > 0 {
                         connection_data.connections -= 1;
+                        debug!("Decremented connection count for {username} at {addr} (non-shared)");
+                    } else if is_shared {
+                        debug!("Skipped decrementing connection count for {username} at {addr} (shared stream)");
                     }
 
                     if connection_data.connections < connection_data.max_connections {
@@ -330,16 +340,12 @@ impl ActiveUserManager {
                     user_agent.to_string(),
                     country,
                 );
-                debug!("[DEBUG] Creating new stream_info for addr {}, shared={}, current_connections={}",
-                       fingerprint.addr, stream_channel.shared, connection_data.connections);
-
                 // Only increment connection count for non-shared streams
-                // Shared streams represent a single provider connection shared by multiple clients
                 if !stream_channel.shared {
                     connection_data.connections += 1;
-                    debug!("[DEBUG] Incremented connections to {} for user {} (non-shared stream)", connection_data.connections, username);
+                    debug!("Incremented connection count for {username} at {} (non-shared)", fingerprint.addr);
                 } else {
-                    debug!("[DEBUG] NOT incrementing connections for user {} (shared stream)", username);
+                    debug!("Skipped incrementing connection count for {username} at {} (shared stream)", fingerprint.addr);
                 }
                 connection_data.streams.push(stream_info.clone());
                 user_connections
