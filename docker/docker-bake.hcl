@@ -97,7 +97,7 @@ target "scratch-final" {
   ]
 
   tags = [
-    "${GHCR_NS}:dev-slim-${VERSION}-${ARCH_TAG}"
+    # "${GHCR_NS}:dev-slim-${VERSION}-${ARCH_TAG}"
   ]
 
   output = [
@@ -123,7 +123,7 @@ target "alpine-final" {
   ]
 
   tags = [
-    "${GHCR_NS}:dev-${VERSION}-${ARCH_TAG}"
+    # "${GHCR_NS}:dev-${VERSION}-${ARCH_TAG}"
   ]
 
   output = [
