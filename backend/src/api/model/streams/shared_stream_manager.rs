@@ -14,7 +14,7 @@ use std::sync::Arc;
 use crate::api::model::streams::buffered_stream::CHANNEL_SIZE;
 use crate::api::model::BoxedProviderStream;
 use crate::utils::trace_if_enabled;
-use log::{debug, info, trace, warn};
+use log::{debug, trace, warn};
 use shared::utils::sanitize_sensitive_info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -98,11 +98,6 @@ impl BurstBuffer {
     pub fn push(&mut self, packet: Arc<Bytes>) {
         while self.current_bytes > self.buffer_size {
             if let Some(popped) = self.buffer.pop_front() {
-                warn!(
-                    "Shared-stream burst buffer full ({} bytes). Dropping {} bytes",
-                    self.current_bytes,
-                    popped.len()
-                );
                 self.current_bytes -= popped.len();
             } else {
                 self.current_bytes = 0;
@@ -166,10 +161,7 @@ impl SharedStreamState {
         {
             let mut subs = self.subscribers.write().await;
             subs.insert(*addr, cancel_token.clone());
-            info!(
-                "Shared stream subscriber added {addr}; total subscribers={}",
-                subs.len()
-            );
+            debug!("Shared stream subscriber added {addr}; total subscribers={}", subs.len());
         }
 
         let client_tx_clone = client_tx.clone();
@@ -212,10 +204,7 @@ impl SharedStreamState {
                                     let buffer = burst_buffer_for_log.lock().await;
                                     buffer.current_bytes
                                 };
-                                warn!(
-                                    "Shared stream client lagged behind {address}. Skipped {skipped} messages (buffered {} bytes, yield counter {yield_counter})",
-                                    buffered_bytes
-                                );
+                                warn!("Shared stream client lagged behind {address}. Skipped {skipped} messages (buffered {buffered_bytes} bytes, yield counter {yield_counter})");
                                 loop_cnt += 1;
                                if loop_cnt >= yield_counter {
                                    tokio::task::yield_now().await;
@@ -351,11 +340,8 @@ impl SharedStreamManager {
 
         if let Some(shared_state) = shared_state {
             let remaining = shared_state.subscribers.read().await.len();
-            info!(
-                "Unregistering shared stream {} (remaining_subscribers={remaining}, send_stop_signal={send_stop_signal})",
-                sanitize_sensitive_info(stream_url)
-            );
-            debug_if_enabled!("Unregistering shared stream {}", sanitize_sensitive_info(stream_url));
+            debug_if_enabled!("Unregistering shared stream {} (remaining_subscribers={remaining}, send_stop_signal={send_stop_signal})",
+                sanitize_sensitive_info(stream_url));
 
             if let Some(provider_handle) = &shared_state.provider_guard {
                 self.provider_manager.release_handle(provider_handle).await;
@@ -390,15 +376,11 @@ impl SharedStreamManager {
                 )
             };
 
-            info!(
-                "Shared stream subscriber removed {addr}; remaining subscribers={remaining}"
-            );
+            debug!("Shared stream subscriber removed {addr}; remaining subscribers={remaining}");
 
             if is_empty {
                 if let Some(url) = stream_url.as_ref() {
-                    info!(
-                        "No subscribers remain for {} after removing {addr}",
-                        sanitize_sensitive_info(url)
+                    debug_if_enabled!("No subscribers remain for {} after removing {addr}", sanitize_sensitive_info(url)
                     );
                     self.unregister(url, send_stop_signal).await;
                 }
@@ -427,10 +409,7 @@ impl SharedStreamManager {
         let mut shared_streams = self.shared_streams.write().await;
         shared_streams.by_key.insert(stream_url.to_string(), shared_state);
         shared_streams.key_by_addr.insert(*addr, stream_url.to_string());
-        info!(
-            "Registered shared stream {} for initial subscriber {addr}",
-            sanitize_sensitive_info(stream_url)
-        );
+        debug_if_enabled!("Registered shared stream {} for initial subscriber {addr}", sanitize_sensitive_info(stream_url));
     }
 
     pub(crate) async fn register_shared_stream<S, E>(
@@ -453,12 +432,8 @@ impl SharedStreamManager {
         app_state.active_provider.make_shared_connection(addr, stream_url).await;
         let subscribed_stream = Self::subscribe_shared_stream(app_state, stream_url, addr).await;
         shared_state.broadcast(stream_url, bytes_stream, Arc::clone(&app_state.shared_stream_manager));
-        info!(
-            "Created shared provider stream {} (channel_capacity={}, burst_buffer_min={} bytes)",
-            sanitize_sensitive_info(stream_url),
-            buf_size,
-            min_buffer_bytes
-        );
+        debug_if_enabled!("Created shared provider stream {} (channel_capacity={buf_size}, burst_buffer_min={min_buffer_bytes} bytes)",
+            sanitize_sensitive_info(stream_url));
         debug_if_enabled!("Created shared provider stream {}", sanitize_sensitive_info(stream_url));
         subscribed_stream
     }

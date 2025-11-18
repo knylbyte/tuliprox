@@ -97,7 +97,7 @@ impl ActiveProviderManager {
                     old.release().await;
                 }
 
-                info!(
+                debug!(
                     "Added provider connection {provider_name:?} for {addr} (active_single_connections={})",
                     connections.single.len()
                 );
@@ -135,10 +135,7 @@ impl ActiveProviderManager {
 
         let handle = connections.single.remove(addr);
         if let Some(allocation) = handle {
-            info!(
-                "Released provider connection {:?} for {addr}",
-                allocation.get_provider_name().unwrap_or_default()
-            );
+            debug!("Released provider connection {} for {addr}", allocation.get_provider_name().unwrap_or_default());
             allocation.release().await;
         }
 

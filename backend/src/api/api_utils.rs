@@ -1071,10 +1071,7 @@ async fn build_stream_response(
     // Cache only complete responses (200 OK without Content-Range)
     let can_cache = status == axum::http::StatusCode::OK && !has_content_range;
     if can_cache {
-        info!(
-            "Caching eligible resource stream {}",
-            sanitized_resource_url
-        );
+        debug!( "Caching eligible resource stream {sanitized_resource_url}");
         let cache_resource_path = if let Some(cache) = app_state.cache.load().as_ref() {
             Some(cache.lock().await.store_path(resource_url))
         } else {
@@ -1083,29 +1080,18 @@ async fn build_stream_response(
         if let Some(resource_path) = cache_resource_path {
             match create_new_file_for_write(&resource_path).await {
                 Ok(file) => {
-                    info!(
-                        "Persisting resource stream {} to {}",
-                        sanitized_resource_url,
-                        resource_path.display()
-                    );
+                    debug!("Persisting resource stream {sanitized_resource_url} to {}", resource_path.display());
                     let writer = BufWriter::new(file);
                     let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
                     let stream = PersistPipeStream::new(byte_stream, writer, add_cache_content);
                     return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(stream)));
                 }
                 Err(err) => {
-                    warn!(
-                        "Failed to create cache file {} for {}: {err}",
-                        resource_path.display(),
-                        sanitized_resource_url
-                    );
+                    warn!("Failed to create cache file {} for {sanitized_resource_url}: {err}", resource_path.display());
                 }
             }
         } else {
-            debug!(
-                "Resource cache unavailable; streaming response for {} without persistence",
-                sanitized_resource_url
-            );
+            debug!("Resource cache unavailable; streaming response for {sanitized_resource_url} without persistence");
         }
     }
 

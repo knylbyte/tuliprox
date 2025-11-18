@@ -141,7 +141,7 @@ impl ActiveUserManager {
         };
 
         if let Some(username) = disconnected_user {
-            info!("Released connection for user {username} at {addr}");
+            debug!("Released connection for user {username} at {addr}");
         }
 
         if log_active_user {
@@ -308,11 +308,8 @@ impl ActiveUserManager {
                 user_connections
                     .key_by_addr
                     .insert(fingerprint.addr, username.to_string());
-                info!(
-                    "Added new connection for {username} at {} (active_user_connections={})",
-                    fingerprint.addr,
-                    connection_data.connections
-                );
+                debug!( "Added new connection for {username} at {} (active_user_connections={})",
+                    fingerprint.addr, connection_data.connections);
 
                 stream_info
             }
@@ -349,10 +346,7 @@ impl ActiveUserManager {
         let username = user.username.clone();
         let mut user_connections = self.connections.write().await;
         let connection_data = user_connections.by_key.entry(username.clone()).or_insert_with(|| {
-            info!(
-                "Creating first session for user {username} {}",
-                sanitize_sensitive_info(stream_url)
-            );
+            debug!("Creating first session for user {username} {}", sanitize_sensitive_info(stream_url));
             let mut data = UserConnectionData::new(0, user.max_connections);
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
             data.add_session(session);
@@ -376,11 +370,8 @@ impl ActiveUserManager {
         }
 
         // If no session exists, create one
-        info!(
-            "Creating session for user {} with token {session_token} for url: {}",
-            user.username,
-            sanitize_sensitive_info(stream_url)
-        );
+        debug!("Creating session for user {} with token {session_token} for url: {}",
+            user.username, sanitize_sensitive_info(stream_url));
         let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
         let token = session.token.clone();
         connection_data.add_session(session);
@@ -399,9 +390,7 @@ impl ActiveUserManager {
                         stream.addr = *addr;
                     }
                 }
-                info!(
-                    "Updated session {token} for {username} address {previous_addr} -> {addr}"
-                );
+                debug!("Updated session {token} for {username} address {previous_addr} -> {addr}");
             }
         }
     }

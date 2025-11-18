@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 use std::cmp::{max};
-use log::{debug, warn};
+use log::{debug};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio_stream::wrappers::ReceiverStream;
 use crate::api::model::{BoxedProviderStream};
@@ -39,10 +39,7 @@ impl BufferedStream {
                 Some(Ok(chunk)) => {
                     let chunk_len = chunk.len();
                     if tx.send(Ok(chunk)).await.is_err() {
-                        warn!(
-                            "Buffered stream channel closed before delivering {} bytes to client",
-                            chunk_len
-                        );
+                        debug!("Buffered stream channel closed before delivering {chunk_len} bytes to client");
                         client_close_signal.notify();
                         break;
                     }
@@ -50,9 +47,7 @@ impl BufferedStream {
                 Some(Err(err)) => {
                     let err_msg = err.to_string();
                     if tx.send(Err(err)).await.is_err() {
-                        warn!(
-                            "Buffered stream dropped stream error due to closed receiver: {err_msg}"
-                        );
+                        debug!("Buffered stream dropped stream error due to closed receiver: {err_msg}");
                         client_close_signal.notify();
                     }
                     break;
