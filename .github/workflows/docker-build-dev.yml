@@ -219,7 +219,7 @@ jobs:
             --allow=fs.write=${DOCKER_TAR_DEST} \
             --allow=fs.write=${CACHE_DEST} \
             --allow=fs.read=${CACHE_CONTEXT} \
-            --metadata-file metadata-${{ matrix.arch_tag }}.json
+            --metadata-file metadata-${{ matrix.arch_tag }}.json \
             --load \
             --progress plain \
             "${target_list[@]}"
