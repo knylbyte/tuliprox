@@ -256,7 +256,7 @@ pub fn create_vod_info_from_item(target: &ConfigTarget, user: &ProxyUserCredenti
     let name = &pli.name;
     let extension = pli.get_additional_property("container_extension")
         .map_or_else(|| extract_extension_from_url(&pli.url).map_or_else(String::new, std::string::ToString::to_string),
-                     |v| get_string_from_serde_value(&v).map_or_else(String::new, |v| v));
+                     |v| get_string_from_serde_value(&v).unwrap_or_default());
     let added = last_updated / 1000;
     format!(r#"{{
   "info": {{}},

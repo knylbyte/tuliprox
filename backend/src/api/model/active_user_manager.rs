@@ -119,7 +119,7 @@ impl ActiveUserManager {
     }
 
     pub async fn release_connection(&self, addr: &SocketAddr) {
-        let log_active_user = {
+        let (log_active_user, disconnected_user) = {
             let mut user_connections = self.connections.write().await;
 
             if let Some(username) = user_connections.key_by_addr.remove(addr) {
@@ -134,11 +134,15 @@ impl ActiveUserManager {
                     }
                     connection_data.streams.retain(|c| c.addr != *addr);
                 }
-                true
+                (true, Some(username))
             } else {
-                false
+                (false, None)
             }
         };
+
+        if let Some(username) = disconnected_user {
+            debug!("Released connection for user {username} at {addr}");
+        }
 
         if log_active_user {
             self.log_active_user().await;
@@ -256,14 +260,11 @@ impl ActiveUserManager {
             let mut user_connections = self.connections.write().await;
 
             // needs to be registered through socket connection to avoid race time conditions through short disconnect
-            if !user_connections
-                .key_by_addr
-                .contains_key(&fingerprint.addr) {
+            if !user_connections.key_by_addr.contains_key(&fingerprint.addr) {
                 return None;
             }
 
-            user_connections
-                .key_by_addr.insert(fingerprint.addr, username.to_string());
+            user_connections.key_by_addr.insert(fingerprint.addr, username.to_string());
 
             let connection_data = user_connections.by_key
                 .entry(username.to_string())
@@ -300,11 +301,10 @@ impl ActiveUserManager {
                     country,
                 );
                 connection_data.connections += 1;
+                let connections = connection_data.connections;
                 connection_data.streams.push(stream_info.clone());
-                user_connections
-                    .key_by_addr
-                    .insert(fingerprint.addr, username.to_string());
-                debug!("Added new connection for {username} at {}", fingerprint.addr);
+                user_connections.key_by_addr.insert(fingerprint.addr, username.to_string());
+                debug!( "Added new connection for {username} at {} (active_user_connections={connections})", fingerprint.addr);
 
                 stream_info
             }
@@ -341,7 +341,7 @@ impl ActiveUserManager {
         let username = user.username.clone();
         let mut user_connections = self.connections.write().await;
         let connection_data = user_connections.by_key.entry(username.clone()).or_insert_with(|| {
-            debug!("Creating session for user {username} with token {session_token} {}", sanitize_sensitive_info(stream_url));
+            debug!("Creating first session for user {username} {}", sanitize_sensitive_info(stream_url));
             let mut data = UserConnectionData::new(0, user.max_connections);
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
             data.add_session(session);
@@ -365,7 +365,8 @@ impl ActiveUserManager {
         }
 
         // If no session exists, create one
-        debug!("Creating session for user {} with token {session_token} for url: {}", user.username, sanitize_sensitive_info(stream_url));
+        debug!("Creating session for user {} with token {session_token} for url: {}",
+            user.username, sanitize_sensitive_info(stream_url));
         let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
         let token = session.token.clone();
         connection_data.add_session(session);
@@ -384,6 +385,7 @@ impl ActiveUserManager {
                         stream.addr = *addr;
                     }
                 }
+                debug!("Updated session {token} for {username} address {previous_addr} -> {addr}");
             }
         }
     }

@@ -1,7 +1,7 @@
 use crate::api::model::provider_lineup_manager::{ProviderAllocation, ProviderLineupManager};
 use crate::api::model::{EventManager, ProviderConfig};
 use crate::model::{AppConfig, ConfigInput};
-use log::{debug, error};
+use log::{debug, error, info};
 use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
@@ -97,7 +97,10 @@ impl ActiveProviderManager {
                     old.release().await;
                 }
 
-                debug!("Added provider connection {provider_name:?} for {addr}");
+                debug!(
+                    "Added provider connection {provider_name:?} for {addr} (active_single_connections={})",
+                    connections.single.len()
+                );
                 return Some(ProviderHandle::new(*addr, allocation));
             }
         }
@@ -132,7 +135,7 @@ impl ActiveProviderManager {
 
         let handle = connections.single.remove(addr);
         if let Some(allocation) = handle {
-            debug!("Released provider connection {:?} for {addr}", allocation.get_provider_name().unwrap_or_default());
+            debug!("Released provider connection {} for {addr}", allocation.get_provider_name().unwrap_or_default());
             allocation.release().await;
         }
 
@@ -152,6 +155,10 @@ impl ActiveProviderManager {
         if released {
             connections.shared.key_by_addr.remove(addr);
             connections.shared.by_key.remove(&key);
+            info!(
+                "Released shared provider allocation {} after last subscriber {addr}",
+                sanitize_sensitive_info(&key)
+            );
         }
     }
 
@@ -165,6 +172,10 @@ impl ActiveProviderManager {
         if let Some(allocation) = handle {
             connections.shared.by_key.insert(key.to_string(), SharedAllocation { allocation, connections: HashSet::from([*addr]) });
             connections.shared.key_by_addr.insert(*addr, key.to_string());
+            info!(
+                "Promoted provider connection for {addr} into shared stream {}",
+                sanitize_sensitive_info(key)
+            );
         }
     }
 
@@ -177,6 +188,11 @@ impl ActiveProviderManager {
 
         if let Some(shared_allocation) = connections.shared.by_key.get_mut(&key) {
             shared_allocation.connections.insert(*addr);
+            debug!(
+                "Added shared stream subscriber {addr} to {}, total shared connections={}",
+                sanitize_sensitive_info(&key),
+                shared_allocation.connections.len()
+            );
         }
     }
 

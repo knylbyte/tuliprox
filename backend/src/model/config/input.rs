@@ -109,7 +109,7 @@ impl From<&ConfigInputAliasDto> for ConfigInputAlias {
         Self {
             id: dto.id,
             name: dto.name.clone(),
-            url: get_base_url_from_str(&dto.url).map_or_else(|| dto.url.clone(), |base_url| base_url),
+            url: get_base_url_from_str(&dto.url).unwrap_or_else(|| dto.url.clone()),
             username: dto.username.clone(),
             password: dto.password.clone(),
             priority: dto.priority,
