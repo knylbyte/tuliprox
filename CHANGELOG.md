@@ -6,6 +6,7 @@
 - Async persist cache write pipe so response caching no longer blocks the async runtime
 - M3U playlist exports now stream async to keep the runtime responsive
 - Shared stream burst buffer zero copy data buffer to reduce memory usage.
+- Added detailed shared-stream/buffer/provider logging to trace lag, cache persistence, and session/provider lifecycle events.
 
 
 # 3.2.0 (2025-11-14)

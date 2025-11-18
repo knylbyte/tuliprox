@@ -1,6 +1,6 @@
 use crate::api::model::StreamError;
 use bytes::Bytes;
-use log::error;
+use log::{error, info, warn};
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -47,7 +47,8 @@ where
 
     fn poll_pending_writes(&mut self, cx: &mut Context<'_>) -> Poll<()> {
         while let Some(chunk) = self.pending_writes.front() {
-            if self.current_offset >= chunk.len() {
+            let chunk_len = chunk.len();
+            if self.current_offset >= chunk_len {
                 if let Some(finished) = self.pending_writes.pop_front() {
                     self.size.fetch_add(finished.len(), Ordering::SeqCst);
                 }
@@ -66,6 +67,10 @@ where
                     self.current_offset += written;
                 }
                 Poll::Ready(Err(err)) => {
+                    warn!(
+                        "Dropping {} buffered bytes after persistence write error: {err}",
+                        chunk_len.saturating_sub(self.current_offset)
+                    );
                     error!("Error writing to resource file: {err}");
                     self.pending_writes.pop_front();
                     self.current_offset = 0;
@@ -92,6 +97,7 @@ where
         if !self.completed {
             self.completed = true;
             let size = self.size.load(Ordering::SeqCst);
+            info!("Persisted {} bytes to cache resource", size);
             (self.callback)(size);
         }
     }
