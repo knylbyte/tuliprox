@@ -101,7 +101,7 @@ target "scratch-final" {
   ]
 
   output = [
-    "type=docker,dest=${DOCKER_TAR_DEST}/scratch-final.docker"
+    "type=image,name=${GHCR_NS},push-by-digest=true,name-canonical=true,push=true"
   ]
 }
 
@@ -127,6 +127,6 @@ target "alpine-final" {
   ]
 
   output = [
-    "type=docker,dest=${DOCKER_TAR_DEST}/alpine-final.docker"
+    "type=image,name=${GHCR_NS},push-by-digest=true,name-canonical=true,push=true"
   ]
 }
