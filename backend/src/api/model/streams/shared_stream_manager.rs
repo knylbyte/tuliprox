@@ -437,7 +437,6 @@ impl SharedStreamManager {
         shared_state.broadcast(stream_url, bytes_stream, Arc::clone(&app_state.shared_stream_manager));
         debug_if_enabled!("Created shared provider stream {} (channel_capacity={buf_size}, burst_buffer_min={min_buffer_bytes} bytes)",
             sanitize_sensitive_info(stream_url));
-        debug_if_enabled!("Created shared provider stream {}", sanitize_sensitive_info(stream_url));
         subscribed_stream
     }
 
