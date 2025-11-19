@@ -393,7 +393,13 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry/index,id=cargo-registry-ind
     tar -C ${CARGO_HOME} -cf /out/cargo-registry-cache.tar registry/cache   || true; \
     tar -C ${CARGO_HOME} -cf /out/cargo-git-db.tar         git/db           || true; \
     tar -C ${CARGO_HOME} -cf /out/cargo-target.tar         target           || true; \
-    tar -C ${CARGO_HOME} -cf /out/sccache.tar              sccache          || true
+    tar -C ${CARGO_HOME} -cf /out/sccache.tar              sccache          || true; \
+    printf 'Cache TAR sizes (MB):\n'; \
+    for tarfile in /out/*.tar; do \
+      [ -f "${tarfile}" ] || continue; \
+      size_mb="$(du -m "${tarfile}" | awk '{ print $1 }')"; \
+      printf '  %s: %s MB\n' "$(basename "${tarfile}")" "${size_mb}"; \
+    done
 
 # -----------------------------------------------------------------
 # Final Image #1: Cache Exporter (from scratch) -> for CI caching

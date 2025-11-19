@@ -121,20 +121,35 @@ jobs:
         with:
           platforms: ${{ matrix.platform }}
 
-      - name: Step 2.3 - Set up Buildx
+      - name: Step 2.3 - Free up disk space
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Disk usage before cleanup:"
+          df -h
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf /opt/ghc || true
+          docker system prune -af || true
+          echo "Disk usage after cleanup:"
+          df -h
+
+      - name: Step 2.4 - Set up Buildx
         uses: docker/setup-buildx-action@v3
         id: setup-buildx
         with:
           platforms: ${{ matrix.platform }}
 
-      - name: Step 2.4 - Login to GHCR
+      - name: Step 2.5 - Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Step 2.5 - Read version
+      - name: Step 2.6 - Read version
         id: version
         shell: bash
         run: |
@@ -146,14 +161,14 @@ jobs:
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
       
-      - name: Step 2.6 - Create build directories
+      - name: Step 2.7 - Create build directories
         run: |
           echo "Create build and cache directories..."
           mkdir -p ${{ env.CACHE_CONTEXT }}/${{ matrix.arch_tag }}
           mkdir -p ${{ env.CACHE_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
           mkdir -p ${{ env.BUILD_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
 
-      - name: Step 2.7 - Up-/Download cache artifacts
+      - name: Step 2.8 - Up-/Download cache artifacts
         uses: actions/cache@v4
         id: cache
         with:
@@ -163,7 +178,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
-      - name: Step 2.8 - Extract cache artifacts
+      - name: Step 2.9 - Extract cache artifacts
         shell: bash
         working-directory: ${{ env.CACHE_CONTEXT }}
         run: |
@@ -180,7 +195,7 @@ jobs:
 
           rm -rf *.tar || true
 
-      - name: Step 2.9 - Resolve Bake targets
+      - name: Step 2.10 - Resolve Bake targets
         id: bake-targets
         shell: bash
         run: |
@@ -192,7 +207,7 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.10 - Build images with docker buildx bake
+      - name: Step 2.11 - Build images with docker buildx bake
         id: build
         shell: bash
         env:
@@ -226,7 +241,7 @@ jobs:
 
           cat metadata-${{ matrix.arch_tag }}.json
 
-      - name: Step 2.10 - Archive cache artifacts for upload
+      - name: Step 2.12 - Archive cache artifacts for upload
         shell: bash
         working-directory: ${{ env.CACHE_CONTEXT }}
         run: |
