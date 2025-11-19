@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufReader, Error, Write};
+use std::io::{BufReader, Error, ErrorKind};
 use std::path::Path;
 use serde::Serialize;
 use serde_json::Value;
 use shared::utils::json_iter_array;
-use crate::utils::{file_reader, file_writer};
+use crate::utils::file_reader;
+use tokio::fs;
+use tokio::io::AsyncWriteExt;
 
 pub fn json_filter_file<S: ::std::hash::BuildHasher>(file_path: &Path, filter: &HashMap<&str, HashSet<String, S>, S>) -> Vec<serde_json::Value> {
     let mut filtered: Vec<serde_json::Value> = Vec::with_capacity(1024);
@@ -35,12 +37,12 @@ pub fn json_filter_file<S: ::std::hash::BuildHasher>(file_path: &Path, filter: &
     filtered
 }
 
-pub fn json_write_documents_to_file<T>(file: &Path, value: &T) -> Result<(), Error>
+pub async fn json_write_documents_to_file<T>(file: &Path, value: &T) -> Result<(), Error>
 where
     T: ?Sized + Serialize,
 {
-    let file = File::create(file)?;
-    let mut writer = file_writer(&file);
-    serde_json::to_writer(&mut writer, value)?;
-    writer.flush()
+    let mut file = fs::File::create(file).await?;
+    let payload = serde_json::to_vec(value).map_err(|err| Error::new(ErrorKind::Other, err))?;
+    file.write_all(&payload).await?;
+    file.flush().await
 }

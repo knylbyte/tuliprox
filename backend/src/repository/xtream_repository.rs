@@ -257,7 +257,7 @@ pub async fn xtream_write_playlist(
         (get_collection_path(&path, storage_const::COL_CAT_VOD), &cat_vod_col),
         (get_collection_path(&path, storage_const::COL_CAT_SERIES), &cat_series_col),
     ] {
-        match json_write_documents_to_file(&col_path, data) {
+        match json_write_documents_to_file(&col_path, data).await {
             Ok(()) => {}
             Err(err) => {
                 errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));

@@ -243,7 +243,7 @@ async fn save_xtream_user_bouquet_for_target(config: &Config, target_name: &str,
     if let Some(bouquet_categories) = bouquet {
         if let Some(xtream_categories) = xtream_get_playlist_categories(config, target_name, cluster).await {
             let filtered: Vec<&PlaylistXtreamCategory> = xtream_categories.iter().filter(|p| bouquet_categories.contains(&p.name)).collect();
-            return json_write_documents_to_file(&bouquet_path, &filtered);
+            return json_write_documents_to_file(&bouquet_path, &filtered).await;
         }
     }
 
@@ -253,7 +253,7 @@ async fn save_xtream_user_bouquet_for_target(config: &Config, target_name: &str,
     Ok(())
 }
 
-fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetType, cluster: XtreamCluster, bouquet: Option<&Vec<String>>) -> Result<(), Error> {
+async fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetType, cluster: XtreamCluster, bouquet: Option<&Vec<String>>) -> Result<(), Error> {
     let bouquet_path = match cluster {
         XtreamCluster::Live => user_get_live_bouquet_path(storage_path, target),
         XtreamCluster::Video => user_get_vod_bouquet_path(storage_path, target),
@@ -261,7 +261,7 @@ fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetType, clu
     };
     match bouquet {
         Some(bouquet_categories) => {
-            json_write_documents_to_file(&bouquet_path, bouquet_categories)?;
+            json_write_documents_to_file(&bouquet_path, bouquet_categories).await?;
         }
         None => if bouquet_path.exists() {
             std::fs::remove_file(bouquet_path)?;
@@ -277,9 +277,9 @@ async fn save_user_bouquet_for_target(config: &Config, target_name: &str, storag
         save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Video, bouquet.vod.as_ref()).await?;
         save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Series, bouquet.series.as_ref()).await?;
     } else {
-        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Live, bouquet.live.as_ref())?;
-        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Video, bouquet.vod.as_ref())?;
-        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Series, bouquet.series.as_ref())?;
+        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Live, bouquet.live.as_ref()).await?;
+        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Video, bouquet.vod.as_ref()).await?;
+        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Series, bouquet.series.as_ref()).await?;
     }
     Ok(())
 }
