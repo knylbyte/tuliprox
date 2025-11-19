@@ -6,11 +6,11 @@ use tokio::sync::RwLock;
 use futures::stream::TryStreamExt;
 use log::info;
 use serde_json::{json, Value};
-use std::fs::File;
-use std::io::{Write};
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::{fs};
+use tokio::fs;
 use axum::response::IntoResponse;
 use shared::utils::bytes_to_megabytes;
 use shared::error::to_io_error;
@@ -20,11 +20,11 @@ async fn download_file(active: Arc<RwLock<Option<FileDownload>>>, client: &reqwe
     if let Some(file_download) = active.read().await.as_ref().as_ref() {
         match client.get(file_download.url.clone()).send().await {
             Ok(response) => {
-                match fs::create_dir_all(&file_download.file_dir) {
+                match fs::create_dir_all(&file_download.file_dir).await {
                     Ok(()) => {
                         if let Some(file_path_str) = file_download.file_path.to_str() {
                             info!("Downloading {file_path_str}");
-                            match File::create(&file_download.file_path) {
+                            match File::create(&file_download.file_path).await {
                                 Ok(mut file) => {
                                     let mut downloaded: u64 = 0;
                                     let mut stream = response.bytes_stream().map_err(to_io_error);
@@ -32,7 +32,7 @@ async fn download_file(active: Arc<RwLock<Option<FileDownload>>>, client: &reqwe
                                         match stream.try_next().await {
                                             Ok(item) => {
                                                 if let Some(chunk) = item {
-                                                    match file.write_all(&chunk) {
+                                                    match file.write_all(&chunk).await {
                                                         Ok(()) => {
                                                             downloaded += chunk.len() as u64;
                                                             if let Some(lock) = active.write().await.as_mut() {
