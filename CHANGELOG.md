@@ -10,6 +10,7 @@
 - Connection registration failures now trigger an explicit disconnect so zombie sockets don’t linger.
 - Video download queue now uses async file I/O to keep the runtime responsive during large transfers.
 - JSON playlist/category writers (xtream collections, user bouquets) now stream through Tokio I/O so persisting those files no longer blocks the runtime.
+- Playlist EPG exports now write via async file handles to avoid blocking the runtime during XML serialization.
 - Playlist updates now use Tokio tasks instead of spinning up per-source threads/runtimes, reducing CPU and memory overhead during large syncs.
 - XMLTV timeshift responses stream asynchronously end-to-end to keep the Axum runtime responsive.
 - `main` now uses `#[tokio::main]`, removing the manual runtime boilerplate and keeping every branch async end-to-end.
