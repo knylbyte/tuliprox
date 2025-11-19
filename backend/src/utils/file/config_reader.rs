@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use arc_swap::access::{Access};
 use crate::repository::user_repository::{get_api_user_db_path, load_api_user};
+use tokio::fs;
 
 enum EitherReader<L, R> {
     Left(L),
@@ -301,7 +302,7 @@ pub async fn read_api_proxy(config: &AppConfig, resolve_env: bool) -> Option<Api
     }
 }
 
-fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str) -> Result<(), TuliproxError>
+async fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str) -> Result<(), TuliproxError>
 where
     T: ?Sized + Serialize,
 {
@@ -310,23 +311,26 @@ where
     let backup_path = PathBuf::from(backup_dir).join(format!("{filename}_{}", Local::now().format("%Y%m%d_%H%M%S")));
 
 
-    match std::fs::copy(&path, &backup_path) {
+    match fs::copy(&path, &backup_path).await {
         Ok(_) => {}
         Err(err) => { error!("Could not backup file {}:{}", &backup_path.to_str().unwrap_or("?"), err) }
     }
     info!("Saving file to {}", &path.to_str().unwrap_or("?"));
 
-    File::create(&path)
-        .and_then(|f| serde_yaml::to_writer(f, &config).map_err(to_io_error))
+    let serialized = serde_yaml::to_string(config)
+        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not serialize file {}: {}", &path.to_str().unwrap_or("?"), err))?;
+
+    fs::write(&path, serialized)
+        .await
         .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
 }
 
-pub fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfigDto) -> Result<(), TuliproxError> {
-    write_config_file(file_path, backup_dir, config, "api-proxy.yml")
+pub async fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfigDto) -> Result<(), TuliproxError> {
+    write_config_file(file_path, backup_dir, config, "api-proxy.yml").await
 }
 
-pub fn save_main_config(file_path: &str, backup_dir: &str, config: &ConfigDto) -> Result<(), TuliproxError> {
-    write_config_file(file_path, backup_dir, config, "config.yml")
+pub async fn save_main_config(file_path: &str, backup_dir: &str, config: &ConfigDto) -> Result<(), TuliproxError> {
+    write_config_file(file_path, backup_dir, config, "config.yml").await
 }
 
 pub fn resolve_env_var(value: &str) -> String {
