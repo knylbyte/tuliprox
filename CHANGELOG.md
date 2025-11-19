@@ -8,6 +8,11 @@
 - Shared stream burst buffer zero copy data buffer to reduce memory usage.
 - Added detailed shared-stream/buffer/provider logging to trace lag, cache persistence, and session/provider lifecycle events.
 - Connection registration failures now trigger an explicit disconnect so zombie sockets don’t linger.
+- Playlist updates now use Tokio tasks instead of spinning up per-source threads/runtimes, reducing CPU and memory overhead during large syncs.
+- XMLTV timeshift responses stream asynchronously end-to-end to keep the Axum runtime responsive.
+- `main` now uses `#[tokio::main]`, removing the manual runtime boilerplate and keeping every branch async end-to-end.
+- XMLTV timeshift responses stream asynchronously end-to-end to keep the Axum runtime responsive.
+- Healthcheck CLI path now uses the async reqwest client so startup checks no longer block a dedicated thread.
 - Shared stream shutdown now drops registry locks before releasing provider handles to prevent cross-lock stalls.
 
 

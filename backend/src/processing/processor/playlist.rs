@@ -6,7 +6,7 @@ use crate::Config;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::thread;
+use tokio::task::JoinSet;
 use tokio::sync::Mutex;
 
 use crate::api::model::{EventManager, EventMessage, PlaylistStorageState};
@@ -385,7 +385,7 @@ fn create_input_stat(group_count: usize, channel_count: usize, error_count: usiz
 async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, user_targets: Arc<ProcessTargets>,
                          event_manager: Option<Arc<EventManager>>, playlist_state: Option<&Arc<PlaylistStorageState>>,
 ) -> (Vec<SourceStats>, Vec<TuliproxError>) {
-    let mut handle_list = vec![];
+    let mut async_tasks = JoinSet::new();
     let thread_num = config.config.load().threads;
     let sources = config.sources.load();
     let process_parallel = thread_num > 1 && sources.sources.len() > 1;
@@ -410,27 +410,14 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
         if process_parallel {
             let http_client = Arc::clone(&client);
             let playlist_state = playlist_state.cloned();
-            let handles = &mut handle_list;
-            let process = move || {
-                // TODO better way ?
-                match tokio::runtime::Runtime::new() {
-                    Ok(rt) => {
-                        rt.block_on(async {
-                            let (input_stats, target_stats, mut res_errors) =
-                                process_source(Arc::clone(&http_client), cfg, index, usr_trgts, event_manager, playlist_state.as_ref()).await;
-                            shared_errors.lock().await.append(&mut res_errors);
-                            if let Some(process_stats) = SourceStats::try_new(input_stats, target_stats) {
-                                shared_stats.lock().await.push(process_stats);
-                            }
-                        });
-                    }
-                    Err(err) => error!("Could not create runtime !!! {err}"),
+            async_tasks.spawn(async move {
+                let (input_stats, target_stats, mut res_errors) =
+                    process_source(Arc::clone(&http_client), cfg, index, usr_trgts, event_manager, playlist_state.as_ref()).await;
+                shared_errors.lock().await.append(&mut res_errors);
+                if let Some(process_stats) = SourceStats::try_new(input_stats, target_stats) {
+                    shared_stats.lock().await.push(process_stats);
                 }
-            };
-            handles.push(thread::spawn(process));
-            if handles.len() >= thread_num as usize {
-                handles.drain(..).for_each(|handle| { let _ = handle.join(); });
-            }
+            });
         } else {
             let (input_stats, target_stats, mut res_errors) =
                 process_source(Arc::clone(&client), cfg, index, usr_trgts, event_manager, playlist_state).await;
@@ -441,8 +428,10 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
         }
         drop(update_lock);
     }
-    for handle in handle_list {
-        let _ = handle.join();
+    while let Some(result) = async_tasks.join_next().await {
+        if let Err(err) = result {
+            error!("Playlist processing task failed: {err:?}");
+        }
     }
     if let (Ok(s), Ok(e)) = (Arc::try_unwrap(stats), Arc::try_unwrap(errors)) {
         (s.into_inner(), e.into_inner())
