@@ -9,9 +9,10 @@ use crate::utils::json_write_documents_to_file;
 use chrono::Local;
 use log::error;
 use std::collections::{HashMap, HashSet};
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use crate::utils;
+use tokio::task;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct StoredProxyUserCredentialsDeprecated {
@@ -122,12 +123,24 @@ fn add_target_user_to_user_tree(target_users: &[TargetUser], user_tree: &mut BPl
 
 pub async fn merge_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
     let path = get_api_user_db_path(cfg);
-    let lock = cfg.file_locks.read_lock(&path).await;
-    let mut user_tree: BPlusTree<String, StoredProxyUserCredentials> = BPlusTree::load(&path).unwrap_or_else(|_| BPlusTree::new());
-    drop(lock);
+    let read_lock = cfg.file_locks.read_lock(&path).await;
+    let mut user_tree: BPlusTree<String, StoredProxyUserCredentials> = task::spawn_blocking({
+        let path = path.clone();
+        move || BPlusTree::load(&path).unwrap_or_else(|_| BPlusTree::new())
+    })
+        .await
+        .map_err(|err| Error::new(ErrorKind::Other, format!("Failed to load user db: {err}")))?;
+    drop(read_lock);
     add_target_user_to_user_tree(target_users, &mut user_tree);
-    let _lock = cfg.file_locks.write_lock(&path).await;
-    user_tree.store(&path)
+    let write_lock = cfg.file_locks.write_lock(&path).await;
+    let result = task::spawn_blocking({
+        let path = path.clone();
+        move || user_tree.store(&path)
+    })
+        .await
+        .map_err(|err| Error::new(ErrorKind::Other, format!("Failed to store user db: {err}")))?;
+    drop(write_lock);
+    result
 }
 
 /// # Panics
@@ -136,10 +149,11 @@ pub async fn merge_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Res
 pub async fn backup_api_user_db_file(cfg: &AppConfig, path: &Path) {
     if let Some(backup_dir) = cfg.config.load().backup_dir.as_ref() {
         let backup_path = PathBuf::from(backup_dir).join(format!("{}_{}", storage_const::API_USER_DB_FILE, Local::now().format("%Y%m%d_%H%M%S")));
-        let _lock = cfg.file_locks.read_lock(path).await;
-        match std::fs::copy(path, &backup_path) {
-            Ok(_) => {}
-            Err(err) => { error!("Could not backup file {}:{}", &backup_path.to_str().unwrap_or("?"), err) }
+        let lock = cfg.file_locks.read_lock(path).await;
+        let copy_result = tokio::fs::copy(path, &backup_path).await;
+        drop(lock);
+        if let Err(err) = copy_result {
+            error!("Could not backup file {}:{}", &backup_path.to_str().unwrap_or("?"), err);
         }
     }
 }
@@ -149,8 +163,10 @@ pub async fn store_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Res
     add_target_user_to_user_tree(target_users, &mut user_tree);
     let path = get_api_user_db_path(cfg);
     backup_api_user_db_file(cfg, &path).await;
-    let _lock = cfg.file_locks.write_lock(&path).await;
-    user_tree.store(&path)
+    let write_lock = cfg.file_locks.write_lock(&path).await;
+    let result = user_tree.store(&path);
+    drop(write_lock);
+    result
 }
 
 // TODO remove me if we get stable on user_db

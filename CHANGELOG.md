@@ -9,6 +9,7 @@
 - Added detailed shared-stream/buffer/provider logging to trace lag, cache persistence, and session/provider lifecycle events.
 - Connection registration failures now trigger an explicit disconnect so zombie sockets don’t linger.
 - Video download queue now uses async file I/O to keep the runtime responsive during large transfers.
+- API user DB persistence (merge/backup/store) now executes through async Tokio I/O so user-management APIs stay responsive without extra blocking hops.
 - JSON playlist/category writers (xtream collections, user bouquets) now stream through Tokio I/O so persisting those files no longer blocks the runtime.
 - Playlist EPG exports now write via async file handles to avoid blocking the runtime during XML serialization.
 - Config and API proxy save endpoints now serialize via Tokio I/O, so editing configs through the API no longer blocks the runtime threads.
