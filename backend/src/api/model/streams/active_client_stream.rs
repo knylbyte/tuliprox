@@ -33,6 +33,8 @@ pub(in crate::api) struct ActiveClientStream {
 }
 
 impl ActiveClientStream {
+
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn new(mut stream_details: StreamDetails,
                       app_state: &AppState,
                       user: &ProxyUserCredentials,

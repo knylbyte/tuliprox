@@ -69,7 +69,10 @@ pub struct StreamInfo {
 }
 
 impl StreamInfo {
-    pub fn new(username: &str, addr: &SocketAddr, client_ip: &str, provider: &str, stream_channel: StreamChannel, user_agent: String, country: Option<String>, session_token: Option<&str>) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(username: &str, addr: &SocketAddr, client_ip: &str, provider: &str,
+               stream_channel: StreamChannel, user_agent: String, country: Option<String>,
+               session_token: Option<&str>) -> Self {
         Self {
             username: username.to_string(),
             channel: stream_channel,

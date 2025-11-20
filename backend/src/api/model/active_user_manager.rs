@@ -273,28 +273,32 @@ impl ActiveUserManager {
 
             let user_agent_string = user_agent.to_string();
 
-            let mut existing_stream_info = session_token.and_then(|token| {
-                connection_data.streams.iter_mut().find(|s| s.session_token.as_deref() == Some(token))
-            });
-
-            if existing_stream_info.is_none() {
-                existing_stream_info = connection_data
+            let existing_stream_mut = if let Some(token) = session_token {
+                connection_data
                     .streams
                     .iter_mut()
-                    .find(|s| s.addr == fingerprint.addr);
-            }
+                    .find(|s| s.session_token.as_deref() == Some(token))
+            } else {
+                connection_data
+                    .streams
+                    .iter_mut()
+                    .find(|s| s.addr == fingerprint.addr)
+            };
 
-            if let Some(stream_info) = existing_stream_info {
+            let existing_stream_info = existing_stream_mut.map(|stream_info| {
                 stream_info.channel = stream_channel.clone();
                 stream_info.provider = provider.to_string();
-                stream_info.addr = *fingerprint.addr;
-                stream_info.user_agent = user_agent_string.clone();
+                stream_info.user_agent.clone_from(&user_agent_string);
                 stream_info.ts = current_time_secs();
-                if session_token.is_some() {
-                    stream_info.session_token = session_token.map(|token| token.to_string());
+
+                if let Some(token) = session_token {
+                    stream_info.session_token = Some(token.to_string());
                 }
+
                 stream_info.clone()
-            } else {
+            });
+
+            if let Some(stream_info) = existing_stream_info { stream_info } else {
                 let country = {
                     let geoip = self.geo_ip.load();
                     if let Some(geoip_db) = (*geoip).as_ref() {
@@ -323,7 +327,7 @@ impl ActiveUserManager {
                     connection_data.streams.push(stream_info.clone());
                     Self::log_connection_added(username, &fingerprint.addr, connection_data, total_active);
                 }
-                
+
                 stream_info
             }
         };
