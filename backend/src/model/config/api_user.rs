@@ -6,6 +6,7 @@ use chrono::Local;
 use log::debug;
 use shared::model::{ProxyType, ProxyUserCredentialsDto, ProxyUserStatus, TargetUserDto, UserConnectionPermission};
 use std::sync::Arc;
+use zeroize::Zeroize;
 
 #[derive(Debug, Clone, Default)]
 pub struct ProxyUserCredentials {
@@ -106,6 +107,15 @@ impl ProxyUserCredentials {
             return app_state.get_connection_permission(&self.username, self.max_connections).await;
         }
         UserConnectionPermission::Allowed
+    }
+}
+
+impl Drop for ProxyUserCredentials {
+    fn drop(&mut self) {
+        self.password.zeroize();
+        if let Some(mut token) = self.token.take() {
+            token.zeroize();
+        }
     }
 }
 
