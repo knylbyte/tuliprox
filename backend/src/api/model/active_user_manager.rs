@@ -152,7 +152,9 @@ impl ActiveUserManager {
         };
 
         if let Some(username) = disconnected_user {
-            debug!("Released connection for user {username} at {addr}");
+            if !username.is_empty() {
+                debug!("Released connection for user {username} at {addr}");
+            }
         }
 
         if log_active_user {

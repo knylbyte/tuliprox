@@ -123,16 +123,14 @@ fn add_target_user_to_user_tree(target_users: &[TargetUser], user_tree: &mut BPl
 
 pub async fn merge_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
     let path = get_api_user_db_path(cfg);
-    let read_lock = cfg.file_locks.read_lock(&path).await;
+    let write_lock = cfg.file_locks.write_lock(&path).await;
     let mut user_tree: BPlusTree<String, StoredProxyUserCredentials> = task::spawn_blocking({
         let path = path.clone();
         move || BPlusTree::load(&path).unwrap_or_else(|_| BPlusTree::new())
     })
         .await
         .map_err(|err| Error::other(format!("Failed to load user db: {err}")))?;
-    drop(read_lock);
     add_target_user_to_user_tree(target_users, &mut user_tree);
-    let write_lock = cfg.file_locks.write_lock(&path).await;
     let result = task::spawn_blocking({
         let path = path.clone();
         move || user_tree.store(&path)

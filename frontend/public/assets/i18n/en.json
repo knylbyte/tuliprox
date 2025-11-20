@@ -27,7 +27,7 @@
     "HOST": "Host",
     "PORT": "Port",
     "WEB_ROOT": "Web-Root",
-    "THREADS": "Threads",
+    "PROCESS_PARALLEL": "Process Parallel",
     "WORKING_DIR": "Working dir",
     "BACKUP_DIR": "Backup dir",
     "UPDATE_ON_BOOT": "Update on boot",

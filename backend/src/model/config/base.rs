@@ -43,7 +43,7 @@ fn create_directories(cfg: &Config, temp_path: &Path) {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Default)]
 pub struct Config {
-    pub threads: u8,
+    pub process_parallel: bool,
     pub api: ConfigApi,
     pub working_dir: String,
     pub backup_dir: Option<String>,
@@ -128,7 +128,7 @@ macros::from_impl!(Config);
 impl From<&ConfigDto> for Config {
     fn from(dto: &ConfigDto) -> Self {
         Config {
-            threads: dto.threads,
+            process_parallel: dto.process_parallel,
             api: ConfigApi::from(&dto.api),
             working_dir: dto.working_dir.clone(),
             backup_dir: dto.backup_dir.clone(),

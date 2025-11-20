@@ -18,7 +18,7 @@ use crate::repository::storage::get_target_storage_path;
 use crate::repository::xtream_repository::{xtream_get_epg_file_path, xtream_get_storage_path};
 use crate::utils;
 
-pub fn get_empty_epg_response() -> impl axum::response::IntoResponse + Send {
+pub fn get_empty_epg_response() -> axum::response::Response {
     try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("text/xml"))
@@ -145,13 +145,13 @@ fn parse_timeshift(time_shift: Option<&String>) -> Option<i32> {
 async fn serve_epg(
     epg_path: &Path,
     user: &ProxyUserCredentials,
-) -> impl axum::response::IntoResponse + Send {
+) -> axum::response::Response {
     match tokio::fs::File::open(epg_path).await {
         Ok(epg_file) => match parse_timeshift(user.epg_timeshift.as_ref()) {
             None => serve_file(epg_path, mime::TEXT_XML).await.into_response(),
             Some(duration) => serve_epg_with_timeshift(epg_file, duration),
         },
-        Err(_) => get_empty_epg_response().into_response(),
+        Err(_) => get_empty_epg_response(),
     }
 }
 
@@ -235,7 +235,6 @@ fn serve_epg_with_timeshift(
         )
         .header(axum::http::header::CONTENT_ENCODING, "gzip") // Set Content-Encoding header
         .body(axum::body::Body::from_stream(body_stream)))
-        .into_response()
 }
 
 /// Handles XMLTV EPG API requests, serving the appropriate EPG file with optional time-shifting based on user configuration.

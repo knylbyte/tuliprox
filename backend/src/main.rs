@@ -175,15 +175,30 @@ async fn start_in_server_mode(cfg: Arc<AppConfig>, targets: Arc<ProcessTargets>)
 
 async fn healthcheck(config_file: &str) -> bool {
     let path = std::path::PathBuf::from(config_file);
-    let file = File::open(path).expect("Failed to open config file");
-    let config: HealthcheckConfig = serde_yaml::from_reader(config_file_reader(file, true)).expect("Failed to parse config file");
+    match File::open(path) {
+        Ok(file) => {
+            match serde_yaml::from_reader::<_, HealthcheckConfig>(config_file_reader(file, true)) {
+                Ok(config) => {
+                    match reqwest::Client::new()
+                        .get(format!("http://localhost:{}/healthcheck", config.api.port))
+                        .send()
+                        .await
+                    {
+                        Ok(response) => matches!(response.json::<Healthcheck>().await, Ok(check) if check.status == "ok"),
+                        Err(_) => false,
+                    }
 
-    match reqwest::Client::new()
-        .get(format!("http://localhost:{}/healthcheck", config.api.port))
-        .send()
-        .await
-    {
-        Ok(response) => matches!(response.json::<Healthcheck>().await, Ok(check) if check.status == "ok"),
-        Err(_) => false,
-    }
+                }
+                Err(err) => {
+                    error!("Failed to parse config file for healthcheck {err:?}");
+                    false
+                }
+            }
+        },
+        Err(err) => {
+            error!("Failed to open config file for healthcheck {err:?}");
+            false
+        }
+     }
+
 }

@@ -386,11 +386,10 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
                          event_manager: Option<Arc<EventManager>>, playlist_state: Option<&Arc<PlaylistStorageState>>,
 ) -> (Vec<SourceStats>, Vec<TuliproxError>) {
     let mut async_tasks = JoinSet::new();
-    let thread_num = config.config.load().threads;
     let sources = config.sources.load();
-    let process_parallel = thread_num > 1 && sources.sources.len() > 1;
+    let process_parallel = config.config.load().process_parallel && sources.sources.len() > 1;
     if process_parallel && log_enabled!(Level::Debug) {
-        debug!("Using {thread_num} threads");
+        debug!("Parallel processing enabled");
     }
     let errors = Arc::new(Mutex::<Vec<TuliproxError>>::new(vec![]));
     let stats = Arc::new(Mutex::<Vec<SourceStats>>::new(vec![]));

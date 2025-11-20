@@ -32,10 +32,10 @@ use shared::utils::{
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
-use tokio::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::BufWriter;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -809,7 +809,7 @@ pub async fn stream_response(
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
         if let Some(value) =
-            try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), req_headers).await
+            try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), session_token, req_headers).await
         {
             return value.into_response();
         }
@@ -845,7 +845,7 @@ pub async fn stream_response(
         };
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, None, req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, Some(session_token), req_headers)
                 .await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
@@ -953,6 +953,7 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
         .unwrap_or_default()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn try_shared_stream_response_if_any(
     app_state: &AppState,
     stream_url: &str,
@@ -960,6 +961,7 @@ async fn try_shared_stream_response_if_any(
     user: &ProxyUserCredentials,
     connect_permission: UserConnectionPermission,
     mut stream_channel: StreamChannel,
+    session_token: &str,
     req_headers: &HeaderMap,
 ) -> Option<impl IntoResponse> {
     if let Some((stream, provider)) =
@@ -982,7 +984,7 @@ async fn try_shared_stream_response_if_any(
             stream_details.provider_name = provider;
             stream_channel.shared = true;
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, None, req_headers)
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, Some(session_token), req_headers)
                     .await
                     .boxed();
             let mut response = axum::response::Response::builder().status(status_code);
@@ -1258,7 +1260,7 @@ pub fn separate_number_and_remainder(input: &str) -> (String, Option<String>) {
 }
 
 /// # Panics
-pub fn empty_json_list_response() -> impl IntoResponse + Send {
+pub fn empty_json_list_response() -> axum::response::Response {
     try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())

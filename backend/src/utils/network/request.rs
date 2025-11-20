@@ -204,29 +204,34 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
     headers
 }
 
-async fn decode_local_file_bytes(content: Vec<u8>) -> Result<String, Error> {
-    if content.len() >= 2 && is_gzip(&content[0..2]) {
-        let mut decoder = async_compression::tokio::bufread::GzipDecoder::new(&content[..]);
-        let mut decode_buffer = String::new();
-        decoder
-            .read_to_string(&mut decode_buffer).await
-            .map_err(|err| str_to_io_error(&format!("failed to decode gzip content {err}")))?;
-        Ok(decode_buffer)
+pub async fn get_local_file_content(file_path: &Path) -> Result<String, std::io::Error> {
+    // Datei öffnen
+    let file = File::open(file_path).await.map_err(|_| {
+        std::io::Error::new(ErrorKind::NotFound, format!("File not found: {}", file_path.display()))
+    })?;
+
+    let mut buf_reader = BufReader::new(file);
+
+    // Peek die ersten 2 Bytes, um gzip zu erkennen
+    let buffer = buf_reader.fill_buf().await?;
+    let is_gzipped = buffer.len() >= 2 && is_gzip(&buffer[0..2]);
+
+    let mut decoded = String::new();
+
+    if is_gzipped {
+        // Async Gzip Decoder verwenden
+        let mut gzip_decoder = async_compression::tokio::bufread::GzipDecoder::new(buf_reader);
+        gzip_decoder.read_to_string(&mut decoded).await.map_err(|e| {
+            std::io::Error::other(format!("Failed to decode gzip content: {e}"))
+        })?;
     } else {
-        Ok(String::from_utf8_lossy(&content).parse().unwrap_or_default())
+        // Plaintext lesen
+        buf_reader.read_to_string(&mut decoded).await.map_err(|e| {
+            std::io::Error::other(format!("Failed to read file: {e}"))
+        })?;
     }
-}
 
-fn local_file_not_found(path: &Path) -> Error {
-    let file_str = path.to_str().unwrap_or("?");
-    Error::new(ErrorKind::InvalidData, format!("Cant find file {file_str}"))
-}
-
-pub async fn get_local_file_content(file_path: &Path) -> Result<String, Error> {
-    match tokio::fs::read(file_path).await {
-        Ok(content) => decode_local_file_bytes(content).await,
-        Err(_) => Err(local_file_not_found(file_path)),
-    }
+    Ok(decoded)
 }
 
 // pub fn get_local_file_content_blocking(file_path: &PathBuf) -> Result<String, Error> {
