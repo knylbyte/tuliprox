@@ -47,7 +47,7 @@ tokio = { version = "1.48", features = ["rt-multi-thread", "parking_lot", "fs"] 
 #console-subscriber = "0"
 #tracing = "0.1"
 #tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-tokio-util = "0.7"
+tokio-util =  { version = "0.7", features = ["io-util"] }
 tempfile = "3.23"
 ruzstd = "0.8"
 filetime = "0.2"

@@ -79,7 +79,7 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
         match result {
             Ok(()) => {
                 if !playlist.is_empty() {
-                    if let Err(err) = epg_write(config, target, &target_path, epg, output) {
+                    if let Err(err) = epg_write(config, target, &target_path, epg, output).await {
                         errors.push(err);
                     }
                 }

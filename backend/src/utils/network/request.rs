@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{BufWriter, Error, ErrorKind, Write};
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -9,7 +8,8 @@ use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, log_enabled, trace, Level};
 use reqwest::header::CONTENT_ENCODING;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
+use tokio::fs::File;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio_util::io::StreamReader;
 use url::Url;
 
@@ -244,13 +244,13 @@ async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &Config
         Ok(response) => {
             if response.status().is_success() {
                 // Open a file in write mode
-                let mut file = BufWriter::with_capacity(8192, File::create(file_path)?);
+                let mut file = BufWriter::with_capacity(8192, File::create(file_path).await?);
                 // Stream the response body in chunks
                 let mut stream = response.bytes_stream();
                 while let Some(chunk) = stream.next().await {
                     match chunk {
                         Ok(bytes) => {
-                            file.write_all(&bytes)?;
+                            file.write_all(&bytes).await?;
                         }
                         Err(err) => {
                             return Err(str_to_io_error(&format!("Failed to read chunk: {err}")));
@@ -258,7 +258,7 @@ async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &Config
                     }
                 }
 
-                file.flush()?;
+                file.flush().await?;
                 let elapsed = start_time.elapsed().as_secs();
                 debug!("File downloaded successfully to {}, took:{}", file_path.display(), format_elapsed_time(elapsed));
                 Ok(file_path.to_path_buf())

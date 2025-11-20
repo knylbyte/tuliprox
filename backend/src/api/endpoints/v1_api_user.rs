@@ -127,7 +127,7 @@ async fn save_config_api_proxy_user(
             backup_dir.as_ref(),
             &ApiProxyConfigDto::from(&*new_api_proxy),
             paths.api_proxy_file_path.as_str(),
-        ) {
+        ).await {
             return (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 axum::Json(json!({"error": err.to_string()}))
@@ -167,7 +167,7 @@ async fn delete_config_api_proxy_user(
                 let config = app_state.app_config.config.load();
                 let backup_dir = config.get_backup_dir();
                 let paths = app_state.app_config.paths.load();
-                if let Some(err) = crate::api::endpoints::v1_api_config::intern_save_config_api_proxy(backup_dir.as_ref(), &ApiProxyConfigDto::from(&*new_api_proxy), paths.api_proxy_file_path.as_str()) {
+                if let Some(err) = crate::api::endpoints::v1_api_config::intern_save_config_api_proxy(backup_dir.as_ref(), &ApiProxyConfigDto::from(&*new_api_proxy), paths.api_proxy_file_path.as_str()).await {
                     return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
                 }
             }
