@@ -255,7 +255,7 @@ impl ActiveUserManager {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn update_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
-                                   provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>) -> Option<StreamInfo> {
+                                   provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>, session_token: Option<&str>) -> Option<StreamInfo> {
         let stream_info = {
             let mut user_connections = self.connections.write().await;
 
@@ -271,17 +271,30 @@ impl ActiveUserManager {
                 .or_insert_with(|| UserConnectionData::new(0, max_connections));
             connection_data.max_connections = max_connections;
 
-            let existing_stream_info = connection_data
-                .streams
-                .iter_mut()
-                .find(|s| s.addr == fingerprint.addr)
-                .map(|stream_info| {
-                    stream_info.channel = stream_channel.clone();
-                    stream_info.provider = provider.to_string();
-                    stream_info.clone()
-                });
+            let user_agent_string = user_agent.to_string();
 
-            if let Some(stream_info) = existing_stream_info { stream_info } else {
+            let mut existing_stream_info = session_token.and_then(|token| {
+                connection_data.streams.iter_mut().find(|s| s.session_token.as_deref() == Some(token))
+            });
+
+            if existing_stream_info.is_none() {
+                existing_stream_info = connection_data
+                    .streams
+                    .iter_mut()
+                    .find(|s| s.addr == fingerprint.addr);
+            }
+
+            if let Some(stream_info) = existing_stream_info {
+                stream_info.channel = stream_channel.clone();
+                stream_info.provider = provider.to_string();
+                stream_info.addr = *fingerprint.addr;
+                stream_info.user_agent = user_agent_string.clone();
+                stream_info.ts = current_time_secs();
+                if session_token.is_some() {
+                    stream_info.session_token = session_token.map(|token| token.to_string());
+                }
+                stream_info.clone()
+            } else {
                 let country = {
                     let geoip = self.geo_ip.load();
                     if let Some(geoip_db) = (*geoip).as_ref() {
@@ -297,8 +310,9 @@ impl ActiveUserManager {
                     &fingerprint.client_ip,
                     provider,
                     stream_channel,
-                    user_agent.to_string(),
+                    user_agent_string,
                     country,
+                    session_token,
                 );
 
                 user_connections.key_by_addr.insert(fingerprint.addr, username.to_string());

@@ -10,7 +10,7 @@
 - Connection registration failures now trigger an explicit disconnect so zombie sockets don’t linger.
 - Shared stream shutdown now drops registry locks before releasing provider handles to prevent cross-lock stalls.
 - Added `order: none` support for group/channel sorting so mappings can opt out of any reordering and keep the source order.
-
+- Session tracking now matches repeated HLS segment connections by session token so a single user keeps one active connection count even when new TCP sockets are opened.
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
