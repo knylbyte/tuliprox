@@ -742,7 +742,7 @@ pub async fn force_provider_stream_response(
             .await;
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, Some(&user_session.token), req_headers)
                 .await;
 
         let (status_code, header_map) =
@@ -845,7 +845,7 @@ pub async fn stream_response(
         };
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, None, req_headers)
                 .await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
@@ -982,7 +982,7 @@ async fn try_shared_stream_response_if_any(
             stream_details.provider_name = provider;
             stream_channel.shared = true;
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, req_headers)
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, None, req_headers)
                     .await
                     .boxed();
             let mut response = axum::response::Response::builder().status(status_code);
