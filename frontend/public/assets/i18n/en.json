@@ -397,7 +397,7 @@
   "INFO": {
     "RESTART_TO_APPLY_CHANGES": "You need to restart to apply changes.",
     "SCHEDULE_EXAMPLE": "Schedule example",
-    "PROCESS_PARALLEL": "Process Parallel: If you have multiple providers you can enable it. Accessing you provider parallel can cause a ban.",
+    "PROCESS_PARALLEL": "Process Parallel: If you have multiple providers you can enable it. Accessing your provider parallel can cause a ban.",
     "WEB_ROOT": "Web-Root: Contains the web-ui files. They are normally placed in the same directory under ./web"
   },
   "HINT": {

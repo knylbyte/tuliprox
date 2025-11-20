@@ -418,8 +418,8 @@ mod tests {
     use std::env::temp_dir;
     use std::sync::Arc;
 
-    #[test]
-    pub fn save_target_user() {
+    #[tokio::test]
+    pub async fn save_target_user() {
         let user =
             TargetUser {
                 target: "test".to_string(),
@@ -502,7 +502,7 @@ mod tests {
             encrypt_secret: Default::default(),
         };
         let target_user = vec![user];
-        let _ = store_api_user(&cfg, &target_user);
+        let _ = store_api_user(&cfg, &target_user).await;
 
         let user_list = load_api_user(&cfg);
         assert!(user_list.is_ok());

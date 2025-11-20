@@ -166,7 +166,7 @@ async fn serve_epg_with_timeshift(
     offset_minutes: i32,
 ) -> axum::response::Response {
     if epg_path.exists() {
-        match tokio::fs::File::open(epg_path).await {
+        return match tokio::fs::File::open(epg_path).await {
             Ok(file) => {
                 let reader = tokio::io::BufReader::new(file);
                 let (tx, rx) = tokio::io::duplex(8192);
@@ -233,7 +233,10 @@ async fn serve_epg_with_timeshift(
 
                         buf.clear();
                     }
-                    let _ = xml_writer.into_inner().shutdown().await;
+                    let mut encoder = xml_writer.into_inner();
+                    if let Err(e) = encoder.shutdown().await {
+                        error!("Failed to shutdown epg gzip encoder: {e}");
+                    }
                 });
 
                 let body_stream = ReaderStream::new(rx);
@@ -278,10 +281,10 @@ async fn xmltv_api(
     let Some(epg_path) = get_epg_path_for_target(config, &target) else {
         // No epg configured,  No processing or timeshift, epg can't be mapped to the channels.
         // we do not deliver epg
-        return get_empty_epg_response().into_response();
+        return get_empty_epg_response();
     };
 
-    serve_epg(&epg_path, &user).await.into_response()
+    serve_epg(&epg_path, &user).await
 }
 
 /// Registers the XMLTV EPG API routes for handling HTTP GET requests.
