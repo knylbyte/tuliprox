@@ -100,7 +100,7 @@ async fn main() {
 
     if args.healthcheck {
         let healthy = healthcheck(config_paths.config_file_path.as_str()).await;
-        std::process::exit(if healthy { 0 } else { 1 });
+        std::process::exit(i32::from(!healthy));
     }
 
     info!("Version: {VERSION}");
@@ -183,10 +183,7 @@ async fn healthcheck(config_file: &str) -> bool {
         .send()
         .await
     {
-        Ok(response) => match response.json::<Healthcheck>().await {
-            Ok(check) if check.status == "ok" => true,
-            _ => false,
-        },
+        Ok(response) => matches!(response.json::<Healthcheck>().await, Ok(check) if check.status == "ok"),
         Err(_) => false,
     }
 }

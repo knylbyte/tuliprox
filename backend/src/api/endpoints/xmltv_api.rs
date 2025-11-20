@@ -149,13 +149,13 @@ async fn serve_epg(
     match tokio::fs::File::open(epg_path).await {
         Ok(epg_file) => match parse_timeshift(user.epg_timeshift.as_ref()) {
             None => serve_file(epg_path, mime::TEXT_XML).await.into_response(),
-            Some(duration) => serve_epg_with_timeshift(epg_file, duration).await,
+            Some(duration) => serve_epg_with_timeshift(epg_file, duration),
         },
         Err(_) => get_empty_epg_response().into_response(),
     }
 }
 
-async fn serve_epg_with_timeshift(
+fn serve_epg_with_timeshift(
     epg_file: tokio::fs::File,
     offset_minutes: i32,
 ) -> axum::response::Response {

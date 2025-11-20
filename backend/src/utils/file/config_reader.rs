@@ -8,7 +8,7 @@ use arc_swap::{ArcSwap, ArcSwapAny};
 use chrono::Local;
 use log::{error, info, warn};
 use serde::Serialize;
-use shared::error::{create_tuliprox_error, info_err, to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error, info_err, TuliproxError, TuliproxErrorKind};
 use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto, TargetUserDto};
 use shared::utils::{CONSTANTS};
 use std::env;

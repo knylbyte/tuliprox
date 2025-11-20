@@ -5,7 +5,7 @@ use crate::repository::m3u_repository::m3u_get_epg_file_path;
 use crate::repository::xtream_repository::{xtream_get_epg_file_path, xtream_get_storage_path};
 use crate::utils::debug_if_enabled;
 use quick_xml::Writer;
-use std::io::{Cursor, Write};
+use std::io::{Cursor};
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;

@@ -9,7 +9,7 @@ use crate::utils::json_write_documents_to_file;
 use chrono::Local;
 use log::error;
 use std::collections::{HashMap, HashSet};
-use std::io::{Error, ErrorKind};
+use std::io::{Error};
 use std::path::{Path, PathBuf};
 use crate::utils;
 use tokio::task;
@@ -129,7 +129,7 @@ pub async fn merge_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Res
         move || BPlusTree::load(&path).unwrap_or_else(|_| BPlusTree::new())
     })
         .await
-        .map_err(|err| Error::new(ErrorKind::Other, format!("Failed to load user db: {err}")))?;
+        .map_err(|err| Error::other(format!("Failed to load user db: {err}")))?;
     drop(read_lock);
     add_target_user_to_user_tree(target_users, &mut user_tree);
     let write_lock = cfg.file_locks.write_lock(&path).await;
@@ -138,7 +138,7 @@ pub async fn merge_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Res
         move || user_tree.store(&path)
     })
         .await
-        .map_err(|err| Error::new(ErrorKind::Other, format!("Failed to store user db: {err}")))?;
+        .map_err(|err| Error::other(format!("Failed to store user db: {err}")))?;
     drop(write_lock);
     result
 }
