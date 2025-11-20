@@ -174,7 +174,7 @@ impl ActiveProviderManager {
     pub async fn add_shared_connection(&self, addr: &SocketAddr, key: &str) {
         let mut connections = self.connections.write().await;
         if let Some(shared_allocation) = connections.shared.by_key.get_mut(key) {
-            debug!("Shared connection: Promoted connection {addr} to shared with key {key:?}");
+            debug!("Shared connection: Added connection {addr} to shared with key {key:?}");
             shared_allocation.connections.insert(*addr);
             connections.shared.key_by_addr.insert(*addr, key.to_string());
         } else {
