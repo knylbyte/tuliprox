@@ -864,13 +864,13 @@ Has three top level attributes
 
 #### `groups`
 Used for sorting at the group (category) level.
-It has one top-level attribute `order` which can be set to `asc`or `desc`.
+It has one top-level attribute `order` which can be set to `asc`, `desc`, or `none` to preserve the source order for that level.
 #### `channels`
 Used for sorting the channels within a group/category.
 This is a list of sort configurations for groups. Each configuration has the following top-level entries:
 - `field` - can be  `title`, `name`, `caption` or `url`.
 - `group_pattern` - a regular expression like `'^TR.:\s?(.*)'` matched against group title.
-- `order` - can be `asc` or `desc`
+- `order` - can be `asc`, `desc`, or `none` (which skips sorting for that group_pattern and keeps the playlist order coming from the sources).
 - `sequence` _optional_  - a list of regexp matching field values (based on `field`). These are used to sort based on index. The `order` is ignored for this entries.
 
 The pattern should be selected taking into account the processing sequence.

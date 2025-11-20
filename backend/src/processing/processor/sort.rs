@@ -10,6 +10,9 @@ fn playlist_comparator(
     value_a: &str,
     value_b: &str,
 ) -> Ordering {
+    if matches!(order, SortOrder::None) {
+        return Ordering::Equal;
+    }
     if let Some(regex_list) = sequence {
         let mut match_a = None;
         let mut match_b = None;
@@ -123,10 +126,15 @@ pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new
     if let Some(sort) = &target.sort {
         let match_as_ascii = sort.match_as_ascii;
         if let Some(group_sort) = &sort.groups {
-            new_playlist.sort_by(|a, b| playlistgroup_comparator(a, b, group_sort, match_as_ascii));
+            if group_sort.order != SortOrder::None {
+                new_playlist.sort_by(|a, b| playlistgroup_comparator(a, b, group_sort, match_as_ascii));
+            }
         }
         if let Some(channel_sorts) = &sort.channels {
             for channel_sort in channel_sorts {
+                if channel_sort.order == SortOrder::None {
+                    continue;
+                }
                 let regexp = &channel_sort.group_pattern;
                 for group in new_playlist.iter_mut() {
                     let group_title = if match_as_ascii { deunicode(&group.title) } else { group.title.clone() };
