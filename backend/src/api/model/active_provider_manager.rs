@@ -1,7 +1,7 @@
 use crate::api::model::provider_lineup_manager::{ProviderAllocation, ProviderLineupManager};
 use crate::api::model::{EventManager, ProviderConfig};
 use crate::model::{AppConfig, ConfigInput};
-use log::{debug};
+use log::{debug, error};
 use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
@@ -165,6 +165,7 @@ impl ActiveProviderManager {
         let mut connections = self.connections.write().await;
         let handle = connections.single.remove(addr);
         if let Some(allocation) = handle {
+            debug!("Shared connection: Promoted connection {addr} to shared with key {key:?}");
             connections.shared.by_key.insert(key.to_string(), SharedAllocation { allocation, connections: HashSet::from([*addr]) });
             connections.shared.key_by_addr.insert(*addr, key.to_string());
         }
@@ -173,8 +174,11 @@ impl ActiveProviderManager {
     pub async fn add_shared_connection(&self, addr: &SocketAddr, key: &str) {
         let mut connections = self.connections.write().await;
         if let Some(shared_allocation) = connections.shared.by_key.get_mut(key) {
+            debug!("Shared connection: Promoted connection {addr} to shared with key {key:?}");
             shared_allocation.connections.insert(*addr);
             connections.shared.key_by_addr.insert(*addr, key.to_string());
+        } else {
+          error!("Failed to add shared connection for {addr}: url: {key:?} not found");
         }
     }
 
