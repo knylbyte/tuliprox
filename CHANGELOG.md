@@ -1,5 +1,6 @@
 # Changelog
 # 3.3.0 (2025-11-xx)
+- !BREAKING CHANGE!  `config.yml` `threads` attribute is now renamed to `process_parallel` and is a boolean value true or false.
 - Avoid blocking the runtime when warming cache
 - Normalize FileLockManager paths so aliases share the same lock
 - Use async file operations for playlist persistence to avoid blocking async paths

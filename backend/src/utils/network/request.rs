@@ -412,7 +412,7 @@ async fn download_json_content(client: Arc<reqwest::Client>, disabled_headers: O
 pub async fn get_input_json_content(client: Arc<reqwest::Client>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, TuliproxError> {
     match download_json_content(client, disabled_headers, input, persist_filepath).await {
         Ok(content) => Ok(content),
-        Err(e) => create_tuliprox_error_result!(TuliproxErrorKind::Notify, "cant download input url: {}  => {}", sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()))
+        Err(e) => create_tuliprox_error_result!(TuliproxErrorKind::Notify, "cant download input {},  url: {}  => {}", input.name, sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()))
     }
 }
 
