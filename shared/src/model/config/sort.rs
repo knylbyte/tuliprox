@@ -23,6 +23,8 @@ pub enum SortOrder {
     Asc,
     #[serde(rename = "desc")]
     Desc,
+    #[serde(rename = "none")]
+    None,
 }
 
 impl Display for SortOrder {
@@ -30,6 +32,7 @@ impl Display for SortOrder {
         let str = match self {
             SortOrder::Asc => "asc".to_string(),
             SortOrder::Desc => "desc".to_string(),
+            SortOrder::None => "none".to_string(),
         };
         write!(f, "{str}")
     }

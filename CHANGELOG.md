@@ -9,6 +9,7 @@
 - Added detailed shared-stream/buffer/provider logging to trace lag, cache persistence, and session/provider lifecycle events.
 - Connection registration failures now trigger an explicit disconnect so zombie sockets don’t linger.
 - Shared stream shutdown now drops registry locks before releasing provider handles to prevent cross-lock stalls.
+- Added `order: none` support for group/channel sorting so mappings can opt out of any reordering and keep the source order.
 
 
 # 3.2.0 (2025-11-14)
