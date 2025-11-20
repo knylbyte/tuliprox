@@ -42,6 +42,7 @@ fn playlist_comparator(
                     return match order {
                         SortOrder::Asc => idx_a.cmp(&idx_b),
                         SortOrder::Desc => idx_b.cmp(&idx_a),
+                        SortOrder::None => Ordering::Equal,
                     };
                 }
 
@@ -59,10 +60,11 @@ fn playlist_comparator(
                     let vb = caps_b.name(name).map(|m| m.as_str());
                     if let (Some(va), Some(vb)) = (va, vb) {
                         let o = va.cmp(vb);
-                        if o != Ordering::Equal {
+                        if !matches!(o, Ordering::Equal) {
                             return match order {
                                 SortOrder::Asc => o,
                                 SortOrder::Desc => o.reverse(),
+                                SortOrder::None => Ordering::Equal,
                             };
                         }
                     }
@@ -72,15 +74,18 @@ fn playlist_comparator(
                 match order {
                     SortOrder::Asc => o,
                     SortOrder::Desc => o.reverse(),
+                    SortOrder::None => Ordering::Equal,
                 }
             }
             (Some(_), None) => match order {
                 SortOrder::Asc => Ordering::Less,
                 SortOrder::Desc => Ordering::Greater,
+                SortOrder::None => Ordering::Equal,
             },
             (None, Some(_)) => match order {
                 SortOrder::Asc => Ordering::Greater,
                 SortOrder::Desc => Ordering::Less,
+                SortOrder::None => Ordering::Equal,
             },
             (None, None) => {
                 // NP match → fallback
@@ -88,6 +93,7 @@ fn playlist_comparator(
                 match order {
                     SortOrder::Asc => o,
                     SortOrder::Desc => o.reverse(),
+                    SortOrder::None => Ordering::Equal,
                 }
             }
         }
@@ -97,6 +103,7 @@ fn playlist_comparator(
         match order {
             SortOrder::Asc => o,
             SortOrder::Desc => o.reverse(),
+            SortOrder::None => Ordering::Equal,
         }
     }
 }
@@ -126,13 +133,13 @@ pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new
     if let Some(sort) = &target.sort {
         let match_as_ascii = sort.match_as_ascii;
         if let Some(group_sort) = &sort.groups {
-            if group_sort.order != SortOrder::None {
+            if !matches!(group_sort.order, SortOrder::None) {
                 new_playlist.sort_by(|a, b| playlistgroup_comparator(a, b, group_sort, match_as_ascii));
             }
         }
         if let Some(channel_sorts) = &sort.channels {
             for channel_sort in channel_sorts {
-                if channel_sort.order == SortOrder::None {
+                if matches!(channel_sort.order, SortOrder::None) {
                     continue;
                 }
                 let regexp = &channel_sort.group_pattern;
