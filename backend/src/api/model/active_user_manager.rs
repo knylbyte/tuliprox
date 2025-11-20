@@ -11,7 +11,7 @@ use shared::utils::{current_time_secs, default_grace_period_millis, default_grac
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -87,6 +87,8 @@ pub struct ActiveUserManager {
     connections: RwLock<UserConnections>,
     event_manager: Arc<EventManager>,
     geo_ip: Arc<ArcSwapOption<GeoIp>>,
+    last_logged_user_count: AtomicUsize,
+    last_logged_user_connection_count: AtomicUsize,
 }
 
 impl ActiveUserManager {
@@ -104,6 +106,8 @@ impl ActiveUserManager {
             gc_ts: Some(AtomicU64::new(current_time_secs())),
             geo_ip: Arc::clone(geoip),
             event_manager: Arc::clone(event_manager),
+            last_logged_user_count: AtomicUsize::new(0),
+            last_logged_user_connection_count: AtomicUsize::new(0),
         }
     }
 
@@ -114,7 +118,14 @@ impl ActiveUserManager {
         };
         self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Connections(user_count, user_connection_count)));
         if is_log_user_enabled {
-            info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
+            let last_user_count = self.last_logged_user_count.load(Ordering::Relaxed);
+            let last_connection_count = self.last_logged_user_connection_count.load(Ordering::Relaxed);
+            if last_user_count != user_count && last_connection_count != user_connection_count {
+                self.last_logged_user_count.store(last_user_count, Ordering::Relaxed);
+                self.last_logged_user_connection_count.store(last_connection_count, Ordering::Relaxed);
+                info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
+
+            }
         }
     }
 
@@ -273,30 +284,21 @@ impl ActiveUserManager {
 
             let user_agent_string = user_agent.to_string();
 
-            let existing_stream_mut = if let Some(token) = session_token {
-                connection_data
-                    .streams
-                    .iter_mut()
-                    .find(|s| s.session_token.as_deref() == Some(token))
-            } else {
-                connection_data
-                    .streams
-                    .iter_mut()
-                    .find(|s| s.addr == fingerprint.addr)
-            };
+            let existing_stream_info = connection_data
+                .streams
+                .iter_mut()
+                .find(|s| s.addr == fingerprint.addr)
+                .map(|stream_info| {
+                    stream_info.channel = stream_channel.clone();
+                    stream_info.provider = provider.to_string();
+                    stream_info.user_agent.clone_from(&user_agent_string);
+                    stream_info.ts = current_time_secs();
 
-            let existing_stream_info = existing_stream_mut.map(|stream_info| {
-                stream_info.channel = stream_channel.clone();
-                stream_info.provider = provider.to_string();
-                stream_info.user_agent.clone_from(&user_agent_string);
-                stream_info.ts = current_time_secs();
-
-                if let Some(token) = session_token {
-                    stream_info.session_token = Some(token.to_string());
-                }
-
-                stream_info.clone()
-            });
+                    if let Some(token) = session_token {
+                        stream_info.session_token = Some(token.to_string());
+                    }
+                    stream_info.clone()
+                });
 
             if let Some(stream_info) = existing_stream_info { stream_info } else {
                 let country = {
@@ -381,13 +383,13 @@ impl ActiveUserManager {
                     session.provider = provider.to_string();
                 }
                 session.permission = connection_permission;
-                debug!("Using session for user {} with token {session_token} for url: {}", user.username, sanitize_sensitive_info(stream_url));
+                debug!("Using session for user {} with url: {}", user.username, sanitize_sensitive_info(stream_url));
                 return session.token.clone();
             }
         }
 
         // If no session exists, create one
-        debug!("Creating session for user {} with token {session_token} for url: {}",
+        debug!("Creating session for user {} with url: {}",
             user.username, sanitize_sensitive_info(stream_url));
         let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
         let token = session.token.clone();
