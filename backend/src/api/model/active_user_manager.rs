@@ -300,13 +300,15 @@ impl ActiveUserManager {
                     user_agent.to_string(),
                     country,
                 );
-                connection_data.connections += 1;
-                let connections = connection_data.connections;
 
-                connection_data.streams.push(stream_info.clone());
                 user_connections.key_by_addr.insert(fingerprint.addr, username.to_string());
                 let total_active = user_connections.key_by_addr.len();
-                self.log_connection_added(username, &fingerprint.addr, connection_data, total_active);
+
+                if let Some(connection_data) = user_connections.by_key.get_mut(username) {
+                    connection_data.connections += 1;
+                    connection_data.streams.push(stream_info.clone());
+                    Self::log_connection_added(username, &fingerprint.addr, connection_data, total_active);
+                }
                 
                 stream_info
             }
@@ -430,45 +432,45 @@ impl ActiveUserManager {
     }
 
     fn log_connection_added(
-        &self,
         username: &str,
         addr: &SocketAddr,
         connection_data: &UserConnectionData,
         total_active_sockets: usize,
     ) {
-        let active_for_user = connection_data.connections;
-        let recent_sockets = connection_data
-            .streams
-            .iter()
-            .rev()
-            .take(3)
-            .map(|stream| stream.addr.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let recent_sockets = if recent_sockets.is_empty() {
-            String::from("n/a")
-        } else {
-            recent_sockets
-        };
-        let unique_clients = connection_data
-            .streams
-            .iter()
-            .map(|stream| stream.client_ip.clone())
-            .collect::<HashSet<_>>()
-            .len();
-
-        if connection_data.max_connections > 0 && active_for_user > connection_data.max_connections {
-            debug!(
-                "User {username} exceeded configured max connections ({}/{}). Unique clients: {}, recent sockets [{}]",
-                active_for_user,
-                connection_data.max_connections,
-                unique_clients,
-                recent_sockets
-            );
-        } else {
-            debug!(
-                "Added new connection for {username} at {addr} (active_user_connections={active_for_user})"
-            );
+        if log::log_enabled!(log::Level::Debug) {
+            let active_for_user = connection_data.connections;
+            if connection_data.max_connections > 0 && active_for_user > connection_data.max_connections {
+                let recent_sockets = connection_data
+                    .streams
+                    .iter()
+                    .rev()
+                    .take(3)
+                    .map(|stream| stream.addr.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let recent_sockets = if recent_sockets.is_empty() {
+                    String::from("n/a")
+                } else {
+                    recent_sockets
+                };
+                let unique_clients = connection_data
+                    .streams
+                    .iter()
+                    .map(|stream| &stream.client_ip)
+                    .collect::<HashSet<_>>()
+                    .len();
+                debug!(
+                    "User {username} exceeded configured max connections ({}/{}). Unique clients: {}, recent sockets [{}]",
+                    active_for_user,
+                    connection_data.max_connections,
+                    unique_clients,
+                    recent_sockets
+                );
+            } else {
+                debug!(
+                    "Added new connection for {username} at {addr} (active user connections={active_for_user}, total connections={total_active_sockets})"
+                );
+            }
         }
     }
 
