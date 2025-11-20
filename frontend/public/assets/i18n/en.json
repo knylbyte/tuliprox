@@ -27,7 +27,7 @@
     "HOST": "Host",
     "PORT": "Port",
     "WEB_ROOT": "Web-Root",
-    "THREADS": "Threads",
+    "PROCESS_PARALLEL": "Process Parallel",
     "WORKING_DIR": "Working dir",
     "BACKUP_DIR": "Backup dir",
     "UPDATE_ON_BOOT": "Update on boot",
@@ -397,7 +397,7 @@
   "INFO": {
     "RESTART_TO_APPLY_CHANGES": "You need to restart to apply changes.",
     "SCHEDULE_EXAMPLE": "Schedule example",
-    "THREADS": "Threads: keep it 0 if you have no problems. Increase it if you have multiple providers. Accessing you provider parallel can cause a ban.",
+    "PROCESS_PARALLEL": "Process Parallel: If you have multiple providers you can enable it. Accessing your provider in parallel can cause a ban.",
     "WEB_ROOT": "Web-Root: Contains the web-ui files. They are normally placed in the same directory under ./web"
   },
   "HINT": {

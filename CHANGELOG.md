@@ -1,5 +1,6 @@
 # Changelog
 # 3.3.0 (2025-11-xx)
+- !BREAKING CHANGE!  `config.yml` `threads` attribute is now renamed to `process_parallel` and is a boolean value true or false.
 - Avoid blocking the runtime when warming cache
 - Normalize FileLockManager paths so aliases share the same lock
 - Use async file operations for playlist persistence to avoid blocking async paths
@@ -8,8 +9,18 @@
 - Shared stream burst buffer zero copy data buffer to reduce memory usage.
 - Added detailed shared-stream/buffer/provider logging to trace lag, cache persistence, and session/provider lifecycle events.
 - Connection registration failures now trigger an explicit disconnect so zombie sockets don’t linger.
+- Video download queue now uses async file I/O to keep the runtime responsive during large transfers.
+- API user DB persistence (merge/backup/store) now executes through async Tokio I/O so user-management APIs stay responsive without extra blocking hops.
+- JSON playlist/category writers (xtream collections, user bouquets) now stream through Tokio I/O so persisting those files no longer blocks the runtime.
+- Playlist EPG exports now write via async file handles to avoid blocking the runtime during XML serialization.
+- Config and API proxy save endpoints now serialize via Tokio I/O, so editing configs through the API no longer blocks the runtime threads.
+- Playlist updates now use Tokio tasks instead of spinning up per-source threads/runtimes, reducing CPU and memory overhead during large syncs.
+- XMLTV timeshift responses stream asynchronously end-to-end to keep the Axum runtime responsive.
+- `main` now uses `#[tokio::main]`, removing the manual runtime boilerplate and keeping every branch async end-to-end.
+- Healthcheck CLI path now uses the async reqwest client so startup checks no longer block a dedicated thread.
 - Shared stream shutdown now drops registry locks before releasing provider handles to prevent cross-lock stalls.
-
+- Added `order: none` support for group/channel sorting so mappings can opt out of any reordering and keep the source order.
+- Session tracking now matches repeated HLS segment connections by session token so a single user keeps one active connection count even when new TCP sockets are opened.
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.

@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufReader, Error, Write};
+use std::io::{BufReader, Write};
 use std::path::Path;
 use serde::Serialize;
 use serde_json::Value;
 use shared::utils::json_iter_array;
-use crate::utils::{file_reader, file_writer};
+use crate::utils::file_reader;
+use tokio_util::io::SyncIoBridge;
 
 pub fn json_filter_file<S: ::std::hash::BuildHasher>(file_path: &Path, filter: &HashMap<&str, HashSet<String, S>, S>) -> Vec<serde_json::Value> {
     let mut filtered: Vec<serde_json::Value> = Vec::with_capacity(1024);
@@ -35,12 +36,16 @@ pub fn json_filter_file<S: ::std::hash::BuildHasher>(file_path: &Path, filter: &
     filtered
 }
 
-pub fn json_write_documents_to_file<T>(file: &Path, value: &T) -> Result<(), Error>
+pub async fn json_write_documents_to_file<T>(file: &std::path::Path, value: &T) -> std::io::Result<()>
 where
     T: ?Sized + Serialize,
 {
-    let file = File::create(file)?;
-    let mut writer = file_writer(&file);
-    serde_json::to_writer(&mut writer, value)?;
-    writer.flush()
+    let file = tokio::fs::File::create(file).await?;
+
+    let sync_writer = SyncIoBridge::new(file);
+    let mut buf_writer = std::io::BufWriter::new(sync_writer);
+
+    serde_json::to_writer(&mut buf_writer, value)?;
+    buf_writer.flush()?;
+    Ok(())
 }

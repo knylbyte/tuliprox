@@ -1,12 +1,3 @@
-use axum::response::IntoResponse;
-use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Offset, TimeZone, Utc};
-use chrono_tz::Tz;
-use log::{error, trace};
-use quick_xml::events::{BytesStart, Event};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
-use tokio_util::io::ReaderStream;
 use crate::api::api_utils::try_unwrap_body;
 use crate::api::api_utils::{get_user_target, serve_file};
 use crate::api::model::AppState;
@@ -17,8 +8,17 @@ use crate::repository::m3u_repository::m3u_get_epg_file_path;
 use crate::repository::storage::get_target_storage_path;
 use crate::repository::xtream_repository::{xtream_get_epg_file_path, xtream_get_storage_path};
 use crate::utils;
+use axum::response::IntoResponse;
+use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Offset, TimeZone, Utc};
+use chrono_tz::Tz;
+use log::{error, trace};
+use quick_xml::events::{BytesStart, Event};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
+use tokio_util::io::ReaderStream;
 
-pub fn get_empty_epg_response() -> impl axum::response::IntoResponse + Send {
+pub fn get_empty_epg_response() -> axum::response::Response {
     try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("text/xml"))
@@ -62,7 +62,7 @@ fn time_correct(original: &str, shift: &Duration) -> String {
 
     let shifted_dt = dt + *shift;
 
-    format!("{} {}",shifted_dt.format("%Y%m%d%H%M%S"), format_offset(tz_offset_minutes))
+    format!("{} {}", shifted_dt.format("%Y%m%d%H%M%S"), format_offset(tz_offset_minutes))
 }
 
 fn format_offset(offset_minutes: i32) -> String {
@@ -84,7 +84,7 @@ fn get_epg_path_for_target_of_type(target_name: &str, epg_path: PathBuf) -> Opti
     None
 }
 
-pub (in crate::api) fn get_epg_path_for_target(config: &Config, target: &ConfigTarget) -> Option<PathBuf> {
+pub(in crate::api) fn get_epg_path_for_target(config: &Config, target: &ConfigTarget) -> Option<PathBuf> {
     // TODO if we have multiple targets, first one serves, this can be problematic when
     // we use m3u playlist but serve xtream target epg
 
@@ -145,97 +145,122 @@ fn parse_timeshift(time_shift: Option<&String>) -> Option<i32> {
 async fn serve_epg(
     epg_path: &Path,
     user: &ProxyUserCredentials,
-) -> impl axum::response::IntoResponse + Send {
-    match tokio::fs::File::open(epg_path).await {
-        Ok(epg_file) => match parse_timeshift(user.epg_timeshift.as_ref()) {
-            None => serve_file(epg_path, mime::TEXT_XML).await.into_response(),
-            Some(duration) => serve_epg_with_timeshift(epg_file, duration).into_response(),
-        },
-        Err(_) => get_empty_epg_response().into_response(),
+) -> axum::response::Response {
+    match tokio::fs::try_exists(epg_path).await {
+        Ok(exists) => {
+            if exists {
+                match parse_timeshift(user.epg_timeshift.as_ref()) {
+                    None => serve_file(epg_path, mime::TEXT_XML).await.into_response(),
+                    Some(duration) => serve_epg_with_timeshift(epg_path, duration).await,
+                }
+            } else {
+                get_empty_epg_response()
+            }
+        }
+        Err(_) => get_empty_epg_response(),
     }
 }
 
-fn serve_epg_with_timeshift(
-    epg_file: tokio::fs::File,
+async fn serve_epg_with_timeshift(
+    epg_path: &Path,
     offset_minutes: i32,
-) -> impl axum::response::IntoResponse + Send {
-    let reader = tokio::io::BufReader::new(epg_file);
-    let (tx, rx) = tokio::io::duplex(8192);
-    tokio::spawn(async move {
-        let encoder = async_compression::tokio::write::GzipEncoder::new(tx);
-        let mut xml_reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(reader));
-        let mut xml_writer = quick_xml::writer::Writer::new(encoder);
-        let mut buf = Vec::with_capacity(4096);
-        let duration = Duration::minutes(i64::from(offset_minutes));
+) -> axum::response::Response {
+    match tokio::fs::try_exists(epg_path).await {
+        Ok(exists) => {
+            if ! exists {
+                return axum::http::StatusCode::NOT_FOUND.into_response();
+            }
+        }
+        Err(err) => {
+            error!("Failed to open egp file {}, {err:?}", epg_path.display());
+            return axum::http::StatusCode::NOT_FOUND.into_response();
+        }
+    }
 
-        loop {
-            match xml_reader.read_event_into_async(&mut buf).await {
-                Ok(Event::Start(ref e)) if e.name().as_ref() == b"programme" => {
-                    // Modify the attributes
-                    let mut elem = BytesStart::new(EPG_TAG_PROGRAMME);
-                    for attr in e.attributes() {
-                        match attr {
-                            Ok(attr) if attr.key.as_ref() == b"start" => {
-                                if let Ok(start_value) = attr.decode_and_unescape_value(xml_reader.decoder()) {
-                                    // Modify the start attribute value as needed
-                                    elem.push_attribute(("start", time_correct(&start_value, &duration).as_str()));
-                                } else {
-                                    // keep original attribute unchanged ?
-                                    elem.push_attribute(attr);
+    match tokio::fs::File::open(epg_path).await {
+        Ok(file) => {
+            let reader = tokio::io::BufReader::new(file);
+            let (tx, rx) = tokio::io::duplex(8192);
+            tokio::spawn(async move {
+                let encoder = async_compression::tokio::write::GzipEncoder::new(tx);
+                let mut xml_reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(reader));
+                let mut xml_writer = quick_xml::writer::Writer::new(encoder);
+                let mut buf = Vec::with_capacity(4096);
+                let duration = Duration::minutes(i64::from(offset_minutes));
+
+                loop {
+                    match xml_reader.read_event_into_async(&mut buf).await {
+                        Ok(Event::Start(ref e)) if e.name().as_ref() == b"programme" => {
+                            // Modify the attributes
+                            let mut elem = BytesStart::new(EPG_TAG_PROGRAMME);
+                            for attr in e.attributes() {
+                                match attr {
+                                    Ok(attr) if attr.key.as_ref() == b"start" => {
+                                        if let Ok(start_value) = attr.decode_and_unescape_value(xml_reader.decoder()) {
+                                            // Modify the start attribute value as needed
+                                            elem.push_attribute(("start", time_correct(&start_value, &duration).as_str()));
+                                        } else {
+                                            // keep original attribute unchanged ?
+                                            elem.push_attribute(attr);
+                                        }
+                                    }
+                                    Ok(attr) if attr.key.as_ref() == b"stop" => {
+                                        if let Ok(stop_value) = attr.decode_and_unescape_value(xml_reader.decoder()) {
+                                            // Modify the stop attribute value as needed
+                                            elem.push_attribute(("stop", time_correct(&stop_value, &duration).as_str()));
+                                        } else {
+                                            elem.push_attribute(attr);
+                                        }
+                                    }
+                                    Ok(attr) => {
+                                        // Copy any other attributes as they are
+                                        elem.push_attribute(attr);
+                                    }
+                                    Err(e) => {
+                                        error!("Error parsing attribute: {e}");
+                                    }
                                 }
                             }
-                            Ok(attr) if attr.key.as_ref() == b"stop" => {
-                                if let Ok(stop_value) = attr.decode_and_unescape_value(xml_reader.decoder()) {
-                                    // Modify the stop attribute value as needed
-                                    elem.push_attribute(("stop", time_correct(&stop_value, &duration).as_str()));
-                                } else {
-                                    elem.push_attribute(attr);
-                                }
+
+                            // Write the modified start event
+                            if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
+                                error!("Failed to write Start event: {e}");
+                                break;
                             }
-                            Ok(attr) => {
-                                // Copy any other attributes as they are
-                                elem.push_attribute(attr);
+                        }
+                        Ok(Event::Eof) => break, // End of file
+                        Ok(event) => {
+                            // Write any other event as is
+                            if let Err(e) = xml_writer.write_event_async(event).await {
+                                error!("Failed to write event: {e}");
+                                break;
                             }
-                            Err(e) => {
-                                error!("Error parsing attribute: {e}");
-                            }
+                        }
+                        Err(e) => {
+                            error!("Error: {e}");
+                            break;
                         }
                     }
 
-                    // Write the modified start event
-                    if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
-                        error!("Failed to write Start event: {e}");
-                        break;
-                    }
+                    buf.clear();
                 }
-                Ok(Event::Eof) => break, // End of file
-                Ok(event) => {
-                    // Write any other event as is
-                    if let Err(e) = xml_writer.write_event_async(event).await {
-                        error!("Failed to write event: {e}");
-                        break;
-                    }
+                let mut encoder = xml_writer.into_inner();
+                if let Err(e) = encoder.shutdown().await {
+                    error!("Failed to shutdown epg gzip encoder: {e}");
                 }
-                Err(e) => {
-                    error!("Error: {e}");
-                    break;
-                }
-            }
+            });
 
-            buf.clear();
+            let body_stream = ReaderStream::new(rx);
+            try_unwrap_body!(axum::response::Response::builder()
+                    .header(
+                        axum::http::header::CONTENT_TYPE,
+                        mime::TEXT_XML.to_string()
+                    )
+                    .header(axum::http::header::CONTENT_ENCODING, "gzip") // Set Content-Encoding header
+                    .body(axum::body::Body::from_stream(body_stream)))
         }
-        let _ = xml_writer.into_inner().shutdown().await;
-    });
-
-    let body_stream = ReaderStream::new(rx);
-    try_unwrap_body!(axum::response::Response::builder()
-        .header(
-            axum::http::header::CONTENT_TYPE,
-            mime::TEXT_XML.to_string()
-        )
-        .header(axum::http::header::CONTENT_ENCODING, "gzip") // Set Content-Encoding header
-        .body(axum::body::Body::from_stream(body_stream)))
-        .into_response()
+        Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 /// Handles XMLTV EPG API requests, serving the appropriate EPG file with optional time-shifting based on user configuration.
@@ -265,10 +290,10 @@ async fn xmltv_api(
     let Some(epg_path) = get_epg_path_for_target(config, &target) else {
         // No epg configured,  No processing or timeshift, epg can't be mapped to the channels.
         // we do not deliver epg
-        return get_empty_epg_response().into_response();
+        return get_empty_epg_response();
     };
 
-    serve_epg(&epg_path, &user).await.into_response()
+    serve_epg(&epg_path, &user).await
 }
 
 /// Registers the XMLTV EPG API routes for handling HTTP GET requests.

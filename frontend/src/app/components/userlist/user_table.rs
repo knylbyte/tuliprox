@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
 use crate::app::components::{convert_bool_to_chip_style, AppIcon, CellValue, Chip, HideContent, MaxConnections, ProxyTypeView, RevealContent, Table, TableDefinition, UserStatus, UserlistContext, UserlistPage};
@@ -213,6 +214,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                         match order {
                             SortOrder::Asc => a_value.cmp(&b_value),
                             SortOrder::Desc => b_value.cmp(&a_value),
+                            SortOrder::None => Ordering::Equal,
                         }
                     });
                     user_list.set(Some(Rc::new(new_user_list)));

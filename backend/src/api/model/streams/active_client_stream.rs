@@ -33,12 +33,15 @@ pub(in crate::api) struct ActiveClientStream {
 }
 
 impl ActiveClientStream {
+
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn new(mut stream_details: StreamDetails,
                       app_state: &AppState,
                       user: &ProxyUserCredentials,
                       connection_permission: UserConnectionPermission,
                       fingerprint: &Fingerprint,
                       stream_channel: StreamChannel,
+                      session_token: Option<&str>,
                       req_headers: &HeaderMap) -> Self {
         if connection_permission == UserConnectionPermission::Exhausted {
             error!("Something is wrong this should not happen");
@@ -49,7 +52,7 @@ impl ActiveClientStream {
 
         let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
 
-        app_state.connection_manager.update_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent).await;
+        app_state.connection_manager.update_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent, session_token).await;
         if let Some((_,_,_m_, Some(cvt))) = stream_details.stream_info.as_ref() {
             app_state.connection_manager.update_stream_detail(&fingerprint.addr, *cvt).await;
         }

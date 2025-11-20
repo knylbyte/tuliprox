@@ -1,6 +1,5 @@
 use crate::model::{macros, AppConfig, Config, ProxyUserCredentials, TargetUser};
 use crate::repository::user_repository::{backup_api_user_db_file, get_api_user_db_path, load_api_user, merge_api_user};
-use crate::utils::{save_api_proxy};
 use log::debug;
 use std::cmp::PartialEq;
 use std::fs;
@@ -113,7 +112,7 @@ impl ApiProxyConfig {
                     let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&cfg.config);
                     let backup_dir = config.get_backup_dir();
                     self.user = vec![];
-                    if let Err(err) = utils::save_api_proxy(api_proxy_file, backup_dir.as_ref(), &ApiProxyConfigDto::from(&*self)) {
+                    if let Err(err) = utils::save_api_proxy(api_proxy_file, backup_dir.as_ref(), &ApiProxyConfigDto::from(&*self)).await {
                         errors.push(format!("Error saving api proxy file: {err}"));
                     }
                 }
@@ -148,7 +147,7 @@ impl ApiProxyConfig {
 
                 let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&cfg.config);
                 let backup_dir = config.get_backup_dir();
-                if let Err(err) = save_api_proxy(api_proxy_file, backup_dir.as_ref(), &ApiProxyConfigDto::from(&*self)) {
+                if let Err(err) = utils::save_api_proxy(api_proxy_file, backup_dir.as_ref(), &ApiProxyConfigDto::from(&*self)).await {
                     errors.push(format!("Error saving api proxy file: {err}"));
                 } else {
                     backup_api_user_db_file(cfg, &user_db_path).await;

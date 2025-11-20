@@ -32,10 +32,10 @@ use shared::utils::{
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
-use tokio::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::BufWriter;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -145,26 +145,35 @@ pub fn get_memory_usage() -> String {
 
 #[allow(clippy::missing_panics_doc)]
 pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoResponse + Send {
-    if file_path.exists() {
-        return match tokio::fs::File::open(file_path).await {
-            Ok(file) => {
-                let reader = tokio::io::BufReader::new(file);
-                let stream = tokio_util::io::ReaderStream::new(reader);
-                let body = axum::body::Body::from_stream(stream);
-
-                try_unwrap_body!(axum::response::Response::builder()
-                    .status(axum::http::StatusCode::OK)
-                    .header(axum::http::header::CONTENT_TYPE, mime_type.to_string())
-                    .header(
-                        axum::http::header::CACHE_CONTROL,
-                        axum::http::header::HeaderValue::from_static("no-cache")
-                    )
-                    .body(body))
+    match tokio::fs::try_exists(file_path).await {
+        Ok(exists) => {
+            if ! exists {
+                return axum::http::StatusCode::NOT_FOUND.into_response();
             }
-            Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        };
+        }
+        Err(err) => {
+            error!("Failed to open egp file {}, {err:?}", file_path.display());
+            return axum::http::StatusCode::NOT_FOUND.into_response();
+        }
     }
-    axum::http::StatusCode::NOT_FOUND.into_response()
+
+    match tokio::fs::File::open(file_path).await {
+        Ok(file) => {
+            let reader = tokio::io::BufReader::new(file);
+            let stream = tokio_util::io::ReaderStream::new(reader);
+            let body = axum::body::Body::from_stream(stream);
+
+            try_unwrap_body!(axum::response::Response::builder()
+                .status(axum::http::StatusCode::OK)
+                .header(axum::http::header::CONTENT_TYPE, mime_type.to_string())
+                .header(
+                    axum::http::header::CACHE_CONTROL,
+                    axum::http::header::HeaderValue::from_static("no-cache")
+                )
+                .body(body))
+        }
+        Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 pub fn get_user_target_by_username(
@@ -742,7 +751,7 @@ pub async fn force_provider_stream_response(
             .await;
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, Some(&user_session.token), req_headers)
                 .await;
 
         let (status_code, header_map) =
@@ -809,7 +818,7 @@ pub async fn stream_response(
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
         if let Some(value) =
-            try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), req_headers).await
+            try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), session_token, req_headers).await
         {
             return value.into_response();
         }
@@ -845,7 +854,7 @@ pub async fn stream_response(
         };
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, Some(session_token), req_headers)
                 .await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
@@ -953,6 +962,7 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
         .unwrap_or_default()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn try_shared_stream_response_if_any(
     app_state: &AppState,
     stream_url: &str,
@@ -960,6 +970,7 @@ async fn try_shared_stream_response_if_any(
     user: &ProxyUserCredentials,
     connect_permission: UserConnectionPermission,
     mut stream_channel: StreamChannel,
+    session_token: &str,
     req_headers: &HeaderMap,
 ) -> Option<impl IntoResponse> {
     if let Some((stream, provider)) =
@@ -982,7 +993,7 @@ async fn try_shared_stream_response_if_any(
             stream_details.provider_name = provider;
             stream_channel.shared = true;
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, req_headers)
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, Some(session_token), req_headers)
                     .await
                     .boxed();
             let mut response = axum::response::Response::builder().status(status_code);
@@ -1258,7 +1269,7 @@ pub fn separate_number_and_remainder(input: &str) -> (String, Option<String>) {
 }
 
 /// # Panics
-pub fn empty_json_list_response() -> impl IntoResponse + Send {
+pub fn empty_json_list_response() -> axum::response::Response {
     try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())

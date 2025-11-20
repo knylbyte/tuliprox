@@ -1,6 +1,6 @@
 [package]
 name = "tuliprox"
-version = "3.2.4"
+version = "3.2.5"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -47,7 +47,7 @@ tokio = { version = "1.48", features = ["rt-multi-thread", "parking_lot", "fs"] 
 #console-subscriber = "0"
 #tracing = "0.1"
 #tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-tokio-util = "0.7"
+tokio-util =  { version = "0.7", features = ["io-util"] }
 tempfile = "3.23"
 ruzstd = "0.8"
 filetime = "0.2"
@@ -70,6 +70,7 @@ libc = "0.2"
 #[cfg(target_os = "windows")]
 winapi = { version = "0.3", features = ["psapi", "minwindef", "processthreadsapi"] }
 chrono-tz = "0.10.4"
+zeroize = "1.8.2"
 # [target.'cfg(not(target_env = "msvc"))'.dependencies]
 # tikv-jemallocator =  { version = "*", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 

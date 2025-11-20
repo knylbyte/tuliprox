@@ -64,10 +64,15 @@ pub struct StreamInfo {
     pub ts: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_token: Option<String>,
 }
 
 impl StreamInfo {
-    pub fn new(username: &str, addr: &SocketAddr, client_ip: &str, provider: &str, stream_channel: StreamChannel, user_agent: String, country: Option<String>) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(username: &str, addr: &SocketAddr, client_ip: &str, provider: &str,
+               stream_channel: StreamChannel, user_agent: String, country: Option<String>,
+               session_token: Option<&str>) -> Self {
         Self {
             username: username.to_string(),
             channel: stream_channel,
@@ -77,6 +82,7 @@ impl StreamInfo {
             user_agent,
             ts: current_time_secs(),
             country,
+            session_token: session_token.map(|token| token.to_string()),
         }
     }
 }

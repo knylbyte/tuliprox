@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{BufWriter, Error, ErrorKind, Write};
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -9,7 +8,8 @@ use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, log_enabled, trace, Level};
 use reqwest::header::CONTENT_ENCODING;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
+use tokio::fs::File;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio_util::io::StreamReader;
 use url::Url;
 
@@ -204,29 +204,34 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
     headers
 }
 
-async fn decode_local_file_bytes(content: Vec<u8>) -> Result<String, Error> {
-    if content.len() >= 2 && is_gzip(&content[0..2]) {
-        let mut decoder = async_compression::tokio::bufread::GzipDecoder::new(&content[..]);
-        let mut decode_buffer = String::new();
-        decoder
-            .read_to_string(&mut decode_buffer).await
-            .map_err(|err| str_to_io_error(&format!("failed to decode gzip content {err}")))?;
-        Ok(decode_buffer)
+pub async fn get_local_file_content(file_path: &Path) -> Result<String, std::io::Error> {
+    // Datei öffnen
+    let file = File::open(file_path).await.map_err(|err| {
+        std::io::Error::new(ErrorKind::NotFound, format!("Failed to open file: {}, {err:?}", file_path.display()))
+    })?;
+
+    let mut buf_reader = BufReader::new(file);
+
+    // Peek die ersten 2 Bytes, um gzip zu erkennen
+    let buffer = buf_reader.fill_buf().await?;
+    let is_gzipped = buffer.len() >= 2 && is_gzip(&buffer[0..2]);
+
+    let mut decoded = String::new();
+
+    if is_gzipped {
+        // Async Gzip Decoder verwenden
+        let mut gzip_decoder = async_compression::tokio::bufread::GzipDecoder::new(buf_reader);
+        gzip_decoder.read_to_string(&mut decoded).await.map_err(|e| {
+            std::io::Error::other(format!("Failed to decode gzip content: {e}"))
+        })?;
     } else {
-        Ok(String::from_utf8_lossy(&content).parse().unwrap_or_default())
+        // Plaintext lesen
+        buf_reader.read_to_string(&mut decoded).await.map_err(|e| {
+            std::io::Error::other(format!("Failed to read file: {e}"))
+        })?;
     }
-}
 
-fn local_file_not_found(path: &Path) -> Error {
-    let file_str = path.to_str().unwrap_or("?");
-    Error::new(ErrorKind::InvalidData, format!("Cant find file {file_str}"))
-}
-
-pub async fn get_local_file_content(file_path: &Path) -> Result<String, Error> {
-    match tokio::fs::read(file_path).await {
-        Ok(content) => decode_local_file_bytes(content).await,
-        Err(_) => Err(local_file_not_found(file_path)),
-    }
+    Ok(decoded)
 }
 
 // pub fn get_local_file_content_blocking(file_path: &PathBuf) -> Result<String, Error> {
@@ -244,13 +249,13 @@ async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &Config
         Ok(response) => {
             if response.status().is_success() {
                 // Open a file in write mode
-                let mut file = BufWriter::with_capacity(8192, File::create(file_path)?);
+                let mut file = BufWriter::with_capacity(8192, File::create(file_path).await?);
                 // Stream the response body in chunks
                 let mut stream = response.bytes_stream();
                 while let Some(chunk) = stream.next().await {
                     match chunk {
                         Ok(bytes) => {
-                            file.write_all(&bytes)?;
+                            file.write_all(&bytes).await?;
                         }
                         Err(err) => {
                             return Err(str_to_io_error(&format!("Failed to read chunk: {err}")));
@@ -258,7 +263,7 @@ async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &Config
                     }
                 }
 
-                file.flush()?;
+                file.flush().await?;
                 let elapsed = start_time.elapsed().as_secs();
                 debug!("File downloaded successfully to {}, took:{}", file_path.display(), format_elapsed_time(elapsed));
                 Ok(file_path.to_path_buf())
@@ -407,7 +412,7 @@ async fn download_json_content(client: Arc<reqwest::Client>, disabled_headers: O
 pub async fn get_input_json_content(client: Arc<reqwest::Client>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, TuliproxError> {
     match download_json_content(client, disabled_headers, input, persist_filepath).await {
         Ok(content) => Ok(content),
-        Err(e) => create_tuliprox_error_result!(TuliproxErrorKind::Notify, "cant download input url: {}  => {}", sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()))
+        Err(e) => create_tuliprox_error_result!(TuliproxErrorKind::Notify, "cant download input {},  url: {}  => {}", input.name, sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()))
     }
 }
 
