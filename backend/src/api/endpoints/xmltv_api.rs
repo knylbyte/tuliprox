@@ -165,93 +165,102 @@ async fn serve_epg_with_timeshift(
     epg_path: &Path,
     offset_minutes: i32,
 ) -> axum::response::Response {
-    if epg_path.exists() {
-        return match tokio::fs::File::open(epg_path).await {
-            Ok(file) => {
-                let reader = tokio::io::BufReader::new(file);
-                let (tx, rx) = tokio::io::duplex(8192);
-                tokio::spawn(async move {
-                    let encoder = async_compression::tokio::write::GzipEncoder::new(tx);
-                    let mut xml_reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(reader));
-                    let mut xml_writer = quick_xml::writer::Writer::new(encoder);
-                    let mut buf = Vec::with_capacity(4096);
-                    let duration = Duration::minutes(i64::from(offset_minutes));
+    match tokio::fs::try_exists(epg_path).await {
+        Ok(exists) => {
+            if ! exists {
+                return axum::http::StatusCode::NOT_FOUND.into_response();
+            }
+        }
+        Err(err) => {
+            error!("Failed to open egp file {}, {err:?}", epg_path.display());
+            return axum::http::StatusCode::NOT_FOUND.into_response();
+        }
+    }
 
-                    loop {
-                        match xml_reader.read_event_into_async(&mut buf).await {
-                            Ok(Event::Start(ref e)) if e.name().as_ref() == b"programme" => {
-                                // Modify the attributes
-                                let mut elem = BytesStart::new(EPG_TAG_PROGRAMME);
-                                for attr in e.attributes() {
-                                    match attr {
-                                        Ok(attr) if attr.key.as_ref() == b"start" => {
-                                            if let Ok(start_value) = attr.decode_and_unescape_value(xml_reader.decoder()) {
-                                                // Modify the start attribute value as needed
-                                                elem.push_attribute(("start", time_correct(&start_value, &duration).as_str()));
-                                            } else {
-                                                // keep original attribute unchanged ?
-                                                elem.push_attribute(attr);
-                                            }
-                                        }
-                                        Ok(attr) if attr.key.as_ref() == b"stop" => {
-                                            if let Ok(stop_value) = attr.decode_and_unescape_value(xml_reader.decoder()) {
-                                                // Modify the stop attribute value as needed
-                                                elem.push_attribute(("stop", time_correct(&stop_value, &duration).as_str()));
-                                            } else {
-                                                elem.push_attribute(attr);
-                                            }
-                                        }
-                                        Ok(attr) => {
-                                            // Copy any other attributes as they are
+    match tokio::fs::File::open(epg_path).await {
+        Ok(file) => {
+            let reader = tokio::io::BufReader::new(file);
+            let (tx, rx) = tokio::io::duplex(8192);
+            tokio::spawn(async move {
+                let encoder = async_compression::tokio::write::GzipEncoder::new(tx);
+                let mut xml_reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(reader));
+                let mut xml_writer = quick_xml::writer::Writer::new(encoder);
+                let mut buf = Vec::with_capacity(4096);
+                let duration = Duration::minutes(i64::from(offset_minutes));
+
+                loop {
+                    match xml_reader.read_event_into_async(&mut buf).await {
+                        Ok(Event::Start(ref e)) if e.name().as_ref() == b"programme" => {
+                            // Modify the attributes
+                            let mut elem = BytesStart::new(EPG_TAG_PROGRAMME);
+                            for attr in e.attributes() {
+                                match attr {
+                                    Ok(attr) if attr.key.as_ref() == b"start" => {
+                                        if let Ok(start_value) = attr.decode_and_unescape_value(xml_reader.decoder()) {
+                                            // Modify the start attribute value as needed
+                                            elem.push_attribute(("start", time_correct(&start_value, &duration).as_str()));
+                                        } else {
+                                            // keep original attribute unchanged ?
                                             elem.push_attribute(attr);
                                         }
-                                        Err(e) => {
-                                            error!("Error parsing attribute: {e}");
+                                    }
+                                    Ok(attr) if attr.key.as_ref() == b"stop" => {
+                                        if let Ok(stop_value) = attr.decode_and_unescape_value(xml_reader.decoder()) {
+                                            // Modify the stop attribute value as needed
+                                            elem.push_attribute(("stop", time_correct(&stop_value, &duration).as_str()));
+                                        } else {
+                                            elem.push_attribute(attr);
                                         }
                                     }
+                                    Ok(attr) => {
+                                        // Copy any other attributes as they are
+                                        elem.push_attribute(attr);
+                                    }
+                                    Err(e) => {
+                                        error!("Error parsing attribute: {e}");
+                                    }
                                 }
+                            }
 
-                                // Write the modified start event
-                                if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
-                                    error!("Failed to write Start event: {e}");
-                                    break;
-                                }
-                            }
-                            Ok(Event::Eof) => break, // End of file
-                            Ok(event) => {
-                                // Write any other event as is
-                                if let Err(e) = xml_writer.write_event_async(event).await {
-                                    error!("Failed to write event: {e}");
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                error!("Error: {e}");
+                            // Write the modified start event
+                            if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
+                                error!("Failed to write Start event: {e}");
                                 break;
                             }
                         }
-
-                        buf.clear();
+                        Ok(Event::Eof) => break, // End of file
+                        Ok(event) => {
+                            // Write any other event as is
+                            if let Err(e) = xml_writer.write_event_async(event).await {
+                                error!("Failed to write event: {e}");
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            error!("Error: {e}");
+                            break;
+                        }
                     }
-                    let mut encoder = xml_writer.into_inner();
-                    if let Err(e) = encoder.shutdown().await {
-                        error!("Failed to shutdown epg gzip encoder: {e}");
-                    }
-                });
 
-                let body_stream = ReaderStream::new(rx);
-                try_unwrap_body!(axum::response::Response::builder()
+                    buf.clear();
+                }
+                let mut encoder = xml_writer.into_inner();
+                if let Err(e) = encoder.shutdown().await {
+                    error!("Failed to shutdown epg gzip encoder: {e}");
+                }
+            });
+
+            let body_stream = ReaderStream::new(rx);
+            try_unwrap_body!(axum::response::Response::builder()
                     .header(
                         axum::http::header::CONTENT_TYPE,
                         mime::TEXT_XML.to_string()
                     )
                     .header(axum::http::header::CONTENT_ENCODING, "gzip") // Set Content-Encoding header
                     .body(axum::body::Body::from_stream(body_stream)))
-            }
-            Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        };
+        }
+        Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
-    axum::http::StatusCode::NOT_FOUND.into_response()
 }
 
 /// Handles XMLTV EPG API requests, serving the appropriate EPG file with optional time-shifting based on user configuration.

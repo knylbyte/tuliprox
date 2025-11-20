@@ -504,7 +504,7 @@ mod tests {
         let target_user = vec![user];
         let _ = store_api_user(&cfg, &target_user).await;
 
-        let user_list = load_api_user(&cfg);
+        let user_list = load_api_user(&cfg).await;
         assert!(user_list.is_ok());
         assert_eq!(user_list.as_ref().unwrap().len(), 1);
         assert_eq!(user_list.as_ref().unwrap().first().unwrap().credentials.len(), 4);

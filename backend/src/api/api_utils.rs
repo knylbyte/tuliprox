@@ -145,26 +145,35 @@ pub fn get_memory_usage() -> String {
 
 #[allow(clippy::missing_panics_doc)]
 pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoResponse + Send {
-    if file_path.exists() {
-        return match tokio::fs::File::open(file_path).await {
-            Ok(file) => {
-                let reader = tokio::io::BufReader::new(file);
-                let stream = tokio_util::io::ReaderStream::new(reader);
-                let body = axum::body::Body::from_stream(stream);
-
-                try_unwrap_body!(axum::response::Response::builder()
-                    .status(axum::http::StatusCode::OK)
-                    .header(axum::http::header::CONTENT_TYPE, mime_type.to_string())
-                    .header(
-                        axum::http::header::CACHE_CONTROL,
-                        axum::http::header::HeaderValue::from_static("no-cache")
-                    )
-                    .body(body))
+    match tokio::fs::try_exists(file_path).await {
+        Ok(exists) => {
+            if ! exists {
+                return axum::http::StatusCode::NOT_FOUND.into_response();
             }
-            Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        };
+        }
+        Err(err) => {
+            error!("Failed to open egp file {}, {err:?}", file_path.display());
+            return axum::http::StatusCode::NOT_FOUND.into_response();
+        }
     }
-    axum::http::StatusCode::NOT_FOUND.into_response()
+
+    match tokio::fs::File::open(file_path).await {
+        Ok(file) => {
+            let reader = tokio::io::BufReader::new(file);
+            let stream = tokio_util::io::ReaderStream::new(reader);
+            let body = axum::body::Body::from_stream(stream);
+
+            try_unwrap_body!(axum::response::Response::builder()
+                .status(axum::http::StatusCode::OK)
+                .header(axum::http::header::CONTENT_TYPE, mime_type.to_string())
+                .header(
+                    axum::http::header::CACHE_CONTROL,
+                    axum::http::header::HeaderValue::from_static("no-cache")
+                )
+                .body(body))
+        }
+        Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 pub fn get_user_target_by_username(
