@@ -206,8 +206,8 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
 
 pub async fn get_local_file_content(file_path: &Path) -> Result<String, std::io::Error> {
     // Datei öffnen
-    let file = File::open(file_path).await.map_err(|_| {
-        std::io::Error::new(ErrorKind::NotFound, format!("File not found: {}", file_path.display()))
+    let file = File::open(file_path).await.map_err(|err| {
+        std::io::Error::new(ErrorKind::NotFound, format!("Failed to open file: {}, {err:?}", file_path.display()))
     })?;
 
     let mut buf_reader = BufReader::new(file);

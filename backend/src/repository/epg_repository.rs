@@ -27,31 +27,6 @@ async fn epg_write_file(target: &ConfigTarget, epg: &Epg, path: &Path) -> Result
 
     debug_if_enabled!("Epg for target {} written to {}", target.name, path.to_str().unwrap_or("?"));
     Ok(())
-    //
-    //
-    // let mut writer = Writer::new(Cursor::new(vec![]));
-    // match epg.write_to(&mut writer) {
-    //     Ok(()) => {
-    //         let result = writer.into_inner().into_inner();
-    //         match File::create(path).await {
-    //             Ok(mut epg_file) => {
-    //                 match epg_file.write_all("<?xml version=\"1.0\" encoding=\"utf-8\" ?><!DOCTYPE tv SYSTEM \"xmltv.dtd\">".as_bytes()).await {
-    //                     Ok(()) => {}
-    //                     Err(err) => return Err(notify_err!(format!("failed to write epg: {} - {}", path.to_str().unwrap_or("?"), err))),
-    //                 }
-    //                 match epg_file.write_all(&result).await {
-    //                     Ok(()) => {
-    //                         debug_if_enabled!("Epg for target {} written to {}", target.name, path.to_str().unwrap_or("?"));
-    //                     }
-    //                     Err(err) => return Err(notify_err!(format!("failed to write epg: {} - {}", path.to_str().unwrap_or("?"), err))),
-    //                 }
-    //             }
-    //             Err(err) => return Err(notify_err!(format!("failed to write epg: {} - {}", path.to_str().unwrap_or("?"), err))),
-    //         }
-    //     }
-    //     Err(err) => return Err(notify_err!(format!("failed to write epg: {} - {}", path.to_str().unwrap_or("?"), err))),
-    // }
-    // Ok(())
 }
 
 pub async fn epg_write(cfg: &Config, target: &ConfigTarget, target_path: &Path, epg: Option<&Epg>, output: &TargetOutput) -> Result<(), TuliproxError> {

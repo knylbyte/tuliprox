@@ -1,17 +1,17 @@
-use crate::model::{AppConfig, ProxyUserCredentials, TargetUser};
-use crate::model::{Config};
-use shared::model::{PlaylistBouquetDto, ProxyType, ProxyUserStatus, TargetBouquetDto, TargetType, XtreamCluster};
 use crate::model::PlaylistXtreamCategory;
+use crate::model::{AppConfig, ProxyUserCredentials, TargetUser};
+use crate::model::Config;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::xtream_get_playlist_categories;
+use crate::utils;
 use crate::utils::json_write_documents_to_file;
 use chrono::Local;
 use log::error;
+use shared::model::{PlaylistBouquetDto, ProxyType, ProxyUserStatus, TargetBouquetDto, TargetType, XtreamCluster};
 use std::collections::{HashMap, HashSet};
-use std::io::{Error};
+use std::io::Error;
 use std::path::{Path, PathBuf};
-use crate::utils;
 use tokio::task;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -162,7 +162,10 @@ pub async fn store_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Res
     let path = get_api_user_db_path(cfg);
     backup_api_user_db_file(cfg, &path).await;
     let write_lock = cfg.file_locks.write_lock(&path).await;
-    let result = user_tree.store(&path);
+    let result = task::spawn_blocking({
+        let path = path.clone();
+        move || user_tree.store(&path)
+    }).await.map_err(|err| Error::other(format!("Failed to store user db: {err}")))?;
     drop(write_lock);
     result
 }
@@ -262,7 +265,7 @@ async fn save_xtream_user_bouquet_for_target(config: &Config, target_name: &str,
     }
 
     if bouquet_path.exists() {
-        std::fs::remove_file(bouquet_path)?;
+        tokio::fs::remove_file(bouquet_path).await?;
     }
     Ok(())
 }
@@ -278,7 +281,7 @@ async fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetTyp
             json_write_documents_to_file(&bouquet_path, bouquet_categories).await?;
         }
         None => if bouquet_path.exists() {
-            std::fs::remove_file(bouquet_path)?;
+            tokio::fs::remove_file(bouquet_path).await?;
         }
     }
 
@@ -409,11 +412,11 @@ pub async fn user_get_bouquet_filter(config: &Config, username: &str, category_i
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::FileLockManager;
+    use arc_swap::{ArcSwap, ArcSwapAny};
     use shared::model::{ConfigPaths, ProxyType, ProxyUserStatus};
     use std::env::temp_dir;
     use std::sync::Arc;
-    use arc_swap::{ArcSwap, ArcSwapAny};
-    use crate::utils::FileLockManager;
 
     #[test]
     pub fn save_target_user() {

@@ -410,12 +410,15 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
             let http_client = Arc::clone(&client);
             let playlist_state = playlist_state.cloned();
             async_tasks.spawn(async move {
+                // Hold the per-source lock for the full duration of this update.
+                let current_update_lock = update_lock;
                 let (input_stats, target_stats, mut res_errors) =
                     process_source(Arc::clone(&http_client), cfg, index, usr_trgts, event_manager, playlist_state.as_ref()).await;
                 shared_errors.lock().await.append(&mut res_errors);
                 if let Some(process_stats) = SourceStats::try_new(input_stats, target_stats) {
                     shared_stats.lock().await.push(process_stats);
                 }
+                drop(current_update_lock);
             });
         } else {
             let (input_stats, target_stats, mut res_errors) =
@@ -424,8 +427,8 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
             if let Some(process_stats) = SourceStats::try_new(input_stats, target_stats) {
                 shared_stats.lock().await.push(process_stats);
             }
+            drop(update_lock);
         }
-        drop(update_lock);
     }
     while let Some(result) = async_tasks.join_next().await {
         if let Err(err) = result {
