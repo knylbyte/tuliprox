@@ -373,6 +373,12 @@ It must be a 32-character hexadecimal string (16 bytes), for example:
 reverse_proxy:
   rewrite_secret: A1B2C3D4E5F60718293A4B5C6D7E8F90
 ```
+You can generate a random secret using:
+```bash
+openssl rand -hex 16
+# or
+node -e "console.log(require('crypto').randomBytes(16).toString('hex').toUpperCase())"
+```
 
 ### 1.7 `backup_dir`
 is the directory where the backup configuration files written, when saved from the ui.

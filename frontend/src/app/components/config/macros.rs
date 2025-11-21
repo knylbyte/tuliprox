@@ -196,33 +196,6 @@ macro_rules! edit_field_text {
 }
 
 #[macro_export]
-macro_rules! edit_field_text_custom {
-    ($instance:expr, $label:expr, $field:ident, $action:path, $read_value:expr, $write_value:expr) => {
-        $crate::edit_field_text!(@inner $instance, $label, $field, $action, false, $read_value, $write_value)
-    };
-    ($instance:expr, $label:expr, $field:ident, $action:path,  $hidden:expr, $read_value:expr, $write_value:expr) => {
-        $crate::edit_field_text!(@inner $instance, $label, $field, $action, $hidden, $read_value, $write_value)
-    };
-    (@inner $instance:expr, $label:expr, $field:ident, $action:path, $hidden:expr) => {{
-        let instance = $instance.clone();
-        html! {
-            <div class="tp__form-field tp__form-field__text">
-                <$crate::app::components::input::Input
-                    label={$label}
-                    hidden={$hidden}
-                    name={stringify!($field)}
-                    autocomplete={true}
-                    value={$read_value(instance.form.$field.clone())}
-                    on_change={Callback::from(move |value: String| {
-                        instance.dispatch($write_value($action(value)));
-                    })}
-                />
-            </div>
-        }
-    }};
-}
-
-#[macro_export]
 macro_rules! edit_field_bool {
     ($instance:expr, $label:expr, $field:ident, $action:path) => {{
         let instance = $instance.clone();
