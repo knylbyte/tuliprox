@@ -17,6 +17,7 @@ use shared::utils::{is_dash_url, is_hls_url};
 use shared::create_tuliprox_error;
 use std::path::Path;
 use std::sync::Arc;
+use log::info;
 use crate::processing::processor::playlist::apply_filter_to_playlist;
 
 pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGroup], epg: Option<&Epg>,
@@ -204,6 +205,7 @@ pub async fn load_playlists_into_memory_cache(app_state: &AppState) -> Result<()
 
 pub async fn load_target_into_memory_cache(app_state: &AppState, target: &Arc<ConfigTarget>) {
     if target.use_memory_cache {
+        info!("Loading target {} into memory cache", target.name);
         for output in &target.output {
             match output {
                 TargetOutput::Xtream(_) => {

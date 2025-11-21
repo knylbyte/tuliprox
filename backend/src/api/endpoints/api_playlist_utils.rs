@@ -99,20 +99,6 @@ fn group_playlist_groups_by_cluster(playlist: Vec<PlaylistGroup>) -> (Vec<Playli
     (live, video, series)
 }
 
-
-// async fn get_categories_content(action: Result<(Option<PathBuf>, Option<String>), std::io::Error>) -> Option<String> {
-//     if let Ok((Some(file_path), _content)) = action {
-//         if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
-//             // TODO deserialize like sax parser
-//             if let Ok(categories) = serde_json::from_str::<Vec<PlaylistXtreamCategory>>(&content) {
-//                 return serde_json::to_string(&categories).ok();
-//             }
-//         }
-//     }
-//     None
-// }
-
-
 async fn grouped_channels(
     cfg: &AppConfig,
     target: &ConfigTarget,

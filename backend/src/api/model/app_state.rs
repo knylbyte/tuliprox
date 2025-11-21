@@ -10,7 +10,7 @@ use crate::repository::playlist_repository::load_target_into_memory_cache;
 use crate::tools::lru_cache::LRUResourceCache;
 use crate::utils::request::create_client;
 use arc_swap::{ArcSwap, ArcSwapOption};
-use log::error;
+use log::{error, info};
 use reqwest::Client;
 use shared::error::TuliproxError;
 use shared::model::UserConnectionPermission;
@@ -207,6 +207,7 @@ pub fn create_cache(config: &Config) -> Option<Arc<Mutex<LRUResourceCache>>> {
         });
     let cache_enabled = lru_cache.is_some();
     if cache_enabled {
+        info!("Scanning cache");
         if let Some(res_cache) = lru_cache {
             let cache = Arc::new(Mutex::new(res_cache));
             let cache_scanner = Arc::clone(&cache);

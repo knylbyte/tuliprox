@@ -259,8 +259,10 @@ async fn save_xtream_user_bouquet_for_target(config: &Config, target_name: &str,
 
     if let Some(bouquet_categories) = bouquet {
         if let Some(xtream_categories) = xtream_get_playlist_categories(config, target_name, cluster).await {
-            let filtered: Vec<&PlaylistXtreamCategory> = xtream_categories.iter().filter(|p| bouquet_categories.contains(&p.name)).collect();
-            return json_write_documents_to_file(&bouquet_path, &filtered).await;
+            let filtered: Vec<PlaylistXtreamCategory> = xtream_categories.iter().filter(|p| bouquet_categories.contains(&p.name)).cloned().collect();
+            return task::spawn_blocking(move || {
+                json_write_documents_to_file(&bouquet_path, &filtered)
+            }).await?;
         }
     }
 
@@ -278,7 +280,10 @@ async fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetTyp
     };
     match bouquet {
         Some(bouquet_categories) => {
-            json_write_documents_to_file(&bouquet_path, bouquet_categories).await?;
+            let categories = bouquet_categories.clone();
+            task::spawn_blocking(move || {
+                json_write_documents_to_file(&bouquet_path, &categories)
+            }).await??;
         }
         None => if bouquet_path.exists() {
             tokio::fs::remove_file(bouquet_path).await?;
