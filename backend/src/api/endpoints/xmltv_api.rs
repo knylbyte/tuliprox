@@ -252,7 +252,7 @@ async fn serve_epg_with_rewrites(
                                 break;
                             }
                         }
-                        Ok(Event::Start(ref e)) if rewrite_urls && e.name().as_ref() == b"icon" => {
+                        Ok(Event::Empty(ref e) | Event::Start(ref e)) if rewrite_urls && e.name().as_ref() == b"icon" => {
                             // Modify the attributes
                             let mut elem = BytesStart::new(EPG_TAG_ICON);
                             for attr in e.attributes() {

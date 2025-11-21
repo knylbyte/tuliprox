@@ -256,7 +256,7 @@ async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Resul
 
     loop {
         match reader.read_event_into_async(&mut buf).await {
-            Ok(Event::Start(e)) => {
+            Ok(Event::Empty(e) | Event::Start(e)) => {
                 let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 current_tag.clone_from(&tag);
 

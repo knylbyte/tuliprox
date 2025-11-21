@@ -57,6 +57,13 @@ pub fn deobscure_text(secret: &[u8;16], encoded: &str) -> Result<String, Tulipro
     // Base64 decode
     let data = general_purpose::URL_SAFE_NO_PAD.decode(encoded).map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't decode base64".to_string()))?;
 
+   if data.len() < 16 {
+       return Err(TuliproxError::new(
+           TuliproxErrorKind::Info,
+           "Token too short to contain IV".to_string(),
+       ));
+   }
+
     let (iv, ciphertext) = data.split_at(16);
 
     // AES-CTR Decryption
@@ -67,7 +74,7 @@ pub fn deobscure_text(secret: &[u8;16], encoded: &str) -> Result<String, Tulipro
     count += crypter.finalize(&mut buf[count..]).map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't finalize decrypt".to_string()))?;
     buf.truncate(count);
 
-    String::from_utf8(buf).map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't create uf8 string from decrypted".to_string()))
+    String::from_utf8(buf).map_err(|_err| TuliproxError::new(TuliproxErrorKind::Info, "Can't create utf8 string from decrypted".to_string()))
 }
 
 #[cfg(test)]
