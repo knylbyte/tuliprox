@@ -1,7 +1,7 @@
 use crate::model::config::cache::CacheConfig;
 use crate::model::{macros, GeoIpConfig, RateLimitConfig, StreamConfig};
 use shared::model::{ResourceRetryConfigDto, ReverseProxyConfigDto, ReverseProxyDisabledHeaderConfigDto};
-use shared::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier};
+use shared::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier, hex_to_u8_16, u8_16_to_hex};
 use std::cmp::max;
 
 #[derive(Debug, Clone)]
@@ -95,6 +95,7 @@ impl From<&ResourceRetryConfig> for ResourceRetryConfigDto {
 #[derive(Debug, Clone)]
 pub struct ReverseProxyConfig {
     pub resource_rewrite_disabled: bool,
+    pub rewrite_secret: [u8; 16],
     pub resource_retry: ResourceRetryConfig,
     pub disabled_header: Option<ReverseProxyDisabledHeaderConfig>,
     pub stream: Option<StreamConfig>,
@@ -109,6 +110,7 @@ impl From<&ReverseProxyConfigDto> for ReverseProxyConfig {
     fn from(dto: &ReverseProxyConfigDto) -> Self {
         Self {
             resource_rewrite_disabled: dto.resource_rewrite_disabled,
+            rewrite_secret: hex_to_u8_16(&dto.rewrite_secret).unwrap_or_default(),
             resource_retry: dto
                 .resource_retry
                 .as_ref()
@@ -130,6 +132,7 @@ impl From<&ReverseProxyConfig> for ReverseProxyConfigDto {
     fn from(instance: &ReverseProxyConfig) -> Self {
         Self {
             resource_rewrite_disabled: instance.resource_rewrite_disabled,
+            rewrite_secret: u8_16_to_hex(&instance.rewrite_secret),
             resource_retry: Some(ResourceRetryConfigDto::from(&instance.resource_retry)),
             disabled_header: instance.disabled_header.as_ref().map(|d| ReverseProxyDisabledHeaderConfigDto {
                 referer_header: d.referer_header,

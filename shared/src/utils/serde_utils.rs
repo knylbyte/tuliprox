@@ -111,3 +111,38 @@ where
 {
     ciborium::de::from_reader(value).map_err(to_io_error)
 }
+
+
+pub fn u8_16_to_hex(bytes: &[u8; 16]) -> String {
+    bytes.iter().map(|b| format!("{:02X}", b)).collect()
+}
+
+pub fn hex_to_u8_16(hex: &str) -> Result<[u8; 16], String> {
+    if hex.len() != 32 {
+        return Err("Hex string must be exactly 32 characters".into());
+    }
+
+    let mut out = [0u8; 16];
+
+    for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+        let s = std::str::from_utf8(chunk).map_err(|_| "Invalid UTF-8")?;
+        out[i] = u8::from_str_radix(s, 16).map_err(|_| "Invalid hex")?;
+    }
+
+    Ok(out)
+}
+
+pub fn hex_to_secret<'de, D>(deserializer: D) -> Result<[u8; 16], D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    hex_to_u8_16(&s).map_err(serde::de::Error::custom)
+}
+
+pub fn secret_to_hex<S>(bytes: &[u8; 16], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&u8_16_to_hex(bytes))
+}

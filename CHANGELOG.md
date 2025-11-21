@@ -1,6 +1,7 @@
 # Changelog
 # 3.3.0 (2025-11-xx)
 - !BREAKING CHANGE!  `config.yml` `threads` attribute is now renamed to `process_parallel` and is a boolean value true or false.
+- !BREAKING CHANGE!  `config.yml` added reverse proxy config `rewrite_secret` field to keep resource URLs valid after restart.
 - Avoid blocking the runtime when warming cache
 - Normalize FileLockManager paths so aliases share the same lock
 - Use async file operations for playlist persistence to avoid blocking async paths
@@ -21,6 +22,7 @@
 - Shared stream shutdown now drops registry locks before releasing provider handles to prevent cross-lock stalls.
 - Added `order: none` support for group/channel sorting so mappings can opt out of any reordering and keep the source order.
 - Session tracking now matches repeated HLS segment connections by session token so a single user keeps one active connection count even when new TCP sockets are opened.
+- EPG icon urls are now rewritten on reverse proxy mode. 
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
