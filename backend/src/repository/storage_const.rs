@@ -8,6 +8,7 @@ pub(in crate::repository) const FILE_M3U: &str = "m3u";
 pub const FILE_SUFFIX_WAL: &str = "wal";
 pub const M3U_STREAM_PATH: &str = "m3u-stream";
 pub const M3U_RESOURCE_PATH: &str = "resource/m3u";
+pub const EPG_RESOURCE_PATH: &str = "resource/epg";
 
 pub const COL_CAT_LIVE: &str = "cat_live";
 pub const COL_CAT_SERIES: &str = "cat_series";

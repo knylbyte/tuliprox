@@ -1,22 +1,25 @@
-use crate::api::api_utils::try_unwrap_body;
 use crate::api::api_utils::{get_user_target, serve_file};
+use crate::api::api_utils::{get_user_target_by_credentials, resource_response, try_unwrap_body};
 use crate::api::model::AppState;
 use crate::api::model::UserApiRequest;
-use crate::model::{Config, EPG_TAG_PROGRAMME};
+use crate::model::{get_attr_value, Config, EPG_TAG_ICON, EPG_TAG_PROGRAMME};
 use crate::model::{ConfigTarget, ProxyUserCredentials, TargetOutput};
-use crate::repository::m3u_repository::m3u_get_epg_file_path;
 use crate::repository::storage::get_target_storage_path;
+use crate::repository::storage_const;
 use crate::repository::xtream_repository::{xtream_get_epg_file_path, xtream_get_storage_path};
 use crate::utils;
+use crate::utils::{deobscure_text, obscure_text};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
 use log::{error, trace};
 use quick_xml::events::{BytesStart, Event};
+use shared::model::{PlaylistItemType};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
+use crate::repository::m3u_repository::m3u_get_epg_file_path;
 
 pub fn get_empty_epg_response() -> axum::response::Response {
     try_unwrap_body!(axum::response::Response::builder()
@@ -143,31 +146,50 @@ fn parse_timeshift(time_shift: Option<&String>) -> Option<i32> {
 }
 
 async fn serve_epg(
+    app_state: &Arc<AppState>,
     epg_path: &Path,
     user: &ProxyUserCredentials,
+    target: &Arc<ConfigTarget>,
 ) -> axum::response::Response {
-    match tokio::fs::try_exists(epg_path).await {
-        Ok(exists) => {
-            if exists {
-                match parse_timeshift(user.epg_timeshift.as_ref()) {
-                    None => serve_file(epg_path, mime::TEXT_XML).await.into_response(),
-                    Some(duration) => serve_epg_with_timeshift(epg_path, duration).await,
-                }
+    if let Ok(exists) = tokio::fs::try_exists(epg_path).await {
+        if exists {
+            let rewrite_resources = app_state.app_config.is_reverse_proxy_resource_rewrite_enabled();
+
+            // If redirect is true → rewrite_urls = false → keep original
+            // If redirect is false and rewrite_resources is true → rewrite_urls = true → rewriting allowed
+            // If redirect is false and rewrite_resources is false → rewrite_urls = false → no rewriting
+            let redirect = user.proxy.is_redirect(PlaylistItemType::Live) || target.is_force_redirect(PlaylistItemType::Live);
+            let rewrite_urls = !redirect && rewrite_resources;
+
+            // Use 0 for timeshift if None
+            let timeshift = parse_timeshift(user.epg_timeshift.as_ref()).unwrap_or(0);
+
+            return if timeshift != 0 || rewrite_urls {
+                let server_info = app_state.app_config.get_user_server_info(user);
+                let base_url = format!("{}/{}/{}/{}/", server_info.get_base_url(),
+                                       storage_const::EPG_RESOURCE_PATH, &user.username, &user.password);
+                // Apply timeshift and/or rewrite URLs
+                serve_epg_with_rewrites(epg_path, timeshift, rewrite_urls, &app_state.app_config.encrypt_secret, &base_url).await
             } else {
-                get_empty_epg_response()
-            }
+                // Neither timeshift nor rewrite needed, serve original file
+                serve_file(epg_path, mime::TEXT_XML).await.into_response()
+            };
         }
-        Err(_) => get_empty_epg_response(),
     }
+    get_empty_epg_response()
 }
 
-async fn serve_epg_with_timeshift(
+#[allow(clippy::too_many_lines)]
+async fn serve_epg_with_rewrites(
     epg_path: &Path,
     offset_minutes: i32,
+    rewrite_urls: bool,
+    secret: &[u8; 16],
+    base_url: &str,
 ) -> axum::response::Response {
     match tokio::fs::try_exists(epg_path).await {
         Ok(exists) => {
-            if ! exists {
+            if !exists {
                 return axum::http::StatusCode::NOT_FOUND.into_response();
             }
         }
@@ -177,6 +199,8 @@ async fn serve_epg_with_timeshift(
         }
     }
 
+    let encrypt_secret = *secret;
+    let rewrite_base_url = base_url.to_owned();
     match tokio::fs::File::open(epg_path).await {
         Ok(file) => {
             let reader = tokio::io::BufReader::new(file);
@@ -190,7 +214,7 @@ async fn serve_epg_with_timeshift(
 
                 loop {
                     match xml_reader.read_event_into_async(&mut buf).await {
-                        Ok(Event::Start(ref e)) if e.name().as_ref() == b"programme" => {
+                        Ok(Event::Start(ref e)) if offset_minutes != 0 && e.name().as_ref() == b"programme" => {
                             // Modify the attributes
                             let mut elem = BytesStart::new(EPG_TAG_PROGRAMME);
                             for attr in e.attributes() {
@@ -226,6 +250,54 @@ async fn serve_epg_with_timeshift(
                             if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
                                 error!("Failed to write Start event: {e}");
                                 break;
+                            }
+                        }
+                        Ok(ref event @ (Event::Empty(ref e) | Event::Start(ref e))) if rewrite_urls && e.name().as_ref() == b"icon" => {
+                            // Modify the attributes
+                            let mut elem = BytesStart::new(EPG_TAG_ICON);
+                            for attr in e.attributes() {
+                                match attr {
+                                    Ok(attr) if attr.key.as_ref() == b"src" => {
+                                        if let Some(icon) = get_attr_value(&attr) {
+                                            if icon.is_empty() {
+                                                elem.push_attribute(attr);
+                                            } else {
+                                                let rewritten_url = if let Ok(encrypted) = obscure_text(&encrypt_secret, &icon) {
+                                                    format!("{rewrite_base_url}{encrypted}")
+                                                 } else {
+                                                    icon
+                                                };
+                                                elem.push_attribute(("src", rewritten_url.as_str()));
+                                            }
+                                        } else {
+                                            elem.push_attribute(attr);
+                                        }
+                                    }
+                                    Ok(attr) => {
+                                        // Copy any other attributes as they are
+                                        elem.push_attribute(attr);
+                                    }
+                                    Err(e) => {
+                                        error!("Error parsing attribute: {e}");
+                                    }
+                                }
+                            }
+
+                            // Write the modified icon event
+                            // if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
+                            //     error!("Failed to write Start event: {e}");
+                            //     break;
+                            // }
+                            let out_event = match event {
+                                    Event::Empty(_) => Some(Event::Empty(elem)),
+                                    Event::Start(_) => Some(Event::Start(elem)),
+                                    _ => None,
+                                };
+                            if let Some(out) = out_event {
+                                if let Err(e) = xml_writer.write_event_async(out).await {
+                                    error!("Failed to write icon event: {e}");
+                                    break;
+                                }
                             }
                         }
                         Ok(Event::Eof) => break, // End of file
@@ -293,7 +365,34 @@ async fn xmltv_api(
         return get_empty_epg_response();
     };
 
-    serve_epg(&epg_path, &user).await
+    serve_epg(&app_state, &epg_path, &user, &target).await
+}
+
+#[axum::debug_handler]
+async fn epg_api_resource(
+    req_headers: axum::http::HeaderMap,
+    axum::extract::Query(api_req): axum::extract::Query<UserApiRequest>,
+    axum::extract::Path((username, password, resource)): axum::extract::Path<(
+        String,
+        String,
+        String,
+    )>,
+    axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
+) -> impl IntoResponse + Send {
+    let Some((user, _target)) =
+        get_user_target_by_credentials(&username, &password, &api_req, &app_state)
+    else {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    };
+    if user.permission_denied(&app_state) {
+        return axum::http::StatusCode::FORBIDDEN.into_response();
+    }
+
+    if let Ok(resource_url) = deobscure_text(&app_state.app_config.encrypt_secret, &resource) {
+        resource_response(&app_state, &resource_url, &req_headers, None).await.into_response()
+    } else {
+        axum::http::StatusCode::BAD_REQUEST.into_response()
+    }
 }
 
 /// Registers the XMLTV EPG API routes for handling HTTP GET requests.
@@ -311,6 +410,9 @@ pub fn xmltv_api_register() -> axum::Router<Arc<AppState>> {
         .route("/xmltv.php", axum::routing::get(xmltv_api))
         .route("/update/epg.php", axum::routing::get(xmltv_api))
         .route("/epg", axum::routing::get(xmltv_api))
+        .route(&format!("/{}/{{username}}/{{password}}/{{resource}}", storage_const::EPG_RESOURCE_PATH),
+               axum::routing::get(epg_api_resource),
+        )
 }
 
 #[cfg(test)]

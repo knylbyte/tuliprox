@@ -226,6 +226,10 @@ fn concat_text(t1: &String, t2: &str) -> String {
     }
 }
 
+pub fn get_attr_value(attr: &quick_xml::events::attributes::Attribute) -> Option<String> {
+    attr.unescape_value().ok().map(|v| v.to_string())
+}
+
 #[allow(clippy::too_many_lines)]
 async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Result<EpgTv, TuliproxError> {
 
@@ -246,16 +250,10 @@ async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Resul
         - chrono::Duration::days(1);
     let threshold_ts = yesterday_start.timestamp();
 
-    let get_attr_value = |attr: &quick_xml::events::attributes::Attribute| {
-        if let Ok(value) = attr.unescape_value() {
-            return Some(value.to_string());
-        }
-        None
-    };
 
     loop {
         match reader.read_event_into_async(&mut buf).await {
-            Ok(Event::Start(e)) => {
+            Ok(Event::Empty(e) | Event::Start(e)) => {
                 let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 current_tag.clone_from(&tag);
 

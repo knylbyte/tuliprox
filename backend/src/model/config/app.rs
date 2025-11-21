@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use arc_swap::access::Access;
-use log::{debug, error};
+use log::{error, warn};
 use rand::Rng;
 use shared::create_tuliprox_error_result;
 use shared::error::{TuliproxError, TuliproxErrorKind};
@@ -132,7 +132,7 @@ impl AppConfig {
         if let Some(hdhomerun) = &*guard {
             for device in &hdhomerun.devices {
                 if !device.t_enabled {
-                    debug!("HdHomeRun device '{}' has no username and will be disabled", device.name);
+                    warn!("HdHomeRun device '{}' has no username and will be disabled", device.name);
                 }
             }
         }
