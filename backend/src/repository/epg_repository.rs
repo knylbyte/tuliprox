@@ -1,29 +1,31 @@
-use std::io::Write;
-use shared::error::{notify_err, TuliproxError};
-use crate::model::{Config, ConfigTarget, TargetOutput};
 use crate::model::Epg;
+use crate::model::{Config, ConfigTarget, TargetOutput};
 use crate::repository::m3u_repository::m3u_get_epg_file_path;
 use crate::repository::xtream_repository::{xtream_get_epg_file_path, xtream_get_storage_path};
 use crate::utils::debug_if_enabled;
+use shared::error::{notify_err, TuliproxError};
 use std::path::Path;
+use tokio::io::AsyncWriteExt;
 
-async fn epg_write_file(target: &ConfigTarget, epg: &Epg, path: &Path) -> Result<(), TuliproxError> {
-    let file = tokio::fs::File::create(path).await.map_err(|e| notify_err!(format!("failed to create epg file: {}", e)))?;
-    // problem quickxml is not async
-    let sync_writer = tokio_util::io::SyncIoBridge::new(file);
-    let mut writer = quick_xml::Writer::new(std::io::BufWriter::new(sync_writer));
+pub async fn epg_write_file(target: &ConfigTarget, epg: &Epg, path: &Path) -> Result<(), TuliproxError> {
+    let file = tokio::fs::File::create(path).await
+        .map_err(|e| notify_err!(format!("failed to create epg file: {}", e)))?;
+    let buf_writer = tokio::io::BufWriter::new(file);
+    let mut writer = quick_xml::writer::Writer::new(buf_writer);
 
-    writer.write_event(quick_xml::events::Event::Decl(
-        quick_xml::events::BytesDecl::new("1.0", Some("utf-8"), None)
-    )).map_err(|e| notify_err!(format!("failed to write XML header: {}", e)))?;
+    // XML Header
+    writer.write_event_async(quick_xml::events::Event::Decl(quick_xml::events::BytesDecl::new("1.0", Some("utf-8"), None)))
+        .await.map_err(|e| notify_err!(format!("failed to write XML header: {}", e)))?;
 
-    writer.write_event(quick_xml::events::Event::DocType(quick_xml::events::BytesText::new("tv SYSTEM \"xmltv.dtd\"")))
-        .map_err(|e| notify_err!(format!("failed to write doctype: {}", e)))?;
+    // DOCTYPE
+    writer.write_event_async(quick_xml::events::Event::DocType(quick_xml::events::BytesText::new("tv SYSTEM \"xmltv.dtd\"")))
+        .await.map_err(|e| notify_err!(format!("failed to write doctype: {}", e)))?;
 
+    // EPG Content
+    epg.write_to_async(&mut writer).await.map_err(|e| notify_err!(format!("failed to write epg: {}", e)))?;
 
-    epg.write_to(&mut writer).map_err(|e| notify_err!(format!("failed to write epg: {}", e)))?;
-
-    writer.into_inner().flush().map_err(|e| notify_err!(format!("failed to flush epg: {}", e)))?;
+    let inner = writer.get_mut(); // Zugriff auf den BufWriter<tokio::fs::File>
+    inner.flush().await.map_err(|e| notify_err!(format!("failed to flush epg: {}", e)))?;
 
     debug_if_enabled!("Epg for target {} written to {}", target.name, path.to_str().unwrap_or("?"));
     Ok(())

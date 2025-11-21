@@ -617,7 +617,7 @@ pub fn rewrite_doc_urls(resource_url: Option<&String>, document: &mut Map<String
 }
 
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct PlaylistXtreamCategory {
     #[serde(alias = "category_id")]
     pub id: String,

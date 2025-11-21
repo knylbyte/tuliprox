@@ -21,13 +21,14 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 use shared::error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::{PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
-use shared::utils::{generate_playlist_uuid, get_u32_from_serde_value, hex_encode, json_iter_array};
+use shared::utils::{generate_playlist_uuid, get_u32_from_serde_value, hex_encode};
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Error, ErrorKind, Read, Write};
+use std::io::{BufWriter, Error, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::task;
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
@@ -137,28 +138,38 @@ fn get_map_item_as_str(map: &serde_json::Map<String, Value>, key: &str) -> Optio
     None
 }
 
-fn load_old_category_ids(path: &Path) -> (u32, HashMap<String, u32>) {
-    let mut result: HashMap<String, u32> = HashMap::new();
-    let mut max_id: u32 = 0;
-    for (cluster, cat) in [(XtreamCluster::Live, storage_const::COL_CAT_LIVE), (XtreamCluster::Video, storage_const::COL_CAT_VOD), (XtreamCluster::Series, storage_const::COL_CAT_SERIES)] {
-        let col_path = get_collection_path(path, cat);
-        if col_path.exists() {
-            if let Ok(file) = File::open(col_path) {
-                let reader = file_reader(file);
-                for entry in json_iter_array::<Value, BufReader<File>>(reader).flatten() {
-                    if let Some(category_id) = entry.get(crate::model::XC_TAG_CATEGORY_ID).and_then(get_u32_from_serde_value) {
-                        if let Value::Object(item) = entry {
-                            if let Some(category_name) = get_map_item_as_str(&item, crate::model::XC_TAG_CATEGORY_NAME) {
-                                result.insert(format!("{cluster}{category_name}"), category_id);
-                                max_id = max_id.max(category_id);
+async fn load_old_category_ids(path: &Path) -> (u32, HashMap<String, u32>) {
+    let old_path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let mut result: HashMap<String, u32> = HashMap::new();
+        let mut max_id: u32 = 0;
+        for (cluster, cat) in [(XtreamCluster::Live, storage_const::COL_CAT_LIVE), (XtreamCluster::Video, storage_const::COL_CAT_VOD), (XtreamCluster::Series, storage_const::COL_CAT_SERIES)] {
+            let col_path = get_collection_path(&old_path, cat);
+            if col_path.exists() {
+                if let Ok(file) = File::open(col_path) {
+                    let reader = file_reader(file);
+                    match serde_json::from_reader(reader) {
+                        Ok(value) => {
+                            if let Value::Array(list) = value {
+                                for entry in list {
+                                    if let Some(category_id) = entry.get(crate::model::XC_TAG_CATEGORY_ID).and_then(get_u32_from_serde_value) {
+                                        if let Value::Object(item) = entry {
+                                            if let Some(category_name) = get_map_item_as_str(&item, crate::model::XC_TAG_CATEGORY_NAME) {
+                                                result.insert(format!("{cluster}{category_name}"), category_id);
+                                                max_id = max_id.max(category_id);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
+                        Err(_err) => {}
                     }
                 }
             }
         }
-    }
-    (max_id, result)
+        (max_id, result)
+    }).await.unwrap_or_else(|_| (0, HashMap::new()))
 }
 
 pub fn xtream_get_storage_path(cfg: &Config, target_name: &str) -> Option<PathBuf> {
@@ -218,7 +229,7 @@ pub async fn xtream_write_playlist(
     let mut vod_col = Vec::with_capacity(10_000);
 
     // preserve category_ids
-    let (max_cat_id, existing_cat_ids) = load_old_category_ids(&path);
+    let (max_cat_id, existing_cat_ids) = load_old_category_ids(&path).await;
     let mut cat_id_counter = max_cat_id;
     for plg in playlist.iter_mut() {
         if !&plg.channels.is_empty() {
@@ -252,18 +263,24 @@ pub async fn xtream_write_playlist(
         }
     }
 
-    for (col_path, data) in [
-        (get_collection_path(&path, storage_const::COL_CAT_LIVE), &cat_live_col),
-        (get_collection_path(&path, storage_const::COL_CAT_VOD), &cat_vod_col),
-        (get_collection_path(&path, storage_const::COL_CAT_SERIES), &cat_series_col),
-    ] {
-        match json_write_documents_to_file(&col_path, data).await {
-            Ok(()) => {}
-            Err(err) => {
-                errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
+    let root_path = path.clone();
+    let write_errors = task::spawn_blocking(move || {
+        let mut write_errors = vec![];
+        for (col_path, data) in [
+            (get_collection_path(&root_path, storage_const::COL_CAT_LIVE), &cat_live_col),
+            (get_collection_path(&root_path, storage_const::COL_CAT_VOD), &cat_vod_col),
+            (get_collection_path(&root_path, storage_const::COL_CAT_SERIES), &cat_series_col),
+        ] {
+            match json_write_documents_to_file(&col_path, data) {
+                Ok(()) => {}
+                Err(err) => {
+                    write_errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
+                }
             }
         }
-    }
+        write_errors
+    }).await.map_err(|e| notify_err!(format!("Task panicked: {}", e)))?;
+    errors.extend(write_errors);
 
     match write_playlists_to_file(
         cfg,
