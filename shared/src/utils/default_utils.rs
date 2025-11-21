@@ -14,3 +14,11 @@ pub const fn default_connect_timeout_secs() -> u32 { 6 }
 pub const fn default_resource_retry_attempts() -> u32 { 3 }
 pub const fn default_resource_retry_backoff_ms() -> u64 { 250 }
 pub const fn default_resource_retry_backoff_multiplier() -> f64 { 1.0 }
+pub fn default_secret() -> String {
+    let mut out = [0u8; 16];
+    for x in &mut out {
+        *x = fastrand::u8(..);
+    }
+
+    out.iter().map(|b| format!("{:02X}", b)).collect()
+}

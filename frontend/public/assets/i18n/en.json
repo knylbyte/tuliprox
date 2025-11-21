@@ -224,6 +224,7 @@
     "WEB_SEARCH": "Web Search",
     "USER_UI_ENABLED": "User-UI Enabled",
     "RESOURCE_REWRITE_DISABLED": "Resource Rewrite Disabled",
+    "REWRITE_SECRET": "Rewrite Secret",
     "DEVICE_AUTH": "Auth",
     "TOKEN_TTL_MINS": "Token ttl (mins)",
     "AUTH": "Auth",

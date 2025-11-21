@@ -1,6 +1,6 @@
-use crate::error::TuliproxError;
+use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{CacheConfigDto, GeoIpConfigDto, RateLimitConfigDto, StreamConfigDto};
-use crate::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier};
+use crate::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier, hex_to_u8_16};
 use log::warn;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -31,6 +31,7 @@ impl ReverseProxyDisabledHeaderConfigDto {
 pub struct ReverseProxyConfigDto {
     #[serde(default)]
     pub resource_rewrite_disabled: bool,
+    pub rewrite_secret: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource_retry: Option<ResourceRetryConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -88,6 +89,9 @@ impl ReverseProxyConfigDto {
     }
 
     pub(crate) fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {
+
+        hex_to_u8_16(&self.rewrite_secret).map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, e))?;
+
         if let Some(stream) = self.stream.as_mut() {
             stream.prepare()?;
         }

@@ -18,7 +18,7 @@ pub async fn epg_write_file(target: &ConfigTarget, epg: &Epg, path: &Path) -> Re
         .await.map_err(|e| notify_err!(format!("failed to write XML header: {}", e)))?;
 
     // DOCTYPE
-    writer.write_event_async(quick_xml::events::Event::DocType(quick_xml::events::BytesText::new("tv SYSTEM \"xmltv.dtd\"")))
+    writer.write_event_async(quick_xml::events::Event::DocType(quick_xml::events::BytesText::new(r#"tv SYSTEM "xmltv.dtd""#)))
         .await.map_err(|e| notify_err!(format!("failed to write doctype: {}", e)))?;
 
     // EPG Content

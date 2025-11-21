@@ -154,6 +154,7 @@ async fn serve_epg(
     if let Ok(exists) = tokio::fs::try_exists(epg_path).await {
         if exists {
             let rewrite_resources = app_state.app_config.is_reverse_proxy_resource_rewrite_enabled();
+            let encrypt_secret = app_state.app_config.get_reverse_proxy_rewrite_secret().unwrap_or_else(|| app_state.app_config.encrypt_secret);
 
             // If redirect is true → rewrite_urls = false → keep original
             // If redirect is false and rewrite_resources is true → rewrite_urls = true → rewriting allowed
@@ -169,7 +170,7 @@ async fn serve_epg(
                 let base_url = format!("{}/{}/{}/{}/", server_info.get_base_url(),
                                        storage_const::EPG_RESOURCE_PATH, &user.username, &user.password);
                 // Apply timeshift and/or rewrite URLs
-                serve_epg_with_rewrites(epg_path, timeshift, rewrite_urls, &app_state.app_config.encrypt_secret, &base_url).await
+                serve_epg_with_rewrites(epg_path, timeshift, rewrite_urls, &encrypt_secret, &base_url).await
             } else {
                 // Neither timeshift nor rewrite needed, serve original file
                 serve_file(epg_path, mime::TEXT_XML).await.into_response()
@@ -206,9 +207,28 @@ async fn serve_epg_with_rewrites(
             let reader = tokio::io::BufReader::new(file);
             let (tx, rx) = tokio::io::duplex(8192);
             tokio::spawn(async move {
-                let encoder = async_compression::tokio::write::GzipEncoder::new(tx);
+                let mut encoder = async_compression::tokio::write::GzipEncoder::new(tx);
+
+                // Work-Around BytesText DocType escape, see below
+                if let Err(err)  =encoder.write_all(b"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n").await {
+                    error!("EPG: Failed to write xml header {err}");
+                }
+
+                if let Err(err)  =encoder.write_all(b"<!DOCTYPE tv SYSTEM \"xmltv.dtd\">\n").await {
+                    error!("EPG: Failed to write epg doc type {err}");
+                }
+
                 let mut xml_reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(reader));
                 let mut xml_writer = quick_xml::writer::Writer::new(encoder);
+
+                // TODO howto avoid BytesText to escape the doctype "xmltv.dtd"  which is written as &quote;xmltv.dtd&quote;
+                // if let Err(err)  =xml_writer.write_event_async(Event::Decl(quick_xml::events::BytesDecl::new("1.0", Some("utf-8"), None))).await {
+                //     error!("EPG: Failed to write epg header {err}");
+                // }
+                // if let Err(err)  = xml_writer.write_event_async(Event::DocType( quick_xml::events::BytesText::new(r#"tv SYSTEM "xmltv.dtd""#))).await {
+                //     error!("EPG: Failed to write epg doc type {err}");
+                // }
+
                 let mut buf = Vec::with_capacity(4096);
                 let duration = Duration::minutes(i64::from(offset_minutes));
 
@@ -300,6 +320,7 @@ async fn serve_epg_with_rewrites(
                                 }
                             }
                         }
+                        Ok(Event::Decl(_) | Event::DocType(_)) => {},
                         Ok(Event::Eof) => break, // End of file
                         Ok(event) => {
                             // Write any other event as is
@@ -388,7 +409,8 @@ async fn epg_api_resource(
         return axum::http::StatusCode::FORBIDDEN.into_response();
     }
 
-    if let Ok(resource_url) = deobscure_text(&app_state.app_config.encrypt_secret, &resource) {
+    let encrypt_secret = app_state.app_config.get_reverse_proxy_rewrite_secret().unwrap_or_else(|| app_state.app_config.encrypt_secret);
+    if let Ok(resource_url) = deobscure_text(&encrypt_secret, &resource) {
         resource_response(&app_state, &resource_url, &req_headers, None).await.into_response()
     } else {
         axum::http::StatusCode::BAD_REQUEST.into_response()

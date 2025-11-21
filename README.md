@@ -357,6 +357,23 @@ Example:
 1.0.4.0,1.0.7.255,AU
 ```
 
+#### 1.6.8 `rewrite_secret`
+The `rewrite_secret` field is used to keep generated resource URLs stable across application restarts.
+Some parts of the system generate URLs that include a hashed or signed component based on an internal secret value.
+Normally, this secret would change after every restart, which would invalidate previously generated URLs.
+
+By explicitly setting a `rewrite_secret`, you ensure that the same value is reused on every startup.
+This guarantees that resource URLs remain valid, even if the application restarts or updates.
+
+In short:
+`rewrite_secret` provides a persistent secret used for generating and verifying rewrite URLs, preventing them from breaking after a restart.
+
+It must be a 32-character hexadecimal string (16 bytes), for example:
+```yaml
+reverse_proxy:
+  rewrite_secret: A1B2C3D4E5F60718293A4B5C6D7E8F90
+```
+
 ### 1.7 `backup_dir`
 is the directory where the backup configuration files written, when saved from the ui.
 

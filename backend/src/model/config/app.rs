@@ -144,6 +144,11 @@ impl AppConfig {
         config.reverse_proxy.as_ref().is_none_or(|r| !r.resource_rewrite_disabled)
     }
 
+    pub fn get_reverse_proxy_rewrite_secret(&self) -> Option<[u8; 16]> {
+        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
+        config.reverse_proxy.as_ref().map(|r| r.rewrite_secret)
+    }
+
     fn intern_get_target_for_user(&self, user_target: Option<(ProxyUserCredentials, String)>) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
         match user_target {
             Some((user, target_name)) => {

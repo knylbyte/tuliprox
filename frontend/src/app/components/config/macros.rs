@@ -94,6 +94,20 @@ macro_rules! config_field_custom {
 }
 
 #[macro_export]
+macro_rules! config_field_custom_hide {
+    ($label:expr, $value:expr) => {
+        html! {
+            <div class="tp__form-field tp__form-field__text">
+                <label>{$label}</label>
+                <span class="tp__form-field__value">
+                    <$crate::app::components::HideContent content={$value}></$crate::app::components::HideContent>
+                </span>
+            </div>
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! config_field_child {
     ($label:expr, $body:block) => {
         html! {
@@ -174,6 +188,33 @@ macro_rules! edit_field_text {
                     value={instance.form.$field.clone()}
                     on_change={Callback::from(move |value: String| {
                         instance.dispatch($action(value));
+                    })}
+                />
+            </div>
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! edit_field_text_custom {
+    ($instance:expr, $label:expr, $field:ident, $action:path, $read_value:expr, $write_value:expr) => {
+        $crate::edit_field_text!(@inner $instance, $label, $field, $action, false, $read_value, $write_value)
+    };
+    ($instance:expr, $label:expr, $field:ident, $action:path,  $hidden:expr, $read_value:expr, $write_value:expr) => {
+        $crate::edit_field_text!(@inner $instance, $label, $field, $action, $hidden, $read_value, $write_value)
+    };
+    (@inner $instance:expr, $label:expr, $field:ident, $action:path, $hidden:expr) => {{
+        let instance = $instance.clone();
+        html! {
+            <div class="tp__form-field tp__form-field__text">
+                <$crate::app::components::input::Input
+                    label={$label}
+                    hidden={$hidden}
+                    name={stringify!($field)}
+                    autocomplete={true}
+                    value={$read_value(instance.form.$field.clone())}
+                    on_change={Callback::from(move |value: String| {
+                        instance.dispatch($write_value($action(value)));
                     })}
                 />
             </div>
