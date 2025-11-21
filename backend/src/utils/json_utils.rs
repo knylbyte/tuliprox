@@ -51,5 +51,6 @@ where
     let file = std::fs::File::create(path)?;
     let mut buf_writer = std::io::BufWriter::new(file);
     serde_json::to_writer(&mut buf_writer, value)?;
-    buf_writer.flush()
+    buf_writer.flush()?;
+    buf_writer.into_inner()?.sync_all()
 }

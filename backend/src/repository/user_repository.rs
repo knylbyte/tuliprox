@@ -262,7 +262,8 @@ async fn save_xtream_user_bouquet_for_target(config: &Config, target_name: &str,
             let filtered: Vec<PlaylistXtreamCategory> = xtream_categories.iter().filter(|p| bouquet_categories.contains(&p.name)).cloned().collect();
             return task::spawn_blocking(move || {
                 json_write_documents_to_file(&bouquet_path, &filtered)
-            }).await?;
+            }).await
+                .map_err(|err| Error::other(format!("Failed to write xtream bouquet file: {err}")))?;
         }
     }
 
@@ -283,7 +284,7 @@ async fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetTyp
             let categories = bouquet_categories.clone();
             task::spawn_blocking(move || {
                 json_write_documents_to_file(&bouquet_path, &categories)
-            }).await??;
+            }).await.map_err(|err| Error::other(format!("Failed to write m3u bouquet file: {err}")))??;
         }
         None => if bouquet_path.exists() {
             tokio::fs::remove_file(bouquet_path).await?;

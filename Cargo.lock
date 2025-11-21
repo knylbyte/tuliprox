@@ -3765,7 +3765,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "3.2.7"
+version = "3.2.8"
 dependencies = [
  "base64",
  "bitflags 2.10.0",
