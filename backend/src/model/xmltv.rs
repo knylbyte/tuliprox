@@ -227,10 +227,7 @@ fn concat_text(t1: &String, t2: &str) -> String {
 }
 
 pub fn get_attr_value(attr: &quick_xml::events::attributes::Attribute) -> Option<String> {
-    if let Ok(value) = attr.unescape_value() {
-    return Some(value.to_string());
-    }
-    None
+    attr.unescape_value().ok().map(|v| v.to_string())
 }
 
 #[allow(clippy::too_many_lines)]

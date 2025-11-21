@@ -252,7 +252,7 @@ async fn serve_epg_with_rewrites(
                                 break;
                             }
                         }
-                        Ok(Event::Empty(ref e) | Event::Start(ref e)) if rewrite_urls && e.name().as_ref() == b"icon" => {
+                        Ok(ref event @ (Event::Empty(ref e) | Event::Start(ref e))) if rewrite_urls && e.name().as_ref() == b"icon" => {
                             // Modify the attributes
                             let mut elem = BytesStart::new(EPG_TAG_ICON);
                             for attr in e.attributes() {
@@ -284,9 +284,20 @@ async fn serve_epg_with_rewrites(
                             }
 
                             // Write the modified icon event
-                            if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
-                                error!("Failed to write Start event: {e}");
-                                break;
+                            // if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
+                            //     error!("Failed to write Start event: {e}");
+                            //     break;
+                            // }
+                            let out_event = match event {
+                                    Event::Empty(_) => Some(Event::Empty(elem)),
+                                    Event::Start(_) => Some(Event::Start(elem)),
+                                    _ => None,
+                                };
+                            if let Some(out) = out_event {
+                                if let Err(e) = xml_writer.write_event_async(out).await {
+                                    error!("Failed to write icon event: {e}");
+                                    break;
+                                }
                             }
                         }
                         Ok(Event::Eof) => break, // End of file
