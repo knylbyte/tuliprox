@@ -371,7 +371,7 @@ In short:
 It must be a 32-character hexadecimal string (16 bytes), for example:
 ```yaml
 reverse_proxy:
-  rewrite_secret: A1B2C3D4E5F60718293A4B5C6D7E8F90
+  rewrite_secret: A1B2C3D4E5F60718293A4B5C6D7E8F90 # Example only — generate your own
 ```
 You can generate a random secret using:
 ```bash
