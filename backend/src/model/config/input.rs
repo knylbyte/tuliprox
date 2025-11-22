@@ -92,7 +92,7 @@ impl From<&StagedInputDto> for StagedInput {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ConfigInputAlias {
     pub id: u16,
     pub name: String,

@@ -1,21 +1,21 @@
-use crate::model::{InputSource, ProxyUserCredentials};
+use crate::api::model::AppState;
+use crate::messaging::send_message;
 use crate::model::{Config, ConfigInput, ConfigTarget};
+use crate::model::{InputSource, ProxyUserCredentials};
 use crate::processing::parser::xtream;
 use crate::repository::xtream_repository;
 use crate::repository::xtream_repository::{rewrite_xtream_series_info_content, rewrite_xtream_vod_info_content, xtream_get_input_info};
+use crate::utils::request;
+use chrono::DateTime;
+use log::{error, info, warn};
 use shared::error::{str_to_io_error, TuliproxError};
-use crate::utils::{request};
-use chrono::{DateTime};
-use log::{info, warn};
+use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, XtreamCluster, XtreamPlaylistItem};
+use shared::utils::{extract_extension_from_url, get_i64_from_serde_value, get_string_from_serde_value};
 // use std::cmp::Ordering;
 use std::io::Error;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, XtreamCluster, XtreamPlaylistItem};
-use shared::utils::{extract_extension_from_url, get_i64_from_serde_value, get_string_from_serde_value};
-use crate::api::model::AppState;
-use crate::messaging::{send_message};
 
 #[inline]
 pub fn get_xtream_stream_url_base(url: &str, username: &str, password: &str) -> String {
@@ -191,10 +191,10 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Input
     Ok(())
 }
 
-pub async fn get_xtream_playlist(cfg: &Config, client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
+pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &Arc<reqwest::Client>, input: &Arc<ConfigInput>, working_dir: &str) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
     let input_source: InputSource = {
         match input.staged.as_ref() {
-            None => input.into(),
+            None => input.as_ref().into(),
             Some(staged) => staged.into(),
         }
     };
@@ -204,7 +204,9 @@ pub async fn get_xtream_playlist(cfg: &Config, client: Arc<reqwest::Client>, inp
 
     let base_url = get_xtream_stream_url_base(&input_source.url, username, password);
     let input_source_login = input_source.with_url(base_url.clone());
+    check_alias_user_state(cfg, &client, input);
     if let Err(err) = xtream_login(cfg, &client, &input_source_login, username).await {
+        error!("Could not log in with xtream user {username} for provider {}. {err}", input.name);
         return (Vec::with_capacity(0), vec![err]);
     }
 
@@ -248,6 +250,46 @@ pub async fn get_xtream_playlist(cfg: &Config, client: Arc<reqwest::Client>, inp
         plg.id = grp_id;
     }
     (playlist_groups, errors)
+}
+
+fn check_alias_user_state(cfg: &Arc<Config>, client: &Arc<reqwest::Client>, input: &Arc<ConfigInput>) {
+    let cfg = Arc::clone(cfg);
+    let client = Arc::clone(client);
+    let input = Arc::clone(input);
+    tokio::spawn(async move {
+        if let Some(aliases) = input.aliases.as_ref() {
+            for alias in aliases {
+                // Random wait time  5–20 seconds to avoid provider block
+                let delay = fastrand::i32(5..=20) as u64;
+                tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
+
+                if let (Some(username), Some(password)) =
+                    (alias.username.as_ref(), alias.password.as_ref())
+                {
+                    let mut input_source: InputSource = input.as_ref().into();
+                    input_source.username = alias.username.clone();
+                    input_source.password = alias.password.clone();
+                    input_source.url = alias.url.clone();
+                    let base_url = get_xtream_stream_url_base(
+                        &input_source.url,
+                        username,
+                        password,
+                    );
+                    let input_source_login = input_source.with_url(base_url.clone());
+
+                    if let Err(err) =
+                        xtream_login(&cfg, &client, &input_source_login, username).await
+                    {
+                        error!(
+                            "Could not log in with xtream user {} for provider {}. {err}",
+                            username,
+                            alias.name
+                        );
+                    }
+                }
+            }
+        }
+    });
 }
 
 pub fn create_vod_info_from_item(target: &ConfigTarget, user: &ProxyUserCredentials, pli: &XtreamPlaylistItem, last_updated: i64) -> String {
