@@ -6,7 +6,6 @@ use crate::processing::parser::xtream;
 use crate::repository::xtream_repository;
 use crate::repository::xtream_repository::{rewrite_xtream_series_info_content, rewrite_xtream_vod_info_content, xtream_get_input_info};
 use crate::utils::request;
-use chrono::DateTime;
 use log::{error, info, warn};
 use shared::error::{str_to_io_error, TuliproxError};
 use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, XtreamCluster, XtreamPlaylistItem};
@@ -172,10 +171,11 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Input
                             if expiration_ts > now_secs {
                                 let time_left = expiration_ts - now_secs;
                                 if time_left < 3 * 24 * 60 * 60 {
-                                    let datetime = DateTime::from_timestamp(expiration_timestamp, 0).unwrap();
-                                    let formatted = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
-                                    warn!("User account for user {username} expires {formatted}");
-                                    send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} expires {formatted}")).await;
+                                    if let Some(datetime) = chrono::DateTime::from_timestamp(expiration_timestamp, 0) {
+                                        let formatted = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
+                                        warn!("User account for user {username} expires {formatted}");
+                                        send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} expires {formatted}")).await;
+                                    }
                                 }
                             } else {
                                 warn!("User account for user {username} is expired");
@@ -204,8 +204,8 @@ pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &Arc<reqwest::Client
 
     let base_url = get_xtream_stream_url_base(&input_source.url, username, password);
     let input_source_login = input_source.with_url(base_url.clone());
-    check_alias_user_state(cfg, &client, input);
-    if let Err(err) = xtream_login(cfg, &client, &input_source_login, username).await {
+    check_alias_user_state(cfg, client, input);
+    if let Err(err) = xtream_login(cfg, client, &input_source_login, username).await {
         error!("Could not log in with xtream user {username} for provider {}. {err}", input.name);
         return (Vec::with_capacity(0), vec![err]);
     }
@@ -222,8 +222,8 @@ pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &Arc<reqwest::Client
             let stream_file_path = crate::utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{stream}_").as_str());
 
             match futures::join!(
-                request::get_input_json_content(Arc::clone(&client), None, &input_source_category, category_file_path),
-                request::get_input_json_content(Arc::clone(&client), None, &input_source_stream, stream_file_path)
+                request::get_input_json_content(Arc::clone(client), None, &input_source_category, category_file_path),
+                request::get_input_json_content(Arc::clone(client), None, &input_source_stream, stream_file_path)
             ) {
                 (Ok(category_content), Ok(stream_content)) => {
                     match xtream::parse_xtream(input,
@@ -260,16 +260,16 @@ fn check_alias_user_state(cfg: &Arc<Config>, client: &Arc<reqwest::Client>, inpu
         if let Some(aliases) = input.aliases.as_ref() {
             for alias in aliases {
                 // Random wait time  5–20 seconds to avoid provider block
-                let delay = fastrand::i32(5..=20) as u64;
+                let delay =  u64::from(fastrand::u32(5..=20));
                 tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
 
                 if let (Some(username), Some(password)) =
                     (alias.username.as_ref(), alias.password.as_ref())
                 {
                     let mut input_source: InputSource = input.as_ref().into();
-                    input_source.username = alias.username.clone();
-                    input_source.password = alias.password.clone();
-                    input_source.url = alias.url.clone();
+                    input_source.username.clone_from(&alias.username);
+                    input_source.password.clone_from(&alias.password);
+                    input_source.url.clone_from(&alias.url);
                     let base_url = get_xtream_stream_url_base(
                         &input_source.url,
                         username,

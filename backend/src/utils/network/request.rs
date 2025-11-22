@@ -96,11 +96,11 @@ pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: 
 }
 
 
-pub async fn get_input_text_content(client: Arc<reqwest::Client>, input: &InputSource, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<String, TuliproxError> {
+pub async fn get_input_text_content(client: &Arc<reqwest::Client>, input: &InputSource, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<String, TuliproxError> {
     debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(&input.url));
 
     if input.url.parse::<url::Url>().is_ok() {
-        match download_text_content(client, None, input, None, persist_filepath).await {
+        match download_text_content(Arc::clone(client), None, input, None, persist_filepath).await {
             Ok((content, _response_url)) => Ok(content),
             Err(e) => {
                 error!("Failed to download input '{}': {}", &input.name, sanitize_sensitive_info(e.to_string().as_str()));

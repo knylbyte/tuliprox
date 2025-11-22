@@ -283,7 +283,7 @@ fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bo
 async fn playlist_download_from_input(client: &Arc<reqwest::Client>, config: &Arc<Config>, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
     let working_dir = &config.working_dir;
     match input.input_type {
-        InputType::M3u => m3u::get_m3u_playlist(Arc::clone(client), config, input, working_dir).await,
+        InputType::M3u => m3u::get_m3u_playlist(client, config, input, working_dir).await,
         InputType::Xtream => xtream::get_xtream_playlist(config, client, input, working_dir).await,
         InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![])
     }
