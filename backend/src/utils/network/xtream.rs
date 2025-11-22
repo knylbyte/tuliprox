@@ -252,6 +252,8 @@ pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &Arc<reqwest::Client
     (playlist_groups, errors)
 }
 
+/// Spawns a background task to check alias user states asynchronously.
+/// This is fire-and-forget; errors are logged but not returned.
 fn check_alias_user_state(cfg: &Arc<Config>, client: &Arc<reqwest::Client>, input: &Arc<ConfigInput>) {
     let cfg = Arc::clone(cfg);
     let client = Arc::clone(client);
