@@ -91,12 +91,12 @@ async fn playlist_content(
            get_playlist_for_target(app_state.app_config.get_target_by_id(target_id).as_deref(), &app_state.app_config, accept.as_ref()).await.into_response()
         }
         PlaylistRequest::Input(input_id) => {
-            get_playlist(Arc::clone(&app_state.http_client.load()), app_state.app_config.get_input_by_id(input_id).as_deref(), &config, accept.as_ref()).await.into_response()
+            get_playlist(Arc::clone(&app_state.http_client.load()), app_state.app_config.get_input_by_id(input_id).as_ref(), &config, accept.as_ref()).await.into_response()
         }
         PlaylistRequest::CustomXtream(xtream) => {
             match Url::parse(&xtream.url) {
                 Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => {
-                    let input = create_config_input_for_xtream(&xtream.username, &xtream.password, &xtream.url);
+                    let input = Arc::new(create_config_input_for_xtream(&xtream.username, &xtream.password, &xtream.url));
                     get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config, accept.as_ref()).await.into_response()
                 }
                 _ => {
@@ -107,7 +107,7 @@ async fn playlist_content(
         PlaylistRequest::CustomM3u(m3u) => {
             match Url::parse(&m3u.url) {
                 Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => {
-                    let input = create_config_input_for_m3u(&m3u.url);
+                    let input = Arc::new(create_config_input_for_m3u(&m3u.url));
                     get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config, accept.as_ref()).await.into_response()
                 }
                 _ => {
