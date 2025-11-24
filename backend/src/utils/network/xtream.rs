@@ -261,8 +261,8 @@ fn check_alias_user_state(cfg: &Arc<Config>, client: &Arc<reqwest::Client>, inpu
     tokio::spawn(async move {
         if let Some(aliases) = input.aliases.as_ref() {
             for alias in aliases {
-                // Random wait time  5–20 seconds to avoid provider block
-                let delay =  u64::from(fastrand::u32(5..=20));
+                // Random wait time  60–180 seconds to avoid provider block
+                let delay =  u64::from(fastrand::u32(60..=180));
                 tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
 
                 if let (Some(username), Some(password)) =

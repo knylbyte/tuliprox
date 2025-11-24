@@ -291,7 +291,7 @@ async fn xtream_player_api_stream(
             .into_response();
         }
 
-        let stream_channel = create_stream_channel_with_type(&pli, item_type);
+        let stream_channel = create_stream_channel_with_type(target.id, &pli, item_type);
 
         if session.virtual_id == virtual_id && is_seek_request(cluster, req_headers).await {
             // partial request means we are in reverse proxy mode, seek happened
@@ -380,7 +380,7 @@ async fn xtream_player_api_stream(
         .into_response();
     }
 
-    let stream_channel = create_stream_channel_with_type(&pli, item_type);
+    let stream_channel = create_stream_channel_with_type(target.id, &pli, item_type);
 
     stream_response(
         fingerprint,
@@ -516,7 +516,7 @@ async fn xtream_player_api_stream_with_token(
             fingerprint,
             app_state,
             session_key.as_str(),
-            pli.to_stream_channel(),
+            pli.to_stream_channel(target.id),
             &stream_url,
             req_headers,
             &input,
