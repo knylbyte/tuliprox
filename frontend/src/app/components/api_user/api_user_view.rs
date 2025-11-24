@@ -50,7 +50,7 @@ pub fn ApiUserView() -> Html {
                         </div>
                     </div>
                     <div class="tp__app-main__body">
-                        {" TODO "}
+                        <ApiUserPlaylist></ApiUserPlaylist>
                     </div>
               </div>
             </div>
