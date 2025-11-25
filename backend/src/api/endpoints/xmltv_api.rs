@@ -145,11 +145,12 @@ fn parse_timeshift(time_shift: Option<&String>) -> Option<i32> {
     })
 }
 
-async fn serve_epg(
+pub async fn serve_epg(
     app_state: &Arc<AppState>,
     epg_path: &Path,
     user: &ProxyUserCredentials,
     target: &Arc<ConfigTarget>,
+    filter: Option<String>,
 ) -> axum::response::Response {
     if let Ok(exists) = tokio::fs::try_exists(epg_path).await {
         if exists {
@@ -165,12 +166,12 @@ async fn serve_epg(
             // Use 0 for timeshift if None
             let timeshift = parse_timeshift(user.epg_timeshift.as_ref()).unwrap_or(0);
 
-            return if timeshift != 0 || rewrite_urls {
+            return if timeshift != 0 || rewrite_urls || filter.is_some() {
                 let server_info = app_state.app_config.get_user_server_info(user);
                 let base_url = format!("{}/{}/{}/{}/", server_info.get_base_url(),
                                        storage_const::EPG_RESOURCE_PATH, &user.username, &user.password);
-                // Apply timeshift and/or rewrite URLs
-                serve_epg_with_rewrites(epg_path, timeshift, rewrite_urls, &encrypt_secret, &base_url).await
+                // Apply timeshift and/or rewrite URLs and/or filter
+                serve_epg_with_rewrites(epg_path, timeshift, rewrite_urls, &encrypt_secret, &base_url, filter).await
             } else {
                 // Neither timeshift nor rewrite needed, serve original file
                 serve_file(epg_path, mime::TEXT_XML).await.into_response()
@@ -187,6 +188,7 @@ async fn serve_epg_with_rewrites(
     rewrite_urls: bool,
     secret: &[u8; 16],
     base_url: &str,
+    filter: Option<String>,
 ) -> axum::response::Response {
     match tokio::fs::try_exists(epg_path).await {
         Ok(exists) => {
@@ -231,10 +233,75 @@ async fn serve_epg_with_rewrites(
 
                 let mut buf = Vec::with_capacity(4096);
                 let duration = Duration::minutes(i64::from(offset_minutes));
+                let mut skip_depth = None;
 
                 loop {
-                    match xml_reader.read_event_into_async(&mut buf).await {
-                        Ok(Event::Start(ref e)) if offset_minutes != 0 && e.name().as_ref() == b"programme" => {
+                    buf.clear();
+                    let event = match xml_reader.read_event_into_async(&mut buf).await {
+                        Ok(e) => e,
+                        Err(e) => {
+                            error!("Error reading epg XML event: {e}");
+                            break;
+                        }
+                    };
+
+                    if let Some(flt) =  &filter {
+                        // Filter
+                        match &event {
+                            Event::Start(e) => {
+                                if skip_depth.is_none() {
+                                    let should_skip = match e.name().as_ref() {
+                                        b"channel" => {
+                                            e.attributes()
+                                                .filter_map(Result::ok)
+                                                .find(|a| a.key.as_ref() == b"id")
+                                                .and_then(|a| a.unescape_value().ok())
+                                                .is_some_and(|v| !flt.eq(v.as_ref()))
+                                        }
+                                        b"programme" => {
+                                            e.attributes()
+                                                .filter_map(Result::ok)
+                                                .find(|a| a.key.as_ref() == b"channel")
+                                                .and_then(|a| a.unescape_value().ok())
+                                                .is_some_and(|v| !flt.eq(v.as_ref()))
+                                        }
+                                        _ => false,
+                                    };
+
+                                    if should_skip {
+                                        skip_depth = Some(1);
+                                        continue;
+                                    }
+                                } else {
+                                    skip_depth = skip_depth.map(|d| d + 1);
+                                    continue;
+                                }
+                            }
+                            Event::End(_) => {
+                                if let Some(depth) = skip_depth {
+                                    if depth == 1 {
+                                        skip_depth = None;
+                                    } else {
+                                        skip_depth = Some(depth - 1);
+                                    }
+                                    continue;
+                                }
+                            }
+                            Event::Empty(_) => {
+                                if skip_depth.is_some() {
+                                    continue;
+                                }
+                            }
+                            _ => {}
+                        }
+
+                        if skip_depth.is_some() {
+                            continue;
+                        }
+                    }
+
+                    match &event {
+                        Event::Start(ref e) if offset_minutes != 0 && e.name().as_ref() == b"programme" => {
                             // Modify the attributes
                             let mut elem = BytesStart::new(EPG_TAG_PROGRAMME);
                             for attr in e.attributes() {
@@ -261,18 +328,18 @@ async fn serve_epg_with_rewrites(
                                         elem.push_attribute(attr);
                                     }
                                     Err(e) => {
-                                        error!("Error parsing attribute: {e}");
+                                        error!("Error parsing epg attribute: {e}");
                                     }
                                 }
                             }
 
                             // Write the modified start event
                             if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
-                                error!("Failed to write Start event: {e}");
+                                error!("Failed to write epg Start event: {e}");
                                 break;
                             }
                         }
-                        Ok(ref event @ (Event::Empty(ref e) | Event::Start(ref e))) if rewrite_urls && e.name().as_ref() == b"icon" => {
+                        ref event @ (Event::Empty(ref e) | Event::Start(ref e)) if rewrite_urls && e.name().as_ref() == b"icon" => {
                             // Modify the attributes
                             let mut elem = BytesStart::new(EPG_TAG_ICON);
                             for attr in e.attributes() {
@@ -298,16 +365,11 @@ async fn serve_epg_with_rewrites(
                                         elem.push_attribute(attr);
                                     }
                                     Err(e) => {
-                                        error!("Error parsing attribute: {e}");
+                                        error!("Error parsing epg attribute: {e}");
                                     }
                                 }
                             }
 
-                            // Write the modified icon event
-                            // if let Err(e) = xml_writer.write_event_async(Event::Start(elem)).await {
-                            //     error!("Failed to write Start event: {e}");
-                            //     break;
-                            // }
                             let out_event = match event {
                                     Event::Empty(_) => Some(Event::Empty(elem)),
                                     Event::Start(_) => Some(Event::Start(elem)),
@@ -315,28 +377,23 @@ async fn serve_epg_with_rewrites(
                                 };
                             if let Some(out) = out_event {
                                 if let Err(e) = xml_writer.write_event_async(out).await {
-                                    error!("Failed to write icon event: {e}");
+                                    error!("Failed to write epg icon event: {e}");
                                     break;
                                 }
                             }
                         }
-                        Ok(Event::Decl(_) | Event::DocType(_)) => {},
-                        Ok(Event::Eof) => break, // End of file
-                        Ok(event) => {
+                        Event::Decl(_) | Event::DocType(_) => {},
+                        Event::Eof => break, // End of file
+                        _ => {
                             // Write any other event as is
                             if let Err(e) = xml_writer.write_event_async(event).await {
-                                error!("Failed to write event: {e}");
+                                error!("Failed to epg write event: {e}");
                                 break;
                             }
                         }
-                        Err(e) => {
-                            error!("Error: {e}");
-                            break;
-                        }
                     }
-
-                    buf.clear();
                 }
+                buf.clear();
                 let mut encoder = xml_writer.into_inner();
                 if let Err(e) = encoder.shutdown().await {
                     error!("Failed to shutdown epg gzip encoder: {e}");
@@ -386,7 +443,7 @@ async fn xmltv_api(
         return get_empty_epg_response();
     };
 
-    serve_epg(&app_state, &epg_path, &user, &target).await
+    serve_epg(&app_state, &epg_path, &user, &target, None).await
 }
 
 #[axum::debug_handler]

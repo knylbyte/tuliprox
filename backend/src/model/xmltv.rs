@@ -230,6 +230,7 @@ pub fn get_attr_value(attr: &quick_xml::events::attributes::Attribute) -> Option
     attr.unescape_value().ok().map(|v| v.to_string())
 }
 
+// This function filters a timeslot starting from yesterday.
 #[allow(clippy::too_many_lines)]
 async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Result<EpgTv, TuliproxError> {
 

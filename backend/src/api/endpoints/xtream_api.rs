@@ -9,7 +9,7 @@ use crate::api::api_utils::{
 };
 use crate::api::api_utils::{redirect, try_result_not_found, try_option_bad_request, try_result_bad_request};
 use crate::api::endpoints::hls_api::handle_hls_stream_request;
-use crate::api::endpoints::xmltv_api::get_empty_epg_response;
+use crate::api::endpoints::xmltv_api::{get_empty_epg_response, get_epg_path_for_target, serve_epg};
 use crate::api::model::AppState;
 use crate::api::model::UserApiRequest;
 use crate::api::model::XtreamAuthorizationResponse;
@@ -946,7 +946,7 @@ async fn xtream_player_api_timeshift_query_stream(
 async fn xtream_get_stream_info_response(
     app_state: &Arc<AppState>,
     user: &ProxyUserCredentials,
-    target: &ConfigTarget,
+    target: &Arc<ConfigTarget>,
     stream_id: &str,
     cluster: XtreamCluster,
 ) -> impl IntoResponse + Send {
@@ -1029,7 +1029,7 @@ async fn xtream_get_stream_info_response(
 async fn xtream_get_short_epg(
     app_state: &Arc<AppState>,
     user: &ProxyUserCredentials,
-    target: &ConfigTarget,
+    target: &Arc<ConfigTarget>,
     stream_id: &str,
     limit: &str,
 ) -> impl IntoResponse + Send {
@@ -1046,6 +1046,16 @@ async fn xtream_get_short_epg(
             target,
             None,
         ).await {
+
+            let config = &app_state.app_config.config.load();
+            if let Some(epg_path) = get_epg_path_for_target(config, target) {
+                if let Ok(exists) = tokio::fs::try_exists(&epg_path).await {
+                    if exists {
+                        return serve_epg(app_state, &epg_path, user, target, pli.epg_channel_id.clone()).await
+                    }
+                }
+            }
+
             if pli.provider_id > 0 {
                 let input_name = &pli.input_name;
                 if let Some(input) = app_state.app_config.get_input_by_name(input_name.as_str()) {
@@ -1196,7 +1206,7 @@ async fn xtream_player_api_handle_content_action(
 
 async fn xtream_get_catchup_response(
     app_state: &Arc<AppState>,
-    target: &ConfigTarget,
+    target: &Arc<ConfigTarget>,
     stream_id: &str,
     start: &str,
     end: &str,
