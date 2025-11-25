@@ -227,7 +227,7 @@ async fn hls_api_stream(
         app_state.app_config.get_input_by_id(params.input_id),
         true,
         format!(
-            "Cant find input for target {target_name}, stream_id {virtual_id}, hls"
+            "Cant find input {} for target {target_name}, stream_id {virtual_id}, hls", params.input_id
         )
     );
 

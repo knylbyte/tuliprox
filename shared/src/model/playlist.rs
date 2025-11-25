@@ -37,6 +37,19 @@ impl XtreamCluster {
     }
 }
 
+impl FromStr for XtreamCluster {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "live" | "Live" => Ok(XtreamCluster::Live),
+            "video" | "Video" | "vod" | "movie" | "Movie" => Ok(XtreamCluster::Video),
+            "series" | "Series" => Ok(XtreamCluster::Series),
+            _ => Err(format!("Invalid XtreamCluster: {s}")),
+        }
+    }
+}
+
 impl Display for XtreamCluster {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())

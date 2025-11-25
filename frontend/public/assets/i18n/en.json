@@ -8,6 +8,7 @@
     "LIVE_SHORT": "L",
     "VOD_SHORT": "V",
     "SERIES_SHORT": "S",
+    "MOVIE": "Movie",
     "SAVE": "Save",
     "SUBMIT": "Submit",
     "OK": "Ok",
@@ -327,7 +328,7 @@
     "COPY_CREDENTIALS": "Copy Credentials"
   },
   "TITLE": {
-    "USER_BOUQUET_EDITOR": "User group editor"
+    "USER_BOUQUET_EDITOR": "Playlist Category Selection"
   },
   "MESSAGES": {
     "NO_CONTENT": "No content",
@@ -354,6 +355,9 @@
       "GEOIP": {
         "SUCCESS": "Successfully downloaded Geo-IP db",
         "FAIL": "Failed to download Geo-IP db!"
+      },
+      "USER_BOUQUET": {
+        "FAIL": "Failed to download user bouquets!"
       }
     },
     "LOGIN": {

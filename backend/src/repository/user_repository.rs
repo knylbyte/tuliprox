@@ -8,7 +8,7 @@ use crate::utils;
 use crate::utils::json_write_documents_to_file;
 use chrono::Local;
 use log::error;
-use shared::model::{PlaylistBouquetDto, ProxyType, ProxyUserStatus, TargetBouquetDto, TargetType, XtreamCluster};
+use shared::model::{PlaylistBouquetDto, PlaylistClusterBouquetDto, ProxyType, ProxyUserStatus, TargetType, XtreamCluster};
 use std::collections::{HashMap, HashSet};
 use std::io::Error;
 use std::path::{Path, PathBuf};
@@ -294,7 +294,7 @@ async fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetTyp
     Ok(())
 }
 
-async fn save_user_bouquet_for_target(config: &Config, target_name: &str, storage_path: &Path, target: TargetType, bouquet: &TargetBouquetDto) -> Result<(), Error> {
+async fn save_user_bouquet_for_target(config: &Config, target_name: &str, storage_path: &Path, target: TargetType, bouquet: &PlaylistClusterBouquetDto) -> Result<(), Error> {
     if target == TargetType::Xtream {
         save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Live, bouquet.live.as_ref()).await?;
         save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Video, bouquet.vod.as_ref()).await?;
@@ -390,7 +390,6 @@ pub async fn user_get_bouquet_filter(config: &Config, username: &str, category_i
         XtreamCluster::Video => user_get_vod_bouquet(config, username, target).await,
         XtreamCluster::Series => user_get_series_bouquet(config, username, target).await,
     };
-
 
     match bouquet {
         None => None,

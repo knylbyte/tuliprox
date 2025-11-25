@@ -256,7 +256,7 @@ async fn xtream_player_api_stream(
     let input = try_option_bad_request!(
         app_state.app_config.get_input_by_name(pli.input_name.as_str()),
         true,
-        format!( "Cant find input for target {target_name}, context {}, stream_id {virtual_id}", stream_req.context)
+        format!( "Cant find input {} for target {target_name}, context {}, stream_id {virtual_id}", pli.input_name, stream_req.context)
     );
 
     let (cluster, item_type) = if stream_req.context == ApiStreamContext::Timeshift {
@@ -432,8 +432,8 @@ async fn xtream_player_api_stream_with_token(
                 .get_input_by_name(pli.input_name.as_str()),
             true,
             format!(
-                "Cant find input for target {target_name}, context {}, stream_id {}",
-                stream_req.context, pli.virtual_id
+                "Cant find input {} for target {target_name}, context {}, stream_id {}",
+                pli.input_name, stream_req.context, pli.virtual_id
             )
         );
 

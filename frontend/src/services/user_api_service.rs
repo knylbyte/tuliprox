@@ -1,0 +1,52 @@
+use std::rc::Rc;
+use log::error;
+use shared::model::{PlaylistBouquetDto, PlaylistCategoriesDto};
+use shared::utils::{concat_path_leading_slash};
+use crate::error::Error;
+use crate::services::{get_base_href, request_get, request_post};
+
+#[derive(Debug, Default)]
+pub struct UserApiService {
+    user_playlist_categories_path: String,
+    user_playlist_bouquet_path: String,
+}
+
+impl UserApiService {
+    pub fn new() -> Self {
+        let base_href = get_base_href();
+        Self {
+            user_playlist_categories_path: concat_path_leading_slash(&base_href, "api/v1/user/playlist/categories"),
+            user_playlist_bouquet_path: concat_path_leading_slash(&base_href, "api/v1/user/playlist/bouquet"),
+        }
+    }
+
+    pub async fn get_playlist_categories(&self) -> Result<Option<Rc<PlaylistCategoriesDto>>, Error> {
+        match request_get::<Rc<PlaylistCategoriesDto>>(&self.user_playlist_categories_path, None, None).await {
+            Ok(categories) => { Ok(categories) },
+            Err(err) => {
+                error!("{err}");
+                Err(err)
+            }
+        }
+    }
+
+    pub async fn get_playlist_bouquet(&self) -> Result<Option<Rc<PlaylistBouquetDto>>, Error> {
+        match request_get::<Rc<PlaylistBouquetDto>>(&self.user_playlist_bouquet_path, None, None).await {
+            Ok(bouquet) => { Ok(bouquet) },
+            Err(err) => {
+                error!("{err}");
+                Err(err)
+            }
+        }
+    }
+
+    pub async fn save_playlist_bouquet(&self, bouquet: &PlaylistBouquetDto) -> Result<(), Error> {
+        match request_post::<&PlaylistBouquetDto, ()>(&self.user_playlist_bouquet_path, bouquet, None, None).await{
+            Ok(_) => { Ok(()) },
+            Err(err) => {
+                error!("{err}");
+                Err(err)
+            }
+        }
+    }
+}
