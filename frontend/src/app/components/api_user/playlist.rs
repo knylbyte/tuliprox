@@ -41,7 +41,7 @@ impl fmt::Display for ApiUserPlaylistPage {
     }
 }
 
-fn to_playlist_cluster(bouquet: Option<&Rc<RefCell<BouquetSelection>>>) -> Option<PlaylistClusterBouquetDto> {
+fn to_playlist_cluster(count: (usize, usize, usize), bouquet: Option<&Rc<RefCell<BouquetSelection>>>) -> Option<PlaylistClusterBouquetDto> {
     if let Some(bouq) = bouquet {
         let selections = bouq.borrow();
 
@@ -53,9 +53,9 @@ fn to_playlist_cluster(bouquet: Option<&Rc<RefCell<BouquetSelection>>>) -> Optio
             if v.is_empty() { None } else { Some(v) }
         };
 
-        let live = selected_vec(&selections.live);
-        let vod  = selected_vec(&selections.vod);
-        let series = selected_vec(&selections.series);
+        let live = selected_vec(&selections.live).filter(|v| v.len() != count.0);
+        let vod  = selected_vec(&selections.vod).filter(|v| v.len() != count.1);
+        let series = selected_vec(&selections.series).filter(|v| v.len() != count.2);
 
         // if all three are None, return None
         if live.is_none() && vod.is_none() && series.is_none() {
@@ -127,18 +127,29 @@ pub fn ApiUserPlaylist() -> Html {
     let on_save = {
         let selections = selections.clone();
         let services = service_ctx.clone();
+        let categories = categories.clone();
 
         Callback::from(move |_| {
             let selections = selections.clone();
             let services = services.clone();
+            let categories_xtream_count = categories.as_ref().and_then(|plc| plc.xtream.as_ref().map(|x|
+                (x.live.as_ref().map(|v| v.len()).unwrap_or(0),
+                 x.vod.as_ref().map(|v| v.len()).unwrap_or(0),
+                 x.series.as_ref().map(|v| v.len()).unwrap_or(0))
+            )).unwrap_or((0,0,0));
+            let categories_m3u_count = categories.as_ref().and_then(|plc| plc.m3u.as_ref().map(|x|
+                (x.live.as_ref().map(|v| v.len()).unwrap_or(0),
+                 x.vod.as_ref().map(|v| v.len()).unwrap_or(0),
+                 x.series.as_ref().map(|v| v.len()).unwrap_or(0))
+            )).unwrap_or((0,0,0));
 
             wasm_bindgen_futures::spawn_local(async move {
                 services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
                 let result = {
                     let selects = selections.borrow();
                     PlaylistBouquetDto {
-                        xtream: to_playlist_cluster(selects.get(&ApiUserPlaylistPage::Xtream)),
-                        m3u:    to_playlist_cluster(selects.get(&ApiUserPlaylistPage::M3u)),
+                        xtream: to_playlist_cluster(categories_xtream_count, selects.get(&ApiUserPlaylistPage::Xtream)),
+                        m3u:    to_playlist_cluster(categories_m3u_count, selects.get(&ApiUserPlaylistPage::M3u)),
                     }
                 };
 
