@@ -1,9 +1,9 @@
-use std::io;
+use crate::error::to_io_error;
 use chrono::{NaiveDateTime, ParseError, TimeZone, Utc};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::Value;
-use crate::error::to_io_error;
+use std::io;
 
 fn value_to_string_array(value: &[Value]) -> Vec<String> {
     value.iter().filter_map(value_to_string).collect()
@@ -55,7 +55,7 @@ where
     })
 }
 
-pub fn deserialize_number_from_string<'de, D, T: DeserializeOwned  + std::str::FromStr>(
+pub fn deserialize_number_from_string<'de, D, T: DeserializeOwned + std::str::FromStr>(
     deserializer: D,
 ) -> Result<Option<T>, D::Error>
 where
@@ -154,16 +154,16 @@ pub fn deserialize_timestamp<'de, D>(deserializer: D) -> Result<Option<i64>, D::
 where
     D: serde::Deserializer<'de>,
 {
-    // - try to deserialize a seconds
+    // - try to deserialize as seconds
     // - try to deserialize as date-time string of format like "2028-11-23 14:12:34"
     let val = Option::<Value>::deserialize(deserializer)?;
     match val {
-        Some(Value::Number(n)) => n.as_i64().ok_or_else(|| serde::de::Error::custom("invalid number")).map(Some),
-        Some(Value::String(s)) => {
-            let dt = NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
-                .map_err(serde::de::Error::custom)?;
-            Ok(Some(Utc.from_utc_datetime(&dt).timestamp()))
-        }
+        Some(Value::Number(n)) => n
+            .as_i64()
+            .ok_or_else(|| serde::de::Error::custom("invalid number"))
+            .map(Some),
+        Some(Value::String(s)) => parse_timestamp(&s).map_err(serde::de::Error::custom),
+        Some(Value::Null) => Ok(None),
         Some(_) => Err(serde::de::Error::custom("expected number or string")),
         None => Ok(None),
     }

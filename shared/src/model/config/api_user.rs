@@ -72,8 +72,8 @@ impl ProxyUserCredentialsDto {
             }
         }
         if let Some(exp_date) = self.exp_date {
-            let now =  chrono::Utc::now();
-            if (exp_date - now.timestamp()) < 0 {
+            let now = chrono::Utc::now().timestamp();
+            if exp_date < now {
                 return false;
             }
         }
