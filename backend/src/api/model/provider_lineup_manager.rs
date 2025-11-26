@@ -578,6 +578,7 @@ impl ProviderLineupManager {
                         || a_alias.username != b_alias.username
                         || a_alias.password != b_alias.password
                         || a_alias.url != b_alias.url
+                        || a_alias.exp_date != b_alias.exp_date
                     {
                         return true;
                     }

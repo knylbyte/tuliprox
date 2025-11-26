@@ -8,6 +8,7 @@ use shared::utils::{deserialize_as_option_string, deserialize_as_string, deseria
                     get_non_empty_str, opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
 use std::iter::FromIterator;
 
+#[derive(Debug, Default)]
 pub struct XtreamLoginInfo {
     pub status: Option<ProxyUserStatus>,
     pub exp_date: Option<i64>,

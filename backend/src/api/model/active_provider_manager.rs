@@ -134,7 +134,10 @@ impl ActiveProviderManager {
         };
 
         if let Some(allocation) = single_allocation {
-            debug!("Released provider connection {:?} for {addr}", allocation.get_provider_name().unwrap_or_default());
+            debug!(
+            "Released provider connection {:?} for {addr}",
+            allocation.get_provider_name().unwrap_or_default()
+        );
             allocation.release().await;
             return;
         }
@@ -148,28 +151,37 @@ impl ActiveProviderManager {
                 None => return, // no shared connection
             };
 
-            if let Some(shared) = connections.shared.by_key.get_mut(&key) {
-                shared.connections.remove(addr);
-                if shared.connections.is_empty() {
-                    let allocation_clone = shared.allocation.clone();
-                    connections.shared.key_by_addr.retain(|_, v| v != &key);
-                    connections.shared.by_key.remove(&key);
-                    Some(allocation_clone)
-                } else {
-                    None
-                }
+            // Clone the SharedAllocation to avoid double mutable borrow
+            let mut shared = match connections.shared.by_key.get(&key) {
+                Some(s) => s.clone(),
+                None => return,
+            };
+
+            // Remove this address from the shared connection set
+            shared.connections.remove(addr);
+            // Always remove stale key-by-addr entry
+            connections.shared.key_by_addr.remove(addr);
+
+            if shared.connections.is_empty() {
+                // If this was the last user of the shared allocation:
+                connections.shared.by_key.remove(&key);
+                Some(shared.allocation)
             } else {
+                // Update the entry back with the remaining connections
+                connections.shared.by_key.insert(key, shared);
                 None
             }
         };
 
         // release allocation
         if let Some(allocation) = shared_allocation {
-            debug!("Released last shared connection for provider {}, releasing allocation {addr}", allocation.get_provider_name().unwrap_or_default());
             allocation.release().await;
+            debug!(
+            "Released last shared connection for provider {}, releasing allocation {addr}",
+            allocation.get_provider_name().unwrap_or_default()
+        );
         }
     }
-
 
     pub async fn release_handle(&self, handle: &ProviderHandle) {
         self.release_connection(&handle.client_id).await;

@@ -33,7 +33,7 @@ impl UserApiService {
     }
 
     pub async fn save_playlist_bouquet(&self, bouquet: &PlaylistBouquetDto) -> Result<(), Error> {
-        match request_post::<&PlaylistBouquetDto, ()>(&self.user_playlist_bouquet_path, bouquet, None, None).await{
+        match request_post::<&PlaylistBouquetDto, ()>(&self.user_playlist_bouquet_path, bouquet, None, None).await {
             Ok(_) => { Ok(()) },
             Err(err) => {
                 error!("{err}");

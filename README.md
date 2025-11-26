@@ -684,7 +684,7 @@ Each input has the following attributes:
 - `headers` is optional
 - `method` can be `GET` or `POST`
 - `username` only mandatory for type `xtream`
-- `pasword` only mandatory for type `xtream`
+- `password` only mandatory for type `xtream`
 - `exp_date` optional, i a date as "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12` or Unix timestamp (seconds since epoch)
 - `options` is optional,
   + `xtream_skip_live` true or false, live section can be skipped.

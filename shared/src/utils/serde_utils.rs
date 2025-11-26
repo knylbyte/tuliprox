@@ -148,6 +148,8 @@ where
     serializer.serialize_str(&u8_16_to_hex(bytes))
 }
 
+/// Deserializes a timestamp from either a Unix timestamp (seconds) or a UTC datetime string
+/// in the format "YYYY-MM-DD HH:MM:SS". Note: Datetime strings are interpreted as UTC.
 pub fn deserialize_timestamp<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
 where
     D: serde::Deserializer<'de>,

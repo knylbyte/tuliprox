@@ -88,7 +88,10 @@ fn csv_assign_config_input_column(config_input: &mut ConfigInputAliasDto, header
                 config_input.password = Some(value.to_string());
             }
             FIELD_EXP_DATE => {
-                config_input.exp_date = parse_timestamp(value).ok().flatten();
+                config_input.exp_date = parse_timestamp(value).unwrap_or_else(|e| {
+                    error!("Failed to parse exp_date '{value}': {e}");
+                    None
+                });
             }
             _ => {}
         }
