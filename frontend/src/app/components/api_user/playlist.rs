@@ -1,22 +1,22 @@
+use crate::app::components::api_user::target_playlist::{BouquetSelection, UserTargetPlaylist};
+use crate::app::components::{Panel, RadioButtonGroup, TextButton};
+use crate::hooks::use_service_context;
+use crate::model::{BusyStatus, EventMessage};
+use shared::error::TuliproxError;
+use shared::info_err;
+use shared::model::{PlaylistBouquetDto, PlaylistCategoriesDto, PlaylistClusterBouquetDto};
 use std::cell::RefCell;
-use yew::prelude::*;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::str::FromStr;
+use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::error::TuliproxError;
-use shared::info_err;
-use shared::model::{PlaylistBouquetDto, PlaylistCategoriesDto, PlaylistClusterBouquetDto};
-use crate::app::components::{Panel, RadioButtonGroup, TextButton};
-use crate::app::components::api_user::target_playlist::{BouquetSelection, UserTargetPlaylist};
-use crate::hooks::use_service_context;
-use crate::model::{BusyStatus, EventMessage};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum ApiUserPlaylistPage {
     Xtream,
-    M3u
+    M3u,
 }
 
 impl FromStr for ApiUserPlaylistPage {
@@ -54,7 +54,7 @@ fn to_playlist_cluster(count: (usize, usize, usize), bouquet: Option<&Rc<RefCell
         };
 
         let live = selected_vec(&selections.live).filter(|v| v.len() != count.0);
-        let vod  = selected_vec(&selections.vod).filter(|v| v.len() != count.1);
+        let vod = selected_vec(&selections.vod).filter(|v| v.len() != count.1);
         let series = selected_vec(&selections.series).filter(|v| v.len() != count.2);
 
         // if all three are None, return None
@@ -112,7 +112,12 @@ pub fn ApiUserPlaylist() -> Html {
                         bouquets.set(bouquet.clone());
                         categories.set(cats.clone());
                     }
-                    _ => {
+                    (Err(e1), Err(e2)) => {
+                        log::error!("Failed to load bouquet: {e1:?}, categories: {e2:?}");
+                        services.toastr.error(translate.t("MESSAGES.DOWNLOAD.USER_BOUQUET.FAIL"));
+                    }
+                    (Err(e), _) | (_, Err(e)) => {
+                        log::error!("Failed to load user data: {e:?}");
                         services.toastr.error(translate.t("MESSAGES.DOWNLOAD.USER_BOUQUET.FAIL"));
                     }
                 }
@@ -127,21 +132,23 @@ pub fn ApiUserPlaylist() -> Html {
     let on_save = {
         let selections = selections.clone();
         let services = service_ctx.clone();
+        let translate = translate.clone();
         let categories = categories.clone();
 
         Callback::from(move |_| {
             let selections = selections.clone();
             let services = services.clone();
+            let translate = translate.clone();
             let categories_xtream_count = categories.as_ref().and_then(|plc| plc.xtream.as_ref().map(|x|
                 (x.live.as_ref().map(|v| v.len()).unwrap_or(0),
                  x.vod.as_ref().map(|v| v.len()).unwrap_or(0),
                  x.series.as_ref().map(|v| v.len()).unwrap_or(0))
-            )).unwrap_or((0,0,0));
+            )).unwrap_or((0, 0, 0));
             let categories_m3u_count = categories.as_ref().and_then(|plc| plc.m3u.as_ref().map(|x|
                 (x.live.as_ref().map(|v| v.len()).unwrap_or(0),
                  x.vod.as_ref().map(|v| v.len()).unwrap_or(0),
                  x.series.as_ref().map(|v| v.len()).unwrap_or(0))
-            )).unwrap_or((0,0,0));
+            )).unwrap_or((0, 0, 0));
 
             wasm_bindgen_futures::spawn_local(async move {
                 services.event.broadcast(EventMessage::Busy(BusyStatus::Show));
@@ -149,13 +156,13 @@ pub fn ApiUserPlaylist() -> Html {
                     let selects = selections.borrow();
                     PlaylistBouquetDto {
                         xtream: to_playlist_cluster(categories_xtream_count, selects.get(&ApiUserPlaylistPage::Xtream)),
-                        m3u:    to_playlist_cluster(categories_m3u_count, selects.get(&ApiUserPlaylistPage::M3u)),
+                        m3u: to_playlist_cluster(categories_m3u_count, selects.get(&ApiUserPlaylistPage::M3u)),
                     }
                 };
 
                 match services.user_api.save_playlist_bouquet(&result).await {
-                     Ok(()) =>  services.toastr.success("Bouquet saved successfully"),
-                     Err(_) => services.toastr.error("Failed to save playlist"),
+                    Ok(()) =>  services.toastr.success(translate.t("MESSAGES.SAVE.BOUQUET.SUCCESS")),
+                    Err(_) => services.toastr.error(translate.t("MESSAGES.SAVE.BOUQUET.FAIL")),
                 }
 
                 services.event.broadcast(EventMessage::Busy(BusyStatus::Hide));

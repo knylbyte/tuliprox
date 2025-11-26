@@ -267,10 +267,13 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                             let virtual_id = dto.channel.virtual_id;
                             let cluster = dto.channel.cluster;
                             let services = services.clone();
+                            let translate = translate.clone();
                             let copy_to_clipboard = copy_to_clipboard.clone();
                             spawn_local(async move {
                                 if let Some(url) = services.playlist.get_playlist_webplayer_url(target_id, virtual_id, cluster).await {
                                     copy_to_clipboard.emit(url);
+                                } else {
+                                    services.toastr.error(translate.t("MESSAGES.FAILED_TO_RETRIEVE_WEBPLAYER_URL"));
                                 }
                             });
                         }

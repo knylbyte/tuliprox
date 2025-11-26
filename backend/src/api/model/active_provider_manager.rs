@@ -74,10 +74,6 @@ impl ActiveProviderManager {
         self.providers.update_config(inputs, grace_period_millis, grace_period_timeout_secs).await;
     }
 
-    // fn get_next_handle_id(&self) -> usize {
-    //     self.next_handle_id.fetch_update(Ordering::AcqRel,Ordering::Acquire,|x| Some(x.wrapping_add(1))).unwrap_or_default()
-    // }
-
     async fn acquire_connection_inner(&self, provider_or_input_name: &str, addr: &SocketAddr, force: bool) -> Option<ProviderHandle> {
         // Call the specific acquisition function
         let allocation = if force {

@@ -391,7 +391,7 @@ async fn resolve_streaming_strategy(
                 }
             }
         } else {
-            debug!("Input {} is exhausted. No connections allowed.", input.name);
+            debug!("Provider {} is exhausted. No connections allowed.", input.name);
             let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
             ProviderStreamState::Custom(stream)
         };

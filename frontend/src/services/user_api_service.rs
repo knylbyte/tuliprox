@@ -21,23 +21,15 @@ impl UserApiService {
     }
 
     pub async fn get_playlist_categories(&self) -> Result<Option<Rc<PlaylistCategoriesDto>>, Error> {
-        match request_get::<Rc<PlaylistCategoriesDto>>(&self.user_playlist_categories_path, None, None).await {
-            Ok(categories) => { Ok(categories) },
-            Err(err) => {
-                error!("{err}");
-                Err(err)
-            }
-        }
+        request_get::<Rc<PlaylistCategoriesDto>>(&self.user_playlist_categories_path, None, None)
+            .await
+            .inspect_err(|err| error!("{err}"))
     }
 
     pub async fn get_playlist_bouquet(&self) -> Result<Option<Rc<PlaylistBouquetDto>>, Error> {
-        match request_get::<Rc<PlaylistBouquetDto>>(&self.user_playlist_bouquet_path, None, None).await {
-            Ok(bouquet) => { Ok(bouquet) },
-            Err(err) => {
-                error!("{err}");
-                Err(err)
-            }
-        }
+        request_get::<Rc<PlaylistBouquetDto>>(&self.user_playlist_bouquet_path, None, None)
+            .await
+            .inspect_err(|err| error!("{err}"))
     }
 
     pub async fn save_playlist_bouquet(&self, bouquet: &PlaylistBouquetDto) -> Result<(), Error> {

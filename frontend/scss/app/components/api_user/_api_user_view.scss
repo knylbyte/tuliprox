@@ -89,16 +89,10 @@
   }
 
   &__categories {
-    //display: flex;
-    //flex-flow: row wrap;
-    //width: 100%;
-    //gap: var(--gap-default);
-    padding: var(--padding-default) 0;
-    //box-sizing: border-box;
-
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(size.$playlist-categories-grid-cell-width, 1fr));
     gap: var(--gap-large);
+    padding: var(--padding-default) 0;
     box-sizing: border-box;
     width: 100%;
 
