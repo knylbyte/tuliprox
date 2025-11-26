@@ -555,6 +555,7 @@ impl ProviderLineupManager {
             || a.username != b.username
             || a.password != b.password
             || a.url != b.url
+            || a.exp_date != b.exp_date
         {
             return true;
         }

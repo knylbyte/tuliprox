@@ -1,6 +1,7 @@
 use std::io;
-use serde::{Deserialize, Deserializer,};
+use chrono::{NaiveDateTime, ParseError, TimeZone, Utc};
 use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::Value;
 use crate::error::to_io_error;
 
@@ -19,9 +20,9 @@ fn value_to_string(v: &Value) -> Option<String> {
 
 pub fn deserialize_as_option_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
-    D: Deserializer<'de>,
+    D: serde::Deserializer<'de>,
 {
-    let value: Value = Deserialize::deserialize(deserializer)?;
+    let value: Value = serde::Deserialize::deserialize(deserializer)?;
 
     match &value {
         Value::String(s) => Ok(Some(s.to_owned())),
@@ -32,9 +33,9 @@ where
 
 pub fn deserialize_as_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
-    D: Deserializer<'de>,
+    D: serde::Deserializer<'de>,
 {
-    let value: Value = Deserialize::deserialize(deserializer)?;
+    let value: Value = serde::Deserialize::deserialize(deserializer)?;
 
     match &value {
         Value::String(s) => Ok(s.to_string()),
@@ -45,7 +46,7 @@ where
 
 pub fn deserialize_as_string_array<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
 where
-    D: Deserializer<'de>,
+    D: serde::Deserializer<'de>,
 {
     Value::deserialize(deserializer).map(|v| match v {
         Value::String(value) => Some(vec![value]),
@@ -58,7 +59,7 @@ pub fn deserialize_number_from_string<'de, D, T: DeserializeOwned  + std::str::F
     deserializer: D,
 ) -> Result<Option<T>, D::Error>
 where
-    D: Deserializer<'de>,
+    D: serde::Deserializer<'de>,
 {
     // we define a local enum type inside of the function
     // because it is untagged, serde will deserialize as the first variant
@@ -145,4 +146,39 @@ where
     S: serde::Serializer,
 {
     serializer.serialize_str(&u8_16_to_hex(bytes))
+}
+
+pub fn deserialize_timestamp<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // - try to deserialize a seconds
+    // - try to deserialize as date-time string of format like "2028-11-23 14:12:34"
+    let val = Option::<Value>::deserialize(deserializer)?;
+    match val {
+        Some(Value::Number(n)) => n.as_i64().ok_or_else(|| serde::de::Error::custom("invalid number")).map(Some),
+        Some(Value::String(s)) => {
+            let dt = NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
+                .map_err(serde::de::Error::custom)?;
+            Ok(Some(Utc.from_utc_datetime(&dt).timestamp()))
+        }
+        Some(_) => Err(serde::de::Error::custom("expected number or string")),
+        None => Ok(None),
+    }
+}
+
+pub fn parse_timestamp(value: &str) -> Result<Option<i64>, ParseError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+
+    if let Ok(ts) = value.parse::<i64>() {
+        return Ok(Some(ts));
+    }
+
+    //  "YYYY-MM-DD HH:MM:SS"
+    let dt = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")?;
+    let timestamp = Utc.from_utc_datetime(&dt).timestamp();
+    Ok(Some(timestamp))
 }

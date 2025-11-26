@@ -1,20 +1,21 @@
 use crate::api::model::AppState;
 use crate::messaging::send_message;
-use crate::model::{Config, ConfigInput, ConfigTarget};
+use crate::model::{is_input_expired, Config, ConfigInput, ConfigTarget, XtreamLoginInfo};
 use crate::model::{InputSource, ProxyUserCredentials};
 use crate::processing::parser::xtream;
 use crate::repository::xtream_repository;
 use crate::repository::xtream_repository::{rewrite_xtream_series_info_content, rewrite_xtream_vod_info_content, xtream_get_input_info};
 use crate::utils::request;
+use chrono::{DateTime, Utc};
 use log::{error, info, warn};
 use shared::error::{str_to_io_error, TuliproxError};
 use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::{extract_extension_from_url, get_i64_from_serde_value, get_string_from_serde_value};
-// use std::cmp::Ordering;
 use std::io::Error;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+const THREE_DAYS_IN_SECS: i64 = 3 * 24 * 60 * 60;
 
 #[inline]
 pub fn get_xtream_stream_url_base(url: &str, username: &str, password: &str) -> String {
@@ -134,7 +135,7 @@ const ACTIONS: [(XtreamCluster, &str, &str); 3] = [
     (XtreamCluster::Video, crate::model::XC_ACTION_GET_VOD_CATEGORIES, crate::model::XC_ACTION_GET_VOD_STREAMS),
     (XtreamCluster::Series, crate::model::XC_ACTION_GET_SERIES_CATEGORIES, crate::model::XC_ACTION_GET_SERIES)];
 
-async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &InputSource, username: &str) -> Result<(), TuliproxError> {
+async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &InputSource, username: &str) -> Result<Option<XtreamLoginInfo>, TuliproxError> {
     let content = if let Ok(content) = request::get_input_json_content(Arc::clone(client), None, input, None).await {
         content
     } else {
@@ -148,47 +149,57 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Input
         }
     };
 
-    match content.get("user_info") {
-        None => {}
-        Some(value) => {
-            if let Some(status_value) = value.get("status") {
-                if let Some(status) = get_string_from_serde_value(status_value) {
-                    if let Ok(cur_status) = ProxyUserStatus::from_str(&status) {
-                        if !matches!(cur_status,  ProxyUserStatus::Active | ProxyUserStatus::Trial) {
-                            warn!("User status for user {username} is {cur_status:?}");
-                            send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User status for user {username} is {cur_status:?}")).await;
-                        }
-                    }
-                }
-            }
-            if let Some(status_value) = value.get("exp_date") {
-                if let Some(expiration_timestamp) = get_i64_from_serde_value(status_value) {
-                    if expiration_timestamp > 0 {
-                        #[allow(clippy::cast_sign_loss)]
-                        let expiration_ts = expiration_timestamp as u64;
-                        if let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) {
-                            let now_secs = now.as_secs();
-                            if expiration_ts > now_secs {
-                                let time_left = expiration_ts - now_secs;
-                                if time_left < 3 * 24 * 60 * 60 {
-                                    if let Some(datetime) = chrono::DateTime::from_timestamp(expiration_timestamp, 0) {
-                                        let formatted = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
-                                        warn!("User account for user {username} expires {formatted}");
-                                        send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} expires {formatted}")).await;
-                                    }
-                                }
-                            } else {
-                                warn!("User account for user {username} is expired");
-                                send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} is expired")).await;
-                            }
-                        }
+    let mut login_info = XtreamLoginInfo {
+        status: None,
+        exp_date: None,
+    };
+
+    if let Some(user_info) = content.get("user_info") {
+        if let Some(status_value) = user_info.get("status") {
+            if let Some(status) = get_string_from_serde_value(status_value) {
+                if let Ok(cur_status) = ProxyUserStatus::from_str(&status) {
+                    login_info.status = Some(cur_status);
+                    if !matches!(cur_status, ProxyUserStatus::Active | ProxyUserStatus::Trial) {
+                        warn!("User status for user {username} is {cur_status:?}");
+                        send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User status for user {username} is {cur_status:?}")).await;
                     }
                 }
             }
         }
+
+        if let Some(exp_value) = user_info.get("exp_date") {
+            if let Some(expiration_timestamp) = get_i64_from_serde_value(exp_value) {
+                login_info.exp_date = Some(expiration_timestamp);
+                notify_account_expire(login_info.exp_date, cfg, client, username).await;
+            }
+        }
     }
 
-    Ok(())
+    if login_info.exp_date.is_none() && login_info.status.is_none() {
+        Ok(None)
+    } else {
+        Ok(Some(login_info))
+    }
+}
+
+pub async fn notify_account_expire(exp_date: Option<i64>, cfg: &Config, client: &Arc<reqwest::Client>, username: &str) {
+    if let Some(expiration_timestamp) = exp_date {
+        let now_secs = Utc::now().timestamp(); // UTC-Time
+        if expiration_timestamp > now_secs {
+            let time_left = expiration_timestamp - now_secs;
+
+            if time_left < THREE_DAYS_IN_SECS {
+                if let Some(datetime) = DateTime::<Utc>::from_timestamp(expiration_timestamp, 0) {
+                    let formatted = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
+                    warn!("User account for user {username} expires {formatted}");
+                    send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} expires {formatted}")).await;
+                }
+            }
+        } else {
+            warn!("User account for user {username} is expired");
+            send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} is expired")).await;
+        }
+    }
 }
 
 pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &Arc<reqwest::Client>, input: &Arc<ConfigInput>, working_dir: &str) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
@@ -204,7 +215,9 @@ pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &Arc<reqwest::Client
 
     let base_url = get_xtream_stream_url_base(&input_source.url, username, password);
     let input_source_login = input_source.with_url(base_url.clone());
-    check_alias_user_state(cfg, client, input);
+
+    check_alias_user_state(cfg, client, input).await;
+
     if let Err(err) = xtream_login(cfg, client, &input_source_login, username).await {
         error!("Could not log in with xtream user {username} for provider {}. {err}", input.name);
         return (Vec::with_capacity(0), vec![err]);
@@ -252,46 +265,53 @@ pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &Arc<reqwest::Client
     (playlist_groups, errors)
 }
 
-/// Spawns a background task to check alias user states asynchronously.
-/// This is fire-and-forget; errors are logged but not returned.
-fn check_alias_user_state(cfg: &Arc<Config>, client: &Arc<reqwest::Client>, input: &Arc<ConfigInput>) {
-    let cfg = Arc::clone(cfg);
-    let client = Arc::clone(client);
-    let input = Arc::clone(input);
-    tokio::spawn(async move {
-        if let Some(aliases) = input.aliases.as_ref() {
-            for alias in aliases {
-                // Random wait time  60–180 seconds to avoid provider block
-                let delay =  u64::from(fastrand::u32(60..=180));
-                tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
-
-                if let (Some(username), Some(password)) =
-                    (alias.username.as_ref(), alias.password.as_ref())
-                {
-                    let mut input_source: InputSource = input.as_ref().into();
-                    input_source.username.clone_from(&alias.username);
-                    input_source.password.clone_from(&alias.password);
-                    input_source.url.clone_from(&alias.url);
-                    let base_url = get_xtream_stream_url_base(
-                        &input_source.url,
-                        username,
-                        password,
-                    );
-                    let input_source_login = input_source.with_url(base_url.clone());
-
-                    if let Err(err) =
-                        xtream_login(&cfg, &client, &input_source_login, username).await
-                    {
-                        error!(
-                            "Could not log in with xtream user {} for provider {}. {err}",
-                            username,
-                            alias.name
-                        );
-                    }
-                }
+async fn check_alias_user_state(cfg: &Arc<Config>, client: &Arc<reqwest::Client>, input: &Arc<ConfigInput>) {
+    if let Some(aliases) = input.aliases.as_ref() {
+        for alias in aliases {
+            if is_input_expired(alias.exp_date) {
+                notify_account_expire(alias.exp_date, cfg, client, alias.username.as_ref().map_or("", |s| s.as_str())).await;
             }
         }
-    });
+    }
+
+    // TODO figure out how and when to call it to avoid provider bans. Possible reason for provider ban is to avoid brute force attacks.
+
+    //
+    // let cfg = Arc::clone(cfg);
+    // let client = Arc::clone(client);
+    // let input = Arc::clone(input);
+    //
+    // tokio::spawn(async move {
+    //     for alias in &aliases {
+    //         // Random wait time  60–180 seconds to avoid provider block
+    //         let delay = u64::from(fastrand::u32(60..=180));
+    //         tokio::time::sleep(tokio::time::Duration::from_secs(delay)).await;
+    //
+    //         if let (Some(username), Some(password)) =
+    //             (alias.username.as_ref(), alias.password.as_ref())
+    //         {
+    //             let mut input_source: InputSource = input.as_ref().into();
+    //             input_source.username.clone_from(&alias.username);
+    //             input_source.password.clone_from(&alias.password);
+    //             input_source.url.clone_from(&alias.url);
+    //             let base_url = get_xtream_stream_url_base(
+    //                 &input_source.url,
+    //                 username,
+    //                 password,
+    //             );
+    //             let input_source_login = input_source.with_url(base_url.clone());
+    //
+    //             match xtream_login(&cfg, &client, &input_source_login, username).await {
+    //                 Ok(Some(xtream_login_info)) => {
+    //                     // TODO need to update the alias
+    //
+    //                 }
+    //                 Ok(None) => error!("Could log in with xtream user {} for provider {}. But could not extract account info", username, alias.name),
+    //                 Err(err) => error!("Could not log in with xtream user {} for provider {}. {err}",username,alias.name),
+    //             }
+    //         }
+    //     }
+    // });
 }
 
 pub fn create_vod_info_from_item(target: &ConfigTarget, user: &ProxyUserCredentials, pli: &XtreamPlaylistItem, last_updated: i64) -> String {

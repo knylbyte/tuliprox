@@ -7,7 +7,7 @@ use std::io::{BufRead, Cursor, Error};
 use std::path::PathBuf;
 use url::Url;
 use shared::model::{ConfigInputAliasDto, InputType};
-use shared::utils::{get_credentials_from_url, trim_last_slash};
+use shared::utils::{get_credentials_from_url, parse_timestamp, trim_last_slash};
 use crate::utils::request::get_local_file_content;
 
 const CSV_SEPARATOR: char = ';';
@@ -18,8 +18,9 @@ const FIELD_URL: &str = "url";
 const FIELD_NAME: &str = "name";
 const FIELD_USERNAME: &str = "username";
 const FIELD_PASSWORD: &str = "password";
+const FIELD_EXP_DATE: &str = "exp_date";
 const FIELD_UNKNOWN: &str = "?";
-const DEFAULT_COLUMNS: &[&str] = &[FIELD_URL, FIELD_MAX_CON, FIELD_PRIO, FIELD_NAME, FIELD_USERNAME, FIELD_PASSWORD];
+const DEFAULT_COLUMNS: &[&str] = &[FIELD_URL, FIELD_MAX_CON, FIELD_PRIO, FIELD_NAME, FIELD_USERNAME, FIELD_PASSWORD, FIELD_EXP_DATE];
 
 fn csv_assign_mandatory_fields(alias: &mut ConfigInputAliasDto, input_type: InputType) {
     if !alias.url.is_empty() {
@@ -86,6 +87,9 @@ fn csv_assign_config_input_column(config_input: &mut ConfigInputAliasDto, header
             FIELD_PASSWORD => {
                 config_input.password = Some(value.to_string());
             }
+            FIELD_EXP_DATE => {
+                config_input.exp_date = parse_timestamp(value).ok().flatten();
+            }
             _ => {}
         }
     }
@@ -117,6 +121,7 @@ pub fn csv_read_inputs_from_reader(batch_input_type: InputType, reader: impl Buf
                         FIELD_NAME => FIELD_NAME,
                         FIELD_USERNAME => FIELD_USERNAME,
                         FIELD_PASSWORD => FIELD_PASSWORD,
+                        FIELD_EXP_DATE => FIELD_EXP_DATE,
                         _ => {
                             error!("Field {s} is unsupported for csv input");
                             FIELD_UNKNOWN
@@ -135,6 +140,7 @@ pub fn csv_read_inputs_from_reader(batch_input_type: InputType, reader: impl Buf
             password: None,
             priority: 0,
             max_connections: 1,
+            exp_date: None,
         };
 
         let columns: Vec<&str> = line.split(CSV_SEPARATOR).collect();
@@ -193,9 +199,9 @@ http://hd.providerline.com/get.php?username=user4&password=user4&type=m3u_plus;i
 ";
 
     const XTREAM_BATCH: &str = r"
-#name;username;password;url;max_connections
-input_1;de566567;de2345f43g5;http://provider_1.tv:80;1
-input_2;de566567;de2345f43g5;http://provider_2.tv:8080;1
+#name;username;password;url;max_connections;exp_date
+input_1;de566567;de2345f43g5;http://provider_1.tv:80;1;2028-11-23 13:12:34
+input_2;de566567;de2345f43g5;http://provider_2.tv:8080;1;2028-12-23 13:12:34
 ";
 
     #[test]
