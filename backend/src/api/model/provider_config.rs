@@ -1,5 +1,5 @@
 use std::fmt;
-use crate::model::{ConfigInput, ConfigInputAlias, InputUserInfo};
+use crate::model::{is_input_expired, ConfigInput, ConfigInputAlias, InputUserInfo};
 use jsonwebtoken::get_current_timestamp;
 use log::{debug};
 use std::ops::Deref;
@@ -42,6 +42,7 @@ pub struct ProviderConfig {
     pub input_type: InputType,
     max_connections: usize,
     priority: i16,
+    exp_date: Option<i64>,
     connection: RwLock<ProviderConfigConnection>,
     on_connection_change: ProviderConnectionChangeCallback,
 }
@@ -57,7 +58,8 @@ impl fmt::Display for ProviderConfig {
         write!(f, ", priority: {}", self.priority)?;
         write_if_some!(f, self,
             ", username: " => username,
-            ", password: " => password
+            ", password: " => password,
+            ", exp_date: " => exp_date
         );
         write!(f, "}}")?;
         Ok(())
@@ -80,6 +82,7 @@ impl PartialEq for ProviderConfig {
             && self.input_type == other.input_type
             && self.max_connections == other.max_connections
             && self.priority == other.priority
+            && self.exp_date == other.exp_date
            // Note: self.connection is skipped
     }
 }
@@ -90,7 +93,7 @@ macro_rules! modify_connections {
         $self.notify_connection_change($guard.current_connections);
     }};
     ($self:ident, $guard:ident, -1) => {{
-        $guard.current_connections -= 1;
+        $guard.current_connections = $guard.current_connections.saturating_sub(1);
         $self.notify_connection_change($guard.current_connections);
     }};
 }
@@ -109,6 +112,7 @@ impl ProviderConfig {
             input_type: cfg.input_type,
             max_connections: cfg.max_connections as usize,
             priority: cfg.priority,
+            exp_date: cfg.exp_date,
             connection: RwLock::new(get_connection.and_then(|f| f(cfg.name.as_str())).map_or_else(Default::default, Clone::clone)),
             on_connection_change
         }
@@ -127,6 +131,7 @@ impl ProviderConfig {
             input_type: cfg.input_type,
             max_connections: alias.max_connections as usize,
             priority: alias.priority,
+            exp_date: alias.exp_date,
             connection: RwLock::new(get_connection.and_then(|f| f(alias.name.as_str())).map_or_else(Default::default, Clone::clone)),
             on_connection_change,
         }
@@ -178,12 +183,20 @@ impl ProviderConfig {
     //     !self.is_exhausted()
     // }
 
-    async fn force_allocate(&self) {
+    async fn force_allocate(&self) -> bool {
+        if is_input_expired(self.exp_date) {
+            return false;
+        }
         let mut guard = self.connection.write().await;
         modify_connections!(self, guard, +1);
+        true
     }
 
     async fn try_allocate(&self, grace: bool, grace_period_timeout_secs: u64) -> ProviderConfigAllocation {
+        if is_input_expired(self.exp_date) {
+            return ProviderConfigAllocation::Exhausted;
+        }
+
         let mut guard = self.connection.write().await;
         if self.max_connections == 0 {
             modify_connections!(self, guard, +1);
@@ -220,6 +233,10 @@ impl ProviderConfig {
     // is intended to use with redirects, to cycle through provider
     // do not increment and connection counter!
     async fn get_next(&self, grace: bool, grace_period_timeout_secs: u64) -> bool {
+        if is_input_expired(self.exp_date) {
+            return false;
+        }
+
         if self.max_connections == 0 {
             return true;
         }
@@ -288,8 +305,11 @@ impl ProviderConfigWrapper {
     }
 
     pub async fn force_allocate(&self) -> ProviderAllocation {
-        self.inner.force_allocate().await;
-        ProviderAllocation::new_available(Arc::clone(&self.inner))
+        if self.inner.force_allocate().await {
+            ProviderAllocation::new_available(Arc::clone(&self.inner))
+        } else {
+            ProviderAllocation::Exhausted
+        }
     }
 
     pub async fn try_allocate(&self, grace: bool, grace_period_timeout_secs: u64) -> ProviderAllocation {

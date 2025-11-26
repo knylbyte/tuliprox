@@ -23,7 +23,11 @@
 - Added `order: none` support for group/channel sorting so mappings can opt out of any reordering and keep the source order.
 - Session tracking now matches repeated HLS segment connections by session token so a single user keeps one active connection count even when new TCP sockets are opened.
 - EPG icon urls are now rewritten on reverse proxy mode.
-- Xtream Codes Batch provider accounts are now checked for expiration. 
+- Short EPG is now served from local disk, if available
+- WebUI Api-User Category selection implemented
+- Stream Table Copy-To-Clipboard functions added
+- Refactored provider connection handling to avoid possible race conditions
+- Added `exp_date` field to inputs, aliases, and CSV batch files; accepts date in "YYYY-MM-DD HH:MM:SS" format or Unix timestamp (seconds since epoch).
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.

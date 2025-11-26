@@ -166,10 +166,11 @@ pub(in crate::api) async fn handle_hls_stream_request(
 async fn get_stream_channel(app_state: &Arc<AppState>, target: &Arc<ConfigTarget>, virtual_id: u32) -> Option<StreamChannel> {
     if target.has_output(TargetType::Xtream) {
         if let Ok((pli, _)) = xtream_repository::xtream_get_item_for_stream_id(virtual_id, app_state, target, None).await {
-            return Some(pli.to_stream_channel());
+            return Some(pli.to_stream_channel(target.id));
         }
     }
-    m3u_get_item_for_stream_id(virtual_id, app_state, target).await.ok().map(|pli| pli.to_stream_channel())
+    let target_id = target.id;
+    m3u_get_item_for_stream_id(virtual_id, app_state, target).await.ok().map(|pli| pli.to_stream_channel(target_id))
 }
 
 async fn resolve_stream_channel(
@@ -181,6 +182,7 @@ async fn resolve_stream_channel(
     let mut channel = match get_stream_channel(app_state, target, virtual_id).await {
         Some(channel) => channel,
         None => StreamChannel {
+            target_id: target.id,
             virtual_id,
             provider_id: 0,
             item_type: PlaylistItemType::LiveHls,
@@ -225,7 +227,7 @@ async fn hls_api_stream(
         app_state.app_config.get_input_by_id(params.input_id),
         true,
         format!(
-            "Cant find input for target {target_name}, stream_id {virtual_id}, hls"
+            "Cant find input {} for target {target_name}, stream_id {virtual_id}, hls", params.input_id
         )
     );
 

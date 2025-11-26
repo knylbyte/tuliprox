@@ -1,4 +1,4 @@
-use crate::api::model::{AppState, CustomVideoStreamType, ProviderHandle, StreamDetails};
+use crate::api::model::{AppState, ConnectionManager, CustomVideoStreamType, ProviderHandle, StreamDetails};
 use crate::api::model::BoxedProviderStream;
 use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
@@ -30,6 +30,7 @@ pub(in crate::api) struct ActiveClientStream {
     provider_handle: Option<ProviderHandle>,
     custom_video: (Option<TransportStreamBuffer>, Option<TransportStreamBuffer>),
     waker: Option<Arc<AtomicWaker>>,
+    connection_manager: Arc<ConnectionManager>,
 }
 
 impl ActiveClientStream {
@@ -95,6 +96,7 @@ impl ActiveClientStream {
             send_custom_stream_flag: grace_stop_flag,
             custom_video,
             waker,
+            connection_manager: Arc::clone(&app_state.connection_manager)
         }
     }
 
@@ -216,5 +218,15 @@ impl Stream for ActiveClientStream {
         }
 
         Poll::Ready(None)
+    }
+}
+
+impl Drop for ActiveClientStream {
+    fn drop(&mut self) {
+        let mgr = Arc::clone(&self.connection_manager);
+        let hndl = self.provider_handle.take();
+        tokio::spawn(async move {
+            mgr.release_provider_handle(hndl).await;
+        });
     }
 }

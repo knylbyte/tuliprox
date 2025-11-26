@@ -119,7 +119,7 @@ async fn m3u_api_stream(
             .app_config
             .get_input_by_name(pli.input_name.as_str()),
         true,
-        format!("Cant find input for target {target_name}, stream_id {virtual_id}")
+        format!("Cant find input {} for target {target_name}, stream_id {virtual_id}", pli.input_name)
     );
     let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
 
@@ -154,7 +154,7 @@ async fn m3u_api_stream(
                 fingerprint,
                 app_state,
                 session,
-                pli.to_stream_channel(),
+                pli.to_stream_channel(target.id),
                 req_headers,
                 &input,
                 &user,
@@ -224,7 +224,7 @@ async fn m3u_api_stream(
         fingerprint,
         app_state,
         &session_key,
-        pli.to_stream_channel(),
+        pli.to_stream_channel(target.id),
         session_url,
         req_headers,
         &input,

@@ -8,7 +8,7 @@ use crate::utils;
 use crate::utils::json_write_documents_to_file;
 use chrono::Local;
 use log::error;
-use shared::model::{PlaylistBouquetDto, ProxyType, ProxyUserStatus, TargetBouquetDto, TargetType, XtreamCluster};
+use shared::model::{PlaylistBouquetDto, PlaylistClusterBouquetDto, ProxyType, ProxyUserStatus, TargetType, XtreamCluster};
 use std::collections::{HashMap, HashSet};
 use std::io::Error;
 use std::path::{Path, PathBuf};
@@ -256,7 +256,6 @@ async fn save_xtream_user_bouquet_for_target(config: &Config, target_name: &str,
         XtreamCluster::Series => user_get_series_bouquet_path(storage_path, TargetType::Xtream),
     };
 
-
     if let Some(bouquet_categories) = bouquet {
         if let Some(xtream_categories) = xtream_get_playlist_categories(config, target_name, cluster).await {
             let filtered: Vec<PlaylistXtreamCategory> = xtream_categories.iter().filter(|p| bouquet_categories.contains(&p.name)).cloned().collect();
@@ -294,27 +293,23 @@ async fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetTyp
     Ok(())
 }
 
-async fn save_user_bouquet_for_target(config: &Config, target_name: &str, storage_path: &Path, target: TargetType, bouquet: &TargetBouquetDto) -> Result<(), Error> {
+async fn save_user_bouquet_for_target(config: &Config, target_name: &str, storage_path: &Path, target: TargetType, bouquet: Option<&PlaylistClusterBouquetDto>) -> Result<(), Error> {
     if target == TargetType::Xtream {
-        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Live, bouquet.live.as_ref()).await?;
-        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Video, bouquet.vod.as_ref()).await?;
-        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Series, bouquet.series.as_ref()).await?;
+        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Live, bouquet.and_then(|b| b.live.as_ref())).await?;
+        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Video, bouquet.and_then(|b| b.vod.as_ref())).await?;
+        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Series, bouquet.and_then(|b| b.series.as_ref())).await?;
     } else {
-        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Live, bouquet.live.as_ref()).await?;
-        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Video, bouquet.vod.as_ref()).await?;
-        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Series, bouquet.series.as_ref()).await?;
+        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Live, bouquet.and_then(|b| b.live.as_ref())).await?;
+        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Video, bouquet.and_then(|b| b.vod.as_ref())).await?;
+        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Series, bouquet.and_then(|b| b.series.as_ref())).await?;
     }
     Ok(())
 }
 
 pub async fn save_user_bouquet(cfg: &Config, target_name: &str, username: &str, bouquet: &PlaylistBouquetDto) -> Result<(), Error> {
     if let Some(storage_path) = ensure_user_storage_path(cfg, username) {
-        if let Some(xb) = &bouquet.xtream {
-            save_user_bouquet_for_target(cfg, target_name, &storage_path, TargetType::Xtream, xb).await?;
-        }
-        if let Some(mb) = &bouquet.m3u {
-            save_user_bouquet_for_target(cfg, target_name, &storage_path, TargetType::M3u, mb).await?;
-        }
+        save_user_bouquet_for_target(cfg, target_name, &storage_path, TargetType::Xtream, bouquet.xtream.as_ref()).await?;
+        save_user_bouquet_for_target(cfg, target_name, &storage_path, TargetType::M3u, bouquet.m3u.as_ref()).await?;
         Ok(())
     } else {
         Err(Error::new(std::io::ErrorKind::NotFound, format!("User config path not found for user {username}")))
@@ -390,7 +385,6 @@ pub async fn user_get_bouquet_filter(config: &Config, username: &str, category_i
         XtreamCluster::Video => user_get_vod_bouquet(config, username, target).await,
         XtreamCluster::Series => user_get_series_bouquet(config, username, target).await,
     };
-
 
     match bouquet {
         None => None,

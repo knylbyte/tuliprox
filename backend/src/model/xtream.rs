@@ -2,11 +2,17 @@ use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, XtreamTargetOutput};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
-use shared::model::{xtream_const, PlaylistItem, XtreamPlaylistItem};
+use shared::model::{xtream_const, PlaylistItem, ProxyUserStatus, XtreamPlaylistItem};
 use shared::model::{ClusterFlags, PlaylistEntry, XtreamCluster};
 use shared::utils::{deserialize_as_option_string, deserialize_as_string, deserialize_as_string_array, deserialize_number_from_string,
                     get_non_empty_str, opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
 use std::iter::FromIterator;
+
+#[derive(Debug, Default)]
+pub struct XtreamLoginInfo {
+    pub status: Option<ProxyUserStatus>,
+    pub exp_date: Option<i64>,
+}
 
 #[derive(Deserialize, Default)]
 pub struct XtreamCategory {

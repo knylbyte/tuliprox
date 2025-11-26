@@ -230,6 +230,7 @@ pub fn get_attr_value(attr: &quick_xml::events::attributes::Attribute) -> Option
     attr.unescape_value().ok().map(|v| v.to_string())
 }
 
+// This function filters a timeslot starting from yesterday.
 #[allow(clippy::too_many_lines)]
 async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Result<EpgTv, TuliproxError> {
 
@@ -246,10 +247,10 @@ async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Resul
 
     // only 1 day old epg
     let now = Utc::now();
-    let yesterday_start = Utc.with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0).unwrap()
+    let yesterday_start = Utc.with_ymd_and_hms(now.year(), now.month(), now.day(), 0, 0, 0)
+        .single().expect("Current date at midnight should always be valid")
         - chrono::Duration::days(1);
     let threshold_ts = yesterday_start.timestamp();
-
 
     loop {
         match reader.read_event_into_async(&mut buf).await {

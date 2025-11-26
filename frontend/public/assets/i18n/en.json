@@ -8,6 +8,7 @@
     "LIVE_SHORT": "L",
     "VOD_SHORT": "V",
     "SERIES_SHORT": "S",
+    "MOVIE": "Movie",
     "SAVE": "Save",
     "SUBMIT": "Submit",
     "OK": "Ok",
@@ -327,7 +328,7 @@
     "COPY_CREDENTIALS": "Copy Credentials"
   },
   "TITLE": {
-    "USER_BOUQUET_EDITOR": "User group editor"
+    "USER_BOUQUET_EDITOR": "Playlist Category Selection"
   },
   "MESSAGES": {
     "NO_CONTENT": "No content",
@@ -341,6 +342,7 @@
     "SCHEDULE_EXISTS": "Schedule already exists",
     "CLIPBOARD_NOT_SUPPORTED": "Clipboard not supported.\nYour browser or current context does not allow clipboard access.\nPlease use HTTPS or localhost.",
     "FAILED_TO_KICK_USER_STREAM":  "Failed to kick user stream",
+    "FAILED_TO_RETRIEVE_WEBPLAYER_URL": "Failed to retrieve webplayer URL",
     "DOWNLOAD": {
       "SUCCESS": "Successfully downloaded",
       "FAIL": "Failed to download!",
@@ -354,6 +356,9 @@
       "GEOIP": {
         "SUCCESS": "Successfully downloaded Geo-IP db",
         "FAIL": "Failed to download Geo-IP db!"
+      },
+      "USER_BOUQUET": {
+        "FAIL": "Failed to download user bouquets!"
       }
     },
     "LOGIN": {

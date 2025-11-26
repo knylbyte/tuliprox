@@ -1,6 +1,6 @@
 use crate::services::{get_base_href, request_post, ACCEPT_PREFER_BIN};
 use log::error;
-use shared::model::{CommonPlaylistItem, EpgTv, PlaylistCategoriesResponse, PlaylistEpgRequest, PlaylistRequest, UiPlaylistCategories, WebplayerUrlRequest};
+use shared::model::{EpgTv, PlaylistCategoriesResponse, PlaylistEpgRequest, PlaylistRequest, UiPlaylistCategories, WebplayerUrlRequest, XtreamCluster};
 use std::rc::Rc;
 use shared::utils::{concat_path_leading_slash};
 
@@ -41,11 +41,11 @@ impl PlaylistService {
         })
     }
 
-    pub async fn get_playlist_webplayer_url(&self, target_id: u16, dto: &Rc<CommonPlaylistItem>) -> Option<String> {
+    pub async fn get_playlist_webplayer_url(&self, target_id: u16, virtual_id: u32, cluster: XtreamCluster) -> Option<String> {
         let request = WebplayerUrlRequest {
             target_id,
-            virtual_id: dto.virtual_id,
-            cluster: dto.xtream_cluster.unwrap_or_default(),
+            virtual_id,
+            cluster,
         };
         request_post::<&WebplayerUrlRequest, String>(&self.playlist_api_webplayer_url_path, &request, None, Some("text/plain".to_string())).await.unwrap_or_else(|err| {
             error!("{err}");

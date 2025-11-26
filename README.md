@@ -665,9 +665,6 @@ The template can now be used for sequence
           - '(?i)\bSD\b'
 ```
 
-
-
-
 ### 2.2. `sources`
 `sources` is a sequence of source definitions, which have two top level entries:
 -`inputs`
@@ -687,7 +684,8 @@ Each input has the following attributes:
 - `headers` is optional
 - `method` can be `GET` or `POST`
 - `username` only mandatory for type `xtream`
-- `pasword`only mandatory for type `xtream`
+- `password` only mandatory for type `xtream`
+- `exp_date` optional, i a date as "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12` or Unix timestamp (seconds since epoch)
 - `options` is optional,
   + `xtream_skip_live` true or false, live section can be skipped.
   + `xtream_skip_vod` true or false, vod section can be skipped.
@@ -834,9 +832,9 @@ There are 2 batch input types  `xtream_batch` and `m3u_batch`.
 ```
 
 ```csv
-#name;username;password;url;max_connections;priority
-my_provider_1;user1;password1;http://my_provider_1.com:80;1;0
-my_provider_2;user2;password2;http://my_provider_2.com:8080;1;0
+#name;username;password;url;max_connections;priority;exp_date
+my_provider_1;user1;password1;http://my_provider_1.com:80;1;0;2028-11-23 12:34:23
+my_provider_2;user2;password2;http://my_provider_2.com:8080;1;0;2028-11-23 12:34:23
 ```
 
 ##### `M3uBatch`
@@ -863,6 +861,11 @@ A `priority` of `0` is higher than `1`
 **Negative numbers** are allowed and represent even higher priority
 Higher numbers mean **lower priority**
 This means tasks or items with smaller (even negative) values will be handled before those with larger values.
+
+The `exp_date` field is a date as:
+- "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12`
+- or Unix timestamp (seconds since epoch)
+
 
 ### 2.2.2 `targets`
 Has the following top level entries:
