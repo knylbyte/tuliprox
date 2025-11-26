@@ -354,11 +354,8 @@ async fn handle_channel_unavailable_stream(app_state: &Arc<AppState>,
     app_state.connection_manager.release_provider_connection(&stream_options.addr).await;
 
     if let (Some(boxed_provider_stream), response_info) =
-        create_channel_unavailable_stream(
-            &app_state.app_config,
-            &get_response_headers(stream_options.get_headers()),
-            StatusCode::SERVICE_UNAVAILABLE,
-        )
+        create_channel_unavailable_stream(&app_state.app_config,&get_response_headers(stream_options.get_headers()),
+                                          StatusCode::SERVICE_UNAVAILABLE)
     {
         Ok(Some((boxed_provider_stream, response_info)))
     } else {
@@ -383,37 +380,23 @@ async fn get_provider_stream(
             }
             Ok(None) => {
                 if connect_err > ERR_MAX_RETRY_COUNT {
-                    warn!(
-                        "The stream could be unavailable. {}",
-                        sanitize_sensitive_info(stream_options.get_url().as_str())
-                    );
+                    warn!("The stream could be unavailable. {}", sanitize_sensitive_info(stream_options.get_url().as_str()));
+                    break;
                 }
             }
             Err(status) => {
                 debug!("Provider stream response error status response : {status}");
-                if status == StatusCode::FORBIDDEN
-                    || status == StatusCode::SERVICE_UNAVAILABLE
-                    || status == StatusCode::UNAUTHORIZED
-                {
-                    warn!(
-                        "The stream could be unavailable. ({status}) {}",
-                        sanitize_sensitive_info(stream_options.get_url().as_str())
-                    );
-                    stream_options.cancel_reconnect();
-                    return Err(status);
+                if matches!(status, StatusCode::FORBIDDEN | StatusCode::SERVICE_UNAVAILABLE | StatusCode::UNAUTHORIZED) {
+                    warn!("The stream could be unavailable. ({status}) {}",sanitize_sensitive_info(stream_options.get_url().as_str()));
+                    break;
                 }
                 if connect_err > ERR_MAX_RETRY_COUNT {
-                    warn!(
-                        "The stream could be unavailable. ({status}) {}",
-                        sanitize_sensitive_info(stream_options.get_url().as_str())
-                    );
+                    warn!("The stream could be unavailable. ({status}) {}",sanitize_sensitive_info(stream_options.get_url().as_str()));
+                    break;
                 }
             }
         }
-        if !stream_options.should_continue() {
-            return Err(StatusCode::SERVICE_UNAVAILABLE);
-        }
-        if connect_err > ERR_MAX_RETRY_COUNT {
+        if !stream_options.should_continue() || connect_err > ERR_MAX_RETRY_COUNT {
             break;
         }
         if start.elapsed().as_secs() > RETRY_SECONDS {
@@ -425,16 +408,11 @@ async fn get_provider_stream(
         }
         connect_err += 1;
         tokio::time::sleep(Duration::from_millis(50)).await;
-        debug_if_enabled!(
-            "Reconnecting stream {}",
-            sanitize_sensitive_info(url.as_str())
-        );
+        debug_if_enabled!("Reconnecting stream {}", sanitize_sensitive_info(url.as_str()));
     }
-    debug_if_enabled!(
-        "Stopped reconnecting stream {}",
-        sanitize_sensitive_info(url.as_str())
-    );
+    debug_if_enabled!("Stopped reconnecting stream {}", sanitize_sensitive_info(url.as_str()));
     stream_options.cancel_reconnect();
+    app_state.connection_manager.release_provider_connection(&stream_options.addr).await;
     Err(StatusCode::SERVICE_UNAVAILABLE)
 }
 
@@ -493,7 +471,20 @@ pub async fn create_provider_stream(
                         if continue_streaming.is_active() {
                             match get_provider_stream(&app_state_clone, &client, &stream_opts).await {
                                 Ok(Some((stream, _info))) => Some((stream, ())),
-                                Ok(None) => None,
+                                Ok(None) => {
+                                    app_state_clone.connection_manager.release_provider_connection(&stream_opts.addr).await;
+                                    continue_streaming.notify();
+                                    if let (Some(boxed_provider_stream), _response_info) =
+                                        create_channel_unavailable_stream(
+                                            &app_state_clone.app_config,
+                                            &get_response_headers(stream_opts.get_headers()),
+                                            StatusCode::SERVICE_UNAVAILABLE,
+                                        )
+                                    {
+                                        return Some((boxed_provider_stream, ()));
+                                    }
+                                    None
+                                }
                                 Err(status) => {
                                     app_state_clone.connection_manager.release_provider_connection(&stream_opts.addr).await;
                                     continue_streaming.notify();
@@ -510,6 +501,7 @@ pub async fn create_provider_stream(
                                 }
                             }
                         } else {
+                            app_state_clone.connection_manager.release_provider_connection(&stream_opts.addr).await;
                             None
                         }
                     }

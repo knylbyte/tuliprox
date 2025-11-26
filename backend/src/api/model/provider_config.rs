@@ -90,7 +90,7 @@ macro_rules! modify_connections {
         $self.notify_connection_change($guard.current_connections);
     }};
     ($self:ident, $guard:ident, -1) => {{
-        $guard.current_connections -= 1;
+        $guard.current_connections = $guard.current_connections.saturating_sub(1);
         $self.notify_connection_change($guard.current_connections);
     }};
 }

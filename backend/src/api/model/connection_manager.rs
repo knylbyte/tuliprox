@@ -58,7 +58,7 @@ impl ConnectionManager {
 
     pub async fn release_provider_handle(&self, provider_handle: Option<ProviderHandle>) {
         if let Some(handle) = provider_handle {
-            self.release_provider_connection(&handle.id).await;
+            self.release_provider_connection(&handle.client_id).await;
         }
     }
 

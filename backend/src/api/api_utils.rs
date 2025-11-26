@@ -360,7 +360,7 @@ async fn resolve_streaming_strategy(
         if let Some(allocation) = provider_connection_handle.as_ref().map(|ph| &ph.allocation) {
             match allocation {
                 ProviderAllocation::Exhausted => {
-                    debug!("Input {} is exhausted. No connections allowed.", input.name);
+                    debug!("Provider {} is exhausted. No connections allowed.", input.name);
                     let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
                     ProviderStreamState::Custom(stream)
                 }

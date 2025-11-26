@@ -24,6 +24,10 @@
 - Session tracking now matches repeated HLS segment connections by session token so a single user keeps one active connection count even when new TCP sockets are opened.
 - EPG icon urls are now rewritten on reverse proxy mode.
 - Xtream Codes Batch provider accounts are now checked for expiration. 
+- Short EPG is now served from local disc, if available
+- WebUI Api-User Category selection implemented
+- Stream Table Copy-To-Clipboard functions added
+- Refactored provider connection handling to avoid possible race conditions
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
