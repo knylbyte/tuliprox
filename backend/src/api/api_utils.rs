@@ -1,5 +1,5 @@
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
-use crate::api::model::UserSession;
+use crate::api::model::{SessionKey, UserSession};
 use crate::api::model::{
     create_channel_unavailable_stream, create_custom_video_stream_response,
     create_provider_connections_exhausted_stream, create_provider_stream,
@@ -17,7 +17,7 @@ use crate::utils::request;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::BUILD_TIMESTAMP;
 use arc_swap::ArcSwapOption;
-use axum::http::HeaderMap;
+use axum::http::{header::USER_AGENT, HeaderMap};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
@@ -487,6 +487,8 @@ async fn create_stream_response_details(
                     req_headers,
                     streaming_strategy.input_headers.as_ref(),
                     disabled_headers.as_ref(),
+                    stream_url,
+                    guard_provider_name.as_deref(),
                 );
                 let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
                 let provider_stream = match create_provider_stream(
@@ -763,8 +765,10 @@ pub async fn force_provider_stream_response(
 
         let body_stream = prepare_body_stream(app_state, item_type, stream);
         debug_if_enabled!(
-            "Streaming provider forced stream request from {}",
-            sanitize_sensitive_info(&user_session.stream_url)
+            "Streaming provider forced stream request from {} (provider {} stream {})",
+            sanitize_sensitive_info(&user_session.stream_url),
+            user_session.provider,
+            user_session.stream_identifier
         );
         return try_unwrap_body!(response.body(body_stream));
     }
@@ -925,9 +929,20 @@ pub async fn stream_response(
                         | PlaylistItemType::Series
                         | PlaylistItemType::Catchup
                 ) {
+                    let user_agent_string = req_headers
+                        .get(USER_AGENT)
+                        .map(|h| String::from_utf8_lossy(h.as_bytes()).to_string())
+                        .unwrap_or_default();
+                    let session_key = SessionKey::new(
+                        &user.username,
+                        &user_agent_string,
+                        fingerprint.addr.ip(),
+                        stream_url,
+                    );
                     let _ = app_state
                         .active_users
                         .create_user_session(
+                            session_key,
                             user,
                             session_token,
                             virtual_id,

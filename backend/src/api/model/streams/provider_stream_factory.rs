@@ -39,6 +39,8 @@ pub struct ProviderStreamFactoryOptions {
     share_stream: bool,
     pipe_stream: bool,
     url: Url,
+    stream_identifier: String,
+    provider_name: Option<String>,
     headers: HeaderMap,
     range_bytes: Arc<Option<AtomicUsize>>,
     reconnect_flag: Arc<AtomicOnceFlag>,
@@ -55,6 +57,8 @@ impl ProviderStreamFactoryOptions {
         req_headers: &HeaderMap,
         input_headers: Option<&HashMap<String, String>>,
         disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
+        stream_identifier: &str,
+        provider_name: Option<&str>,
     ) -> Self {
         let buffer_size = if stream_options.buffer_enabled {
             stream_options.buffer_size
@@ -84,6 +88,8 @@ impl ProviderStreamFactoryOptions {
             share_stream,
             reconnect_flag: Arc::new(AtomicOnceFlag::new()),
             url,
+            stream_identifier: stream_identifier.to_string(),
+            provider_name: provider_name.map(ToString::to_string),
             headers,
             range_bytes,
         }
@@ -127,6 +133,16 @@ impl ProviderStreamFactoryOptions {
     #[inline]
     pub fn get_url_as_str(&self) -> &str {
         self.url.as_str()
+    }
+
+    #[inline]
+    pub fn get_provider_name(&self) -> Option<&str> {
+        self.provider_name.as_deref()
+    }
+
+    #[inline]
+    pub fn get_stream_identifier(&self) -> &str {
+        &self.stream_identifier
     }
 
     #[inline]
@@ -369,7 +385,8 @@ async fn get_provider_stream(
     stream_options: &ProviderStreamFactoryOptions,
 ) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
     let url = stream_options.get_url();
-    debug_if_enabled!("stream provider {}", sanitize_sensitive_info(url.as_str()));
+    let provider_name = stream_options.get_provider_name().unwrap_or("n/a");
+    debug_if_enabled!("stream provider {} (provider {provider_name}, stream {})", sanitize_sensitive_info(url.as_str()), sanitize_sensitive_info(stream_options.get_stream_identifier()));
     let start = Instant::now();
     let mut connect_err: u32 = 1;
 
@@ -408,9 +425,9 @@ async fn get_provider_stream(
         }
         connect_err += 1;
         tokio::time::sleep(Duration::from_millis(50)).await;
-        debug_if_enabled!("Reconnecting stream {}", sanitize_sensitive_info(url.as_str()));
+        debug_if_enabled!("Reconnecting stream {} (provider {provider_name}, stream {})", sanitize_sensitive_info(url.as_str()), sanitize_sensitive_info(stream_options.get_stream_identifier()));
     }
-    debug_if_enabled!("Stopped reconnecting stream {}", sanitize_sensitive_info(url.as_str()));
+    debug_if_enabled!("Stopped reconnecting stream {} (provider {provider_name}, stream {})", sanitize_sensitive_info(url.as_str()), sanitize_sensitive_info(stream_options.get_stream_identifier()));
     stream_options.cancel_reconnect();
     app_state.connection_manager.release_provider_connection(&stream_options.addr).await;
     Err(StatusCode::SERVICE_UNAVAILABLE)

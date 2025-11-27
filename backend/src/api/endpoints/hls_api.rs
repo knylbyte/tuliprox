@@ -5,7 +5,7 @@ use crate::api::api_utils::{
 use crate::api::api_utils::{get_headers_from_request, try_option_bad_request, HeaderFilter};
 use crate::api::model::AppState;
 use crate::api::model::{create_custom_video_stream_response, CustomVideoStreamType};
-use crate::api::model::{ProviderAllocation, UserSession};
+use crate::api::model::{ProviderAllocation, SessionKey, UserSession};
 use crate::auth::Fingerprint;
 use crate::model::{ConfigInput, InputSource};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
@@ -15,7 +15,7 @@ use crate::processing::parser::hls::{
 use crate::repository::m3u_repository::m3u_get_item_for_stream_id;
 use crate::repository::xtream_repository;
 use crate::utils::request;
-use axum::http::HeaderMap;
+use axum::http::{header::USER_AGENT, HeaderMap};
 use axum::response::IntoResponse;
 use log::{debug, error};
 use serde::Deserialize;
@@ -83,7 +83,18 @@ pub(in crate::api) async fn handle_hls_stream_request(
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
                     let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
+                    let user_agent_string = req_headers
+                        .get(USER_AGENT)
+                        .map(|h| String::from_utf8_lossy(h.as_bytes()).to_string())
+                        .unwrap_or_default();
+                    let session_key = SessionKey::new(
+                        &user.username,
+                        &user_agent_string,
+                        fingerprint.addr.ip(),
+                        &stream_url,
+                    );
                     let session_token = app_state.active_users.create_user_session(
+                        session_key,
                         user,
                         &user_session_token,
                         virtual_id,
