@@ -27,26 +27,26 @@ jobs:
       archs: ${{ steps.arch.outputs.archs }}
 
     steps:
-      - name: Step 1.1 - Checkout
+      - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Step 1.2 - Login to GHCR
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Step 1.3 - Set arch list
+      - name: Set arch list
         id: arch
         shell: bash
         run: |
           set -euo pipefail
           echo "archs=linux-amd64 linux-arm64 linux-armv7" >> "$GITHUB_OUTPUT"
 
-      - name: Step 1.4 - Check prebuild availability (all archs)
+      - name: Check prebuild availability (all archs)
         id: check
         shell: bash
         env:
@@ -61,7 +61,7 @@ jobs:
           done
           echo "need_build_tools=$need_build_tools" >> "$GITHUB_OUTPUT"
 
-      - name: Step 1.5 - Summary (tuliprox build tools check)
+      - name: Summary (tuliprox build tools check)
         if: always()
         shell: bash
         run: |
@@ -80,7 +80,7 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Step 1.6 - Build tuliprox-build-tools if needed
+      - name: Build tuliprox-build-tools if needed
         if: steps.check.outputs.need_build_tools == 'true'
         run: |
           gh workflow run docker-build-tuliprox-build-tools.yml --ref ${{ github.ref }} --repo ${{ github.repository }} --field trigger=gh-actions
@@ -113,43 +113,28 @@ jobs:
     runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
 
     steps:
-      - name: Step 2.1 - Checkout
+      - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Step 2.2 - Set up QEMU
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: ${{ matrix.platform }}
 
-      - name: Step 2.3 - Free up disk space
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "Disk usage before cleanup:"
-          df -h
-          sudo rm -rf /usr/share/dotnet || true
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/local/share/boost || true
-          sudo rm -rf /opt/ghc || true
-          docker system prune -af || true
-          echo "Disk usage after cleanup:"
-          df -h
-
-      - name: Step 2.4 - Set up Buildx
+      - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
         id: setup-buildx
         with:
           platforms: ${{ matrix.platform }}
 
-      - name: Step 2.5 - Login to GHCR
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Step 2.6 - Read version
+      - name: Read version
         id: version
         shell: bash
         run: |
@@ -161,14 +146,14 @@ jobs:
           fi
           echo "version=$ver" >> "$GITHUB_OUTPUT"
       
-      - name: Step 2.7 - Create build directories
+      - name: Create build directories
         run: |
           echo "Create build and cache directories..."
           mkdir -p ${{ env.CACHE_CONTEXT }}/${{ matrix.arch_tag }}
           mkdir -p ${{ env.CACHE_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
           mkdir -p ${{ env.BUILD_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}
 
-      - name: Step 2.8 - Up-/Download cache artifacts
+      - name: Up-/Download cache artifacts
         uses: actions/cache@v4
         id: cache
         with:
@@ -178,7 +163,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ci-cache-${{ matrix.arch_tag }}-
 
-      - name: Step 2.9 - Extract cache artifacts
+      - name: Extract cache artifacts
         shell: bash
         working-directory: ${{ env.CACHE_CONTEXT }}
         run: |
@@ -303,24 +288,24 @@ jobs:
   #   runs-on: ubuntu-24.04
 
   #   steps:
-  #     - name: Step 3.1 - Set up Docker
+  #     - name: Set up Docker
   #       uses: docker/setup-docker-action@v4
 
-  #     - name: Step 3.2 - GHCR Login
+  #     - name: GHCR Login
   #       uses: docker/login-action@v3
   #       with:
   #         registry: ghcr.io
   #         username: ${{ github.actor }}
   #         password: ${{ secrets.GITHUB_TOKEN }}
 
-  #     - name: Step 3.3 - Download image artifacts
+  #     - name: Download image artifacts
   #       uses: actions/download-artifact@v5
   #       with:
   #         pattern: dev-images-*
   #         path: ${{ env.BUILD_ARTIFACTS_DEST }}
   #         merge-multiple: true
 
-      # - name: Step 3.4 - Extract build artefacts
+      # - name: Extract build artefacts
       #   shell: bash
       #   working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
       #   run: |
@@ -334,7 +319,7 @@ jobs:
 
       #     ls -al ./**
 
-      # - name: Step 3.5 - Load images
+      # - name: Load images
       #   shell: bash
       #   working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
       #   run: |
@@ -360,7 +345,7 @@ jobs:
 
       #     docker image ls
 
-      # - name: Step 3.6 - Create and publish manifests
+      # - name: Create and publish manifests
       #   id: create
       #   shell: bash
       #   working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
@@ -453,7 +438,7 @@ jobs:
       #       } >> "$GITHUB_OUTPUT"
       #     fi
 
-      # - name: Step 3.4 - Summary (manifests)
+      # - name: Summary (manifests)
       #   if: always()
       #   shell: bash
       #   run: |

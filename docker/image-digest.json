@@ -1,0 +1,30 @@
+{
+  "tuliprox": {
+    "latest": {
+      "amd64": 0,
+      "arm64": 0
+    },
+    "dev": {
+      "amd64": 0,
+      "arm64": 0
+    },
+    "dev-slim": {
+      "amd64": 0,
+      "arm64": 0
+    }
+  },
+  "docker-build-tools": {
+    "digest": 0,
+    "latest": {
+      "amd64": 0,
+      "arm64": 0
+    }
+  },
+  "cache": {
+    "digest": 0,
+    "latest": {
+      "amd64": 0,
+      "arm64": 0
+    }
+  }
+}

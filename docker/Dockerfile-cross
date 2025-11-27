@@ -15,7 +15,7 @@ FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main AS rust-build
 # Get target architecture
 ARG RUST_TARGET
 
-RUN apt-get update && apt-get install -y --no-install-recommends pkg-config musl-tools libssl-dev
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config musl-tools libssl-dev 
 
 # Update Rust toolchain and add necessary target
 RUN rustup update && rustup target add $RUST_TARGET

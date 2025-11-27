@@ -222,3 +222,11 @@ RUN trunk --version \
  && mold --version
 
 
+# note: package translation 
+# debian -> alpine 
+# libssl-dev    -> libressl-dev (opensll-dev)
+# pkg-config    -> pkgconf
+# musl-tools    -> musl-dev (build-base) 
+# curl          -> curl
+# libclang-dev  -> clang21-dev
+# binaryen      -> binaryen (community package)
