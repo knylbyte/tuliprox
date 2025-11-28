@@ -4,7 +4,7 @@ use crate::api::model::{
     create_channel_unavailable_stream, create_custom_video_stream_response,
     create_provider_connections_exhausted_stream, create_provider_stream,
     get_stream_response_with_headers, ActiveClientStream, AppState,
-    CustomVideoStreamType, PersistPipeStream,
+    CustomVideoStreamType, PersistPipeStream, SessionKey,
     ProviderStreamFactoryOptions, SharedStreamManager,
     StreamError, ThrottledStream, UserApiRequest,
 };
@@ -17,7 +17,7 @@ use crate::utils::request;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::BUILD_TIMESTAMP;
 use arc_swap::ArcSwapOption;
-use axum::http::HeaderMap;
+use axum::http::{header::USER_AGENT, HeaderMap};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
@@ -32,6 +32,7 @@ use shared::utils::{
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -745,13 +746,14 @@ pub async fn force_provider_stream_response(
             .stream_info
             .as_ref()
             .map(|(h, sc, url, cvt)| (h.clone(), *sc, url.clone(), *cvt));
+        let session_key = build_session_key(&user.username, req_headers, &fingerprint.addr, &user_session.stream_identifier);
         app_state
             .active_users
             .update_session_addr(&user.username, &user_session.token, &fingerprint.addr)
             .await;
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, Some(&user_session.token), req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, session_key.clone(), Some(&user_session.token))
                 .await;
 
         let (status_code, header_map) =
@@ -763,8 +765,9 @@ pub async fn force_provider_stream_response(
 
         let body_stream = prepare_body_stream(app_state, item_type, stream);
         debug_if_enabled!(
-            "Streaming provider forced stream request from {}",
-            sanitize_sensitive_info(&user_session.stream_url)
+            "Streaming provider forced stream request from {} ({})",
+            sanitize_sensitive_info(&user_session.stream_url),
+            session_key.stream_identifier
         );
         return try_unwrap_body!(response.body(body_stream));
     }
@@ -814,11 +817,13 @@ pub async fn stream_response(
 
     let virtual_id = stream_channel.virtual_id;
     let item_type = stream_channel.item_type;
+    let stream_identifier = stream_channel.url.clone();
+    let session_key = build_session_key(&user.username, req_headers, &fingerprint.addr, &stream_identifier);
 
     let share_stream = is_stream_share_enabled(item_type, target);
     if share_stream {
         if let Some(value) =
-            try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), session_token, req_headers).await
+            try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), session_token, req_headers, &session_key).await
         {
             return value.into_response();
         }
@@ -854,7 +859,7 @@ pub async fn stream_response(
         };
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, Some(session_token), req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, session_key.clone(), Some(session_token))
                 .await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
@@ -928,6 +933,7 @@ pub async fn stream_response(
                     let _ = app_state
                         .active_users
                         .create_user_session(
+                            &session_key,
                             user,
                             session_token,
                             virtual_id,
@@ -971,7 +977,8 @@ async fn try_shared_stream_response_if_any(
     connect_permission: UserConnectionPermission,
     mut stream_channel: StreamChannel,
     session_token: &str,
-    req_headers: &HeaderMap,
+    _req_headers: &HeaderMap,
+    session_key: &SessionKey,
 ) -> Option<impl IntoResponse> {
     if let Some((stream, provider)) =
         SharedStreamManager::subscribe_shared_stream(app_state, stream_url, &fingerprint.addr).await
@@ -993,7 +1000,7 @@ async fn try_shared_stream_response_if_any(
             stream_details.provider_name = provider;
             stream_channel.shared = true;
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, Some(session_token), req_headers)
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, session_key.clone(), Some(session_token))
                     .await
                     .boxed();
             let mut response = axum::response::Response::builder().status(status_code);
@@ -1349,6 +1356,19 @@ pub fn json_or_bin_response<T: Serialize>(accept: Option<&String>, data: &T) -> 
     json_response(data).into_response()
 }
 
-pub fn create_session_fingerprint(fingerprint: &str, username: &str, virtual_id: u32) -> String {
-    format!("{fingerprint}|{username}|{virtual_id}")
+pub fn build_session_key(
+    username: &str,
+    req_headers: &HeaderMap,
+    remote_addr: &SocketAddr,
+    stream_identifier: &str,
+) -> SessionKey {
+    let user_agent = req_headers
+        .get(USER_AGENT)
+        .map(|h| String::from_utf8_lossy(h.as_bytes()).to_string())
+        .unwrap_or_default();
+    SessionKey::new(username, &user_agent, &remote_addr.ip(), stream_identifier)
+}
+
+pub fn create_session_fingerprint(fingerprint: &str, username: &str, virtual_id: u32, stream_identifier: &str) -> String {
+    format!("{fingerprint}|{username}|{virtual_id}|{stream_identifier}")
 }

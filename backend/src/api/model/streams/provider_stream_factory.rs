@@ -42,6 +42,7 @@ pub struct ProviderStreamFactoryOptions {
     headers: HeaderMap,
     range_bytes: Arc<Option<AtomicUsize>>,
     reconnect_flag: Arc<AtomicOnceFlag>,
+    stream_identifier: String,
 }
 
 impl ProviderStreamFactoryOptions {
@@ -86,6 +87,7 @@ impl ProviderStreamFactoryOptions {
             url,
             headers,
             range_bytes,
+            stream_identifier: stream_url.to_string(),
         }
     }
 
@@ -127,6 +129,11 @@ impl ProviderStreamFactoryOptions {
     #[inline]
     pub fn get_url_as_str(&self) -> &str {
         self.url.as_str()
+    }
+
+    #[inline]
+    pub fn get_stream_identifier(&self) -> &str {
+        &self.stream_identifier
     }
 
     #[inline]
@@ -369,7 +376,7 @@ async fn get_provider_stream(
     stream_options: &ProviderStreamFactoryOptions,
 ) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
     let url = stream_options.get_url();
-    debug_if_enabled!("stream provider {}", sanitize_sensitive_info(url.as_str()));
+    debug_if_enabled!("stream provider {} ({})", sanitize_sensitive_info(url.as_str()), stream_options.get_stream_identifier());
     let start = Instant::now();
     let mut connect_err: u32 = 1;
 

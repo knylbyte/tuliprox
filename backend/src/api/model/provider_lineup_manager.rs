@@ -822,6 +822,7 @@ mod tests {
             method: InputFetchMethod::default(),
             staged: None,
             t_batch_url: None,
+            exp_date: None,
         }
     }
 
@@ -835,6 +836,7 @@ mod tests {
             password: Some("alias_pass".to_string()),
             priority,
             max_connections,
+            exp_date: None,
         }
     }
 

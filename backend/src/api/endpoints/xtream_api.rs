@@ -265,7 +265,12 @@ async fn xtream_player_api_stream(
         (pli.xtream_cluster, pli.item_type)
     };
 
-    let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
+    let stream_identifier = if stream_req.action_path.is_empty() {
+        pli.url.clone()
+    } else {
+        stream_req.action_path.to_string()
+    };
+    let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id, &stream_identifier);
     let user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &session_key).await;
@@ -437,7 +442,12 @@ async fn xtream_player_api_stream_with_token(
             )
         );
 
-        let session_key = create_session_fingerprint(&fingerprint.key, "webui", virtual_id);
+        let stream_identifier = if stream_req.action_path.is_empty() {
+            pli.url.clone()
+        } else {
+            stream_req.action_path.to_string()
+        };
+        let session_key = create_session_fingerprint(&fingerprint.key, "webui", virtual_id, &stream_identifier);
 
         let is_hls_request =
             pli.item_type == PlaylistItemType::LiveHls || stream_ext.as_deref() == Some(HLS_EXT);

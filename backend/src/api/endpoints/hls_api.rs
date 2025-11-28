@@ -1,4 +1,4 @@
-use crate::api::api_utils::{create_session_fingerprint, try_unwrap_body};
+use crate::api::api_utils::{build_session_key, create_session_fingerprint, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_stream_alternative_url, is_seek_request,
 };
@@ -52,6 +52,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
     connection_permission: UserConnectionPermission,
 ) -> impl IntoResponse + Send {
     let url = replace_url_extension(hls_url, HLS_EXT);
+    let stream_identifier = hls_url.to_string();
     let server_info = app_state.app_config.get_user_server_info(user);
 
     let (request_url, session_token) = match user_session {
@@ -82,8 +83,10 @@ pub(in crate::api) async fn handle_hls_stream_request(
             {
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
-                    let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
+                    let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id, &stream_identifier);
+                    let session_key = build_session_key(&user.username, req_headers, &fingerprint.addr, &stream_identifier);
                     let session_token = app_state.active_users.create_user_session(
+                        &session_key,
                         user,
                         &user_session_token,
                         virtual_id,
@@ -231,7 +234,14 @@ async fn hls_api_stream(
         )
     );
 
-    let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
+    let Some((requested_session_token, stream_identifier)) = get_hls_session_token_and_url_from_token(
+        &app_state.app_config.encrypt_secret,
+        &params.token,
+    ) else {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    };
+
+    let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id, &stream_identifier);
     let mut user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &user_session_token).await;
@@ -256,11 +266,8 @@ async fn hls_api_stream(
                 .into_response();
         }
 
-        let hls_url = match get_hls_session_token_and_url_from_token(
-            &app_state.app_config.encrypt_secret,
-            &params.token,
-        ) {
-            Some((Some(session_token), hls_url)) if session.token.eq(&session_token) => hls_url,
+        let hls_url = match requested_session_token {
+            Some(ref session_token) if session.token.eq(session_token) => stream_identifier.clone(),
             _ => return axum::http::StatusCode::BAD_REQUEST.into_response(),
         };
 

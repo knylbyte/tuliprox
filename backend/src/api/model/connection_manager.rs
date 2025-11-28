@@ -1,6 +1,5 @@
-use std::borrow::Cow;
 use std::net::SocketAddr;
-use crate::api::model::{ActiveProviderManager, ActiveUserManager, CustomVideoStreamType, EventManager, EventMessage, ProviderHandle, SharedStreamManager};
+use crate::api::model::{ActiveProviderManager, ActiveUserManager, CustomVideoStreamType, EventManager, EventMessage, ProviderHandle, SessionKey, SharedStreamManager};
 use std::sync::Arc;
 use log::{debug, warn};
 use shared::model::{ActiveUserConnectionChange, StreamChannel};
@@ -68,12 +67,12 @@ impl ConnectionManager {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn update_connection(&self, username: &str, max_connections: u32, fingerprint: &Fingerprint,
-                                provider: &str, stream_channel: StreamChannel, user_agent: Cow<'_, str>, session_token: Option<&str>) {
-        if let Some(stream_info) = self.user_manager.update_connection(username, max_connections, fingerprint, provider, stream_channel, user_agent, session_token).await {
+    pub async fn update_connection(&self, session_key: &SessionKey, max_connections: u32, fingerprint: &Fingerprint,
+                                provider: &str, stream_channel: StreamChannel, session_token: Option<&str>) {
+        if let Some(stream_info) = self.user_manager.update_connection(session_key, max_connections, fingerprint, provider, stream_channel, session_token).await {
             self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Updated(stream_info)));
         } else {
-            warn!("Failed to register connection for user {username} at {}; disconnecting client", fingerprint.addr);
+            warn!("Failed to register connection for user {} at {}; disconnecting client", session_key.username, fingerprint.addr);
             let _ = self.kick_connection(&fingerprint.addr);
         }
     }

@@ -123,7 +123,8 @@ async fn m3u_api_stream(
     );
     let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
 
-    let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
+    let stream_identifier = pli.url.clone();
+    let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id, &stream_identifier);
     let user_session = app_state
         .active_users
         .get_and_update_user_session(&user.username, &session_key).await;
