@@ -38,6 +38,7 @@ impl Stream for ClientStream {
                 Poll::Ready(Some(Ok(bytes))) => {
                     if bytes.is_empty() {
                         trace!("client stream empty bytes");
+                        // Empty payload signals upstream closure; notify and let consumer see final chunk
                         self.close_signal.notify();
                     } else if let Some(counter) = self.total_bytes.as_ref() {
                       counter.fetch_add(bytes.len(), Ordering::Relaxed);
