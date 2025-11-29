@@ -1,5 +1,5 @@
 use std::rc::Rc;
-use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState, StatusCheck};
+use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState, StatusCheck, SystemInfo};
 use crate::model::BusyStatus;
 
 #[allow(clippy::large_enum_variant)]
@@ -16,4 +16,5 @@ pub enum EventMessage {
     PlaylistUpdate(PlaylistUpdateState),
     PlaylistUpdateProgress(String, String),
     WebSocketStatus(bool),
+    SystemInfoUpdate(SystemInfo),
 }

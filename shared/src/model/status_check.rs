@@ -9,7 +9,6 @@ pub struct StatusCheck {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub build_time: Option<String>,
     pub server_time: String,
-    pub memory: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache: Option<String>,
     pub active_users: usize,
@@ -26,7 +25,6 @@ impl Default for StatusCheck {
             version: "n/a".to_string(),
             build_time: None,
             server_time: "n/a".to_string(),
-            memory: "n/a".to_string(),
             cache: None,
             active_users: 0,
             active_user_connections: 0,

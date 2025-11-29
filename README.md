@@ -309,11 +309,18 @@ reverse_proxy:
 #### 1.6.5 `disabled_header`
 Controls which headers are removed before tuliprox forwards a request to the upstream provider when acting as a reverse proxy. Use `referer_header` to drop the Referer header, enable `x_header` to strip every header beginning with `X-`, and list any additional headers to remove under `custom_header`.
 
+has the following attributes:
+- referer_header
+- x_header
+- cloudfare_header
+- custom_header is a list of header names
+
 ```yaml
 reverse_proxy:
   disabled_header:
     referer_header: false
     x_header: false
+    cloudfare_header: false
     custom_header:
       - my-custom-header
 ```
@@ -1217,7 +1224,7 @@ messaging:
     - watch
 ```
 
-## 2. `mapping.yml`
+## 3. `mapping.yml`
 Has the root item `mappings` which has the following top level entries:
 - `templates` _optional_
 - `mapping` _mandatory_
@@ -1232,7 +1239,7 @@ The filename or path can be given as `-m` argument. (See Mappings section)
 
 Default mapping file is `maping.yml`
 
-### 2.1 `templates`
+### 3.1 `templates`
 If you have a lot of repeats in you regexps, you can use `templates` to make your regexps cleaner.
 You can reference other templates in templates with `!name!`;
 ```yaml

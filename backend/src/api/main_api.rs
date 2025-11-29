@@ -28,6 +28,7 @@ use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
+use crate::api::sys_usage::exec_system_usage;
 use crate::repository::storage::get_geoip_path;
 use crate::utils::GeoIp;
 
@@ -265,6 +266,8 @@ pub async fn start_server(
     if let Err(err) = load_playlists_into_memory_cache(&app_state).await {
         error!("Failed to load playlists into memory cache: {err}");
     }
+
+    exec_system_usage(&app_state);
 
     exec_scheduler(
         &Arc::clone(&shared_data.http_client.load()),

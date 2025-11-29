@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Poll};
 use futures::{Stream};
-use log::trace;
+use log::{trace};
 use shared::utils::sanitize_sensitive_info;
 use crate::api::model::BoxedProviderStream;
 use crate::api::model::StreamError;
@@ -39,7 +39,8 @@ impl Stream for ClientStream {
                     Poll::Ready(Some(Ok(bytes))) => {
                         if bytes.is_empty() {
                             trace!("client stream empty bytes");
-                            continue;
+                            self.close_signal.notify();
+                            return Poll::Ready(None);
                         }
 
                         if let Some(counter) = self.total_bytes.as_ref() {
@@ -55,10 +56,13 @@ impl Stream for ClientStream {
                     Poll::Pending => return Poll::Pending,
                     Poll::Ready(Some(Err(err))) => {
                         trace!("client stream error: {err}");
+                        self.close_signal.notify();
+                        return Poll::Ready(None);
                     }
                 }
             }
         } else {
+            self.close_signal.notify();
             Poll::Ready(None)
         }
     }

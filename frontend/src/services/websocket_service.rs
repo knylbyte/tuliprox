@@ -291,6 +291,9 @@ fn handle_socket_protocol_msg(event: MessageEvent, event_service: &Rc<EventServi
                     ProtocolMessage::PlaylistUpdateProgressResponse(target, msg) => {
                         event_service.broadcast(EventMessage::PlaylistUpdateProgress(target, msg));
                     }
+                    ProtocolMessage::SystemInfoResponse(system_info) => {
+                        event_service.broadcast(EventMessage::SystemInfoUpdate(system_info));
+                    }
                     ProtocolMessage::Version(_) => {
                         attempt_counter.store(0, Ordering::SeqCst);
                         event_service.broadcast(EventMessage::WebSocketStatus(true));
