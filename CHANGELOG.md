@@ -28,6 +28,8 @@
 - Stream Table Copy-To-Clipboard functions added
 - Refactored provider connection handling to avoid possible race conditions
 - Added `exp_date` field to inputs, aliases, and CSV batch files; accepts date in "YYYY-MM-DD HH:MM:SS" format or Unix timestamp (seconds since epoch).
+- Added `cloudflare_header` to reverse proxy `disable_header` settings.
+- Added cpu usage to web ui view
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.

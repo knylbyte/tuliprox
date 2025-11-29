@@ -19,7 +19,7 @@ use shared::utils::sanitize_sensitive_info;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::{sleep, Duration, Instant};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -135,8 +135,8 @@ pub struct SharedStreamState {
     subscribers: RwLock<HashMap<SubscriberId, CancellationToken>>,
     broadcaster: tokio::sync::broadcast::Sender<Bytes>,
     stop_token: CancellationToken,
-    burst_buffer: Arc<Mutex<BurstBuffer>>,
-    task_handles: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    burst_buffer: Arc<RwLock<BurstBuffer>>,
+    task_handles: RwLock<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 impl SharedStreamState {
@@ -152,8 +152,8 @@ impl SharedStreamState {
             subscribers: RwLock::new(HashMap::new()),
             broadcaster,
             stop_token: CancellationToken::new(),
-            burst_buffer: Arc::new(Mutex::new(BurstBuffer::new(burst_buffer_size_in_bytes))),
-            task_handles: Mutex::new(Vec::new()),
+            burst_buffer: Arc::new(RwLock::new(BurstBuffer::new(burst_buffer_size_in_bytes))),
+            task_handles: RwLock::new(Vec::new()),
         }
     }
 
@@ -181,7 +181,7 @@ impl SharedStreamState {
         let handle = tokio::spawn(async move {
             // initial burst buffer
             let snapshot = {
-                let buffer = burst_buffer.lock().await;
+                let buffer = burst_buffer.read().await;
                 buffer.snapshot()
             };
             send_burst_buffer(&snapshot, &client_tx_clone, &cancel_token).await;
@@ -229,7 +229,7 @@ impl SharedStreamState {
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                             let buffered_bytes = {
-                                let buffer = burst_buffer_for_log.lock().await;
+                                let buffer = burst_buffer_for_log.read().await;
                                 buffer.current_bytes
                             };
                             warn!("Shared stream client lagged behind {address}. Skipped {skipped} messages (buffered {buffered_bytes} bytes, yield counter {yield_counter})");
@@ -243,7 +243,7 @@ impl SharedStreamState {
             manager.release_connection(&address, false).await;
         });
 
-        self.task_handles.lock().await.push(handle);
+        self.task_handles.write().await.push(handle);
 
         let provider = self.provider_guard.as_ref().and_then(|h| h.allocation.get_provider_name());
         (convert_stream(ReceiverStream::new(client_rx).boxed()), provider)
@@ -281,7 +281,7 @@ impl SharedStreamState {
                         Some(Ok(data)) => {
                           let arc_data = Arc::new(data);
                           {
-                            let mut buffer = burst_buffer.lock().await;
+                            let mut buffer = burst_buffer.write().await;
                             buffer.push(arc_data.clone());
                           }
 
@@ -370,7 +370,7 @@ impl SharedStreamManager {
             debug_if_enabled!("Unregistering shared stream {} (remaining_subscribers={remaining}, send_stop_signal={send_stop_signal})",
             sanitize_sensitive_info(stream_url));
 
-            for handle in shared_state.task_handles.lock().await.drain(..) {
+            for handle in shared_state.task_handles.write().await.drain(..) {
                 handle.abort();
             }
 

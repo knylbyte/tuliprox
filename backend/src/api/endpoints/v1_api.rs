@@ -51,7 +51,6 @@ pub async fn create_status_check(app_state: &Arc<AppState>) -> StatusCheck {
         version: VERSION.to_string(),
         build_time: crate::api::api_utils::get_build_time(),
         server_time: crate::api::api_utils::get_server_time(),
-        memory: crate::api::api_utils::get_memory_usage(),
         active_users,
         active_user_connections,
         active_provider_connections,

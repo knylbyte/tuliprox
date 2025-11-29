@@ -26,7 +26,7 @@ use log::{debug, error, log_enabled, trace, warn};
 use reqwest::header::RETRY_AFTER;
 use serde::Serialize;
 use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_byte_size, trim_slash};
+use shared::utils::{bin_serialize, default_grace_period_millis, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
@@ -137,10 +137,6 @@ pub fn get_build_time() -> Option<String> {
         .parse::<DateTime<Utc>>()
         .ok()
         .map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string())
-}
-
-pub fn get_memory_usage() -> String {
-    crate::utils::get_memory_usage().map_or(String::from("?"), human_readable_byte_size)
 }
 
 #[allow(clippy::missing_panics_doc)]

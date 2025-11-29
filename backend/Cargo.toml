@@ -1,6 +1,6 @@
 [package]
 name = "tuliprox"
-version = "3.2.11"
+version = "3.2.12"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -71,6 +71,7 @@ libc = "0.2"
 winapi = { version = "0.3", features = ["psapi", "minwindef", "processthreadsapi"] }
 chrono-tz = "0.10.4"
 zeroize = "1.8.2"
+sysinfo = { version = "0.37.2", default-features = false, features = ["system"] }
 # [target.'cfg(not(target_env = "msvc"))'.dependencies]
 # tikv-jemallocator =  { version = "*", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 

@@ -1,5 +1,5 @@
 use log::{trace};
-use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState};
+use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState, SystemInfo};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq)]
@@ -10,12 +10,11 @@ pub enum EventMessage {
     ConfigChange(ConfigType),
     PlaylistUpdate(PlaylistUpdateState),
     PlaylistUpdateProgress(String, String),
+    SystemInfoUpdate(SystemInfo)
 }
 
 pub struct EventManager {
     channel_tx: tokio::sync::broadcast::Sender<EventMessage>,
-    // #[allow(dead_code)]
-    //channel_rx: tokio::sync::broadcast::Receiver<EventMessage>,
 }
 
 impl EventManager {
@@ -44,6 +43,12 @@ impl EventManager {
     pub fn send_provider_event(&self, provider: &str, connection_count: usize) {
         if !self.send_event(EventMessage::ActiveProvider(String::from(provider), connection_count)) {
             trace!("Failed to send connection change: {provider}: {connection_count}");
+        }
+    }
+
+    pub fn send_system_info(&self, system_info: SystemInfo) {
+        if !self.send_event(EventMessage::SystemInfoUpdate(system_info)) {
+            trace!("Failed to send system info");
         }
     }
 }

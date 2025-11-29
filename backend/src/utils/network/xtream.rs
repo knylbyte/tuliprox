@@ -170,7 +170,7 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Input
         if let Some(exp_value) = user_info.get("exp_date") {
             if let Some(expiration_timestamp) = get_i64_from_serde_value(exp_value) {
                 login_info.exp_date = Some(expiration_timestamp);
-                notify_account_expire(login_info.exp_date, cfg, client, username).await;
+                notify_account_expire(login_info.exp_date, cfg, client, username, &input.name).await;
             }
         }
     }
@@ -182,7 +182,7 @@ async fn xtream_login(cfg: &Config, client: &Arc<reqwest::Client>, input: &Input
     }
 }
 
-pub async fn notify_account_expire(exp_date: Option<i64>, cfg: &Config, client: &Arc<reqwest::Client>, username: &str) {
+pub async fn notify_account_expire(exp_date: Option<i64>, cfg: &Config, client: &Arc<reqwest::Client>, username: &str, input_name: &str) {
     if let Some(expiration_timestamp) = exp_date {
         let now_secs = Utc::now().timestamp(); // UTC-Time
         if expiration_timestamp > now_secs {
@@ -197,7 +197,7 @@ pub async fn notify_account_expire(exp_date: Option<i64>, cfg: &Config, client: 
             }
         } else {
             warn!("User account for user {username} is expired");
-            send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} is expired")).await;
+            send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} for provider {input_name} is expired")).await;
         }
     }
 }
@@ -269,7 +269,7 @@ async fn check_alias_user_state(cfg: &Arc<Config>, client: &Arc<reqwest::Client>
     if let Some(aliases) = input.aliases.as_ref() {
         for alias in aliases {
             if is_input_expired(alias.exp_date) {
-                notify_account_expire(alias.exp_date, cfg, client, alias.username.as_ref().map_or("", |s| s.as_str())).await;
+                notify_account_expire(alias.exp_date, cfg, client, alias.username.as_ref().map_or("", |s| s.as_str()), &alias.name).await;
             }
         }
     }

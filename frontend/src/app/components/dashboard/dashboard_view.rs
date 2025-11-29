@@ -26,12 +26,6 @@ pub fn DashboardView() -> Html {
               <Card><GithubActionCard /></Card>
               <Card><IpinfoActionCard /></Card>
             </div>
-            // <div class="tp__dashboard__body-stats">
-            //     <Card><StatusCard title={translate.t("LABEL.MEMORY")}
-            //             data={status_ctx.status.as_ref().map_or_else(|| "n/a".to_string(), |status| status.memory.clone())} /></Card>
-            //     <Card><StatusCard title={translate.t("LABEL.CACHE")}
-            //             data={status_ctx.status.as_ref().map_or_else(|| "n/a".to_string(), |status| status.cache.as_ref().map_or_else(|| "n/a".to_string(), |c| c.clone()))} /></Card>
-            // </div>
         </div>
       </div>
     }

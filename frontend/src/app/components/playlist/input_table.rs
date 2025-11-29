@@ -13,9 +13,9 @@ use crate::html_if;
 use crate::model::DialogResult;
 use crate::services::{DialogService};
 use shared::model::InputType;
+use shared::utils::unix_ts_to_str;
 
-
-const HEADERS: [&str; 15] = [
+const HEADERS: [&str; 16] = [
 "LABEL.EMPTY",
 "LABEL.ENABLED",
 "LABEL.NAME",
@@ -31,6 +31,7 @@ const HEADERS: [&str; 15] = [
 "LABEL.EPG",
 "LABEL.HEADERS",
 "LABEL.STAGED",
+"LABEL.EXP_DATE",
 ];
 
 #[derive(Clone, PartialEq)]
@@ -139,6 +140,8 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                                  { <RevealContent preview={ html!{ dto.staged.as_ref().map_or_else(String::new, |s| s.url.clone())} }>
                                       <StagedInputView input={ dto.staged.clone() } />
                                    </RevealContent> }),
+                            15 => dto.exp_date.as_ref().and_then(|ts| unix_ts_to_str(*ts))
+                                    .map(|s| html! { { s } }).unwrap_or_else(|| html! { <AppIcon name="Unlimited" /> }),
                             _ => html! {""},
                         }
                     },
@@ -159,17 +162,13 @@ pub fn InputTable(props: &InputTableProps) -> Html {
                                  label={translator.t("LABEL.ALIAS")}  />
                             },
                             2 => html! { alias.name.as_str() },
-                            3 => html! { },
                             4 => html! { alias.url.as_str() },
                             5 => alias.username.as_ref().map_or_else(|| html!{}, |u| html!{u}),
                             6 => alias.password.as_ref().map_or_else(|| html!{}, |pwd| html! { <HideContent content={pwd.to_string()}></HideContent>}),
-                            7 => html! { },
-                            8 => html! { },
                             9 => html! { alias.priority.to_string() },
                             10 => html! { alias.max_connections.to_string() },
-                            11 => html! { },
-                            12 => html! { },
-                            13 => html! { },
+                            15 => alias.exp_date.as_ref().and_then(|ts| unix_ts_to_str(*ts))
+                                .map(|s| html! { { s } }).unwrap_or_else(|| html! { <AppIcon name="Unlimited" /> }),
                             _ => html! { },
                         }
                     }

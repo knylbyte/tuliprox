@@ -40,6 +40,7 @@ const LABEL_BACKOFF_MULTIPLIER: &str = "LABEL.BACKOFF_MULTIPLIER";
 const LABEL_DISABLED_HEADER: &str = "LABEL.DISABLED_HEADER";
 const LABEL_REFERER_HEADER: &str = "LABEL.REFERER_HEADER";
 const LABEL_X_HEADER: &str = "LABEL.X_HEADER";
+const LABEL_CF_HEADER: &str = "LABEL.CF_HEADER";
 const LABEL_CUSTOM_HEADERS: &str = "LABEL.CUSTOM_HEADERS";
 const LABEL_ADD_HEADER: &str = "LABEL.ADD_HEADER";
 const LABEL_GEOIP: &str = "LABEL.GEOIP";
@@ -113,6 +114,7 @@ generate_form_reducer!(
     fields {
         RefererHeader => referer_header: bool,
         XHeader => x_header: bool,
+        CloudflareHeader => cloudflare_header: bool,
         CustomHeader => custom_header: Vec<String>,
     }
 );
@@ -327,6 +329,7 @@ pub fn ReverseProxyConfigView() -> Html {
                 <h1>{translate.t(LABEL_DISABLED_HEADER)}</h1>
                 { config_field_bool!(disabled_header_state.form, translate.t(LABEL_REFERER_HEADER), referer_header) }
                 { config_field_bool!(disabled_header_state.form, translate.t(LABEL_X_HEADER), x_header) }
+                { config_field_bool!(disabled_header_state.form, translate.t(LABEL_CF_HEADER), cloudflare_header) }
                 { config_field_custom!(translate.t(LABEL_CUSTOM_HEADERS), custom_headers) }
             </Card>
         }
@@ -338,6 +341,7 @@ pub fn ReverseProxyConfigView() -> Html {
                 <h1>{translate.t(LABEL_DISABLED_HEADER)}</h1>
                 { edit_field_bool!(disabled_header_state, translate.t(LABEL_REFERER_HEADER), referer_header, ReverseProxyDisabledHeaderConfigFormAction::RefererHeader) }
                 { edit_field_bool!(disabled_header_state, translate.t(LABEL_X_HEADER), x_header, ReverseProxyDisabledHeaderConfigFormAction::XHeader) }
+                { edit_field_bool!(disabled_header_state, translate.t(LABEL_CF_HEADER), cloudflare_header, ReverseProxyDisabledHeaderConfigFormAction::CloudflareHeader) }
                 { edit_field_list!(disabled_header_state, translate.t(LABEL_CUSTOM_HEADERS), custom_header, ReverseProxyDisabledHeaderConfigFormAction::CustomHeader, translate.t(LABEL_ADD_HEADER)) }
             </Card>
         }

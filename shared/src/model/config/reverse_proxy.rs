@@ -1,6 +1,7 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{CacheConfigDto, GeoIpConfigDto, RateLimitConfigDto, StreamConfigDto};
-use crate::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms, default_resource_retry_backoff_multiplier, hex_to_u8_16};
+use crate::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms,
+                   default_resource_retry_backoff_multiplier, hex_to_u8_16};
 use log::warn;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -10,6 +11,8 @@ pub struct ReverseProxyDisabledHeaderConfigDto {
     pub referer_header: bool,
     #[serde(default)]
     pub x_header: bool,
+    #[serde(default)]
+    pub cloudflare_header: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_header: Vec<String>,
 }
@@ -18,6 +21,7 @@ impl ReverseProxyDisabledHeaderConfigDto {
     pub fn is_empty(&self) -> bool {
         !self.referer_header
             && !self.x_header
+            && !self.cloudflare_header
             && self.custom_header.iter().all(|h| h.trim().is_empty())
     }
 
