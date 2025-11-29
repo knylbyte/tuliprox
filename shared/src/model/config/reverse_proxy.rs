@@ -12,7 +12,7 @@ pub struct ReverseProxyDisabledHeaderConfigDto {
     #[serde(default)]
     pub x_header: bool,
     #[serde(default)]
-    pub cloudfare_header: bool,
+    pub cloudflare_header: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_header: Vec<String>,
 }
@@ -21,7 +21,7 @@ impl ReverseProxyDisabledHeaderConfigDto {
     pub fn is_empty(&self) -> bool {
         !self.referer_header
             && !self.x_header
-            && !self.cloudfare_header
+            && !self.cloudflare_header
             && self.custom_header.iter().all(|h| h.trim().is_empty())
     }
 

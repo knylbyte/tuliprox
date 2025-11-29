@@ -6,7 +6,7 @@ use shared::model::SystemInfo;
 use crate::api::model::{AppState};
 
 
-pub fn exec_system_usage(app_state: &Arc<AppState>) {
+pub fn exec_system_usage(app_state: &Arc<AppState>) -> tokio::task::JoinHandle<()> {
     let state = Arc::clone(app_state);
 
     tokio::spawn(async move {
@@ -36,5 +36,5 @@ pub fn exec_system_usage(app_state: &Arc<AppState>) {
             }
             tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
         }
-    });
+    })
 }

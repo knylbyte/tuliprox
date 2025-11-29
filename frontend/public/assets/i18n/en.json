@@ -47,7 +47,7 @@
     "BACKOFF_MULTIPLIER": "Backoff multiplier",
     "REFERER_HEADER": "Remove referer header",
     "X_HEADER": "Remove X-* headers",
-    "CF_HEADER": "Remove Cloudfare headers",
+    "CF_HEADER": "Remove Cloudflare headers",
     "CUSTOM_HEADERS": "Custom headers",
     "ADD_HEADER": "Add header",
     "RECONNECT": "Reconnect",

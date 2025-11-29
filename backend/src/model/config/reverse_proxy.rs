@@ -8,7 +8,7 @@ use std::cmp::max;
 pub struct ReverseProxyDisabledHeaderConfig {
     pub referer_header: bool,
     pub x_header: bool,
-    pub cloudfare_header: bool,
+    pub cloudflare_header: bool,
     pub custom_header: Vec<String>,
 }
 
@@ -21,7 +21,7 @@ impl ReverseProxyDisabledHeaderConfig {
         if self.x_header && header_lc.starts_with("x-") {
             return true;
         }
-        if self.cloudfare_header && header_lc.starts_with("cf-") {
+        if self.cloudflare_header && header_lc.starts_with("cf-") {
             return true;
         }
         self.custom_header
@@ -122,7 +122,7 @@ impl From<&ReverseProxyConfigDto> for ReverseProxyConfig {
             disabled_header: dto.disabled_header.as_ref().map(|d| ReverseProxyDisabledHeaderConfig {
                 referer_header: d.referer_header,
                 x_header: d.x_header,
-                cloudfare_header: d.cloudfare_header,
+                cloudflare_header: d.cloudflare_header,
                 custom_header: d.custom_header.clone(),
             }),
             stream: dto.stream.as_ref().map(Into::into),
@@ -142,7 +142,7 @@ impl From<&ReverseProxyConfig> for ReverseProxyConfigDto {
             disabled_header: instance.disabled_header.as_ref().map(|d| ReverseProxyDisabledHeaderConfigDto {
                 referer_header: d.referer_header,
                 x_header: d.x_header,
-                cloudfare_header: d.cloudfare_header,
+                cloudflare_header: d.cloudflare_header,
                 custom_header: d.custom_header.clone(),
             }),
             stream: instance.stream.as_ref().map(Into::into),
