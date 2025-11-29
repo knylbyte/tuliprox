@@ -39,11 +39,8 @@ impl Stream for ClientStream {
                     if bytes.is_empty() {
                         trace!("client stream empty bytes");
                         self.close_signal.notify();
-                        return Poll::Ready(None);
-                    }
-
-                    if let Some(counter) = self.total_bytes.as_ref() {
-                        counter.fetch_add(bytes.len(), Ordering::SeqCst);
+                    } else if let Some(counter) = self.total_bytes.as_ref() {
+                      counter.fetch_add(bytes.len(), Ordering::Relaxed);
                     }
 
                     Poll::Ready(Some(Ok(bytes)))
@@ -56,7 +53,7 @@ impl Stream for ClientStream {
                 Poll::Ready(Some(Err(err))) => {
                     trace!("client stream error: {err}");
                     self.close_signal.notify();
-                    Poll::Ready(None)
+                    Poll::Ready(Some(Err(err)))
                 }
             }
         } else {
