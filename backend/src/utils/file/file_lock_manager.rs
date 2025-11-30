@@ -35,9 +35,13 @@ impl FileLockManager {
     /// This helps prevent unbounded growth of the locks map for dynamic string keys.
     pub async fn prune_unused_locks(&self) {
         let mut locks = self.locks.lock().await;
-
+        let initial_count = locks.len();
         // Retain only entries that can still be upgraded (i.e., there is at least one active guard)
         locks.retain(|_key, weak_lock| weak_lock.upgrade().is_some());
+        let removed = initial_count - locks.len();
+        if removed > 0 {
+            log::debug!("Pruned {removed} unused file locks ({} remaining)", locks.len());
+        }
     }
 
     // Acquires a read lock for the specified file and returns a FileReadGuard.

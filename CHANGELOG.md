@@ -1,35 +1,37 @@
 # Changelog
 # 3.3.0 (2025-11-xx)
-- !BREAKING CHANGE!  `config.yml` `threads` attribute is now renamed to `process_parallel` and is a boolean value true or false.
-- !BREAKING CHANGE!  `config.yml` added reverse proxy config `rewrite_secret` field to keep resource URLs valid after restart.
-- Avoid blocking the runtime when warming cache
-- Normalize FileLockManager paths so aliases share the same lock
-- Use async file operations for playlist persistence to avoid blocking async paths
-- Async persist cache write pipe so response caching no longer blocks the async runtime
-- M3U playlist exports now stream async to keep the runtime responsive
-- Shared stream burst buffer zero copy data buffer to reduce memory usage.
+!BREAKING CHANGE! config.yml threads attribute is now renamed to process_parallel and is a boolean (true or false).
+- !BREAKING CHANGE! config.yml adds a reverse proxy config field rewrite_secret to keep resource URLs valid after restart.
+- Avoid blocking the runtime when warming the cache.
+- Normalize FileLockManager paths so aliases share the same lock.
+- Use async file operations for playlist persistence to avoid blocking the async runtime.
+- Async cache persistence write pipeline so response caching no longer blocks the runtime.
+- M3U playlist exports now stream asynchronously to keep the runtime responsive.
+- Shared stream burst buffer uses zero-copy data buffers to reduce memory usage.
 - Added detailed shared-stream/buffer/provider logging to trace lag, cache persistence, and session/provider lifecycle events.
-- Connection registration failures now trigger an explicit disconnect so zombie sockets don’t linger.
+- Connection registration failures now trigger an explicit disconnect to prevent zombie sockets.
 - Video download queue now uses async file I/O to keep the runtime responsive during large transfers.
-- API user DB persistence (merge/backup/store) now executes through async Tokio I/O so user-management APIs stay responsive without extra blocking hops.
-- JSON playlist/category writers (xtream collections, user bouquets) now stream through Tokio I/O so persisting those files no longer blocks the runtime.
-- Playlist EPG exports now write via async file handles to avoid blocking the runtime during XML serialization.
-- Config and API proxy save endpoints now serialize via Tokio I/O, so editing configs through the API no longer blocks the runtime threads.
-- Playlist updates now use Tokio tasks instead of spinning up per-source threads/runtimes, reducing CPU and memory overhead during large syncs.
+- API user DB persistence (merge/backup/store) now executes through async Tokio I/O so user-management APIs remain responsive without blocking.
+- JSON playlist/category writers (Xtream collections, user bouquets) now stream through Tokio I/O, so persisting these files no longer blocks the runtime.
+- Playlist EPG exports now write via async file handles to avoid blocking during XML serialization.
+- Config and API proxy save endpoints now serialize via Tokio I/O, so editing configs through the API no longer blocks runtime threads.
+- Playlist updates now use Tokio tasks instead of spawning per-source threads/runtimes, reducing CPU and memory overhead during large syncs.
 - XMLTV timeshift responses stream asynchronously end-to-end to keep the Axum runtime responsive.
-- `main` now uses `#[tokio::main]`, removing the manual runtime boilerplate and keeping every branch async end-to-end.
-- Healthcheck CLI path now uses the async reqwest client so startup checks no longer block a dedicated thread.
+- main now uses #[tokio::main], removing manual runtime boilerplate and keeping every branch async end-to-end.
+- Healthcheck CLI path now uses the async Reqwest client so startup checks no longer block a dedicated thread.
 - Shared stream shutdown now drops registry locks before releasing provider handles to prevent cross-lock stalls.
-- Added `order: none` support for group/channel sorting so mappings can opt out of any reordering and keep the source order.
-- Session tracking now matches repeated HLS segment connections by session token so a single user keeps one active connection count even when new TCP sockets are opened.
-- EPG icon urls are now rewritten on reverse proxy mode.
-- Short EPG is now served from local disk, if available
-- WebUI Api-User Category selection implemented
-- Stream Table Copy-To-Clipboard functions added
-- Refactored provider connection handling to avoid possible race conditions
-- Added `exp_date` field to inputs, aliases, and CSV batch files; accepts date in "YYYY-MM-DD HH:MM:SS" format or Unix timestamp (seconds since epoch).
-- Added `cloudflare_header` to reverse proxy `disable_header` settings.
-- Added cpu usage to web ui view
+- Added order: none support for group/channel sorting, allowing mappings to retain source order.
+- Session tracking now matches repeated HLS segment connections by session token so a single user maintains one active connection count, even when new TCP sockets are opened.
+- EPG icon URLs are now rewritten in reverse proxy mode.
+- Short EPG is now served from local disk if available.
+- WebUI API-User category selection implemented.
+- Stream table "Copy-To-Clipboard" functions added.
+- Refactored provider connection handling to avoid potential race conditions.
+- Added exp_date field to inputs, aliases, and CSV batch files; accepts dates in "YYYY-MM-DD HH:MM:SS" format or Unix timestamps (seconds since epoch).
+- Added cloudflare_header to reverse proxy disable_header settings.
+- Added CPU usage to the WebUI view.
+- Fixed race conditions during simultaneous access to shared streams.
+- Fixed race conditions during simultaneous access by the same user.
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
