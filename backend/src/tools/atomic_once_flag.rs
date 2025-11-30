@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// ```rust
 /// let flag = AtomicOnceFlag::new();
 /// assert!(flag.is_active());
-/// flag.disable();
+/// flag.notify();
 /// assert!(!flag.is_active());
 #[derive(Debug)]
 pub struct AtomicOnceFlag {

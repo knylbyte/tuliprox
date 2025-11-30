@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::{fmt, io};
 use tokio::sync::{Mutex, RwLock};
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard};
@@ -16,7 +16,7 @@ enum LockKey {
 
 #[derive(Clone)]
 pub struct FileLockManager {
-    locks: Arc<Mutex<HashMap<LockKey, Arc<RwLock<()>>>>>,
+    locks: Arc<Mutex<HashMap<LockKey, Weak<RwLock<()>>>>>,
 }
 
 impl FileLockManager {
@@ -71,13 +71,16 @@ impl FileLockManager {
     async fn get_or_create_lock(&self, lock_key: LockKey) -> Arc<RwLock<()>> {
         let mut locks = self.locks.lock().await;
 
-        if let Some(lock) = locks.get(&lock_key) {
-            return lock.clone();
+
+        if let Some(weak_lock) = locks.get(&lock_key) {
+            if let Some(strong_lock) = weak_lock.upgrade() {
+                return strong_lock;
+            }
+            locks.remove(&lock_key);
         }
 
         let file_lock = Arc::new(RwLock::new(()));
-        locks.insert(lock_key, file_lock.clone());
-        drop(locks);
+        locks.insert(lock_key, Arc::downgrade(&file_lock));
         file_lock
     }
 }
