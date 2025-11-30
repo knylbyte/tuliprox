@@ -150,6 +150,8 @@ pub trait PlaylistEntry: Send + Sync {
 pub struct PlaylistItemHeader {
     #[serde(skip)]
     pub uuid: UUIDType, // calculated
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_of: Option<UUIDType>,
     pub id: String, // provider id
     pub virtual_id: u32, // virtual id
     pub name: String,
