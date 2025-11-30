@@ -241,7 +241,7 @@ fn map_playlist_counter(target: &ConfigTarget, playlist: &mut [PlaylistGroup]) {
                         for channel in &mut plg.channels {
                             let provider = ValueProvider { pli: channel };
                             if counter.filter.filter(&provider) {
-                                let cntval = counter.value.fetch_add(1, core::sync::atomic::Ordering::Acquire);
+                                let cntval = counter.value.fetch_add(1, core::sync::atomic::Ordering::AcqRel);
                                 let padded_cntval = if counter.padding > 0 {
                                     format!("{:0width$}", cntval, width = counter.padding as usize)
                                 } else {

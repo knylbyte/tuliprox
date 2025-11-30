@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A flag that is initially active (`true`) and can only be disabled once.
-/// Once the flag is disabled by calling `disable()`, it remains inactive (`false`) forever.
+/// Once the flag is disabled by calling [`notify()`], it remains inactive (`false`) forever.
 ///
 /// ## Use Case
 /// This type is useful when you need a one-way toggle to mark a resource or state as "finalized",

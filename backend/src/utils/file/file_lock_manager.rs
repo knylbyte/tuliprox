@@ -133,16 +133,3 @@ fn normalize_path(path: &Path) -> PathBuf {
 
     base.clean()
 }
-
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    #[test]
-    fn test_normalize_path() {
-        let path = PathBuf::from("https://10.1.41.41");
-        let normalized = normalize_path(&path);
-        assert_eq!(normalized.display().to_string(), "dsd sdf sf d");
-
-    }
-}

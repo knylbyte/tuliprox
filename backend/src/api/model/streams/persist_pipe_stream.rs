@@ -50,7 +50,7 @@ where
             let chunk_len = chunk.len();
             if self.current_offset >= chunk_len {
                 if let Some(finished) = self.pending_writes.pop_front() {
-                    self.size.fetch_add(finished.len(), Ordering::Acquire);
+                    self.size.fetch_add(finished.len(), Ordering::AcqRel);
                 }
                 self.current_offset = 0;
                 continue;

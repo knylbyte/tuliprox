@@ -119,7 +119,7 @@ mod tests {
         let expression = "0/1 * * * * * *"; // every second
 
         let runs = AtomicU8::new(0);
-        let run_me = || runs.fetch_add(1, Ordering::Acquire);
+        let run_me = || runs.fetch_add(1, Ordering::AcqRel);
 
         let start = std::time::Instant::now();
         if let Ok(schedule) = Schedule::from_str(expression) {

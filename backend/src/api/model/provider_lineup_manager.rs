@@ -397,7 +397,7 @@ impl MultiProviderLineup {
     /// ```
     async fn acquire(&self, with_grace: bool, grace_period_timeout_secs: u64) -> ProviderAllocation {
         let provider_count = self.providers.len();
-        let start = self.index.fetch_add(1, Ordering::Acquire) % provider_count;
+        let start = self.index.fetch_add(1, Ordering::AcqRel) % provider_count;
         let mut idx = start;
 
         loop {
@@ -435,7 +435,7 @@ impl MultiProviderLineup {
     async fn get_next(&self, grace_period_timeout_secs: u64) -> Option<Arc<ProviderConfig>> {
         let provider_count = self.providers.len();
 
-        let start = self.index.fetch_add(1, Ordering::Acquire) % provider_count;
+        let start = self.index.fetch_add(1, Ordering::AcqRel) % provider_count;
         let mut idx = start;
 
         loop {
