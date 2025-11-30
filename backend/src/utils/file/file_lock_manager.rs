@@ -43,6 +43,13 @@ impl FileLockManager {
         }
     }
 
+    pub async fn write_lock_str(&self, text: &str) -> FileWriteGuard {
+        let path = PathBuf::from(text);
+        let file_lock = self.get_or_create_lock(&path).await;
+        let guard = Arc::clone(&file_lock).write_owned().await;
+        FileWriteGuard::new(guard)
+    }
+
 
     // Helper function: retrieves or creates a lock for a file.
     async fn get_or_create_lock(&self, path: &Path) -> Arc<RwLock<()>> {

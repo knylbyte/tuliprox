@@ -319,7 +319,7 @@ impl MultiProviderLineup {
                     let p = &pg[idx];
                     let result = p.try_allocate(grace, grace_period_timeout_secs).await;
                     if !matches!(result, ProviderAllocation::Exhausted) {
-                        index.store((idx + 1) % provider_count, Ordering::Relaxed);
+                        index.store((idx + 1) % provider_count, Ordering::SeqCst);
                         return result;
                     }
 
@@ -331,7 +331,7 @@ impl MultiProviderLineup {
                     }
                 }
 
-                index.store(idx, Ordering::Relaxed);
+                index.store(idx, Ordering::SeqCst);
             }
         }
         ProviderAllocation::Exhausted
@@ -352,7 +352,7 @@ impl MultiProviderLineup {
                     let p = &pg[idx];
                     let result = p.get_next(grace, grace_period_timeout_secs).await;
                     if result.is_some() {
-                        index.store((idx + 1) % provider_count, Ordering::Relaxed);
+                        index.store((idx + 1) % provider_count, Ordering::SeqCst);
                         return result;
                     }
 
@@ -364,7 +364,7 @@ impl MultiProviderLineup {
                     }
                 }
 
-                index.store(idx, Ordering::Relaxed);
+                index.store(idx, Ordering::SeqCst);
             }
         }
         None
@@ -682,8 +682,8 @@ impl ProviderLineupManager {
         let providers = self.providers.load();
         let allocation = match Self::get_provider_config_by_name(input_name, &providers) {
             None => ProviderAllocation::Exhausted, // No Name matched, we don't have this provider
-            Some((lineup, _config)) => lineup.acquire(self.grace_period_millis.load(Ordering::Relaxed) > 0,
-                                                      self.grace_period_timeout_secs.load(Ordering::Relaxed)).await
+            Some((lineup, _config)) => lineup.acquire(self.grace_period_millis.load(Ordering::SeqCst) > 0,
+                                                      self.grace_period_timeout_secs.load(Ordering::SeqCst)).await
         };
         Self::log_allocation(&allocation);
         allocation

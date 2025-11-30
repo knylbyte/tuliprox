@@ -235,6 +235,9 @@ async fn xtream_player_api_stream(
         false,
         format!("Could not find any user for xc stream {}", stream_req.username)
     );
+
+    let _guard =  app_state.app_config.file_locks.write_lock_str(&user.username).await;
+
     if user.permission_denied(app_state) {
         return create_custom_video_stream_response(app_state, &fingerprint.addr, CustomVideoStreamType::UserAccountExpired).await.into_response();
     }
@@ -242,7 +245,7 @@ async fn xtream_player_api_stream(
     let target_name = &target.name;
     if !target.has_output(TargetType::Xtream) {
         debug!("Target has no xtream codes playlist {target_name}");
-        return axum::http::StatusCode::BAD_REQUEST.into_response();
+        return create_custom_video_stream_response(app_state, &fingerprint.addr, CustomVideoStreamType::ChannelUnavailable).await.into_response();
     }
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
