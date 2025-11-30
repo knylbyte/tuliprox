@@ -82,9 +82,6 @@ pub(in crate::processing) fn create_resolve_info_wal_files(cfg: &Config, input: 
 pub(in crate::processing) fn should_update_info(pli: &mut PlaylistItem, processed_provider_ids: &HashMap<u32, u64>, field: &str) -> (bool, u32, u64) {
     let Some(provider_id) = pli.header.get_provider_id() else { return (false, 0, 0) };
     let last_modified = pli.header.get_additional_property_as_u64(field);
-    if pli.header.alias_of.is_some() {
-        return (false, provider_id, last_modified.unwrap_or(0));
-    }
     let old_timestamp = processed_provider_ids.get(&provider_id);
     (old_timestamp.is_none()
          || last_modified.is_none()

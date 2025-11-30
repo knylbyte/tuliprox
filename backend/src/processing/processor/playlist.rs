@@ -206,11 +206,9 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> (PlaylistItem, b
 fn map_channel_with_aliases(channel: PlaylistItem, mapping: &Mapping) -> Vec<PlaylistItem> {
     if mapping.create_alias {
         let original = channel.clone();
-        let base_uuid = *original.header.get_uuid();
         let (mut mapped_channel, matched) = map_channel(channel, mapping);
         if matched {
             mapped_channel.header.uuid = create_alias_uuid(original.header.get_uuid(), &mapping.id);
-            mapped_channel.header.alias_of = Some(base_uuid);
             vec![original, mapped_channel]
         } else {
             vec![mapped_channel]

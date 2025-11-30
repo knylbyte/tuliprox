@@ -10,7 +10,7 @@ use crate::processing::processor::{handle_error, handle_error_and_return, create
 use shared::utils::{get_u32_from_serde_value, get_u64_from_serde_value, get_string_from_serde_value};
 use crate::repository::xtream_repository::xtream_get_input_info;
 use serde_json::{from_str, Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Write};
 use std::sync::Arc;
 use std::time::Instant;
@@ -77,6 +77,7 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: Arc<reqwest::C
     else { return; };
 
     let mut processed_info_ids = read_processed_vod_info_ids(app_config, errors, fpl).await;
+    let mut fetched_in_run: HashSet<u32> = HashSet::new();
     let mut content_writer = utils::file_writer(&wal_content_file);
     let mut record_writer = utils::file_writer(&wal_record_file);
     let mut content_updated = false;
@@ -96,8 +97,8 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: Arc<reqwest::C
     let mut last_processed_vod_info_count = 0;
 
     for pli in  vod_info_iter {
-        let (should_update, _provider_id, _ts) = should_update_vod_info(pli, &processed_info_ids);
-        if should_update {
+        let (should_update, provider_id, _ts) = should_update_vod_info(pli, &processed_info_ids);
+        if should_update && provider_id != 0 && fetched_in_run.insert(provider_id) {
             if let Some(content) = playlist_resolve_download_playlist_item(Arc::clone(&client), pli, fpl.input, errors, resolve_delay, XtreamCluster::Video).await {
                 let normalized_content = normalize_json_content(content);
                 if let Some((provider_id, info_record)) = extract_info_record_from_vod_info(&normalized_content) {

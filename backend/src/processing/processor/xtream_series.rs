@@ -11,7 +11,7 @@ use crate::repository::xtream_repository::{write_series_info_to_wal_file, xtream
 use crate::repository::IndexedDocumentReader;
 use shared::error::{notify_err, info_err};
 use crate::processing::processor::{handle_error, handle_error_and_return, create_resolve_options_function_for_xtream_target};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::sync::Arc;
@@ -53,6 +53,7 @@ fn should_update_series_info(pli: &mut PlaylistItem, processed_provider_ids: &Ha
 async fn playlist_resolve_series_info(cfg: &AppConfig, client: Arc<reqwest::Client>, errors: &mut Vec<TuliproxError>,
                                       fpl: &mut FetchedPlaylist<'_>, resolve_delay: u16) -> bool {
     let mut processed_info_ids = read_processed_series_info_ids(cfg, errors, fpl).await;
+    let mut fetched_in_run: HashSet<u32> = HashSet::new();
     // we cant write to the indexed-document directly because of the write lock and time-consuming operation.
     // All readers would be waiting for the lock and the app would be unresponsive.
     // We collect the content into a wal file and write it once we collected everything.
@@ -81,7 +82,7 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: Arc<reqwest::Clie
     let mut last_processed_series_info_count = 0;
     for pli in series_info_iter {
         let (should_update, provider_id, ts) = should_update_series_info(pli, &processed_info_ids);
-        if should_update {
+        if should_update && provider_id != 0 && fetched_in_run.insert(provider_id) {
             if let Some(content) = playlist_resolve_download_playlist_item(Arc::clone(&client), pli, fpl.input, errors, resolve_delay, XtreamCluster::Series).await {
                 let normalized_content = normalize_json_content(content);
                 handle_error_and_return!(write_series_info_to_wal_file(provider_id, ts, &normalized_content, &mut content_writer, &mut record_writer),
