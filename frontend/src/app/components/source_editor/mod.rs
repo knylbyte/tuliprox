@@ -8,6 +8,9 @@ mod output_form;
 mod editor_form;
 mod block_view;
 mod output_xtream_form;
+mod output_m3u_form;
+mod output_strm_form;
+mod output_hdhomerun_form;
 mod layout;
 
 pub(crate) use editor_view::*;
@@ -20,3 +23,6 @@ pub(crate) use output_form::*;
 pub(crate) use editor_form::*;
 pub(crate) use block_view::*;
 pub(crate) use output_xtream_form::*;
+pub(crate) use output_m3u_form::*;
+pub(crate) use output_strm_form::*;
+pub(crate) use output_hdhomerun_form::*;
