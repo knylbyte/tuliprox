@@ -1257,6 +1257,7 @@ This will replace all occurrences of `!delimiter!` and `!quality!` in the regexp
 Has the following top level entries:
 - `id` _mandatory_
 - `match_as_ascii` _optional_ default is `false`
+- `create_alias` _optional_ default is `false`
 - `mapper` _mandatory_
 - `counter` _optional_
 
@@ -1268,16 +1269,31 @@ If you have non ascii characters in you playlist and want to
 write regexp without considering chars like `é` and use `e` instead, set this option to `true`.
 [unidecode](https://crates.io/crates/unidecode) is used to convert the text.
 
-### 2.3.3 `mapper`
+### 2.3.3 `create_alias`
+Set this to `true` to keep the original channel and add a mapped copy whenever a mapper rule matches. The copy gets a derived UUID and follows the mapped fields (e.g. a new group), so a channel can live in multiple groups such as favourites.
+
+Example:
+```yaml
+mapping:
+  - id: favourites_news
+    match_as_ascii: true
+    create_alias: true
+    mapper:
+      - filter: 'Group ~ "(?i)news"'
+        script: |
+          @Group = "Favourites"
+```
+
+### 2.3.4 `mapper`
 Has the following top level entries:
 - `filter`
 - `script`
 
-#### 2.3.3.1 `filter`
+#### 2.3.4.1 `filter`
 The filter  is a string with a statement (@see filter statements).
 It is optional and allows you to filter the content.
 
-#### 2.3.3.2 `script`
+#### 2.3.4.2 `script`
 Script has a custom DSL syntax. 
 
 This Domain-Specific Language (DSL) supports simple scripting operations including variable assignment, 
@@ -1429,7 +1445,7 @@ mappings:
             @Caption = concat("!US_TNT_PREFIX!", " ", coast_quality)
             @Group = "!US_TNT_ENTERTAIN_GROUP!"
 ```
-### 2.3.4 counter
+### 2.3.5 counter
 
 Each mapping can have a list of counter.
 
