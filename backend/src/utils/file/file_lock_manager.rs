@@ -3,10 +3,12 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::{fmt, io};
+use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard};
 use shared::error::str_to_io_error;
 use path_clean::PathClean;
+use crate::api::model::AppState;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum LockKey {
@@ -24,6 +26,18 @@ impl FileLockManager {
         Self {
             locks: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Removes all entries from the internal locks map whose `RwLock` has been dropped.
+    ///
+    /// Each entry in the `HashMap` is stored as a `Weak<RwLock<()>>`. This method iterates
+    /// over all keys and removes the ones that cannot be upgraded to a strong `Arc` anymore.
+    /// This helps prevent unbounded growth of the locks map for dynamic string keys.
+    pub async fn prune_unused_locks(&self) {
+        let mut locks = self.locks.lock().await;
+
+        // Retain only entries that can still be upgraded (i.e., there is at least one active guard)
+        locks.retain(|_key, weak_lock| weak_lock.upgrade().is_some());
     }
 
     // Acquires a read lock for the specified file and returns a FileReadGuard.
@@ -135,4 +149,16 @@ fn normalize_path(path: &Path) -> PathBuf {
     };
 
     base.clean()
+}
+
+pub fn exec_file_lock_prune(app_state: &Arc<AppState>) {
+    let app_state = Arc::clone(app_state);
+    tokio::spawn({
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                app_state.app_config.file_locks.prune_unused_locks().await;
+            }
+        }
+    });
 }

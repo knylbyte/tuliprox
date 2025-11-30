@@ -73,7 +73,6 @@ async fn start_scheduler(client: Arc<reqwest::Client>, expression: &str, app_sta
     }
 }
 
-
 fn get_process_targets(cfg: &Arc<AppConfig>, process_targets: &Arc<ProcessTargets>, exec_targets: Option<&Vec<String>>) -> Arc<ProcessTargets> {
     let sources = cfg.sources.load();
     if let Ok(user_targets) = sources.validate_targets(exec_targets) {
