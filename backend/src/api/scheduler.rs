@@ -119,7 +119,7 @@ mod tests {
         let expression = "0/1 * * * * * *"; // every second
 
         let runs = AtomicU8::new(0);
-        let run_me = || runs.fetch_add(1, Ordering::SeqCst);
+        let run_me = || runs.fetch_add(1, Ordering::Acquire);
 
         let start = std::time::Instant::now();
         if let Ok(schedule) = Schedule::from_str(expression) {
@@ -130,14 +130,14 @@ mod tests {
                     tokio::time::sleep_until(tokio::time::Instant::from(datetime_to_instant(datetime))).await;
                     run_me();
                 }
-                if runs.load(Ordering::SeqCst) == 6 {
+                if runs.load(Ordering::Acquire) == 6 {
                     break;
                 }
             }
         }
         let duration = start.elapsed();
 
-        assert!(runs.load(Ordering::SeqCst) == 6, "Failed to run");
+        assert!(runs.load(Ordering::Acquire) == 6, "Failed to run");
         assert!(duration.as_secs() > 4, "Failed time");
     }
 }

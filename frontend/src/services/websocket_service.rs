@@ -79,7 +79,7 @@ impl WebSocketService {
     }
 
     pub fn connect_ws_with_backoff(&self) {
-        if self.connected.load(Ordering::SeqCst) {
+        if self.connected.load(Ordering::Acquire) {
             return;
         }
         match WebSocket::new(&self.ws_path) {
@@ -115,7 +115,7 @@ impl WebSocketService {
                         // on open is called on a connect attempt, it does not mean it is connected!
                         trace!("WebSocket connection opened.");
                         if Self::try_send_message(ws_open_clone.borrow().as_ref(), ProtocolMessage::Version(PROTOCOL_VERSION)) {
-                            connected_clone.store(true, Ordering::SeqCst);
+                            connected_clone.store(true, Ordering::Release);
                         }
                     }));
                     socket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
@@ -158,7 +158,7 @@ impl WebSocketService {
                         // it will be dropped when the service or field is taken elsewhere if desired.
 
                         *ws_close_rc.borrow_mut() = None;
-                        connected_clone.store(false, Ordering::SeqCst);
+                        connected_clone.store(false, Ordering::Release);
                         event_service_clone.broadcast(EventMessage::WebSocketStatus(false));
 
                         // schedule reconnect
@@ -177,7 +177,7 @@ impl WebSocketService {
 
                     let onerror_callback = Closure::<dyn FnMut(ErrorEvent)>::wrap(Box::new(move |e: ErrorEvent| {
                         error!("WebSocket error: {:?}", e);
-                        connected_clone.store(false, Ordering::SeqCst);
+                        connected_clone.store(false, Ordering::Release);
                         event_service_clone.broadcast(EventMessage::WebSocketStatus(false));
                         // ws_service_reconnect_clone.schedule_reconnect();
                     }));
@@ -190,7 +190,7 @@ impl WebSocketService {
 
     fn schedule_reconnect(&self) {
         // increment attempts atomically and get the previous value
-        let attempt = self.attempt_counter.fetch_add(1, Ordering::SeqCst) as u32;
+        let attempt = self.attempt_counter.fetch_add(1, Ordering::Acquire) as u32;
 
         if attempt >= WS_RECONNECT_MAX_ATTEMPTS {
             warn!("WebSocket reconnect attempts exceeded ({attempt}). Giving up.");
@@ -230,7 +230,7 @@ impl WebSocketService {
     }
 
     pub async fn get_server_status(&self) {
-        if self.connected.load(Ordering::SeqCst) {
+        if self.connected.load(Ordering::Acquire) {
             if let Some(token) = get_token() {
                 self.send_message(ProtocolMessage::StatusRequest(token));
             }
@@ -295,7 +295,7 @@ fn handle_socket_protocol_msg(event: MessageEvent, event_service: &Rc<EventServi
                         event_service.broadcast(EventMessage::SystemInfoUpdate(system_info));
                     }
                     ProtocolMessage::Version(_) => {
-                        attempt_counter.store(0, Ordering::SeqCst);
+                        attempt_counter.store(0, Ordering::Release);
                         event_service.broadcast(EventMessage::WebSocketStatus(true));
                         if let Some(token) = get_token() {
                             return Some(ProtocolMessage::Auth(token));

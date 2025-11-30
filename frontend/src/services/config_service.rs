@@ -56,7 +56,7 @@ impl ConfigService {
     }
 
     async fn fetch_server_config(&self) {
-        if self.is_fetching.swap(true, Ordering::SeqCst) {
+        if self.is_fetching.swap(true, Ordering::AcqRel) {
             return;
         }
         let result = match request_get::<AppConfigDto>(&self.config_path, None, None).await {
@@ -109,7 +109,7 @@ impl ConfigService {
         };
         self.server_config.replace(result.clone());
         self.config_channel.set(result);
-        self.is_fetching.store(false, Ordering::SeqCst);
+        self.is_fetching.store(false, Ordering::Release);
     }
 
     pub async fn get_ip_info(&self) -> Option<IpCheckDto> {

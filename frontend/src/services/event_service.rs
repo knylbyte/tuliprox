@@ -53,7 +53,7 @@ impl EventService {
     }
 
     pub fn subscribe<F: Fn(EventMessage) + 'static>(&self, callback: F) -> usize {
-        let sub_id = self.subscriber_id.fetch_add(1, Ordering::SeqCst);
+        let sub_id = self.subscriber_id.fetch_add(1, Ordering::Acquire);
         self.subscribers.borrow_mut().insert(sub_id, Box::new(callback));
         sub_id
     }

@@ -8,9 +8,15 @@ use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard};
 use shared::error::str_to_io_error;
 use path_clean::PathClean;
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum LockKey {
+    Path(PathBuf),
+    Str(String),
+}
+
 #[derive(Clone)]
 pub struct FileLockManager {
-    locks: Arc<Mutex<HashMap<PathBuf, Arc<RwLock<()>>>>>,
+    locks: Arc<Mutex<HashMap<LockKey, Arc<RwLock<()>>>>>,
 }
 
 impl FileLockManager {
@@ -22,46 +28,55 @@ impl FileLockManager {
 
     // Acquires a read lock for the specified file and returns a FileReadGuard.
     pub async fn read_lock(&self, path: &Path) -> FileReadGuard {
-        let file_lock = self.get_or_create_lock(path).await;
+        let file_lock = self.get_or_create_lock(Self::get_lock_key_for_path(path)).await;
         let guard = Arc::clone(&file_lock).read_owned().await;
         FileReadGuard::new(guard)
     }
 
     // Acquires a write lock for the specified file and returns a FileWriteGuard.
     pub async fn write_lock(&self, path: &Path) -> FileWriteGuard {
-        let file_lock = self.get_or_create_lock(path).await;
+        let file_lock = self.get_or_create_lock(Self::get_lock_key_for_path(path)).await;
         let guard = Arc::clone(&file_lock).write_owned().await;
         FileWriteGuard::new(guard)
     }
 
     // Tries to acquire a write lock for the specified file and returns a FileWriteGuard.
     pub async fn try_write_lock(&self, path: &Path) -> io::Result<FileWriteGuard> {
-        let file_lock = self.get_or_create_lock(path).await;
+        let file_lock = self.get_or_create_lock(Self::get_lock_key_for_path(path)).await;
         match Arc::clone(&file_lock).try_write_owned() {
             Ok(lock_guard) => Ok(FileWriteGuard::new(lock_guard)),
             Err(_) => Err(str_to_io_error("Failed to acquire write lock"))
         }
     }
 
+    /// Acquires a write lock using a raw string key instead of a normalized `Path`.
+    ///
+    /// Unlike the standard path-based locks, this method does **not** perform any
+    /// path normalization or conversion. The string is used directly as the lock key,
+    /// which can be useful for non-file-based identifiers or dynamic keys.
     pub async fn write_lock_str(&self, text: &str) -> FileWriteGuard {
-        let path = PathBuf::from(text);
-        let file_lock = self.get_or_create_lock(&path).await;
+        let lock_key = LockKey::Str(text.to_string());
+        let file_lock = self.get_or_create_lock(lock_key).await;
         let guard = Arc::clone(&file_lock).write_owned().await;
         FileWriteGuard::new(guard)
     }
 
 
-    // Helper function: retrieves or creates a lock for a file.
-    async fn get_or_create_lock(&self, path: &Path) -> Arc<RwLock<()>> {
+    fn get_lock_key_for_path(path: &Path) -> LockKey {
         let normalized_path = normalize_path(path);
+        LockKey::Path(normalized_path)
+    }
+
+    // Helper function: retrieves or creates a lock for a file.
+    async fn get_or_create_lock(&self, lock_key: LockKey) -> Arc<RwLock<()>> {
         let mut locks = self.locks.lock().await;
 
-        if let Some(lock) = locks.get(&normalized_path) {
+        if let Some(lock) = locks.get(&lock_key) {
             return lock.clone();
         }
 
         let file_lock = Arc::new(RwLock::new(()));
-        locks.insert(normalized_path, file_lock.clone());
+        locks.insert(lock_key, file_lock.clone());
         drop(locks);
         file_lock
     }
@@ -117,4 +132,17 @@ fn normalize_path(path: &Path) -> PathBuf {
     };
 
     base.clean()
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_normalize_path() {
+        let path = PathBuf::from("https://10.1.41.41");
+        let normalized = normalize_path(&path);
+        assert_eq!(normalized.display().to_string(), "dsd sdf sf d");
+
+    }
 }
