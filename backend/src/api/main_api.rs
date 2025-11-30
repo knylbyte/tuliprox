@@ -30,7 +30,7 @@ use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use crate::api::sys_usage::exec_system_usage;
 use crate::repository::storage::get_geoip_path;
-use crate::utils::GeoIp;
+use crate::utils::{exec_file_lock_prune, GeoIp};
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {
     let web_dir = web_root.to_string();
@@ -281,6 +281,8 @@ pub async fn start_server(
         &app_state,
         &targets,
     );
+
+    exec_file_lock_prune(&app_state);
 
     exec_config_watch(&app_state, &cancel_token_file_watch);
 

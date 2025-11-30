@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A flag that is initially active (`true`) and can only be disabled once.
-/// Once the flag is disabled by calling `disable()`, it remains inactive (`false`) forever.
+/// Once the flag is disabled by calling [`notify()`], it remains inactive (`false`) forever.
 ///
 /// ## Use Case
 /// This type is useful when you need a one-way toggle to mark a resource or state as "finalized",
@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// ```rust
 /// let flag = AtomicOnceFlag::new();
 /// assert!(flag.is_active());
-/// flag.disable();
+/// flag.notify();
 /// assert!(!flag.is_active());
 #[derive(Debug)]
 pub struct AtomicOnceFlag {
@@ -36,13 +36,13 @@ impl AtomicOnceFlag {
     ///
     /// This operation is atomic and uses the specified memory ordering.
     pub fn notify(&self) {
-        self.enabled.store(false, Ordering::SeqCst);
+        self.enabled.store(false, Ordering::Release);
     }
 
     /// Checks if the flag is still active.
     ///
     /// Returns `true` if the flag is active (initial state). Returns `false` if the flag has been disabled.
     pub fn is_active(&self) -> bool {
-        self.enabled.load(Ordering::SeqCst)
+        self.enabled.load(Ordering::Acquire)
     }
 }

@@ -41,7 +41,7 @@ impl Stream for ClientStream {
                         // Empty payload signals upstream closure; notify and let consumer see final chunk
                         self.close_signal.notify();
                     } else if let Some(counter) = self.total_bytes.as_ref() {
-                      counter.fetch_add(bytes.len(), Ordering::Relaxed);
+                      counter.fetch_add(bytes.len(), Ordering::AcqRel);
                     }
 
                     Poll::Ready(Some(Ok(bytes)))

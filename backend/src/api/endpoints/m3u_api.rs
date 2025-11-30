@@ -92,6 +92,9 @@ async fn m3u_api_stream(
             stream_req.username
         )
     );
+
+    let _guard =  app_state.app_config.file_locks.write_lock_str(&user.username).await;
+
     if user.permission_denied(app_state) {
         return create_custom_video_stream_response(
             app_state, &fingerprint.addr,

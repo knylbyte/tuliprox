@@ -812,13 +812,18 @@ pub async fn stream_response(
     let item_type = stream_channel.item_type;
 
     let share_stream = is_stream_share_enabled(item_type, target);
-    if share_stream {
+    let _shared_lock = if share_stream {
+        let write_lock = app_state.app_config.file_locks.write_lock_str(stream_url).await;
+
         if let Some(value) =
             try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), session_token, req_headers).await
         {
             return value.into_response();
         }
-    }
+        Some(write_lock)
+    } else {
+        None
+    };
 
     let stream_options = get_stream_options(app_state);
     let mut stream_details = create_stream_response_details(

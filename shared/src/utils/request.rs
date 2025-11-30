@@ -5,10 +5,10 @@ use crate::utils::{CONSTANTS, DASH_EXT, DASH_EXT_FRAGMENT, DASH_EXT_QUERY, HLS_E
 
 
 pub fn set_sanitize_sensitive_info(value: bool) {
-    CONSTANTS.sanitize.store(value, Ordering::SeqCst);
+    CONSTANTS.sanitize.store(value, Ordering::Relaxed);
 }
 pub fn sanitize_sensitive_info(query: &str) -> Cow<'_, str> {
-    if !CONSTANTS.sanitize.load(Ordering::SeqCst) {
+    if !CONSTANTS.sanitize.load(Ordering::Relaxed) {
         return Cow::Borrowed(query);
     }
 

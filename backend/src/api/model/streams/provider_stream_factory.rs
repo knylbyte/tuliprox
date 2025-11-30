@@ -144,7 +144,7 @@ impl ProviderStreamFactoryOptions {
         self.range_bytes
             .as_ref()
             .as_ref()
-            .map(|atomic| atomic.load(Ordering::SeqCst))
+            .map(|atomic| atomic.load(Ordering::Acquire))
     }
 
     // pub fn get_range_bytes(&self) -> &Arc<Option<AtomicUsize>> {
