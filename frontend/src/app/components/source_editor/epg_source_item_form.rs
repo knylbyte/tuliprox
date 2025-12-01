@@ -1,10 +1,12 @@
 use crate::app::components::{Card, TextButton};
-use crate::{edit_field_text, generate_form_reducer};
+use crate::{edit_field_bool, edit_field_number_i16, edit_field_text, generate_form_reducer};
 use shared::model::EpgSourceDto;
 use yew::{function_component, html, use_reducer, Callback, Html, Properties, UseReducerHandle};
 use yew_i18n::use_translation;
 
 const LABEL_EPG_SOURCE_URL: &str = "LABEL.EPG_SOURCE_URL";
+const LABEL_EPG_PRIORITY: &str = "LABEL.PRIORITY";
+const LABEL_EPG_LOGO_OVERRIDE: &str = "LABEL.EPG_LOGO_OVERRIDE";
 
 generate_form_reducer!(
     state: EpgSourceFormState { form: EpgSourceDto },
@@ -43,7 +45,7 @@ pub fn EpgSourceItemForm(props: &EpgSourceItemFormProps) -> Html {
         let form_state = form_state.clone();
         let on_submit = props.on_submit.clone();
         Callback::from(move |_| {
-            let data = form_state.data().clone();
+            let data = form_state.form.clone();
             if !data.url.trim().is_empty() {
                 on_submit.emit(data);
             }
@@ -60,8 +62,10 @@ pub fn EpgSourceItemForm(props: &EpgSourceItemFormProps) -> Html {
     html! {
         <Card class="tp__config-view__card tp__item-form">
             { edit_field_text!(form_state, translate.t(LABEL_EPG_SOURCE_URL), url, EpgSourceFormAction::Url) }
+            { edit_field_number_i16!(form_state, translate.t(LABEL_EPG_PRIORITY), priority, EpgSourceFormAction::Priority) }
+            { edit_field_bool!(form_state, translate.t(LABEL_EPG_LOGO_OVERRIDE), logo_override, EpgSourceFormAction::LogoOverride) }
 
-            <div class="tp__item-form__buttons">
+            <div class="tp__form-page__toolbar">
                 <TextButton
                     class="primary"
                     name="submit_epg_source"

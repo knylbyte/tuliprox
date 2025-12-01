@@ -1,12 +1,13 @@
 use crate::app::components::config::HasFormData;
 use crate::app::components::key_value_editor::KeyValueEditor;
 use crate::app::components::select::Select;
-use crate::app::components::{BlockId, BlockInstance, Card, DropDownOption, DropDownSelection, EditMode, Panel, RadioButtonGroup, SourceEditorContext, TextButton};
+use crate::app::components::{AliasItemForm, BlockId, BlockInstance, Card, DropDownOption, DropDownSelection, EditMode, EpgSourceItemForm, IconButton, Panel, RadioButtonGroup, SourceEditorContext, TextButton};
 use crate::{config_field_child, edit_field_bool, edit_field_date, edit_field_number_i16, edit_field_number_u16, edit_field_text, edit_field_text_option, generate_form_reducer};
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, EpgConfigDto, EpgSourceDto, InputFetchMethod, InputType, StagedInputDto};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::Rc;
+use web_sys::MouseEvent;
 use yew::{classes, function_component, html, use_context, use_effect_with, use_memo, use_reducer, use_state, Callback, Html, Properties, UseReducerHandle};
 use yew_i18n::use_translation;
 
@@ -15,20 +16,15 @@ const LABEL_INPUT_TYPE: &str = "LABEL.INPUT_TYPE";
 const LABEL_FETCH_METHOD: &str = "LABEL.METHOD";
 const LABEL_HEADERS: &str = "LABEL.HEADERS";
 const LABEL_URL: &str = "LABEL.URL";
-const LABEL_EPG: &str = "LABEL.EPG";
 const LABEL_EPG_SOURCES: &str = "LABEL.EPG_SOURCES";
-const LABEL_EPG_SOURCE_URL: &str = "LABEL.EPG_SOURCE_URL";
 const LABEL_USERNAME: &str = "LABEL.USERNAME";
 const LABEL_PASSWORD: &str = "LABEL.PASSWORD";
 const LABEL_PERSIST: &str = "LABEL.PERSIST";
 const LABEL_ENABLED: &str = "LABEL.ENABLED";
 const LABEL_ALIASES: &str = "LABEL.ALIASES";
-const LABEL_ALIAS_ID: &str = "LABEL.ALIAS_ID";
-const LABEL_ALIAS_NAME: &str = "LABEL.ALIAS_NAME";
 const LABEL_PRIORITY: &str = "LABEL.PRIORITY";
 const LABEL_MAX_CONNECTIONS: &str = "LABEL.MAX_CONNECTIONS";
 const LABEL_EXP_DATE: &str = "LABEL.EXP_DATE";
-const LABEL_ADD_HEADER: &str = "LABEL.ADD_HEADER";
 const LABEL_ADD_EPG_SOURCE: &str = "LABEL.ADD_EPG_SOURCE";
 const LABEL_ADD_ALIAS: &str = "LABEL.ADD_ALIAS";
 const LABEL_XTREAM_SKIP_LIVE: &str = "LABEL.SKIP_LIVE";
@@ -56,31 +52,6 @@ impl Display for InputFormPage {
         })
     }
 }
-
-generate_form_reducer!(
-    state: EpgSourceDtoFormState { form: EpgSourceDto },
-    action_name: EpgSourceDtoFormAction,
-    fields {
-        Url => url: String,
-        Priority => priority: i16,
-        LogoOverride => logo_override: bool,
-    }
-);
-
-generate_form_reducer!(
-    state: ConfigInputAliasDtoFormState { form: ConfigInputAliasDto },
-    action_name: ConfigInputAliasDtoFormAction,
-    fields {
-        Id => id: u16,
-        Name => name: String,
-        Url => url: String,
-        Username => username: Option<String>,
-        Password => password: Option<String>,
-        Priority => priority: i16,
-        MaxConnections => max_connections: u16,
-        ExpDate => exp_date: Option<i64>,
-    }
-);
 
 generate_form_reducer!(
     state: ConfigInputOptionsDtoFormState { form: ConfigInputOptionsDto },
@@ -132,7 +103,6 @@ pub struct ConfigInputViewProps {
 
 #[function_component]
 pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
-
     let translate = use_translation();
     let source_editor_ctx = use_context::<SourceEditorContext>().expect("SourceEditorContext not found");
     let fetch_methods = use_memo((), |_| {
@@ -165,9 +135,9 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
         });
 
     // State for EPG sources, Aliases, and Headers
-    let epg_sources_state = use_state(|| Vec::<EpgSourceDto>::new());
-    let aliases_state = use_state(|| Vec::<ConfigInputAliasDto>::new());
-    let headers_state = use_state(|| HashMap::<String, String>::new());
+    let epg_sources_state = use_state(Vec::<EpgSourceDto>::new);
+    let aliases_state = use_state(Vec::<ConfigInputAliasDto>::new);
+    let headers_state = use_state(HashMap::<String, String>::new);
 
     // State for showing item forms
     let show_epg_form_state = use_state(|| false);
@@ -243,6 +213,69 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
             || ()
         });
     }
+
+    let handle_add_epg_item = {
+        let epg_sources = epg_sources_state.clone();
+        let show_epg_form = show_epg_form_state.clone();
+        Callback::from(move |source: EpgSourceDto| {
+            let mut sources = (*epg_sources).clone();
+            sources.push(source);
+            epg_sources.set(sources);
+            show_epg_form.set(false);
+        })
+    };
+
+    let handle_close_add_epg_item = {
+        let show_epg_form = show_epg_form_state.clone();
+        Callback::from(move |_| {
+            show_epg_form.set(false);
+        })
+    };
+
+    let handle_show_add_epg_item = {
+        let show_epg_form = show_epg_form_state.clone();
+        Callback::from(move |_| {
+            show_epg_form.set(true);
+        })
+    };
+
+    let handle_add_alias_item = {
+        let aliases = aliases_state.clone();
+        let show_alias_form = show_alias_form_state.clone();
+        Callback::from(move |alias: ConfigInputAliasDto| {
+            let mut items = (*aliases).clone();
+            items.push(alias);
+            aliases.set(items);
+            show_alias_form.set(false);
+        })
+    };
+
+    let handle_close_add_alias_item = {
+        let show_alias_form = show_alias_form_state.clone();
+        Callback::from(move |()| {
+            show_alias_form.set(false);
+        })
+    };
+
+    let handle_show_add_alias_item = {
+        let show_alias_form = show_alias_form_state.clone();
+        Callback::from(move |_| {
+            show_alias_form.set(true);
+        })
+    };
+
+
+    let handle_remove_alias_list_item = {
+        let alias_list = aliases_state.clone();
+        Callback::from(move |(idx, e): (String, MouseEvent)| {
+            e.prevent_default();
+            if let Ok(index) = idx.parse::<usize>() {
+                let mut items = (*alias_list).clone();
+                items.remove(index);
+                alias_list.set(items);
+            }
+        })
+    };
 
     let render_options = || {
         html! {
@@ -348,10 +381,21 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
 
         html! {
             <Card class="tp__config-view__card">
-                // Headers Section
-                { config_field_child!(translate.t(LABEL_HEADERS), {
-                    let headers_set = headers.clone();
-                    html! {
+               if *show_epg_form {
+                    <EpgSourceItemForm
+                        on_submit={handle_add_epg_item}
+                        on_cancel={handle_close_add_epg_item}
+                    />
+               } else if *show_alias_form {
+                    <AliasItemForm
+                        on_submit={handle_add_alias_item}
+                        on_cancel={handle_close_add_alias_item}
+                    />
+                } else {
+                  // Headers Section
+                  { config_field_child!(translate.t(LABEL_HEADERS), {
+                      let headers_set = headers.clone();
+                      html! {
                         <KeyValueEditor
                             entries={(*headers).clone()}
                             readonly={false}
@@ -361,17 +405,14 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                                 headers_set.set(new_headers);
                             })}
                         />
-                    }
-                })}
+                      }
+                  })}
 
-                // EPG Sources Section
-                { config_field_child!(translate.t(LABEL_EPG_SOURCES), {
-                    let epg_sources_list = epg_sources.clone();
-                    let epg_sources_add = epg_sources.clone();
-                    let show_epg_form_toggle = show_epg_form.clone();
-                    let show_epg_form_check = show_epg_form.clone();
+                  // EPG Sources Section
+                  { config_field_child!(translate.t(LABEL_EPG_SOURCES), {
+                      let epg_sources_list = epg_sources.clone();
 
-                    html! {
+                      html! {
                         <div class="tp__form-list">
                             <div class="tp__form-list__items">
                             {
@@ -379,114 +420,66 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                                     let epg_sources_remove = epg_sources_list.clone();
                                     html! {
                                         <div class="tp__form-list__item" key={idx}>
-                                            <div class="tp__form-list__item-content">
-                                                <span>{&source.url}</span>
-                                            </div>
-                                            <button
-                                                class="tp__form-list__item-remove"
+                                            <IconButton
+                                                name="Remove"
+                                                icon="Delete"
                                                 onclick={Callback::from(move |_| {
                                                     let mut sources = (*epg_sources_remove).clone();
                                                     sources.remove(idx);
                                                     epg_sources_remove.set(sources);
-                                                })}
-                                            >
-                                                {"×"}
-                                            </button>
+                                                })} />
+                                            <div class="tp__form-list__item-content">
+                                                <span>{&source.url}</span>
+                                            </div>
                                         </div>
                                     }
                                 })
                             }
                             </div>
-
-                            if *show_epg_form_check {
-                                <EpgSourceItemForm
-                                    on_submit={Callback::from(move |source: EpgSourceDto| {
-                                        let mut sources = (*epg_sources_add).clone();
-                                        sources.push(source);
-                                        epg_sources_add.set(sources);
-                                        show_epg_form.set(false);
-                                    })}
-                                    on_cancel={Callback::from(move |_| {
-                                        show_epg_form.set(false);
-                                    })}
-                                />
-                            } else {
-                                <TextButton
-                                    class="primary"
-                                    name="add_epg_source"
-                                    icon="Add"
-                                    title={translate.t(LABEL_ADD_EPG_SOURCE)}
-                                    onclick={Callback::from(move |_| {
-                                        show_epg_form_toggle.set(true);
-                                    })}
-                                />
-                            }
+                            <TextButton
+                                class="primary"
+                                name="add_epg_source"
+                                icon="Add"
+                                title={translate.t(LABEL_ADD_EPG_SOURCE)}
+                                onclick={handle_show_add_epg_item}
+                            />
                         </div>
-                    }
-                })}
+                      }
+                  })}
 
-                // Aliases Section
-                { config_field_child!(translate.t(LABEL_ALIASES), {
-                    let aliases_list = aliases.clone();
-                    let aliases_add = aliases.clone();
-                    let show_alias_form_toggle = show_alias_form.clone();
-                    let show_alias_form_check = show_alias_form.clone();
-                    let next_id = (*aliases_list).iter().map(|a| a.id).max().unwrap_or(0) + 1;
-
-                    html! {
+                  // Aliases Section
+                  { config_field_child!(translate.t(LABEL_ALIASES), {
+                      let aliases_list = aliases.clone();
+                      html! {
                         <div class="tp__form-list">
                             <div class="tp__form-list__items">
                             {
                                 for (*aliases_list).iter().enumerate().map(|(idx, alias)| {
-                                    let aliases_remove = aliases_list.clone();
                                     html! {
                                         <div class="tp__form-list__item" key={idx}>
+                                                <IconButton
+                                                name={idx.to_string()}
+                                                icon="Delete"
+                                                onclick={handle_remove_alias_list_item.clone()}/>
                                             <div class="tp__form-list__item-content">
                                                 <span><strong>{&alias.name}</strong>{" - "}{&alias.url}</span>
                                             </div>
-                                            <button
-                                                class="tp__form-list__item-remove"
-                                                onclick={Callback::from(move |_| {
-                                                    let mut items = (*aliases_remove).clone();
-                                                    items.remove(idx);
-                                                    aliases_remove.set(items);
-                                                })}
-                                            >
-                                                {"×"}
-                                            </button>
                                         </div>
                                     }
                                 })
                             }
                             </div>
-
-                            if *show_alias_form_check {
-                                <AliasItemForm
-                                    next_id={next_id}
-                                    on_submit={Callback::from(move |alias: ConfigInputAliasDto| {
-                                        let mut items = (*aliases_add).clone();
-                                        items.push(alias);
-                                        aliases_add.set(items);
-                                        show_alias_form.set(false);
-                                    })}
-                                    on_cancel={Callback::from(move |_| {
-                                        show_alias_form.set(false);
-                                    })}
-                                />
-                            } else {
-                                <TextButton
-                                    class="primary"
-                                    name="add_alias"
-                                    icon="Add"
-                                    title={translate.t(LABEL_ADD_ALIAS)}
-                                    onclick={Callback::from(move |_| {
-                                        show_alias_form_toggle.set(true);
-                                    })}
-                                />
-                            }
+                            <TextButton
+                                class="primary"
+                                name="add_alias"
+                                icon="Add"
+                                title={translate.t(LABEL_ADD_ALIAS)}
+                                onclick={handle_show_add_alias_item}
+                            />
                         </div>
-                    }
-                })}
+                      }
+                  })}
+                }
             </Card>
         }
     };
@@ -545,10 +538,10 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
         })
     };
     let handle_cancel = {
-      let source_editor_ctx = source_editor_ctx.clone();
-      Callback::from(move |_| {
-          source_editor_ctx.edit_mode.set(EditMode::Inactive);
-      })
+        let source_editor_ctx = source_editor_ctx.clone();
+        Callback::from(move |_| {
+            source_editor_ctx.edit_mode.set(EditMode::Inactive);
+        })
     };
 
     let render_edit_mode = || {

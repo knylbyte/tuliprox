@@ -73,7 +73,7 @@ pub fn TraktListItemForm(props: &TraktListItemFormProps) -> Html {
         let form_state = form_state.clone();
         let on_submit = props.on_submit.clone();
         Callback::from(move |_| {
-            let data = form_state.data().clone();
+            let data = form_state.form.clone();
             if !data.user.trim().is_empty()
                 && !data.list_slug.trim().is_empty()
                 && !data.category_name.trim().is_empty() {
@@ -102,13 +102,10 @@ pub fn TraktListItemForm(props: &TraktListItemFormProps) -> Html {
                         name={"trakt_content_type"}
                         multi_select={false}
                         on_select={Callback::from(move |(_, selections):(String, DropDownSelection)| {
-                            match selections {
-                                DropDownSelection::Single(option) => {
-                                    if let Ok(ct) = option.parse::<TraktContentType>() {
-                                        form_state_ct.dispatch(TraktListFormAction::ContentType(ct));
-                                    }
+                            if let DropDownSelection::Single(option) = selections {
+                                if let Ok(ct) = option.parse::<TraktContentType>() {
+                                    form_state_ct.dispatch(TraktListFormAction::ContentType(ct));
                                 }
-                                _ => {}
                             }
                         })}
                         options={content_type_options.clone()}
@@ -118,7 +115,7 @@ pub fn TraktListItemForm(props: &TraktListItemFormProps) -> Html {
 
             { edit_field_number_u8!(form_state, translate.t(LABEL_TRAKT_FUZZY_MATCH_THRESHOLD), fuzzy_match_threshold, TraktListFormAction::FuzzyMatchThreshold) }
 
-            <div class="tp__item-form__buttons">
+            <div class="tp__form-page__toolbar">
                 <TextButton
                     class="primary"
                     name="submit_trakt_list"

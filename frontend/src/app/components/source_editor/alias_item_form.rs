@@ -16,7 +16,6 @@ generate_form_reducer!(
     state: AliasFormState { form: ConfigInputAliasDto },
     action_name: AliasFormAction,
     fields {
-        Id => id: u16,
         Name => name: String,
         Url => url: String,
         Username => username: Option<String>,
@@ -33,8 +32,6 @@ pub struct AliasItemFormProps {
     pub on_cancel: Callback<()>,
     #[prop_or_default]
     pub initial: Option<ConfigInputAliasDto>,
-    #[prop_or(0)]
-    pub next_id: u16,
 }
 
 #[function_component]
@@ -44,7 +41,7 @@ pub fn AliasItemForm(props: &AliasItemFormProps) -> Html {
     let form_state: UseReducerHandle<AliasFormState> = use_reducer(|| {
         AliasFormState {
             form: props.initial.clone().unwrap_or_else(|| ConfigInputAliasDto {
-                id: props.next_id,
+                id: 0,
                 name: String::new(),
                 url: String::new(),
                 username: None,
@@ -61,7 +58,7 @@ pub fn AliasItemForm(props: &AliasItemFormProps) -> Html {
         let form_state = form_state.clone();
         let on_submit = props.on_submit.clone();
         Callback::from(move |_| {
-            let data = form_state.data().clone();
+            let data = form_state.form.clone();
             if !data.name.trim().is_empty() && !data.url.trim().is_empty() {
                 on_submit.emit(data);
             }
@@ -85,7 +82,7 @@ pub fn AliasItemForm(props: &AliasItemFormProps) -> Html {
             { edit_field_number_u16!(form_state, translate.t(LABEL_MAX_CONNECTIONS), max_connections, AliasFormAction::MaxConnections) }
             { edit_field_date!(form_state, translate.t(LABEL_EXP_DATE), exp_date, AliasFormAction::ExpDate) }
 
-            <div class="tp__item-form__buttons">
+            <div class="tp__form-page__toolbar">
                 <TextButton
                     class="primary"
                     name="submit_alias"
