@@ -53,18 +53,6 @@ generate_form_reducer!(
 );
 
 generate_form_reducer!(
-    state: TraktListConfigFormState { form: TraktListConfigDto },
-    action_name: TraktListConfigFormAction,
-    fields {
-        User => user: String,
-        ListSlug => list_slug: String,
-        CategoryName => category_name: String,
-        ContentType => content_type: TraktContentType,
-        FuzzyMatchThreshold => fuzzy_match_threshold: u8,
-    }
-);
-
-generate_form_reducer!(
     state: XtreamTargetOutputFormState { form: XtreamTargetOutputDto },
     action_name: XtreamTargetOutputFormAction,
     fields {
@@ -105,12 +93,8 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
     // State for Trakt lists
     let trakt_lists_state = use_state(|| Vec::<TraktListConfigDto>::new());
 
-    // State for adding new Trakt list
-    let trakt_list_add_state: UseReducerHandle<TraktListConfigFormState> =
-        use_reducer(|| TraktListConfigFormState {
-            form: TraktListConfigDto::default(),
-            modified: false,
-        });
+    // State for showing trakt list form
+    let show_trakt_list_form_state = use_state(|| false);
 
     let view_visible = use_state(|| OutputFormPage::Main.to_string());
 
@@ -164,29 +148,7 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
     let render_trakt = || {
         let trakt_lists = trakt_lists_state.clone();
         let trakt_api = trakt_api_state.clone();
-        let trakt_list_add = trakt_list_add_state.clone();
-
-        // Create content type options
-        let content_type_options = use_memo(trakt_list_add.form.content_type, |content_type| {
-            let default_ct = content_type;
-            vec![
-                DropDownOption {
-                    id: "vod".to_string(),
-                    label: html! { "Vod" },
-                    selected: default_ct == &TraktContentType::Vod,
-                },
-                DropDownOption {
-                    id: "series".to_string(),
-                    label: html! { "Series" },
-                    selected: default_ct == &TraktContentType::Series,
-                },
-                DropDownOption {
-                    id: "both".to_string(),
-                    label: html! { "Both" },
-                    selected: default_ct == &TraktContentType::Both,
-                },
-            ]
-        });
+        let show_trakt_list_form = show_trakt_list_form_state.clone();
 
         html! {
             <Card class="tp__config-view__card">
@@ -200,13 +162,17 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
 
                 // Trakt Lists
                 { config_field_child!(translate.t(LABEL_TRAKT_LISTS), {
+                    let trakt_lists_list = trakt_lists.clone();
                     let trakt_lists_add = trakt_lists.clone();
+                    let show_trakt_list_form_toggle = show_trakt_list_form.clone();
+                    let show_trakt_list_form_check = show_trakt_list_form.clone();
+
                     html! {
                         <div class="tp__form-list">
                             <div class="tp__form-list__items">
                             {
-                                for (*trakt_lists).iter().enumerate().map(|(idx, list)| {
-                                    let trakt_lists_remove = trakt_lists.clone();
+                                for (*trakt_lists_list).iter().enumerate().map(|(idx, list)| {
+                                    let trakt_lists_remove = trakt_lists_list.clone();
                                     let content_type_str = match list.content_type {
                                         TraktContentType::Vod => "Vod",
                                         TraktContentType::Series => "Series",
@@ -243,47 +209,30 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
                                 })
                             }
                             </div>
-                            <div class="tp__form-list__add-trakt">
-                                { edit_field_text!(trakt_list_add, translate.t(LABEL_TRAKT_USER), user, TraktListConfigFormAction::User) }
-                                { edit_field_text!(trakt_list_add, translate.t(LABEL_TRAKT_LIST_SLUG), list_slug, TraktListConfigFormAction::ListSlug) }
-                                { edit_field_text!(trakt_list_add, translate.t(LABEL_TRAKT_CATEGORY_NAME), category_name, TraktListConfigFormAction::CategoryName) }
-                                { config_field_child!(translate.t(LABEL_TRAKT_CONTENT_TYPE), {
-                                    let trakt_list_add_ct = trakt_list_add.clone();
-                                    html! {
-                                        <Select
-                                            name={"trakt_content_type"}
-                                            multi_select={false}
-                                            on_select={Callback::from(move |(_, selections):(String, DropDownSelection)| {
-                                                match selections {
-                                                    DropDownSelection::Single(option) => {
-                                                        if let Ok(ct) = option.parse::<TraktContentType>() {
-                                                            trakt_list_add_ct.dispatch(TraktListConfigFormAction::ContentType(ct));
-                                                        }
-                                                    }
-                                                    _ => {}
-                                                }
-                                            })}
-                                            options={content_type_options.clone()}
-                                        />
-                                    }
-                                })}
-                                { edit_field_number_u8!(trakt_list_add, translate.t(LABEL_TRAKT_FUZZY_MATCH_THRESHOLD), fuzzy_match_threshold, TraktListConfigFormAction::FuzzyMatchThreshold) }
-                                <button
-                                    class="tp__form-list__add-button"
-                                    onclick={Callback::from(move |_| {
-                                        let list_data = trakt_list_add.data();
-                                        if !list_data.user.is_empty() && !list_data.list_slug.is_empty() && !list_data.category_name.is_empty() {
-                                            let mut items = (*trakt_lists_add).clone();
-                                            items.push(list_data.clone());
-                                            trakt_lists_add.set(items);
-                                            // Reset form
-                                            trakt_list_add.dispatch(TraktListConfigFormAction::SetAll(TraktListConfigDto::default()));
-                                        }
+
+                            if *show_trakt_list_form_check {
+                                <TraktListItemForm
+                                    on_submit={Callback::from(move |list: TraktListConfigDto| {
+                                        let mut items = (*trakt_lists_add).clone();
+                                        items.push(list);
+                                        trakt_lists_add.set(items);
+                                        show_trakt_list_form.set(false);
                                     })}
-                                >
-                                    {translate.t(LABEL_ADD_TRAKT_LIST)}
-                                </button>
-                            </div>
+                                    on_cancel={Callback::from(move |_| {
+                                        show_trakt_list_form.set(false);
+                                    })}
+                                />
+                            } else {
+                                <TextButton
+                                    class="primary"
+                                    name="add_trakt_list"
+                                    icon="Add"
+                                    title={translate.t(LABEL_ADD_TRAKT_LIST)}
+                                    onclick={Callback::from(move |_| {
+                                        show_trakt_list_form_toggle.set(true);
+                                    })}
+                                />
+                            }
                         </div>
                     }
                 })}

@@ -169,6 +169,10 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
     let aliases_state = use_state(|| Vec::<ConfigInputAliasDto>::new());
     let headers_state = use_state(|| HashMap::<String, String>::new());
 
+    // State for showing item forms
+    let show_epg_form_state = use_state(|| false);
+    let show_alias_form_state = use_state(|| false);
+
     let staged_input_types = use_memo(staged_input_state.form.input_type, |input_type| {
         let default_it = input_type;
         [
@@ -339,6 +343,8 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
         let headers = headers_state.clone();
         let epg_sources = epg_sources_state.clone();
         let aliases = aliases_state.clone();
+        let show_epg_form = show_epg_form_state.clone();
+        let show_alias_form = show_alias_form_state.clone();
 
         html! {
             <Card class="tp__config-view__card">
@@ -360,14 +366,17 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
 
                 // EPG Sources Section
                 { config_field_child!(translate.t(LABEL_EPG_SOURCES), {
-                    let epg_sources_add = epg_sources.clone();
                     let epg_sources_list = epg_sources.clone();
+                    let epg_sources_add = epg_sources.clone();
+                    let show_epg_form_toggle = show_epg_form.clone();
+                    let show_epg_form_check = show_epg_form.clone();
+
                     html! {
                         <div class="tp__form-list">
                             <div class="tp__form-list__items">
                             {
-                                for (*epg_sources).iter().enumerate().map(|(idx, source)| {
-                                    let epg_sources_remove = epg_sources.clone();
+                                for (*epg_sources_list).iter().enumerate().map(|(idx, source)| {
+                                    let epg_sources_remove = epg_sources_list.clone();
                                     html! {
                                         <div class="tp__form-list__item" key={idx}>
                                             <div class="tp__form-list__item-content">
@@ -388,50 +397,48 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                                 })
                             }
                             </div>
-                            <div class="tp__form-list__add">
-                                <input
-                                    type="text"
-                                    placeholder={translate.t(LABEL_EPG_SOURCE_URL)}
-                                    id="epg-source-input"
-                                />
-                                <button
-                                    onclick={Callback::from(move |_| {
-                                        if let Some(input) = web_sys::window()
-                                            .and_then(|w| w.document())
-                                            .and_then(|d| d.get_element_by_id("epg-source-input"))
-                                            .and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok())
-                                        {
-                                            let url = input.value().trim().to_string();
-                                            if !url.is_empty() {
-                                                let mut sources = (*epg_sources_add).clone();
-                                                sources.push(EpgSourceDto {
-                                                    url,
-                                                    priority: 0,
-                                                    logo_override: false,
-                                                });
-                                                epg_sources_add.set(sources);
-                                                input.set_value("");
-                                            }
-                                        }
+
+                            if *show_epg_form_check {
+                                <EpgSourceItemForm
+                                    on_submit={Callback::from(move |source: EpgSourceDto| {
+                                        let mut sources = (*epg_sources_add).clone();
+                                        sources.push(source);
+                                        epg_sources_add.set(sources);
+                                        show_epg_form.set(false);
                                     })}
-                                >
-                                    {"+"}
-                                </button>
-                            </div>
+                                    on_cancel={Callback::from(move |_| {
+                                        show_epg_form.set(false);
+                                    })}
+                                />
+                            } else {
+                                <TextButton
+                                    class="primary"
+                                    name="add_epg_source"
+                                    icon="Add"
+                                    title={translate.t(LABEL_ADD_EPG_SOURCE)}
+                                    onclick={Callback::from(move |_| {
+                                        show_epg_form_toggle.set(true);
+                                    })}
+                                />
+                            }
                         </div>
                     }
                 })}
 
                 // Aliases Section
                 { config_field_child!(translate.t(LABEL_ALIASES), {
-                    let aliases_add = aliases.clone();
                     let aliases_list = aliases.clone();
+                    let aliases_add = aliases.clone();
+                    let show_alias_form_toggle = show_alias_form.clone();
+                    let show_alias_form_check = show_alias_form.clone();
+                    let next_id = (*aliases_list).iter().map(|a| a.id).max().unwrap_or(0) + 1;
+
                     html! {
                         <div class="tp__form-list">
                             <div class="tp__form-list__items">
                             {
-                                for (*aliases).iter().enumerate().map(|(idx, alias)| {
-                                    let aliases_remove = aliases.clone();
+                                for (*aliases_list).iter().enumerate().map(|(idx, alias)| {
+                                    let aliases_remove = aliases_list.clone();
                                     html! {
                                         <div class="tp__form-list__item" key={idx}>
                                             <div class="tp__form-list__item-content">
@@ -452,48 +459,31 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                                 })
                             }
                             </div>
-                            <div class="tp__form-list__add-alias">
-                                <input type="text" placeholder={translate.t(LABEL_ALIAS_NAME)} id="alias-name-input" />
-                                <input type="text" placeholder={translate.t(LABEL_URL)} id="alias-url-input" />
-                                <button
-                                    onclick={Callback::from(move |_| {
-                                        if let Some(window) = web_sys::window() {
-                                            if let Some(document) = window.document() {
-                                                let name_input = document
-                                                    .get_element_by_id("alias-name-input")
-                                                    .and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok());
-                                                let url_input = document
-                                                    .get_element_by_id("alias-url-input")
-                                                    .and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok());
 
-                                                if let (Some(name_el), Some(url_el)) = (name_input, url_input) {
-                                                    let name = name_el.value().trim().to_string();
-                                                    let url = url_el.value().trim().to_string();
-                                                    if !name.is_empty() && !url.is_empty() {
-                                                        let mut items = (*aliases_add).clone();
-                                                        let new_id = items.iter().map(|a| a.id).max().unwrap_or(0) + 1;
-                                                        items.push(ConfigInputAliasDto {
-                                                            id: new_id,
-                                                            name,
-                                                            url,
-                                                            username: None,
-                                                            password: None,
-                                                            priority: 0,
-                                                            max_connections: 1,
-                                                            exp_date: None,
-                                                        });
-                                                        aliases_add.set(items);
-                                                        name_el.set_value("");
-                                                        url_el.set_value("");
-                                                    }
-                                                }
-                                            }
-                                        }
+                            if *show_alias_form_check {
+                                <AliasItemForm
+                                    next_id={next_id}
+                                    on_submit={Callback::from(move |alias: ConfigInputAliasDto| {
+                                        let mut items = (*aliases_add).clone();
+                                        items.push(alias);
+                                        aliases_add.set(items);
+                                        show_alias_form.set(false);
                                     })}
-                                >
-                                    {"+"}
-                                </button>
-                            </div>
+                                    on_cancel={Callback::from(move |_| {
+                                        show_alias_form.set(false);
+                                    })}
+                                />
+                            } else {
+                                <TextButton
+                                    class="primary"
+                                    name="add_alias"
+                                    icon="Add"
+                                    title={translate.t(LABEL_ADD_ALIAS)}
+                                    onclick={Callback::from(move |_| {
+                                        show_alias_form_toggle.set(true);
+                                    })}
+                                />
+                            }
                         </div>
                     }
                 })}
