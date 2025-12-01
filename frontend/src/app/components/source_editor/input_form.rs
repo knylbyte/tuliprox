@@ -120,7 +120,6 @@ generate_form_reducer!(
         Priority => priority: i16,
         MaxConnections => max_connections: u16,
         Method => method: InputFetchMethod,
-        Headers => headers: HashMap<String, String>,
         ExpDate => exp_date: Option<i64>,
     }
 );
@@ -165,9 +164,10 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
             modified: false,
         });
 
-    // State for EPG sources and Aliases
+    // State for EPG sources, Aliases, and Headers
     let epg_sources_state = use_state(|| Vec::<EpgSourceDto>::new());
     let aliases_state = use_state(|| Vec::<ConfigInputAliasDto>::new());
+    let headers_state = use_state(|| HashMap::<String, String>::new());
 
     let staged_input_types = use_memo(staged_input_state.form.input_type, |input_type| {
         let default_it = input_type;
@@ -191,6 +191,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
         let staged_input_state = staged_input_state.clone();
         let epg_sources_state = epg_sources_state.clone();
         let aliases_state = aliases_state.clone();
+        let headers_state = headers_state.clone();
 
         let config_input = props.input.clone();
 
@@ -210,6 +211,9 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                         .map_or_else(StagedInputDto::default, |c| c.clone()),
                 ));
 
+                // Load headers
+                headers_state.set(input.headers.clone());
+
                 // Load EPG sources
                 epg_sources_state.set(
                     input
@@ -228,6 +232,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                 ));
                 staged_input_state
                     .dispatch(StagedInputFormAction::SetAll(StagedInputDto::default()));
+                headers_state.set(HashMap::new());
                 epg_sources_state.set(Vec::new());
                 aliases_state.set(Vec::new());
             }
@@ -331,7 +336,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
     };
 
     let render_advanced = || {
-        let input_form_state_headers = input_form_state.clone();
+        let headers = headers_state.clone();
         let epg_sources = epg_sources_state.clone();
         let aliases = aliases_state.clone();
 
@@ -339,14 +344,15 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
             <Card class="tp__config-view__card">
                 // Headers Section
                 { config_field_child!(translate.t(LABEL_HEADERS), {
+                    let headers_set = headers.clone();
                     html! {
                         <KeyValueEditor
-                            entries={input_form_state_headers.form.headers.clone()}
+                            entries={(*headers).clone()}
                             readonly={false}
                             key_placeholder="Header name"
                             value_placeholder="Header value"
-                            on_change={Callback::from(move |headers: HashMap<String, String>| {
-                                input_form_state_headers.dispatch(ConfigInputFormAction::Headers(headers));
+                            on_change={Callback::from(move |new_headers: HashMap<String, String>| {
+                                headers_set.set(new_headers);
                             })}
                         />
                     }
@@ -500,6 +506,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
         let input_form_state = input_form_state.clone();
         let input_options_state = input_options_state.clone();
         let staged_input_state = staged_input_state.clone();
+        let headers_state = headers_state.clone();
         let epg_sources_state = epg_sources_state.clone();
         let aliases_state = aliases_state.clone();
         let block_id = props.block_id;
@@ -519,6 +526,9 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
             } else {
                 Some(staged_input.clone())
             };
+
+            // Handle Headers
+            input.headers = (*headers_state).clone();
 
             // Handle EPG
             let epg_sources = (*epg_sources_state).clone();
