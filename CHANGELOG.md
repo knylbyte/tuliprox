@@ -1,5 +1,6 @@
 # Changelog
 # 3.1.9 (2025-11-xx)
+- test
 - Added `name` attribute to Staged Input.
 - Real-time active provider connection monitoring (dashboard + websocket)
 - Source editor: block selection, batch-mode UI and automatic layout
