@@ -105,6 +105,13 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
     // State for Trakt lists
     let trakt_lists_state = use_state(|| Vec::<TraktListConfigDto>::new());
 
+    // State for adding new Trakt list
+    let trakt_list_add_state: UseReducerHandle<TraktListConfigFormState> =
+        use_reducer(|| TraktListConfigFormState {
+            form: TraktListConfigDto::default(),
+            modified: false,
+        });
+
     let view_visible = use_state(|| OutputFormPage::Main.to_string());
 
     let on_tab_click = {
@@ -157,24 +164,26 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
     let render_trakt = || {
         let trakt_lists = trakt_lists_state.clone();
         let trakt_api = trakt_api_state.clone();
+        let trakt_list_add = trakt_list_add_state.clone();
 
         // Create content type options
-        let content_type_options = use_memo((), |_| {
+        let content_type_options = use_memo(trakt_list_add.form.content_type, |content_type| {
+            let default_ct = content_type;
             vec![
                 DropDownOption {
                     id: "vod".to_string(),
                     label: html! { "Vod" },
-                    selected: false,
+                    selected: default_ct == &TraktContentType::Vod,
                 },
                 DropDownOption {
                     id: "series".to_string(),
                     label: html! { "Series" },
-                    selected: false,
+                    selected: default_ct == &TraktContentType::Series,
                 },
                 DropDownOption {
                     id: "both".to_string(),
                     label: html! { "Both" },
-                    selected: true,
+                    selected: default_ct == &TraktContentType::Both,
                 },
             ]
         });
@@ -235,80 +244,44 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
                             }
                             </div>
                             <div class="tp__form-list__add-trakt">
-                                <input type="text" placeholder={translate.t(LABEL_TRAKT_USER)} id="trakt-user-input" />
-                                <input type="text" placeholder={translate.t(LABEL_TRAKT_LIST_SLUG)} id="trakt-slug-input" />
-                                <input type="text" placeholder={translate.t(LABEL_TRAKT_CATEGORY_NAME)} id="trakt-category-input" />
-                                <select id="trakt-content-type-input">
-                                    <option value="vod">{"Vod"}</option>
-                                    <option value="series">{"Series"}</option>
-                                    <option value="both" selected=true>{"Both"}</option>
-                                </select>
-                                <input
-                                    type="number"
-                                    placeholder={translate.t(LABEL_TRAKT_FUZZY_MATCH_THRESHOLD)}
-                                    id="trakt-threshold-input"
-                                    min="0"
-                                    max="100"
-                                    value="80"
-                                />
-                                <button
-                                    onclick={Callback::from(move |_| {
-                                        if let Some(window) = web_sys::window() {
-                                            if let Some(document) = window.document() {
-                                                let user_input = document
-                                                    .get_element_by_id("trakt-user-input")
-                                                    .and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok());
-                                                let slug_input = document
-                                                    .get_element_by_id("trakt-slug-input")
-                                                    .and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok());
-                                                let category_input = document
-                                                    .get_element_by_id("trakt-category-input")
-                                                    .and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok());
-                                                let content_type_input = document
-                                                    .get_element_by_id("trakt-content-type-input")
-                                                    .and_then(|e| e.dyn_into::<web_sys::HtmlSelectElement>().ok());
-                                                let threshold_input = document
-                                                    .get_element_by_id("trakt-threshold-input")
-                                                    .and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok());
-
-                                                if let (Some(user_el), Some(slug_el), Some(category_el), Some(ct_el), Some(threshold_el)) =
-                                                    (user_input, slug_input, category_input, content_type_input, threshold_input)
-                                                {
-                                                    let user = user_el.value().trim().to_string();
-                                                    let slug = slug_el.value().trim().to_string();
-                                                    let category = category_el.value().trim().to_string();
-                                                    let content_type_str = ct_el.value();
-                                                    let threshold_str = threshold_el.value();
-
-                                                    if !user.is_empty() && !slug.is_empty() && !category.is_empty() {
-                                                        let content_type = match content_type_str.as_str() {
-                                                            "vod" => TraktContentType::Vod,
-                                                            "series" => TraktContentType::Series,
-                                                            _ => TraktContentType::Both,
-                                                        };
-                                                        let threshold = threshold_str.parse::<u8>().unwrap_or(80).clamp(0, 100);
-
-                                                        let mut items = (*trakt_lists_add).clone();
-                                                        items.push(TraktListConfigDto {
-                                                            user,
-                                                            list_slug: slug,
-                                                            category_name: category,
-                                                            content_type,
-                                                            fuzzy_match_threshold: threshold,
-                                                        });
-                                                        trakt_lists_add.set(items);
-
-                                                        user_el.set_value("");
-                                                        slug_el.set_value("");
-                                                        category_el.set_value("");
-                                                        threshold_el.set_value("80");
+                                { edit_field_text!(trakt_list_add, translate.t(LABEL_TRAKT_USER), user, TraktListConfigFormAction::User) }
+                                { edit_field_text!(trakt_list_add, translate.t(LABEL_TRAKT_LIST_SLUG), list_slug, TraktListConfigFormAction::ListSlug) }
+                                { edit_field_text!(trakt_list_add, translate.t(LABEL_TRAKT_CATEGORY_NAME), category_name, TraktListConfigFormAction::CategoryName) }
+                                { config_field_child!(translate.t(LABEL_TRAKT_CONTENT_TYPE), {
+                                    let trakt_list_add_ct = trakt_list_add.clone();
+                                    html! {
+                                        <Select
+                                            name={"trakt_content_type"}
+                                            multi_select={false}
+                                            on_select={Callback::from(move |(_, selections):(String, DropDownSelection)| {
+                                                match selections {
+                                                    DropDownSelection::Single(option) => {
+                                                        if let Ok(ct) = option.parse::<TraktContentType>() {
+                                                            trakt_list_add_ct.dispatch(TraktListConfigFormAction::ContentType(ct));
+                                                        }
                                                     }
+                                                    _ => {}
                                                 }
-                                            }
+                                            })}
+                                            options={content_type_options.clone()}
+                                        />
+                                    }
+                                })}
+                                { edit_field_number_u8!(trakt_list_add, translate.t(LABEL_TRAKT_FUZZY_MATCH_THRESHOLD), fuzzy_match_threshold, TraktListConfigFormAction::FuzzyMatchThreshold) }
+                                <button
+                                    class="tp__form-list__add-button"
+                                    onclick={Callback::from(move |_| {
+                                        let list_data = trakt_list_add.data();
+                                        if !list_data.user.is_empty() && !list_data.list_slug.is_empty() && !list_data.category_name.is_empty() {
+                                            let mut items = (*trakt_lists_add).clone();
+                                            items.push(list_data.clone());
+                                            trakt_lists_add.set(items);
+                                            // Reset form
+                                            trakt_list_add.dispatch(TraktListConfigFormAction::SetAll(TraktListConfigDto::default()));
                                         }
                                     })}
                                 >
-                                    {"+"}
+                                    {translate.t(LABEL_ADD_TRAKT_LIST)}
                                 </button>
                             </div>
                         </div>
