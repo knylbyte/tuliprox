@@ -1,9 +1,10 @@
 use crate::app::components::config::HasFormData;
-use crate::app::components::{BlockId, BlockInstance, Card, EditMode, Panel, SourceEditorContext, TextButton};
-use crate::{ edit_field_bool,  edit_field_number_u16, edit_field_text_option, generate_form_reducer};
-use shared::model::{ XtreamTargetOutputDto, TargetOutputDto};
+use crate::app::components::{BlockId, BlockInstance, Card, EditMode, IconButton, Panel, SourceEditorContext, TextButton, TraktListItemForm};
+use crate::{config_field_child, edit_field_bool, edit_field_number_u16, edit_field_text, edit_field_text_option, generate_form_reducer};
+use shared::model::{TargetOutputDto, TraktApiConfigDto, TraktConfigDto, TraktContentType, TraktListConfigDto, XtreamTargetOutputDto};
 use std::fmt::Display;
 use std::rc::Rc;
+use web_sys::MouseEvent;
 use yew::{classes, function_component, html, use_context, use_effect_with, use_reducer, use_state, Callback, Html, Properties, UseReducerHandle};
 use yew_i18n::use_translation;
 
@@ -15,7 +16,12 @@ const LABEL_RESOLVE_VOD_DELAY: &str = "LABEL.RESOLVE_VOD_DELAY_SEC";
 const LABEL_RESOLVE_SERIES: &str = "LABEL.RESOLVE_SERIES";
 const LABEL_RESOLVE_SERIES_DELAY: &str = "LABEL.RESOLVE_SERIES_DELAY_SEC";
 const LABEL_FILTER: &str = "LABEL.FILTER";
+const LABEL_TRAKT_API_KEY: &str = "LABEL.TRAKT_API_KEY";
+const LABEL_TRAKT_API_VERSION: &str = "LABEL.TRAKT_API_VERSION";
+const LABEL_TRAKT_API_URL: &str = "LABEL.TRAKT_API_URL";
+const LABEL_TRAKT_LISTS: &str = "LABEL.TRAKT_LISTS";
 
+const LABEL_ADD_TRAKT_LIST: &str = "LABEL.ADD_TRAKT_LIST";
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum OutputFormPage {
@@ -31,17 +37,15 @@ impl Display for OutputFormPage {
         })
     }
 }
-//
-// generate_form_reducer!(
-//     state: TraktConfigFormState { form: TraktConfigDto },
-//     action_name: TraktConfigFormAction,
-//     fields {
-//         IgnoreLogo => ignore_logo: bool,
-//         ShareLiveStreams => share_live_streams: bool,
-//         RemoveDuplicates => remove_duplicates: bool,
-//         ForceRedirect => force_redirect: Option<ClusterFlags>,
-//     }
-// );
+generate_form_reducer!(
+    state: TraktApiConfigFormState { form: TraktApiConfigDto },
+    action_name: TraktApiConfigFormAction,
+    fields {
+        Key => key: String,
+        Version => version: String,
+        Url => url: String,
+    }
+);
 
 generate_form_reducer!(
     state: XtreamTargetOutputFormState { form: XtreamTargetOutputDto },
@@ -74,11 +78,18 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
             form: XtreamTargetOutputDto::default(),
             modified: false,
         });
-    // let target_options_state: UseReducerHandle<TraktConfigFormState> =
-    //     use_reducer(|| TraktConfigFormState {
-    //         form: TraktConfigDto::default(),
-    //         modified: false,
-    //     });
+
+    let trakt_api_state: UseReducerHandle<TraktApiConfigFormState> =
+        use_reducer(|| TraktApiConfigFormState {
+            form: TraktApiConfigDto::default(),
+            modified: false,
+        });
+
+    // State for Trakt lists
+    let trakt_lists_state = use_state(Vec::<TraktListConfigDto>::new);
+
+    // State for showing trakt list form
+    let show_trakt_list_form_state = use_state(|| false);
 
     let view_visible = use_state(|| OutputFormPage::Main.to_string());
 
@@ -89,18 +100,70 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
 
     {
         let output_form_state = output_form_state.clone();
+        let trakt_api_state = trakt_api_state.clone();
+        let trakt_lists_state = trakt_lists_state.clone();
 
         let config_output = props.output.clone();
 
         use_effect_with(config_output, move |cfg| {
             if let Some(target) = cfg {
                 output_form_state.dispatch(XtreamTargetOutputFormAction::SetAll(target.as_ref().clone()));
+
+                // Load Trakt configuration
+                if let Some(trakt) = &target.trakt {
+                    trakt_api_state.dispatch(TraktApiConfigFormAction::SetAll(trakt.api.clone()));
+                    trakt_lists_state.set(trakt.lists.clone());
+                } else {
+                    trakt_api_state.dispatch(TraktApiConfigFormAction::SetAll(TraktApiConfigDto::default()));
+                    trakt_lists_state.set(Vec::new());
+                }
             } else {
                 output_form_state.dispatch(XtreamTargetOutputFormAction::SetAll(XtreamTargetOutputDto::default()));
+                trakt_api_state.dispatch(TraktApiConfigFormAction::SetAll(TraktApiConfigDto::default()));
+                trakt_lists_state.set(Vec::new());
             }
             || ()
         });
     }
+
+    let handle_add_trakt_list_item = {
+        let trakt_list = trakt_lists_state.clone();
+        let show_trakt_list_form = show_trakt_list_form_state.clone();
+
+        Callback::from(move |item: TraktListConfigDto| {
+            let mut items = (*trakt_list).clone();
+            items.push(item);
+            trakt_list.set(items);
+            show_trakt_list_form.set(false);
+        })
+    };
+
+    let handle_remove_trakt_list_item = {
+        let trakt_list = trakt_lists_state.clone();
+        Callback::from(move |(idx, e): (String, MouseEvent)| {
+            e.prevent_default();
+            if let Ok(index) = idx.parse::<usize>() {
+                let mut items = (*trakt_list).clone();
+                items.remove(index);
+                trakt_list.set(items);
+            }
+        })
+    };
+
+    let handle_close_trakt_list_form = {
+        let show_trakt_list_form = show_trakt_list_form_state.clone();
+        Callback::from(move |_name| {
+            show_trakt_list_form.set(false);
+        })
+    };
+
+    let handle_show_trakt_list_form = {
+        let show_trakt_list_form = show_trakt_list_form_state.clone();
+        Callback::from(move |_name| {
+            show_trakt_list_form.set(true);
+        })
+    };
+
     let render_output = || {
         html! {
             <Card class="tp__config-view__card">
@@ -116,6 +179,80 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
         }
     };
 
+    let render_trakt = || {
+        let trakt_lists = trakt_lists_state.clone();
+        let trakt_api = trakt_api_state.clone();
+        let show_trakt_list_form = show_trakt_list_form_state.clone();
+
+        html! {
+            <Card class="tp__config-view__card">
+                if *show_trakt_list_form {
+                    <TraktListItemForm
+                        on_submit={handle_add_trakt_list_item}
+                        on_cancel={handle_close_trakt_list_form}
+                    />
+                } else {
+                // Trakt API Configuration
+                <div class="tp__form-section">
+                    <h3>{"API Configuration"}</h3>
+                    { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_KEY), key, TraktApiConfigFormAction::Key) }
+                    { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_VERSION), version, TraktApiConfigFormAction::Version) }
+                    { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_URL), url, TraktApiConfigFormAction::Url) }
+                </div>
+
+                // Trakt Lists
+                { config_field_child!(translate.t(LABEL_TRAKT_LISTS), {
+                    let trakt_lists_list = trakt_lists.clone();
+                    html! {
+                        <div class="tp__form-list">
+                            <div class="tp__form-list__items">
+                            {
+                                for (*trakt_lists_list).iter().enumerate().map(|(idx, list)| {
+                                    let content_type_str = match list.content_type {
+                                        TraktContentType::Vod => "Vod",
+                                        TraktContentType::Series => "Series",
+                                        TraktContentType::Both => "Both",
+                                    };
+                                    html! {
+                                        <div class="tp__form-list__item" key={idx}>
+                                            <IconButton
+                                                name={idx.to_string()}
+                                                icon="Delete"
+                                                onclick={handle_remove_trakt_list_item.clone()}/>
+                                            <div class="tp__form-list__item-content">
+                                                <span>
+                                                    <strong>{&list.user}</strong>
+                                                    {" / "}
+                                                    {&list.list_slug}
+                                                    {" - "}
+                                                    {&list.category_name}
+                                                    {" ("}
+                                                    {content_type_str}
+                                                    {", "}
+                                                    {list.fuzzy_match_threshold}
+                                                    {"%)"}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    }
+                                })
+                            }
+                            </div>
+
+                            <TextButton
+                                class="primary"
+                                name="add_trakt_list"
+                                icon="Add"
+                                title={translate.t(LABEL_ADD_TRAKT_LIST)}
+                                onclick={handle_show_trakt_list_form}
+                            />
+                        </div>
+                    }
+                })}
+            }
+            </Card>
+        }
+    };
 
     let render_edit_mode = || {
         html! {
@@ -149,7 +286,7 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
                 {render_output()}
                 </Panel>
                 <Panel value={OutputFormPage::Trakt.to_string()} active={view_visible.to_string()}>
-                    {"TODO..."}
+                {render_trakt()}
                 </Panel>
             </div>
             </div>
@@ -159,9 +296,23 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
     let handle_apply_target = {
         let source_editor_ctx = source_editor_ctx.clone();
         let output_form_state = output_form_state.clone();
+        let trakt_api_state = trakt_api_state.clone();
+        let trakt_lists_state = trakt_lists_state.clone();
         let block_id = props.block_id;
         Callback::from(move |_| {
-            let output = output_form_state.data().clone();
+            let mut output = output_form_state.data().clone();
+
+            // Handle Trakt configuration
+            let trakt_lists = (*trakt_lists_state).clone();
+            output.trakt = if trakt_lists.is_empty() {
+                None
+            } else {
+                Some(TraktConfigDto {
+                    api: trakt_api_state.data().clone(),
+                    lists: trakt_lists,
+                })
+            };
+
             source_editor_ctx.on_form_change.emit((block_id, BlockInstance::Output(Rc::new(TargetOutputDto::Xtream(output)))));
             source_editor_ctx.edit_mode.set(EditMode::Inactive);
         })

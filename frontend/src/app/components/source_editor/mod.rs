@@ -12,6 +12,9 @@ mod output_m3u_form;
 mod output_strm_form;
 mod output_hdhomerun_form;
 mod layout;
+mod epg_source_item_form;
+mod alias_item_form;
+mod trakt_list_item_form;
 
 pub(crate) use editor_view::*;
 pub(crate) use editor_model::*;
@@ -26,3 +29,6 @@ pub(crate) use output_xtream_form::*;
 pub(crate) use output_m3u_form::*;
 pub(crate) use output_strm_form::*;
 pub(crate) use output_hdhomerun_form::*;
+pub(crate) use epg_source_item_form::*;
+pub(crate) use alias_item_form::*;
+pub(crate) use trakt_list_item_form::*;

@@ -30,3 +30,5 @@ docker/resources
 
 # Ignore VSCode settings and files
 /.vscode
+
+.claude
