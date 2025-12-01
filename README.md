@@ -1269,7 +1269,7 @@ If you have non ascii characters in you playlist and want to
 write regexp without considering chars like `é` and use `e` instead, set this option to `true`.
 [unidecode](https://crates.io/crates/unidecode) is used to convert the text.
 
-### 2.3.3 `create_alias`
+### 2.3.3 `create_alias (BETA)`
 Set this to `true` to keep the original channel and add a mapped copy whenever a mapper rule matches. The copy gets a derived UUID and follows the mapped fields (e.g. a new group), so a channel can live in multiple groups such as favourites.
 
 Example:
