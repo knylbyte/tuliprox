@@ -327,7 +327,11 @@
     "RESOLVE_VOD_DELAY_SEC": "Resolve Vod Delay  (sec)",
     "RESOLVE_SERIES": "Resolve Series",
     "RESOLVE_SERIES_DELAY_SEC": "Resolve Series Delay (sec)",
-    "COPY_CREDENTIALS": "Copy Credentials"
+    "COPY_CREDENTIALS": "Copy Credentials",
+    "EXPORT_STYLE": "Export Style",
+    "STRM_PROPS": "Properties",
+    "ADD_PROPERTY": "Add Property"
+
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "Playlist Category Selection"
