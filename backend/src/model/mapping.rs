@@ -30,6 +30,8 @@ pub struct Mapping {
     pub id: String,
     #[serde(default)]
     pub match_as_ascii: bool,
+    #[serde(default)]
+    pub create_alias: bool,
     pub mapper: Option<Vec<Mapper>>,
     pub counter: Option<Vec<MappingCounterDefinition>>,
     #[serde(skip_serializing, skip_deserializing)]
@@ -43,6 +45,7 @@ impl From<&MappingDto>  for Mapping {
         Self {
             id: dto.id.clone(),
             match_as_ascii: dto.match_as_ascii,
+            create_alias: dto.create_alias,
             mapper: dto.mapper.as_ref().map(|l| l.iter().map(Mapper::from).collect()),
             counter: dto.counter.clone(),
             t_counter: dto.t_counter.clone(),

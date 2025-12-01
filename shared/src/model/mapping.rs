@@ -187,6 +187,8 @@ pub struct MappingDto {
     pub id: String,
     #[serde(default)]
     pub match_as_ascii: bool,
+    #[serde(default)]
+    pub create_alias: bool,
     pub mapper: Option<Vec<MapperDto>>,
     pub counter: Option<Vec<MappingCounterDefinition>>,
     #[serde(skip_serializing, skip_deserializing)]

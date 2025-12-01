@@ -33,7 +33,7 @@ use reqwest::Client;
 use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
 use shared::foundation::filter::{get_field_value, set_field_value, Filter, ValueAccessor, ValueProvider};
 use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
-use shared::utils::default_as_default;
+use shared::utils::{default_as_default, hash_bytes};
 use std::time::Instant;
 
 fn is_valid(pli: &PlaylistItem, filter: &Filter) -> bool {
@@ -170,7 +170,15 @@ fn rename_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Opt
     }
 }
 
-fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
+fn create_alias_uuid(base_uuid: &UUIDType, mapping_id: &str) -> UUIDType {
+    let mut data = Vec::with_capacity(base_uuid.len() + mapping_id.len());
+    data.extend_from_slice(base_uuid);
+    data.extend_from_slice(mapping_id.as_bytes());
+    hash_bytes(&data)
+}
+
+fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> (PlaylistItem, bool) {
+    let mut matched = false;
     if let Some(mapper) = &mapping.mapper {
         if !mapper.is_empty() {
             let header = &channel.header;
@@ -183,6 +191,7 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
                     if let Some(filter) = &m.t_filter {
                         let provider = ValueProvider { pli: ref_chan };
                         if filter.filter(&provider) {
+                            matched = true;
                             let mut accessor = ValueAccessor { pli: ref_chan };
                             script.eval(&mut accessor, templates);
                         }
@@ -191,7 +200,23 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
             }
         }
     }
-    channel
+    (channel, matched)
+}
+
+fn map_channel_with_aliases(channel: PlaylistItem, mapping: &Mapping) -> Vec<PlaylistItem> {
+    if mapping.create_alias {
+        let original = channel.clone();
+        let (mut mapped_channel, matched) = map_channel(channel, mapping);
+        if matched {
+            mapped_channel.header.uuid = create_alias_uuid(original.header.get_uuid(), &mapping.id);
+            vec![original, mapped_channel]
+        } else {
+            vec![mapped_channel]
+        }
+    } else {
+        let (mapped_channel, _) = map_channel(channel, mapping);
+        vec![mapped_channel]
+    }
 }
 
 fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {
@@ -200,7 +225,7 @@ fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option
             let mut grp = playlist_group.clone();
             mappings.iter().filter(|&mapping| mapping.mapper.as_ref().is_some_and(|v| !v.is_empty()))
                 .for_each(|mapping|
-                    grp.channels = grp.channels.drain(..).map(|chan| map_channel(chan, mapping)).collect());
+                    grp.channels = grp.channels.drain(..).flat_map(|chan| map_channel_with_aliases(chan, mapping)).collect());
             grp
         }).collect();
 
