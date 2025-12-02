@@ -85,14 +85,14 @@ pub fn M3uTargetOutputView(props: &M3uTargetOutputViewProps) -> Html {
     html! {
         <div class="tp__source-editor-form tp__config-view-page">
             <div class="tp__source-editor-form__toolbar tp__form-page__toolbar">
-                <TextButton class="primary" name="apply_m3u_output"
-                    icon="Accept"
-                    title={ translate.t("LABEL.OK")}
-                    onclick={handle_apply}></TextButton>
                 <TextButton class="secondary" name="cancel_m3u_output"
                     icon="Cancel"
                     title={ translate.t("LABEL.CANCEL")}
                     onclick={handle_cancel}></TextButton>
+                <TextButton class="primary" name="apply_m3u_output"
+                    icon="Accept"
+                    title={ translate.t("LABEL.OK")}
+                    onclick={handle_apply}></TextButton>
             </div>
             <div class="tp__input-form__body">
                 { render_output() }

@@ -211,14 +211,14 @@ pub fn StrmTargetOutputView(props: &StrmTargetOutputViewProps) -> Html {
     html! {
         <div class="tp__source-editor-form tp__config-view-page">
             <div class="tp__source-editor-form__toolbar tp__form-page__toolbar">
-                <TextButton class="primary" name="apply_strm_output"
-                    icon="Accept"
-                    title={ translate.t("LABEL.OK")}
-                    onclick={handle_apply}></TextButton>
                 <TextButton class="secondary" name="cancel_strm_output"
                     icon="Cancel"
                     title={ translate.t("LABEL.CANCEL")}
                     onclick={handle_cancel}></TextButton>
+                <TextButton class="primary" name="apply_strm_output"
+                    icon="Accept"
+                    title={ translate.t("LABEL.OK")}
+                    onclick={handle_apply}></TextButton>
             </div>
             { render_edit_mode() }
         </div>

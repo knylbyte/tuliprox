@@ -117,18 +117,18 @@ pub fn TraktListItemForm(props: &TraktListItemFormProps) -> Html {
 
             <div class="tp__form-page__toolbar">
                 <TextButton
-                    class="primary"
-                    name="submit_trakt_list"
-                    icon="Accept"
-                    title={translate.t("LABEL.SUBMIT")}
-                    onclick={handle_submit}
-                />
-                <TextButton
                     class="secondary"
                     name="cancel_trakt_list"
                     icon="Cancel"
                     title={translate.t("LABEL.CANCEL")}
                     onclick={handle_cancel}
+                />
+                <TextButton
+                    class="primary"
+                    name="submit_trakt_list"
+                    icon="Accept"
+                    title={translate.t("LABEL.SUBMIT")}
+                    onclick={handle_submit}
                 />
             </div>
         </Card>

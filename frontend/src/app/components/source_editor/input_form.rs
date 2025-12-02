@@ -10,6 +10,7 @@ use std::rc::Rc;
 use web_sys::MouseEvent;
 use yew::{classes, function_component, html, use_context, use_effect_with, use_memo, use_reducer, use_state, Callback, Html, Properties, UseReducerHandle};
 use yew_i18n::use_translation;
+use crate::app::components::title_card::TitledCard;
 
 const LABEL_NAME: &str = "LABEL.NAME";
 const LABEL_INPUT_TYPE: &str = "LABEL.INPUT_TYPE";
@@ -27,9 +28,10 @@ const LABEL_MAX_CONNECTIONS: &str = "LABEL.MAX_CONNECTIONS";
 const LABEL_EXP_DATE: &str = "LABEL.EXP_DATE";
 const LABEL_ADD_EPG_SOURCE: &str = "LABEL.ADD_EPG_SOURCE";
 const LABEL_ADD_ALIAS: &str = "LABEL.ADD_ALIAS";
-const LABEL_XTREAM_SKIP_LIVE: &str = "LABEL.SKIP_LIVE";
-const LABEL_XTREAM_SKIP_VOD: &str = "LABEL.SKIP_VOD";
-const LABEL_XTREAM_SKIP_SERIES: &str = "LABEL.SKIP_SERIES";
+const LABEL_SKIP: &str = "LABEL.SKIP";
+const LABEL_XTREAM_SKIP_LIVE: &str = "LABEL.LIVE";
+const LABEL_XTREAM_SKIP_VOD: &str = "LABEL.VOD";
+const LABEL_XTREAM_SKIP_SERIES: &str = "LABEL.SERIES";
 const LABEL_XTREAM_LIVE_STREAM_USE_PREFIX: &str = "LABEL.LIVE_STREAM_USE_PREFIX";
 const LABEL_XTREAM_LIVE_STREAM_WITHOUT_EXTENSION: &str = "LABEL.LIVE_STREAM_WITHOUT_EXTENSION";
 
@@ -280,9 +282,13 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
     let render_options = || {
         html! {
             <Card class="tp__config-view__card">
-            { edit_field_bool!(input_options_state, translate.t(LABEL_XTREAM_SKIP_LIVE), xtream_skip_live, ConfigInputOptionsFormAction::XtreamSkipLive) }
-            { edit_field_bool!(input_options_state, translate.t(LABEL_XTREAM_SKIP_VOD), xtream_skip_vod, ConfigInputOptionsFormAction::XtreamSkipVod) }
-            { edit_field_bool!(input_options_state, translate.t(LABEL_XTREAM_SKIP_SERIES), xtream_skip_series, ConfigInputOptionsFormAction::XtreamSkipSeries) }
+            <TitledCard title={translate.t(LABEL_SKIP)}>
+              <div class="tp__config-view__cols-3">
+                { edit_field_bool!(input_options_state, translate.t(LABEL_XTREAM_SKIP_LIVE), xtream_skip_live, ConfigInputOptionsFormAction::XtreamSkipLive) }
+                { edit_field_bool!(input_options_state, translate.t(LABEL_XTREAM_SKIP_VOD), xtream_skip_vod, ConfigInputOptionsFormAction::XtreamSkipVod) }
+                { edit_field_bool!(input_options_state, translate.t(LABEL_XTREAM_SKIP_SERIES), xtream_skip_series, ConfigInputOptionsFormAction::XtreamSkipSeries) }
+              </div>
+            </TitledCard>
             { edit_field_bool!(input_options_state, translate.t(LABEL_XTREAM_LIVE_STREAM_USE_PREFIX), xtream_live_stream_use_prefix, ConfigInputOptionsFormAction::XtreamLiveStreamUsePrefix) }
             { edit_field_bool!(input_options_state, translate.t(LABEL_XTREAM_LIVE_STREAM_WITHOUT_EXTENSION), xtream_live_stream_without_extension, ConfigInputOptionsFormAction::XtreamLiveStreamWithoutExtension) }
             </Card>
@@ -296,6 +302,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
         html! {
             <Card class="tp__config-view__card">
                 { edit_field_text!(staged_input_state, translate.t(LABEL_URL),  url, StagedInputFormAction::Url) }
+                <div class="tp__config-view__cols-2">
                 { edit_field_text_option!(staged_input_state, translate.t(LABEL_USERNAME), username, StagedInputFormAction::Username) }
                 { edit_field_text_option!(staged_input_state, translate.t(LABEL_PASSWORD), password, StagedInputFormAction::Password, true) }
                 { config_field_child!(translate.t(LABEL_FETCH_METHOD), {
@@ -335,6 +342,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                         options={staged_input_types.clone()}
                     />
                }})}
+                </div>
 
                 //{ edit_field_list!(staged_input_state, translate.t(LABEL_HEADERS), headers, StagedInputFormAction::Headers, translate.t(LABEL_ADD_HEADER)) }
             </Card>
@@ -344,15 +352,27 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
     let render_input = || {
         let input_method_selection = Rc::new(vec![input_form_state.form.method.to_string()]);
         let input_form_state_disp = input_form_state.clone();
+        let aliases = aliases_state.clone();
+        let show_alias_form = show_alias_form_state.clone();
+
         html! {
              <Card class="tp__config-view__card">
-               { edit_field_bool!(input_form_state, translate.t(LABEL_ENABLED), enabled, ConfigInputFormAction::Enabled) }
+              if *show_alias_form {
+                    <AliasItemForm
+                        on_submit={handle_add_alias_item}
+                        on_cancel={handle_close_add_alias_item}
+                    />
+              } else {
+                <div class="tp__config-view__cols-2">
                { edit_field_text!(input_form_state, translate.t(LABEL_NAME),  name, ConfigInputFormAction::Name) }
+               { edit_field_bool!(input_form_state, translate.t(LABEL_ENABLED), enabled, ConfigInputFormAction::Enabled) }
+                </div>
                { edit_field_text!(input_form_state, translate.t(LABEL_URL),  url, ConfigInputFormAction::Url) }
+                <div class="tp__config-view__cols-2">
                { edit_field_text_option!(input_form_state, translate.t(LABEL_USERNAME), username, ConfigInputFormAction::Username) }
                { edit_field_text_option!(input_form_state, translate.t(LABEL_PASSWORD), password, ConfigInputFormAction::Password, true) }
-               { edit_field_number_u16!(input_form_state, translate.t(LABEL_MAX_CONNECTIONS), max_connections, ConfigInputFormAction::MaxConnections) }
-               { edit_field_number_i16!(input_form_state, translate.t(LABEL_PRIORITY), priority, ConfigInputFormAction::Priority) }
+                 { edit_field_number_u16!(input_form_state, translate.t(LABEL_MAX_CONNECTIONS), max_connections, ConfigInputFormAction::MaxConnections) }
+                 { edit_field_number_i16!(input_form_state, translate.t(LABEL_PRIORITY), priority, ConfigInputFormAction::Priority) }
                { edit_field_date!(input_form_state, translate.t(LABEL_EXP_DATE), exp_date, ConfigInputFormAction::ExpDate) }
                { config_field_child!(translate.t(LABEL_FETCH_METHOD), {
                    html! {
@@ -367,7 +387,41 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                         selected={input_method_selection}
                     />
                }})}
+                </div>
                { edit_field_text_option!(input_form_state, translate.t(LABEL_PERSIST), persist, ConfigInputFormAction::Persist) }
+             // Aliases Section
+                  { config_field_child!(translate.t(LABEL_ALIASES), {
+                      let aliases_list = aliases.clone();
+                      html! {
+                        <div class="tp__form-list">
+                            <div class="tp__form-list__items">
+                            {
+                                for (*aliases_list).iter().enumerate().map(|(idx, alias)| {
+                                    html! {
+                                        <div class="tp__form-list__item" key={idx}>
+                                                <IconButton
+                                                name={idx.to_string()}
+                                                icon="Delete"
+                                                onclick={handle_remove_alias_list_item.clone()}/>
+                                            <div class="tp__form-list__item-content">
+                                                <span><strong>{&alias.name}</strong>{" - "}{&alias.url}</span>
+                                            </div>
+                                        </div>
+                                    }
+                                })
+                            }
+                            </div>
+                            <TextButton
+                                class="primary"
+                                name="add_alias"
+                                icon="Add"
+                                title={translate.t(LABEL_ADD_ALIAS)}
+                                onclick={handle_show_add_alias_item}
+                            />
+                        </div>
+                      }
+                  })}
+                }
             </Card>
         }
     };
@@ -375,9 +429,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
     let render_advanced = || {
         let headers = headers_state.clone();
         let epg_sources = epg_sources_state.clone();
-        let aliases = aliases_state.clone();
         let show_epg_form = show_epg_form_state.clone();
-        let show_alias_form = show_alias_form_state.clone();
 
         html! {
             <Card class="tp__config-view__card">
@@ -386,12 +438,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                         on_submit={handle_add_epg_item}
                         on_cancel={handle_close_add_epg_item}
                     />
-               } else if *show_alias_form {
-                    <AliasItemForm
-                        on_submit={handle_add_alias_item}
-                        on_cancel={handle_close_add_alias_item}
-                    />
-                } else {
+               } else  {
                   // Headers Section
                   { config_field_child!(translate.t(LABEL_HEADERS), {
                       let headers_set = headers.clone();
@@ -442,39 +489,6 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                                 icon="Add"
                                 title={translate.t(LABEL_ADD_EPG_SOURCE)}
                                 onclick={handle_show_add_epg_item}
-                            />
-                        </div>
-                      }
-                  })}
-
-                  // Aliases Section
-                  { config_field_child!(translate.t(LABEL_ALIASES), {
-                      let aliases_list = aliases.clone();
-                      html! {
-                        <div class="tp__form-list">
-                            <div class="tp__form-list__items">
-                            {
-                                for (*aliases_list).iter().enumerate().map(|(idx, alias)| {
-                                    html! {
-                                        <div class="tp__form-list__item" key={idx}>
-                                                <IconButton
-                                                name={idx.to_string()}
-                                                icon="Delete"
-                                                onclick={handle_remove_alias_list_item.clone()}/>
-                                            <div class="tp__form-list__item-content">
-                                                <span><strong>{&alias.name}</strong>{" - "}{&alias.url}</span>
-                                            </div>
-                                        </div>
-                                    }
-                                })
-                            }
-                            </div>
-                            <TextButton
-                                class="primary"
-                                name="add_alias"
-                                icon="Add"
-                                title={translate.t(LABEL_ADD_ALIAS)}
-                                onclick={handle_show_add_alias_item}
                             />
                         </div>
                       }
@@ -594,14 +608,14 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
     html! {
         <div class="tp__source-editor-form tp__config-view-page">
           <div class="tp__source-editor-form__toolbar tp__form-page__toolbar">
-             <TextButton class="primary" name="apply_input"
-                icon="Accept"
-                title={ translate.t("LABEL.OK")}
-                onclick={handle_apply_input}></TextButton>
              <TextButton class="secondary" name="cancel_input"
                 icon="Cancel"
                 title={ translate.t("LABEL.CANCEL")}
                 onclick={handle_cancel}></TextButton>
+             <TextButton class="primary" name="apply_input"
+                icon="Accept"
+                title={ translate.t("LABEL.OK")}
+                onclick={handle_apply_input}></TextButton>
           </div>
             { render_edit_mode() }
         </div>

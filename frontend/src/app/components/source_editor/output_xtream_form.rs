@@ -7,14 +7,14 @@ use std::rc::Rc;
 use web_sys::MouseEvent;
 use yew::{classes, function_component, html, use_context, use_effect_with, use_reducer, use_state, Callback, Html, Properties, UseReducerHandle};
 use yew_i18n::use_translation;
+use crate::app::components::title_card::TitledCard;
 
-const LABEL_SKIP_LIVE_DIRECT_SOURCE: &str = "LABEL.SKIP_LIVE_DIRECT_SOURCE";
-const LABEL_SKIP_VOD_DIRECT_SOURCE: &str = "LABEL.SKIP_VOD_DIRECT_SOURCE";
-const LABEL_SKIP_SERIES_DIRECT_SOURCE: &str = "LABEL.SKIP_SERIES_DIRECT_SOURCE";
-const LABEL_RESOLVE_VOD: &str = "LABEL.RESOLVE_VOD";
-const LABEL_RESOLVE_VOD_DELAY: &str = "LABEL.RESOLVE_VOD_DELAY_SEC";
-const LABEL_RESOLVE_SERIES: &str = "LABEL.RESOLVE_SERIES";
-const LABEL_RESOLVE_SERIES_DELAY: &str = "LABEL.RESOLVE_SERIES_DELAY_SEC";
+const LABEL_SKIP_DIRECT_SOURCE: &str = "LABEL.SKIP_DIRECT_SOURCE";
+const LABEL_LIVE: &str = "LABEL.LIVE";
+const LABEL_VOD: &str = "LABEL.VOD";
+const LABEL_SERIES: &str = "LABEL.SERIES";
+const LABEL_RESOLVE: &str = "LABEL.RESOLVE";
+const LABEL_RESOLVE_DELAY_SEC: &str = "LABEL.RESOLVE_DELAY_SEC";
 const LABEL_FILTER: &str = "LABEL.FILTER";
 const LABEL_TRAKT_API_KEY: &str = "LABEL.TRAKT_API_KEY";
 const LABEL_TRAKT_API_VERSION: &str = "LABEL.TRAKT_API_VERSION";
@@ -167,13 +167,25 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
     let render_output = || {
         html! {
             <Card class="tp__config-view__card">
-                { edit_field_bool!(output_form_state, translate.t(LABEL_SKIP_LIVE_DIRECT_SOURCE), skip_live_direct_source,  XtreamTargetOutputFormAction::SkipLiveDirectSource) }
-                { edit_field_bool!(output_form_state, translate.t(LABEL_SKIP_VOD_DIRECT_SOURCE), skip_video_direct_source,  XtreamTargetOutputFormAction::SkipVideoDirectSource) }
-                { edit_field_bool!(output_form_state, translate.t(LABEL_SKIP_SERIES_DIRECT_SOURCE), skip_series_direct_source,  XtreamTargetOutputFormAction::SkipSeriesDirectSource) }
-                { edit_field_bool!(output_form_state, translate.t(LABEL_RESOLVE_VOD), resolve_vod,  XtreamTargetOutputFormAction::ResolveVod) }
-                { edit_field_bool!(output_form_state, translate.t(LABEL_RESOLVE_SERIES), resolve_series,  XtreamTargetOutputFormAction::ResolveSeries) }
-                { edit_field_number_u16!(output_form_state, translate.t(LABEL_RESOLVE_VOD_DELAY), resolve_vod_delay,  XtreamTargetOutputFormAction::ResolveVodDelay) }
-                { edit_field_number_u16!(output_form_state, translate.t(LABEL_RESOLVE_SERIES_DELAY), resolve_series_delay,  XtreamTargetOutputFormAction::ResolveSeriesDelay) }
+                <TitledCard title={translate.t(LABEL_SKIP_DIRECT_SOURCE)}>
+                  <div class="tp__config-view__cols-3">
+                  { edit_field_bool!(output_form_state, translate.t(LABEL_LIVE), skip_live_direct_source,  XtreamTargetOutputFormAction::SkipLiveDirectSource) }
+                  { edit_field_bool!(output_form_state, translate.t(LABEL_VOD), skip_video_direct_source,  XtreamTargetOutputFormAction::SkipVideoDirectSource) }
+                  { edit_field_bool!(output_form_state, translate.t(LABEL_SERIES), skip_series_direct_source,  XtreamTargetOutputFormAction::SkipSeriesDirectSource) }
+                  </div>
+                </TitledCard>
+                <TitledCard title={translate.t(LABEL_RESOLVE)}>
+                    <div class="tp__config-view__cols-2">
+                    { edit_field_bool!(output_form_state, translate.t(LABEL_VOD), resolve_vod,  XtreamTargetOutputFormAction::ResolveVod) }
+                    { edit_field_bool!(output_form_state, translate.t(LABEL_SERIES), resolve_series,  XtreamTargetOutputFormAction::ResolveSeries) }
+                    </div>
+                </TitledCard>
+                <TitledCard title={translate.t(LABEL_RESOLVE_DELAY_SEC)}>
+                    <div class="tp__config-view__cols-2">
+                    { edit_field_number_u16!(output_form_state, translate.t(LABEL_VOD), resolve_vod_delay,  XtreamTargetOutputFormAction::ResolveVodDelay) }
+                    { edit_field_number_u16!(output_form_state, translate.t(LABEL_SERIES), resolve_series_delay,  XtreamTargetOutputFormAction::ResolveSeriesDelay) }
+                    </div>
+                </TitledCard>
                 { edit_field_text_option!(output_form_state, translate.t(LABEL_FILTER), filter, XtreamTargetOutputFormAction::Filter) }
             </Card>
         }
@@ -327,14 +339,14 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
     html! {
         <div class="tp__source-editor-form tp__config-view-page">
              <div class="tp__source-editor-form__toolbar tp__form-page__toolbar">
-             <TextButton class="primary" name="apply_input"
-                icon="Accept"
-                title={ translate.t("LABEL.OK")}
-                onclick={handle_apply_target}></TextButton>
              <TextButton class="secondary" name="cancel_input"
                 icon="Cancel"
                 title={ translate.t("LABEL.CANCEL")}
                 onclick={handle_cancel}></TextButton>
+             <TextButton class="primary" name="apply_input"
+                icon="Accept"
+                title={ translate.t("LABEL.OK")}
+                onclick={handle_apply_target}></TextButton>
           </div>
             { render_edit_mode() }
         </div>

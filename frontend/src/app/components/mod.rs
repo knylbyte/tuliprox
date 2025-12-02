@@ -49,6 +49,7 @@ mod websocket_status;
 mod floating_background;
 mod source_editor;
 mod cluster_flags_input;
+mod title_card;
 // pub use self::input::*;
 // pub use self::menu_item::*;
 // pub use self::popup_menu::*;

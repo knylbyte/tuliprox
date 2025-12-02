@@ -64,6 +64,24 @@
       font-weight: bold;
     }
   }
+
+  &__cols-2,
+  &__cols-3 {
+    display: grid;
+    gap: var(--gap-default);
+
+    .tp__form-field {
+      min-width: 0;
+    }
+  }
+
+  &__cols-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  &__cols-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
 }
 
 .tp__config-view-page {

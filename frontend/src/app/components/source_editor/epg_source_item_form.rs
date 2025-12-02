@@ -67,18 +67,18 @@ pub fn EpgSourceItemForm(props: &EpgSourceItemFormProps) -> Html {
 
             <div class="tp__form-page__toolbar">
                 <TextButton
-                    class="primary"
-                    name="submit_epg_source"
-                    icon="Accept"
-                    title={translate.t("LABEL.SUBMIT")}
-                    onclick={handle_submit}
-                />
-                <TextButton
                     class="secondary"
                     name="cancel_epg_source"
                     icon="Cancel"
                     title={translate.t("LABEL.CANCEL")}
                     onclick={handle_cancel}
+                />
+                <TextButton
+                    class="primary"
+                    name="submit_epg_source"
+                    icon="Accept"
+                    title={translate.t("LABEL.SUBMIT")}
+                    onclick={handle_submit}
                 />
             </div>
         </Card>

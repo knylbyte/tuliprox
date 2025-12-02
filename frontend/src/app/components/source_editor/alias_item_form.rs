@@ -76,26 +76,28 @@ pub fn AliasItemForm(props: &AliasItemFormProps) -> Html {
         <Card class="tp__config-view__card tp__item-form">
             { edit_field_text!(form_state, translate.t(LABEL_ALIAS_NAME), name, AliasFormAction::Name) }
             { edit_field_text!(form_state, translate.t(LABEL_URL), url, AliasFormAction::Url) }
-            { edit_field_text_option!(form_state, translate.t(LABEL_USERNAME), username, AliasFormAction::Username) }
-            { edit_field_text_option!(form_state, translate.t(LABEL_PASSWORD), password, AliasFormAction::Password, true) }
-            { edit_field_number_i16!(form_state, translate.t(LABEL_PRIORITY), priority, AliasFormAction::Priority) }
-            { edit_field_number_u16!(form_state, translate.t(LABEL_MAX_CONNECTIONS), max_connections, AliasFormAction::MaxConnections) }
+            <div class="tp__config-view__cols-2">
+              { edit_field_text_option!(form_state, translate.t(LABEL_USERNAME), username, AliasFormAction::Username) }
+              { edit_field_text_option!(form_state, translate.t(LABEL_PASSWORD), password, AliasFormAction::Password, true) }
+              { edit_field_number_i16!(form_state, translate.t(LABEL_PRIORITY), priority, AliasFormAction::Priority) }
+              { edit_field_number_u16!(form_state, translate.t(LABEL_MAX_CONNECTIONS), max_connections, AliasFormAction::MaxConnections) }
+            </div>
             { edit_field_date!(form_state, translate.t(LABEL_EXP_DATE), exp_date, AliasFormAction::ExpDate) }
 
             <div class="tp__form-page__toolbar">
-                <TextButton
-                    class="primary"
-                    name="submit_alias"
-                    icon="Accept"
-                    title={translate.t("LABEL.SUBMIT")}
-                    onclick={handle_submit}
-                />
                 <TextButton
                     class="secondary"
                     name="cancel_alias"
                     icon="Cancel"
                     title={translate.t("LABEL.CANCEL")}
                     onclick={handle_cancel}
+                />
+                <TextButton
+                    class="primary"
+                    name="submit_alias"
+                    icon="Accept"
+                    title={translate.t("LABEL.SUBMIT")}
+                    onclick={handle_submit}
                 />
             </div>
         </Card>
