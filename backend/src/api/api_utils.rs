@@ -1,5 +1,5 @@
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
-use crate::api::model::UserSession;
+use crate::api::model::{UserSession};
 use crate::api::model::{
     create_channel_unavailable_stream, create_custom_video_stream_response,
     create_provider_connections_exhausted_stream, create_provider_stream,
@@ -17,12 +17,12 @@ use crate::utils::request;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::BUILD_TIMESTAMP;
 use arc_swap::ArcSwapOption;
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-use log::{debug, error, log_enabled, trace, warn};
+use log::{debug, error,  log_enabled, trace, warn};
 use reqwest::header::RETRY_AFTER;
 use serde::Serialize;
 use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
@@ -373,16 +373,13 @@ async fn resolve_streaming_strategy(
                         )
                     };
 
-                    let available = match allocation {
-                        ProviderAllocation::Exhausted
-                        | ProviderAllocation::Available(_) => true,
-                        ProviderAllocation::GracePeriod(_) => false,
-                    };
-
-                    if available {
-                        ProviderStreamState::Available(Some(provider), url)
-                    } else {
-                        ProviderStreamState::GracePeriod(Some(provider), url)
+                    match allocation {
+                        ProviderAllocation::Exhausted => {
+                            let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
+                            ProviderStreamState::Custom(stream)
+                        },
+                        ProviderAllocation::Available(_) => ProviderStreamState::Available(Some(provider), url),
+                        ProviderAllocation::GracePeriod(_) => ProviderStreamState::GracePeriod(Some(provider), url),
                     }
                 }
             }
@@ -418,7 +415,7 @@ fn get_grace_period_millis(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn create_stream_response_details(
     app_state: &Arc<AppState>,
     stream_options: &StreamOptions,
@@ -449,6 +446,22 @@ async fn create_stream_response_details(
         .provider_handle
         .as_ref()
         .and_then(|guard| guard.allocation.get_provider_name());
+
+    if let ProviderStreamState::GracePeriod(ref provider_grace_check, ref stream_url) = streaming_strategy.provider_stream_state {
+        tokio::time::sleep(tokio::time::Duration::from_millis(grace_period_millis)).await;
+        if let Some(provider_name) = provider_grace_check.as_ref() {
+            if app_state.active_provider.is_over_limit(provider_name).await {
+                app_state.connection_manager.update_stream_detail(&fingerprint.addr, CustomVideoStreamType::ProviderConnectionsExhausted).await;
+                debug!("Provider connections exhausted after grace period for provider: {provider_name}");
+                let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
+                streaming_strategy.provider_stream_state = ProviderStreamState::Custom(stream);
+                let provider_handle = streaming_strategy.provider_handle.take();
+                app_state.connection_manager.release_provider_handle(provider_handle).await;
+            }
+        } else {
+            streaming_strategy.provider_stream_state = ProviderStreamState::Available(provider_grace_check.clone(), stream_url.clone());
+        }
+    }
 
     match streaming_strategy.provider_stream_state {
         // custom stream means we display our own stream like connection exhausted, channel-unavailable...
@@ -837,8 +850,7 @@ pub async fn stream_response(
         share_stream,
         connection_permission,
         None,
-    )
-        .await;
+    ).await;
 
     if stream_details.has_stream() {
         // let content_length = get_stream_content_length(provider_response.as_ref());
@@ -853,15 +865,20 @@ pub async fn stream_response(
         } else {
             None
         };
-        stream_channel.shared = share_stream;
+
+        let mut is_stream_shared = share_stream;
+        if let Some((_header, _status_code, _url, Some(_custom_video))) = stream_details.stream_info.as_ref() {
+            if stream_details.stream.is_some() {
+                is_stream_shared = false;
+            }
+        }
+
+        stream_channel.shared = is_stream_shared;
         let stream =
             ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, Some(session_token), req_headers)
                 .await;
-        let stream_resp = if share_stream {
-            debug_if_enabled!(
-                "Streaming shared stream request from {}",
-                sanitize_sensitive_info(stream_url)
-            );
+        let stream_resp = if is_stream_shared {
+            debug_if_enabled!("Streaming shared stream request from {}",sanitize_sensitive_info(stream_url));
             // Shared Stream response
             let shared_headers = provider_response
                 .as_ref()
@@ -898,9 +915,7 @@ pub async fn stream_response(
                 );
             if log_enabled!(log::Level::Debug) {
                 if session_url.eq(&stream_url) {
-                    debug!(
-                        "Streaming stream request from {}",
-                        sanitize_sensitive_info(stream_url)
+                    debug!("Streaming stream request from {}", sanitize_sensitive_info(stream_url)
                     );
                 } else {
                     debug!(
@@ -977,9 +992,7 @@ async fn try_shared_stream_response_if_any(
     if let Some((stream, provider)) =
         SharedStreamManager::subscribe_shared_stream(app_state, stream_url, &fingerprint.addr).await
     {
-        debug_if_enabled!(
-            "Using shared stream {}",
-            sanitize_sensitive_info(stream_url)
+        debug_if_enabled!("Using shared stream {}", sanitize_sensitive_info(stream_url)
         );
         if let Some(headers) = app_state
             .shared_stream_manager
@@ -991,6 +1004,7 @@ async fn try_shared_stream_response_if_any(
                 axum::http::StatusCode::OK,
             )));
             let mut stream_details = StreamDetails::from_stream(stream);
+
             stream_details.provider_name = provider;
             stream_channel.shared = true;
             let stream =

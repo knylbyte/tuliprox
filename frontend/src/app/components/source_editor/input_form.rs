@@ -174,40 +174,27 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
         use_effect_with(config_input, move |cfg| {
             if let Some(input) = cfg {
                 input_form_state.dispatch(ConfigInputFormAction::SetAll(input.as_ref().clone()));
+
                 input_options_state.dispatch(ConfigInputOptionsFormAction::SetAll(
-                    input
-                        .options
-                        .as_ref()
-                        .map_or_else(ConfigInputOptionsDto::default, |d| d.clone()),
+                    input.options.as_ref().map_or_else(ConfigInputOptionsDto::default, |d| d.clone()),
                 ));
+
                 staged_input_state.dispatch(StagedInputFormAction::SetAll(
-                    input
-                        .staged
-                        .as_ref()
-                        .map_or_else(StagedInputDto::default, |c| c.clone()),
+                    input.staged.as_ref().map_or_else(StagedInputDto::default, |c| c.clone()),
                 ));
 
                 // Load headers
                 headers_state.set(input.headers.clone());
 
                 // Load EPG sources
-                epg_sources_state.set(
-                    input
-                        .epg
-                        .as_ref()
-                        .and_then(|epg| epg.sources.clone())
-                        .unwrap_or_default()
-                );
+                epg_sources_state.set(input.epg.as_ref().and_then(|epg| epg.sources.clone()).unwrap_or_default());
 
                 // Load aliases
                 aliases_state.set(input.aliases.clone().unwrap_or_default());
             } else {
                 input_form_state.dispatch(ConfigInputFormAction::SetAll(ConfigInputDto::default()));
-                input_options_state.dispatch(ConfigInputOptionsFormAction::SetAll(
-                    ConfigInputOptionsDto::default(),
-                ));
-                staged_input_state
-                    .dispatch(StagedInputFormAction::SetAll(StagedInputDto::default()));
+                input_options_state.dispatch(ConfigInputOptionsFormAction::SetAll(ConfigInputOptionsDto::default()));
+                staged_input_state.dispatch(StagedInputFormAction::SetAll(StagedInputDto::default()));
                 headers_state.set(HashMap::new());
                 epg_sources_state.set(Vec::new());
                 aliases_state.set(Vec::new());
