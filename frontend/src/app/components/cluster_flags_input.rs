@@ -2,6 +2,13 @@ use shared::model::{ClusterFlags};
 use yew::prelude::*;
 use yew_i18n::use_translation;
 
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub enum ClusterFlagsInputMode {
+    #[default]
+    NoneIsAll,
+    NoneIsNone,
+}
+
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct ClusterFlagsInputProps {
     pub name: String,
@@ -9,6 +16,8 @@ pub struct ClusterFlagsInputProps {
     pub value: Option<ClusterFlags>,
     #[prop_or_default]
     pub on_change: Callback<(String, Option<ClusterFlags>)>,
+    #[prop_or_default]
+    pub mode:  ClusterFlagsInputMode,
 }
 
 #[function_component]
@@ -18,8 +27,11 @@ pub fn ClusterFlagsInput(props: &ClusterFlagsInputProps) -> Html {
     let flags = use_state(|| props.value.unwrap_or_else(ClusterFlags::all));
     {
         let set_flags = flags.clone();
-        use_effect_with(props.value, move |val| {
-           set_flags.set((*val).unwrap_or_else(ClusterFlags::all));
+        use_effect_with((props.value, props.mode), move |(val, cmode)| {
+           set_flags.set((*val).unwrap_or_else(|| match cmode {
+               ClusterFlagsInputMode::NoneIsAll => ClusterFlags::all(),
+               ClusterFlagsInputMode::NoneIsNone => ClusterFlags::empty(),
+           }));
         });
     }
 

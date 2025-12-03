@@ -52,10 +52,11 @@ pub fn FilterInput(props: &FilterInputProps) -> Html {
         let current_filter = filter_state.clone();
         Callback::from(move |e: MouseEvent| {
             e.prevent_default();
+            let current_filter = (*current_filter).clone();
             let dlg = dialog.clone();
             spawn_local(async move {
-                //let filter_view = html!{<FilterView pretty={true} filter={current_filter} />};
-                //let _result = dlg.content(filter_view, None).await;
+                let filter_view = html!{<div>{current_filter}</div>};
+                let _result = dlg.content(filter_view, None).await;
             });
         })
     };

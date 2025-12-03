@@ -1,6 +1,6 @@
 use crate::app::components::config::HasFormData;
 use crate::app::components::select::Select;
-use crate::app::components::{BlockId, BlockInstance, Card, ClusterFlagsInput, DropDownOption, DropDownSelection, EditMode, FilterInput, Panel, SourceEditorContext, TextButton};
+use crate::app::components::{BlockId, BlockInstance, Card, ClusterFlagsInput, ClusterFlagsInputMode, DropDownOption, DropDownSelection, EditMode, FilterInput, Panel, SourceEditorContext, TextButton};
 use crate::{config_field_child, edit_field_bool, edit_field_list_option, edit_field_text, generate_form_reducer};
 use shared::model::{ClusterFlags, ConfigTargetDto, ConfigTargetOptions, ProcessingOrder};
 use std::fmt::Display;
@@ -149,6 +149,7 @@ pub fn ConfigTargetView(props: &ConfigTargetViewProps) -> Html {
                     <ClusterFlagsInput
                         name="force_redirect"
                         value={target_options_state.form.force_redirect}
+                        mode={ClusterFlagsInputMode::NoneIsNone}
                         on_change={Callback::from(move |(_name, flags):(String, Option<ClusterFlags>)| {
                         target_options_state_1.dispatch(ConfigTargetOptionsFormAction::ForceRedirect(flags));
                     })}
