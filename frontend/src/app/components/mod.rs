@@ -49,6 +49,7 @@ mod websocket_status;
 mod floating_background;
 mod source_editor;
 mod cluster_flags_input;
+mod title_card;
 // pub use self::input::*;
 // pub use self::menu_item::*;
 // pub use self::popup_menu::*;
@@ -92,6 +93,7 @@ pub(crate) use self::key_value_editor::*;
 pub(crate) use self::loading_screen::*;
 pub(crate) use self::websocket_status::*;
 pub(crate) use self::source_editor::*;
+pub(crate) use self::title_card::*;
 
 //pub use self::number_input::*;
 //pub use self::date_input::*;

@@ -24,7 +24,7 @@ impl EpgSourceDto {
 
 
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct EpgConfigDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]

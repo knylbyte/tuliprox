@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::str::FromStr;
 
 const  TRAKT_API_KEY: &str = "0183a05ad97098d87287fe46da4ae286f434f32e8e951caad4cc147c947d79a3";
 const  TRAKT_API_VERSION: &str = "2";
@@ -14,6 +16,29 @@ pub enum TraktContentType {
     Series,
     #[default]
     Both,
+}
+
+impl fmt::Display for TraktContentType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self {
+            TraktContentType::Vod => "Vod",
+            TraktContentType::Series => "Series",
+            TraktContentType::Both => "Both",
+        })
+    }
+}
+
+impl FromStr for TraktContentType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "vod" => Ok(TraktContentType::Vod),
+            "series" => Ok(TraktContentType::Series),
+            "both" => Ok(TraktContentType::Both),
+            _ => Err(format!("Invalid TraktContentType: {}", s)),
+        }
+    }
 }
 
 

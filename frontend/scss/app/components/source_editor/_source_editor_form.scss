@@ -1,4 +1,4 @@
-$form-width: 300px;
+$form-width: 380px;
 
 .tp__source-editor-form-wrapper {
   position: absolute;
@@ -35,6 +35,19 @@ $form-width: 300px;
 
       .tp__card {
         border: none;
+      }
+    }
+  }
+
+  .tp__form-list__item {
+    display: flex;
+    flex-flow: row nowrap;
+    gap: var(--gap-small);
+    align-items: center;
+    .tp__icon-button {
+      fill: var(--menu-button-warn-color);
+      &:hover {
+        fill: var(--menu-button-warn-hover-color);
       }
     }
   }
