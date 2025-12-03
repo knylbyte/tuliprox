@@ -139,8 +139,7 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
 
     let handle_remove_trakt_list_item = {
         let trakt_list = trakt_lists_state.clone();
-        Callback::from(move |(idx, e): (String, MouseEvent)| {
-            e.prevent_default();
+        Callback::from(move |(idx, _e): (String, MouseEvent)| {
             if let Ok(index) = idx.parse::<usize>() {
                 let mut items = (*trakt_list).clone();
                 if index < items.len() {
