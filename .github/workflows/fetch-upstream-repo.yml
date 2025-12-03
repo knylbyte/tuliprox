@@ -22,7 +22,7 @@ jobs:
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
         with:
           target_sync_branch: master
-          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          target_repo_token: ${{ secrets.WORKFLOW_SYNC }}
           upstream_sync_repo: euzu/tuliprox
           upstream_sync_branch: master
 
@@ -30,7 +30,7 @@ jobs:
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.1
         with:
           target_sync_branch: develop
-          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          target_repo_token: ${{ secrets.WORKFLOW_SYNC }}
           upstream_sync_repo: euzu/tuliprox
           upstream_sync_branch: develop
 
