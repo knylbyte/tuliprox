@@ -1,6 +1,6 @@
 use crate::app::components::config::HasFormData;
-use crate::app::components::{BlockId, BlockInstance, Card, EditMode, SourceEditorContext, TextButton};
-use crate::{edit_field_bool, edit_field_text_option, generate_form_reducer};
+use crate::app::components::{BlockId, BlockInstance, Card, EditMode, FilterInput, SourceEditorContext, TextButton};
+use crate::{config_field_child, edit_field_bool, edit_field_text_option, generate_form_reducer};
 use shared::model::{M3uTargetOutputDto, TargetOutputDto};
 use std::rc::Rc;
 use yew::{function_component, html, use_context, use_effect_with, use_reducer, Callback, Html, Properties, UseReducerHandle};
@@ -54,12 +54,19 @@ pub fn M3uTargetOutputView(props: &M3uTargetOutputViewProps) -> Html {
     }
 
     let render_output = || {
+        let output_form_state_1 = output_form_state.clone();
         html! {
             <Card class="tp__config-view__card">
                 { edit_field_text_option!(output_form_state, translate.t(LABEL_FILENAME), filename, M3uTargetOutputFormAction::Filename) }
                 { edit_field_bool!(output_form_state, translate.t(LABEL_INCLUDE_TYPE_IN_URL), include_type_in_url, M3uTargetOutputFormAction::IncludeTypeInUrl) }
                 { edit_field_bool!(output_form_state, translate.t(LABEL_MASK_REDIRECT_URL), mask_redirect_url, M3uTargetOutputFormAction::MaskRedirectUrl) }
-                { edit_field_text_option!(output_form_state, translate.t(LABEL_FILTER), filter, M3uTargetOutputFormAction::Filter) }
+                { config_field_child!(translate.t(LABEL_FILTER), {
+                       html! {
+                            <FilterInput filter={output_form_state_1.form.filter.clone()} on_change={Callback::from(move |new_filter| {
+                                output_form_state_1.dispatch(M3uTargetOutputFormAction::Filter(new_filter));
+                            })} />
+                       }
+                })}
             </Card>
         }
     };

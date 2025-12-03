@@ -1,5 +1,5 @@
 use crate::app::components::config::HasFormData;
-use crate::app::components::{BlockId, BlockInstance, Card, EditMode, IconButton, Panel, SourceEditorContext, TextButton, TraktListItemForm, TitledCard};
+use crate::app::components::{BlockId, BlockInstance, Card, EditMode, IconButton, Panel, SourceEditorContext, TextButton, TraktListItemForm, TitledCard, FilterInput};
 use crate::{config_field_child, edit_field_bool, edit_field_number_u16, edit_field_text, edit_field_text_option, generate_form_reducer};
 use shared::model::{TargetOutputDto, TraktApiConfigDto, TraktConfigDto, TraktContentType, TraktListConfigDto, XtreamTargetOutputDto};
 use std::fmt::Display;
@@ -165,6 +165,7 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
     };
 
     let render_output = || {
+        let output_form_state_1 = output_form_state.clone();
         html! {
             <Card class="tp__config-view__card">
                 <TitledCard title={translate.t(LABEL_SKIP_DIRECT_SOURCE)}>
@@ -186,7 +187,13 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
                     { edit_field_number_u16!(output_form_state, translate.t(LABEL_SERIES), resolve_series_delay,  XtreamTargetOutputFormAction::ResolveSeriesDelay) }
                     </div>
                 </TitledCard>
-                { edit_field_text_option!(output_form_state, translate.t(LABEL_FILTER), filter, XtreamTargetOutputFormAction::Filter) }
+                { config_field_child!(translate.t(LABEL_FILTER), {
+                       html! {
+                            <FilterInput filter={output_form_state_1.form.filter.clone()} on_change={Callback::from(move |new_filter| {
+                                output_form_state_1.dispatch(XtreamTargetOutputFormAction::Filter(new_filter));
+                            })} />
+                       }
+                })}
             </Card>
         }
     };

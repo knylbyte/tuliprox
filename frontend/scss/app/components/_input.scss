@@ -3,7 +3,7 @@
   flex-flow: column;
   overflow: hidden;
   box-sizing: border-box;
-  gap: 6px;
+  gap: var(--gap-small);
   .tp__input-wrapper {
     display: flex;
     flex-flow: row nowrap;
