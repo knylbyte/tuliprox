@@ -210,7 +210,7 @@ impl SharedStreamState {
                 result = broadcast_rx.recv() => {
                     match result {
                         Ok(data) => {
-                            // Wenn der Client pausiert, einfach skippen oder warten
+                            // If the client press pause, skip
                             if client_tx_clone.is_closed() {
                                 continue;
                             }

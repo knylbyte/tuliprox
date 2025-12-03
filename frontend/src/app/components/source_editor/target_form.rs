@@ -30,10 +30,10 @@ enum TargetFormPage {
 
 impl Display for TargetFormPage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", match *self {
-            TargetFormPage::Main => "Main".to_string(),
-            TargetFormPage::Options => "Options".to_string(),
-        })
+        match *self {
+            TargetFormPage::Main => write!(f, "Main"),
+            TargetFormPage::Options => write!(f, "Options"),
+        }
     }
 }
 
@@ -139,8 +139,10 @@ pub fn ConfigTargetView(props: &ConfigTargetViewProps) -> Html {
         let target_options_state_1 = target_options_state.clone();
         html! {
             <Card class="tp__config-view__card">
+            <div class="tp__config-view__cols-2">
             { edit_field_bool!(target_options_state, translate.t(LABEL_IGNORE_LOGO), ignore_logo,  ConfigTargetOptionsFormAction::IgnoreLogo) }
             { edit_field_bool!(target_options_state, translate.t(LABEL_SHARE_LIVE_STREAMS), share_live_streams, ConfigTargetOptionsFormAction::ShareLiveStreams) }
+            </div>
             { edit_field_bool!(target_options_state, translate.t(LABEL_REMOVE_DUPLICATES), remove_duplicates, ConfigTargetOptionsFormAction::RemoveDuplicates) }
             { config_field_child!(translate.t(LABEL_FORCE_REDIRECT), {
                html! {
@@ -160,8 +162,10 @@ pub fn ConfigTargetView(props: &ConfigTargetViewProps) -> Html {
         let target_form_state_1 = target_form_state.clone();
         html! {
             <Card class="tp__config-view__card">
+            <div class="tp__config-view__cols-2">
             { edit_field_bool!(target_form_state, translate.t(LABEL_ENABLED), enabled,  ConfigTargetFormAction::Enabled) }
             { edit_field_bool!(target_form_state, translate.t(LABEL_USE_MEMORY_CACHE), use_memory_cache,  ConfigTargetFormAction::UseMemoryCache) }
+            </div>
             { edit_field_text!(target_form_state, translate.t(LABEL_NAME), name, ConfigTargetFormAction::Name) }
             { edit_field_text!(target_form_state, translate.t(LABEL_FILTER), filter, ConfigTargetFormAction::Filter) }
 
@@ -260,14 +264,14 @@ pub fn ConfigTargetView(props: &ConfigTargetViewProps) -> Html {
     html! {
         <div class="tp__source-editor-form tp__config-view-page">
              <div class="tp__source-editor-form_toolbar tp__form-page__toolbar">
-             <TextButton class="primary" name="apply_input"
-                icon="Accept"
-                title={ translate.t("LABEL.OK")}
-                onclick={handle_apply_target}></TextButton>
              <TextButton class="secondary" name="cancel_input"
                 icon="Cancel"
                 title={ translate.t("LABEL.CANCEL")}
                 onclick={handle_cancel}></TextButton>
+             <TextButton class="primary" name="apply_input"
+                icon="Accept"
+                title={ translate.t("LABEL.OK")}
+                onclick={handle_apply_target}></TextButton>
           </div>
             { render_edit_mode() }
         </div>

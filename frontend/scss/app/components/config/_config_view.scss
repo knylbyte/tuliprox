@@ -59,9 +59,34 @@
     gap: var(--gap-large);
     background-color: var(--sub-card-background-color);
     overflow: hidden;
+
     h1 {
       font-size: 1.2rem;
       font-weight: bold;
+    }
+  }
+
+  &__cols-2,
+  &__cols-3 {
+    display: grid;
+    gap: var(--gap-default);
+
+    .tp__form-field {
+      min-width: 0;
+    }
+  }
+
+  &__cols-2 {
+    grid-template-columns: 1fr 1fr;
+    @media (max-width: size.$mobile-breakpoint) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__cols-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+    @media (max-width: size.$mobile-breakpoint) {
+      grid-template-columns: 1fr;
     }
   }
 }
@@ -111,6 +136,7 @@
     gap: var(--gap-default);
     box-sizing: border-box;
   }
+
   &__schedule {
     display: flex;
     flex-flow: column;
@@ -123,14 +149,16 @@
         text-align: left;
       }
 
-      th,td {
+      th, td {
         width: 1%;
         white-space: nowrap;
       }
+
       th:last-child,
       td:last-child {
         width: auto;
       }
+
       td {
         vertical-align: middle;
       }
@@ -141,28 +169,34 @@
     }
 
   }
+
   &__footer {
     margin-top: var(--margin-default);
     padding-top: var(--margin-default);
-    border-top : 1px solid var(--card-border-color);
+    border-top: 1px solid var(--card-border-color);
+
     svg {
       width: 320px;
       height: 90px;
     }
+
     fill: var(--label-color);
   }
+
   &__editor {
     display: flex;
     flex-flow: row wrap;
     align-items: flex-end;
     gap: var(--gap-default);
     box-sizing: border-box;
+
     .tp__icon-button {
       svg {
         width: 2.3rem;
       }
     }
   }
+
   &__delete-btn {
     fill: var(--menu-button-warn-hover-color);
   }
@@ -174,6 +208,7 @@
       border-color: var(--warn-color);
     }
   }
+
   &__inactive {
     button {
       border-color: var(--warn-color);
@@ -205,8 +240,9 @@
   &__info {
     display: flex;
     flex-flow: row;
-    color:var(--warn-color);
+    color: var(--warn-color);
     fill: currentColor;
+
     span {
       white-space: wrap;
     }

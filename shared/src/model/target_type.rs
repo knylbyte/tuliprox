@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::str::FromStr;
 use enum_iterator::Sequence;
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, Sequence, PartialEq, Eq, Hash)]
@@ -28,6 +29,20 @@ impl Display for TargetType {
             Self::Strm => Self::STRM,
             Self::HdHomeRun => Self::HDHOMERUN,
         })
+    }
+}
+
+impl FromStr for TargetType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            Self::M3U => Ok(Self::M3u),
+            Self::XTREAM => Ok(Self::Xtream),
+            Self::STRM => Ok(Self::Strm),
+            Self::HDHOMERUN => Ok(Self::HdHomeRun),
+            _ => Err(format!("Unknown TargetType: {}", s))
+        }
     }
 }
 

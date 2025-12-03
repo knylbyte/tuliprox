@@ -1,4 +1,4 @@
-use crate::app::components::{BlockId, BlockType, EditMode, SourceEditorContext, XtreamTargetOutputView};
+use crate::app::components::{BlockId, BlockType, EditMode, SourceEditorContext, XtreamTargetOutputView, M3uTargetOutputView, StrmTargetOutputView, HdHomeRunTargetOutputView};
 use shared::model::TargetOutputDto;
 use std::rc::Rc;
 use yew::{function_component, html, use_context, Html, Properties};
@@ -21,7 +21,14 @@ pub fn ConfigOutputView(props: &ConfigOutputViewProps) -> Html {
                 BlockType::InputXtream
                 | BlockType::InputM3u
                 | BlockType::Target => html! {},
-                BlockType::OutputM3u => html! {},
+                BlockType::OutputM3u => {
+                    let output = props.output.as_ref()
+                        .and_then(|to| if let TargetOutputDto::M3u(m3u) = &**to {
+                        Some(Rc::new(m3u.clone()))
+                    } else { None });
+
+                    html! { <M3uTargetOutputView block_id={block_id} output={output} /> }
+                }
                 BlockType::OutputXtream => {
                     let output = props.output.as_ref()
                         .and_then(|to| if let TargetOutputDto::Xtream(xtream) = &**to {
@@ -30,8 +37,22 @@ pub fn ConfigOutputView(props: &ConfigOutputViewProps) -> Html {
 
                     html! { <XtreamTargetOutputView block_id={block_id} output={output} /> }
                 }
-                BlockType::OutputHdHomeRun => html! {},
-                BlockType::OutputStrm => html! {},
+                BlockType::OutputHdHomeRun => {
+                    let output = props.output.as_ref()
+                        .and_then(|to| if let TargetOutputDto::HdHomeRun(hdhomerun) = &**to {
+                        Some(Rc::new(hdhomerun.clone()))
+                    } else { None });
+
+                    html! { <HdHomeRunTargetOutputView block_id={block_id} output={output} /> }
+                }
+                BlockType::OutputStrm => {
+                    let output = props.output.as_ref()
+                        .and_then(|to| if let TargetOutputDto::Strm(strm) = &**to {
+                        Some(Rc::new(strm.clone()))
+                    } else { None });
+
+                    html! { <StrmTargetOutputView block_id={block_id} output={output} /> }
+                }
             }
         }
         EditMode::Inactive => html! {}
