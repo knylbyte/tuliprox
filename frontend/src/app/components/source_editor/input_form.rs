@@ -561,64 +561,64 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
 
     let render_edit_mode = || {
         html! {
-    < div class = "tp__input-form__body" >
-    < div class ="tp__tab-header" >
-    {
-    for [
-    InputFormPage::Main,
-    InputFormPage::Options,
-    InputFormPage::Staged,
-    InputFormPage::Advanced
-    ].iter().map( | page | {
-    let page_str = page.to_string();
-    let active = * view_visible == page_str;
-    let on_tab_click = {
-    let on_tab_click = on_tab_click.clone();
-    let page = * page;
-    Callback::from( move | _ | on_tab_click.emit(page))
-    };
-    html ! {
-    < button
-    class ={classes ! ("tp__tab-button", if active { "active" } else { "" })}
-    onclick ={on_tab_click}
-    >
-    { page_str.clone() }
-    < / button >
-    }
-    })
-    }
-    < / div >
-    < div class = "tp__input-form__body__pages" >
-    < Panel value ={InputFormPage::Main.to_string()} active ={view_visible.to_string()}>
-    {render_input()}
-    < / Panel >
-    < Panel value ={InputFormPage::Options.to_string()} active ={view_visible.to_string()}>
-    {render_options()}
-    < / Panel >
-    < Panel value ={InputFormPage::Staged.to_string()} active ={view_visible.to_string()}>
-    {render_staged()}
-    < / Panel >
-    < Panel value ={InputFormPage::Advanced.to_string()} active ={view_visible.to_string()}>
-    {render_advanced()}
-    < / Panel >
-    < / div >
-    < /div >
-    }
+            <div class="tp__input-form__body">
+                <div class="tp__tab-header">
+                {
+                    for [
+                        InputFormPage::Main,
+                        InputFormPage::Options,
+                        InputFormPage::Staged,
+                        InputFormPage::Advanced
+                    ].iter().map(|page| {
+                        let page_str = page.to_string();
+                        let active = *view_visible == page_str;
+                        let on_tab_click = {
+                            let on_tab_click = on_tab_click.clone();
+                            let page = *page;
+                            Callback::from(move |_| on_tab_click.emit(page))
+                        };
+                        html! {
+                            <button
+                                class={classes!("tp__tab-button", if active { "active" } else { "" })}
+                                onclick={on_tab_click}
+                            >
+                                { page_str.clone() }
+                            </button>
+                        }
+                    })
+                }
+            </div>
+            <div class="tp__input-form__body__pages">
+                <Panel value={InputFormPage::Main.to_string()} active={view_visible.to_string()}>
+                {render_input()}
+                </Panel>
+                <Panel value={InputFormPage::Options.to_string()} active={view_visible.to_string()}>
+                {render_options()}
+                </Panel>
+                <Panel value={InputFormPage::Staged.to_string()} active={view_visible.to_string()}>
+                {render_staged()}
+                </Panel>
+                <Panel value={InputFormPage::Advanced.to_string()} active={view_visible.to_string()}>
+                {render_advanced()}
+                </Panel>
+            </div>
+            </div>
+        }
     };
 
     html! {
-    < div class = "tp__source-editor-form tp__config-view-page" >
-    < div class ="tp__source-editor-form__toolbar tp__form-page__toolbar" >
-    < TextButton class = "secondary" name = "cancel_input"
-    icon = "Cancel"
-    title ={ translate.t("LABEL.CANCEL")}
-    onclick ={handle_cancel}> < / TextButton >
-    < TextButton class = "primary" name = "apply_input"
-    icon = "Accept"
-    title ={ translate.t("LABEL.OK")}
-    onclick ={handle_apply_input}> < / TextButton >
-    < / div >
-    { render_edit_mode() }
-    < / div >
+        <div class="tp__source-editor-form tp__config-view-page">
+          <div class="tp__source-editor-form__toolbar tp__form-page__toolbar">
+             <TextButton class="secondary" name="cancel_input"
+                icon="Cancel"
+                title={ translate.t("LABEL.CANCEL")}
+                onclick={handle_cancel}></TextButton>
+             <TextButton class="primary" name="apply_input"
+                icon="Accept"
+                title={ translate.t("LABEL.OK")}
+                onclick={handle_apply_input}></TextButton>
+          </div>
+            { render_edit_mode() }
+        </div>
     }
 }
