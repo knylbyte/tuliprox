@@ -30,10 +30,10 @@ enum TargetFormPage {
 
 impl Display for TargetFormPage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", match *self {
-            TargetFormPage::Main => "Main".to_string(),
-            TargetFormPage::Options => "Options".to_string(),
-        })
+        match *self {
+            TargetFormPage::Main => write!(f, "Main"),
+            TargetFormPage::Options => write!(f, "Options"),
+        }
     }
 }
 

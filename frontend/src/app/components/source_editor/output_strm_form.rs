@@ -28,8 +28,8 @@ enum StrmFormPage {
 impl Display for StrmFormPage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", match *self {
-            StrmFormPage::Main => "Main".to_string(),
-            StrmFormPage::Options => "Options".to_string(),
+            StrmFormPage::Main => "Main",
+            StrmFormPage::Options => "Options",
         })
     }
 }

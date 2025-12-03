@@ -31,8 +31,8 @@ enum OutputFormPage {
 impl Display for OutputFormPage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", match *self {
-            OutputFormPage::Main => "Main".to_string(),
-            OutputFormPage::Trakt => "Trakt".to_string(),
+            OutputFormPage::Main => "Main",
+            OutputFormPage::Trakt => "Trakt",
         })
     }
 }
@@ -226,7 +226,7 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
                                         TraktContentType::Both => "Both",
                                     };
                                     html! {
-                                        <div class="tp__form-list__item" key={idx}>
+                                        <div class="tp__form-list__item" key={format!("trakt-{idx}")}>
                                             <IconButton
                                                 name={idx.to_string()}
                                                 icon="Delete"

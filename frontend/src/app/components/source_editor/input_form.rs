@@ -46,10 +46,10 @@ enum InputFormPage {
 impl Display for InputFormPage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", match *self {
-            InputFormPage::Main => "Main".to_string(),
-            InputFormPage::Options => "Options".to_string(),
-            InputFormPage::Staged => "Staged".to_string(),
-            InputFormPage::Advanced => "Advanced".to_string(),
+            InputFormPage::Main => "Main",
+            InputFormPage::Options => "Options",
+            InputFormPage::Staged => "Staged",
+            InputFormPage::Advanced => "Advanced",
         })
     }
 }
@@ -400,7 +400,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                             {
                                 for (*aliases_list).iter().enumerate().map(|(idx, alias)| {
                                     html! {
-                                        <div class="tp__form-list__item" key={idx}>
+                                        <div class="tp__form-list__item" key={format!("alias-{idx}")}>
                                                 <IconButton
                                                 name={idx.to_string()}
                                                 icon="Delete"
@@ -467,7 +467,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                             {
                                 for (*epg_sources_list).iter().enumerate().map(|(idx, source)| {
                                     html! {
-                                        <div class="tp__form-list__item" key={idx}>
+                                        <div class="tp__form-list__item" key={format!("epg-{idx}")}>
                                             <IconButton
                                                 name={idx.to_string()}
                                                 icon="Delete"
@@ -522,12 +522,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
             };
 
             // Handle Headers
-            let headers = (*headers_state).clone();
-            input.headers = if headers.is_empty() {
-                HashMap::new()
-            } else {
-                headers
-            };
+            input.headers = (*headers_state).clone();
 
             // Handle EPG: update sources but preserve other fields if present
             let epg_sources = (*epg_sources_state).clone();
