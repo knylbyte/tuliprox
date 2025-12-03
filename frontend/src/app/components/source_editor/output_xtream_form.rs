@@ -1,5 +1,5 @@
 use crate::app::components::config::HasFormData;
-use crate::app::components::{BlockId, BlockInstance, Card, EditMode, IconButton, Panel, SourceEditorContext, TextButton, TraktListItemForm};
+use crate::app::components::{BlockId, BlockInstance, Card, EditMode, IconButton, Panel, SourceEditorContext, TextButton, TraktListItemForm, TitledCard};
 use crate::{config_field_child, edit_field_bool, edit_field_number_u16, edit_field_text, edit_field_text_option, generate_form_reducer};
 use shared::model::{TargetOutputDto, TraktApiConfigDto, TraktConfigDto, TraktContentType, TraktListConfigDto, XtreamTargetOutputDto};
 use std::fmt::Display;
@@ -7,7 +7,6 @@ use std::rc::Rc;
 use web_sys::MouseEvent;
 use yew::{classes, function_component, html, use_context, use_effect_with, use_reducer, use_state, Callback, Html, Properties, UseReducerHandle};
 use yew_i18n::use_translation;
-use crate::app::components::title_card::TitledCard;
 
 const LABEL_SKIP_DIRECT_SOURCE: &str = "LABEL.SKIP_DIRECT_SOURCE";
 const LABEL_LIVE: &str = "LABEL.LIVE";
@@ -20,8 +19,8 @@ const LABEL_TRAKT_API_KEY: &str = "LABEL.TRAKT_API_KEY";
 const LABEL_TRAKT_API_VERSION: &str = "LABEL.TRAKT_API_VERSION";
 const LABEL_TRAKT_API_URL: &str = "LABEL.TRAKT_API_URL";
 const LABEL_TRAKT_LISTS: &str = "LABEL.TRAKT_LISTS";
-
 const LABEL_ADD_TRAKT_LIST: &str = "LABEL.ADD_TRAKT_LIST";
+const LABEL_API_CONFIGURATION: &str = "LABEL.API_CONFIGURATION";
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum OutputFormPage {
@@ -144,8 +143,10 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
             e.prevent_default();
             if let Ok(index) = idx.parse::<usize>() {
                 let mut items = (*trakt_list).clone();
-                items.remove(index);
-                trakt_list.set(items);
+                if index < items.len() {
+                    items.remove(index);
+                    trakt_list.set(items);
+                }
             }
         })
     };
@@ -206,7 +207,7 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
                 } else {
                 // Trakt API Configuration
                 <div class="tp__form-section">
-                    <h3>{"API Configuration"}</h3>
+                    <h3>{translate.t(LABEL_API_CONFIGURATION)}</h3>
                     { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_KEY), key, TraktApiConfigFormAction::Key) }
                     { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_VERSION), version, TraktApiConfigFormAction::Version) }
                     { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_URL), url, TraktApiConfigFormAction::Url) }

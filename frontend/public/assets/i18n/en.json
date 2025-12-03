@@ -340,7 +340,10 @@
     "TRAKT_CONTENT_TYPE":  "Content Type",
     "TRAKT_FUZZY_MATCH_THRESHOLD":  "Fuzzy matchthreshold",
     "ADD_TRAKT_LIST":  "Add a Trakt list",
-    "EPG_LOGO_OVERRIDE": "Logo Override"
+    "EPG_LOGO_OVERRIDE": "Logo Override",
+    "API_CONFIGURATION" : "API Configuration",
+    "HEADER_NAME": "Header Name",
+    "HEADER_VALUE": "Header Value"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "Playlist Category Selection"

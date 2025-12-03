@@ -1,16 +1,15 @@
 use crate::app::components::config::HasFormData;
 use crate::app::components::key_value_editor::KeyValueEditor;
 use crate::app::components::select::Select;
-use crate::app::components::{AliasItemForm, BlockId, BlockInstance, Card, DropDownOption, DropDownSelection, EditMode, EpgSourceItemForm, IconButton, Panel, RadioButtonGroup, SourceEditorContext, TextButton};
+use crate::app::components::{AliasItemForm, BlockId, BlockInstance, Card, DropDownOption, DropDownSelection, EditMode, EpgSourceItemForm, IconButton, Panel, RadioButtonGroup, SourceEditorContext, TextButton, TitledCard};
 use crate::{config_field_child, edit_field_bool, edit_field_date, edit_field_number_i16, edit_field_number_u16, edit_field_text, edit_field_text_option, generate_form_reducer};
-use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, EpgConfigDto, EpgSourceDto, InputFetchMethod, InputType, StagedInputDto};
+use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, EpgSourceDto, InputFetchMethod, InputType, StagedInputDto};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::Rc;
 use web_sys::MouseEvent;
 use yew::{classes, function_component, html, use_context, use_effect_with, use_memo, use_reducer, use_state, Callback, Html, Properties, UseReducerHandle};
 use yew_i18n::use_translation;
-use crate::app::components::title_card::TitledCard;
 
 const LABEL_NAME: &str = "LABEL.NAME";
 const LABEL_INPUT_TYPE: &str = "LABEL.INPUT_TYPE";
@@ -260,8 +259,24 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
             e.prevent_default();
             if let Ok(index) = idx.parse::<usize>() {
                 let mut items = (*alias_list).clone();
-                items.remove(index);
-                alias_list.set(items);
+                if index < items.len() {
+                    items.remove(index);
+                    alias_list.set(items);
+                }
+            }
+        })
+    };
+
+    let handle_remove_epg_source = {
+        let epg_list = epg_sources_state.clone();
+        Callback::from(move |(idx, e): (String, MouseEvent)| {
+            e.prevent_default();
+            if let Ok(index) = idx.parse::<usize>() {
+                let mut items = (*epg_list).clone();
+                if index < items.len() {
+                    items.remove(index);
+                    epg_list.set(items);
+                }
             }
         })
     };
@@ -433,8 +448,8 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                         <KeyValueEditor
                             entries={(*headers).clone()}
                             readonly={false}
-                            key_placeholder="Header name"
-                            value_placeholder="Header value"
+                            key_placeholder={translate.t("LABEL.HEADER_NAME")}
+                           value_placeholder={translate.t("LABEL.HEADER_VALUE")}
                             on_change={Callback::from(move |new_headers: HashMap<String, String>| {
                                 headers_set.set(new_headers);
                             })}
@@ -451,17 +466,12 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                             <div class="tp__form-list__items">
                             {
                                 for (*epg_sources_list).iter().enumerate().map(|(idx, source)| {
-                                    let epg_sources_remove = epg_sources_list.clone();
                                     html! {
                                         <div class="tp__form-list__item" key={idx}>
                                             <IconButton
-                                                name="Remove"
+                                                name={idx.to_string()}
                                                 icon="Delete"
-                                                onclick={Callback::from(move |_| {
-                                                    let mut sources = (*epg_sources_remove).clone();
-                                                    sources.remove(idx);
-                                                    epg_sources_remove.set(sources);
-                                                })} />
+                                                onclick={handle_remove_epg_source.clone()} />
                                             <div class="tp__form-list__item-content">
                                                 <span>{&source.url}</span>
                                             </div>
@@ -514,16 +524,16 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
             // Handle Headers
             input.headers = (*headers_state).clone();
 
-            // Handle EPG
+            // Handle EPG: update sources but preserve other fields if present
             let epg_sources = (*epg_sources_state).clone();
             input.epg = if epg_sources.is_empty() {
-                None
+                // keep any existing epg config if other fields are meaningful,
+                // or drop it entirely if an empty config is not useful
+                input.epg.take()
             } else {
-                Some(EpgConfigDto {
-                    sources: Some(epg_sources),
-                    smart_match: None,
-                    t_sources: Vec::new(),
-                })
+                let mut epg_cfg = input.epg.take().unwrap_or_default();
+                epg_cfg.sources = Some(epg_sources);
+                Some(epg_cfg)
             };
 
             // Handle Aliases

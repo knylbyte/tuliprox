@@ -93,6 +93,7 @@ pub(crate) use self::key_value_editor::*;
 pub(crate) use self::loading_screen::*;
 pub(crate) use self::websocket_status::*;
 pub(crate) use self::source_editor::*;
+pub(crate) use self::title_card::*;
 
 //pub use self::number_input::*;
 //pub use self::date_input::*;
