@@ -259,7 +259,7 @@ async fn lineup_status(
 ) -> impl IntoResponse {
     let current_state = app_state
         .hd_scan_state
-        .load(std::sync::atomic::Ordering::SeqCst);
+        .load(std::sync::atomic::Ordering::Acquire);
     if current_state < 0 {
         axum::Json(json!({
             "ScanInProgress": 0,
@@ -301,11 +301,11 @@ async fn lineup_status(
         if final_state >= 100 {
             app_state
                 .hd_scan_state
-                .store(-1, std::sync::atomic::Ordering::SeqCst);
+                .store(-1, std::sync::atomic::Ordering::Release);
         } else {
             app_state
                 .hd_scan_state
-                .store(final_state, std::sync::atomic::Ordering::SeqCst);
+                .store(final_state, std::sync::atomic::Ordering::Release);
         }
         let found = (num_of_channels * usize::try_from(final_state).unwrap_or(1)) / 100;
         axum::Json(json!({
@@ -330,13 +330,13 @@ async fn lineup_post(
         "start" => {
             app_state
                 .hd_scan_state
-                .store(0, std::sync::atomic::Ordering::SeqCst);
+                .store(0, std::sync::atomic::Ordering::Release);
             axum::http::StatusCode::OK.into_response()
         }
         "abort" => {
             app_state
                 .hd_scan_state
-                .store(-1, std::sync::atomic::Ordering::SeqCst);
+                .store(-1, std::sync::atomic::Ordering::Release);
             axum::http::StatusCode::OK.into_response()
         }
         _ => axum::http::StatusCode::BAD_REQUEST.into_response(),

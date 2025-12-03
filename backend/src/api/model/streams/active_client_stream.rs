@@ -1,4 +1,4 @@
-use crate::api::model::{AppState, CustomVideoStreamType, ProviderHandle, StreamDetails};
+use crate::api::model::{AppState, ConnectionManager, CustomVideoStreamType, ProviderHandle, StreamDetails};
 use crate::api::model::BoxedProviderStream;
 use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
@@ -30,15 +30,19 @@ pub(in crate::api) struct ActiveClientStream {
     provider_handle: Option<ProviderHandle>,
     custom_video: (Option<TransportStreamBuffer>, Option<TransportStreamBuffer>),
     waker: Option<Arc<AtomicWaker>>,
+    connection_manager: Arc<ConnectionManager>,
 }
 
 impl ActiveClientStream {
+
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn new(mut stream_details: StreamDetails,
                       app_state: &AppState,
                       user: &ProxyUserCredentials,
                       connection_permission: UserConnectionPermission,
                       fingerprint: &Fingerprint,
                       stream_channel: StreamChannel,
+                      session_token: Option<&str>,
                       req_headers: &HeaderMap) -> Self {
         if connection_permission == UserConnectionPermission::Exhausted {
             error!("Something is wrong this should not happen");
@@ -49,7 +53,7 @@ impl ActiveClientStream {
 
         let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
 
-        app_state.connection_manager.update_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent).await;
+        app_state.connection_manager.update_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent, session_token).await;
         if let Some((_,_,_m_, Some(cvt))) = stream_details.stream_info.as_ref() {
             app_state.connection_manager.update_stream_detail(&fingerprint.addr, *cvt).await;
         }
@@ -92,6 +96,7 @@ impl ActiveClientStream {
             send_custom_stream_flag: grace_stop_flag,
             custom_video,
             waker,
+            connection_manager: Arc::clone(&app_state.connection_manager)
         }
     }
 
@@ -213,5 +218,15 @@ impl Stream for ActiveClientStream {
         }
 
         Poll::Ready(None)
+    }
+}
+
+impl Drop for ActiveClientStream {
+    fn drop(&mut self) {
+        let mgr = Arc::clone(&self.connection_manager);
+        let hndl = self.provider_handle.take();
+        tokio::spawn(async move {
+            mgr.release_provider_handle(hndl).await;
+        });
     }
 }

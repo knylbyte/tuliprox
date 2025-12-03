@@ -1,17 +1,18 @@
-use crate::model::{AppConfig, ProxyUserCredentials, TargetUser};
-use crate::model::{Config};
-use shared::model::{PlaylistBouquetDto, ProxyType, ProxyUserStatus, TargetBouquetDto, TargetType, XtreamCluster};
 use crate::model::PlaylistXtreamCategory;
+use crate::model::{AppConfig, ProxyUserCredentials, TargetUser};
+use crate::model::Config;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::xtream_get_playlist_categories;
+use crate::utils;
 use crate::utils::json_write_documents_to_file;
 use chrono::Local;
 use log::error;
+use shared::model::{PlaylistBouquetDto, PlaylistClusterBouquetDto, ProxyType, ProxyUserStatus, TargetType, XtreamCluster};
 use std::collections::{HashMap, HashSet};
 use std::io::Error;
 use std::path::{Path, PathBuf};
-use crate::utils;
+use tokio::task;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct StoredProxyUserCredentialsDeprecated {
@@ -120,43 +121,59 @@ fn add_target_user_to_user_tree(target_users: &[TargetUser], user_tree: &mut BPl
     }
 }
 
-pub fn merge_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
+pub async fn merge_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
     let path = get_api_user_db_path(cfg);
-    let lock = cfg.file_locks.read_lock(&path);
-    let mut user_tree: BPlusTree<String, StoredProxyUserCredentials> = BPlusTree::load(&path).unwrap_or_else(|_| BPlusTree::new());
-    drop(lock);
+    let write_lock = cfg.file_locks.write_lock(&path).await;
+    let mut user_tree: BPlusTree<String, StoredProxyUserCredentials> = task::spawn_blocking({
+        let path = path.clone();
+        move || BPlusTree::load(&path).unwrap_or_else(|_| BPlusTree::new())
+    })
+        .await
+        .map_err(|err| Error::other(format!("Failed to load user db: {err}")))?;
     add_target_user_to_user_tree(target_users, &mut user_tree);
-    let _lock = cfg.file_locks.write_lock(&path);
-    user_tree.store(&path)
+    let result = task::spawn_blocking({
+        let path = path.clone();
+        move || user_tree.store(&path)
+    })
+        .await
+        .map_err(|err| Error::other(format!("Failed to store user db: {err}")))?;
+    drop(write_lock);
+    result
 }
 
 /// # Panics
 ///
 /// Will panic if `backup_dir` is not given
-pub fn backup_api_user_db_file(cfg: &AppConfig, path: &Path) {
+pub async fn backup_api_user_db_file(cfg: &AppConfig, path: &Path) {
     if let Some(backup_dir) = cfg.config.load().backup_dir.as_ref() {
         let backup_path = PathBuf::from(backup_dir).join(format!("{}_{}", storage_const::API_USER_DB_FILE, Local::now().format("%Y%m%d_%H%M%S")));
-        let _lock = cfg.file_locks.read_lock(path);
-        match std::fs::copy(path, &backup_path) {
-            Ok(_) => {}
-            Err(err) => { error!("Could not backup file {}:{}", &backup_path.to_str().unwrap_or("?"), err) }
+        let lock = cfg.file_locks.read_lock(path).await;
+        let copy_result = tokio::fs::copy(path, &backup_path).await;
+        drop(lock);
+        if let Err(err) = copy_result {
+            error!("Could not backup file {}:{}", &backup_path.to_str().unwrap_or("?"), err);
         }
     }
 }
 
-pub fn store_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
+pub async fn store_api_user(cfg: &AppConfig, target_users: &[TargetUser]) -> Result<u64, Error> {
     let mut user_tree = BPlusTree::<String, StoredProxyUserCredentials>::new();
     add_target_user_to_user_tree(target_users, &mut user_tree);
     let path = get_api_user_db_path(cfg);
-    backup_api_user_db_file(cfg, &path);
-    let _lock = cfg.file_locks.write_lock(&path);
-    user_tree.store(&path)
+    backup_api_user_db_file(cfg, &path).await;
+    let write_lock = cfg.file_locks.write_lock(&path).await;
+    let result = task::spawn_blocking({
+        let path = path.clone();
+        move || user_tree.store(&path)
+    }).await.map_err(|err| Error::other(format!("Failed to store user db: {err}")))?;
+    drop(write_lock);
+    result
 }
 
 // TODO remove me if we get stable on user_db
-pub fn load_api_user_deprecated(cfg: &AppConfig) -> Result<Vec<TargetUser>, Error> {
+pub async fn load_api_user_deprecated(cfg: &AppConfig) -> Result<Vec<TargetUser>, Error> {
     let path = get_api_user_db_path(cfg);
-    let lock = cfg.file_locks.read_lock(&path);
+    let lock = cfg.file_locks.read_lock(&path).await;
     let user_tree = BPlusTree::<String, StoredProxyUserCredentialsDeprecated>::load(&path)?;
     drop(lock);
     let mut target_users: HashMap<String, TargetUser> = HashMap::new();
@@ -180,10 +197,10 @@ pub fn load_api_user_deprecated(cfg: &AppConfig) -> Result<Vec<TargetUser>, Erro
 }
 
 
-pub fn load_api_user(cfg: &AppConfig) -> Result<Vec<TargetUser>, Error> {
+pub async fn load_api_user(cfg: &AppConfig) -> Result<Vec<TargetUser>, Error> {
     let path = get_api_user_db_path(cfg);
-    let lock = cfg.file_locks.read_lock(&path);
-    let Ok(user_tree) = BPlusTree::<String, StoredProxyUserCredentials>::load(&path) else { return load_api_user_deprecated(cfg) };
+    let lock = cfg.file_locks.read_lock(&path).await;
+    let Ok(user_tree) = BPlusTree::<String, StoredProxyUserCredentials>::load(&path) else { return load_api_user_deprecated(cfg).await };
     drop(lock);
     let mut target_users: HashMap<String, TargetUser> = HashMap::new();
     for (_uname, stored_user) in &user_tree {
@@ -239,21 +256,23 @@ async fn save_xtream_user_bouquet_for_target(config: &Config, target_name: &str,
         XtreamCluster::Series => user_get_series_bouquet_path(storage_path, TargetType::Xtream),
     };
 
-
     if let Some(bouquet_categories) = bouquet {
         if let Some(xtream_categories) = xtream_get_playlist_categories(config, target_name, cluster).await {
-            let filtered: Vec<&PlaylistXtreamCategory> = xtream_categories.iter().filter(|p| bouquet_categories.contains(&p.name)).collect();
-            return json_write_documents_to_file(&bouquet_path, &filtered);
+            let filtered: Vec<PlaylistXtreamCategory> = xtream_categories.iter().filter(|p| bouquet_categories.contains(&p.name)).cloned().collect();
+            return task::spawn_blocking(move || {
+                json_write_documents_to_file(&bouquet_path, &filtered)
+            }).await
+                .map_err(|err| Error::other(format!("Failed to write xtream bouquet file: {err}")))?;
         }
     }
 
     if bouquet_path.exists() {
-        std::fs::remove_file(bouquet_path)?;
+        tokio::fs::remove_file(bouquet_path).await?;
     }
     Ok(())
 }
 
-fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetType, cluster: XtreamCluster, bouquet: Option<&Vec<String>>) -> Result<(), Error> {
+async fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetType, cluster: XtreamCluster, bouquet: Option<&Vec<String>>) -> Result<(), Error> {
     let bouquet_path = match cluster {
         XtreamCluster::Live => user_get_live_bouquet_path(storage_path, target),
         XtreamCluster::Video => user_get_vod_bouquet_path(storage_path, target),
@@ -261,37 +280,36 @@ fn save_m3u_user_bouquet_for_target(storage_path: &Path, target: TargetType, clu
     };
     match bouquet {
         Some(bouquet_categories) => {
-            json_write_documents_to_file(&bouquet_path, bouquet_categories)?;
+            let categories = bouquet_categories.clone();
+            task::spawn_blocking(move || {
+                json_write_documents_to_file(&bouquet_path, &categories)
+            }).await.map_err(|err| Error::other(format!("Failed to write m3u bouquet file: {err}")))??;
         }
         None => if bouquet_path.exists() {
-            std::fs::remove_file(bouquet_path)?;
+            tokio::fs::remove_file(bouquet_path).await?;
         }
     }
 
     Ok(())
 }
 
-async fn save_user_bouquet_for_target(config: &Config, target_name: &str, storage_path: &Path, target: TargetType, bouquet: &TargetBouquetDto) -> Result<(), Error> {
+async fn save_user_bouquet_for_target(config: &Config, target_name: &str, storage_path: &Path, target: TargetType, bouquet: Option<&PlaylistClusterBouquetDto>) -> Result<(), Error> {
     if target == TargetType::Xtream {
-        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Live, bouquet.live.as_ref()).await?;
-        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Video, bouquet.vod.as_ref()).await?;
-        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Series, bouquet.series.as_ref()).await?;
+        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Live, bouquet.and_then(|b| b.live.as_ref())).await?;
+        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Video, bouquet.and_then(|b| b.vod.as_ref())).await?;
+        save_xtream_user_bouquet_for_target(config, target_name, storage_path, XtreamCluster::Series, bouquet.and_then(|b| b.series.as_ref())).await?;
     } else {
-        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Live, bouquet.live.as_ref())?;
-        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Video, bouquet.vod.as_ref())?;
-        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Series, bouquet.series.as_ref())?;
+        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Live, bouquet.and_then(|b| b.live.as_ref())).await?;
+        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Video, bouquet.and_then(|b| b.vod.as_ref())).await?;
+        save_m3u_user_bouquet_for_target(storage_path, target, XtreamCluster::Series, bouquet.and_then(|b| b.series.as_ref())).await?;
     }
     Ok(())
 }
 
 pub async fn save_user_bouquet(cfg: &Config, target_name: &str, username: &str, bouquet: &PlaylistBouquetDto) -> Result<(), Error> {
     if let Some(storage_path) = ensure_user_storage_path(cfg, username) {
-        if let Some(xb) = &bouquet.xtream {
-            save_user_bouquet_for_target(cfg, target_name, &storage_path, TargetType::Xtream, xb).await?;
-        }
-        if let Some(mb) = &bouquet.m3u {
-            save_user_bouquet_for_target(cfg, target_name, &storage_path, TargetType::M3u, mb).await?;
-        }
+        save_user_bouquet_for_target(cfg, target_name, &storage_path, TargetType::Xtream, bouquet.xtream.as_ref()).await?;
+        save_user_bouquet_for_target(cfg, target_name, &storage_path, TargetType::M3u, bouquet.m3u.as_ref()).await?;
         Ok(())
     } else {
         Err(Error::new(std::io::ErrorKind::NotFound, format!("User config path not found for user {username}")))
@@ -368,7 +386,6 @@ pub async fn user_get_bouquet_filter(config: &Config, username: &str, category_i
         XtreamCluster::Series => user_get_series_bouquet(config, username, target).await,
     };
 
-
     match bouquet {
         None => None,
         Some(bouquet_categories) => {
@@ -395,14 +412,14 @@ pub async fn user_get_bouquet_filter(config: &Config, username: &str, category_i
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::FileLockManager;
+    use arc_swap::{ArcSwap, ArcSwapAny};
     use shared::model::{ConfigPaths, ProxyType, ProxyUserStatus};
     use std::env::temp_dir;
     use std::sync::Arc;
-    use arc_swap::{ArcSwap, ArcSwapAny};
-    use crate::utils::FileLockManager;
 
-    #[test]
-    pub fn save_target_user() {
+    #[tokio::test]
+    pub async fn save_target_user() {
         let user =
             TargetUser {
                 target: "test".to_string(),
@@ -485,9 +502,9 @@ mod tests {
             encrypt_secret: Default::default(),
         };
         let target_user = vec![user];
-        let _ = store_api_user(&cfg, &target_user);
+        let _ = store_api_user(&cfg, &target_user).await;
 
-        let user_list = load_api_user(&cfg);
+        let user_list = load_api_user(&cfg).await;
         assert!(user_list.is_ok());
         assert_eq!(user_list.as_ref().unwrap().len(), 1);
         assert_eq!(user_list.as_ref().unwrap().first().unwrap().credentials.len(), 4);

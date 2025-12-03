@@ -73,7 +73,6 @@ async fn start_scheduler(client: Arc<reqwest::Client>, expression: &str, app_sta
     }
 }
 
-
 fn get_process_targets(cfg: &Arc<AppConfig>, process_targets: &Arc<ProcessTargets>, exec_targets: Option<&Vec<String>>) -> Arc<ProcessTargets> {
     let sources = cfg.sources.load();
     if let Ok(user_targets) = sources.validate_targets(exec_targets) {
@@ -119,7 +118,7 @@ mod tests {
         let expression = "0/1 * * * * * *"; // every second
 
         let runs = AtomicU8::new(0);
-        let run_me = || runs.fetch_add(1, Ordering::SeqCst);
+        let run_me = || runs.fetch_add(1, Ordering::AcqRel);
 
         let start = std::time::Instant::now();
         if let Ok(schedule) = Schedule::from_str(expression) {
@@ -130,14 +129,14 @@ mod tests {
                     tokio::time::sleep_until(tokio::time::Instant::from(datetime_to_instant(datetime))).await;
                     run_me();
                 }
-                if runs.load(Ordering::SeqCst) == 6 {
+                if runs.load(Ordering::Acquire) == 6 {
                     break;
                 }
             }
         }
         let duration = start.elapsed();
 
-        assert!(runs.load(Ordering::SeqCst) == 6, "Failed to run");
+        assert!(runs.load(Ordering::Acquire) == 6, "Failed to run");
         assert!(duration.as_secs() > 4, "Failed time");
     }
 }

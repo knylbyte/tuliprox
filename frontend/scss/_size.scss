@@ -17,6 +17,8 @@ $form-grid-cell-width-small-screen: 200px;
 $form-field-min-width-small-screen: 160px;
 $form-max-grid-cells-small-screen: 2;
 
+$playlist-categories-grid-cell-width: 400px;
+
 @mixin fixed-width($width) {
   width: $width;
   min-width: $width;

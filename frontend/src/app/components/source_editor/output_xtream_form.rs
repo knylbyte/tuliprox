@@ -149,7 +149,7 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
                 {render_output()}
                 </Panel>
                 <Panel value={OutputFormPage::Trakt.to_string()} active={view_visible.to_string()}>
-                    {"TODO"}
+                    {"TODO..."}
                 </Panel>
             </div>
             </div>

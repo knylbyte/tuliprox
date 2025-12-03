@@ -108,7 +108,7 @@ where
     };
 
     {
-        let file_lock = cfg.file_locks.read_lock(&file_path);
+        let file_lock = cfg.file_locks.read_lock(&file_path).await;
         if let Ok(info_records) = BPlusTree::<u32, V>::load(&file_path) {
             info_records.iter().for_each(|(provider_id, record)| {
                 processed_info_ids.insert(*provider_id, extract_ts(record));

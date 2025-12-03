@@ -43,8 +43,8 @@ impl ConfigFile {
         Ok(())
     }
 
-    fn load_api_proxy(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
-        match utils::read_api_proxy_config(&app_state.app_config, true) {
+    async fn load_api_proxy(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+        match utils::read_api_proxy_config(&app_state.app_config, true).await {
             Ok(Some(api_proxy)) => {
                 app_state.app_config.set_api_proxy(api_proxy)?;
                 let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&app_state.app_config.paths);
@@ -82,7 +82,7 @@ impl ConfigFile {
         let sources_file = paths.sources_file_path.as_str();
         let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.app_config.config);
         let mut sources_dto = read_sources_file(sources_file, true, true, config.get_hdhr_device_overview().as_ref())?;
-        prepare_sources_batch(&mut sources_dto, true)?;
+        prepare_sources_batch(&mut sources_dto, true).await?;
         let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
         info!("Loaded sources file {sources_file}");
         update_app_state_sources(app_state, sources).await?;
@@ -101,7 +101,7 @@ impl ConfigFile {
         match self {
             ConfigFile::ApiProxy => {
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::ApiProxy));
-                ConfigFile::load_api_proxy(app_state)
+                ConfigFile::load_api_proxy(app_state).await
             }
             ConfigFile::Mapping => {
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Mapping));

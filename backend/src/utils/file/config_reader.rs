@@ -8,7 +8,7 @@ use arc_swap::{ArcSwap, ArcSwapAny};
 use chrono::Local;
 use log::{error, info, warn};
 use serde::Serialize;
-use shared::error::{create_tuliprox_error, info_err, to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error, info_err, TuliproxError, TuliproxErrorKind};
 use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto, TargetUserDto};
 use shared::utils::{CONSTANTS};
 use std::env;
@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use arc_swap::access::{Access};
 use crate::repository::user_repository::{get_api_user_db_path, load_api_user};
+use tokio::fs;
 
 enum EitherReader<L, R> {
     Left(L),
@@ -43,13 +44,13 @@ pub fn config_file_reader(file: File, resolve_env: bool) -> impl Read
     }
 }
 
-pub fn read_api_proxy_config(config: &AppConfig, resolve_env: bool) -> Result<Option<ApiProxyConfig>, TuliproxError> {
+pub async fn read_api_proxy_config(config: &AppConfig, resolve_env: bool) -> Result<Option<ApiProxyConfig>, TuliproxError> {
     let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&config.paths);
     let api_proxy_file_path = paths.api_proxy_file_path.as_str();
     if let Some(api_proxy_dto) = read_api_proxy_file(api_proxy_file_path, resolve_env)? {
         let mut errors = vec![];
         let mut api_proxy: ApiProxyConfig = ApiProxyConfig::from(&api_proxy_dto);
-        api_proxy.migrate_api_user(config, &mut errors);
+        api_proxy.migrate_api_user(config, &mut errors).await;
         if !errors.is_empty() {
             for error in errors {
                 error!("{error}");
@@ -125,7 +126,7 @@ pub fn read_app_config_dto(paths: &ConfigPaths,
     })
 }
 
-pub fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_computed: bool) -> Result<(), TuliproxError> {
+pub async fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_computed: bool) -> Result<(), TuliproxError> {
 
     let mut current_index = 0;
 
@@ -148,7 +149,7 @@ pub fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_computed: b
 
     for source in &mut sources.sources {
         for input in &mut source.inputs {
-            match get_batch_aliases(input.input_type, input.url.as_str()) {
+            match get_batch_aliases(input.input_type, input.url.as_str()).await {
                 Ok(Some((_, aliases))) => {
                     if let Some(idx) = input.prepare_batch(aliases, current_index)? {
                         current_index = idx;
@@ -167,9 +168,9 @@ pub fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_computed: b
     Ok(())
 }
 
-pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(PathBuf, Vec<ConfigInputAliasDto>)>, TuliproxError> {
+pub async fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(PathBuf, Vec<ConfigInputAliasDto>)>, TuliproxError> {
     if input_type == InputType::M3uBatch || input_type == InputType::XtreamBatch {
-        return match utils::csv_read_inputs(input_type, url) {
+        return match utils::csv_read_inputs(input_type, url).await {
             Ok((file_path, batch_aliases)) => {
                 Ok(Some((file_path, batch_aliases)))
             }
@@ -181,7 +182,7 @@ pub fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(Pat
     Ok(None)
 }
 
-pub fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppConfig) -> Result<(), TuliproxError> {
+pub async fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppConfig) -> Result<(), TuliproxError> {
     let use_user_db = app_config_dto
         .api_proxy
         .as_ref()
@@ -190,7 +191,7 @@ pub fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppConfig) 
     if use_user_db {
         let user_db_path = get_api_user_db_path(app_config);
         if user_db_path.exists() {
-            match load_api_user(app_config) {
+            match load_api_user(app_config).await {
                 Ok(stored_users) => if let Some(api_proxy) = app_config_dto.api_proxy.as_mut() {
                     api_proxy.user.extend(stored_users.iter().map(TargetUserDto::from));
                 },
@@ -203,7 +204,7 @@ pub fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppConfig) 
     Ok(())
 }
 
-pub fn read_initial_app_config(paths: &mut ConfigPaths,
+pub async fn read_initial_app_config(paths: &mut ConfigPaths,
                        resolve_env: bool,
                        include_computed: bool,
                        server_mode: bool) -> Result<AppConfig, TuliproxError> {
@@ -213,7 +214,7 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
 
     let config_dto = read_config_file(config_file, resolve_env, include_computed)?;
     let mut sources_dto = read_sources_file(sources_file, resolve_env, include_computed, config_dto.get_hdhr_device_overview().as_ref())?;
-    prepare_sources_batch(&mut  sources_dto, include_computed)?;
+    prepare_sources_batch(&mut  sources_dto, include_computed).await?;
     let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
     let mut config: Config = Config::from(config_dto);
     config.prepare(config_path)?;
@@ -250,7 +251,7 @@ pub fn read_initial_app_config(paths: &mut ConfigPaths,
     }
 
     if server_mode {
-        match read_api_proxy_config(&app_config, resolve_env) {
+        match read_api_proxy_config(&app_config, resolve_env).await {
             Ok(Some(api_proxy)) => app_config.set_api_proxy(api_proxy)?,
             Ok(None) => info!("Api-Proxy file: not used"),
             Err(err) => exit!("{err}"),
@@ -279,13 +280,13 @@ pub fn read_api_proxy_file(api_proxy_file: &str, resolve_env: bool) -> Result<Op
     })
 }
 
-pub fn read_api_proxy(config: &AppConfig, resolve_env: bool) -> Option<ApiProxyConfig> {
+pub async fn read_api_proxy(config: &AppConfig, resolve_env: bool) -> Option<ApiProxyConfig> {
     let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&config.paths);
     match read_api_proxy_file(paths.api_proxy_file_path.as_str(), resolve_env) {
         Ok(Some(api_proxy_dto)) => {
             let mut errors = vec![];
             let mut api_proxy: ApiProxyConfig = api_proxy_dto.into();
-            api_proxy.migrate_api_user(config, &mut errors);
+            api_proxy.migrate_api_user(config, &mut errors).await;
             if !errors.is_empty() {
                 for error in errors {
                     error!("{error}");
@@ -301,7 +302,7 @@ pub fn read_api_proxy(config: &AppConfig, resolve_env: bool) -> Option<ApiProxyC
     }
 }
 
-fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str) -> Result<(), TuliproxError>
+async fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str) -> Result<(), TuliproxError>
 where
     T: ?Sized + Serialize,
 {
@@ -310,23 +311,26 @@ where
     let backup_path = PathBuf::from(backup_dir).join(format!("{filename}_{}", Local::now().format("%Y%m%d_%H%M%S")));
 
 
-    match std::fs::copy(&path, &backup_path) {
+    match fs::copy(&path, &backup_path).await {
         Ok(_) => {}
         Err(err) => { error!("Could not backup file {}:{}", &backup_path.to_str().unwrap_or("?"), err) }
     }
     info!("Saving file to {}", &path.to_str().unwrap_or("?"));
 
-    File::create(&path)
-        .and_then(|f| serde_yaml::to_writer(f, &config).map_err(to_io_error))
+    let serialized = serde_yaml::to_string(config)
+        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not serialize file {}: {}", &path.to_str().unwrap_or("?"), err))?;
+
+    fs::write(&path, serialized)
+        .await
         .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
 }
 
-pub fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfigDto) -> Result<(), TuliproxError> {
-    write_config_file(file_path, backup_dir, config, "api-proxy.yml")
+pub async fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfigDto) -> Result<(), TuliproxError> {
+    write_config_file(file_path, backup_dir, config, "api-proxy.yml").await
 }
 
-pub fn save_main_config(file_path: &str, backup_dir: &str, config: &ConfigDto) -> Result<(), TuliproxError> {
-    write_config_file(file_path, backup_dir, config, "config.yml")
+pub async fn save_main_config(file_path: &str, backup_dir: &str, config: &ConfigDto) -> Result<(), TuliproxError> {
+    write_config_file(file_path, backup_dir, config, "config.yml").await
 }
 
 pub fn resolve_env_var(value: &str) -> String {

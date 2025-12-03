@@ -22,20 +22,20 @@ use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-use log::{debug, error, log_enabled, trace};
+use log::{debug, error, log_enabled, trace, warn};
 use reqwest::header::RETRY_AFTER;
 use serde::Serialize;
 use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_byte_size, trim_slash};
+use shared::utils::{bin_serialize, default_grace_period_millis, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::BufWriter;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -139,32 +139,37 @@ pub fn get_build_time() -> Option<String> {
         .map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string())
 }
 
-pub fn get_memory_usage() -> String {
-    crate::utils::get_memory_usage().map_or(String::from("?"), human_readable_byte_size)
-}
-
 #[allow(clippy::missing_panics_doc)]
 pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoResponse + Send {
-    if file_path.exists() {
-        return match tokio::fs::File::open(file_path).await {
-            Ok(file) => {
-                let reader = tokio::io::BufReader::new(file);
-                let stream = tokio_util::io::ReaderStream::new(reader);
-                let body = axum::body::Body::from_stream(stream);
-
-                try_unwrap_body!(axum::response::Response::builder()
-                    .status(axum::http::StatusCode::OK)
-                    .header(axum::http::header::CONTENT_TYPE, mime_type.to_string())
-                    .header(
-                        axum::http::header::CACHE_CONTROL,
-                        axum::http::header::HeaderValue::from_static("no-cache")
-                    )
-                    .body(body))
+    match tokio::fs::try_exists(file_path).await {
+        Ok(exists) => {
+            if ! exists {
+                return axum::http::StatusCode::NOT_FOUND.into_response();
             }
-            Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        };
+        }
+        Err(err) => {
+            error!("Failed to open egp file {}, {err:?}", file_path.display());
+            return axum::http::StatusCode::NOT_FOUND.into_response();
+        }
     }
-    axum::http::StatusCode::NOT_FOUND.into_response()
+
+    match tokio::fs::File::open(file_path).await {
+        Ok(file) => {
+            let reader = tokio::io::BufReader::new(file);
+            let stream = tokio_util::io::ReaderStream::new(reader);
+            let body = axum::body::Body::from_stream(stream);
+
+            try_unwrap_body!(axum::response::Response::builder()
+                .status(axum::http::StatusCode::OK)
+                .header(axum::http::header::CONTENT_TYPE, mime_type.to_string())
+                .header(
+                    axum::http::header::CACHE_CONTROL,
+                    axum::http::header::HeaderValue::from_static("no-cache")
+                )
+                .body(body))
+        }
+        Err(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 pub fn get_user_target_by_username(
@@ -351,7 +356,7 @@ async fn resolve_streaming_strategy(
         if let Some(allocation) = provider_connection_handle.as_ref().map(|ph| &ph.allocation) {
             match allocation {
                 ProviderAllocation::Exhausted => {
-                    debug!("Input {} is exhausted. No connections allowed.", input.name);
+                    debug!("Provider {} is exhausted. No connections allowed.", input.name);
                     let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
                     ProviderStreamState::Custom(stream)
                 }
@@ -382,7 +387,7 @@ async fn resolve_streaming_strategy(
                 }
             }
         } else {
-            debug!("Input {} is exhausted. No connections allowed.", input.name);
+            debug!("Provider {} is exhausted. No connections allowed.", input.name);
             let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
             ProviderStreamState::Custom(stream)
         };
@@ -742,7 +747,7 @@ pub async fn force_provider_stream_response(
             .await;
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, Some(&user_session.token), req_headers)
                 .await;
 
         let (status_code, header_map) =
@@ -807,13 +812,18 @@ pub async fn stream_response(
     let item_type = stream_channel.item_type;
 
     let share_stream = is_stream_share_enabled(item_type, target);
-    if share_stream {
+    let _shared_lock = if share_stream {
+        let write_lock = app_state.app_config.file_locks.write_lock_str(stream_url).await;
+
         if let Some(value) =
-            try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), req_headers).await
+            try_shared_stream_response_if_any(app_state, stream_url, fingerprint, user, connection_permission, stream_channel.clone(), session_token, req_headers).await
         {
             return value.into_response();
         }
-    }
+        Some(write_lock)
+    } else {
+        None
+    };
 
     let stream_options = get_stream_options(app_state);
     let mut stream_details = create_stream_response_details(
@@ -845,7 +855,7 @@ pub async fn stream_response(
         };
         stream_channel.shared = share_stream;
         let stream =
-            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, req_headers)
+            ActiveClientStream::new(stream_details, app_state, user, connection_permission, fingerprint, stream_channel, Some(session_token), req_headers)
                 .await;
         let stream_resp = if share_stream {
             debug_if_enabled!(
@@ -953,6 +963,7 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
         .unwrap_or_default()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn try_shared_stream_response_if_any(
     app_state: &AppState,
     stream_url: &str,
@@ -960,6 +971,7 @@ async fn try_shared_stream_response_if_any(
     user: &ProxyUserCredentials,
     connect_permission: UserConnectionPermission,
     mut stream_channel: StreamChannel,
+    session_token: &str,
     req_headers: &HeaderMap,
 ) -> Option<impl IntoResponse> {
     if let Some((stream, provider)) =
@@ -982,7 +994,7 @@ async fn try_shared_stream_response_if_any(
             stream_details.provider_name = provider;
             stream_channel.shared = true;
             let stream =
-                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, req_headers)
+                ActiveClientStream::new(stream_details, app_state, user, connect_permission, fingerprint, stream_channel, Some(session_token), req_headers)
                     .await
                     .boxed();
             let mut response = axum::response::Response::builder().status(status_code);
@@ -1043,6 +1055,7 @@ async fn build_stream_response(
     resource_url: &str,
     response: reqwest::Response,
 ) -> axum::response::Response {
+    let sanitized_resource_url = sanitize_sensitive_info(resource_url);
     let status = response.status();
     let mut response_builder =
         axum::response::Response::builder().status(status);
@@ -1070,18 +1083,27 @@ async fn build_stream_response(
     // Cache only complete responses (200 OK without Content-Range)
     let can_cache = status == axum::http::StatusCode::OK && !has_content_range;
     if can_cache {
+        debug!( "Caching eligible resource stream {sanitized_resource_url}");
         let cache_resource_path = if let Some(cache) = app_state.cache.load().as_ref() {
             Some(cache.lock().await.store_path(resource_url))
         } else {
             None
         };
         if let Some(resource_path) = cache_resource_path {
-            if let Ok(file) = create_new_file_for_write(&resource_path) {
-                let writer = BufWriter::new(file);
-                let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
-                let stream = PersistPipeStream::new(byte_stream, writer, add_cache_content);
-                return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(stream)));
+            match create_new_file_for_write(&resource_path).await {
+                Ok(file) => {
+                    debug!("Persisting resource stream {sanitized_resource_url} to {}", resource_path.display());
+                    let writer = BufWriter::new(file);
+                    let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
+                    let stream = PersistPipeStream::new(byte_stream, writer, add_cache_content);
+                    return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(stream)));
+                }
+                Err(err) => {
+                    warn!("Failed to create cache file {} for {sanitized_resource_url}: {err}", resource_path.display());
+                }
             }
+        } else {
+            debug!("Resource cache unavailable; streaming response for {sanitized_resource_url} without persistence");
         }
     }
 
@@ -1248,7 +1270,7 @@ pub fn separate_number_and_remainder(input: &str) -> (String, Option<String>) {
 }
 
 /// # Panics
-pub fn empty_json_list_response() -> impl IntoResponse + Send {
+pub fn empty_json_list_response() -> axum::response::Response {
     try_unwrap_body!(axum::response::Response::builder()
         .status(axum::http::StatusCode::OK)
         .header(axum::http::header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())

@@ -6,7 +6,7 @@ use crate::Config;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::thread;
+use tokio::task::JoinSet;
 use tokio::sync::Mutex;
 
 use crate::api::model::{EventManager, EventMessage, PlaylistStorageState};
@@ -33,7 +33,7 @@ use reqwest::Client;
 use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
 use shared::foundation::filter::{get_field_value, set_field_value, Filter, ValueAccessor, ValueProvider};
 use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
-use shared::utils::default_as_default;
+use shared::utils::{default_as_default, hash_bytes};
 use std::time::Instant;
 
 fn is_valid(pli: &PlaylistItem, filter: &Filter) -> bool {
@@ -170,7 +170,15 @@ fn rename_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Opt
     }
 }
 
-fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
+fn create_alias_uuid(base_uuid: &UUIDType, mapping_id: &str) -> UUIDType {
+    let mut data = Vec::with_capacity(base_uuid.len() + mapping_id.len());
+    data.extend_from_slice(base_uuid);
+    data.extend_from_slice(mapping_id.as_bytes());
+    hash_bytes(&data)
+}
+
+fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> (PlaylistItem, bool) {
+    let mut matched = false;
     if let Some(mapper) = &mapping.mapper {
         if !mapper.is_empty() {
             let header = &channel.header;
@@ -183,6 +191,7 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
                     if let Some(filter) = &m.t_filter {
                         let provider = ValueProvider { pli: ref_chan };
                         if filter.filter(&provider) {
+                            matched = true;
                             let mut accessor = ValueAccessor { pli: ref_chan };
                             script.eval(&mut accessor, templates);
                         }
@@ -191,7 +200,23 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> PlaylistItem {
             }
         }
     }
-    channel
+    (channel, matched)
+}
+
+fn map_channel_with_aliases(channel: PlaylistItem, mapping: &Mapping) -> Vec<PlaylistItem> {
+    if mapping.create_alias {
+        let original = channel.clone();
+        let (mut mapped_channel, matched) = map_channel(channel, mapping);
+        if matched {
+            mapped_channel.header.uuid = create_alias_uuid(original.header.get_uuid(), &mapping.id);
+            vec![original, mapped_channel]
+        } else {
+            vec![mapped_channel]
+        }
+    } else {
+        let (mapped_channel, _) = map_channel(channel, mapping);
+        vec![mapped_channel]
+    }
 }
 
 fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {
@@ -200,7 +225,7 @@ fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option
             let mut grp = playlist_group.clone();
             mappings.iter().filter(|&mapping| mapping.mapper.as_ref().is_some_and(|v| !v.is_empty()))
                 .for_each(|mapping|
-                    grp.channels = grp.channels.drain(..).map(|chan| map_channel(chan, mapping)).collect());
+                    grp.channels = grp.channels.drain(..).flat_map(|chan| map_channel_with_aliases(chan, mapping)).collect());
             grp
         }).collect();
 
@@ -241,7 +266,7 @@ fn map_playlist_counter(target: &ConfigTarget, playlist: &mut [PlaylistGroup]) {
                         for channel in &mut plg.channels {
                             let provider = ValueProvider { pli: channel };
                             if counter.filter.filter(&provider) {
-                                let cntval = counter.value.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+                                let cntval = counter.value.fetch_add(1, core::sync::atomic::Ordering::AcqRel);
                                 let padded_cntval = if counter.padding > 0 {
                                     format!("{:0width$}", cntval, width = counter.padding as usize)
                                 } else {
@@ -280,11 +305,11 @@ fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bo
     (!user_targets.enabled && target.enabled) || (user_targets.enabled && user_targets.has_target(target.id))
 }
 
-async fn playlist_download_from_input(client: &Arc<reqwest::Client>, config: &Arc<Config>, input: &ConfigInput) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
+async fn playlist_download_from_input(client: &Arc<reqwest::Client>, config: &Arc<Config>, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
     let working_dir = &config.working_dir;
     match input.input_type {
-        InputType::M3u => m3u::get_m3u_playlist(Arc::clone(client), config, input, working_dir).await,
-        InputType::Xtream => xtream::get_xtream_playlist(config, Arc::clone(client), input, working_dir).await,
+        InputType::M3u => m3u::get_m3u_playlist(client, config, input, working_dir).await,
+        InputType::Xtream => xtream::get_xtream_playlist(config, client, input, working_dir).await,
         InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![])
     }
 }
@@ -385,12 +410,11 @@ fn create_input_stat(group_count: usize, channel_count: usize, error_count: usiz
 async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, user_targets: Arc<ProcessTargets>,
                          event_manager: Option<Arc<EventManager>>, playlist_state: Option<&Arc<PlaylistStorageState>>,
 ) -> (Vec<SourceStats>, Vec<TuliproxError>) {
-    let mut handle_list = vec![];
-    let thread_num = config.config.load().threads;
+    let mut async_tasks = JoinSet::new();
     let sources = config.sources.load();
-    let process_parallel = thread_num > 1 && sources.sources.len() > 1;
+    let process_parallel = config.config.load().process_parallel && sources.sources.len() > 1;
     if process_parallel && log_enabled!(Level::Debug) {
-        debug!("Using {thread_num} threads");
+        debug!("Parallel processing enabled");
     }
     let errors = Arc::new(Mutex::<Vec<TuliproxError>>::new(vec![]));
     let stats = Arc::new(Mutex::<Vec<SourceStats>>::new(vec![]));
@@ -410,27 +434,17 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
         if process_parallel {
             let http_client = Arc::clone(&client);
             let playlist_state = playlist_state.cloned();
-            let handles = &mut handle_list;
-            let process = move || {
-                // TODO better way ?
-                match tokio::runtime::Runtime::new() {
-                    Ok(rt) => {
-                        rt.block_on(async {
-                            let (input_stats, target_stats, mut res_errors) =
-                                process_source(Arc::clone(&http_client), cfg, index, usr_trgts, event_manager, playlist_state.as_ref()).await;
-                            shared_errors.lock().await.append(&mut res_errors);
-                            if let Some(process_stats) = SourceStats::try_new(input_stats, target_stats) {
-                                shared_stats.lock().await.push(process_stats);
-                            }
-                        });
-                    }
-                    Err(err) => error!("Could not create runtime !!! {err}"),
+            async_tasks.spawn(async move {
+                // Hold the per-source lock for the full duration of this update.
+                let current_update_lock = update_lock;
+                let (input_stats, target_stats, mut res_errors) =
+                    process_source(Arc::clone(&http_client), cfg, index, usr_trgts, event_manager, playlist_state.as_ref()).await;
+                shared_errors.lock().await.append(&mut res_errors);
+                if let Some(process_stats) = SourceStats::try_new(input_stats, target_stats) {
+                    shared_stats.lock().await.push(process_stats);
                 }
-            };
-            handles.push(thread::spawn(process));
-            if handles.len() >= thread_num as usize {
-                handles.drain(..).for_each(|handle| { let _ = handle.join(); });
-            }
+                drop(current_update_lock);
+            });
         } else {
             let (input_stats, target_stats, mut res_errors) =
                 process_source(Arc::clone(&client), cfg, index, usr_trgts, event_manager, playlist_state).await;
@@ -438,11 +452,13 @@ async fn process_sources(client: Arc<reqwest::Client>, config: &Arc<AppConfig>, 
             if let Some(process_stats) = SourceStats::try_new(input_stats, target_stats) {
                 shared_stats.lock().await.push(process_stats);
             }
+            drop(update_lock);
         }
-        drop(update_lock);
     }
-    for handle in handle_list {
-        let _ = handle.join();
+    while let Some(result) = async_tasks.join_next().await {
+        if let Err(err) = result {
+            error!("Playlist processing task failed: {err:?}");
+        }
     }
     if let (Ok(s), Ok(e)) = (Arc::try_unwrap(stats), Arc::try_unwrap(errors)) {
         (s.into_inner(), e.into_inner())

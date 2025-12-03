@@ -144,13 +144,16 @@ pub fn PlaylistExplorer() -> Html {
                                     if let Some(dto) = &*selected_channel {
                                         let copy_to_clipboard = copy_to_clipboard.clone();
                                         let services = services.clone();
-                                        let dto = dto.clone();
+                                        let virtual_id = dto.virtual_id;
+                                        let cluster = dto.xtream_cluster.unwrap_or_default();
                                         let translate_clone = translate_clone.clone();
                                         let target_id = *target_id;
                                         spawn_local(async move {
-                                            if let Some(url) = services.playlist.get_playlist_webplayer_url(target_id, &dto).await {
+                                            if let Some(url) = services.playlist.get_playlist_webplayer_url(target_id, virtual_id, cluster).await {
                                                 copy_to_clipboard.emit(url);
                                                 services.toastr.success(translate_clone.t("MESSAGES.PLAYLIST.WEBPLAYER_URL_COPY_TO_CLIPBOARD"));
+                                            } else {
+                                                services.toastr.error(translate_clone.t("MESSAGES.FAILED_TO_RETRIEVE_WEBPLAYER_URL"));
                                             }
                                         });
                                     }

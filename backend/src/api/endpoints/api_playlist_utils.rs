@@ -99,20 +99,6 @@ fn group_playlist_groups_by_cluster(playlist: Vec<PlaylistGroup>) -> (Vec<Playli
     (live, video, series)
 }
 
-
-// async fn get_categories_content(action: Result<(Option<PathBuf>, Option<String>), std::io::Error>) -> Option<String> {
-//     if let Ok((Some(file_path), _content)) = action {
-//         if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
-//             // TODO deserialize like sax parser
-//             if let Ok(categories) = serde_json::from_str::<Vec<PlaylistXtreamCategory>>(&content) {
-//                 return serde_json::to_string(&categories).ok();
-//             }
-//         }
-//     }
-//     None
-// }
-
-
 async fn grouped_channels(
     cfg: &AppConfig,
     target: &ConfigTarget,
@@ -155,13 +141,13 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
     (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid Arguments"}))).into_response()
 }
 
-pub(in crate::api::endpoints) async fn get_playlist(client: Arc<reqwest::Client>, cfg_input: Option<&ConfigInput>, cfg: &Config, accept: Option<&String>) -> impl IntoResponse + Send {
+pub(in crate::api::endpoints) async fn get_playlist(client: Arc<reqwest::Client>, cfg_input: Option<&Arc<ConfigInput>>, cfg: &Arc<Config>, accept: Option<&String>) -> impl IntoResponse + Send {
     match cfg_input {
         Some(input) => {
             let (result, errors) =
                 match input.input_type {
-                    InputType::M3u | InputType::M3uBatch => m3u::get_m3u_playlist(client, cfg, input, &cfg.working_dir).await,
-                    InputType::Xtream | InputType::XtreamBatch => xtream::get_xtream_playlist(cfg, client, input, &cfg.working_dir).await,
+                    InputType::M3u | InputType::M3uBatch => m3u::get_m3u_playlist(&client, cfg, input, &cfg.working_dir).await,
+                    InputType::Xtream | InputType::XtreamBatch => xtream::get_xtream_playlist(cfg, &client, input, &cfg.working_dir).await,
                 };
             if result.is_empty() {
                 let error_strings: Vec<String> = errors.iter().map(std::string::ToString::to_string).collect();

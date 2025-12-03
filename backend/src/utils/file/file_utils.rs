@@ -10,6 +10,7 @@ use crate::utils::debug_if_enabled;
 use shared::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE};
 use log::{debug, error};
 use path_clean::PathClean;
+use tokio::fs as tokio_fs;
 
 pub fn file_writer<W>(w: W) -> BufWriter<W>
 where
@@ -129,15 +130,12 @@ pub fn open_file(file_name: &Path) -> Result<File, std::io::Error> {
     File::open(file_name)
 }
 
-pub fn persist_file(persist_file: Option<PathBuf>, text: &str) {
+pub async fn persist_file(persist_file: Option<PathBuf>, text: &str) {
     if let Some(path_buf) = persist_file {
         let filename = &path_buf.to_str().unwrap_or("?");
-        match File::create(&path_buf) {
-            Ok(mut file) => match file.write_all(text.as_bytes()) {
-                Ok(()) => debug!("persisted: {filename}"),
-                Err(e) => error!("failed to persist file {filename}, {e}")
-            },
-            Err(e) => error!("failed to persist file {filename}, {e}")
+        match tokio::fs::write(&path_buf, text).await {
+            Ok(()) => debug!("persisted: {filename}"),
+            Err(e) => error!("failed to persist file {filename}, {e}"),
         }
     }
 }
@@ -201,8 +199,13 @@ pub fn append_or_crate_file(path: &Path) -> std::io::Result<File> {
 }
 
 #[inline]
-pub fn create_new_file_for_write(path: &Path) -> std::io::Result<File> {
-    OpenOptions::new().write(true).create(true).truncate(true).open(path)
+pub async fn create_new_file_for_write(path: &Path) -> tokio::io::Result<tokio_fs::File> {
+    tokio_fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .await
 }
 
 #[inline]

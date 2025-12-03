@@ -2,7 +2,7 @@ use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputR
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
-use shared::model::{AppConfigDto, PlaylistUpdateState, StatusCheck};
+use shared::model::{AppConfigDto, PlaylistUpdateState, StatusCheck, SystemInfo};
 use std::future;
 use std::rc::Rc;
 use yew::prelude::*;
@@ -20,6 +20,7 @@ pub fn Home() -> Html {
     let translate = use_translation();
     let config = use_state(|| None::<Rc<AppConfigDto>>);
     let status = use_state(|| None::<Rc<StatusCheck>>);
+    let system_info = use_state(|| None::<Rc<SystemInfo>>);
     let view_visible = use_state(|| ViewType::Dashboard);
     let theme = use_state(Theme::get_current_theme);
 
@@ -70,12 +71,7 @@ pub fn Home() -> Html {
         });
     }
 
-    let handle_view_change = {
-        let view_vis = view_visible.clone();
-        Callback::from(move |view| view_vis.set(view))
-    };
-
-    let _ = use_server_status(status.clone());
+    let _ = use_server_status(status.clone(), system_info.clone());
 
     {
         // first register for config update
@@ -130,11 +126,18 @@ pub fn Home() -> Html {
 
     let status_context = StatusContext {
         status: (*status).clone(),
+        system_info: (*system_info).clone(),
     };
     let playlist_context = PlaylistContext {
         sources: sources.clone(),
     };
 
+
+
+    let handle_view_change = {
+        let view_vis = view_visible.clone();
+        Callback::from(move |view| view_vis.set(view))
+    };
 
     //<div class={"app-header__toolbar"}><select onchange={handle_language} defaultValue={i18next.language}>{services.config().getUiConfig().languages.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
 

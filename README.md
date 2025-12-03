@@ -309,11 +309,18 @@ reverse_proxy:
 #### 1.6.5 `disabled_header`
 Controls which headers are removed before tuliprox forwards a request to the upstream provider when acting as a reverse proxy. Use `referer_header` to drop the Referer header, enable `x_header` to strip every header beginning with `X-`, and list any additional headers to remove under `custom_header`.
 
+has the following attributes:
+- referer_header
+- x_header
+- cloudfare_header
+- custom_header is a list of header names
+
 ```yaml
 reverse_proxy:
   disabled_header:
     referer_header: false
     x_header: false
+    cloudfare_header: false
     custom_header:
       - my-custom-header
 ```
@@ -355,6 +362,29 @@ Example:
 1.0.0.0,1.0.0.255,AU
 1.0.1.0,1.0.3.255,CN
 1.0.4.0,1.0.7.255,AU
+```
+
+#### 1.6.8 `rewrite_secret`
+The `rewrite_secret` field is used to keep generated resource URLs stable across application restarts.
+Some parts of the system generate URLs that include a hashed or signed component based on an internal secret value.
+Normally, this secret would change after every restart, which would invalidate previously generated URLs.
+
+By explicitly setting a `rewrite_secret`, you ensure that the same value is reused on every startup.
+This guarantees that resource URLs remain valid, even if the application restarts or updates.
+
+In short:
+`rewrite_secret` provides a persistent secret used for generating and verifying rewrite URLs, preventing them from breaking after a restart.
+
+It must be a 32-character hexadecimal string (16 bytes), for example:
+```yaml
+reverse_proxy:
+  rewrite_secret: A1B2C3D4E5F60718293A4B5C6D7E8F90 # Example only — generate your own
+```
+You can generate a random secret using:
+```bash
+openssl rand -hex 16
+# or
+node -e "console.log(require('crypto').randomBytes(16).toString('hex').toUpperCase())"
 ```
 
 ### 1.7 `backup_dir`
@@ -642,9 +672,6 @@ The template can now be used for sequence
           - '(?i)\bSD\b'
 ```
 
-
-
-
 ### 2.2. `sources`
 `sources` is a sequence of source definitions, which have two top level entries:
 -`inputs`
@@ -664,7 +691,8 @@ Each input has the following attributes:
 - `headers` is optional
 - `method` can be `GET` or `POST`
 - `username` only mandatory for type `xtream`
-- `pasword`only mandatory for type `xtream`
+- `password` only mandatory for type `xtream`
+- `exp_date` optional, i a date as "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12` or Unix timestamp (seconds since epoch)
 - `options` is optional,
   + `xtream_skip_live` true or false, live section can be skipped.
   + `xtream_skip_vod` true or false, vod section can be skipped.
@@ -811,9 +839,9 @@ There are 2 batch input types  `xtream_batch` and `m3u_batch`.
 ```
 
 ```csv
-#name;username;password;url;max_connections;priority
-my_provider_1;user1;password1;http://my_provider_1.com:80;1;0
-my_provider_2;user2;password2;http://my_provider_2.com:8080;1;0
+#name;username;password;url;max_connections;priority;exp_date
+my_provider_1;user1;password1;http://my_provider_1.com:80;1;0;2028-11-23 12:34:23
+my_provider_2;user2;password2;http://my_provider_2.com:8080;1;0;2028-11-23 12:34:23
 ```
 
 ##### `M3uBatch`
@@ -841,6 +869,11 @@ A `priority` of `0` is higher than `1`
 Higher numbers mean **lower priority**
 This means tasks or items with smaller (even negative) values will be handled before those with larger values.
 
+The `exp_date` field is a date as:
+- "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12`
+- or Unix timestamp (seconds since epoch)
+
+
 ### 2.2.2 `targets`
 Has the following top level entries:
 - `enabled` _optional_ default is `true`, if you disable the processing is skipped
@@ -864,13 +897,13 @@ Has three top level attributes
 
 #### `groups`
 Used for sorting at the group (category) level.
-It has one top-level attribute `order` which can be set to `asc`or `desc`.
+It has one top-level attribute `order` which can be set to `asc`, `desc`, or `none` to preserve the source order for that level.
 #### `channels`
 Used for sorting the channels within a group/category.
 This is a list of sort configurations for groups. Each configuration has the following top-level entries:
 - `field` - can be  `title`, `name`, `caption` or `url`.
 - `group_pattern` - a regular expression like `'^TR.:\s?(.*)'` matched against group title.
-- `order` - can be `asc` or `desc`
+- `order` - can be `asc`, `desc`, or `none` (which skips sorting for that group_pattern and keeps the playlist order coming from the sources).
 - `sequence` _optional_  - a list of regexp matching field values (based on `field`). These are used to sort based on index. The `order` is ignored for this entries.
 
 The pattern should be selected taking into account the processing sequence.
@@ -1191,7 +1224,7 @@ messaging:
     - watch
 ```
 
-## 2. `mapping.yml`
+## 3. `mapping.yml`
 Has the root item `mappings` which has the following top level entries:
 - `templates` _optional_
 - `mapping` _mandatory_
@@ -1206,7 +1239,7 @@ The filename or path can be given as `-m` argument. (See Mappings section)
 
 Default mapping file is `maping.yml`
 
-### 2.1 `templates`
+### 3.1 `templates`
 If you have a lot of repeats in you regexps, you can use `templates` to make your regexps cleaner.
 You can reference other templates in templates with `!name!`;
 ```yaml
@@ -1224,6 +1257,7 @@ This will replace all occurrences of `!delimiter!` and `!quality!` in the regexp
 Has the following top level entries:
 - `id` _mandatory_
 - `match_as_ascii` _optional_ default is `false`
+- `create_alias` _optional_ default is `false`
 - `mapper` _mandatory_
 - `counter` _optional_
 
@@ -1235,16 +1269,31 @@ If you have non ascii characters in you playlist and want to
 write regexp without considering chars like `é` and use `e` instead, set this option to `true`.
 [unidecode](https://crates.io/crates/unidecode) is used to convert the text.
 
-### 2.3.3 `mapper`
+### 2.3.3 `create_alias`
+Set this to `true` to keep the original channel and add a mapped copy whenever a mapper rule matches. The copy gets a derived UUID and follows the mapped fields (e.g. a new group), so a channel can live in multiple groups such as favourites.
+
+Example:
+```yaml
+mapping:
+  - id: favourites_news
+    match_as_ascii: true
+    create_alias: true
+    mapper:
+      - filter: 'Group ~ "(?i)news"'
+        script: |
+          @Group = "Favourites"
+```
+
+### 2.3.4 `mapper`
 Has the following top level entries:
 - `filter`
 - `script`
 
-#### 2.3.3.1 `filter`
+#### 2.3.4.1 `filter`
 The filter  is a string with a statement (@see filter statements).
 It is optional and allows you to filter the content.
 
-#### 2.3.3.2 `script`
+#### 2.3.4.2 `script`
 Script has a custom DSL syntax. 
 
 This Domain-Specific Language (DSL) supports simple scripting operations including variable assignment, 
@@ -1396,7 +1445,7 @@ mappings:
             @Caption = concat("!US_TNT_PREFIX!", " ", coast_quality)
             @Group = "!US_TNT_ENTERTAIN_GROUP!"
 ```
-### 2.3.4 counter
+### 2.3.5 counter
 
 Each mapping can have a list of counter.
 

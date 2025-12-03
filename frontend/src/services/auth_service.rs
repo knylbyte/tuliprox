@@ -7,7 +7,7 @@ use std::future::Future;
 use shared::utils::{concat_path, concat_path_leading_slash};
 use base64::{engine::general_purpose, Engine as _};
 use log::{warn};
-use crate::error::{Error, Error::Unauthorized, Error::NotFound};
+use crate::error::{Error, Error::Unauthorized};
 
 fn decode_jwt_payload(token: &str) -> Option<Claims> {
     let payload_enc = token.split('.').nth(1)?;
@@ -63,21 +63,10 @@ impl AuthService {
         self.auth_channel.set(false);
     }
 
-    fn no_auth(&self, err: Error) -> Result<TokenResponse, Error> {
-        if matches!(err, Unauthorized) {
-            self.username.replace("admin".to_string());
-            self.auth_channel.set(true);
-            set_token(Some(TOKEN_NO_AUTH));
-            self.roles.borrow_mut().push(ROLE_ADMIN.to_string());
-            Ok(TokenResponse {
-                token: TOKEN_NO_AUTH.to_string(),
-                username: "admin".to_string(),
-            })
-        } else {
-            self.auth_channel.set(false);
-            set_token(None);
-            Err(err)
-        }
+    fn unauthorized(&self) -> Result<TokenResponse, Error> {
+        self.auth_channel.set(false);
+        set_token(None);
+        Err(Unauthorized)
     }
 
     pub async fn authenticate(&self, username: String, password: String) -> Result<TokenResponse, Error> {
@@ -93,8 +82,7 @@ impl AuthService {
                 self.handle_token(&token.token);
                 Ok(token)
             }
-            Ok(None) => self.no_auth(NotFound),
-            Err(e) => self.no_auth(e),
+            _ => self.unauthorized(),
         }
     }
 
@@ -108,8 +96,7 @@ impl AuthService {
                 self.handle_token(&token.token);
                 Ok(token)
             }
-            Ok(None) => self.no_auth(NotFound),
-            Err(e) => self.no_auth(e),
+            _ => self.unauthorized(),
         }
     }
 

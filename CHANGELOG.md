@@ -1,5 +1,39 @@
 # Changelog
-# 3.1.9 (2025-11-xx)
+# 3.3.0 (2025-11-xx)
+!BREAKING CHANGE! config.yml threads attribute is now renamed to process_parallel and is a boolean (true or false).
+- !BREAKING CHANGE! config.yml adds a reverse proxy config field rewrite_secret to keep resource URLs valid after restart.
+- Avoid blocking the runtime when warming the cache.
+- Normalize FileLockManager paths so aliases share the same lock.
+- Use async file operations for playlist persistence to avoid blocking the async runtime.
+- Async cache persistence write pipeline so response caching no longer blocks the runtime.
+- M3U playlist exports now stream asynchronously to keep the runtime responsive.
+- Shared stream burst buffer uses zero-copy data buffers to reduce memory usage.
+- Added detailed shared-stream/buffer/provider logging to trace lag, cache persistence, and session/provider lifecycle events.
+- Connection registration failures now trigger an explicit disconnect to prevent zombie sockets.
+- Video download queue now uses async file I/O to keep the runtime responsive during large transfers.
+- API user DB persistence (merge/backup/store) now executes through async Tokio I/O so user-management APIs remain responsive without blocking.
+- JSON playlist/category writers (Xtream collections, user bouquets) now stream through Tokio I/O, so persisting these files no longer blocks the runtime.
+- Playlist EPG exports now write via async file handles to avoid blocking during XML serialization.
+- Config and API proxy save endpoints now serialize via Tokio I/O, so editing configs through the API no longer blocks runtime threads.
+- Playlist updates now use Tokio tasks instead of spawning per-source threads/runtimes, reducing CPU and memory overhead during large syncs.
+- XMLTV timeshift responses stream asynchronously end-to-end to keep the Axum runtime responsive.
+- main now uses #[tokio::main], removing manual runtime boilerplate and keeping every branch async end-to-end.
+- Healthcheck CLI path now uses the async Reqwest client so startup checks no longer block a dedicated thread.
+- Shared stream shutdown now drops registry locks before releasing provider handles to prevent cross-lock stalls.
+- Added order: none support for group/channel sorting, allowing mappings to retain source order.
+- Session tracking now matches repeated HLS segment connections by session token so a single user maintains one active connection count, even when new TCP sockets are opened.
+- EPG icon URLs are now rewritten in reverse proxy mode.
+- Short EPG is now served from local disk if available.
+- WebUI API-User category selection implemented.
+- Stream table "Copy-To-Clipboard" functions added.
+- Refactored provider connection handling to avoid potential race conditions.
+- Added exp_date field to inputs, aliases, and CSV batch files; accepts dates in "YYYY-MM-DD HH:MM:SS" format or Unix timestamps (seconds since epoch).
+- Added cloudflare_header to reverse proxy disable_header settings.
+- Added CPU usage to the WebUI view.
+- Fixed race conditions during simultaneous access to shared streams.
+- Fixed race conditions during simultaneous access by the same user.
+
+# 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
 - Real-time active provider connection monitoring (dashboard + websocket)
 - Source editor: block selection, batch-mode UI and automatic layout
@@ -7,24 +41,25 @@
 - More robust connection-state and provider-handle management
 - Streamlined event notifications and provider-count reporting
 - Added configurable `reverse_proxy.resource_retry` (UI + server) to tune max attempts, base delay, and exponential backoff multiplier for proxied resources.
-- Multi Strm outputs with same type is now allowed. 
+- Multi Strm outputs with same type is now allowed.
 - Added new mapper function `pad(text | number, number, char, optional position: "<" | ">" | "^")`
 - Added new mapper function `format` for simple in-text replacement like `format("Hello {}! Hello {}!", "Bob", "World")`
 - Added `reverse_proxy.stream.shared_burst_buffer_mb` to control shared-stream burst buffer size (default 12 MB).
 - Added `movie` as alias for `vod` for type filter. You can now use `Type = movie` as an alternative to `Type = vod`.
+- Fixed file locks to avoid race conditions on file operations
 
 # 3.1.8 (2025-11-06)
 - Fixed HLS streaming issues caused by session eviction and incorrect headers.
 - Catchup stream fix cycling through multiple providers on play.
 - Custom streams fix and update webui stream info
 - Added TimeZone to `epg_timeshift: [-+]hh:mm or TimeZone`, example `Europe/Paris`, `America/New_York`, `-2:30`(-2h30m), `+0:15` (15m), `2` (2h), `:30` (30m), `:3` (3m)
-If you use TimeZone the timeshift will change on Summer/Winter time if its applied in the TZ.
+  If you use TimeZone the timeshift will change on Summer/Winter time if its applied in the TZ.
 - Fixed: Mappings now automatically reload and reapply after configuration changes, preventing stale settings.
 - Search in Playlist Explorer now returns groups instead of matching flat channel list.
 - Added `use_memory_cache` attribute to target definition to hold playlist in memory to reduce disc access.
-Placing playlist into memory causes more RAM usage but reduces disk access.
-- Added optional `filter` attribute to Output (except HDHomerun-Output). 
-Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
+  Placing playlist into memory causes more RAM usage but reduces disk access.
+- Added optional `filter` attribute to Output (except HDHomerun-Output).
+  Output filters are applied after all transformations have been performed, therefore, all filter contents must refer to the final state of the playlist.
 - Added burst buffer to shared stream
 - Telegram message thread support. thread id can now be appended to chat-id like `chat-id:thread-id`.
 - Telegram supports markdown generation for structured json messages. simply set `markdown: true` in telegram config.
@@ -42,7 +77,7 @@ Output filters are applied after all transformations have been performed, theref
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch
 - Resource proxy retries failed requests up to three times and respects the `Retry-After` header (falls back to 100 ms wait)
-to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
+  to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
 - Added `accept_insecure_ssl_certificates` option in `config.yml` (for serving images over HTTPS without a valid SSL certificate)
 - VOD streams now use tmdbid from `get_vod_streams` if available, removing the need for `resolve_vod` in STRM generation
 - Fixed file length issue in STRM generation
@@ -62,14 +97,14 @@ to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
 - Fixed auto EPG for batch inputs
 - Fixed EPG URL prepare
 - Content Security Policies configurable via config, default OFF
-- WebUI Config View editor for config.yml added 
+- WebUI Config View editor for config.yml added
 
 # 3.1.5 (2025-08-14)
 - Hot reload for config
 - New WebUI (currently only readonly)
 - Fixed shared stream provider connection count
 - Added hanging client connection release
-- Added `replace` built-in function for mapper scripts 
+- Added `replace` built-in function for mapper scripts
 - Added `token_ttl_mins` to web_auth config to define auth token expiration duration.
 - Staged sources. Side-loading playlist. Load from staged, serve from provider.
 - Fixed proxy config
@@ -86,7 +121,7 @@ to reduce transient HTTP errors (400, 408, 425, 429, 5xx)
 ```
    station_prefix = template(concat("US_", station, "_PREFIX")),
 ```
-If we assume the variable `station` contains the value `WINK`, 
+If we assume the variable `station` contains the value `WINK`,
 this script receives the template with the concatenated name `US_WINK_PREFIX` which should be defined in `templates` section,
 and assigns it to the variable `station_prefix`.
 - Extended STRM export functionality with:

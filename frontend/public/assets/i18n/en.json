@@ -8,6 +8,7 @@
     "LIVE_SHORT": "L",
     "VOD_SHORT": "V",
     "SERIES_SHORT": "S",
+    "MOVIE": "Movie",
     "SAVE": "Save",
     "SUBMIT": "Submit",
     "OK": "Ok",
@@ -27,7 +28,7 @@
     "HOST": "Host",
     "PORT": "Port",
     "WEB_ROOT": "Web-Root",
-    "THREADS": "Threads",
+    "PROCESS_PARALLEL": "Process Parallel",
     "WORKING_DIR": "Working dir",
     "BACKUP_DIR": "Backup dir",
     "UPDATE_ON_BOOT": "Update on boot",
@@ -46,6 +47,7 @@
     "BACKOFF_MULTIPLIER": "Backoff multiplier",
     "REFERER_HEADER": "Remove referer header",
     "X_HEADER": "Remove X-* headers",
+    "CF_HEADER": "Remove Cloudflare headers",
     "CUSTOM_HEADERS": "Custom headers",
     "ADD_HEADER": "Add header",
     "RECONNECT": "Reconnect",
@@ -129,6 +131,7 @@
     "SERVER_TIME": "Server time",
     "BUILD_TIME": "Build time",
     "MEMORY": "Memory",
+    "CPU": "CPU",
     "ACTIVE_USERS": "Active users",
     "ACTIVE_USER_CONNECTIONS": "Active user connections",
     "ACTIVE_PROVIDER_CONNECTIONS": "Active provider connections",
@@ -224,6 +227,7 @@
     "WEB_SEARCH": "Web Search",
     "USER_UI_ENABLED": "User-UI Enabled",
     "RESOURCE_REWRITE_DISABLED": "Resource Rewrite Disabled",
+    "REWRITE_SECRET": "Rewrite Secret",
     "DEVICE_AUTH": "Auth",
     "TOKEN_TTL_MINS": "Token ttl (mins)",
     "AUTH": "Auth",
@@ -326,7 +330,7 @@
     "COPY_CREDENTIALS": "Copy Credentials"
   },
   "TITLE": {
-    "USER_BOUQUET_EDITOR": "User group editor"
+    "USER_BOUQUET_EDITOR": "Playlist Category Selection"
   },
   "MESSAGES": {
     "NO_CONTENT": "No content",
@@ -340,6 +344,7 @@
     "SCHEDULE_EXISTS": "Schedule already exists",
     "CLIPBOARD_NOT_SUPPORTED": "Clipboard not supported.\nYour browser or current context does not allow clipboard access.\nPlease use HTTPS or localhost.",
     "FAILED_TO_KICK_USER_STREAM":  "Failed to kick user stream",
+    "FAILED_TO_RETRIEVE_WEBPLAYER_URL": "Failed to retrieve webplayer URL",
     "DOWNLOAD": {
       "SUCCESS": "Successfully downloaded",
       "FAIL": "Failed to download!",
@@ -353,6 +358,9 @@
       "GEOIP": {
         "SUCCESS": "Successfully downloaded Geo-IP db",
         "FAIL": "Failed to download Geo-IP db!"
+      },
+      "USER_BOUQUET": {
+        "FAIL": "Failed to download user bouquets!"
       }
     },
     "LOGIN": {
@@ -397,7 +405,7 @@
   "INFO": {
     "RESTART_TO_APPLY_CHANGES": "You need to restart to apply changes.",
     "SCHEDULE_EXAMPLE": "Schedule example",
-    "THREADS": "Threads: keep it 0 if you have no problems. Increase it if you have multiple providers. Accessing you provider parallel can cause a ban.",
+    "PROCESS_PARALLEL": "Process Parallel: If you have multiple providers you can enable it. Accessing your provider in parallel can cause a ban.",
     "WEB_ROOT": "Web-Root: Contains the web-ui files. They are normally placed in the same directory under ./web"
   },
   "HINT": {

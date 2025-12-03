@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 use std::cmp::{max};
+use log::{debug};
 use tokio::sync::mpsc::{channel, Sender};
 use tokio_stream::wrappers::ReceiverStream;
 use crate::api::model::{BoxedProviderStream};
@@ -36,19 +37,29 @@ impl BufferedStream {
         while client_close_signal.is_active() {
             match stream.next().await {
                 Some(Ok(chunk)) => {
-                  if tx.send(Ok(chunk)).await.is_err() {
-                      client_close_signal.notify();
-                      break;
-                  }
+                    let chunk_len = chunk.len();
+                    if tx.send(Ok(chunk)).await.is_err() {
+                        debug!("Buffered stream channel closed before delivering {chunk_len} bytes to client");
+                        client_close_signal.notify();
+                        break;
+                    }
                 }
                 Some(Err(err)) => {
+                    let err_msg = err.to_string();
                     if tx.send(Err(err)).await.is_err() {
+                        debug!("Buffered stream dropped stream error due to closed receiver: {err_msg}");
                         client_close_signal.notify();
                     }
                     break;
                 }
-                None => break,
+                None => {
+                    debug!("Upstream provider completed buffered stream");
+                    break;
+                }
             }
+        }
+        if !client_close_signal.is_active() {
+            debug!("Client close signal fired; buffered stream exiting");
         }
         drop(tx);
     }

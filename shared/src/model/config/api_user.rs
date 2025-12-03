@@ -1,4 +1,4 @@
-use crate::utils::default_as_true;
+use crate::utils::{default_as_true, deserialize_timestamp};
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ProxyType, ProxyUserStatus};
 
@@ -24,7 +24,7 @@ pub struct ProxyUserCredentialsDto {
     pub epg_timeshift: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
     pub exp_date: Option<i64>,
     #[serde(default)]
     pub max_connections: u32,
@@ -72,8 +72,8 @@ impl ProxyUserCredentialsDto {
             }
         }
         if let Some(exp_date) = self.exp_date {
-            let now =  chrono::Local::now();
-            if (exp_date - now.timestamp()) < 0 {
+            let now = chrono::Utc::now().timestamp();
+            if exp_date < now {
                 return false;
             }
         }

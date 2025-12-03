@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use arc_swap::access::Access;
-use log::{debug, error};
+use log::{error, warn};
 use rand::Rng;
 use shared::create_tuliprox_error_result;
 use shared::error::{TuliproxError, TuliproxErrorKind};
@@ -132,7 +132,7 @@ impl AppConfig {
         if let Some(hdhomerun) = &*guard {
             for device in &hdhomerun.devices {
                 if !device.t_enabled {
-                    debug!("HdHomeRun device '{}' has no username and will be disabled", device.name);
+                    warn!("HdHomeRun device '{}' has no username and will be disabled", device.name);
                 }
             }
         }
@@ -142,6 +142,11 @@ impl AppConfig {
     pub fn is_reverse_proxy_resource_rewrite_enabled(&self) -> bool {
         let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
         config.reverse_proxy.as_ref().is_none_or(|r| !r.resource_rewrite_disabled)
+    }
+
+    pub fn get_reverse_proxy_rewrite_secret(&self) -> Option<[u8; 16]> {
+        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&self.config);
+        config.reverse_proxy.as_ref().map(|r| r.rewrite_secret)
     }
 
     fn intern_get_target_for_user(&self, user_target: Option<(ProxyUserCredentials, String)>) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {

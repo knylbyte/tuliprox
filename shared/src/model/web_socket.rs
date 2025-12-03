@@ -1,6 +1,6 @@
 use std::io;
 use bytes::Bytes;
-use crate::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState, StatusCheck};
+use crate::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState, StatusCheck, SystemInfo};
 use serde::{Deserialize, Serialize};
 use crate::model::user_command::UserCommand;
 
@@ -90,6 +90,7 @@ pub enum ProtocolMessage {
     PlaylistUpdateResponse(PlaylistUpdateState),
     PlaylistUpdateProgressResponse(String, String),
     UserActionResponse(bool),
+    SystemInfoResponse(SystemInfo),
 }
 
 impl ProtocolMessage {

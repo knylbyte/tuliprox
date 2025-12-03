@@ -82,7 +82,8 @@ const BUILD_TIMESTAMP: &str = env!("VERGEN_BUILD_TIMESTAMP");
 // #[export_name = "malloc_conf"]
 // pub static malloc_conf: &[u8] = b"lg_prof_interval:25,prof:true,prof_leak:true,prof_active:true,prof_prefix:/tmp/jeprof\0";
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
 
     if args.genpwd {
@@ -98,29 +99,25 @@ fn main() {
     init_logger(args.log_level.as_ref(), config_paths.config_file_path.as_str());
 
     if args.healthcheck {
-        healthcheck(config_paths.config_file_path.as_str());
-        return;
+        let healthy = healthcheck(config_paths.config_file_path.as_str()).await;
+        std::process::exit(i32::from(!healthy));
     }
 
     info!("Version: {VERSION}");
     if let Some(bts) = BUILD_TIMESTAMP.to_string().parse::<DateTime<Utc>>().ok().map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string()) {
         info!("Build time: {bts}");
     }
-
-    let app_config = utils::read_initial_app_config(&mut config_paths, true, true, args.server).unwrap_or_else(|err| exit!("{}", err));
+    let app_config = utils::read_initial_app_config(&mut config_paths, true, true, args.server).await.unwrap_or_else(|err| exit!("{}", err));
     print_info(&app_config);
 
     let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&app_config.sources);
     let targets = sources.validate_targets(args.target.as_ref()).unwrap_or_else(|err| exit!("{}", err));
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let () = rt.block_on(async {
-        if args.server {
-            start_in_server_mode(Arc::new(app_config), Arc::new(targets)).await;
-        } else {
-            start_in_cli_mode(Arc::new(app_config), Arc::new(targets)).await;
-        }
-    });
+    if args.server {
+        start_in_server_mode(Arc::new(app_config), Arc::new(targets)).await;
+    } else {
+        start_in_cli_mode(Arc::new(app_config), Arc::new(targets)).await;
+    }
 }
 
 fn print_info(app_config: &AppConfig) {
@@ -176,17 +173,32 @@ async fn start_in_server_mode(cfg: Arc<AppConfig>, targets: Arc<ProcessTargets>)
     }
 }
 
-fn healthcheck(config_file: &str) {
+async fn healthcheck(config_file: &str) -> bool {
     let path = std::path::PathBuf::from(config_file);
-    let file = File::open(path).expect("Failed to open config file");
-    let config: HealthcheckConfig = serde_yaml::from_reader(config_file_reader(file, true)).expect("Failed to parse config file");
+    match File::open(path) {
+        Ok(file) => {
+            match serde_yaml::from_reader::<_, HealthcheckConfig>(config_file_reader(file, true)) {
+                Ok(config) => {
+                    match reqwest::Client::new()
+                        .get(format!("http://localhost:{}/healthcheck", config.api.port))
+                        .send()
+                        .await
+                    {
+                        Ok(response) => matches!(response.json::<Healthcheck>().await, Ok(check) if check.status == "ok"),
+                        Err(_) => false,
+                    }
 
-    if let Ok(response) = reqwest::blocking::get(format!("http://localhost:{}/healthcheck", config.api.port)) {
-        if let Ok(check) = response.json::<Healthcheck>() {
-            if check.status == "ok" {
-                std::process::exit(0);
+                }
+                Err(err) => {
+                    error!("Failed to parse config file for healthcheck {err:?}");
+                    false
+                }
             }
+        },
+        Err(err) => {
+            error!("Failed to open config file for healthcheck {err:?}");
+            false
         }
-    }
-    std::process::exit(1);
+     }
+
 }

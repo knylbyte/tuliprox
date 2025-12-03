@@ -51,7 +51,6 @@ pub async fn create_status_check(app_state: &Arc<AppState>) -> StatusCheck {
         version: VERSION.to_string(),
         build_time: crate::api::api_utils::get_build_time(),
         server_time: crate::api::api_utils::get_server_time(),
-        memory: crate::api::api_utils::get_memory_usage(),
         active_users,
         active_user_connections,
         active_provider_connections,
@@ -79,7 +78,7 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
     if let Some(geoip) = config.reverse_proxy.as_ref().and_then(|r| r.geoip.as_ref()) {
         if geoip.enabled {
             let geoip_db_path = &*get_geoip_path(&config.working_dir);
-            let _file_lock = app_state.app_config.file_locks.write_lock(geoip_db_path);
+            let _file_lock = app_state.app_config.file_locks.write_lock(geoip_db_path).await;
 
             let url = if geoip.url.trim().is_empty() { default_geoip_url() } else { geoip.url.clone() };
             let input_source =  InputSource {

@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use regex::Regex;
 use yew::UseStateHandle;
-use shared::model::{AppConfigDto, ConfigTargetDto, PlaylistRequest, ProxyUserCredentialsDto, SearchRequest, StatusCheck, UiPlaylistCategories};
+use shared::model::{AppConfigDto, ConfigTargetDto, PlaylistRequest, ProxyUserCredentialsDto, SearchRequest, StatusCheck, SystemInfo, UiPlaylistCategories};
 use crate::app::components::{InputRow, PlaylistEditorPage, PlaylistExplorerPage, UserlistPage};
 
 type SingleSource = (Vec<Rc<InputRow>>, Vec<Rc<ConfigTargetDto>>);
@@ -118,4 +118,5 @@ pub struct ConfigContext {
 #[derive(Clone, PartialEq)]
 pub struct StatusContext {
     pub status: Option<Rc<StatusCheck>>,
+    pub system_info: Option<Rc<SystemInfo>>,
 }

@@ -1,6 +1,5 @@
 use crate::model::{macros, AppConfig, Config, ProxyUserCredentials, TargetUser};
 use crate::repository::user_repository::{backup_api_user_db_file, get_api_user_db_path, load_api_user, merge_api_user};
-use crate::utils::{save_api_proxy};
 use log::debug;
 use std::cmp::PartialEq;
 use std::fs;
@@ -100,25 +99,25 @@ impl ApiProxyConfig {
     // we have the option to store user in the config file or in the user_db
     // When we switch from one to other we need to migrate the existing data.
     /// # Panics
-    pub fn migrate_api_user(&mut self, cfg: &AppConfig, errors: &mut Vec<String>) {
+    pub async fn migrate_api_user(&mut self, cfg: &AppConfig, errors: &mut Vec<String>) {
         let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&cfg.paths);
         let api_proxy_file = paths.api_proxy_file_path.as_str();
         if self.use_user_db {
             // we have user defined in config file.
             // we migrate them to the db and delete them from the config file
             if !&self.user.is_empty() {
-                if let Err(err) = merge_api_user(cfg, &self.user) {
+                if let Err(err) = merge_api_user(cfg, &self.user).await {
                     errors.push(err.to_string());
                 } else {
                     let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&cfg.config);
                     let backup_dir = config.get_backup_dir();
                     self.user = vec![];
-                    if let Err(err) = utils::save_api_proxy(api_proxy_file, backup_dir.as_ref(), &ApiProxyConfigDto::from(&*self)) {
+                    if let Err(err) = utils::save_api_proxy(api_proxy_file, backup_dir.as_ref(), &ApiProxyConfigDto::from(&*self)).await {
                         errors.push(format!("Error saving api proxy file: {err}"));
                     }
                 }
             }
-            match load_api_user(cfg) {
+            match load_api_user(cfg).await {
                 Ok(users) => {
                     self.user = users;
                 }
@@ -132,7 +131,7 @@ impl ApiProxyConfig {
             if user_db_path.exists() {
                 // we cant have user defined in db file.
                 // we need to load them and save them into the config file
-                if let Ok(stored_users) = load_api_user(cfg) {
+                if let Ok(stored_users) = load_api_user(cfg).await {
                     for stored_user in stored_users {
                         if let Some(target_user) = self.user.iter_mut().find(|t| t.target == stored_user.target) {
                             for stored_credential in &stored_user.credentials {
@@ -148,10 +147,10 @@ impl ApiProxyConfig {
 
                 let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&cfg.config);
                 let backup_dir = config.get_backup_dir();
-                if let Err(err) = save_api_proxy(api_proxy_file, backup_dir.as_ref(), &ApiProxyConfigDto::from(&*self)) {
+                if let Err(err) = utils::save_api_proxy(api_proxy_file, backup_dir.as_ref(), &ApiProxyConfigDto::from(&*self)).await {
                     errors.push(format!("Error saving api proxy file: {err}"));
                 } else {
-                    backup_api_user_db_file(cfg, &user_db_path);
+                    backup_api_user_db_file(cfg, &user_db_path).await;
                     let _ = fs::remove_file(&user_db_path);
                 }
             }

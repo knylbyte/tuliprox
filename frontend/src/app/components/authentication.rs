@@ -24,7 +24,7 @@ pub fn Authentication(props: &AuthenticationProps) -> Html {
                 &mut |success| {
                     authenticated_state.set(success);
                     if success {
-                        services_ctx.websocket.connect_ws();
+                        services_ctx.websocket.connect_ws_with_backoff();
                     }
                     future::ready(())
                 }

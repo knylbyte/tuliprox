@@ -12,8 +12,8 @@ use crate::{utils};
 use crate::utils::{prepare_sources_batch, prepare_users};
 use crate::utils::request::download_text_content;
 
-pub(in crate::api::endpoints) fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfigDto, file_path: &str) -> Option<TuliproxError> {
-    match utils::save_api_proxy(file_path, backup_dir, api_proxy) {
+pub(in crate::api::endpoints) async fn intern_save_config_api_proxy(backup_dir: &str, api_proxy: &ApiProxyConfigDto, file_path: &str) -> Option<TuliproxError> {
+    match utils::save_api_proxy(file_path, backup_dir, api_proxy).await {
         Ok(()) => {}
         Err(err) => {
             error!("Failed to save api_proxy.yml {err}");
@@ -23,8 +23,8 @@ pub(in crate::api::endpoints) fn intern_save_config_api_proxy(backup_dir: &str, 
     None
 }
 
-fn intern_save_config_main(file_path: &str, backup_dir: &str, cfg: &ConfigDto) -> Option<TuliproxError> {
-    match utils::save_main_config(file_path, backup_dir, cfg) {
+async fn intern_save_config_main(file_path: &str, backup_dir: &str, cfg: &ConfigDto) -> Option<TuliproxError> {
+    match utils::save_main_config(file_path, backup_dir, cfg).await {
         Ok(()) => {}
         Err(err) => {
             error!("Failed to save config.yml {err}");
@@ -43,7 +43,7 @@ async fn save_config_main(
         let file_path = paths.config_file_path.as_str();
         let config = app_state.app_config.config.load();
         let backup_dir = config.get_backup_dir();
-        if let Some(err) = intern_save_config_main(file_path, backup_dir.as_ref(), &cfg) {
+        if let Some(err) = intern_save_config_main(file_path, backup_dir.as_ref(), &cfg).await {
             return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
         }
         axum::http::StatusCode::OK.into_response()
@@ -75,7 +75,7 @@ async fn save_config_api_proxy_config(
     let backup_dir = config.get_backup_dir();
     let paths = app_state.app_config.paths.load();
 
-    if let Some(err) = intern_save_config_api_proxy(backup_dir.as_ref(), &ApiProxyConfigDto::from(&updated_api_proxy), paths.api_proxy_file_path.as_str()) {
+    if let Some(err) = intern_save_config_api_proxy(backup_dir.as_ref(), &ApiProxyConfigDto::from(&updated_api_proxy), paths.api_proxy_file_path.as_str()).await {
         return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
     }
     // Persist succeeded — now update in‑memory state
@@ -93,10 +93,10 @@ async fn config(
     let paths = app_state.app_config.paths.load();
     match utils::read_app_config_dto(&paths, true, false) {
         Ok(mut app_config) => {
-            if let Err(err) = prepare_sources_batch(&mut app_config.sources, false) {
+            if let Err(err) = prepare_sources_batch(&mut app_config.sources, false).await {
                 error!("Failed to prepare sources batch: {err}");
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
-            } else if let Err(err) = prepare_users(&mut app_config, &app_state.app_config) {
+            } else if let Err(err) = prepare_users(&mut app_config, &app_state.app_config).await {
                 error!("Failed to prepare users: {err}");
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
             } else {

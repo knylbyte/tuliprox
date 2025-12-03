@@ -9,7 +9,7 @@ pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
 #[serde(deny_unknown_fields)]
 pub struct ConfigDto {
     #[serde(default)]
-    pub threads: u8,
+    pub process_parallel: bool,
     pub api: ConfigApiDto,
     pub working_dir: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -57,7 +57,7 @@ pub struct ConfigDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct MainConfigDto {
     #[serde(default)]
-    pub threads: u8,
+    pub process_parallel: bool,
     pub working_dir: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_dir: Option<String>,
@@ -84,7 +84,7 @@ pub struct MainConfigDto {
 impl Default for MainConfigDto {
     fn default() -> Self {
         MainConfigDto {
-            threads: 0,
+            process_parallel: false,
             working_dir: String::new(),
             backup_dir: None,
             user_config_dir: None,
@@ -103,7 +103,7 @@ impl Default for MainConfigDto {
 impl From<&ConfigDto> for MainConfigDto {
     fn from(config: &ConfigDto) -> Self {
         Self {
-            threads: config.threads,
+            process_parallel: config.process_parallel,
             working_dir: config.working_dir.clone(),
             backup_dir: config.backup_dir.clone(),
             user_config_dir: config.user_config_dir.clone(),
@@ -237,7 +237,7 @@ impl ConfigDto {
     }
 
     pub fn update_from_main_config(&mut self, main_config: &MainConfigDto) {
-        self.threads = main_config.threads;
+        self.process_parallel = main_config.process_parallel;
         self.working_dir = main_config.working_dir.clone();
         self.backup_dir = main_config.backup_dir.clone();
         self.user_config_dir = main_config.user_config_dir.clone();
