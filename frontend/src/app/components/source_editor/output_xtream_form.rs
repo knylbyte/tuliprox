@@ -153,7 +153,7 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
 
     let handle_close_trakt_list_form = {
         let show_trakt_list_form = show_trakt_list_form_state.clone();
-        Callback::from(move |_name| {
+        Callback::from(move |()| {
             show_trakt_list_form.set(false);
         })
     };

@@ -3,7 +3,7 @@ use crate::app::components::key_value_editor::KeyValueEditor;
 use crate::app::components::select::Select;
 use crate::app::components::{AliasItemForm, BlockId, BlockInstance, Card, DropDownOption, DropDownSelection, EditMode, EpgSourceItemForm, IconButton, Panel, RadioButtonGroup, SourceEditorContext, TextButton, TitledCard};
 use crate::{config_field_child, edit_field_bool, edit_field_date, edit_field_number_i16, edit_field_number_u16, edit_field_text, edit_field_text_option, generate_form_reducer};
-use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, EpgSourceDto, InputFetchMethod, InputType, StagedInputDto};
+use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, EpgConfigDto, EpgSourceDto, InputFetchMethod, InputType, StagedInputDto};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::Rc;
@@ -526,15 +526,19 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
 
             // Handle EPG: update sources but preserve other fields if present
             let epg_sources = (*epg_sources_state).clone();
-            input.epg = if epg_sources.is_empty() {
-                // keep any existing epg config if other fields are meaningful,
-                // or drop it entirely if an empty config is not useful
-                input.epg.take()
-            } else {
-                let mut epg_cfg = input.epg.take().unwrap_or_default();
-                epg_cfg.sources = Some(epg_sources);
-                Some(epg_cfg)
-            };
+            if let Some(mut epg_cfg) = input.epg.take() {
+            epg_cfg.sources = if epg_sources.is_empty() { None } else { Some(epg_sources) };
+               input.epg = if epg_cfg.sources.is_some() || epg_cfg.smart_match.is_some() {
+                   Some(epg_cfg)
+               } else {
+                   None
+               };
+           } else if !epg_sources.is_empty() {
+               input.epg = Some(EpgConfigDto {
+                   sources: Some(epg_sources),
+                   ..EpgConfigDto::default()
+               });
+           }
 
             // Handle Aliases
             let aliases = (*aliases_state).clone();
