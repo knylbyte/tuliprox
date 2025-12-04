@@ -1,3 +1,4 @@
+use log::debug;
 use yew::prelude::*;
 use web_sys::MouseEvent;
 
@@ -26,12 +27,14 @@ pub fn CustomDialog(props: &CustomDialogProps) -> Html {
             || ()
         });
     }
-    
+
+    debug!(" props close {}", props.close_on_backdrop_click);
+
     // Handle backdrop click
     let on_backdrop_click = {
         let on_close = props.on_close.clone();
         let close_on_backdrop = props.close_on_backdrop_click;
-        
+
         Callback::from(move |_e: MouseEvent| {
             if close_on_backdrop {
                 if let Some(on_close) = &on_close {

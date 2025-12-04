@@ -1,9 +1,11 @@
-use crate::app::components::{AppIcon, FilterView};
+use crate::app::components::{AppIcon, FilterEditor, FilterView};
 use crate::services::DialogService;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use shared::foundation::filter::get_filter;
+use shared::model::PatternTemplate;
 use crate::app::{ConfigContext};
+use crate::model::{DialogAction, DialogActions, DialogResult};
 
 #[derive(Properties, Clone, PartialEq, Debug)]
 pub struct FilterInputProps {
@@ -19,6 +21,12 @@ pub struct FilterInputProps {
 pub fn FilterInput(props: &FilterInputProps) -> Html {
     let config_ctx = use_context::<ConfigContext>().expect("Config context not found");
     let dialog = use_context::<DialogService>().expect("Dialog service not found");
+    let dialog_actions = use_memo((), |()| {
+         Some(DialogActions {
+            left: Some(vec![DialogAction::new("close", "LABEL.CLOSE", DialogResult::Cancel, Some("Close".to_owned()), None)]),
+            right: vec![DialogAction::new("submit", "LABEL.OK", DialogResult::Ok, Some("Accept".to_owned()), Some("primary".to_string()))],
+        })
+    });
 
     let filter_state = use_state(|| None);
     let parsed_filter_state = use_state(|| None);
@@ -34,10 +42,16 @@ pub fn FilterInput(props: &FilterInputProps) -> Html {
 
     {
         let filter = filter_state.clone();
-        let parsed_filter = parsed_filter_state.clone();
-        let templates = templates_state.clone();
         use_effect_with(props.filter.clone(), move |flt| {
             filter.set(flt.clone());
+        });
+    }
+
+    {
+        let filter = filter_state.clone();
+        let parsed_filter = parsed_filter_state.clone();
+        let templates = templates_state.clone();
+        use_effect_with(filter.clone(), move |flt| {
             let parsed = if let Some(new_fltr) = flt.as_ref() {
                 get_filter(new_fltr, (*templates).as_ref()).ok()
             } else {
@@ -47,16 +61,38 @@ pub fn FilterInput(props: &FilterInputProps) -> Html {
         });
     }
 
+    let handle_filter_edit = {
+        let filter = filter_state.clone();
+        Callback::from(move |flt: Option<String>| {
+            filter.set(flt);
+        })
+    };
+
+    let handle_templates_edit = {
+        let templates = templates_state.clone();
+        Callback::from(move |templ: Option<Vec<PatternTemplate>>| {
+            templates.set(templ);
+        })
+    };
+
     let handle_click = {
         let dialog = dialog.clone();
         let current_filter = filter_state.clone();
+        let handle_filter_edit = handle_filter_edit.clone();
+        let handle_templates_edit =handle_templates_edit.clone();
+        let dialog_actions = dialog_actions.clone();
         Callback::from(move |e: MouseEvent| {
             e.prevent_default();
             let current_filter = (*current_filter).clone();
+            let handle_filter_edit = handle_filter_edit.clone();
+            let handle_templates_edit =handle_templates_edit.clone();
+            let actions = dialog_actions.clone();
             let dlg = dialog.clone();
             spawn_local(async move {
-                let filter_view = html!{<div>{current_filter}</div>};
-                let _result = dlg.content(filter_view, None).await;
+                let filter_view = html!{<FilterEditor filter={current_filter}
+                    on_filter_change={handle_filter_edit}
+                    on_templates_change={handle_templates_edit} />};
+                let _result = dlg.content(filter_view, (*actions).clone(), false).await;
             });
         })
     };

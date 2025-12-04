@@ -343,7 +343,8 @@
     "EPG_LOGO_OVERRIDE": "Logo Override",
     "API_CONFIGURATION" : "API Configuration",
     "HEADER_NAME": "Header Name",
-    "HEADER_VALUE": "Header Value"
+    "HEADER_VALUE": "Header Value",
+    "TEMPLATES": "Templates"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "Playlist Category Selection"
