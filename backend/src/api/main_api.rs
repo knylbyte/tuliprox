@@ -20,9 +20,12 @@ use crate::repository::playlist_repository::load_playlists_into_memory_cache;
 use crate::VERSION;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use axum::Router;
-use log::{error, info};
-use shared::utils::concat_path_leading_slash;
+use axum::{middleware::Next, extract::Request};
+use axum::extract::connect_info::ConnectInfo;
+use log::{debug, error, info};
+use shared::utils::{concat_path_leading_slash, sanitize_sensitive_info};
 use std::io::ErrorKind;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
@@ -357,6 +360,7 @@ pub async fn start_server(
     }
 
     router = router
+        .layer(axum::middleware::from_fn(log_req))
         .layer(create_cors_layer())
         .layer(create_compression_layer());
 
@@ -385,4 +389,40 @@ fn add_rate_limiter(
     } else {
         router
     }
+}
+
+async fn log_req(req: Request, next: Next) -> impl axum::response::IntoResponse {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+
+    let headers = req.headers();
+    let client_ip = headers
+        .get("x-real-ip")
+        .and_then(|h| h.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            headers
+                .get("x-forwarded-for")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|v| v.split(',').next().map(str::trim))
+                .filter(|v| !v.is_empty())
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            req.extensions()
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|c| c.0.to_string())
+        });
+
+    let uri_string = uri.to_string();
+    let safe_ip = client_ip
+        .as_deref()
+        .map(sanitize_sensitive_info)
+        .unwrap_or_else(|| sanitize_sensitive_info("<unknown>"));
+    let safe_uri = sanitize_sensitive_info(&uri_string);
+
+    debug!("Client request [{}] -> {} from {}", method, safe_uri, safe_ip);
+    next.run(req).await
 }
