@@ -128,7 +128,7 @@ async fn m3u_api_stream(
     let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
     
     debug_if_enabled!(
-        "API endpoint [M3U] id chain request_stream_id={} -> action_stream_id={} -> req_virtual_id={} -> virtual_id={}",
+        "ID chain for m3u endpoint: request_stream_id={} -> action_stream_id={} -> req_virtual_id={} -> virtual_id={}",
         stream_req.stream_id,
         action_stream_id,
         req_virtual_id,

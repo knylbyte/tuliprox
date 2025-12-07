@@ -238,9 +238,9 @@ async fn hls_api_stream(
             "Cant find input {} for target {target_name}, stream_id {virtual_id}, hls", params.input_id
         )
     );
-    
+
     debug_if_enabled!(
-      "API endpoint [HLS] id chain request_stream_id={} -> virtual_id={}",
+      "ID chain for hls endpoint: request_stream_id={} -> virtual_id={}",
       params.stream_id,
       virtual_id
     );
