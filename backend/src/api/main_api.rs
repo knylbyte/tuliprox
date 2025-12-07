@@ -392,6 +392,10 @@ fn add_rate_limiter(
 }
 
 async fn log_req(req: Request, next: Next) -> impl axum::response::IntoResponse {
+    if !log::log_enabled!(log::Level::Debug) {
+        return next.run(req).await;
+    }
+
     let method = req.method().clone();
     let uri = req.uri().clone();
 
