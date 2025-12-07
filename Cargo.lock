@@ -1096,7 +1096,7 @@ dependencies = [
 
 [[package]]
 name = "frontend"
-version = "3.2.14"
+version = "3.2.15"
 dependencies = [
  "anyhow",
  "base64",
@@ -3793,7 +3793,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "3.2.14"
+version = "3.2.15"
 dependencies = [
  "base64",
  "bitflags 2.10.0",
