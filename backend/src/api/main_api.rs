@@ -416,13 +416,11 @@ async fn log_req(req: Request, next: Next) -> impl axum::response::IntoResponse 
                 .map(|c| c.0.to_string())
         });
 
-    let uri_string = uri.to_string();
     let safe_ip = client_ip
-        .as_deref()
-        .map(sanitize_sensitive_info)
-        .unwrap_or_else(|| sanitize_sensitive_info("<unknown>"));
+        .as_deref().map_or_else(|| sanitize_sensitive_info("<unknown>"), sanitize_sensitive_info);
+    let uri_string = uri.to_string();
     let safe_uri = sanitize_sensitive_info(&uri_string);
 
-    debug!("Client request [{}] -> {} from {}", method, safe_uri, safe_ip);
+    debug!("Client request [{method}] -> {safe_uri} from {safe_ip}");
     next.run(req).await
 }
