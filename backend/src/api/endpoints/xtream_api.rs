@@ -21,7 +21,7 @@ use crate::model::{Config, ConfigInput};
 use crate::repository::playlist_repository::get_target_id_mapping;
 use crate::repository::storage::get_target_storage_path;
 use crate::repository::{storage_const, user_repository, xtream_repository};
-use crate::utils::trace_if_enabled;
+use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::utils::xtream::create_vod_info_from_item;
 use crate::utils::{request, xtream};
 use axum::http::HeaderMap;
@@ -257,17 +257,24 @@ async fn xtream_player_api_stream(
     );
     let virtual_id = pli.virtual_id;
     let input = try_option_bad_request!(
-        app_state.app_config.get_input_by_name(pli.input_name.as_str()),
-        true,
-        format!( "Cant find input {} for target {target_name}, context {}, stream_id {virtual_id}", pli.input_name, stream_req.context)
+      app_state.app_config.get_input_by_name(pli.input_name.as_str()),
+      true,
+      format!( "Cant find input {} for target {target_name}, context {}, stream_id {virtual_id}", pli.input_name, stream_req.context)
     );
-
+    
     let (cluster, item_type) = if stream_req.context == ApiStreamContext::Timeshift {
-        (XtreamCluster::Video, PlaylistItemType::Catchup)
+      (XtreamCluster::Video, PlaylistItemType::Catchup)
     } else {
-        (pli.xtream_cluster, pli.item_type)
+      (pli.xtream_cluster, pli.item_type)
     };
-
+    
+    debug_if_enabled!(
+        "API endpoint [XTREAM] id chain request_stream_id={} -> action_stream_id={} -> req_virtual_id={} -> virtual_id={}",
+        stream_req.stream_id,
+        action_stream_id,
+        req_virtual_id,
+        virtual_id
+    );
     let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let user_session = app_state
         .active_users

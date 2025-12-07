@@ -12,6 +12,7 @@ use crate::api::model::{create_custom_video_stream_response, CustomVideoStreamTy
 use crate::auth::Fingerprint;
 use crate::repository::m3u_repository::{m3u_get_item_for_stream_id, m3u_load_rewrite_playlist};
 use crate::repository::storage_const;
+use crate::utils::debug_if_enabled;
 use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::stream;
@@ -118,14 +119,21 @@ async fn m3u_api_stream(
     );
     let virtual_id = pli.virtual_id;
     let input = try_option_bad_request!(
-        app_state
-            .app_config
-            .get_input_by_name(pli.input_name.as_str()),
-        true,
-        format!("Cant find input {} for target {target_name}, stream_id {virtual_id}", pli.input_name)
+      app_state
+      .app_config
+      .get_input_by_name(pli.input_name.as_str()),
+      true,
+      format!("Cant find input {} for target {target_name}, stream_id {virtual_id}", pli.input_name)
     );
     let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
-
+    
+    debug_if_enabled!(
+        "API endpoint [M3U] id chain request_stream_id={} -> action_stream_id={} -> req_virtual_id={} -> virtual_id={}",
+        stream_req.stream_id,
+        action_stream_id,
+        req_virtual_id,
+        virtual_id
+    );
     let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let user_session = app_state
         .active_users
