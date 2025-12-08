@@ -75,8 +75,7 @@ target "cache-export" {
   ]
 
   output = [
-    # "type=local,dest=${CACHE_DEST}"
-    "type=image,name=${GHCR_NS}/cache,push-by-digest=true,name-canonical=true,push=true"
+    "type=image,name=${GHCR_NS},push-by-digest=true,name-canonical=true,push=true"
   ]
 }
 
@@ -101,7 +100,7 @@ target "scratch-final" {
   ]
 
   output = [
-    "type=image,name=${GHCR_NS}/dev-slim,push-by-digest=true,name-canonical=true,push=true"
+    "type=image,name=${GHCR_NS},push-by-digest=true,name-canonical=true,push=true"
   ]
 }
 
@@ -123,10 +122,9 @@ target "alpine-final" {
   ]
 
   tags = [
-    # "${GHCR_NS}:dev-${VERSION}-${ARCH_TAG}"
   ]
 
   output = [
-    "type=image,name=${GHCR_NS}/dev,push-by-digest=true,name-canonical=true,push=true"
+    "type=image,name=${GHCR_NS},push-by-digest=true,name-canonical=true,push=true"
   ]
 }
