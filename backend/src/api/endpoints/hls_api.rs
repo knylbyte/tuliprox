@@ -15,6 +15,7 @@ use crate::processing::parser::hls::{
 use crate::repository::m3u_repository::m3u_get_item_for_stream_id;
 use crate::repository::xtream_repository;
 use crate::utils::request;
+use crate::utils::debug_if_enabled;
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use log::{debug, error};
@@ -82,6 +83,13 @@ pub(in crate::api) async fn handle_hls_stream_request(
             {
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
+                    debug_if_enabled!(
+                        "API endpoint [HLS] create_session_fingerprint user={} virtual_id={} provider={} stream_url={}",
+                        sanitize_sensitive_info(&user.username),
+                        virtual_id,
+                        provider_cfg.name,
+                        sanitize_sensitive_info(&stream_url)
+                    );
                     let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
                     let session_token = app_state.active_users.create_user_session(
                         user,
@@ -231,6 +239,11 @@ async fn hls_api_stream(
         )
     );
 
+    debug_if_enabled!(
+      "ID chain for hls endpoint: request_stream_id={} -> virtual_id={}",
+      params.stream_id,
+      virtual_id
+    );
     let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let mut user_session = app_state
         .active_users
