@@ -1,10 +1,10 @@
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
-use crate::api::model::{UserSession};
+use crate::api::model::{tee_stream, UserSession};
 use crate::api::model::{
     create_channel_unavailable_stream, create_custom_video_stream_response,
     create_provider_connections_exhausted_stream, create_provider_stream,
     get_stream_response_with_headers, ActiveClientStream, AppState,
-    CustomVideoStreamType, PersistPipeStream,
+    CustomVideoStreamType,
     ProviderStreamFactoryOptions, SharedStreamManager,
     StreamError, ThrottledStream, UserApiRequest,
 };
@@ -1109,8 +1109,8 @@ async fn build_stream_response(
                     debug!("Persisting resource stream {sanitized_resource_url} to {}", resource_path.display());
                     let writer = BufWriter::new(file);
                     let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
-                    let stream = PersistPipeStream::new(byte_stream, writer, add_cache_content);
-                    return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(stream)));
+                    let tee = tee_stream(byte_stream, writer, &resource_path, add_cache_content);
+                    return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(tee)));
                 }
                 Err(err) => {
                     warn!("Failed to create cache file {} for {sanitized_resource_url}: {err}", resource_path.display());
@@ -1247,10 +1247,7 @@ pub async fn resource_response(
     if let Some(cache) = app_state.cache.load().as_ref() {
         let mut guard = cache.lock().await;
         if let Some(resource_path) = guard.get_content(resource_url) {
-            trace_if_enabled!(
-                "Responding resource from cache {}",
-                sanitize_sensitive_info(resource_url)
-            );
+            trace_if_enabled!("Responding resource from cache {}", sanitize_sensitive_info(resource_url));
             return serve_file(&resource_path, mime::APPLICATION_OCTET_STREAM)
                 .await
                 .into_response();
