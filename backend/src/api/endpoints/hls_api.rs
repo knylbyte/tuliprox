@@ -24,6 +24,15 @@ use shared::model::{PlaylistItemType, StreamChannel, TargetType, UserConnectionP
 use shared::utils::{is_hls_url, replace_url_extension, sanitize_sensitive_info, CUSTOM_VIDEO_PREFIX, HLS_EXT};
 use std::sync::Arc;
 
+const PLAYLIST_TEMPLATE: &str = r"#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:10.0,
+{url}
+#EXT-X-ENDLIST
+";
+
 #[derive(Debug, Deserialize)]
 struct HlsApiPathParams {
     username: String,
@@ -84,9 +93,8 @@ pub(in crate::api) async fn handle_hls_stream_request(
                 Some(provider_cfg) => {
                     let stream_url = get_stream_alternative_url(&url, input, &provider_cfg);
                     debug_if_enabled!(
-                        "API endpoint [HLS] create_session_fingerprint user={} virtual_id={} provider={} stream_url={}",
+                        "API endpoint [HLS] create_session_fingerprint user={} virtual_id={virtual_id} provider={} stream_url={}",
                         sanitize_sensitive_info(&user.username),
-                        virtual_id,
                         provider_cfg.name,
                         sanitize_sensitive_info(&stream_url)
                     );
@@ -155,14 +163,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
                     user.password,
                     CustomVideoStreamType::ChannelUnavailable);
 
-                let playlist = format!(r"#EXTM3U
-#EXT-X-VERSION:3
-#EXT-X-TARGETDURATION:10
-#EXT-X-MEDIA-SEQUENCE:0
-#EXTINF:10.0,
-{url}
-#EXT-X-ENDLIST
-");
+                let playlist = PLAYLIST_TEMPLATE.replace("{url}", &url);
                 hls_response(playlist.clone()).into_response()
             } else {
                 axum::http::StatusCode::NOT_FOUND.into_response()
@@ -234,16 +235,10 @@ async fn hls_api_stream(
     let input = try_option_bad_request!(
         app_state.app_config.get_input_by_id(params.input_id),
         true,
-        format!(
-            "Cant find input {} for target {target_name}, stream_id {virtual_id}, hls", params.input_id
-        )
+        format!("Cant find input {} for target {target_name}, stream_id {virtual_id}, hls", params.input_id)
     );
 
-    debug_if_enabled!(
-      "ID chain for hls endpoint: request_stream_id={} -> virtual_id={}",
-      params.stream_id,
-      virtual_id
-    );
+    debug_if_enabled!("ID chain for hls endpoint: request_stream_id={} -> virtual_id={virtual_id}", params.stream_id);
     let user_session_token = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let mut user_session = app_state
         .active_users
