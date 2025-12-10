@@ -33,8 +33,8 @@ pub fn BlockView(props: &BlockProps) -> Html {
     let from_id = block_id;
     let to_id = block_id;
 
-    let is_target = matches!(block_type, BlockType::Target);
-    let is_input = !is_target && matches!(block_type, BlockType::InputM3u | BlockType::InputXtream);
+    let is_target = block_type.is_target();
+    let is_input = !is_target && block_type.is_input();
     let is_output =  !is_input && !is_target;
 
     let port_style = match port_status {

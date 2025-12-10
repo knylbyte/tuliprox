@@ -32,7 +32,7 @@ pub struct LibraryScanResult {
 impl LibraryProcessor {
     /// Creates a new Library processor from application config
     pub fn from_app_config(app_config: &AppConfig) -> Option<Self> {
-        let vod_config = app_config.vod.load_full()?;
+        let vod_config = app_config.library.load_full()?;
         if !vod_config.enabled {
             return None;
         }

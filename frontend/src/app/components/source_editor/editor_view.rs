@@ -184,6 +184,7 @@ fn create_instance(block_type: BlockType) -> BlockInstance {
     match block_type {
         BlockType::InputXtream => BlockInstance::Input(Rc::new(ConfigInputDto::default())),
         BlockType::InputM3u => BlockInstance::Input(Rc::new(ConfigInputDto::default())),
+        BlockType::InputLibrary => BlockInstance::Input(Rc::new(ConfigInputDto::default())),
         BlockType::Target => {
             let dto = ConfigTargetDto { name: String::new(), ..Default::default() };
             BlockInstance::Target(Rc::new(dto))
