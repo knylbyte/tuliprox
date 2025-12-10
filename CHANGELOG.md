@@ -47,7 +47,8 @@
   - New API endpoints: `POST /api/v1/library/scan`, `GET /api/v1/library/status`, `GET /api/v1/library/item/:id`
   - New input type: `library` for source.yml integration
   - Configuration via `config/library.yml` (see `config/library.yml.example`)
-  
+- Made cache storage more robust. Incomplete downloads will be deleted from cache.
+
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
 - Real-time active provider connection monitoring (dashboard + websocket)
