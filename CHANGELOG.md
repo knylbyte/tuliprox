@@ -2,6 +2,19 @@
 # 3.3.0 (2025-11-xx)
 !BREAKING CHANGE! config.yml threads attribute is now renamed to process_parallel and is a boolean (true or false).
 - !BREAKING CHANGE! config.yml adds a reverse proxy config field rewrite_secret to keep resource URLs valid after restart.
+- **NEW FEATURE: Local VOD Module** - Comprehensive local video file scanning and metadata management
+  - Recursive directory scanning with async tokio::fs operations
+  - Automatic classification (Movies vs TV Series) using configurable regex patterns
+  - Multi-source metadata resolution with priority: NFO files → TMDB API → filename parsing
+  - JSON-based metadata storage with UUID tracking and virtual ID management
+  - TMDB API integration with configurable rate limiting (default 250ms)
+  - NFO file reading/writing support (Kodi/Jellyfin/Emby/Plex compatible)
+  - Incremental scanning (only processes changed files based on modification timestamps)
+  - Orphaned entry cleanup for deleted files
+  - New CLI flags: `--scan-vod`, `--force-vod-rescan`
+  - New API endpoints: `POST /api/v1/vod/scan`, `GET /api/v1/vod/status`, `GET /api/v1/vod/item/:id`
+  - New input type: `local_vod` for source.yml integration
+  - Configuration via `config/vod.yml` (see `config/vod.yml.example`)
 - Avoid blocking the runtime when warming the cache.
 - Normalize FileLockManager paths so aliases share the same lock.
 - Use async file operations for playlist persistence to avoid blocking the async runtime.
