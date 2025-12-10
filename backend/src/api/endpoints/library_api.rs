@@ -7,7 +7,7 @@ use crate::library::{LibraryProcessor, LibraryScanResult};
 
 /// Request to trigger a VOD scan
 #[derive(Debug, Deserialize)]
-pub struct VodScanRequest {
+pub struct LibraryScanRequest {
     /// Force rescan of all files, ignoring modification timestamps
     #[serde(default)]
     pub force_rescan: bool,
@@ -15,7 +15,7 @@ pub struct VodScanRequest {
 
 /// Response for VOD scan
 #[derive(Debug, Serialize)]
-pub struct VodScanResponse {
+pub struct LibraryScanResponse {
     pub status: String,
     pub message: String,
     pub result: Option<LibraryScanResult>,
@@ -23,7 +23,7 @@ pub struct VodScanResponse {
 
 /// Response for VOD status
 #[derive(Debug, Serialize)]
-pub struct VodStatusResponse {
+pub struct LibraryStatusResponse {
     pub enabled: bool,
     pub total_items: usize,
     pub movies: usize,
@@ -31,18 +31,18 @@ pub struct VodStatusResponse {
     pub storage_location: Option<String>,
 }
 
-/// Triggers a VOD scan
-async fn scan_vod(
+/// Triggers a library scan
+async fn scan_library(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
-    axum::Json(request): axum::Json<VodScanRequest>,
+    axum::Json(request): axum::Json<LibraryScanRequest>,
 ) -> axum::response::Response {
     info!("VOD scan requested (force_rescan: {})", request.force_rescan);
 
     // Check if VOD is enabled
-    let vod_config = match app_state.app_config.vod.load_full() {
+    let vod_config = match app_state.app_config.library.load_full() {
         Some(config) if config.enabled => config,
         _ => {
-            let response = VodScanResponse {
+            let response = LibraryScanResponse {
                 status: "error".to_string(),
                 message: "VOD is not enabled".to_string(),
                 result: None,
@@ -56,8 +56,8 @@ async fn scan_vod(
 
     match processor.scan(request.force_rescan).await {
         Ok(result) => {
-            info!("VOD scan completed successfully");
-            let response = VodScanResponse {
+            info!("Library scan completed successfully");
+            let response = LibraryScanResponse {
                 status: "success".to_string(),
                 message: format!(
                     "Scan completed: {} files scanned, {} added, {} updated, {} removed",
@@ -68,8 +68,8 @@ async fn scan_vod(
             axum::Json(response).into_response()
         }
         Err(err) => {
-            error!("VOD scan failed: {err}");
-            let response = VodScanResponse {
+            error!("Library scan failed: {err}");
+            let response = LibraryScanResponse {
                 status: "error".to_string(),
                 message: format!("Scan failed: {err}"),
                 result: None,
@@ -79,15 +79,15 @@ async fn scan_vod(
     }
 }
 
-/// Gets VOD status
-async fn get_vod_status(
+/// Gets Library status
+async fn get_library_status(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
 ) -> axum::response::Response {
-    let vod_config = app_state.app_config.vod.load_full();
+    let library_config = app_state.app_config.library.load_full();
 
-    if let Some(config) = vod_config {
+    if let Some(config) = library_config {
         if !config.enabled {
-            let response = VodStatusResponse {
+            let response = LibraryStatusResponse {
                 enabled: false,
                 total_items: 0,
                 movies: 0,
@@ -110,7 +110,7 @@ async fn get_vod_status(
             .filter(|e| e.metadata.is_series())
             .count();
 
-        let response = VodStatusResponse {
+        let response = LibraryStatusResponse {
             enabled: true,
             total_items: entries.len(),
             movies,
@@ -120,7 +120,7 @@ async fn get_vod_status(
 
         axum::Json(response).into_response()
     } else {
-        let response = VodStatusResponse {
+        let response = LibraryStatusResponse {
             enabled: false,
             total_items: 0,
             movies: 0,
@@ -131,12 +131,12 @@ async fn get_vod_status(
     }
 }
 
-/// Gets a specific VOD item by virtual ID
-async fn get_vod_item(
+/// Gets a specific library item by virtual ID
+async fn get_library_item(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::extract::Path(virtual_id): axum::extract::Path<u16>,
 ) -> axum::response::Response {
-    let vod_config = match app_state.app_config.vod.load_full() {
+    let vod_config = match app_state.app_config.library.load_full() {
         Some(config) if config.enabled => config,
         _ => {
             return axum::http::StatusCode::NOT_FOUND.into_response();
@@ -152,9 +152,9 @@ async fn get_vod_item(
 }
 
 /// Registers VOD API routes
-pub fn vod_api_register(router: axum::Router<Arc<AppState>>) -> axum::Router<Arc<AppState>> {
+pub fn library_api_register(router: axum::Router<Arc<AppState>>) -> axum::Router<Arc<AppState>> {
     router
-        .route("/vod/scan", axum::routing::post(scan_vod))
-        .route("/vod/status", axum::routing::get(get_vod_status))
-        .route("/vod/item/:virtual_id", axum::routing::get(get_vod_item))
+        .route("/library/scan", axum::routing::post(scan_library))
+        .route("/library/status", axum::routing::get(get_library_status))
+        .route("/library/item/{virtual_id}", axum::routing::get(get_library_item))
 }

@@ -33,7 +33,7 @@ pub struct AppConfig {
     pub sources: Arc<ArcSwap<SourcesConfig>>,
     pub hdhomerun: Arc<ArcSwapOption<HdHomeRunConfig>>,
     pub api_proxy: Arc<ArcSwapOption<ApiProxyConfig>>,
-    pub vod: Arc<ArcSwapOption<VodConfig>>,
+    pub library: Arc<ArcSwapOption<VodConfig>>,
     pub file_locks: Arc<utils::FileLockManager>,
     pub paths: Arc<ArcSwap<ConfigPaths>>,
     pub custom_stream_response: Arc<ArcSwapOption<CustomStreamResponse>>,
@@ -61,7 +61,7 @@ impl AppConfig {
     }
 
     pub fn set_vod(&self, vod: VodConfig) {
-        self.vod.store(Some(Arc::new(vod)));
+        self.library.store(Some(Arc::new(vod)));
     }
 
     pub fn set_mappings(&self, mapping_path: &str, mappings_cfg: &Mappings) {

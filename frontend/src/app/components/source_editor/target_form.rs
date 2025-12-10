@@ -172,7 +172,7 @@ pub fn ConfigTargetView(props: &ConfigTargetViewProps) -> Html {
             { config_field_child!(translate.t(LABEL_FILTER), {
                    html! {
                         <FilterInput filter={target_form_state_2.form.filter.clone()} on_change={Callback::from(move |new_filter: Option<String>| {
-                            target_form_state_2.dispatch(ConfigTargetFormAction::Filter(new_filter.unwrap_or_else(String::new)));
+                            target_form_state_2.dispatch(ConfigTargetFormAction::Filter(new_filter.unwrap_or_default()));
                         })} />
                    }
             })}

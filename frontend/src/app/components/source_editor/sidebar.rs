@@ -3,9 +3,10 @@ use yew::prelude::*;
 use yew_i18n::use_translation;
 
 
-pub const BLOCK_TYPES_INPUT: [BlockType; 2] = [
+pub const BLOCK_TYPES_INPUT: [BlockType; 3] = [
     BlockType::InputXtream,
-    BlockType::InputM3u
+    BlockType::InputM3u,
+    BlockType::InputLibrary
 ];
 
 pub const BLOCK_TYPES_TARGET: [BlockType; 1] = [
