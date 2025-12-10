@@ -31,7 +31,7 @@ supported_extensions:
 # Metadata configuration
 metadata:
   # Location to store metadata cache (JSON files)
-  storage_location: "./data/vod_metadata"
+  storage_location: "./data/library_metadata"
 
   # TMDB (The Movie Database) API integration
   tmdb_enabled: false
@@ -64,29 +64,23 @@ playlist:
   # Group name for series in M3U/Xtream playlist
   series_group_name: "VOD Series"
 
-# File serving configuration
-file_serving:
-  # Method to serve video files
-  # Options: "xtream_api" (default) or "m3u"
-  method: "xtream_api"
-
 # Examples of usage:
 #
 # 1. Scan VOD directories from command line:
-#    ./tuliprox --scan-vod
+#    ./tuliprox --scan-library
 #
 # 2. Force rescan all files (ignoring modification timestamps):
-#    ./tuliprox --force-vod-rescan
+#    ./tuliprox --force-library-rescan
 #
 # 3. Trigger scan via API (requires server mode):
-#    POST /api/v1/vod/scan
+#    POST /api/v1/library/scan
 #    {"force_rescan": false}
 #
-# 4. Get VOD status via API:
-#    GET /api/v1/vod/status
+# 4. Get library status via API:
+#    GET /api/v1/library/status
 #
-# 5. Get specific VOD item by virtual ID:
-#    GET /api/v1/vod/item/100
+# 5. Get specific library item by virtual ID:
+#    GET /api/v1/library/item/100
 
 # Metadata sources priority:
 # 1. Existing NFO files (Kodi/Jellyfin/Emby/Plex)

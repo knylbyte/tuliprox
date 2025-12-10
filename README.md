@@ -13,7 +13,7 @@ It supports M3U and M3U8 formats, Xtream Codes API, HDHomeRun and STRM, making i
 - **Flexible Proxy Support**: Acts as a reverse/redirect proxy for EXTM3U, Xtream Codes, HDHomeRun, and STRM formats (Kodi, Plex, Emby, Jellyfin) with:
   - app-specific naming conventions
   - flat directory structure option (for compatibility reasons of some media scanners)
-- **Local VOD Management**: Scan and serve local video files with automatic metadata resolution:
+- **Local media library Management**: Scan and serve local video files with automatic metadata resolution:
   - Recursive directory scanning for movies and TV series
   - Multi-source metadata (NFO files, TMDB API, filename parsing)
   - Automatic classification (Movies vs Series)
@@ -632,78 +632,6 @@ and you use `/config` in your configuration files, the file watcher will still r
 
 This means that any file paths returned by the watcher might not match the paths in your configuration.
 You need to account for this difference when handling file events, e.g., by mapping the original path to your configured path.
-
-### 1.20 `vod` - Local VOD Module
-
-The Local VOD (Video-on-Demand) module enables tuliprox to scan, classify, and serve local video files with automatic metadata resolution.
-
-**Configuration File**: `config/vod.yml`
-
-**Key Features**:
-- Recursive directory scanning for video files
-- Automatic classification (Movies vs TV Series)
-- Multi-source metadata resolution (NFO → TMDB → filename parsing)
-- JSON-based metadata storage with UUID tracking
-- TMDB API integration with rate limiting
-- NFO file reading and writing (Kodi/Jellyfin/Emby/Plex compatible)
-- Incremental scanning (only processes changed files)
-- Virtual ID management for stable playlist integration
-
-**Configuration Example**:
-```yaml
-enabled: true
-scan_directories:
-  - path: "/media/movies"
-    enabled: true
-  - path: "/media/tvshows"
-    enabled: true
-supported_extensions: [mp4, mkv, avi, mov, ts, m4v, webm]
-metadata:
-  storage_location: "./data/vod_metadata"
-  tmdb_enabled: false
-  tmdb_api_key: ""  # Get from https://www.themoviedb.org/settings/api
-  tmdb_rate_limit_ms: 250
-  fallback_to_filename_parsing: true
-  formats: [json]  # or [json, nfo]
-classification:
-  series_patterns:
-    - "(?i)s\\d+e\\d+"          # S01E02
-    - "(?i)\\d+x\\d+"            # 1x02
-    - "(?i)season[\\s._-]*\\d+"  # Season 1
-playlist:
-  movie_group_name: "VOD Movies"
-  series_group_name: "VOD Series"
-file_serving:
-  method: "xtream_api"  # or "m3u"
-```
-
-**CLI Usage**:
-```bash
-# Scan VOD directories
-./tuliprox --scan-vod
-
-# Force full rescan (ignores modification timestamps)
-./tuliprox --force-vod-rescan
-```
-
-**API Endpoints**:
-- `POST /api/v1/vod/scan` - Trigger VOD scan
-  ```json
-  {"force_rescan": false}
-  ```
-- `GET /api/v1/vod/status` - Get VOD status
-- `GET /api/v1/vod/item/:virtual_id` - Get specific VOD item
-
-**Integration with source.yml**:
-```yaml
-sources:
-  - inputs:
-      - name: local-movies
-        type: local_vod  # New input type
-        enabled: true
-```
-
-For a complete configuration example, see `config/vod.yml.example`.
 
 ## 2. `source.yml`
 
@@ -1779,7 +1707,78 @@ server:
 ```
 
 
-## 4. Logging
+## 4 `library.yml` - Local library Module
+
+The local media file library module enables Tuliprox to scan, classify, and serve local video files with automatic metadata resolution.
+
+**Configuration File**: `config/library.yml`
+
+**Key Features**:
+- Recursive directory scanning for video files
+- Automatic classification (Movies vs TV Series)
+- Multi-source metadata resolution (NFO → TMDB → filename parsing)
+- JSON-based metadata storage with UUID tracking
+- TMDB API integration with rate limiting
+- NFO file reading and writing (Kodi/Jellyfin/Emby/Plex compatible)
+- Incremental scanning (only processes changed files)
+- Virtual ID management for stable playlist integration
+
+**Configuration Example**:
+```yaml
+enabled: true
+scan_directories:
+  - path: "/media/movies"
+    enabled: true
+  - path: "/media/tvshows"
+    enabled: true
+supported_extensions: [mp4, mkv, avi, mov, ts, m4v, webm]
+metadata:
+  storage_location: "./data/library_metadata"
+  tmdb_enabled: false
+  tmdb_api_key: ""  # Get from https://www.themoviedb.org/settings/api
+  tmdb_rate_limit_ms: 250
+  fallback_to_filename_parsing: true
+  formats: [json]  # or [json, nfo]
+classification:
+  series_patterns:
+    - "(?i)s\\d+e\\d+"          # S01E02
+    - "(?i)\\d+x\\d+"            # 1x02
+    - "(?i)season[\\s._-]*\\d+"  # Season 1
+playlist:
+  movie_group_name: "VOD Movies"
+  series_group_name: "VOD Series"
+```
+
+**CLI Usage**:
+```bash
+# Scan VOD directories
+./tuliprox --scan-library
+
+# Force full rescan (ignores modification timestamps)
+./tuliprox --force-library-rescan
+```
+
+**API Endpoints**:
+- `POST /api/v1/library/scan` - Trigger library scan
+  ```json
+  {"force_rescan": false}
+  ```
+- `GET /api/v1/library/status` - Get library status
+- `GET /api/v1/library/item/:virtual_id` - Get specific library item
+
+**Integration with source.yml**:
+```yaml
+sources:
+  - inputs:
+      - name: local-movies
+        type: library  # New input type
+        enabled: true
+```
+
+For a complete configuration example, see `config/library.yml.example`.
+
+
+## 5. Logging
 Following log levels are supported:
 - `debug`
 - `info` _default_
