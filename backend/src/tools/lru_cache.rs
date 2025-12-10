@@ -1,9 +1,10 @@
 use crate::utils::{traverse_dir};
-use shared::utils::{hash_string_as_hex, human_readable_byte_size};
+use shared::utils::{hash_string_as_hex, human_readable_byte_size, sanitize_sensitive_info};
 use log::{debug, error, info, trace};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::PathBuf;
+use crate::utils::{trace_if_enabled};
 
 /// `LRUResourceCache`
 ///
@@ -119,12 +120,14 @@ impl LRUResourceCache {
         {
             if let Some((path, size)) = self.cache.get(&key) {
                 if path.exists() {
+                    trace_if_enabled!("Responding resource from cache with key: {key} for url: {}", sanitize_sensitive_info(url));
                     // Move to the end of the queue
                     self.usage_order.retain(|k| k != &key);   // remove from queue
                     self.usage_order.push_back(key);  // add to the to end
                     return Some(path.clone());
                 }
                 {
+                    trace_if_enabled!("Cache inconsistency: file missing for key: {key}, url: {}", sanitize_sensitive_info(url));
                     // this should not happen, someone deleted the file manually and the cache is not in sync
                     self.current_size -= size;
                     self.cache.remove(&key);
