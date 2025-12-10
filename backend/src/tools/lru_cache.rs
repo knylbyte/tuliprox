@@ -127,7 +127,7 @@ impl LRUResourceCache {
                     return Some(path.clone());
                 }
                 {
-                    trace_if_enabled!("Responding resource from cache with key: {key} for url: {}", sanitize_sensitive_info(url));
+                    trace_if_enabled!("Cache inconsistency: file missing for key: {key}, url: {}", sanitize_sensitive_info(url));
                     // this should not happen, someone deleted the file manually and the cache is not in sync
                     self.current_size -= size;
                     self.cache.remove(&key);
