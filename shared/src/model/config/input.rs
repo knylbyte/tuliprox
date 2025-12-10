@@ -56,6 +56,8 @@ pub enum InputType {
     M3uBatch,
     #[serde(rename = "xtream_batch")]
     XtreamBatch,
+    #[serde(rename = "local_vod")]
+    LocalVod,
 }
 
 
@@ -64,6 +66,7 @@ impl InputType {
     const XTREAM: &'static str = "xtream";
     const M3U_BATCH: &'static str = "m3u_batch";
     const XTREAM_BATCH: &'static str = "xtream_batch";
+    const LOCAL_VOD: &'static str = "local_vod";
 }
 
 impl Display for InputType {
@@ -73,6 +76,7 @@ impl Display for InputType {
             Self::Xtream => Self::XTREAM,
             Self::M3uBatch => Self::M3U_BATCH,
             Self::XtreamBatch => Self::XTREAM_BATCH,
+            Self::LocalVod => Self::LOCAL_VOD,
         })
     }
 }
@@ -89,6 +93,8 @@ impl FromStr for InputType {
             Ok(Self::M3uBatch)
         } else if s.eq(Self::XTREAM_BATCH) {
             Ok(Self::XtreamBatch)
+        } else if s.eq(Self::LOCAL_VOD) {
+            Ok(Self::LocalVod)
         } else {
             create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
         }

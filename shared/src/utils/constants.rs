@@ -11,6 +11,7 @@ pub const CONFIG_FILE: &str = "config.yml";
 pub const SOURCE_FILE: &str = "source.yml";
 pub const MAPPING_FILE: &str = "mapping.yml";
 pub const API_PROXY_FILE: &str = "api-proxy.yml";
+pub const VOD_FILE: &str = "vod.yml";
 
 
 pub const ENCODING_GZIP: &str = "gzip";
