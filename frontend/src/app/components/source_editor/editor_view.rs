@@ -716,7 +716,7 @@ pub fn SourceEditor() -> Html {
                 };
 
                 if is_selecting {
-                    let (x,y,w,h) = compute_normalized_selection_rect(selection_start, mouse_x, mouse_y);
+                    let (x, y, w, h) = compute_normalized_selection_rect(selection_start, mouse_x, mouse_y);
                     let ctrl_key = e.ctrl_key();
 
                     // Update selected_blocks: block intersects rect?
@@ -848,6 +848,7 @@ pub fn SourceEditor() -> Html {
         let editor_state_ref = editor_state_ref.clone();
         Callback::from(move |(from, to): (BlockId, BlockId)| {
             editor_state_ref.borrow_mut().connections.retain(|c| !(c.from == from && c.to == to));
+            force_update.set(*force_update + 1);
         })
     };
 
@@ -1045,7 +1046,7 @@ fn update_selection_rect(rect_div: &HtmlElement, x: f32, y: f32, w: f32, h: f32)
     div_style.set_property("height", &format!("{h}px")).unwrap();
 }
 
-fn compute_normalized_selection_rect(selection_start: Position, mouse_x: f32, mouse_y: f32) -> (f32, f32, f32,f32) {
+fn compute_normalized_selection_rect(selection_start: Position, mouse_x: f32, mouse_y: f32) -> (f32, f32, f32, f32) {
     // compute normalized rect
     let (start_x, start_y) = selection_start;
     let x = start_x.min(mouse_x);

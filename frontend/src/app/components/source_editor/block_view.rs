@@ -2,7 +2,7 @@ use web_sys::MouseEvent;
 use yew::{classes, function_component, html, Callback, Html, Properties, TargetCast};
 use yew_i18n::use_translation;
 use crate::html_if;
-use crate::app::components::{Block, BlockId, BlockInstance, BlockType, PortStatus};
+use crate::app::components::{Block, BlockId, BlockInstance, PortStatus};
 #[derive(Properties, PartialEq)]
 pub struct BlockProps {
     pub(crate) block: Block,

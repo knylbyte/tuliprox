@@ -324,14 +324,19 @@
   --graph-paper-line-color-2: #c0c0c030;
 
 
-  /* INPUT BLOCKS — cool blues */
-  --brick-input-shadow-color: #4a90e280;
-  --brick-input-xtream-border-color: #4a90e2cc;
-  --brick-input-xtream-background-color: #4a90e288;
-  --brick-input-m3u-border-color: #4a90e2cc;
-  --brick-input-m3u-background-color: #4a90e288;
-  --brick-input-library-border-color: #4a90e2cc;
-  --brick-input-library-background-color: #4a90e288;
+  /* INPUT BLOCKS — cool blues (distinct per type) */
+
+  --brick-input-xtream-border-color: #1565c0cc;
+  --brick-input-xtream-background-color: #1565c088;
+  --brick-input-xtream-shadow-color: #1565c080;
+
+  --brick-input-m3u-border-color: #409affcc;
+  --brick-input-m3u-background-color: #409aff88;
+  --brick-input-m3u-shadow-color: #409aff80;
+
+  --brick-input-library-border-color: #64b5f6cc;
+  --brick-input-library-background-color: #64b5f688;
+  --brick-input-library-shadow-color: #64b5f680;
 
   /* TARGET BLOCKS — balanced green/teal */
   --brick-target-border-color: #2aa198cc; /* Solarized teal */
