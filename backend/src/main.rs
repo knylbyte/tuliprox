@@ -12,18 +12,20 @@ include_modules!();
 use crate::auth::generate_password;
 use crate::model::{AppConfig, Config, Healthcheck, HealthcheckConfig, ProcessTargets, SourcesConfig};
 use crate::processing::processor::playlist;
+use crate::utils::init_logger;
+use crate::utils::request::create_client;
 use crate::utils::{config_file_reader, resolve_env_var};
-use crate::utils::request::{create_client};
-use chrono::{DateTime, Utc};
-use clap::{Parser};
-use log::{error, info};
-use std::fs::File;
-use std::sync::Arc;
+use crate::library::LibraryProcessor;
 use arc_swap::access::Access;
 use arc_swap::ArcSwap;
+use chrono::{DateTime, Utc};
+use clap::Parser;
+use log::{error, info, warn};
 use shared::model::ConfigPaths;
-use crate::utils::init_logger;
+use std::fs::File;
+use std::sync::Arc;
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Parser)]
 #[command(name = "tuliprox")]
 #[command(author = "euzu <euzu@proton.me>")]
@@ -68,6 +70,14 @@ struct Args {
     #[arg(short = None, long = "healthcheck", default_value_t = false, default_missing_value = "true"
     )]
     healthcheck: bool,
+
+    /// Scan local Library directory
+    #[arg(long = "scan-library", default_value_t = false, default_missing_value = "true")]
+    scan_library: bool,
+
+    /// Force rescan of all local Library files
+    #[arg(long = "force-library-rescan", default_value_t = false, default_missing_value = "true")]
+    force_library_rescan: bool,
 }
 
 
@@ -103,6 +113,14 @@ async fn main() {
         std::process::exit(i32::from(!healthy));
     }
 
+    // Handle VOD scan before starting main application
+    if args.scan_library || args.force_library_rescan {
+        info!("Library scan mode requested");
+        let app_config = utils::read_initial_app_config(&mut config_paths, true, true, false).await.unwrap_or_else(|err| exit!("{}", err));
+        scan_library_cli(&app_config, args.force_library_rescan).await;
+        return;
+    }
+
     info!("Version: {VERSION}");
     if let Some(bts) = BUILD_TIMESTAMP.to_string().parse::<DateTime<Utc>>().ok().map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string()) {
         info!("Build time: {bts}");
@@ -130,6 +148,7 @@ fn print_info(app_config: &AppConfig) {
     info!("Config file: {:?}", &paths.config_file_path);
     info!("Source file: {:?}", &paths.sources_file_path);
     info!("Api Proxy File: {:?}", &paths.api_proxy_file_path);
+    info!("Library File: {:?}", &paths.library_file_path);
     info!("Mapping file: {:?}", &paths.mapping_file_path.as_ref().map_or_else(|| "not used",  |v| v.as_str()));
 
     if let Some(cache) = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
@@ -146,8 +165,9 @@ fn get_file_paths(args: &Args) -> ConfigPaths {
     let config_path: String = utils::resolve_directory_path(&resolve_env_var(&args.config_path.as_ref().map_or_else(utils::get_default_config_path, ToString::to_string)));
     let config_file: String = resolve_env_var(&args.config_file.as_ref().map_or_else(|| utils::get_default_config_file_path(&config_path), ToString::to_string));
     let api_proxy_file = resolve_env_var(&args.api_proxy.as_ref().map_or_else(|| utils::get_default_api_proxy_config_path(config_path.as_str()), ToString::to_string));
-    let sources_file: String = resolve_env_var(&args.source_file.as_ref().map_or_else(|| utils::get_default_sources_file_path(&config_path),  ToString::to_string));
+    let sources_file: String = resolve_env_var(&args.source_file.as_ref().map_or_else(|| utils::get_default_sources_file_path(&config_path), ToString::to_string));
     let mappings_file = args.mapping_file.as_ref().map(|p| resolve_env_var(p));
+    let library_file = resolve_env_var(&utils::get_default_library_file_path(config_path.as_str()));
 
     ConfigPaths {
         config_path,
@@ -155,6 +175,7 @@ fn get_file_paths(args: &Args) -> ConfigPaths {
         sources_file_path: sources_file,
         mapping_file_path: mappings_file, // need to be set after config read
         api_proxy_file_path: api_proxy_file,
+        library_file_path: library_file,
         custom_stream_response_path: None,
     }
 }
@@ -173,6 +194,34 @@ async fn start_in_server_mode(cfg: Arc<AppConfig>, targets: Arc<ProcessTargets>)
     }
 }
 
+async fn scan_library_cli(app_config: &AppConfig, force_rescan: bool) {
+    info!("Starting Library scan from CLI (force_rescan: {force_rescan})");
+
+    let Some(processor) = LibraryProcessor::from_app_config(app_config) else {
+        error!("Library is not enabled in configuration");
+        std::process::exit(1);
+    };
+
+
+    match processor.scan(force_rescan).await {
+        Ok(result) => {
+            info!("Library scan completed successfully!");
+            info!("  Files scanned: {}", result.files_scanned);
+            info!("  Files added: {}", result.files_added);
+            info!("  Files updated: {}", result.files_updated);
+            info!("  Files removed: {}", result.files_removed);
+            if result.errors > 0 {
+                warn!("  Errors: {}", result.errors);
+            }
+            std::process::exit(0);
+        }
+        Err(err) => {
+            error!("Library scan failed: {err}");
+            std::process::exit(1);
+        }
+    }
+}
+
 async fn healthcheck(config_file: &str) -> bool {
     let path = std::path::PathBuf::from(config_file);
     match File::open(path) {
@@ -187,18 +236,16 @@ async fn healthcheck(config_file: &str) -> bool {
                         Ok(response) => matches!(response.json::<Healthcheck>().await, Ok(check) if check.status == "ok"),
                         Err(_) => false,
                     }
-
                 }
                 Err(err) => {
                     error!("Failed to parse config file for healthcheck {err:?}");
                     false
                 }
             }
-        },
+        }
         Err(err) => {
             error!("Failed to open config file for healthcheck {err:?}");
             false
         }
-     }
-
+    }
 }

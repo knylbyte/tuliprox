@@ -11,6 +11,7 @@ pub const CONFIG_FILE: &str = "config.yml";
 pub const SOURCE_FILE: &str = "source.yml";
 pub const MAPPING_FILE: &str = "mapping.yml";
 pub const API_PROXY_FILE: &str = "api-proxy.yml";
+pub const LIBRARY_FILE: &str = "library.yml";
 
 
 pub const ENCODING_GZIP: &str = "gzip";
@@ -97,6 +98,11 @@ pub struct Constants {
     pub allowed_output_formats: Vec<String>,
     pub re_trakt_year:  Regex,
     pub re_quality:  Regex,
+    pub re_classifier_quality:  Regex,
+    pub re_classifier_year: Regex,
+    pub re_classifier_cleanup: Regex,
+    pub re_classifier_episode: Regex,
+    pub re_classifier_season: Regex,
 }
 
 pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
@@ -148,5 +154,10 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
         ].into_iter().collect::<HashSet<&str>>(),
         re_trakt_year: Regex::new(r"\(?(\d{4})\)?$").unwrap(),
         re_quality: Regex::new(r"(?i)\b(4K|UHD|8K|2160p?|1080p?|720p?|480p?|BLURAY|HDTV|DVDRIP|CAM|TS|HDR|DV|SDR)\b").unwrap(),
+        re_classifier_quality:  Regex::new(r"(?i)[\s\._-]*(1080p|720p|480p|2160p|4K|BluRay|BRRip|WEB-DL|WEBRip|HDTV|DVDRip|CAM|TS|HDR|DV|SDR|UHD|8K).*$").unwrap(),
+        re_classifier_year: Regex::new(r"[\(\[]?(\d{4})[\)\]]?").unwrap(),
+        re_classifier_cleanup: Regex::new(r"(?i)[\s\._-]*(?:s\d+e\d+|\d+x\d+|season[\s\._-]*\d+|episode[\s\._-]*\d+).*$").unwrap(),
+        re_classifier_episode: Regex::new(r"(?i)(?:e|episode|x)[\s\._-]*(\d+)").unwrap(),
+        re_classifier_season: Regex::new(r"(?i)(?:s|season)[\s\._-]*(\d+)").unwrap(),
     }
 );

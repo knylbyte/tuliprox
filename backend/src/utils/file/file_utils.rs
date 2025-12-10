@@ -7,7 +7,7 @@ use std::{env, fs};
 
 use shared::error::str_to_io_error;
 use crate::utils::debug_if_enabled;
-use shared::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE};
+use shared::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE, LIBRARY_FILE};
 use log::{debug, error};
 use path_clean::PathClean;
 use tokio::fs as tokio_fs;
@@ -88,6 +88,11 @@ pub fn get_default_mappings_path(config_path: &str) -> String {
 #[inline]
 pub fn get_default_api_proxy_config_path(config_path: &str) -> String {
     get_default_file_path(config_path, API_PROXY_FILE)
+}
+
+#[inline]
+pub fn get_default_library_file_path(config_path: &str) -> String {
+    get_default_file_path(config_path, LIBRARY_FILE)
 }
 
 pub fn resolve_directory_path(input: &str) -> String {

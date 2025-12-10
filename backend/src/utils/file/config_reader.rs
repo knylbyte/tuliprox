@@ -1,5 +1,5 @@
 use crate::model::Config;
-use crate::model::{ApiProxyConfig, AppConfig, SourcesConfig};
+use crate::model::{ApiProxyConfig, AppConfig, SourcesConfig, VodConfig};
 use crate::{utils};
 use crate::utils::file_reader;
 use crate::utils::sys_utils::exit;
@@ -9,7 +9,7 @@ use chrono::Local;
 use log::{error, info, warn};
 use serde::Serialize;
 use shared::error::{create_tuliprox_error, info_err, TuliproxError, TuliproxErrorKind};
-use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto, TargetUserDto};
+use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto, TargetUserDto, VodConfigDto};
 use shared::utils::{CONSTANTS};
 use std::env;
 use std::fs::File;
@@ -233,6 +233,7 @@ pub async fn read_initial_app_config(paths: &mut ConfigPaths,
         sources: Arc::new(ArcSwap::from_pointee(sources)),
         hdhomerun: Arc::new(ArcSwapAny::default()),
         api_proxy: Arc::new(ArcSwapAny::default()),
+        vod: Arc::new(ArcSwapAny::default()),
         paths: Arc::new(ArcSwap::from_pointee(paths.clone())),
         file_locks: Arc::new(FileLockManager::default()),
         custom_stream_response: Arc::new(ArcSwapAny::default()),
@@ -256,6 +257,17 @@ pub async fn read_initial_app_config(paths: &mut ConfigPaths,
             Ok(None) => info!("Api-Proxy file: not used"),
             Err(err) => exit!("{err}"),
         }
+    }
+
+    // Load VOD configuration
+    match read_vod_file(paths.library_file_path.as_str(), resolve_env) {
+        Ok(Some(vod_dto)) => {
+            let vod_config = VodConfig::from(&vod_dto);
+            app_config.set_vod(vod_config);
+            info!("VOD config loaded successfully");
+        }
+        Ok(None) => info!("VOD file: not used"),
+        Err(err) => warn!("Failed to load VOD config: {err}"),
     }
 
     Ok(app_config)
@@ -300,6 +312,25 @@ pub async fn read_api_proxy(config: &AppConfig, resolve_env: bool) -> Option<Api
             None
         }
     }
+}
+
+pub fn read_vod_file(vod_file: &str, resolve_env: bool) -> Result<Option<VodConfigDto>, TuliproxError> {
+    open_file(&std::path::PathBuf::from(vod_file)).map_or(Ok(None), |file| {
+        let maybe_vod: Result<VodConfigDto, _> = serde_yaml::from_reader(config_file_reader(file, resolve_env));
+        match maybe_vod {
+            Ok(mut vod_dto) => {
+                if resolve_env {
+                    if let Err(err) = vod_dto.prepare() {
+                        exit!("cant read vod-config file: {err}");
+                    }
+                }
+                Ok(Some(vod_dto))
+            }
+            Err(err) => {
+                Err(info_err!(format!("cant read vod-config file: {err}")))
+            }
+        }
+    })
 }
 
 async fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str) -> Result<(), TuliproxError>

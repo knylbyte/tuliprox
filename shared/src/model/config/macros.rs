@@ -44,6 +44,9 @@ macro_rules! check_input_credentials {
                     return Err(info_err!("input type xtream-batch should not define username or password attribute ".to_owned()));
                 }
             }
+            InputType::Library => {
+                // nothing to do
+            }
         }
     };
 }
@@ -71,6 +74,7 @@ macro_rules! check_input_connections {
                     return Err(info_err!("input type xtream-batch should not define priority attribute ".to_owned()));
                 }
             }
+            InputType::Library => {}
         }
     };
 }

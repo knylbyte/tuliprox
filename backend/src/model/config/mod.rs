@@ -29,6 +29,7 @@ mod trakt_api;
 pub mod macros;
 mod favourites;
 mod geoip;
+mod vod;
 
 pub use api::*;
 pub use api_proxy::*;
@@ -59,3 +60,4 @@ pub use video_download::*;
 pub use web_auth::*;
 pub use web_ui::*;
 pub use favourites::*;
+pub use vod::*;

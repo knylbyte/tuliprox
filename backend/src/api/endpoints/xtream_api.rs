@@ -269,7 +269,7 @@ async fn xtream_player_api_stream(
     };
     
     debug_if_enabled!(
-        "ID chain for xtream endpoint: request_stream_id={} -> action_stream_id={action_stream_id} -> req_virtual_id={req_virtual_id} -> virtual_id={virtual_id}");
+        "ID chain for xtream endpoint: request_stream_id={} -> action_stream_id={action_stream_id} -> req_virtual_id={req_virtual_id} -> virtual_id={virtual_id}", stream_req.stream_id);
     let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let user_session = app_state
         .active_users

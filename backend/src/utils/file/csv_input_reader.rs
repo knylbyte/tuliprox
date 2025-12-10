@@ -102,7 +102,8 @@ fn csv_assign_config_input_column(config_input: &mut ConfigInputAliasDto, header
 pub fn csv_read_inputs_from_reader(batch_input_type: InputType, reader: impl BufRead) -> Result<Vec<ConfigInputAliasDto>, Error> {
     let input_type = match batch_input_type {
         InputType::M3uBatch | InputType::M3u => InputType::M3uBatch,
-        InputType::XtreamBatch | InputType::Xtream => InputType::XtreamBatch
+        InputType::XtreamBatch | InputType::Xtream => InputType::XtreamBatch,
+        InputType::Library => InputType::Library
     };
     let mut result = vec![];
     let mut default_columns = vec![];

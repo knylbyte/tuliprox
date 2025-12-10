@@ -148,6 +148,7 @@ pub(in crate::api::endpoints) async fn get_playlist(client: Arc<reqwest::Client>
                 match input.input_type {
                     InputType::M3u | InputType::M3uBatch => m3u::get_m3u_playlist(&client, cfg, input, &cfg.working_dir).await,
                     InputType::Xtream | InputType::XtreamBatch => xtream::get_xtream_playlist(cfg, &client, input, &cfg.working_dir).await,
+                    InputType::Library => (Vec::<PlaylistGroup>::new(), vec![]) // TODO LocalVod
                 };
             if result.is_empty() {
                 let error_strings: Vec<String> = errors.iter().map(std::string::ToString::to_string).collect();
