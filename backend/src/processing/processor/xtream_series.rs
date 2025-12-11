@@ -31,25 +31,24 @@ fn write_series_episode_record_to_wal_file(
     writer: &mut BufWriter<&File>,
     provider_id: u32,
     episode: &XtreamSeriesInfoEpisode,
-) -> std::io::Result<()> {
+) -> std::io::Result<usize> {
     let series_episode = XtreamSeriesEpisode::from(episode);
     if let Ok(content_bytes) = bincode_serialize(&series_episode) {
         writer.write_all(&provider_id.to_le_bytes())?;
-        if let Ok(len)  = u32::try_from(content_bytes.len()) {
+        let content_len = content_bytes.len();
+        if let Ok(len)  = u32::try_from(content_len) {
             writer.write_all(&len.to_le_bytes())?;
             writer.write_all(&content_bytes)?;
-        } else {
-            error!("Cant write to WAL file, content length exceeds u32");
+            return Ok(content_len + 4usize)
         }
+        error!("Cant write to WAL file, content length exceeds u32");
     }
-    Ok(())
+    Ok(0)
 }
 
 fn should_update_series_info(pli: &mut PlaylistItem, processed_provider_ids: &HashMap<u32, u64>) -> (bool, u32, u64) {
     should_update_info(pli, processed_provider_ids, crate::model::XC_TAG_SERIES_INFO_LAST_MODIFIED)
 }
-
-const FLUSH_INTERVAL: usize = 50;
 
 async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client, errors: &mut Vec<TuliproxError>,
                                       fpl: &mut FetchedPlaylist<'_>, resolve_delay: u16) -> bool {
@@ -198,15 +197,18 @@ async fn process_series_info(
                         Ok(Some(mut series)) => {
                             for (episode, pli_episode) in &mut series {
                                 let Some(provider_id) = &pli_episode.header.get_provider_id() else { continue; };
-                                handle_error!(write_series_episode_record_to_wal_file(&mut wal_writer, *provider_id, episode),
-                                |err| errors.push(info_err!(format!("Failed to write to series episode wal file: {err}"))));
-                            }
-                            write_counter +=1;
-                            // periodic flush to bound BufWriter memory
-                            if write_counter >= FLUSH_INTERVAL {
-                                write_counter = 0;
-                                if let Err(err) = wal_writer.flush() {
-                                    errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
+                                match write_series_episode_record_to_wal_file(&mut wal_writer, *provider_id, episode) {
+                                    Ok(written_bytes) => {
+                                        write_counter += written_bytes;
+                                        // periodic flush to bound BufWriter memory
+                                        if write_counter >= IO_BUFFER_SIZE {
+                                            write_counter = 0;
+                                            if let Err(err) = wal_writer.flush() {
+                                                errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {errors.push(info_err!(format!("Failed to write to series episode wal file: {err}"))) }
                                 }
                             }
                             group_series.extend(series.into_iter().map(|(_, pli)| pli));
