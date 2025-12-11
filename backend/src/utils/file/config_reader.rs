@@ -259,15 +259,15 @@ pub async fn read_initial_app_config(paths: &mut ConfigPaths,
         }
     }
 
-    // Load VOD configuration
+    // Load Library configuration
     match read_vod_file(paths.library_file_path.as_str(), resolve_env) {
         Ok(Some(vod_dto)) => {
             let vod_config = VodConfig::from(&vod_dto);
             app_config.set_vod(vod_config);
-            info!("VOD config loaded successfully");
+            info!("Library config loaded successfully");
         }
-        Ok(None) => info!("VOD file: not used"),
-        Err(err) => warn!("Failed to load VOD config: {err}"),
+        Ok(None) => info!("Library file: not used"),
+        Err(err) => warn!("Failed to load Library config: {err}"),
     }
 
     Ok(app_config)
