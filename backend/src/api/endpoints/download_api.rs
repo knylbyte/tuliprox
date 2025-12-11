@@ -1,7 +1,7 @@
 use crate::api::model::AppState;
 use crate::api::model::{DownloadQueue, FileDownload, FileDownloadRequest};
 use crate::model::{AppConfig, VideoDownloadConfig};
-use crate::utils::request;
+use crate::utils::{async_file_writer, request};
 use tokio::sync::RwLock;
 use futures::stream::TryStreamExt;
 use log::info;
@@ -25,15 +25,23 @@ async fn download_file(active: Arc<RwLock<Option<FileDownload>>>, client: &reqwe
                         if let Some(file_path_str) = file_download.file_path.to_str() {
                             info!("Downloading {file_path_str}");
                             match File::create(&file_download.file_path).await {
-                                Ok(mut file) => {
+                                Ok(file) => {
+                                    let mut buf_writer = async_file_writer(file);
                                     let mut downloaded: u64 = 0;
                                     let mut stream = response.bytes_stream().map_err(to_io_error);
+                                    let mut write_counter = 0;
                                     loop {
                                         match stream.try_next().await {
                                             Ok(item) => {
                                                 if let Some(chunk) = item {
-                                                    match file.write_all(&chunk).await {
+                                                    match buf_writer.write_all(&chunk).await {
                                                         Ok(()) => {
+                                                            write_counter += 1;
+                                                            if write_counter > 50 {
+                                                                buf_writer.flush().await.map_err(|err| err.to_string())?;
+                                                                write_counter = 0;
+                                                            }
+
                                                             downloaded += chunk.len() as u64;
                                                             if let Some(lock) = active.write().await.as_mut() {
                                                                 lock.size = downloaded;
@@ -47,6 +55,8 @@ async fn download_file(active: Arc<RwLock<Option<FileDownload>>>, client: &reqwe
                                                     if let Some(lock) = active.write().await.as_mut() {
                                                         lock.size = downloaded;
                                                     }
+                                                    buf_writer.flush().await.map_err(|err| err.to_string())?;
+                                                    buf_writer.shutdown().await.map_err(|err| err.to_string())?;
                                                     return Ok(());
                                                 }
                                             }

@@ -34,8 +34,6 @@ pub async fn epg_write_file(target: &ConfigTarget, epg: &Epg, path: &Path) -> Re
     // EPG Content
     epg.write_to_async(&mut writer).await.map_err(|e| notify_err!(format!("failed to write epg: {}", e)))?;
 
-    let inner = writer.get_mut(); // Zugriff auf den BufWriter<tokio::fs::File>
-    inner.flush().await.map_err(|e| notify_err!(format!("failed to flush epg: {}", e)))?;
 
     debug_if_enabled!("Epg for target {} written to {}", target.name, path.to_str().unwrap_or("?"));
     Ok(())

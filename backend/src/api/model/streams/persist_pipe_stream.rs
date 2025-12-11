@@ -7,6 +7,8 @@ use tokio::io::AsyncWriteExt;
 use tokio_stream::{StreamExt};
 use tokio_stream::wrappers::ReceiverStream;
 
+const FLUSH_INTERVAL: usize = 50;
+
 pub fn tee_stream<S, W>(
     mut stream: S,
     mut writer: W,
@@ -23,6 +25,7 @@ where S: tokio_stream::Stream<Item = Result<Bytes, StreamError>> + Send + Unpin 
         let mut total_size = 0usize;
         let mut writer_active = true;
         let mut write_err: Option<StreamError> = None;
+        let mut write_counter = 0usize;
 
         while let Some(chunk) = stream.next().await {
             match chunk {
@@ -32,6 +35,14 @@ where S: tokio_stream::Stream<Item = Result<Bytes, StreamError>> + Send + Unpin 
                         if let Err(e) = writer.write_all(&bytes).await {
                             writer_active = false;
                             write_err = Some(StreamError::StdIo(e.to_string()));
+                        } else {
+                            write_counter += 1;
+                            if write_counter > FLUSH_INTERVAL {
+                                write_counter = 0;
+                                if let Err(err) = writer.flush().await {
+                                    write_err = Some(StreamError::StdIo(format!("Failed periodic flush of tee_stream writer {err}")));
+                                }
+                            }
                         }
                     }
 

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use futures::TryFutureExt;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use url::Url;
 use shared::utils::sanitize_sensitive_info;
 use crate::api::model::AppState;
@@ -93,6 +93,8 @@ impl Epg {
             .map(|c| (c, false))
             .collect();
 
+        let mut write_counter = 0usize;
+
         while let Some((tag, ended)) = stack.pop() {
             if ended {
                 // End-Event
@@ -122,10 +124,20 @@ impl Epg {
                     }
                 }
             }
+            write_counter += 1;
+            if write_counter > 50 {
+                writer.get_mut().flush().await?; // flush underlying writer
+                write_counter = 0;
+            }
         }
 
         // write tv-end
         writer.write_event_async(Event::End(BytesEnd::new("tv"))).await?;
+
+        let inner = writer.get_mut();
+        inner.flush().await?;
+        inner.shutdown().await?;
+
         Ok(())
     }
 }
