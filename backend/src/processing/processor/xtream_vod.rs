@@ -15,6 +15,7 @@ use std::time::Instant;
 use log::{info, log_enabled, Level};
 use crate::utils;
 use crate::processing::processor::xtream::normalize_json_content;
+use crate::utils::IO_BUFFER_SIZE;
 
 create_resolve_options_function_for_xtream_target!(vod);
 
@@ -63,8 +64,6 @@ fn should_update_vod_info(pli: &mut PlaylistItem, processed_provider_ids: &HashM
     should_update_info(pli, processed_provider_ids, crate::model::XC_TAG_VOD_INFO_ADDED)
 }
 
-const FLUSH_INTERVAL: usize = 50;
-
 pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Client, target: &ConfigTarget, errors: &mut Vec<TuliproxError>, fpl: &mut FetchedPlaylist<'_>) {
     let (resolve_movies, resolve_delay) = get_resolve_vod_options(target, fpl);
     if !resolve_movies { return; }
@@ -108,9 +107,9 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
                             |err| errors.push(notify_err!(format!("Failed to resolve vod, could not write to wal file {err}"))));
                         processed_info_ids.insert(provider_id, ts);
                         content_updated = true;
-                        write_counter += 1;
+                        write_counter += normalized_str.len();
                         // periodic flush to bound BufWriter memory
-                        if write_counter >= FLUSH_INTERVAL {
+                        if write_counter >= IO_BUFFER_SIZE {
                             write_counter = 0;
                             if let Err(err) = content_writer.flush() {
                                 errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));

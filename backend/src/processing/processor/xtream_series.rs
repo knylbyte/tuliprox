@@ -19,7 +19,7 @@ use log::{error, info, log_enabled, warn, Level};
 use crate::model::{XtreamSeriesEpisode, XtreamSeriesInfoEpisode};
 use crate::utils;
 use crate::processing::processor::xtream::normalize_json_content;
-use crate::utils::bincode_serialize;
+use crate::utils::{bincode_serialize, IO_BUFFER_SIZE};
 
 create_resolve_options_function_for_xtream_target!(series);
 
@@ -93,10 +93,10 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
                             |err| errors.push(notify_err!(format!("Failed to resolve series, could not write to wal file {err}"))));
                     processed_info_ids.insert(provider_id, ts);
                     content_updated = true;
-                    write_counter += 1;
+                    write_counter += normalized_str.len();
 
                     // periodic flush to bound BufWriter memory
-                    if write_counter >= FLUSH_INTERVAL {
+                    if write_counter >= IO_BUFFER_SIZE {
                         write_counter = 0;
                         if let Err(err) = content_writer.flush() {
                             errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
@@ -121,9 +121,9 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
     // record_wal contains provider_id and timestamp
     if content_updated {
         handle_error!(content_writer.flush(),
-            |err| errors.push(notify_err!(format!("Failed to resolve vod, could not write to wal file {err}"))));
+            |err| errors.push(notify_err!(format!("Failed to resolve series, could not write to wal file {err}"))));
         handle_error!(record_writer.flush(),
-            |err| errors.push(notify_err!(format!("Failed to resolve vod tmdb, could not write to wal file {err}"))));
+            |err| errors.push(notify_err!(format!("Failed to resolve series tmdb, could not write to wal file {err}"))));
         handle_error!(content_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync series info to wal file {err}"))));
         handle_error!(record_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync series info record to wal file {err}"))));
         drop(content_writer);

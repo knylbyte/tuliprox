@@ -263,6 +263,8 @@ async fn get_remote_content_as_file(client: &reqwest::Client, input: &ConfigInpu
                             }
                         }
                         Err(err) => {
+                            let _ = writer.flush().await;
+                            let _ = writer.shutdown().await;
                             return Err(str_to_io_error(&format!("Failed to read chunk: {err}")));
                         }
                     }

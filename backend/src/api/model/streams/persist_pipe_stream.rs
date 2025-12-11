@@ -6,8 +6,7 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::{StreamExt};
 use tokio_stream::wrappers::ReceiverStream;
-
-const FLUSH_INTERVAL: usize = 50;
+use crate::utils::IO_BUFFER_SIZE;
 
 pub fn tee_stream<S, W>(
     mut stream: S,
@@ -36,8 +35,8 @@ where S: tokio_stream::Stream<Item = Result<Bytes, StreamError>> + Send + Unpin 
                             writer_active = false;
                             write_err = Some(StreamError::StdIo(e.to_string()));
                         } else {
-                            write_counter += 1;
-                            if write_counter > FLUSH_INTERVAL {
+                            write_counter += bytes.len();
+                            if write_counter >= IO_BUFFER_SIZE {
                                 write_counter = 0;
                                 if let Err(err) = writer.flush().await {
                                     writer_active = false;

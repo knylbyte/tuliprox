@@ -944,7 +944,7 @@ async fn write_strm_index_file(
             .await
             .map_err(|err| format!("Failed to write strm index entry: {err}"))?;
         writer
-            .write(new_line)
+            .write_all(new_line)
             .await
             .map_err(|err| format!("Failed to write strm index entry: {err}"))?;
         if write_counter >= IO_BUFFER_SIZE {

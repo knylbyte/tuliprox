@@ -126,7 +126,7 @@ impl Epg {
                 }
             }
             write_counter += 1;
-            if write_counter > 50 {
+            if write_counter >= 50 {
                 writer.get_mut().flush().await?; // flush underlying writer
                 write_counter = 0;
             }
