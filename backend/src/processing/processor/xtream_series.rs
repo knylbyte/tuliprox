@@ -14,7 +14,6 @@ use crate::processing::processor::{handle_error, handle_error_and_return, create
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::sync::Arc;
 use std::time::Instant;
 use log::{error, info, log_enabled, warn, Level};
 use crate::model::{XtreamSeriesEpisode, XtreamSeriesInfoEpisode};
@@ -50,7 +49,7 @@ fn should_update_series_info(pli: &mut PlaylistItem, processed_provider_ids: &Ha
     should_update_info(pli, processed_provider_ids, crate::model::XC_TAG_SERIES_INFO_LAST_MODIFIED)
 }
 
-async fn playlist_resolve_series_info(cfg: &AppConfig, client: Arc<reqwest::Client>, errors: &mut Vec<TuliproxError>,
+async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client, errors: &mut Vec<TuliproxError>,
                                       fpl: &mut FetchedPlaylist<'_>, resolve_delay: u16) -> bool {
     let mut processed_info_ids = read_processed_series_info_ids(cfg, errors, fpl).await;
     let mut fetched_in_run: HashSet<u32> = HashSet::new();
@@ -83,7 +82,7 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: Arc<reqwest::Clie
     for pli in series_info_iter {
         let (should_update, provider_id, ts) = should_update_series_info(pli, &processed_info_ids);
         if should_update && provider_id != 0 && fetched_in_run.insert(provider_id) {
-            if let Some(content) = playlist_resolve_download_playlist_item(Arc::clone(&client), pli, fpl.input, errors, resolve_delay, XtreamCluster::Series).await {
+            if let Some(content) = playlist_resolve_download_playlist_item(client, pli, fpl.input, errors, resolve_delay, XtreamCluster::Series).await {
                 let normalized_content = normalize_json_content(content);
                 handle_error_and_return!(write_series_info_to_wal_file(provider_id, ts, &normalized_content, &mut content_writer, &mut record_writer),
                         |err| errors.push(notify_err!(format!("Failed to resolve series, could not write to wal file {err}"))));
@@ -217,7 +216,7 @@ async fn process_series_info(
 
 
 pub async fn playlist_resolve_series(cfg: &AppConfig,
-                                     client: Arc<reqwest::Client>,
+                                     client: &reqwest::Client,
                                      target: &ConfigTarget,
                                      errors: &mut Vec<TuliproxError>,
                                      pipe: &ProcessingPipe,

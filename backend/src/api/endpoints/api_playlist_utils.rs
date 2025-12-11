@@ -141,13 +141,13 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
     (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid Arguments"}))).into_response()
 }
 
-pub(in crate::api::endpoints) async fn get_playlist(client: Arc<reqwest::Client>, cfg_input: Option<&Arc<ConfigInput>>, cfg: &Arc<Config>, accept: Option<&String>) -> impl IntoResponse + Send {
+pub(in crate::api::endpoints) async fn get_playlist(client: &reqwest::Client, cfg_input: Option<&Arc<ConfigInput>>, cfg: &Arc<Config>, accept: Option<&String>) -> impl IntoResponse + Send {
     match cfg_input {
         Some(input) => {
             let (result, errors) =
                 match input.input_type {
-                    InputType::M3u | InputType::M3uBatch => m3u::get_m3u_playlist(&client, cfg, input, &cfg.working_dir).await,
-                    InputType::Xtream | InputType::XtreamBatch => xtream::get_xtream_playlist(cfg, &client, input, &cfg.working_dir).await,
+                    InputType::M3u | InputType::M3uBatch => m3u::get_m3u_playlist(client, cfg, input, &cfg.working_dir).await,
+                    InputType::Xtream | InputType::XtreamBatch => xtream::get_xtream_playlist(cfg, client, input, &cfg.working_dir).await,
                 };
             if result.is_empty() {
                 let error_strings: Vec<String> = errors.iter().map(std::string::ToString::to_string).collect();

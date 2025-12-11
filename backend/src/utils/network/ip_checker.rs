@@ -1,11 +1,9 @@
 use shared::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::IpCheckConfig;
 use regex::Regex;
-use reqwest::Client;
-use std::sync::Arc;
 use shared::utils::sanitize_sensitive_info;
 
-async fn fetch_ip(client: &Arc<Client>, url: &str, regex: Option<&Regex>) -> Result<String, TuliproxError> {
+async fn fetch_ip(client: &reqwest::Client, url: &str, regex: Option<&Regex>) -> Result<String, TuliproxError> {
     let response = client.get(url).send().await
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("Failed to request {}: {e}", sanitize_sensitive_info(url))))?;
 
@@ -28,7 +26,7 @@ async fn fetch_ip(client: &Arc<Client>, url: &str, regex: Option<&Regex>) -> Res
 }
 
 /// Fetch both IPs from a shared URL (if both regex patterns are available)
-async fn fetch_combined_ips(client: &Arc<Client>, config: &IpCheckConfig, url: &str) -> (Option<String>, Option<String>) {
+async fn fetch_combined_ips(client: &reqwest::Client, config: &IpCheckConfig, url: &str) -> (Option<String>, Option<String>) {
     let response = client.get(url).send().await.ok();
     let text = match response {
         Some(r) => r.text().await.ok(),
@@ -55,7 +53,7 @@ async fn fetch_combined_ips(client: &Arc<Client>, config: &IpCheckConfig, url: &
 }
 
 /// Fetch both IPv4 and IPv6 addresses, using separate or combined URL(s)
-pub async fn get_ips(client: &Arc<Client>, config: &IpCheckConfig) -> Result<(Option<String>, Option<String>), TuliproxError> {
+pub async fn get_ips(client: &reqwest::Client, config: &IpCheckConfig) -> Result<(Option<String>, Option<String>), TuliproxError> {
     match (&config.url_ipv4, &config.url_ipv6, &config.url) {
         // Both dedicated URLs provided
         (Some(url_v4), Some(url_v6), _) => {

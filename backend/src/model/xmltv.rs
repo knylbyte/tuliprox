@@ -197,8 +197,9 @@ pub async fn parse_xmltv_for_web_ui_from_file(path: &Path) -> Result<EpgTv, Tuli
 
 pub async fn parse_xmltv_for_web_ui_from_url(app_state: &Arc<AppState>, url: &str) -> Result<EpgTv, TuliproxError> {
     if let Ok(request_url) = Url::parse(url) {
+        let client = app_state.http_client.load();
        match get_remote_content_as_stream(
-            Arc::clone(&app_state.http_client.load()),
+            client.as_ref(),
             &request_url,
             InputFetchMethod::GET,
             None,

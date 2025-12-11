@@ -114,7 +114,7 @@ async fn create_shared_data(
 }
 
 fn exec_update_on_boot(
-    client: Arc<reqwest::Client>,
+    client: &reqwest::Client,
     app_state: &Arc<AppState>,
     targets: &Arc<ProcessTargets>,
 ) {
@@ -127,8 +127,9 @@ fn exec_update_on_boot(
         let app_state_clone = Arc::clone(&app_state.app_config);
         let targets_clone = Arc::clone(targets);
         let playlist_state = Arc::clone(&app_state.playlists);
+        let client = client.clone();
         tokio::spawn(async move {
-            playlist::exec_processing(client, app_state_clone, targets_clone, None, Some(playlist_state)).await;
+            playlist::exec_processing(&client, app_state_clone, targets_clone, None, Some(playlist_state)).await;
         });
     }
 }
@@ -272,15 +273,17 @@ pub async fn start_server(
 
     exec_system_usage(&app_state);
 
+    let client = shared_data.http_client.load();
+
     exec_scheduler(
-        &Arc::clone(&shared_data.http_client.load()),
+        client.as_ref(),
         &app_state,
         &targets,
         &cancel_token_scheduler,
     );
 
     exec_update_on_boot(
-        Arc::clone(&shared_data.http_client.load()),
+        client.as_ref(),
         &app_state,
         &targets,
     );

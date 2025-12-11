@@ -119,7 +119,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
     let headers = request::get_request_headers(None, Some(&forwarded), disabled_headers.as_ref());
     let input_source = InputSource::from(input).with_url(request_url);
     match request::download_text_content(
-        Arc::clone(&app_state.http_client.load()),
+        &app_state.http_client.load(),
         disabled_headers.as_ref(),
         &input_source,
         Some(&headers),

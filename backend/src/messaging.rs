@@ -5,13 +5,12 @@ use log::{debug, error};
 use reqwest::header;
 use shared::model::MsgKind;
 use shared::utils::json_str_to_markdown;
-use std::sync::Arc;
 
 fn is_enabled(kind: MsgKind, cfg: &MessagingConfig) -> bool {
     cfg.notify_on.contains(&kind)
 }
 
-async fn send_http_post_request(client: &Arc<reqwest::Client>, msg: &str, messaging: &MessagingConfig) {
+async fn send_http_post_request(client: &reqwest::Client, msg: &str, messaging: &MessagingConfig) {
     if let Some(rest) = &messaging.rest {
     let data = msg.to_owned();
         match client
@@ -27,7 +26,7 @@ async fn send_http_post_request(client: &Arc<reqwest::Client>, msg: &str, messag
     }
 }
 
-async fn send_telegram_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &MessagingConfig, json: bool) {
+async fn send_telegram_message(client: &reqwest::Client, msg: &str, messaging: &MessagingConfig, json: bool) {
     // TODO use proxy settings
     if let Some(telegram) = &messaging.telegram {
         let (message, options) = {
@@ -49,7 +48,7 @@ async fn send_telegram_message(client: &Arc<reqwest::Client>, msg: &str, messagi
     }
 }
 
-async fn send_pushover_message(client: &Arc<reqwest::Client>, msg: &str, messaging: &MessagingConfig) {
+async fn send_pushover_message(client: &reqwest::Client, msg: &str, messaging: &MessagingConfig) {
     if let Some(pushover) = &messaging.pushover {
         let encoded_message: String = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("token", pushover.token.as_str())
@@ -75,7 +74,7 @@ async fn send_pushover_message(client: &Arc<reqwest::Client>, msg: &str, messagi
     }
 }
 
-async fn dispatch_send_message(client: &Arc<reqwest::Client>, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str, json: bool) {
+async fn dispatch_send_message(client: &reqwest::Client, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str, json: bool) {
     if let Some(messaging) = cfg {
         if is_enabled(kind, messaging) {
             tokio::join!(
@@ -87,10 +86,10 @@ async fn dispatch_send_message(client: &Arc<reqwest::Client>, kind: MsgKind, cfg
     }
 }
 
-pub async fn send_message_json(client: &Arc<reqwest::Client>, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
+pub async fn send_message_json(client: &reqwest::Client, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
     dispatch_send_message(client, kind, cfg, msg, true).await;
 }
 
-pub async fn send_message(client: &Arc<reqwest::Client>, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
+pub async fn send_message(client: &reqwest::Client, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
     dispatch_send_message(client, kind, cfg, msg, false).await;
 }

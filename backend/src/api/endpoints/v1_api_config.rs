@@ -123,7 +123,7 @@ async fn config_batch_content(
                 .reverse_proxy
                 .as_ref()
                 .and_then(|r| r.disabled_header.clone());
-            return match download_text_content(Arc::clone(&app_state.http_client.load()), disabled_headers.as_ref(), &input_source, None, None).await {
+            return match download_text_content(&app_state.http_client.load(), disabled_headers.as_ref(), &input_source, None, None).await {
                 Ok((content, _path)) => {
                     // Return CSV with explicit content-type
                     try_unwrap_body!(axum::response::Response::builder()

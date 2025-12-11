@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, log_enabled, trace, Level};
@@ -53,7 +52,7 @@ pub fn classify_content_type(headers: &[(String, String)]) -> MimeCategory {
         })
 }
 
-pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
+pub async fn get_input_epg_content_as_file(client: &reqwest::Client, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
     debug_if_enabled!("getting input epg content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(url_str));
     if url_str.parse::<url::Url>().is_ok() {
         match download_epg_content_as_file(client, input, url_str, working_dir, persist_filepath).await {
@@ -96,11 +95,11 @@ pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: 
 }
 
 
-pub async fn get_input_text_content(client: &Arc<reqwest::Client>, input: &InputSource, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<String, TuliproxError> {
+pub async fn get_input_text_content(client: &reqwest::Client, input: &InputSource, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<String, TuliproxError> {
     debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(&input.url));
 
     if input.url.parse::<url::Url>().is_ok() {
-        match download_text_content(Arc::clone(client), None, input, None, persist_filepath).await {
+        match download_text_content(client, None, input, None, persist_filepath).await {
             Ok((content, _response_url)) => Ok(content),
             Err(e) => {
                 error!("Failed to download input '{}': {}", &input.name, sanitize_sensitive_info(e.to_string().as_str()));
@@ -140,7 +139,7 @@ pub async fn get_input_text_content(client: &Arc<reqwest::Client>, input: &Input
 }
 
 pub fn get_client_request<S: ::std::hash::BuildHasher + Default>
-        (client: &Arc<reqwest::Client>,
+        (client: &reqwest::Client,
          method: InputFetchMethod,
          headers: Option<&HashMap<String, String, S>>,
          url: &Url,
@@ -242,9 +241,9 @@ pub async fn get_local_file_content(file_path: &Path) -> Result<String, std::io:
 // }
 
 
-async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, url: &Url, file_path: &Path) -> Result<PathBuf, std::io::Error> {
+async fn get_remote_content_as_file(client: &reqwest::Client, input: &ConfigInput, url: &Url, file_path: &Path) -> Result<PathBuf, std::io::Error> {
     let start_time = Instant::now();
-    let request = get_client_request(&client, input.method, Some(&input.headers), url, None, None);
+    let request = get_client_request(client, input.method, Some(&input.headers), url, None, None);
     match request.send().await {
         Ok(response) => {
             if response.status().is_success() {
@@ -279,12 +278,12 @@ type DynReader = Pin<Box<dyn AsyncRead + Send>>;
 
 #[allow(clippy::implicit_hasher)]
 pub async fn get_remote_content_as_stream(
-    client: Arc<reqwest::Client>,
+    client: &reqwest::Client,
     url: &Url,
     method: InputFetchMethod,
     headers: Option<&HashMap<String, String>>
 ) -> Result<(DynReader, String), Error> {
-    let request = get_client_request(&client, method, headers, url, None, None);
+    let request = get_client_request(client, method, headers, url, None, None);
     let response = request.send().await.map_err(std::io::Error::other)?;
 
     if !response.status().is_success() {
@@ -320,7 +319,7 @@ pub async fn get_remote_content_as_stream(
     Ok((reader, response_url))
 }
 
-async fn get_remote_content(client: Arc<reqwest::Client>, input: &InputSource, headers: Option<&HeaderMap>, url: &Url, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> Result<(String, String), Error> {
+async fn get_remote_content(client: &reqwest::Client, input: &InputSource, headers: Option<&HeaderMap>, url: &Url, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> Result<(String, String), Error> {
     let start_time = Instant::now();
 
     let custom_headers = headers.map(|h| {
@@ -328,14 +327,14 @@ async fn get_remote_content(client: Arc<reqwest::Client>, input: &InputSource, h
     let merged = get_request_headers(Some(&input.headers), custom_headers.as_ref(), disabled_headers);
     let headers: HashMap<String, String> = merged.iter().map(|(k, v)| (k.as_str().to_string(), String::from_utf8_lossy(v.as_bytes()).to_string())).collect();
 
-    let (mut stream, response_url) = get_remote_content_as_stream(client.clone(), url, input.method, Some(&headers)).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
+    let (mut stream, response_url) = get_remote_content_as_stream(client, url, input.method, Some(&headers)).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
     let mut content = String::new();
     stream.read_to_string(&mut content).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
     debug_if_enabled!("Request took: {} {}", format_elapsed_time(start_time.elapsed().as_secs()), sanitize_sensitive_info(url.as_str()));
     Ok((content, response_url))
 }
 
-async fn download_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, url_str: &str, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, Error> {
+async fn download_epg_content_as_file(client: &reqwest::Client, input: &ConfigInput, url_str: &str, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, Error> {
     if let Ok(url) = url_str.parse::<url::Url>() {
         if url.scheme() == "file" {
             url.to_file_path().map_or_else(|()| Err(Error::new(ErrorKind::Unsupported, format!("Unknown file {}", sanitize_sensitive_info(url_str)))), |file_path| if file_path.exists() {
@@ -361,7 +360,7 @@ async fn download_epg_content_as_file(client: Arc<reqwest::Client>, input: &Conf
 }
 
 pub async fn download_text_content(
-    client: Arc<reqwest::Client>,
+    client: &reqwest::Client,
     disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     input: &InputSource,
     headers: Option<&HeaderMap>,
@@ -396,7 +395,7 @@ pub async fn download_text_content(
     }
 }
 
-async fn download_json_content(client: Arc<reqwest::Client>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, Error> {
+async fn download_json_content(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, Error> {
     debug_if_enabled!("downloading json content from {}", sanitize_sensitive_info(&input.url));
     match download_text_content(client, disabled_headers, input, None, persist_filepath).await {
         Ok((content, _response_url)) => {
@@ -409,7 +408,7 @@ async fn download_json_content(client: Arc<reqwest::Client>, disabled_headers: O
     }
 }
 
-pub async fn get_input_json_content(client: Arc<reqwest::Client>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, TuliproxError> {
+pub async fn get_input_json_content(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, TuliproxError> {
     match download_json_content(client, disabled_headers, input, persist_filepath).await {
         Ok(content) => Ok(content),
         Err(e) => create_tuliprox_error_result!(TuliproxErrorKind::Notify, "cant download input {},  url: {}  => {}", input.name, sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()))

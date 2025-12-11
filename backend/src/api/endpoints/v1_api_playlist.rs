@@ -60,14 +60,14 @@ async fn playlist_update(
     let process_targets = app_state.app_config.sources.load().validate_targets(user_targets.as_ref());
     match process_targets {
         Ok(valid_targets) => {
-            let http_client = Arc::clone(&app_state.http_client.load());
+            let http_client = app_state.http_client.load().as_ref().clone();
             let app_config = Arc::clone(&app_state.app_config);
             let event_manager = Arc::clone(&app_state.event_manager);
             let playlist_state = Arc::clone(&app_state.playlists);
             let valid_targets = Arc::new(valid_targets);
             tokio::spawn({
                async move {
-                   playlist::exec_processing(http_client, app_config, valid_targets, Some(event_manager), Some(playlist_state)).await;
+                   playlist::exec_processing(&http_client, app_config, valid_targets, Some(event_manager), Some(playlist_state)).await;
                }
             });
             axum::http::StatusCode::ACCEPTED.into_response()
@@ -86,18 +86,19 @@ async fn playlist_content(
     axum::extract::Json(playlist_req): axum::extract::Json<PlaylistRequest>,
 ) -> impl IntoResponse + Send {
     let config = app_state.app_config.config.load();
+    let client = app_state.http_client.load();
     match playlist_req {
         PlaylistRequest::Target(target_id) => {
            get_playlist_for_target(app_state.app_config.get_target_by_id(target_id).as_deref(), &app_state.app_config, accept.as_ref()).await.into_response()
         }
         PlaylistRequest::Input(input_id) => {
-            get_playlist(Arc::clone(&app_state.http_client.load()), app_state.app_config.get_input_by_id(input_id).as_ref(), &config, accept.as_ref()).await.into_response()
+            get_playlist(client.as_ref(), app_state.app_config.get_input_by_id(input_id).as_ref(), &config, accept.as_ref()).await.into_response()
         }
         PlaylistRequest::CustomXtream(xtream) => {
             match Url::parse(&xtream.url) {
                 Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => {
                     let input = Arc::new(create_config_input_for_xtream(&xtream.username, &xtream.password, &xtream.url));
-                    get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config, accept.as_ref()).await.into_response()
+                    get_playlist(client.as_ref(), Some(&input), &config, accept.as_ref()).await.into_response()
                 }
                 _ => {
                     (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url scheme; only http/https are allowed"}))).into_response()
@@ -108,7 +109,7 @@ async fn playlist_content(
             match Url::parse(&m3u.url) {
                 Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => {
                     let input = Arc::new(create_config_input_for_m3u(&m3u.url));
-                    get_playlist(Arc::clone(&app_state.http_client.load()), Some(&input), &config, accept.as_ref()).await.into_response()
+                    get_playlist(client.as_ref(), Some(&input), &config, accept.as_ref()).await.into_response()
                 }
                 _ => {
                     (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url scheme; only http/https are allowed"}))).into_response()
