@@ -11,34 +11,34 @@ use log::{debug, error};
 use path_clean::PathClean;
 use tokio::fs as tokio_fs;
 
-pub const WRITER_BUFFER_SIZE: usize = 256*1024; // 256kb
+pub const IO_BUFFER_SIZE: usize = 256*1024; // 256kb
 
 pub fn file_writer<W>(w: W) -> std::io::BufWriter<W>
 where
     W: std::io::Write,
 {
-    std::io::BufWriter::with_capacity(WRITER_BUFFER_SIZE, w)
+    std::io::BufWriter::with_capacity(IO_BUFFER_SIZE, w)
 }
 
 pub fn file_reader<R>(r: R) -> std::io::BufReader<R>
 where
     R: std::io::Read,
 {
-    std::io::BufReader::with_capacity(WRITER_BUFFER_SIZE, r)
+    std::io::BufReader::with_capacity(IO_BUFFER_SIZE, r)
 }
 
 pub fn async_file_writer<W>(w: W) -> tokio::io::BufWriter<W>
 where
     W: tokio::io::AsyncWrite,
 {
-    tokio::io::BufWriter::with_capacity(WRITER_BUFFER_SIZE, w)
+    tokio::io::BufWriter::with_capacity(IO_BUFFER_SIZE, w)
 }
 
 pub fn async_file_reader<R>(r: R) -> tokio::io::BufReader<R>
 where
     R: tokio::io::AsyncRead,
 {
-    tokio::io::BufReader::with_capacity(WRITER_BUFFER_SIZE, r)
+    tokio::io::BufReader::with_capacity(IO_BUFFER_SIZE, r)
 }
 
 

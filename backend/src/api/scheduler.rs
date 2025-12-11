@@ -55,7 +55,6 @@ async fn start_scheduler(client: reqwest::Client, expression: &str, app_state: A
             loop {
                 let mut upcoming = schedule.upcoming(offset).take(1);
                 if let Some(datetime) = upcoming.next() {
-                    let client = client.clone();
                     tokio::select! {
                         () = tokio::time::sleep_until(tokio::time::Instant::from(datetime_to_instant(datetime))) => {
                            let app_config = Arc::clone(&app_state.app_config);

@@ -20,7 +20,7 @@ use crate::model::{ConfigInput};
 use crate::repository::storage::{get_input_storage_path};
 use crate::repository::storage_const;
 use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
-use crate::utils::{async_file_reader, async_file_writer, debug_if_enabled, WRITER_BUFFER_SIZE};
+use crate::utils::{async_file_reader, async_file_writer, debug_if_enabled, IO_BUFFER_SIZE};
 use shared::utils::{filter_request_header, sanitize_sensitive_info, short_hash, ENCODING_DEFLATE, ENCODING_GZIP};
 use crate::utils::{get_file_path, persist_file};
 
@@ -257,7 +257,7 @@ async fn get_remote_content_as_file(client: &reqwest::Client, input: &ConfigInpu
                         Ok(bytes) => {
                             write_counter += bytes.len();
                             writer.write_all(&bytes).await?;
-                            if write_counter >= WRITER_BUFFER_SIZE {
+                            if write_counter >= IO_BUFFER_SIZE {
                                 writer.flush().await?;
                                 write_counter = 0;
                             }

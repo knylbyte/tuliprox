@@ -54,6 +54,14 @@ impl XtreamPlaylistIterator {
             let filter_ids: Option<HashSet<u32>> = filter.as_ref().map(|set| {
                 set.iter().filter_map(|s| s.parse::<u32>().ok()).collect()
             });
+            let filter_ids: Option<HashSet<u32>> = filter.as_ref().map(|set| {
+                set.iter().filter_map(|s| {
+                    s.parse::<u32>().map_err(|e| {
+                        error!("Failed to parse bouquet filter id '{}': {}", s, e);
+                        e
+                    }).ok()
+                }).collect()
+            });
 
             Ok(Self {
                 reader,

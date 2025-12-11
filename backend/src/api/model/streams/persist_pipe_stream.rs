@@ -40,6 +40,7 @@ where S: tokio_stream::Stream<Item = Result<Bytes, StreamError>> + Send + Unpin 
                             if write_counter > FLUSH_INTERVAL {
                                 write_counter = 0;
                                 if let Err(err) = writer.flush().await {
+                                    writer_active = false;
                                     write_err = Some(StreamError::StdIo(format!("Failed periodic flush of tee_stream writer {err}")));
                                 }
                             }

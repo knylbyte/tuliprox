@@ -17,7 +17,7 @@ use log::error;
 use tokio::fs;
 use tokio::io::{AsyncWriteExt};
 use tokio::task;
-use crate::utils::{async_file_writer, WRITER_BUFFER_SIZE};
+use crate::utils::{async_file_writer, IO_BUFFER_SIZE};
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
@@ -66,7 +66,7 @@ async fn persist_m3u_playlist_as_text(
         await_playlist_write!(writer.write_all(bytes), "Failed to write entry to {} - {}", m3u_filename.display());
         await_playlist_write!(writer.write_all(b"\n"), "Failed to write newline to {} - {}", m3u_filename.display());
         write_counter += bytes.len() + 1;
-        if write_counter >= WRITER_BUFFER_SIZE {
+        if write_counter >= IO_BUFFER_SIZE {
             await_playlist_write!(writer.flush(), "Failed to flush {} - {}", m3u_filename.display());
             write_counter = 0;
         }

@@ -203,7 +203,7 @@ async fn process_series_info(
                             }
                             write_counter +=1;
                             // periodic flush to bound BufWriter memory
-                            if write_counter <= FLUSH_INTERVAL {
+                            if write_counter >= FLUSH_INTERVAL {
                                 write_counter = 0;
                                 if let Err(err) = wal_writer.flush() {
                                     errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));

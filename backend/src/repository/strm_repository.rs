@@ -8,7 +8,7 @@ use crate::repository::storage::{ensure_target_storage_path, get_input_storage_p
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::{xtream_get_record_file_path, InputVodInfoRecord};
 use shared::utils::{extract_extension_from_url, hash_bytes, hash_string_as_hex, truncate_string, ExportStyleConfig, CONSTANTS};
-use crate::utils::{async_file_reader, async_file_writer, normalize_string_path, truncate_filename, FileReadGuard, WRITER_BUFFER_SIZE};
+use crate::utils::{async_file_reader, async_file_writer, normalize_string_path, truncate_filename, FileReadGuard, IO_BUFFER_SIZE};
 use chrono::Datelike;
 use filetime::{set_file_times, FileTime};
 use log::{error, trace};
@@ -947,7 +947,7 @@ async fn write_strm_index_file(
             .write(new_line)
             .await
             .map_err(|err| format!("Failed to write strm index entry: {err}"))?;
-        if write_counter >= WRITER_BUFFER_SIZE {
+        if write_counter >= IO_BUFFER_SIZE {
             write_counter = 0;
             writer.flush().await.map_err(|err| format!("Failed to flush: {err}"))?;
         }

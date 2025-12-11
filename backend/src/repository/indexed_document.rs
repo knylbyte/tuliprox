@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use shared::error::{str_to_io_error, to_io_error};
 use crate::utils;
-use crate::utils::{bincode_deserialize, bincode_serialize, WRITER_BUFFER_SIZE};
+use crate::utils::{bincode_deserialize, bincode_serialize, IO_BUFFER_SIZE};
 
 const BLOCK_SIZE: usize = 4096;
 const LEN_SIZE: usize = 4;
@@ -280,9 +280,6 @@ where
         if let Some(offset) = self.index_tree.query(doc_id) {
             self.main_file.seek(SeekFrom::Start(u64::from(*offset)))?;
             let buf_size = IndexedDocument::read_content_size(&mut self.main_file)?;
-            if self.buffer.capacity() < buf_size {
-                self.buffer.reserve(buf_size - self.buffer.capacity());
-            }
             self.buffer.resize(buf_size, 0u8);
             self.main_file.read_exact(&mut self.buffer[..buf_size])?;
             if let Ok(item) = bincode_deserialize::<T>(&self.buffer[..buf_size]) {
@@ -514,7 +511,7 @@ where
                 gc_writer.write_all(&size_bytes)?;
                 gc_writer.write_all(&buffer[0..buf_size])?;
                 write_counter += buf_size;
-                if write_counter >= WRITER_BUFFER_SIZE {
+                if write_counter >= IO_BUFFER_SIZE {
                     write_counter = 0;
                     gc_writer.flush()?;
                 }

@@ -1,16 +1,16 @@
+use crate::utils::async_file_reader;
+use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
+use async_compression::tokio::bufread::{GzipDecoder, ZlibDecoder};
 use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::fs::File;
 use tokio::io::{
-    self, AsyncRead, BufReader, AsyncSeekExt, AsyncReadExt, ReadBuf,
+    self, AsyncRead, AsyncReadExt, AsyncSeekExt, ReadBuf,
 };
-use async_compression::tokio::bufread::{GzipDecoder, ZlibDecoder};
-use crate::utils::async_file_reader;
-use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
 
 pub struct CompressedFileReaderAsync {
-    reader: BufReader<Box<dyn AsyncRead + Unpin + Send>>,
+    reader: Box<dyn AsyncRead + Unpin + Send>,
 }
 
 impl CompressedFileReaderAsync {
@@ -22,17 +22,13 @@ impl CompressedFileReaderAsync {
         buffered_file.read_exact(&mut header).await?;
         buffered_file.seek(io::SeekFrom::Start(0)).await?;
 
-        let reader: Box<dyn AsyncRead + Unpin + Send> = if is_gzip(&header) {
-            Box::new(GzipDecoder::new(buffered_file))
+        if is_gzip(&header) {
+            Ok(Self { reader: Box::new(GzipDecoder::new(buffered_file)) })
         } else if is_deflate(&header) {
-            Box::new(ZlibDecoder::new(buffered_file))
+            Ok(Self { reader: Box::new(ZlibDecoder::new(buffered_file)) })
         } else {
-            Box::new(buffered_file)
-        };
-
-        Ok(Self {
-            reader: async_file_reader(reader),
-        })
+            Ok(Self { reader: Box::new(buffered_file) })
+        }
     }
 }
 
