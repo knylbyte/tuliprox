@@ -100,13 +100,14 @@ mod test {
     use std::fs::File;
     use std::io::BufReader;
     use std::path::PathBuf;
+    use crate::utils::file_reader;
 
     #[test]
     pub fn test_csv() {
         let db_file = PathBuf::from("/projects/m3u-test/asn-country-ipv4.db");
         let source = PathBuf::from("/projects/m3u-test/asn-country-ipv4.csv");
         let file = File::open(source).expect("Could not open csv file");
-        let reader = BufReader::new(file);
+        let reader = file_reader(file);
         let mut geo_ip = GeoIp::new();
         let _ = geo_ip.import_ipv4_from_csv(reader, &db_file).expect("Could not import csv");
 

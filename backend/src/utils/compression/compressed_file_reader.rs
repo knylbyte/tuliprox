@@ -26,7 +26,7 @@ impl CompressedFileReader {
         };
 
         Ok(Self {
-            reader: BufReader::new(reader),
+            reader: file_reader(reader),
         })
     }
 }

@@ -109,9 +109,9 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
                         processed_info_ids.insert(provider_id, ts);
                         content_updated = true;
                         write_counter += 1;
-
                         // periodic flush to bound BufWriter memory
-                        if write_counter.is_multiple_of(FLUSH_INTERVAL) {
+                        if write_counter >= FLUSH_INTERVAL {
+                            write_counter = 0;
                             if let Err(err) = content_writer.flush() {
                                 errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
                             }

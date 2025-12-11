@@ -6,7 +6,7 @@ use tokio::io::{
     self, AsyncRead, BufReader, AsyncSeekExt, AsyncReadExt, ReadBuf,
 };
 use async_compression::tokio::bufread::{GzipDecoder, ZlibDecoder};
-
+use crate::utils::async_file_reader;
 use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
 
 pub struct CompressedFileReaderAsync {
@@ -17,7 +17,7 @@ impl CompressedFileReaderAsync {
     pub async fn new(path: &Path) -> std::io::Result<Self> {
         let file: File = tokio::fs::File::open(path).await?;
 
-        let mut buffered_file = BufReader::new(file);
+        let mut buffered_file = async_file_reader(file);
         let mut header = [0u8; 2];
         buffered_file.read_exact(&mut header).await?;
         buffered_file.seek(io::SeekFrom::Start(0)).await?;
@@ -31,7 +31,7 @@ impl CompressedFileReaderAsync {
         };
 
         Ok(Self {
-            reader: BufReader::new(reader),
+            reader: async_file_reader(reader),
         })
     }
 }
@@ -46,19 +46,3 @@ impl AsyncRead for CompressedFileReaderAsync {
     }
 }
 
-//
-// impl AsyncBufRead for CompressedFileReaderAsync {
-//     fn poll_fill_buf(
-//         self: Pin<&mut Self>,
-//         cx: &mut Context<'_>,
-//     ) -> Poll<io::Result<&[u8]>> {
-//         unsafe {
-//             let this = self.get_unchecked_mut();
-//             Pin::new_unchecked(&mut this.reader).poll_fill_buf(cx)
-//         }
-//     }
-//
-//     fn consume(mut self: Pin<&mut Self>, amt: usize) {
-//         Pin::new(&mut self.reader).consume(amt)
-//     }
-// }

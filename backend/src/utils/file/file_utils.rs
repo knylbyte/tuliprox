@@ -11,7 +11,7 @@ use log::{debug, error};
 use path_clean::PathClean;
 use tokio::fs as tokio_fs;
 
-const WRITER_BUFFER_SIZE: usize = 131_072; // 128kb
+pub const WRITER_BUFFER_SIZE: usize = 256*1024; // 256kb
 
 pub fn file_writer<W>(w: W) -> std::io::BufWriter<W>
 where
@@ -32,6 +32,13 @@ where
     W: tokio::io::AsyncWrite,
 {
     tokio::io::BufWriter::with_capacity(WRITER_BUFFER_SIZE, w)
+}
+
+pub fn async_file_reader<R>(r: R) -> tokio::io::BufReader<R>
+where
+    R: tokio::io::AsyncRead,
+{
+    tokio::io::BufReader::with_capacity(WRITER_BUFFER_SIZE, r)
 }
 
 

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use shared::error::{str_to_io_error, to_io_error};
 use crate::utils;
-use crate::utils::{bincode_deserialize, bincode_serialize};
+use crate::utils::{bincode_deserialize, bincode_serialize, WRITER_BUFFER_SIZE};
 
 const BLOCK_SIZE: usize = 4096;
 const LEN_SIZE: usize = 4;
@@ -163,54 +163,67 @@ where
     where
         T: ?Sized + serde::Serialize,
     {
-        let encoded_bytes = bincode_serialize(doc).map_err(|_| Error::new(ErrorKind::InvalidData, "Failed to serialize document"))?;
-        let mut new_record_appended = false; // do i need to change the index and set the new offset
+        // Determine target position (overwrite in place or append)
         if let Some(&offset) = self.index_tree.query(&doc_id) {
+            // Existing entry: check size and choose strategy
             self.main_file.seek(SeekFrom::Start(u64::from(offset)))?;
-            let size = IndexedDocument::read_content_size(&mut self.main_file)?;
-            if size == encoded_bytes.len() {
-                // check if it is equal
-                let mut record_buffer = vec![0; size];
-                // record_buffer.resize(size, 0);
+            let old_size = IndexedDocument::read_content_size(&mut self.main_file)?;
 
-                self.main_file.read_exact(&mut record_buffer)?;
-                if record_buffer == encoded_bytes {
-                    return Ok(());
-                }
-            }
+            // Prepare new payload (bincode utils, compatible with project)
+            let encoded = bincode_serialize(doc)
+                .map_err(|e| str_to_io_error(&format!("Failed to serialize document for {}: {e}", self.main_path.display())))?;
+            let new_size: SizeType = SizeType::try_from(encoded.len() as u64)
+                .map_err(|e| str_to_io_error(&format!("Encoded document size does not fit into u32 for {}: {e}", self.main_path.display())))?;
 
-            if encoded_bytes.len() > size {
-                // does not fit we need to append, file is fragmented
+            if usize::try_from(new_size).unwrap_or(usize::MAX) > old_size {
+                // Does not fit -> append at end of file (mark fragmentation)
                 if !self.fragmented {
                     self.fragmented = true;
                     IndexedDocument::write_fragmentation(&mut self.main_file, true)?;
                 }
                 self.main_file.seek(SeekFrom::End(0))?;
-                new_record_appended = true;
-            } else {
-                self.main_file.seek(SeekFrom::Start(u64::from(offset)))?;
-            }
-        } else {
-            self.main_file.seek(SeekFrom::End(0))?;
-            new_record_appended = true;
-        }
+                // We write: length + payload
+                self.dirty = true;
+                self.main_file.write_all(&new_size.to_le_bytes())?;
+                self.main_file.write_all(&encoded)?;
 
+                self.index_tree.insert(doc_id, self.main_offset);
+                // Increase main_offset: LEN_SIZE + new_size
+                let written_bytes_u64 = (LEN_SIZE as u64) +  u64::from(new_size);
+                let written_bytes: SizeType = SizeType::try_from(written_bytes_u64)
+                    .map_err(|e| str_to_io_error(&format!("Written byte count overflow for {}: {e}", self.main_path.display())))?;
+                self.main_offset = self.main_offset.checked_add(written_bytes)
+                    .ok_or_else(|| str_to_io_error(&format!("main_offset overflow while appending to {}", self.main_path.display())))?;
+                return Ok(());
+            }
+            // Fits (<=): overwrite at the same position
+            self.main_file.seek(SeekFrom::Start(u64::from(offset)))?;
+            self.dirty = true;
+            self.main_file.write_all(&new_size.to_le_bytes())?;
+            self.main_file.write_all(&encoded)?;
+            return Ok(());
+        }
+        // New entry -> append
+        self.main_file.seek(SeekFrom::End(0))?;
+        // Determine size and write it, then write payload
+        let encoded = bincode_serialize(doc)
+            .map_err(|e| str_to_io_error(&format!("Failed to serialize document for {}: {e}", self.main_path.display())))?;
+        let new_size: SizeType = SizeType::try_from(encoded.len() as u64)
+            .map_err(|e| str_to_io_error(&format!("Encoded document size does not fit into u32 for {}: {e}", self.main_path.display())))?;
         self.dirty = true;
+        self.main_file
+            .write_all(&new_size.to_le_bytes())
+            .map_err(|e| str_to_io_error(&format!("Failed to write length prefix to {}: {e}", self.main_path.display())))?;
+        self.main_file
+            .write_all(&encoded)
+            .map_err(|e| str_to_io_error(&format!("Failed to write document payload to {}: {e}", self.main_path.display())))?;
 
-        let encoded_bytes_len = SizeType::try_from(encoded_bytes.len()).map_err(to_io_error)?;
-        self.main_file.write_all(&encoded_bytes_len.to_le_bytes())?;
-        match utils::check_write(&self.main_file.write_all(&encoded_bytes)) {
-            Ok(()) => {
-                if new_record_appended {
-                    self.index_tree.insert(doc_id, self.main_offset);
-                    let written_bytes = SizeType::try_from(encoded_bytes.len() + LEN_SIZE).map_err(to_io_error)?;
-                    self.main_offset += written_bytes;
-                }
-            }
-            Err(err) => {
-                return Err(str_to_io_error(&format!("failed to write document: {} - {}", self.main_path.display(), err)));
-            }
-        }
+        self.index_tree.insert(doc_id, self.main_offset);
+        let written_bytes_u64 = (LEN_SIZE as u64) +  u64::from(new_size);
+        let written_bytes: SizeType = SizeType::try_from(written_bytes_u64)
+            .map_err(|e| str_to_io_error(&format!("Written byte count overflow for {}: {e}", self.main_path.display())))?;
+        self.main_offset = self.main_offset.checked_add(written_bytes)
+            .ok_or_else(|| str_to_io_error(&format!("main_offset overflow while appending to {}", self.main_path.display())))?;
         Ok(())
     }
 }
@@ -237,6 +250,7 @@ where
 {
     main_file: BufReader<File>,
     index_tree: IndexedDocumentIndex<K>,
+    buffer: Vec<u8>,
     t_type: PhantomData<T>,
 }
 
@@ -252,8 +266,10 @@ where
             let index_tree = IndexedDocumentIndex::<K>::load(index_path)?;
 
             Ok(Self {
-                main_file: utils::file_reader(main_file),
+                // Larger read buffer for sequential access
+                main_file: BufReader::with_capacity(BLOCK_SIZE * 64, main_file),
                 index_tree,
+                buffer: Vec::with_capacity(BLOCK_SIZE),
                 t_type: PhantomData,
             })
         } else {
@@ -264,9 +280,12 @@ where
         if let Some(offset) = self.index_tree.query(doc_id) {
             self.main_file.seek(SeekFrom::Start(u64::from(*offset)))?;
             let buf_size = IndexedDocument::read_content_size(&mut self.main_file)?;
-            let mut buffer: Vec<u8> = vec![0; buf_size];
-            self.main_file.read_exact(&mut buffer)?;
-            if let Ok(item) = bincode_deserialize::<T>(&buffer) {
+            if self.buffer.capacity() < buf_size {
+                self.buffer.reserve(buf_size - self.buffer.capacity());
+            }
+            self.buffer.resize(buf_size, 0u8);
+            self.main_file.read_exact(&mut self.buffer[..buf_size])?;
+            if let Ok(item) = bincode_deserialize::<T>(&self.buffer[..buf_size]) {
                 return Ok(item);
             }
         }
@@ -308,7 +327,8 @@ where
                 Ok(file) => {
                     Ok(Self {
                         main_path: main_path.to_path_buf(),
-                        main_file: utils::file_reader(file),
+                        // Larger read buffer for sequential iteration
+                        main_file: BufReader::with_capacity(BLOCK_SIZE * 128, file),
                         offsets,
                         index: 0,
                         failed: false,
@@ -467,6 +487,8 @@ where
             self.index_tree.traverse(|keys, values| {
                 keys.iter().zip(values.iter()).for_each(|(key, &offset)| key_offset.push((key.clone(), offset)));
             });
+            // For better disk locality: sort by offset (sequential reads)
+            key_offset.sort_by_key(|(_, off)| *off);
             let mut gc_writer = utils::file_writer(&gc_file);
 
             let fragmented_byte = 0u8.to_le_bytes();
@@ -475,6 +497,8 @@ where
             let mut gc_offset = 1usize; // offset is 1 because of fragment bit
             let mut buffer: Vec<u8> = Vec::with_capacity(BLOCK_SIZE);
             let mut size_bytes = [0u8; LEN_SIZE];
+            let mut write_counter = 0usize;
+
             for (key, offset) in key_offset {
                 // read old content
                 self.main_file.seek(SeekFrom::Start(u64::from(offset)))?;
@@ -489,6 +513,11 @@ where
 
                 gc_writer.write_all(&size_bytes)?;
                 gc_writer.write_all(&buffer[0..buf_size])?;
+                write_counter += buf_size;
+                if write_counter >= WRITER_BUFFER_SIZE {
+                    write_counter = 0;
+                    gc_writer.flush()?;
+                }
 
                 let pointer = OffsetPointer::try_from(gc_offset).map_err(to_io_error)?;
                 self.index_tree.insert(key, pointer);

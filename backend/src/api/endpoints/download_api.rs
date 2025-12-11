@@ -1,7 +1,7 @@
 use crate::api::model::AppState;
 use crate::api::model::{DownloadQueue, FileDownload, FileDownloadRequest};
 use crate::model::{AppConfig, VideoDownloadConfig};
-use crate::utils::{async_file_writer, request};
+use crate::utils::{async_file_writer, request, WRITER_BUFFER_SIZE};
 use tokio::sync::RwLock;
 use futures::stream::TryStreamExt;
 use log::info;
@@ -36,8 +36,8 @@ async fn download_file(active: Arc<RwLock<Option<FileDownload>>>, client: &reqwe
                                                 if let Some(chunk) = item {
                                                     match buf_writer.write_all(&chunk).await {
                                                         Ok(()) => {
-                                                            write_counter += 1;
-                                                            if write_counter > 50 {
+                                                            write_counter += chunk.len();
+                                                            if write_counter >= WRITER_BUFFER_SIZE {
                                                                 buf_writer.flush().await.map_err(|err| err.to_string())?;
                                                                 write_counter = 0;
                                                             }

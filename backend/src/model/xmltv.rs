@@ -12,6 +12,7 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use url::Url;
 use shared::utils::sanitize_sensitive_info;
 use crate::api::model::AppState;
+use crate::utils::async_file_reader;
 use crate::utils::request::{get_remote_content_as_stream};
 
 pub const EPG_TAG_TV: &str = "tv";
@@ -247,7 +248,7 @@ pub fn get_attr_value(attr: &quick_xml::events::attributes::Attribute) -> Option
 #[allow(clippy::too_many_lines)]
 async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Result<EpgTv, TuliproxError> {
 
-    let mut reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(reader));
+    let mut reader = quick_xml::reader::Reader::from_reader(async_file_reader(reader));
     let mut buf = Vec::new();
 
     let mut channels = Vec::new();

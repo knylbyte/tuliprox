@@ -8,7 +8,7 @@ use log::{debug, error, log_enabled, trace, Level};
 use reqwest::header::CONTENT_ENCODING;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio_util::io::StreamReader;
 use url::Url;
 
@@ -20,7 +20,7 @@ use crate::model::{ConfigInput};
 use crate::repository::storage::{get_input_storage_path};
 use crate::repository::storage_const;
 use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
-use crate::utils::{debug_if_enabled};
+use crate::utils::{async_file_reader, async_file_writer, debug_if_enabled, WRITER_BUFFER_SIZE};
 use shared::utils::{filter_request_header, sanitize_sensitive_info, short_hash, ENCODING_DEFLATE, ENCODING_GZIP};
 use crate::utils::{get_file_path, persist_file};
 
@@ -209,7 +209,7 @@ pub async fn get_local_file_content(file_path: &Path) -> Result<String, std::io:
         std::io::Error::new(ErrorKind::NotFound, format!("Failed to open file: {}, {err:?}", file_path.display()))
     })?;
 
-    let mut buf_reader = BufReader::new(file);
+    let mut buf_reader = async_file_reader(file);
 
     // Peek die ersten 2 Bytes, um gzip zu erkennen
     let buffer = buf_reader.fill_buf().await?;
@@ -248,13 +248,19 @@ async fn get_remote_content_as_file(client: &reqwest::Client, input: &ConfigInpu
         Ok(response) => {
             if response.status().is_success() {
                 // Open a file in write mode
-                let mut file = BufWriter::with_capacity(8192, File::create(file_path).await?);
+                let mut writer = async_file_writer(File::create(file_path).await?);
+                let mut write_counter = 0;
                 // Stream the response body in chunks
                 let mut stream = response.bytes_stream();
                 while let Some(chunk) = stream.next().await {
                     match chunk {
                         Ok(bytes) => {
-                            file.write_all(&bytes).await?;
+                            write_counter += bytes.len();
+                            writer.write_all(&bytes).await?;
+                            if write_counter >= WRITER_BUFFER_SIZE {
+                                writer.flush().await?;
+                                write_counter = 0;
+                            }
                         }
                         Err(err) => {
                             return Err(str_to_io_error(&format!("Failed to read chunk: {err}")));
@@ -262,7 +268,8 @@ async fn get_remote_content_as_file(client: &reqwest::Client, input: &ConfigInpu
                     }
                 }
 
-                file.flush().await?;
+                writer.flush().await?;
+                writer.shutdown().await?;
                 let elapsed = start_time.elapsed().as_secs();
                 debug!("File downloaded successfully to {}, took:{}", file_path.display(), format_elapsed_time(elapsed));
                 Ok(file_path.to_path_buf())
@@ -297,7 +304,7 @@ pub async fn get_remote_content_as_stream(
     let stream_reader = StreamReader::new(
         response.bytes_stream().map_err(std::io::Error::other),
     );
-    let mut buf_reader = BufReader::new(stream_reader);
+    let mut buf_reader = async_file_reader(stream_reader);
     let peek = buf_reader.fill_buf().await?;
 
     if peek.len() >= 2 {

@@ -12,7 +12,7 @@ use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState,
 use crate::model::{ConfigInput, ResourceRetryConfig};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::lru_cache::LRUResourceCache;
-use crate::utils::create_new_file_for_write;
+use crate::utils::{async_file_reader, async_file_writer, create_new_file_for_write};
 use crate::utils::request;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::BUILD_TIMESTAMP;
@@ -35,7 +35,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::BufWriter;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -155,7 +154,7 @@ pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoRes
 
     match tokio::fs::File::open(file_path).await {
         Ok(file) => {
-            let reader = tokio::io::BufReader::new(file);
+            let reader = async_file_reader(file);
             let stream = tokio_util::io::ReaderStream::new(reader);
             let body = axum::body::Body::from_stream(stream);
 
@@ -1107,7 +1106,7 @@ async fn build_stream_response(
             match create_new_file_for_write(&resource_path).await {
                 Ok(file) => {
                     debug!("Persisting resource stream {sanitized_resource_url} to {}", resource_path.display());
-                    let writer = BufWriter::new(file);
+                    let writer = async_file_writer(file);
                     let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
                     let tee = tee_stream(byte_stream, writer, &resource_path, add_cache_content);
                     return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(tee)));

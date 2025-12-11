@@ -1,4 +1,4 @@
-use crate::utils::file_reader;
+use crate::utils::{file_reader, file_writer};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -49,7 +49,7 @@ where
     T: Serialize,
 {
     let file = std::fs::File::create(path)?;
-    let mut buf_writer = std::io::BufWriter::new(file);
+    let mut buf_writer = file_writer(file);
     serde_json::to_writer(&mut buf_writer, value)?;
     buf_writer.flush()?;
     buf_writer.into_inner()?.sync_all()
