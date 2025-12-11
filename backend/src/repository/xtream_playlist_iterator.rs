@@ -52,12 +52,9 @@ impl XtreamPlaylistIterator {
             let filter = user_get_bouquet_filter(&config, &user.username, category_id, TargetType::Xtream, cluster).await;
             // Parse bouquet filter (strings) once into u32 set to minimize per-item allocations
             let filter_ids: Option<HashSet<u32>> = filter.as_ref().map(|set| {
-                set.iter().filter_map(|s| s.parse::<u32>().ok()).collect()
-            });
-            let filter_ids: Option<HashSet<u32>> = filter.as_ref().map(|set| {
                 set.iter().filter_map(|s| {
                     s.parse::<u32>().map_err(|e| {
-                        error!("Failed to parse bouquet filter id '{}': {}", s, e);
+                        error!("Failed to parse bouquet filter id '{s}': {e}");
                         e
                     }).ok()
                 }).collect()
