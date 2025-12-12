@@ -138,7 +138,6 @@ impl Epg {
 
         let inner = writer.get_mut();
         inner.flush().await?;
-        inner.shutdown().await?;
 
         Ok(())
     }

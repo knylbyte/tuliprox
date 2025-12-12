@@ -158,16 +158,11 @@ pub async fn get_input_text_content_as_stream(client: &reqwest::Client, input: &
                 if filepath.exists() {
                     match get_local_file_content_as_stream(&filepath).await {
                         Ok(content) => {
-                            if persist_filepath.is_some() {
-                                let tee_reader: DynReader = if let Some(path) = persist_filepath {
-                                    let tee = tee_dyn_reader(content, &path, Some(Arc::new(|size| {
-                                        debug_if_enabled!("Persisted {} bytes", human_readable_byte_size(size as u64));
-                                    }))).await;
-                                    Box::pin(tee)
-                                } else {
-                                    content
-                                };
-                                Some(tee_reader)
+                            if let Some(path) = persist_filepath {
+                                let tee = tee_dyn_reader(content, &path, Some(Arc::new(|size| {
+                                    debug_if_enabled!("Persisted {} bytes", human_readable_byte_size(size as u64));
+                                }))).await;
+                                Some(Box::pin(tee))
                             } else {
                                 Some(content)
                             }

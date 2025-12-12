@@ -72,7 +72,7 @@ where
             let s = n.to_string();
             match s.parse::<T>() {
                 Ok(v) => Ok(Some(v)),
-                Err(_) => Ok(None), // Fehler ignorieren, None zurückgeben
+                Err(_) => Ok(None), // Ignore parse errors, return None
             }
         }
 
@@ -83,17 +83,21 @@ where
                 return Ok(None);
             }
 
-            // find the number
-            let digits = s.chars()
-                .skip_while(|c| !c.is_ascii_digit())
-                .take_while(|c| c.is_ascii_digit())
-                .collect::<String>();
-
-            if digits.is_empty() {
+            // find the number, preserving optional sign
+            let trimmed = s.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '-' && c != '+');
+            if trimmed.is_empty() {
                 return Ok(None);
             }
 
-            match digits.parse::<T>() {
+            let number_str = trimmed.chars()
+                .take_while(|c| c.is_ascii_digit() || (*c == '-' || *c == '+') && trimmed.starts_with(|x: char| x == '-' || x == '+'))
+                .collect::<String>();
+
+            if number_str.is_empty() || number_str == "-" || number_str == "+" {
+                return Ok(None);
+            }
+
+            match number_str.parse::<T>() {
                 Ok(v) => Ok(Some(v)),
                 Err(_) => Ok(None),
             }
