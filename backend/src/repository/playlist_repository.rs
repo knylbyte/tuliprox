@@ -193,7 +193,6 @@ async fn load_m3u_target_storage(app_config: &AppConfig, target: &ConfigTarget) 
 }
 
 
-
 pub async fn load_playlists_into_memory_cache(app_state: &AppState) -> Result<(), TuliproxError> {
     for sources in &app_state.app_config.sources.load().sources {
         for target in &sources.targets {

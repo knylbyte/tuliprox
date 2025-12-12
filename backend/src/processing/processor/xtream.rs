@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::Arc;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::xtream_get_record_file_path;
@@ -17,7 +16,7 @@ use crate::utils;
 use crate::utils::xtream;
 use serde_json::{from_str, to_string, Value};
 
-pub(in crate::processing) async fn playlist_resolve_download_playlist_item(client: Arc<reqwest::Client>, pli: &PlaylistItem, input: &ConfigInput, errors: &mut Vec<TuliproxError>, resolve_delay: u16, cluster: XtreamCluster) -> Option<String> {
+pub(in crate::processing) async fn playlist_resolve_download_playlist_item(client: &reqwest::Client, pli: &PlaylistItem, input: &ConfigInput, errors: &mut Vec<TuliproxError>, resolve_delay: u16, cluster: XtreamCluster) -> Option<String> {
     let mut result = None;
     let provider_id = pli.get_provider_id()?;
     if let Some(info_url) = xtream::get_xtream_player_api_info_url(input, cluster, provider_id) {

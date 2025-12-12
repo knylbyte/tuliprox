@@ -31,6 +31,7 @@ use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
+use tower_http::services::ServeDir;
 use crate::api::sys_usage::exec_system_usage;
 use crate::repository::storage::get_geoip_path;
 use crate::utils::{exec_file_lock_prune, GeoIp};
@@ -114,7 +115,7 @@ async fn create_shared_data(
 }
 
 fn exec_update_on_boot(
-    client: Arc<reqwest::Client>,
+    client: &reqwest::Client,
     app_state: &Arc<AppState>,
     targets: &Arc<ProcessTargets>,
 ) {
@@ -127,8 +128,9 @@ fn exec_update_on_boot(
         let app_state_clone = Arc::clone(&app_state.app_config);
         let targets_clone = Arc::clone(targets);
         let playlist_state = Arc::clone(&app_state.playlists);
+        let client = client.clone();
         tokio::spawn(async move {
-            playlist::exec_processing(client, app_state_clone, targets_clone, None, Some(playlist_state)).await;
+            playlist::exec_processing(&client, app_state_clone, targets_clone, None, Some(playlist_state)).await;
         });
     }
 }
@@ -272,15 +274,17 @@ pub async fn start_server(
 
     exec_system_usage(&app_state);
 
+    let client = shared_data.http_client.load();
+
     exec_scheduler(
-        &Arc::clone(&shared_data.http_client.load()),
+        client.as_ref(),
         &app_state,
         &targets,
         &cancel_token_scheduler,
     );
 
     exec_update_on_boot(
-        Arc::clone(&shared_data.http_client.load()),
+        client.as_ref(),
         &app_state,
         &targets,
     );
@@ -312,6 +316,7 @@ pub async fn start_server(
     // Web Server
     let mut router = axum::Router::new()
         .route("/healthcheck", axum::routing::get(healthcheck))
+        .nest_service("/.well-known", ServeDir::new(web_dir_path.join("static/.well-known")))
         .merge(ws_api_register(
             web_auth_enabled,
             web_ui_path.as_str(),

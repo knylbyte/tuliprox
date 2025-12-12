@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::{Mutex};
 use tokio::io::AsyncRead;
+use crate::utils::async_file_reader;
 use crate::utils::compressed_file_reader_async::CompressedFileReaderAsync;
 
 /// Splits a string at the first delimiter if the prefix matches a known country code.
@@ -412,7 +413,7 @@ where
     F: FnMut(XmlTag),
 {
     let mut stack: Vec<XmlTag> = vec![];
-    let mut xml_reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(content));
+    let mut xml_reader = quick_xml::reader::Reader::from_reader(async_file_reader(content));
     let mut buf = Vec::<u8>::new();
     loop {
         match xml_reader.read_event_into_async(&mut buf).await {

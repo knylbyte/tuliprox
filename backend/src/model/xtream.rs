@@ -31,7 +31,7 @@ impl XtreamCategory {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct XtreamStream {
     #[serde(default, deserialize_with = "deserialize_as_string")]
     pub name: String,

@@ -6,7 +6,8 @@ use crate::repository::storage_const;
 use crate::utils;
 
 pub(in crate::repository) fn get_target_id_mapping_file(target_path: &Path) -> PathBuf {
-    target_path.join(PathBuf::from(storage_const::FILE_ID_MAPPING))
+    // Join directly with &str to avoid an intermediate PathBuf allocation
+    target_path.join(storage_const::FILE_ID_MAPPING)
 }
 
 pub fn ensure_target_storage_path(cfg: &Config, target_name: &str) -> Result<PathBuf, TuliproxError> {
