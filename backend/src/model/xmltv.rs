@@ -12,6 +12,7 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use url::Url;
 use shared::utils::sanitize_sensitive_info;
 use crate::api::model::AppState;
+use crate::model::{InputSource};
 use crate::utils::async_file_reader;
 use crate::utils::request::{get_remote_content_as_stream};
 
@@ -211,11 +212,23 @@ pub async fn parse_xmltv_for_web_ui_from_file(path: &Path) -> Result<EpgTv, Tuli
 pub async fn parse_xmltv_for_web_ui_from_url(app_state: &Arc<AppState>, url: &str) -> Result<EpgTv, TuliproxError> {
     if let Ok(request_url) = Url::parse(url) {
         let client = app_state.http_client.load();
-       match get_remote_content_as_stream(
-            client.as_ref(),
-            &request_url,
-            InputFetchMethod::GET,
-            None,
+        let input_source: InputSource = InputSource {
+            name: String::from("xmltv"),
+            url: request_url.to_string(),
+            username: None,
+            password: None,
+            method: InputFetchMethod::GET,
+            headers: HashMap::default(),
+        };
+
+        let disabled_headers = app_state.get_disabled_headers();
+
+        match get_remote_content_as_stream(
+           &client,
+           &input_source,
+           None,
+           &request_url,
+           disabled_headers.as_ref(),
         ).await {
            Ok((stream, _url)) => {
                parse_xmltv_for_web_ui(stream).await

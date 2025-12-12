@@ -1,7 +1,7 @@
 use crate::error::to_io_error;
 use chrono::{NaiveDateTime, ParseError, TimeZone, Utc};
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::io;
 
@@ -55,43 +55,52 @@ where
     })
 }
 
-pub fn deserialize_number_from_string<'de, D, T: DeserializeOwned + std::str::FromStr>(
-    deserializer: D,
-) -> Result<Option<T>, D::Error>
+
+pub fn deserialize_number_from_string<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
-    D: serde::Deserializer<'de>,
+    D: Deserializer<'de>,
+    T: DeserializeOwned + std::str::FromStr,
 {
-    // we define a local enum type inside of the function
-    // because it is untagged, serde will deserialize as the first variant
-    // that it can
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum MaybeNumber<U> {
-        // if it can be parsed as Option<T>, it will be
-        Value(Option<U>),
-        // otherwise try parsing as a string
-        NumberString(String),
-    }
+    let raw: Value = Value::deserialize(deserializer)?;
 
-    // deserialize into local enum
-    let value: MaybeNumber<T> = Deserialize::deserialize(deserializer)?;
-    match value {
-        // if parsed as T or None, return that
-        MaybeNumber::Value(value) => Ok(value),
+    match raw {
+        // Null → None
+        Value::Null => Ok(None),
 
-        // (if it is any other string)
-        MaybeNumber::NumberString(s) => {
+        // its a number
+        Value::Number(n) => {
+            let s = n.to_string();
+            match s.parse::<T>() {
+                Ok(v) => Ok(Some(v)),
+                Err(_) => Ok(None), // Fehler ignorieren, None zurückgeben
+            }
+        }
+
+        // String → extract first number
+        Value::String(s) => {
             let s = s.trim();
             if s.is_empty() {
                 return Ok(None);
             }
-            // parse string to number, if fails return None
-            if let Ok(num) = s.parse::<T>() {
-                return Ok(Some(num));
+
+            // find the number
+            let digits = s.chars()
+                .skip_while(|c| !c.is_ascii_digit())
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>();
+
+            if digits.is_empty() {
+                return Ok(None);
             }
 
-            serde_json::from_str::<T>(s).map_or_else(|_| Ok(None), |val| Ok(Some(val)))
+            match digits.parse::<T>() {
+                Ok(v) => Ok(Some(v)),
+                Err(_) => Ok(None),
+            }
         }
+
+        // invalid -> return None
+        _ => Ok(None),
     }
 }
 

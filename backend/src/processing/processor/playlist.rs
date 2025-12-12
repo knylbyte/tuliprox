@@ -24,7 +24,7 @@ use crate::processing::processor::trakt::process_trakt_categories_for_target;
 use crate::processing::processor::xtream_series::playlist_resolve_series;
 use crate::processing::processor::xtream_vod::playlist_resolve_vod;
 use crate::repository::playlist_repository::persist_playlist;
-use crate::utils::debug_if_enabled;
+use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::utils::StepMeasure;
 use deunicode::deunicode;
 use futures::StreamExt;
@@ -134,7 +134,7 @@ fn exec_rename(pli: &mut PlaylistItem, rename: Option<&Vec<ConfigRename>>) {
                 let value = get_field_value(result, r.field);
                 let cap = r.pattern.replace_all(value.as_str(), &r.new_name);
                 if log_enabled!(log::Level::Debug) && *value != cap {
-                    debug_if_enabled!("Renamed {}={} to {}", &r.field, value, cap);
+                    trace_if_enabled!("Renamed {}={value} to {cap}", &r.field);
                 }
                 let value = cap.into_owned();
                 set_field_value(result, r.field, value);
@@ -153,7 +153,7 @@ fn rename_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Opt
                     for r in renames {
                         if matches!(r.field, ItemField::Group) {
                             let cap = r.pattern.replace_all(&grp.title, &r.new_name);
-                            debug_if_enabled!("Renamed group {} to {} for {}", &grp.title, cap, target.name);
+                            trace_if_enabled!("Renamed group {} to {cap} for {}", &grp.title, target.name);
                             grp.title = cap.into_owned();
                         }
                     }

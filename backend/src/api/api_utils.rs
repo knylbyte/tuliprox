@@ -479,13 +479,7 @@ async fn create_stream_response_details(
         | ProviderStreamState::GracePeriod(_provider_name, request_url) => {
             let parsed_url = Url::parse(&request_url);
             let ((stream, stream_info), reconnect_flag) = if let Ok(url) = parsed_url {
-                let disabled_headers = app_state
-                    .app_config
-                    .config
-                    .load()
-                    .reverse_proxy
-                    .as_ref()
-                    .and_then(|r| r.disabled_header.clone());
+                let disabled_headers = app_state.get_disabled_headers();
                 let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
                     fingerprint.addr,
                     item_type,
@@ -1135,10 +1129,7 @@ async fn fetch_resource_with_retry(
         .reverse_proxy
         .as_ref()
         .map_or_else(ResourceRetryConfig::get_default_retry_values, |rp| rp.resource_retry.get_retry_values());
-    let disabled_headers = config
-        .reverse_proxy
-        .as_ref()
-        .and_then(|r| r.disabled_header.clone());
+    let disabled_headers = app_state.get_disabled_headers();
     for attempt in 0..max_attempts {
         let client = request::get_client_request(
             &app_state.http_client.load(),

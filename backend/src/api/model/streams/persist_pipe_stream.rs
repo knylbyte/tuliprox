@@ -1,12 +1,13 @@
-use std::path::Path;
-use crate::api::model::StreamError;
+use crate::utils::request::DynReader;
+use crate::utils::{async_file_writer, IO_BUFFER_SIZE};
 use bytes::Bytes;
 use log::{debug, error};
+use std::path::{Path,};
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
-use tokio_stream::{StreamExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_stream::wrappers::ReceiverStream;
-use crate::utils::IO_BUFFER_SIZE;
+use tokio_stream::StreamExt;
+use crate::api::model::StreamError;
 
 pub fn tee_stream<S, W>(
     mut stream: S,
@@ -14,8 +15,9 @@ pub fn tee_stream<S, W>(
     file_path: &Path,
     callback: Arc<dyn Fn(usize) + Send + Sync>,
 ) -> ReceiverStream<Result<Bytes, StreamError>>
-where S: tokio_stream::Stream<Item = Result<Bytes, StreamError>> + Send + Unpin + 'static,
-      W: tokio::io::AsyncWrite + Send + Unpin + 'static,
+where
+    S: tokio_stream::Stream<Item=Result<Bytes, StreamError>> + Send + Unpin + 'static,
+    W: tokio::io::AsyncWrite + Send + Unpin + 'static,
 {
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, StreamError>>(32);
     let resource_path = file_path.to_owned();
@@ -76,4 +78,55 @@ where S: tokio_stream::Stream<Item = Result<Bytes, StreamError>> + Send + Unpin 
     });
 
     ReceiverStream::new(rx)
+}
+
+pub async fn tee_dyn_reader(
+    reader: DynReader,
+    persist_path: &Path,
+    callback: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+) -> DynReader {
+    let file = match tokio::fs::File::create(persist_path).await {
+        Ok(f) => f,
+        Err(err) => {
+            error!("Cant open file to write: {}, {err}", persist_path.display());
+            return reader;
+        }
+    };
+
+    let (mut tx, rx) = tokio::io::duplex(IO_BUFFER_SIZE);
+    let mut writer = async_file_writer(file);
+    let reader_arc = reader;
+
+    tokio::spawn(async move {
+        let mut total_bytes = 0usize;
+        let mut buf = [0u8; 8192];
+
+        let mut reader = reader_arc;
+
+        loop {
+            let n = match reader.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => n,
+            };
+
+            total_bytes += n;
+
+            if tx.write_all(&buf[..n]).await.is_err() {
+                break;
+            }
+
+            if writer.write_all(&buf[..n]).await.is_err() {
+                break;
+            }
+        }
+
+        let _ = writer.flush().await;
+        let _ = tx.shutdown().await;
+
+        if let Some(cb) = callback {
+            cb(total_bytes);
+        }
+    });
+
+    Box::pin(rx) as DynReader
 }

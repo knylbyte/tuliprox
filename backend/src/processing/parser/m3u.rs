@@ -2,7 +2,8 @@ use crate::model::{Config, ConfigInput};
 use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, XtreamCluster, DEFAULT_VIDEO_EXTENSIONS};
 use shared::utils::extract_id_from_url;
 use std::borrow::BorrowMut;
-
+use tokio::io::AsyncBufReadExt;
+use crate::utils::request::DynReader;
 
 // other implementations like calculating text_distance on all titles took too much time
 // we keep it now as simple as possible and less memory intensive.
@@ -87,9 +88,9 @@ fn skip_digit(it: &mut std::str::Chars) -> Option<char> {
     }
 }
 
-fn create_empty_playlistitem_header(input_name: &str, url: &str) -> PlaylistItemHeader {
+fn create_empty_playlistitem_header(input_name: &str, url: String) -> PlaylistItemHeader {
     PlaylistItemHeader {
-        url: url.to_owned(),
+        url,
         category_id: 0,
         input_name: input_name.to_string(),
         ..Default::default()
@@ -107,7 +108,15 @@ macro_rules! process_header_fields {
     };
 }
 
-fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url: &str) -> PlaylistItemHeader {
+fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url: String) -> PlaylistItemHeader {
+    let url_id = extract_id_from_url(&url);
+    let url_types = if video_suffixes.iter().any(|suffix| url.ends_with(suffix)) {
+        // TODO find Series based on group or configured names
+        Some((XtreamCluster::Video, PlaylistItemType::Video))
+    } else {
+        None
+    };
+
     let mut plih = create_empty_playlistitem_header(input_name, url);
     let mut it = content.chars();
     let mut stack = String::with_capacity(64);
@@ -157,7 +166,7 @@ fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url:
             plih.epg_channel_id = None;
             if let Some(pid) = provider_id {
                 plih.id = pid;
-            } else if let Some(chanid) = extract_id_from_url(url) {
+            } else if let Some(chanid) = url_id {
                 plih.id = chanid;
             }
         } else {
@@ -167,11 +176,9 @@ fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url:
             }
         }
     }
-
-    if video_suffixes.iter().any(|suffix| url.ends_with(suffix)) {
-        // TODO find Series based on group or configured names
-        plih.xtream_cluster = XtreamCluster::Video;
-        plih.item_type = PlaylistItemType::Video;
+    if let Some((url_cluster, url_item_type)) = url_types {
+        plih.xtream_cluster = url_cluster;
+        plih.item_type = url_item_type;
     }
 
     {
@@ -189,10 +196,7 @@ fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url:
     plih
 }
 
-pub fn consume_m3u<'a, I, F: FnMut(PlaylistItem)>(cfg: &Config, input: &ConfigInput, lines: I, mut visit: F)
-where
-    I: Iterator<Item=&'a str>,
-{
+pub async fn consume_m3u<F: FnMut(PlaylistItem)>(cfg: &Config, input: &ConfigInput, lines: DynReader, mut visit: F) {
     let mut header: Option<String> = None;
     let mut group: Option<String> = None;
     let input_name = input.name.as_str();
@@ -203,9 +207,10 @@ where
       },
       None => DEFAULT_VIDEO_EXTENSIONS.to_vec()
     };
-    for line in lines {
+    let mut lines = tokio::io::BufReader::new(lines).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
         if line.starts_with("#EXTINF") {
-            header = Some(String::from(line));
+            header = Some(line);
             continue;
         }
         if line.starts_with("#EXTGRP") {
@@ -233,9 +238,7 @@ where
     }
 }
 
-pub fn parse_m3u<'a, I>(cfg: &Config, input: &ConfigInput, lines: I) -> Vec<PlaylistGroup>
-where
-    I: Iterator<Item=&'a str>,
+pub async fn parse_m3u(cfg: &Config, input: &ConfigInput, lines: DynReader) -> Vec<PlaylistGroup>
 {
     let mut sort_order: Vec<Vec<PlaylistItem>> = vec![];
     let mut sort_order_idx: usize = 0;
@@ -258,7 +261,7 @@ where
                 }
             }
         }
-    });
+    }).await;
     let mut grp_id = 0;
     let result: Vec<PlaylistGroup> = sort_order.into_iter().filter_map(|channels| {
         // create a group based on the first playlist item
@@ -285,7 +288,7 @@ mod test {
         let url = "http://hello.de/hello.ts";
         let line = r#"#EXTINF:-1 channel-id="abc-seven" tvg-id="abc-seven" tvg-logo="https://abc.nz/.images/seven.png" tvg-chno="7" group-title="Sydney" , Seven"#;
 
-        let pli = process_header(input, &video_suffixes, line, url);
+        let pli = process_header(input, &video_suffixes, line, url.to_string());
         assert_eq!(pli.title, "Seven");
         assert_eq!(pli.id, "abc-seven");
         assert_eq!(pli.logo, "https://abc.nz/.images/seven.png");
@@ -300,7 +303,7 @@ mod test {
         let url = "http://hello.de/hello.ts";
         let line = r#"#EXTINF:-1 channel-id="abc-seven" tvg-id="abc-seven" tvg-logo="https://abc.nz/.images/seven.png" tvg-chno="7" group-title="Sydney", Seven"#;
 
-        let pli = process_header(input, &video_suffixes, line, url);
+        let pli = process_header(input, &video_suffixes, line, url.to_string());
         assert_eq!(pli.title, "Seven");
         assert_eq!(pli.id, "abc-seven");
         assert_eq!(pli.logo, "https://abc.nz/.images/seven.png");
@@ -315,7 +318,7 @@ mod test {
         let url = "http://hello.de/hello.ts";
         let line = r#"#EXTINF:-1 tvg-id="abc-seven" xui-id="provider-123" group-title="Sydney", Seven"#;
 
-        let pli = process_header(input, &video_suffixes, line, url);
+        let pli = process_header(input, &video_suffixes, line, url.to_string());
         assert_eq!(pli.title, "Seven");
         assert_eq!(pli.id, "provider-123"); // Should use xui-id
         assert_eq!(pli.epg_channel_id, Some("abc-seven".to_string())); // Should preserve original tvg-id

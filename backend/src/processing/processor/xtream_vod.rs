@@ -68,6 +68,8 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
     let (resolve_movies, resolve_delay) = get_resolve_vod_options(target, fpl);
     if !resolve_movies { return; }
 
+    // TODO read existing WAL File and import it to avoid duplicate requests
+
     // we cant write to the indexed-document directly because of the write lock and time-consuming operation.
     // All readers would be waiting for the lock and the app would be unresponsive.
     // We collect the content into a wal file and write it once we collected everything.

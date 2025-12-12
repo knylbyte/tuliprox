@@ -190,7 +190,7 @@ pub fn get_csv_file_path(file_uri: &str) -> Result<PathBuf, Error> {
 mod tests {
     use crate::utils::file::csv_input_reader::csv_read_inputs_from_reader;
     use crate::utils::{file_reader, resolve_env_var};
-    use std::io::{BufReader, Cursor};
+    use std::io::{Cursor};
     use shared::model::InputType;
 
     const M3U_BATCH: &str = r"

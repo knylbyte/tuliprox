@@ -7,23 +7,31 @@ use crate::utils::xtream::{get_xtream_stream_url_base};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::task::spawn_blocking;
+use crate::utils::request::DynReader;
 
-fn map_to_xtream_category(categories: &Value) -> Result<Vec<XtreamCategory>, TuliproxError> {
-    match serde_json::from_value::<Vec<XtreamCategory>>(categories.to_owned()) {
-        Ok(xtream_categories) => Ok(xtream_categories),
-        Err(err) => {
-            create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to process categories {}", &err)
+async fn map_to_xtream_category(categories: DynReader) -> Result<Vec<XtreamCategory>, TuliproxError> {
+    spawn_blocking(move || {
+        let reader = tokio_util::io::SyncIoBridge::new(categories);
+        match serde_json::from_reader::<_, Vec<XtreamCategory>>(reader) {
+            Ok(xtream_categories) => Ok(xtream_categories),
+            Err(err) => {
+                create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to process categories {}", &err)
+            }
         }
-    }
+    }).await.map_err(|e| TuliproxError::new(TuliproxErrorKind::Notify, format!("Mapping xtream categories failed: {e}")))?
 }
 
-fn map_to_xtream_streams(xtream_cluster: XtreamCluster, streams: &Value) -> Result<Vec<XtreamStream>, TuliproxError> {
-    match serde_json::from_value::<Vec<XtreamStream>>(streams.to_owned()) {
+async fn map_to_xtream_streams(xtream_cluster: XtreamCluster, streams: DynReader) -> Result<Vec<XtreamStream>, TuliproxError> {
+    spawn_blocking(move || {
+    let reader = tokio_util::io::SyncIoBridge::new(streams);
+    match serde_json::from_reader::<_, Vec<XtreamStream>>(reader) {
         Ok(stream_list) => Ok(stream_list),
         Err(err) => {
-            create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to map to xtream streams {:?}: {}", xtream_cluster, &err)
+            create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to map to xtream streams {xtream_cluster}: {err}", )
         }
     }
+    }).await.map_err(|e| TuliproxError::new(TuliproxErrorKind::Notify, format!("Mapping xtream streams failed: {e}")))?
 }
 
 fn create_xtream_series_episode_url(url: &str, username: &str, password: &str, episode: &XtreamSeriesInfoEpisode) -> Arc<String> {
@@ -119,18 +127,18 @@ pub fn create_xtream_url(xtream_cluster: XtreamCluster, url: &str, username: &st
     }
 }
 
-pub fn parse_xtream(input: &ConfigInput,
+pub async fn parse_xtream(input: &ConfigInput,
                     xtream_cluster: XtreamCluster,
-                    categories: &Value,
-                    streams: &Value) -> Result<Option<Vec<PlaylistGroup>>, TuliproxError> {
-    match map_to_xtream_category(categories) {
+                    categories: DynReader,
+                    streams: DynReader) -> Result<Option<Vec<PlaylistGroup>>, TuliproxError> {
+    match map_to_xtream_category(categories).await {
         Ok(xtream_categories) => {
             let input_name = input.name.clone();
             let url = input.url.as_str();
             let username = input.username.as_ref().map_or("", |v| v);
             let password = input.password.as_ref().map_or("", |v| v);
 
-            match map_to_xtream_streams(xtream_cluster, streams) {
+            match map_to_xtream_streams(xtream_cluster, streams).await {
                 Ok(mut xtream_streams) => {
                     let mut group_map: HashMap<String, XtreamCategory> =
                         xtream_categories.into_iter().map(|category|
@@ -204,7 +212,10 @@ pub fn parse_xtream(input: &ConfigInput,
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use shared::model::XtreamCluster;
     use crate::model::XtreamSeriesInfo;
+    use crate::processing::parser::xtream::map_to_xtream_streams;
+    use crate::utils::async_file_reader;
 
     #[test]
     fn test_read_json_file_into_struct() {
@@ -221,4 +232,17 @@ mod tests {
 
     }
 
+    #[tokio::test]
+    async fn test_read_json_stream_into_struct() -> std::io::Result<()> {
+        let reader = Box::pin(async_file_reader(tokio::fs::File::open("/tmp/vod_streams.json").await?));
+        match map_to_xtream_streams(XtreamCluster::Video, reader).await {
+            Ok(_streams) => {
+                assert!(true);
+            },
+            Err(err) => {
+                assert!(false, "Failed to parse json file: {err}");
+            }
+        };
+        Ok(())
+    }
 }

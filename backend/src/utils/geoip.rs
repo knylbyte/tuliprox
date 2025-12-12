@@ -98,7 +98,6 @@ mod test {
 
     use crate::utils::geoip::GeoIp;
     use std::fs::File;
-    use std::io::BufReader;
     use std::path::PathBuf;
     use crate::utils::file_reader;
 

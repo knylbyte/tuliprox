@@ -118,11 +118,7 @@ async fn config_batch_content(
         // The url is changed at this point, we need the raw url for the batch file
         if let Some(batch_url) = config_input.t_batch_url.as_ref() {
             let input_source = InputSource::from(&*config_input).with_url(batch_url.to_owned());
-            let config = app_state.app_config.config.load();
-            let disabled_headers = config
-                .reverse_proxy
-                .as_ref()
-                .and_then(|r| r.disabled_header.clone());
+            let disabled_headers = app_state.get_disabled_headers();
             return match download_text_content(&app_state.http_client.load(), disabled_headers.as_ref(), &input_source, None, None).await {
                 Ok((content, _path)) => {
                     // Return CSV with explicit content-type

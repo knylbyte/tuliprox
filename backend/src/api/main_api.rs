@@ -31,6 +31,7 @@ use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
+use tower_http::services::ServeDir;
 use crate::api::sys_usage::exec_system_usage;
 use crate::repository::storage::get_geoip_path;
 use crate::utils::{exec_file_lock_prune, GeoIp};
@@ -315,6 +316,7 @@ pub async fn start_server(
     // Web Server
     let mut router = axum::Router::new()
         .route("/healthcheck", axum::routing::get(healthcheck))
+        .nest_service("/.well-known", ServeDir::new(web_dir_path.join("static/.well-known")))
         .merge(ws_api_register(
             web_auth_enabled,
             web_ui_path.as_str(),

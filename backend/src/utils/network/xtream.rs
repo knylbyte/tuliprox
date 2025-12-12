@@ -235,14 +235,14 @@ pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Client, in
             let stream_file_path = crate::utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{stream}_").as_str());
 
             match futures::join!(
-                request::get_input_json_content(client, None, &input_source_category, category_file_path),
-                request::get_input_json_content(client, None, &input_source_stream, stream_file_path)
+                request::get_input_json_content_as_stream(client, None, &input_source_category, category_file_path),
+                request::get_input_json_content_as_stream(client, None, &input_source_stream, stream_file_path)
             ) {
                 (Ok(category_content), Ok(stream_content)) => {
                     match xtream::parse_xtream(input,
                                                *xtream_cluster,
-                                               &category_content,
-                                               &stream_content) {
+                                               category_content,
+                                               stream_content).await {
                         Ok(sub_playlist_parsed) => {
                             if let Some(mut xtream_sub_playlist) = sub_playlist_parsed {
                                 playlist_groups.append(&mut xtream_sub_playlist);
