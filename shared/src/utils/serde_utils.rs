@@ -1,6 +1,5 @@
 use crate::error::to_io_error;
 use chrono::{NaiveDateTime, ParseError, TimeZone, Utc};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::io;
@@ -59,7 +58,7 @@ where
 pub fn deserialize_number_from_string<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
-    T: DeserializeOwned + std::str::FromStr,
+    T: std::str::FromStr,
 {
     let raw: Value = Value::deserialize(deserializer)?;
 
@@ -70,9 +69,10 @@ where
         // its a number
         Value::Number(n) => {
             let s = n.to_string();
-            match s.parse::<T>() {
-                Ok(v) => Ok(Some(v)),
-                Err(_) => Ok(None), // Ignore parse errors, return None
+            if let Ok(r) = s.parse::<T>() {
+                Ok(Some(r))
+            } else {
+                Ok(None)
             }
         }
 
@@ -83,23 +83,28 @@ where
                 return Ok(None);
             }
 
-            // Find first digit; include optional sign immediately before it (ignoring whitespace).
+            // Find first digit OR a '.' that is immediately followed by a digit;
+            // include optional sign immediately before it (ignoring whitespace).
             let mut last_non_ws: Option<(usize, char)> = None;
-            let mut digit_pos: Option<usize> = None;
+            let mut num_pos: Option<usize> = None;
             for (i, c) in s.char_indices() {
                 if c.is_ascii_digit() {
-                    digit_pos = Some(i);
+                    num_pos = Some(i);
+                    break;
+                }
+                if c == '.' && s[i + 1..].chars().next().is_some_and(|n| n.is_ascii_digit()) {
+                    num_pos = Some(i);
                     break;
                 }
                 if !c.is_whitespace() {
                     last_non_ws = Some((i, c));
                 }
             }
-            let Some(digit_i) = digit_pos else { return Ok(None); };
+            let Some(num_i) = num_pos else { return Ok(None); };
 
             let start = match last_non_ws {
                 Some((i, '-')) | Some((i, '+')) => i,
-                _ => digit_i,
+                _ => num_i,
             };
             let mut it = s[start..].chars().peekable();
 

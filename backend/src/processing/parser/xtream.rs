@@ -237,6 +237,9 @@ mod tests {
         let reader = Box::pin(async_file_reader(tokio::fs::File::open("/tmp/vod_streams.json").await?));
         match map_to_xtream_streams(XtreamCluster::Video, reader).await {
             Ok(_streams) => {
+                println!("{:?}", _streams.get(1));
+                println!("{:?}", _streams.get(100));
+                println!("{:?}", _streams.get(200));
                 assert!(true);
             },
             Err(err) => {
