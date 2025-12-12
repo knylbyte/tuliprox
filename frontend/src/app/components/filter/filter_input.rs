@@ -48,10 +48,9 @@ pub fn FilterInput(props: &FilterInputProps) -> Html {
     }
 
     {
-        let filter = filter_state.clone();
         let parsed_filter = parsed_filter_state.clone();
         let templates = templates_state.clone();
-        use_effect_with(filter.clone(), move |flt| {
+        use_effect_with((*filter_state).clone(), move |flt| {
             let parsed = if let Some(new_fltr) = flt.as_ref() {
                 get_filter(new_fltr, (*templates).as_ref()).ok()
             } else {
@@ -102,7 +101,7 @@ pub fn FilterInput(props: &FilterInputProps) -> Html {
     };
 
     html! {
-        <div class={"tp__filter-input tp__input"} onclick={handle_click}>
+        <div class={"tp__filter-input tp__input"} onclick={handle_click} tabindex="0">
         <div class={"tp__input-wrapper"}>
         <span class="tp__filter-input__preview">
         {

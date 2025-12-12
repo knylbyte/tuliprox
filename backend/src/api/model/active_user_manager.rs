@@ -519,6 +519,7 @@ impl ActiveUserManager {
 
             if now - ts > USER_GC_TTL {
                 if let Ok(mut user_connections) = self.connections.try_write() {
+                    user_connections.kicked.retain(|_, (expires_at, _)| *expires_at > now);
                     user_connections.by_key.retain(|_k, v| now - v.ts < USER_CON_TTL && v.connections > 0);
                     for connection_data in user_connections.by_key.values_mut() {
                         connection_data.sessions.retain(|s| now - s.ts < USER_CON_TTL);
