@@ -37,7 +37,7 @@ impl ActiveClientStream {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn new(mut stream_details: StreamDetails,
-                      app_state: &AppState,
+                      app_state: &Arc<AppState>,
                       user: &ProxyUserCredentials,
                       connection_permission: UserConnectionPermission,
                       fingerprint: &Fingerprint,
@@ -53,6 +53,7 @@ impl ActiveClientStream {
 
         let user_agent = req_headers.get(USER_AGENT).map(|h| String::from_utf8_lossy(h.as_bytes())).unwrap_or_default();
 
+        let virtual_id = stream_channel.virtual_id;
         app_state.connection_manager.update_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent, session_token).await;
         if let Some((_,_,_m_, Some(cvt))) = stream_details.stream_info.as_ref() {
             app_state.connection_manager.update_stream_detail(&fingerprint.addr, *cvt).await;
@@ -76,12 +77,13 @@ impl ActiveClientStream {
                 futures::stream::empty::<Result<Bytes, StreamError>>().boxed()
             }
             Some(stream) => {
-                match app_state.app_config.config.load().sleep_timer_mins {
+                let config = app_state.app_config.config.load();
+                match config.sleep_timer_mins {
                     None => stream,
                     Some(mins) => {
                         let secs = u32::try_from((u64::from(mins) * 60).min(u64::from(u32::MAX))).unwrap_or(0);
                         if secs > 0 {
-                            TimedClientStream::new(stream, secs).boxed()
+                            TimedClientStream::new(app_state, stream, secs, fingerprint.addr, virtual_id).boxed()
                         } else {
                             stream
                         }

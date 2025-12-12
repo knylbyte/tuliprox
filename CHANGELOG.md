@@ -48,6 +48,8 @@
   - New input type: `library` for source.yml integration
   - Configuration via `config/library.yml` (see `config/library.yml.example`)
 - Made cache storage more robust. Incomplete downloads will be deleted from cache.
+- `kick_secs` added to config.yaml `web_ui` config. Default 30 seconds, if a user is kicked from the `web_ui`, they can't connect for this duration.
+  This setting is also used for sleep-timed streams.
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.

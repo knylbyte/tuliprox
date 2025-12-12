@@ -61,6 +61,10 @@ pub(in crate::api) async fn handle_hls_stream_request(
     req_headers: &HeaderMap,
     connection_permission: UserConnectionPermission,
 ) -> impl IntoResponse + Send {
+    if app_state.active_users.is_user_blocked_for_stream(&user.username, virtual_id).await {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
+
     let url = replace_url_extension(hls_url, HLS_EXT);
     let server_info = app_state.app_config.get_user_server_info(user);
 
@@ -160,7 +164,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
                     CustomVideoStreamType::ChannelUnavailable);
 
                 let playlist = PLAYLIST_TEMPLATE.replace("{url}", &url);
-                hls_response(playlist.clone()).into_response()
+                hls_response(playlist).into_response()
             } else {
                 axum::http::StatusCode::NOT_FOUND.into_response()
             }

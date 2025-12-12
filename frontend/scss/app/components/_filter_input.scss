@@ -6,12 +6,13 @@
   .tp__input-wrapper {
     height: 2.5rem;
     padding: 0 var(--padding-mini);
+    display: flex;
+    align-items: center;
     justify-content: space-between;
   }
 
   &:hover {
     fill: var(--text-color);
-    cursor: pointer;
     filter: brightness(1.2);
   }
 

@@ -1,7 +1,6 @@
 use crate::api::api_utils::{get_headers_from_request, StreamOptions};
 use crate::api::model::{get_response_headers, AppState, CustomVideoStreamType};
 use crate::api::model::StreamError;
-use crate::api::model::TimedClientStream;
 use crate::api::model::{create_channel_unavailable_stream, get_header_filter_for_item_type};
 use crate::api::model::{BoxedProviderStream, ProviderStreamFactoryResponse};
 use crate::model::{ReverseProxyDisabledHeaderConfig};
@@ -33,7 +32,6 @@ pub struct ProviderStreamFactoryOptions {
     addr: SocketAddr,
     // item_type: PlaylistItemType,
     reconnect_enabled: bool,
-    force_reconnect_secs: u32,
     buffer_enabled: bool,
     buffer_size: usize,
     share_stream: bool,
@@ -77,7 +75,6 @@ impl ProviderStreamFactoryOptions {
             // item_type,
             addr,
             reconnect_enabled: stream_options.stream_retry,
-            force_reconnect_secs: stream_options.stream_force_retry_secs,
             pipe_stream: stream_options.pipe_provider_stream,
             buffer_enabled: stream_options.buffer_enabled,
             buffer_size,
@@ -161,10 +158,6 @@ impl ProviderStreamFactoryOptions {
         self.reconnect_flag.is_active()
     }
 
-    #[inline]
-    pub fn get_reconnect_force_secs(&self) -> u32 {
-        self.force_reconnect_secs
-    }
 }
 
 fn get_request_range_start_bytes(req_headers: &HashMap<String, Vec<u8>>) -> Option<usize> {
@@ -302,16 +295,7 @@ async fn provider_stream_request(
                         StreamError::reqwest(&err)
                     })
                     .boxed();
-                let boxed_provider_stream = if stream_options.get_reconnect_force_secs() > 0 {
-                    TimedClientStream::new(
-                        provider_stream,
-                        stream_options.get_reconnect_force_secs(),
-                    )
-                    .boxed()
-                } else {
-                    provider_stream
-                };
-                return Ok(Some((boxed_provider_stream, response_info)));
+                return Ok(Some((provider_stream, response_info)));
             }
 
             if status.is_client_error() {

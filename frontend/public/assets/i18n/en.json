@@ -128,6 +128,7 @@
     "SECRET": "Secret",
     "USERFILE": "Userfile",
     "PLAYER_SERVER": "Player Server",
+    "KICK_DURATION": "Kick duration (secs)",
     "VERSION": "Version",
     "SERVER_TIME": "Server time",
     "BUILD_TIME": "Build time",

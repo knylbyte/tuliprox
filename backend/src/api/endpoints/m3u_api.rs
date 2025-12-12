@@ -118,6 +118,11 @@ async fn m3u_api_stream(
         format!("Failed to read m3u item for stream id {req_virtual_id}")
     );
     let virtual_id = pli.virtual_id;
+
+    if app_state.active_users.is_user_blocked_for_stream(&user.username, virtual_id).await {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
+
     let input = try_option_bad_request!(
       app_state
       .app_config
