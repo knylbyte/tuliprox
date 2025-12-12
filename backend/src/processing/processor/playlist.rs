@@ -309,8 +309,7 @@ async fn playlist_download_from_input(client: &reqwest::Client, config: &Arc<Con
     match input.input_type {
         InputType::M3u => m3u::get_m3u_playlist(client, config, input, working_dir).await,
         InputType::Xtream => xtream::get_xtream_playlist(config, client, input, working_dir).await,
-        InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![]),
-        InputType::Library => (vec![], vec![]) // TODO LocalVod
+        InputType::Library | InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![]),
     }
 }
 
