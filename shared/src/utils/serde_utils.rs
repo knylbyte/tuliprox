@@ -83,24 +83,70 @@ where
                 return Ok(None);
             }
 
-            // find the number, preserving optional sign
-            let trimmed = s.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '-' && c != '+');
-            if trimmed.is_empty() {
+            // Find first digit; include optional sign immediately before it (ignoring whitespace).
+            let mut last_non_ws: Option<(usize, char)> = None;
+            let mut digit_pos: Option<usize> = None;
+            for (i, c) in s.char_indices() {
+                if c.is_ascii_digit() {
+                    digit_pos = Some(i);
+                    break;
+                }
+                if !c.is_whitespace() {
+                    last_non_ws = Some((i, c));
+                }
+            }
+            let Some(digit_i) = digit_pos else { return Ok(None); };
+
+            let start = match last_non_ws {
+                Some((i, '-')) | Some((i, '+')) => i,
+                _ => digit_i,
+            };
+            let mut it = s[start..].chars().peekable();
+
+            // optional sign
+            let mut out = String::new();
+            if matches!(it.peek(), Some('-' | '+')) {
+                out.push(it.next().unwrap());
+                while matches!(it.peek(), Some(c) if c.is_whitespace()) {
+                    it.next();
+                }
+            }
+
+            // digits + optional single dot
+            let mut saw_digit = false;
+            let mut saw_dot = false;
+            while let Some(&c) = it.peek() {
+                if c.is_ascii_digit() {
+                    saw_digit = true;
+                    out.push(c);
+                    it.next();
+                    continue;
+                }
+                if c == '.' && !saw_dot {
+                    saw_dot = true;
+                    out.push(c);
+                    it.next();
+                    continue;
+                }
+                break;
+            }
+            if !saw_digit {
                 return Ok(None);
             }
 
-            let number_str = trimmed.chars()
-                .take_while(|c| c.is_ascii_digit() || (*c == '-' || *c == '+') && trimmed.starts_with(|x: char| x == '-' || x == '+'))
-                .collect::<String>();
-
-            if number_str.is_empty() || number_str == "-" || number_str == "+" {
-                return Ok(None);
+            // Try full parse; if it fails and we included '.', fall back to integer part.
+            if let Ok(v) = out.parse::<T>() {
+                return Ok(Some(v));
             }
-
-            match number_str.parse::<T>() {
-                Ok(v) => Ok(Some(v)),
-                Err(_) => Ok(None),
+            if saw_dot {
+                let int_part = out.split('.').next().unwrap_or("");
+                if !int_part.is_empty() && int_part != "-" && int_part != "+" {
+                    if let Ok(v) = int_part.parse::<T>() {
+                        return Ok(Some(v));
+                    }
+                }
             }
+            Ok(None)
         }
 
         // invalid -> return None

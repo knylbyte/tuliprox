@@ -13,8 +13,9 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio_util::io::StreamReader;
 use url::Url;
 
-use crate::model::{format_elapsed_time, AppConfig, InputSource, ReverseProxyDisabledHeaderConfig};
+use crate::api::model::persist_pipe_stream::tee_dyn_reader;
 use crate::model::ConfigInput;
+use crate::model::{format_elapsed_time, AppConfig, InputSource, ReverseProxyDisabledHeaderConfig};
 use crate::repository::storage::get_input_storage_path;
 use crate::repository::storage_const;
 use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
@@ -24,7 +25,6 @@ use shared::error::create_tuliprox_error_result;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::{InputFetchMethod, DEFAULT_USER_AGENT};
 use shared::utils::{filter_request_header, human_readable_byte_size, sanitize_sensitive_info, short_hash, ENCODING_DEFLATE, ENCODING_GZIP};
-use crate::api::model::persist_pipe_stream::tee_dyn_reader;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MimeCategory {
@@ -162,11 +162,11 @@ pub async fn get_input_text_content_as_stream(client: &reqwest::Client, input: &
                                 let tee = tee_dyn_reader(content, &path, Some(Arc::new(|size| {
                                     debug_if_enabled!("Persisted {} bytes", human_readable_byte_size(size as u64));
                                 }))).await;
-                                Some(Box::pin(tee))
+                                Some(tee)
                             } else {
                                 Some(content)
                             }
-                        },
+                        }
                         Err(err) => {
                             return create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed : {}", err);
                         }
@@ -227,7 +227,7 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
         for (key, value) in custom {
             let key_lc = key.to_lowercase();
             if filter_request_header(key_lc.as_str()) {
-                if disabled_headers.as_ref().is_some_and(|d| d.should_remove(key)) {
+                if disabled_headers.as_ref().is_some_and(|d| d.should_remove(key_lc.as_str())) {
                     continue;
                 }
                 if header_keys.contains(key_lc.as_str()) {
@@ -466,7 +466,7 @@ pub async fn download_text_content(
             Err(err) => Err(err),
         }
     } else {
-        Err(str_to_io_error(&format!("Malformed URL {}",sanitize_sensitive_info(&input.url))))
+        Err(str_to_io_error(&format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
     }
 }
 
@@ -491,16 +491,10 @@ pub async fn download_text_content_as_stream(
         };
         match result {
             Ok((content, response_url)) => {
-                if persist_filepath.is_some() {
-
-                    let tee_reader: DynReader = if let Some(path) = persist_filepath {
-                        let tee = tee_dyn_reader(content, &path, Some(Arc::new(|size| {
-                            debug!("Persisted {size} bytes");
-                        }))).await;
-                        Box::pin(tee)
-                    } else {
-                        content
-                    };
+                if let Some(path) = persist_filepath {
+                    let tee_reader: DynReader = tee_dyn_reader(content, &path, Some(Arc::new(|size| {
+                        debug!("Persisted {size} bytes");
+                    }))).await;
                     Ok((tee_reader, response_url))
                 } else {
                     Ok((content, response_url))
