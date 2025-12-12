@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 use std::path::{Path};
-use std::sync::Arc;
 use log::{error, info};
 use shared::model::{MsgKind, PlaylistGroup};
 use crate::messaging::{send_message};
@@ -8,7 +7,7 @@ use crate::model::Config;
 use crate::utils;
 use crate::utils::{bincode_deserialize, bincode_serialize};
 
-pub async fn process_group_watch(client: &Arc<reqwest::Client>, cfg: &Config, target_name: &str, pl: &PlaylistGroup) {
+pub async fn process_group_watch(client: &reqwest::Client, cfg: &Config, target_name: &str, pl: &PlaylistGroup) {
     let mut new_tree = BTreeSet::new();
     pl.channels.iter().for_each(|chan| {
         let header = &chan.header;
@@ -60,7 +59,7 @@ struct WatchChanges {
     pub removed: Vec<String>,
 }
 
-async fn handle_watch_notification(client: &Arc<reqwest::Client>, cfg: &Config, added: &BTreeSet<String>, removed: &BTreeSet<String>, target_name: &str, group_name: &str) {
+async fn handle_watch_notification(client: &reqwest::Client, cfg: &Config, added: &BTreeSet<String>, removed: &BTreeSet<String>, target_name: &str, group_name: &str) {
     let added = added.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
     let removed = removed.iter().map(std::string::ToString::to_string).collect::<Vec<String>>();
     if !added.is_empty() || !removed.is_empty() {

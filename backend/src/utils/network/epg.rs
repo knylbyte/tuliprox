@@ -5,7 +5,6 @@ use crate::utils::{add_prefix_to_filename, cleanup_unlisted_files_with_suffix, p
 use crate::utils::request;
 use log::debug;
 use std::path::PathBuf;
-use std::sync::Arc;
 use shared::utils::{sanitize_sensitive_info, short_hash};
 
 fn get_input_raw_epg_file_path(url: &str, input: &ConfigInput, working_dir: &str) -> Option<PathBuf> {
@@ -14,13 +13,13 @@ fn get_input_raw_epg_file_path(url: &str, input: &ConfigInput, working_dir: &str
         .map(|path| add_prefix_to_filename(&path, format!("{file_prefix}_epg_").as_str(), Some("xml")))
 }
 
-async fn download_epg_file(url: &str, client: &Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str) -> Result<PathBuf, TuliproxError> {
+async fn download_epg_file(url: &str, client: &reqwest::Client, input: &ConfigInput, working_dir: &str) -> Result<PathBuf, TuliproxError> {
     debug!("Getting epg file path for url: {}", sanitize_sensitive_info(url));
     let persist_file_path = get_input_raw_epg_file_path(url, input, working_dir);
-    request::get_input_epg_content_as_file(Arc::clone(client), input, working_dir, url, persist_file_path).await
+    request::get_input_epg_content_as_file(client, input, working_dir, url, persist_file_path).await
 }
 
-pub async fn get_xmltv(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str) -> (Option<TVGuide>, Vec<TuliproxError>) {
+pub async fn get_xmltv(client: &reqwest::Client, input: &ConfigInput, working_dir: &str) -> (Option<TVGuide>, Vec<TuliproxError>) {
     match &input.epg {
         None => (None, vec![]),
         Some(epg_config) => {
@@ -29,7 +28,7 @@ pub async fn get_xmltv(client: Arc<reqwest::Client>, input: &ConfigInput, workin
             let mut stored_file_paths = vec![];
 
             for epg_source in &epg_config.sources {
-                match download_epg_file(&epg_source.url, &client, input, working_dir).await {
+                match download_epg_file(&epg_source.url, client, input, working_dir).await {
                     Ok(file_path) => {
                         stored_file_paths.push(file_path.clone());
                         file_paths.push(PersistedEpgSource {file_path, priority: epg_source.priority, logo_override: epg_source.logo_override});

@@ -8,7 +8,6 @@ use shared::utils::{get_u32_from_serde_value};
 use shared::utils::{CONSTANTS};
 use crate::utils::{trace_if_enabled, with};
 use log::{debug, info, trace, warn};
-use std::sync::Arc;
 use strsim::normalized_levenshtein;
 
 fn extract_quality(value: &str) -> Option<&str> {
@@ -243,8 +242,8 @@ pub struct TraktCategoriesProcessor {
 }
 
 impl TraktCategoriesProcessor {
-    pub fn new(http_client: Arc<reqwest::Client>, trakt_config: &TraktConfig) -> Self {
-        let client = TraktClient::new(http_client, trakt_config.api.clone());
+    pub fn new(http_client: &reqwest::Client, trakt_config: &TraktConfig) -> Self {
+        let client = TraktClient::new(http_client.clone(), trakt_config.api.clone());
         Self { client }
     }
 
@@ -292,7 +291,7 @@ impl TraktCategoriesProcessor {
     }
 }
 pub async fn process_trakt_categories_for_target(
-    http_client: Arc<reqwest::Client>,
+    http_client: &reqwest::Client,
     playlist: &[PlaylistGroup],
     target: &ConfigTarget,
 ) -> Result<Option<Vec<PlaylistGroup>>, Vec<TuliproxError>> {

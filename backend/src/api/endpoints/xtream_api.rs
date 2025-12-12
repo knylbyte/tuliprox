@@ -976,7 +976,7 @@ async fn xtream_get_stream_info_response(
                     if user.proxy == ProxyType::Redirect && cluster == XtreamCluster::Live {
                         return redirect(&info_url).into_response();
                     } else if let Ok(content) = xtream::get_xtream_stream_info(
-                        Arc::clone(&app_state.http_client.load()),
+                        &app_state.http_client.load(),
                         app_state,
                         user,
                         &input,
@@ -1085,7 +1085,7 @@ async fn xtream_get_short_epg(
                         // TODO serve epg from own db
                         let input_source = InputSource::from(&*input).with_url(info_url);
                         return match request::download_text_content(
-                            Arc::clone(&app_state.http_client.load()),
+                            &app_state.http_client.load(),
                             None,
                             &input_source,
                             None,
@@ -1238,7 +1238,7 @@ async fn xtream_get_catchup_response(
     let input_source = InputSource::from(&*input).with_url(info_url);
     let content = try_result_bad_request!(
         xtream::get_xtream_stream_info_content(
-            Arc::clone(&app_state.http_client.load()),
+            &app_state.http_client.load(),
             &input_source
         )
         .await

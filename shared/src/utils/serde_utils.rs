@@ -1,7 +1,6 @@
 use crate::error::to_io_error;
 use chrono::{NaiveDateTime, ParseError, TimeZone, Utc};
-use serde::de::DeserializeOwned;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::io;
 
@@ -55,43 +54,108 @@ where
     })
 }
 
-pub fn deserialize_number_from_string<'de, D, T: DeserializeOwned + std::str::FromStr>(
-    deserializer: D,
-) -> Result<Option<T>, D::Error>
+
+pub fn deserialize_number_from_string<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
-    D: serde::Deserializer<'de>,
+    D: Deserializer<'de>,
+    T: std::str::FromStr,
 {
-    // we define a local enum type inside of the function
-    // because it is untagged, serde will deserialize as the first variant
-    // that it can
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum MaybeNumber<U> {
-        // if it can be parsed as Option<T>, it will be
-        Value(Option<U>),
-        // otherwise try parsing as a string
-        NumberString(String),
-    }
+    let raw: Value = Value::deserialize(deserializer)?;
 
-    // deserialize into local enum
-    let value: MaybeNumber<T> = Deserialize::deserialize(deserializer)?;
-    match value {
-        // if parsed as T or None, return that
-        MaybeNumber::Value(value) => Ok(value),
+    match raw {
+        // Null → None
+        Value::Null => Ok(None),
 
-        // (if it is any other string)
-        MaybeNumber::NumberString(s) => {
+        // its a number
+        Value::Number(n) => {
+            let s = n.to_string();
+            if let Ok(r) = s.parse::<T>() {
+                Ok(Some(r))
+            } else {
+                Ok(None)
+            }
+        }
+
+        // String → extract first number
+        Value::String(s) => {
             let s = s.trim();
             if s.is_empty() {
                 return Ok(None);
             }
-            // parse string to number, if fails return None
-            if let Ok(num) = s.parse::<T>() {
-                return Ok(Some(num));
+
+            // Find first digit OR a '.' that is immediately followed by a digit;
+            // include optional sign immediately before it (ignoring whitespace).
+            let mut last_non_ws: Option<(usize, char)> = None;
+            let mut num_pos: Option<usize> = None;
+            for (i, c) in s.char_indices() {
+                if c.is_ascii_digit() {
+                    num_pos = Some(i);
+                    break;
+                }
+                if c == '.' && s[i + 1..].chars().next().is_some_and(|n| n.is_ascii_digit()) {
+                    num_pos = Some(i);
+                    break;
+                }
+                if !c.is_whitespace() {
+                    last_non_ws = Some((i, c));
+                }
+            }
+            let Some(num_i) = num_pos else { return Ok(None); };
+
+            let start = match last_non_ws {
+                Some((i, '-')) | Some((i, '+')) => i,
+                _ => num_i,
+            };
+            let mut it = s[start..].chars().peekable();
+
+            // optional sign
+            let mut out = String::new();
+            if matches!(it.peek(), Some('-' | '+')) {
+                out.push(it.next().unwrap());
+                while matches!(it.peek(), Some(c) if c.is_whitespace()) {
+                    it.next();
+                }
             }
 
-            serde_json::from_str::<T>(s).map_or_else(|_| Ok(None), |val| Ok(Some(val)))
+            // digits + optional single dot
+            let mut saw_digit = false;
+            let mut saw_dot = false;
+            while let Some(&c) = it.peek() {
+                if c.is_ascii_digit() {
+                    saw_digit = true;
+                    out.push(c);
+                    it.next();
+                    continue;
+                }
+                if c == '.' && !saw_dot {
+                    saw_dot = true;
+                    out.push(c);
+                    it.next();
+                    continue;
+                }
+                break;
+            }
+            if !saw_digit {
+                return Ok(None);
+            }
+
+            // Try full parse; if it fails and we included '.', fall back to integer part.
+            if let Ok(v) = out.parse::<T>() {
+                return Ok(Some(v));
+            }
+            if saw_dot {
+                let int_part = out.split('.').next().unwrap_or("");
+                if !int_part.is_empty() && int_part != "-" && int_part != "+" {
+                    if let Ok(v) = int_part.parse::<T>() {
+                        return Ok(Some(v));
+                    }
+                }
+            }
+            Ok(None)
         }
+
+        // invalid -> return None
+        _ => Ok(None),
     }
 }
 

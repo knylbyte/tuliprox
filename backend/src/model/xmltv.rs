@@ -8,10 +8,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use futures::TryFutureExt;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use url::Url;
 use shared::utils::sanitize_sensitive_info;
 use crate::api::model::AppState;
+use crate::model::{InputSource};
+use crate::utils::async_file_reader;
 use crate::utils::request::{get_remote_content_as_stream};
 
 pub const EPG_TAG_TV: &str = "tv";
@@ -93,6 +95,8 @@ impl Epg {
             .map(|c| (c, false))
             .collect();
 
+        let mut write_counter = 0usize;
+
         while let Some((tag, ended)) = stack.pop() {
             if ended {
                 // End-Event
@@ -122,10 +126,19 @@ impl Epg {
                     }
                 }
             }
+            write_counter += 1;
+            if write_counter >= 50 {
+                writer.get_mut().flush().await?; // flush underlying writer
+                write_counter = 0;
+            }
         }
 
         // write tv-end
         writer.write_event_async(Event::End(BytesEnd::new("tv"))).await?;
+
+        let inner = writer.get_mut();
+        inner.flush().await?;
+
         Ok(())
     }
 }
@@ -197,11 +210,24 @@ pub async fn parse_xmltv_for_web_ui_from_file(path: &Path) -> Result<EpgTv, Tuli
 
 pub async fn parse_xmltv_for_web_ui_from_url(app_state: &Arc<AppState>, url: &str) -> Result<EpgTv, TuliproxError> {
     if let Ok(request_url) = Url::parse(url) {
-       match get_remote_content_as_stream(
-            Arc::clone(&app_state.http_client.load()),
-            &request_url,
-            InputFetchMethod::GET,
-            None,
+        let client = app_state.http_client.load();
+        let input_source: InputSource = InputSource {
+            name: String::from("xmltv"),
+            url: request_url.to_string(),
+            username: None,
+            password: None,
+            method: InputFetchMethod::GET,
+            headers: HashMap::default(),
+        };
+
+        let disabled_headers = app_state.get_disabled_headers();
+
+        match get_remote_content_as_stream(
+           &client,
+           &input_source,
+           None,
+           &request_url,
+           disabled_headers.as_ref(),
         ).await {
            Ok((stream, _url)) => {
                parse_xmltv_for_web_ui(stream).await
@@ -234,7 +260,7 @@ pub fn get_attr_value(attr: &quick_xml::events::attributes::Attribute) -> Option
 #[allow(clippy::too_many_lines)]
 async fn parse_xmltv_for_web_ui<R: AsyncRead + Send + Unpin>(reader: R) -> Result<EpgTv, TuliproxError> {
 
-    let mut reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(reader));
+    let mut reader = quick_xml::reader::Reader::from_reader(async_file_reader(reader));
     let mut buf = Vec::new();
 
     let mut channels = Vec::new();

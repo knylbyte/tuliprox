@@ -89,6 +89,7 @@
 - UserTable: Copy credentials to clipboard from user table
 - UserTable: Kick user action from streams table
 - UserTable: Auto-generated username/password for new proxy users
+- Update process uses now streams for data processing. 
 
 # 3.1.7 (2025-10-10)
 - Added Dark/Bright theme switch

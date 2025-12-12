@@ -10,6 +10,7 @@ use crate::repository::storage_const;
 use crate::repository::user_repository::user_get_bouquet_filter;
 use crate::utils::FileReadGuard;
 use std::collections::HashSet;
+// concat_string! macro from shared utils is used for efficient String building
 
 #[allow(clippy::struct_excessive_bools)]
 pub struct M3uPlaylistIterator {
@@ -67,26 +68,39 @@ impl M3uPlaylistIterator {
     }
 
     fn get_rewritten_url(&self, m3u_pli: &M3uPlaylistItem, typed: bool, prefix_path: &str) -> String {
-        if typed {
-            let stream_type = match m3u_pli.item_type {
+        // Build URL efficiently with a single allocation using concat_string! macro
+        let stream_type: &str = if typed {
+            match m3u_pli.item_type {
                 PlaylistItemType::Live
                 | PlaylistItemType::Catchup
                 | PlaylistItemType::LiveUnknown
                 | PlaylistItemType::LiveHls
                 | PlaylistItemType::LiveDash => "live",
                 PlaylistItemType::Video => "movie",
-                PlaylistItemType::Series
-                | PlaylistItemType::SeriesInfo => "series",
-            };
-            format!("{}/{prefix_path}/{stream_type}/{}/{}/{}",
-                    &self.base_url,
-                    &self.username,
-                    &self.password,
-                    m3u_pli.virtual_id
+                PlaylistItemType::Series | PlaylistItemType::SeriesInfo => "series",
+            }
+        } else {
+            ""
+        };
+
+        let mut cap = self.base_url.len()
+            + prefix_path.len()
+            + self.username.len()
+            + self.password.len()
+            + 32; // separators and id
+        if typed { cap += stream_type.len() + 1; }
+
+        if typed {
+            shared::concat_string!(
+                cap = cap;
+                &self.base_url, "/", prefix_path, "/", stream_type, "/",
+                &self.username, "/", &self.password, "/", m3u_pli.virtual_id
             )
         } else {
-            format!("{}/{prefix_path}/{}/{}/{}",
-                    &self.base_url, &self.username, &self.password, m3u_pli.virtual_id
+            shared::concat_string!(
+                cap = cap;
+                &self.base_url, "/", prefix_path, "/",
+                &self.username, "/", &self.password, "/", m3u_pli.virtual_id
             )
         }
     }
@@ -101,14 +115,15 @@ impl M3uPlaylistIterator {
     fn get_next(&mut self) -> Option<(M3uPlaylistItem, bool)> {
         let entry = if let Some(set) = &self.filter {
             if let Some((current_item, _)) = self.lookup_item.take() {
-                let next_valid = self.reader.find(|(pli, _)| set.contains(&pli.group.clone()));
+                // Avoid cloning strings while filtering
+                let next_valid = self.reader.find(|(pli, _)| set.contains(pli.group.as_str()));
                 self.lookup_item = next_valid;
                 let has_next = self.lookup_item.is_some();
                 Some((current_item, has_next))
             } else {
-                let current_item = self.reader.find(|(item, _)| set.contains(&item.group.clone()));
+                let current_item = self.reader.find(|(item, _)| set.contains(item.group.as_str()));
                 if let Some((item, _)) = current_item {
-                    self.lookup_item = self.reader.find(|(item, _)| set.contains(&item.group.clone()));
+                    self.lookup_item = self.reader.find(|(item, _)| set.contains(item.group.as_str()));
                     let has_next = self.lookup_item.is_some();
                     Some((item, has_next))
                 } else {
@@ -121,19 +136,29 @@ impl M3uPlaylistIterator {
 
         // TODO hls and unknown reverse proxy
         entry.map(|(mut m3u_pli, has_next)| {
-            let is_redirect = self.proxy_type.is_redirect(m3u_pli.item_type) || self.target_options.as_ref().and_then(|o| o.force_redirect.as_ref()).is_some_and(|f| f.has_cluster(m3u_pli.item_type));
-            let should_rewrite_urls = if is_redirect { self.mask_redirect_url} else { true };
-            let rewrite_urls = if should_rewrite_urls {
-                Some((self.get_stream_url(&m3u_pli, self.include_type_in_url), if self.rewrite_resource { Some(self.get_resource_url(&m3u_pli)) } else { None }))
-            } else {
-                None
-            };
-            let url = m3u_pli.url.clone();
-            let (stream_url, resource_url) = rewrite_urls
-                .map_or_else(|| (url, None), |(su, ru)| (su, ru.as_ref().map(String::to_string)));
+            let is_redirect = self.proxy_type.is_redirect(m3u_pli.item_type)
+                || self
+                    .target_options
+                    .as_ref()
+                    .and_then(|o| o.force_redirect.as_ref())
+                    .is_some_and(|f| f.has_cluster(m3u_pli.item_type));
+            let should_rewrite_urls = if is_redirect { self.mask_redirect_url } else { true };
 
-            m3u_pli.t_stream_url.clone_from(&stream_url);
-            m3u_pli.t_resource_url.clone_from(&resource_url);
+            if should_rewrite_urls {
+                let stream_url = self.get_stream_url(&m3u_pli, self.include_type_in_url);
+                let resource_url = if self.rewrite_resource {
+                    Some(self.get_resource_url(&m3u_pli))
+                } else {
+                    None
+                };
+                m3u_pli.t_stream_url = stream_url;
+                m3u_pli.t_resource_url = resource_url;
+            } else {
+                // Keep original URL (clone required because target field is distinct)
+                m3u_pli.t_stream_url = m3u_pli.url.clone();
+                m3u_pli.t_resource_url = None;
+            }
+
             (m3u_pli, has_next)
         })
     }

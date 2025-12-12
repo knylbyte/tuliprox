@@ -13,7 +13,7 @@ use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAlias
 use shared::utils::{CONSTANTS};
 use std::env;
 use std::fs::File;
-use std::io::{self, BufReader, Read};
+use std::io::{self, Read};
 use std::path::PathBuf;
 use std::sync::Arc;
 use arc_swap::access::{Access};
@@ -40,7 +40,7 @@ pub fn config_file_reader(file: File, resolve_env: bool) -> impl Read
     if resolve_env {
         EitherReader::Left(EnvResolvingReader::new(file_reader(file)))
     } else {
-        EitherReader::Right(BufReader::new(file))
+        EitherReader::Right(file_reader(file))
     }
 }
 

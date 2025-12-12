@@ -190,8 +190,8 @@ pub fn get_csv_file_path(file_uri: &str) -> Result<PathBuf, Error> {
 #[cfg(test)]
 mod tests {
     use crate::utils::file::csv_input_reader::csv_read_inputs_from_reader;
-    use crate::utils::resolve_env_var;
-    use std::io::{BufReader, Cursor};
+    use crate::utils::{file_reader, resolve_env_var};
+    use std::io::{Cursor};
     use shared::model::InputType;
 
     const M3U_BATCH: &str = r"
@@ -210,7 +210,7 @@ input_2;de566567;de2345f43g5;http://provider_2.tv:8080;1;2028-12-23 13:12:34
 
     #[test]
     fn test_read_inputs_xtream_as_m3u() {
-        let reader = BufReader::new(Cursor::new(XTREAM_BATCH));
+        let reader = file_reader(Cursor::new(XTREAM_BATCH));
         let result = csv_read_inputs_from_reader(InputType::M3uBatch, reader);
         assert!(result.is_ok());
         let aliases = result.unwrap();
@@ -222,7 +222,7 @@ input_2;de566567;de2345f43g5;http://provider_2.tv:8080;1;2028-12-23 13:12:34
 
     #[test]
     fn test_read_inputs_m3u_as_m3u() {
-        let reader = BufReader::new(Cursor::new(M3U_BATCH));
+        let reader = file_reader(Cursor::new(M3U_BATCH));
         let result = csv_read_inputs_from_reader(InputType::M3uBatch, reader);
         assert!(result.is_ok());
         let aliases = result.unwrap();
@@ -234,7 +234,7 @@ input_2;de566567;de2345f43g5;http://provider_2.tv:8080;1;2028-12-23 13:12:34
 
     #[test]
     fn test_read_inputs_xtream_as_xtream() {
-        let reader = BufReader::new(Cursor::new(XTREAM_BATCH));
+        let reader = file_reader(Cursor::new(XTREAM_BATCH));
         let result = csv_read_inputs_from_reader(InputType::XtreamBatch, reader);
         assert!(result.is_ok());
         let aliases = result.unwrap();
@@ -246,7 +246,7 @@ input_2;de566567;de2345f43g5;http://provider_2.tv:8080;1;2028-12-23 13:12:34
 
     #[test]
     fn test_read_inputs_m3u_as_xtream() {
-        let reader = BufReader::new(Cursor::new(M3U_BATCH));
+        let reader = file_reader(Cursor::new(M3U_BATCH));
         let result = csv_read_inputs_from_reader(InputType::XtreamBatch, reader);
         assert!(result.is_ok());
         let aliases = result.unwrap();

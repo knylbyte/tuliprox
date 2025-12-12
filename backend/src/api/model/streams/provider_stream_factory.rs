@@ -193,7 +193,7 @@ fn get_request_range_start_bytes(req_headers: &HashMap<String, Vec<u8>>) -> Opti
 // }
 
 fn prepare_client(
-    request_client: &Arc<reqwest::Client>,
+    request_client: &reqwest::Client,
     stream_options: &ProviderStreamFactoryOptions,
 ) -> (reqwest::RequestBuilder, bool) {
     let url = stream_options.get_url();
@@ -263,7 +263,7 @@ fn prepare_client(
 
 async fn provider_stream_request(
     app_state: &Arc<AppState>,
-    request_client: &Arc<reqwest::Client>,
+    request_client: &reqwest::Client,
     stream_options: &ProviderStreamFactoryOptions,
 ) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
     let (client, _partial_content) = prepare_client(request_client, stream_options);
@@ -365,7 +365,7 @@ async fn handle_channel_unavailable_stream(app_state: &Arc<AppState>,
 
 async fn get_provider_stream(
     app_state: &Arc<AppState>,
-    client: &Arc<reqwest::Client>,
+    client: &reqwest::Client,
     stream_options: &ProviderStreamFactoryOptions,
 ) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
     let url = stream_options.get_url();
@@ -419,7 +419,7 @@ async fn get_provider_stream(
 #[allow(clippy::too_many_lines)]
 pub async fn create_provider_stream(
     app_state: &Arc<AppState>,
-    client: &Arc<reqwest::Client>,
+    client: &reqwest::Client,
     stream_options: ProviderStreamFactoryOptions,
 ) -> Option<ProviderStreamFactoryResponse> {
     let client_stream_factory = |stream, reconnect_flag, range_cnt| {
@@ -461,9 +461,9 @@ pub async fn create_provider_stream(
                 let continue_streaming_signal = continue_client_signal.clone();
                 let stream_options_provider = stream_options.clone();
                 let app_state_clone = Arc::clone(app_state);
-                let client = Arc::clone(client);
+                let client = client.clone();
                 let unfold: BoxedProviderStream = stream::unfold((), move |()| {
-                    let client = Arc::clone(&client);
+                    let client = client.clone();
                     let stream_opts = stream_options_provider.clone();
                     let continue_streaming = continue_streaming_signal.clone();
                     let app_state_clone = Arc::clone(&app_state_clone);
@@ -572,7 +572,7 @@ pub async fn create_provider_stream(
 //         let input = None;
 //
 //         let options = BufferStreamOptions::new(PlaylistItemType::Live, true, true, 0, false);
-//         let value = create_provider_stream(&cfg, Arc::clone(&client), &url, &req, input, options);
+//         let value = create_provider_stream(&cfg, &client, &url, &req, input, options);
 //         let mut values = value.await;
 //         'outer: while let Some((ref mut stream, info)) = values.as_mut() {
 //             if info.is_some() {
