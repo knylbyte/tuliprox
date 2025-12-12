@@ -119,7 +119,7 @@ async fn m3u_api_stream(
     );
     let virtual_id = pli.virtual_id;
 
-    if app_state.active_users.is_user_blocked_for_stream(stream_req.username, virtual_id).await {
+    if app_state.active_users.is_user_blocked_for_stream(&user.username, virtual_id).await {
         return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
 

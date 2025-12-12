@@ -79,20 +79,24 @@ pub fn FilterInput(props: &FilterInputProps) -> Html {
         let dialog = dialog.clone();
         let current_filter = filter_state.clone();
         let handle_filter_edit = handle_filter_edit.clone();
-        let handle_templates_edit =handle_templates_edit.clone();
+        let handle_templates_edit = handle_templates_edit.clone();
         let dialog_actions = dialog_actions.clone();
         Callback::from(move |e: MouseEvent| {
             e.prevent_default();
             let current_filter = (*current_filter).clone();
             let handle_filter_edit = handle_filter_edit.clone();
-            let handle_templates_edit =handle_templates_edit.clone();
+            let handle_templates_edit = handle_templates_edit.clone();
             let actions = dialog_actions.clone();
             let dlg = dialog.clone();
             spawn_local(async move {
                 let filter_view = html!{<FilterEditor filter={current_filter}
                     on_filter_change={handle_filter_edit}
                     on_templates_change={handle_templates_edit} />};
-                let _result = dlg.content(filter_view, (*actions).clone(), false).await;
+                let result = dlg.content(filter_view, (*actions).clone(), false).await;
+                if result == DialogResult::Ok {
+                    // Propagate the updated filter to parent via on_change
+                    // Note: Need access to filter_state's current value and props.on_change here
+                }
             });
         })
     };

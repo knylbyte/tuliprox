@@ -28,14 +28,6 @@ pub fn FilterEditor(props: &FilterEditorProps) -> Html {
     {
         let templates = templates_state.clone();
         let cfg_templates = config_ctx.config.as_ref().and_then(|c| c.sources.templates.clone());
-        use_effect_with(cfg_templates, move |templ| {
-            templates.set(templ.clone());
-        });
-    }
-
-    {
-        let templates = templates_state.clone();
-        let cfg_templates = config_ctx.config.as_ref().and_then(|c| c.sources.templates.clone());
         use_effect_with(cfg_templates,  move |templ| {
             templates.set(templ.clone());
         });
@@ -75,13 +67,16 @@ pub fn FilterEditor(props: &FilterEditorProps) -> Html {
 
     let handle_filter_input = {
       let filter = filter_state.clone();
+      let on_filter_change = props.on_filter_change.clone();
       Callback::from(move |event: InputEvent| {
           if let Some(input) = event.target_dyn_into::<web_sys::HtmlTextAreaElement>() {
               let value = input.value();
               if value.is_empty() {
                   filter.set(None);
+                  on_filter_change.emit(None);
               } else {
-                  filter.set(Some(value));
+                  filter.set(Some(value.clone()));
+                  on_filter_change.emit(Some(value));
               }
           }
       })

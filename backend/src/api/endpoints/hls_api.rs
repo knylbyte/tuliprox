@@ -164,7 +164,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
                     CustomVideoStreamType::ChannelUnavailable);
 
                 let playlist = PLAYLIST_TEMPLATE.replace("{url}", &url);
-                hls_response(playlist.clone()).into_response()
+                hls_response(playlist).into_response()
             } else {
                 axum::http::StatusCode::NOT_FOUND.into_response()
             }

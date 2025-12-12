@@ -507,7 +507,7 @@ impl ActiveUserManager {
         let now = current_time_secs();
         connections.kicked.retain(|_, (expires_at, _)| *expires_at > now);
         if let Some(username) = connections.key_by_addr.get(addr).cloned() {
-            let expires_at = now + blocked_secs;
+            let expires_at = now + blocked_secs.clamp(1,86_400); // max 1 day
             connections.kicked.insert(username, (expires_at, virtual_id));
         }
     }

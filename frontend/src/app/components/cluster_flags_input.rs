@@ -24,7 +24,12 @@ pub struct ClusterFlagsInputProps {
 pub fn ClusterFlagsInput(props: &ClusterFlagsInputProps) -> Html {
     let translate = use_translation();
 
-    let flags = use_state(|| props.value.unwrap_or_else(ClusterFlags::all));
+    let flags = use_state(|| {
+       props.value.unwrap_or_else(|| match props.mode {
+            ClusterFlagsInputMode::NoneIsAll => ClusterFlags::all(),
+            ClusterFlagsInputMode::NoneIsNone => ClusterFlags::empty(),
+        })
+    });
     {
         let set_flags = flags.clone();
         use_effect_with((props.value, props.mode), move |(val, cmode)| {
