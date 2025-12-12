@@ -973,7 +973,7 @@ fn get_stream_throttle(app_state: &AppState) -> u64 {
 
 #[allow(clippy::too_many_arguments)]
 async fn try_shared_stream_response_if_any(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     stream_url: &str,
     fingerprint: &Fingerprint,
     user: &ProxyUserCredentials,

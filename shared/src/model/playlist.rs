@@ -10,6 +10,7 @@ use std::str::FromStr;
 // https://siptv.eu/howto/playlist.html
 
 pub type UUIDType = [u8; 32];
+pub type VirtualId = u32;
 
 #[derive(Debug, Copy, Clone, Eq, Hash, PartialEq, Serialize, Deserialize, Default)]
 #[repr(u8)]
@@ -138,7 +139,7 @@ pub trait FieldSetAccessor {
 }
 
 pub trait PlaylistEntry: Send + Sync {
-    fn get_virtual_id(&self) -> u32;
+    fn get_virtual_id(&self) -> VirtualId;
     fn get_provider_id(&self) -> Option<u32>;
     fn get_category_id(&self) -> Option<u32>;
     fn get_provider_url(&self) -> String;
@@ -151,7 +152,7 @@ pub struct PlaylistItemHeader {
     #[serde(skip)]
     pub uuid: UUIDType, // calculated
     pub id: String, // provider id
-    pub virtual_id: u32, // virtual id
+    pub virtual_id: VirtualId, // virtual id
     pub name: String,
     pub chno: String,
     pub logo: String,
@@ -290,7 +291,7 @@ generate_field_accessor_impl_for_playlist_item_header!(id, /*virtual_id,*/ name,
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct M3uPlaylistItem {
-    pub virtual_id: u32,
+    pub virtual_id: VirtualId,
     pub provider_id: String,
     pub name: String,
     pub chno: String,
@@ -367,7 +368,7 @@ impl M3uPlaylistItem {
 
 impl PlaylistEntry for M3uPlaylistItem {
     #[inline]
-    fn get_virtual_id(&self) -> u32 {
+    fn get_virtual_id(&self) -> VirtualId {
         self.virtual_id
     }
 
@@ -421,7 +422,7 @@ impl From<M3uPlaylistItem> for CommonPlaylistItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XtreamPlaylistItem {
-    pub virtual_id: u32,
+    pub virtual_id: VirtualId,
     pub provider_id: u32,
     pub name: String,
     pub logo: String,
@@ -477,7 +478,7 @@ impl XtreamPlaylistItem {
 
 impl PlaylistEntry for XtreamPlaylistItem {
     #[inline]
-    fn get_virtual_id(&self) -> u32 {
+    fn get_virtual_id(&self) -> VirtualId {
         self.virtual_id
     }
     #[inline]
@@ -718,7 +719,7 @@ impl PlaylistItem {
 
 impl PlaylistEntry for PlaylistItem {
     #[inline]
-    fn get_virtual_id(&self) -> u32 {
+    fn get_virtual_id(&self) -> VirtualId {
         self.header.virtual_id
     }
 

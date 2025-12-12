@@ -229,7 +229,6 @@ async fn xtream_player_api_stream(
     //     debug!("{}", sanitize_sensitive_info(&message));
     // }
 
-
     let (user, target) = try_option_bad_request!(
         get_user_target_by_credentials( stream_req.username, stream_req.password, api_req, app_state),
         false,
@@ -256,6 +255,10 @@ async fn xtream_player_api_stream(
         format!("Failed to read xtream item for stream id {req_virtual_id}")
     );
     let virtual_id = pli.virtual_id;
+    if app_state.active_users.is_user_blocked_for_stream(&user.username, virtual_id).await {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
+
     let input = try_option_bad_request!(
       app_state.app_config.get_input_by_name(pli.input_name.as_str()),
       true,
@@ -267,14 +270,10 @@ async fn xtream_player_api_stream(
     } else {
       (pli.xtream_cluster, pli.item_type)
     };
-    
+
     debug_if_enabled!(
-        "ID chain for xtream endpoint: request_stream_id={} -> action_stream_id={} -> req_virtual_id={} -> virtual_id={}",
-        stream_req.stream_id,
-        action_stream_id,
-        req_virtual_id,
-        virtual_id
-    );
+        "ID chain for xtream endpoint: request_stream_id={} -> action_stream_id={action_stream_id} -> req_virtual_id={req_virtual_id} -> virtual_id={virtual_id}",
+        stream_req.stream_id);
     let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let user_session = app_state
         .active_users

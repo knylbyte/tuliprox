@@ -10,6 +10,8 @@ pub struct ConfirmDialogProps {
     pub ok_caption: String,
     pub cancel_caption: String,
     pub on_confirm: Callback<DialogResult>,
+    #[prop_or(true)]
+    pub close_on_backdrop_click: bool,
 }
 
 #[function_component]
@@ -45,7 +47,7 @@ pub fn ConfirmDialog(props: &ConfirmDialogProps) -> Html {
             open={*is_open}
             class="tp__confirm-dialog"
             modal=true
-            close_on_backdrop_click=true
+            close_on_backdrop_click={props.close_on_backdrop_click}
             on_close={Some(on_close)}
         >
             <h2>{ &props.title }</h2>

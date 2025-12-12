@@ -136,7 +136,7 @@ async fn handle_protocol_message(
             Ok(ProtocolMessage::UserAction(cmd)) => {
                 if let Some(token) = mem.token.as_ref() {
                     if !auth_required || verify_auth_admin_token(token, secret_key) {
-                        Some(ProtocolMessage::UserActionResponse(handle_user_action(app_state, cmd)))
+                        Some(ProtocolMessage::UserActionResponse(handle_user_action(app_state, cmd).await))
                     } else {
                         Some(ProtocolMessage::UserActionResponse(false))
                     }
@@ -314,8 +314,8 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth_req
     }
 }
 
-fn handle_user_action(app_state: &Arc<AppState>, cmd: UserCommand) -> bool {
+async fn handle_user_action(app_state: &Arc<AppState>, cmd: UserCommand) -> bool {
     match cmd {
-        UserCommand::Kick(addr) => app_state.connection_manager.kick_connection(&addr),
+        UserCommand::Kick(addr, virtual_id, secs) => app_state.connection_manager.kick_connection(&addr, virtual_id, secs).await,
     }
 }

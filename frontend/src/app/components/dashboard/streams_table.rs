@@ -8,7 +8,7 @@ use gloo_timers::callback::Interval;
 use gloo_utils::window;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use shared::model::{PlaylistItemType, ProtocolMessage, SortOrder, StreamChannel, StreamInfo, UserCommand};
-use shared::utils::{current_time_secs, strip_port};
+use shared::utils::{current_time_secs, default_kick_secs, strip_port};
 use std::fmt::Display;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -84,7 +84,7 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
     let popup_is_open = use_state(|| false);
     let selected_dto = use_state(|| None::<Rc<StreamInfo>>);
 
-    let headers = use_memo(config_ctx, |cfg| {
+    let headers = use_memo(config_ctx.clone(), |cfg| {
         let include_country = if let Some(app_cfg) = &cfg.config {
             app_cfg.config.is_geoip_enabled()
         } else {
@@ -241,12 +241,15 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         let services = service_ctx.clone();
         let selected_dto = selected_dto.clone();
         let copy_to_clipboard = copy_to_clipboard.clone();
+        let kick_secs = config_ctx.config.as_ref().and_then(|app_cfg| app_cfg.config.web_ui.as_ref())
+            .map(|web_ui| web_ui.kick_secs)
+            .unwrap_or_else(default_kick_secs);
         Callback::from(move |(name, _): (String, _)| {
             if let Ok(action) = StreamsTableAction::from_str(&name) {
                 match action {
                     StreamsTableAction::Kick => {
                         if let Some(dto) = (*selected_dto).as_ref() {
-                            if !services.websocket.send_message(ProtocolMessage::UserAction(UserCommand::Kick(dto.addr))) {
+                            if !services.websocket.send_message(ProtocolMessage::UserAction(UserCommand::Kick(dto.addr, dto.channel.virtual_id, kick_secs))) {
                                 services.toastr.error(translate.t("MESSAGES.FAILED_TO_KICK_USER_STREAM"));
                             }
                         }

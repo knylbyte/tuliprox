@@ -1,6 +1,6 @@
 use crate::app::components::config::HasFormData;
 use crate::app::components::select::Select;
-use crate::app::components::{BlockId, BlockInstance, Card, DropDownOption, DropDownSelection, EditMode, Panel, SourceEditorContext, TextButton};
+use crate::app::components::{BlockId, BlockInstance, Card, DropDownOption, DropDownSelection, EditMode, FilterInput, Panel, SourceEditorContext, TextButton};
 use crate::{config_field_child, edit_field_bool, edit_field_list_option, edit_field_text, edit_field_text_option, generate_form_reducer};
 use shared::model::{StrmExportStyle, StrmTargetOutputDto, TargetOutputDto};
 use std::fmt::Display;
@@ -106,6 +106,7 @@ pub fn StrmTargetOutputView(props: &StrmTargetOutputViewProps) -> Html {
 
     let render_main = || {
         let output_form_state_1 = output_form_state.clone();
+        let output_form_state_2 = output_form_state.clone();
         html! {
             <Card class="tp__config-view__card">
                 { edit_field_text!(output_form_state, translate.t(LABEL_DIRECTORY), directory, StrmTargetOutputFormAction::Directory) }
@@ -134,7 +135,13 @@ pub fn StrmTargetOutputView(props: &StrmTargetOutputViewProps) -> Html {
                         />
                     }
                 })}
-                { edit_field_text_option!(output_form_state, translate.t(LABEL_FILTER), filter, StrmTargetOutputFormAction::Filter) }
+                { config_field_child!(translate.t(LABEL_FILTER), {
+                   html! {
+                        <FilterInput filter={output_form_state_2.form.filter.clone()} on_change={Callback::from(move |new_filter| {
+                            output_form_state_2.dispatch(StrmTargetOutputFormAction::Filter(new_filter));
+                        })} />
+                   }
+                })}
             </Card>
         }
     };
