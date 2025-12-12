@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use log::{debug, error};
 use url::Url;
 
@@ -63,7 +62,7 @@ pub fn telegram_create_instance(bot_token: &str, chat_id: &str) -> BotInstance {
 }
 
 pub async fn telegram_send_message(
-    client: &Arc<reqwest::Client>,
+    client: &reqwest::Client,
     instance: &BotInstance,
     msg: &str,
     options: Option<&SendMessageOption>,

@@ -26,7 +26,7 @@ pub fn datetime_to_instant(datetime: DateTime<FixedOffset>) -> Instant {
     Instant::now() + duration_until
 }
 
-pub fn exec_scheduler(client: &Arc<reqwest::Client>, app_state: &Arc<AppState>, targets: &Arc<ProcessTargets>,
+pub fn exec_scheduler(client: &reqwest::Client, app_state: &Arc<AppState>, targets: &Arc<ProcessTargets>,
                       cancel: &CancellationToken) {
     let cfg = &app_state.app_config;
     let config = cfg.config.load();
@@ -39,7 +39,7 @@ pub fn exec_scheduler(client: &Arc<reqwest::Client>, app_state: &Arc<AppState>, 
         let expression = schedule.schedule.clone();
         let exec_targets = get_process_targets(cfg, targets, schedule.targets.as_ref());
         let app_state_clone = Arc::clone(app_state);
-        let http_client = Arc::clone(client);
+        let http_client = client.clone();
         let cancel_token = cancel.clone();
         tokio::spawn(async move {
             start_scheduler(http_client, expression.as_str(), app_state_clone, exec_targets, cancel_token).await;
@@ -47,7 +47,7 @@ pub fn exec_scheduler(client: &Arc<reqwest::Client>, app_state: &Arc<AppState>, 
     }
 }
 
-async fn start_scheduler(client: Arc<reqwest::Client>, expression: &str, app_state: Arc<AppState>,
+async fn start_scheduler(client: reqwest::Client, expression: &str, app_state: Arc<AppState>,
                          targets: Arc<ProcessTargets>, cancel: CancellationToken) {
     match Schedule::from_str(expression) {
         Ok(schedule) => {
@@ -60,7 +60,7 @@ async fn start_scheduler(client: Arc<reqwest::Client>, expression: &str, app_sta
                            let app_config = Arc::clone(&app_state.app_config);
                            let event_manager = Arc::clone(&app_state.event_manager);
                            let playlist_state = app_state.playlists.clone();
-                           exec_processing(Arc::clone(&client), app_config, Arc::clone(&targets), Some(event_manager), Some(playlist_state)).await;
+                           exec_processing(&client, app_config, Arc::clone(&targets), Some(event_manager), Some(playlist_state)).await;
                         }
                         () = cancel.cancelled() => {
                             break;

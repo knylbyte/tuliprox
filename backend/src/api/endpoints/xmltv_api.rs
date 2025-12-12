@@ -8,7 +8,7 @@ use crate::repository::storage::get_target_storage_path;
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::{xtream_get_epg_file_path, xtream_get_storage_path};
 use crate::utils;
-use crate::utils::{deobscure_text, obscure_text};
+use crate::utils::{async_file_reader, deobscure_text, obscure_text};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
@@ -206,7 +206,7 @@ async fn serve_epg_with_rewrites(
     let rewrite_base_url = base_url.to_owned();
     match tokio::fs::File::open(epg_path).await {
         Ok(file) => {
-            let reader = tokio::io::BufReader::new(file);
+            let reader = async_file_reader(file);
             let (tx, rx) = tokio::io::duplex(8192);
             tokio::spawn(async move {
                 let mut encoder = async_compression::tokio::write::GzipEncoder::new(tx);
@@ -220,7 +220,7 @@ async fn serve_epg_with_rewrites(
                     error!("EPG: Failed to write epg doc type {err}");
                 }
 
-                let mut xml_reader = quick_xml::reader::Reader::from_reader(tokio::io::BufReader::new(reader));
+                let mut xml_reader = quick_xml::reader::Reader::from_reader(async_file_reader(reader));
                 let mut xml_writer = quick_xml::writer::Writer::new(encoder);
 
                 // TODO howto avoid BytesText to escape the doctype "xmltv.dtd"  which is written as &quote;xmltv.dtd&quote;

@@ -1,29 +1,30 @@
+use futures::{StreamExt, TryStreamExt};
+use log::{debug, error, log_enabled, trace, Level};
+use reqwest::header::CONTENT_ENCODING;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::{HashMap, HashSet};
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use futures::{StreamExt, TryStreamExt};
-use log::{debug, error, log_enabled, trace, Level};
-use reqwest::header::CONTENT_ENCODING;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio_util::io::StreamReader;
 use url::Url;
 
+use crate::api::model::persist_pipe_stream::tee_dyn_reader;
+use crate::model::ConfigInput;
+use crate::model::{format_elapsed_time, AppConfig, InputSource, ReverseProxyDisabledHeaderConfig};
+use crate::repository::storage::get_input_storage_path;
+use crate::repository::storage_const;
+use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
+use crate::utils::{async_file_reader, async_file_writer, debug_if_enabled, IO_BUFFER_SIZE};
+use crate::utils::{get_file_path, persist_file};
 use shared::error::create_tuliprox_error_result;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::{InputFetchMethod, DEFAULT_USER_AGENT};
-use crate::model::{format_elapsed_time, AppConfig, InputSource, ReverseProxyDisabledHeaderConfig};
-use crate::model::{ConfigInput};
-use crate::repository::storage::{get_input_storage_path};
-use crate::repository::storage_const;
-use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
-use crate::utils::{debug_if_enabled};
-use shared::utils::{filter_request_header, sanitize_sensitive_info, short_hash, ENCODING_DEFLATE, ENCODING_GZIP};
-use crate::utils::{get_file_path, persist_file};
+use shared::utils::{filter_request_header, human_readable_byte_size, sanitize_sensitive_info, short_hash, ENCODING_DEFLATE, ENCODING_GZIP};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MimeCategory {
@@ -53,7 +54,7 @@ pub fn classify_content_type(headers: &[(String, String)]) -> MimeCategory {
         })
 }
 
-pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
+pub async fn get_input_epg_content_as_file(client: &reqwest::Client, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
     debug_if_enabled!("getting input epg content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(url_str));
     if url_str.parse::<url::Url>().is_ok() {
         match download_epg_content_as_file(client, input, url_str, working_dir, persist_filepath).await {
@@ -96,11 +97,11 @@ pub async fn get_input_epg_content_as_file(client: Arc<reqwest::Client>, input: 
 }
 
 
-pub async fn get_input_text_content(client: &Arc<reqwest::Client>, input: &InputSource, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<String, TuliproxError> {
+pub async fn get_input_text_content(client: &reqwest::Client, input: &InputSource, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<String, TuliproxError> {
     debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(&input.url));
 
     if input.url.parse::<url::Url>().is_ok() {
-        match download_text_content(Arc::clone(client), None, input, None, persist_filepath).await {
+        match download_text_content(client, None, input, None, persist_filepath).await {
             Ok((content, _response_url)) => Ok(content),
             Err(e) => {
                 error!("Failed to download input '{}': {}", &input.name, sanitize_sensitive_info(e.to_string().as_str()));
@@ -139,13 +140,58 @@ pub async fn get_input_text_content(client: &Arc<reqwest::Client>, input: &Input
     }
 }
 
+
+pub async fn get_input_text_content_as_stream(client: &reqwest::Client, input: &InputSource, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<DynReader, TuliproxError> {
+    debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(&input.url));
+
+    if input.url.parse::<url::Url>().is_ok() {
+        match download_text_content_as_stream(client, None, input, None, persist_filepath).await {
+            Ok((content, _response_url)) => Ok(content),
+            Err(e) => {
+                error!("Failed to download input '{}': {}", &input.name, sanitize_sensitive_info(e.to_string().as_str()));
+                create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed to download")
+            }
+        }
+    } else {
+        let result = match get_file_path(working_dir, Some(PathBuf::from(&input.url))) {
+            Some(filepath) => {
+                if filepath.exists() {
+                    match get_local_file_content_as_stream(&filepath).await {
+                        Ok(content) => {
+                            if let Some(path) = persist_filepath {
+                                let tee = tee_dyn_reader(content, &path, Some(Arc::new(|size| {
+                                    debug_if_enabled!("Persisted {} bytes", human_readable_byte_size(size as u64));
+                                }))).await;
+                                Some(tee)
+                            } else {
+                                Some(content)
+                            }
+                        }
+                        Err(err) => {
+                            return create_tuliprox_error_result!(TuliproxErrorKind::Notify, "Failed : {}", err);
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+            None => None
+        };
+        result.map_or_else(|| {
+            let msg = format!("cant read input url: {}", sanitize_sensitive_info(&input.url));
+            error!("{msg}");
+            create_tuliprox_error_result!(TuliproxErrorKind::Notify, "{msg}")
+        }, Ok)
+    }
+}
+
 pub fn get_client_request<S: ::std::hash::BuildHasher + Default>
-        (client: &Arc<reqwest::Client>,
-         method: InputFetchMethod,
-         headers: Option<&HashMap<String, String, S>>,
-         url: &Url,
-         custom_headers: Option<&HashMap<String, Vec<u8>, S>>,
-         disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> reqwest::RequestBuilder {
+(client: &reqwest::Client,
+ method: InputFetchMethod,
+ headers: Option<&HashMap<String, String, S>>,
+ url: &Url,
+ custom_headers: Option<&HashMap<String, Vec<u8>, S>>,
+ disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> reqwest::RequestBuilder {
     let request = match method {
         InputFetchMethod::GET => client.get(url.clone()),
         InputFetchMethod::POST => {
@@ -181,7 +227,7 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
         for (key, value) in custom {
             let key_lc = key.to_lowercase();
             if filter_request_header(key_lc.as_str()) {
-                if disabled_headers.as_ref().is_some_and(|d| d.should_remove(key)) {
+                if disabled_headers.as_ref().is_some_and(|d| d.should_remove(key_lc.as_str())) {
                     continue;
                 }
                 if header_keys.contains(key_lc.as_str()) {
@@ -210,7 +256,7 @@ pub async fn get_local_file_content(file_path: &Path) -> Result<String, std::io:
         std::io::Error::new(ErrorKind::NotFound, format!("Failed to open file: {}, {err:?}", file_path.display()))
     })?;
 
-    let mut buf_reader = BufReader::new(file);
+    let mut buf_reader = async_file_reader(file);
 
     // Peek die ersten 2 Bytes, um gzip zu erkennen
     let buffer = buf_reader.fill_buf().await?;
@@ -234,6 +280,26 @@ pub async fn get_local_file_content(file_path: &Path) -> Result<String, std::io:
     Ok(decoded)
 }
 
+pub async fn get_local_file_content_as_stream(file_path: &Path) -> Result<DynReader, std::io::Error> {
+    // open file
+    let file = File::open(file_path).await.map_err(|err| {
+        std::io::Error::new(ErrorKind::NotFound, format!("Failed to open file: {}, {err:?}", file_path.display()))
+    })?;
+
+    let mut buf_reader = async_file_reader(file);
+
+    // Peek first 2 Bytes, for gzip detection
+    let buffer = buf_reader.fill_buf().await?;
+    let is_gzipped = buffer.len() >= 2 && is_gzip(&buffer[0..2]);
+
+    if is_gzipped {
+        // use Async Gzip Decoder
+        Ok(Box::pin(async_compression::tokio::bufread::GzipDecoder::new(buf_reader)))
+    } else {
+        Ok(Box::pin(buf_reader))
+    }
+}
+
 // pub fn get_local_file_content_blocking(file_path: &PathBuf) -> Result<String, Error> {
 //     match fs::read(file_path) {
 //         Ok(content) => decode_local_file_bytes(content).await,
@@ -242,28 +308,37 @@ pub async fn get_local_file_content(file_path: &Path) -> Result<String, std::io:
 // }
 
 
-async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, url: &Url, file_path: &Path) -> Result<PathBuf, std::io::Error> {
+async fn get_remote_content_as_file(client: &reqwest::Client, input: &ConfigInput, url: &Url, file_path: &Path) -> Result<PathBuf, std::io::Error> {
     let start_time = Instant::now();
-    let request = get_client_request(&client, input.method, Some(&input.headers), url, None, None);
+    let request = get_client_request(client, input.method, Some(&input.headers), url, None, None);
     match request.send().await {
         Ok(response) => {
             if response.status().is_success() {
                 // Open a file in write mode
-                let mut file = BufWriter::with_capacity(8192, File::create(file_path).await?);
+                let mut writer = async_file_writer(File::create(file_path).await?);
+                let mut write_counter = 0;
                 // Stream the response body in chunks
                 let mut stream = response.bytes_stream();
                 while let Some(chunk) = stream.next().await {
                     match chunk {
                         Ok(bytes) => {
-                            file.write_all(&bytes).await?;
+                            write_counter += bytes.len();
+                            writer.write_all(&bytes).await?;
+                            if write_counter >= IO_BUFFER_SIZE {
+                                writer.flush().await?;
+                                write_counter = 0;
+                            }
                         }
                         Err(err) => {
+                            let _ = writer.flush().await;
+                            let _ = writer.shutdown().await;
                             return Err(str_to_io_error(&format!("Failed to read chunk: {err}")));
                         }
                     }
                 }
 
-                file.flush().await?;
+                writer.flush().await?;
+                writer.shutdown().await?;
                 let elapsed = start_time.elapsed().as_secs();
                 debug!("File downloaded successfully to {}, took:{}", file_path.display(), format_elapsed_time(elapsed));
                 Ok(file_path.to_path_buf())
@@ -275,16 +350,23 @@ async fn get_remote_content_as_file(client: Arc<reqwest::Client>, input: &Config
     }
 }
 
-type DynReader = Pin<Box<dyn AsyncRead + Send>>;
+pub type DynReader = Pin<Box<dyn AsyncRead + Send>>;
 
 #[allow(clippy::implicit_hasher)]
 pub async fn get_remote_content_as_stream(
-    client: Arc<reqwest::Client>,
+    client: &reqwest::Client,
+    input: &InputSource,
+    headers: Option<&HeaderMap>,
     url: &Url,
-    method: InputFetchMethod,
-    headers: Option<&HashMap<String, String>>
+    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
 ) -> Result<(DynReader, String), Error> {
-    let request = get_client_request(&client, method, headers, url, None, None);
+    let custom_headers = headers.map(|h| {
+        h.iter().map(|(k, v)| (k.as_str().to_string(), v.as_bytes().to_vec())).collect::<HashMap<_, _>>()
+    });
+    let merged = get_request_headers(Some(&input.headers), custom_headers.as_ref(), disabled_headers);
+    let headers: HashMap<String, String> = merged.iter().map(|(k, v)| (k.as_str().to_string(), String::from_utf8_lossy(v.as_bytes()).to_string())).collect();
+
+    let request = get_client_request(client, input.method, Some(&headers), url, None, None);
     let response = request.send().await.map_err(std::io::Error::other)?;
 
     if !response.status().is_success() {
@@ -298,7 +380,7 @@ pub async fn get_remote_content_as_stream(
     let stream_reader = StreamReader::new(
         response.bytes_stream().map_err(std::io::Error::other),
     );
-    let mut buf_reader = BufReader::new(stream_reader);
+    let mut buf_reader = async_file_reader(stream_reader);
     let peek = buf_reader.fill_buf().await?;
 
     if peek.len() >= 2 {
@@ -320,22 +402,17 @@ pub async fn get_remote_content_as_stream(
     Ok((reader, response_url))
 }
 
-async fn get_remote_content(client: Arc<reqwest::Client>, input: &InputSource, headers: Option<&HeaderMap>, url: &Url, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> Result<(String, String), Error> {
+async fn get_remote_content(client: &reqwest::Client, input: &InputSource, headers: Option<&HeaderMap>, url: &Url, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> Result<(String, String), Error> {
     let start_time = Instant::now();
 
-    let custom_headers = headers.map(|h| {
-        h.iter().map(|(k, v)| (k.as_str().to_string(), v.as_bytes().to_vec())).collect::<HashMap<_, _>>()});
-    let merged = get_request_headers(Some(&input.headers), custom_headers.as_ref(), disabled_headers);
-    let headers: HashMap<String, String> = merged.iter().map(|(k, v)| (k.as_str().to_string(), String::from_utf8_lossy(v.as_bytes()).to_string())).collect();
-
-    let (mut stream, response_url) = get_remote_content_as_stream(client.clone(), url, input.method, Some(&headers)).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
+    let (mut stream, response_url) = get_remote_content_as_stream(client, input, headers, url, disabled_headers).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
     let mut content = String::new();
     stream.read_to_string(&mut content).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
     debug_if_enabled!("Request took: {} {}", format_elapsed_time(start_time.elapsed().as_secs()), sanitize_sensitive_info(url.as_str()));
     Ok((content, response_url))
 }
 
-async fn download_epg_content_as_file(client: Arc<reqwest::Client>, input: &ConfigInput, url_str: &str, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, Error> {
+async fn download_epg_content_as_file(client: &reqwest::Client, input: &ConfigInput, url_str: &str, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, Error> {
     if let Ok(url) = url_str.parse::<url::Url>() {
         if url.scheme() == "file" {
             url.to_file_path().map_or_else(|()| Err(Error::new(ErrorKind::Unsupported, format!("Unknown file {}", sanitize_sensitive_info(url_str)))), |file_path| if file_path.exists() {
@@ -361,7 +438,7 @@ async fn download_epg_content_as_file(client: Arc<reqwest::Client>, input: &Conf
 }
 
 pub async fn download_text_content(
-    client: Arc<reqwest::Client>,
+    client: &reqwest::Client,
     disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     input: &InputSource,
     headers: Option<&HeaderMap>,
@@ -389,14 +466,48 @@ pub async fn download_text_content(
             Err(err) => Err(err),
         }
     } else {
-        Err(str_to_io_error(&format!(
-            "Malformed URL {}",
-            sanitize_sensitive_info(&input.url)
-        )))
+        Err(str_to_io_error(&format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
     }
 }
 
-async fn download_json_content(client: Arc<reqwest::Client>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, Error> {
+pub async fn download_text_content_as_stream(
+    client: &reqwest::Client,
+    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
+    input: &InputSource,
+    headers: Option<&HeaderMap>,
+    persist_filepath: Option<PathBuf>,
+) -> Result<(DynReader, String), Error> {
+    if let Ok(url) = input.url.parse::<url::Url>() {
+        let result = if url.scheme() == "file" {
+            match url.to_file_path() {
+                Ok(file_path) => get_local_file_content_as_stream(&file_path).await.map(|c| (c, url.to_string())),
+                Err(()) => Err(str_to_io_error(&format!(
+                    "Unknown file {}",
+                    sanitize_sensitive_info(&input.url)
+                ))),
+            }
+        } else {
+            get_remote_content_as_stream(client, input, headers, &url, disabled_headers).await
+        };
+        match result {
+            Ok((content, response_url)) => {
+                if let Some(path) = persist_filepath {
+                    let tee_reader: DynReader = tee_dyn_reader(content, &path, Some(Arc::new(|size| {
+                        debug!("Persisted {size} bytes");
+                    }))).await;
+                    Ok((tee_reader, response_url))
+                } else {
+                    Ok((content, response_url))
+                }
+            }
+            Err(err) => Err(err),
+        }
+    } else {
+        Err(str_to_io_error(&format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
+    }
+}
+
+async fn download_json_content(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, Error> {
     debug_if_enabled!("downloading json content from {}", sanitize_sensitive_info(&input.url));
     match download_text_content(client, disabled_headers, input, None, persist_filepath).await {
         Ok((content, _response_url)) => {
@@ -409,13 +520,27 @@ async fn download_json_content(client: Arc<reqwest::Client>, disabled_headers: O
     }
 }
 
-pub async fn get_input_json_content(client: Arc<reqwest::Client>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, TuliproxError> {
+pub async fn get_input_json_content(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, TuliproxError> {
     match download_json_content(client, disabled_headers, input, persist_filepath).await {
         Ok(content) => Ok(content),
         Err(e) => create_tuliprox_error_result!(TuliproxErrorKind::Notify, "cant download input {},  url: {}  => {}", input.name, sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()))
     }
 }
 
+async fn download_json_content_as_stream(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<DynReader, Error> {
+    debug_if_enabled!("downloading json content from {}", sanitize_sensitive_info(&input.url));
+    match download_text_content_as_stream(client, disabled_headers, input, None, persist_filepath).await {
+        Ok((reader, _response_url)) => Ok(reader),
+        Err(err) => Err(err)
+    }
+}
+
+pub async fn get_input_json_content_as_stream(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<DynReader, TuliproxError> {
+    match download_json_content_as_stream(client, disabled_headers, input, persist_filepath).await {
+        Ok(stream) => Ok(stream),
+        Err(e) => create_tuliprox_error_result!(TuliproxErrorKind::Notify, "cant download input {},  url: {}  => {}", input.name, sanitize_sensitive_info(&input.url), sanitize_sensitive_info(e.to_string().as_str()))
+    }
+}
 
 pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
     let config = cfg.config.load();
@@ -424,7 +549,6 @@ pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
         .pool_idle_timeout(Duration::from_secs(30))
         .pool_max_idle_per_host(10)
         .danger_accept_invalid_certs(config.accept_insecure_ssl_certificates);
-
 
     if let Some(proxy_cfg) = config.proxy.as_ref() {
         match Url::parse(&proxy_cfg.url) {
@@ -443,7 +567,7 @@ pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
                             Ok(p) => { client = client.proxy(p); }
                             Err(err) => error!("Failed to create SOCKS proxy {url}: {err}"),
                         }
-                    },
+                    }
                     "http" | "https" => {
                         match reqwest::Proxy::all(url.as_str()) {
                             Ok(p) => {

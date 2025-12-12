@@ -1,21 +1,20 @@
 use crate::model::{TraktApiConfig, TraktListConfig, TraktListItem};
 use shared::error::TuliproxError;
 use reqwest::header::{HeaderMap, HeaderValue};
-use std::sync::Arc;
 use log::{debug, info};
 use shared::error::{info_err};
 use shared::utils::trim_last_slash;
 use super::errors::{handle_trakt_api_error};
 
 pub struct TraktClient {
-    client: Arc<reqwest::Client>,
+    client: reqwest::Client,
     api_config: TraktApiConfig,
     // Pre-computed headers to avoid recreating them each time
     headers: HeaderMap,
 }
 
 impl TraktClient {
-    pub fn new(client: Arc<reqwest::Client>, api_config: TraktApiConfig) -> Self {
+    pub fn new(client: reqwest::Client, api_config: TraktApiConfig) -> Self {
         let headers = Self::create_headers(&api_config);
         Self {
             client,

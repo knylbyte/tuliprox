@@ -8,7 +8,7 @@ use crate::repository::storage::{ensure_target_storage_path, get_input_storage_p
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::{xtream_get_record_file_path, InputVodInfoRecord};
 use shared::utils::{extract_extension_from_url, hash_bytes, hash_string_as_hex, truncate_string, ExportStyleConfig, CONSTANTS};
-use crate::utils::{normalize_string_path, truncate_filename, FileReadGuard};
+use crate::utils::{async_file_reader, async_file_writer, normalize_string_path, truncate_filename, FileReadGuard, IO_BUFFER_SIZE};
 use chrono::Datelike;
 use filetime::{set_file_times, FileTime};
 use log::{error, trace};
@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::{create_dir_all, remove_dir, remove_file, File};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use shared::model::{ClusterFlags, FieldGetAccessor, PlaylistGroup, PlaylistItem, PlaylistItemType, StrmExportStyle, UUIDType};
 use crate::utils;
 // Import the new MediaQuality struct
@@ -932,20 +932,32 @@ async fn write_strm_index_file(
     let file = File::create(index_file_path)
         .await
         .map_err(|err| format!("Failed to create strm index file: {} {err}", index_file_path.display()))?;
-    let mut writer = BufWriter::new(file);
+    // Use a larger buffered writer for sequential writes to reduce syscalls
+    let mut writer = async_file_writer(file);
+    let mut write_counter = 0usize;
     let new_line = "\n".as_bytes();
     for entry in entries {
+        let bytes = entry.as_bytes();
+        write_counter += bytes.len() + 1;
         writer
-            .write_all(entry.as_bytes())
+            .write_all(bytes)
             .await
             .map_err(|err| format!("Failed to write strm index entry: {err}"))?;
         writer
-            .write(new_line)
+            .write_all(new_line)
             .await
             .map_err(|err| format!("Failed to write strm index entry: {err}"))?;
+        if write_counter >= IO_BUFFER_SIZE {
+            write_counter = 0;
+            writer.flush().await.map_err(|err| format!("Failed to flush: {err}"))?;
+        }
     }
     writer
         .flush()
+        .await
+        .map_err(|err| format!("failed to write strm index entry: {err}"))?;
+    writer
+        .shutdown()
         .await
         .map_err(|err| format!("failed to write strm index entry: {err}"))?;
     Ok(())
@@ -989,7 +1001,7 @@ async fn write_strm_file(
 
 async fn has_strm_file_same_hash(file_path: &PathBuf, content_hash: UUIDType) -> bool {
     if let Ok(file) = File::open(&file_path).await {
-        let mut reader = BufReader::new(file);
+        let mut reader = async_file_reader(file);
         let mut buffer = Vec::new();
         match reader.read_to_end(&mut buffer).await {
             Ok(_) => {
@@ -1018,7 +1030,7 @@ fn get_credentials_and_server_info(
 
 async fn read_strm_file_index(strm_file_index_path: &Path) -> std::io::Result<HashSet<String>> {
     let file = File::open(strm_file_index_path).await?;
-    let reader = BufReader::new(file);
+    let reader = async_file_reader(file);
     let mut result = HashSet::new();
     let mut lines = reader.lines();
     while let Ok(Some(line)) = lines.next_line().await {

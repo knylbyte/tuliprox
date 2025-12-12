@@ -131,11 +131,34 @@ pub fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
    if a.len() >= b.len() { a } else { b }
 }
 
+// ------------------------------------------------------------
+// Generic string concatenation macro with optional capacity hint
+// Usage:
+//   let s = concat_string!("/", user, "/", pass, "/", id);
+//   let s = concat_string!(cap = 128; prefix, "/", value);
+// The macro writes all arguments using Display into a preallocated String
+// to minimize temporary allocations and copies.
+// ------------------------------------------------------------
+#[macro_export]
+macro_rules! concat_string {
+    (cap = $cap:expr; $($arg:expr),* $(,)?) => {{
+        let mut __s = ::std::string::String::with_capacity($cap);
+        $( let _ = ::std::fmt::Write::write_fmt(&mut __s, format_args!("{}", $arg)); )*
+        __s
+    }};
+    ( $($arg:expr),* $(,)?) => {{
+        let mut __s = ::std::string::String::new();
+        $( let _ = ::std::fmt::Write::write_fmt(&mut __s, format_args!("{}", $arg)); )*
+        __s
+    }};
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
     use crate::utils::Capitalize;
     use super::generate_random_string;
+    use crate as shared; // allow path-based macro call in tests
 
     #[test]
     fn test_generate_random_string() {
@@ -149,6 +172,22 @@ mod test {
     #[test]
     fn test_capitalize() {
         assert_eq!("hELLO".capitalize(), "Hello");
+    }
+
+    #[test]
+    fn test_concat_string_basic() {
+        let a = "hello";
+        let b = String::from("world");
+        let n = 42;
+        let s = shared::concat_string!(a, " ", b, " ", n);
+        assert_eq!(s, "hello world 42");
+    }
+
+    #[test]
+    fn test_concat_string_with_cap() {
+        let part = "abc";
+        let s = shared::concat_string!(cap = 16; part, "/", 123);
+        assert_eq!(s, "abc/123");
     }
 
 }

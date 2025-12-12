@@ -111,15 +111,11 @@ pub(in crate::api) async fn handle_hls_stream_request(
     // Don't forward Range on playlist fetch; segments use original headers in provider path
     let filter_header: HeaderFilter = Some(Box::new(|name: &str| !name.eq_ignore_ascii_case("range")));
     let forwarded = get_headers_from_request(req_headers, &filter_header);
-    let config = app_state.app_config.config.load();
-    let disabled_headers = config
-        .reverse_proxy
-        .as_ref()
-        .and_then(|r| r.disabled_header.clone());
+    let disabled_headers = app_state.get_disabled_headers();
     let headers = request::get_request_headers(None, Some(&forwarded), disabled_headers.as_ref());
     let input_source = InputSource::from(input).with_url(request_url);
     match request::download_text_content(
-        Arc::clone(&app_state.http_client.load()),
+        &app_state.http_client.load(),
         disabled_headers.as_ref(),
         &input_source,
         Some(&headers),

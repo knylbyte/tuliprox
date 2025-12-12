@@ -1076,15 +1076,12 @@ where
 {
     match channels {
         Some((_, chans)) => {
-            // Convert iterator items to Result<Bytes, String>
+            // Convert iterator items to Result<Bytes, String> with minimal allocations
             let mapped = chans.map(move |(item, has_next)| {
                 match serde_json::to_string(&item) {
-                    Ok(content) => {
-                        Ok(Bytes::from(if has_next {
-                            format!("{content},")
-                        } else {
-                            content
-                        }))
+                    Ok(mut content) => {
+                        if has_next { content.push(','); }
+                        Ok(Bytes::from(content))
                     }
                     Err(_) => Ok(Bytes::from("")),
                 }
