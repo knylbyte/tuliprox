@@ -15,8 +15,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use log::error;
 use tokio::fs;
-use tokio::io::{AsyncWriteExt, BufWriter as AsyncBufWriter};
+use tokio::io::{AsyncWriteExt};
 use tokio::task;
+use crate::utils::{async_file_writer, IO_BUFFER_SIZE};
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
@@ -53,13 +54,22 @@ async fn persist_m3u_playlist_as_text(
     let Some(m3u_filename) = utils::get_file_path(&cfg.working_dir, Some(PathBuf::from(filename))) else { return Ok(()); };
 
     let file = await_playlist_write!(fs::File::create(&m3u_filename), "Can't write m3u plain playlist {} - {}", m3u_filename.display());
-    let mut writer = AsyncBufWriter::new(file);
+    // Larger buffer for sequential writes to reduce syscalls
+    let mut writer = async_file_writer(file);
     await_playlist_write!(writer.write_all(b"#EXTM3U\n"), "Failed to write header to {} - {}", m3u_filename.display());
+
+    let mut write_counter = 0usize;
 
     for m3u in m3u_playlist.iter() {
         let line = m3u.to_m3u(target.options.as_ref(), false);
-        await_playlist_write!(writer.write_all(line.as_bytes()), "Failed to write entry to {} - {}", m3u_filename.display());
+        let bytes = line.as_bytes();
+        await_playlist_write!(writer.write_all(bytes), "Failed to write entry to {} - {}", m3u_filename.display());
         await_playlist_write!(writer.write_all(b"\n"), "Failed to write newline to {} - {}", m3u_filename.display());
+        write_counter += bytes.len() + 1;
+        if write_counter >= IO_BUFFER_SIZE {
+            await_playlist_write!(writer.flush(), "Failed to flush {} - {}", m3u_filename.display());
+            write_counter = 0;
+        }
     }
 
     await_playlist_write!(writer.flush(), "Failed to flush {} - {}", m3u_filename.display());

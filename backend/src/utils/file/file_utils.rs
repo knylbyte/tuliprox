@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
-
+use std::io::Read;
 use shared::error::str_to_io_error;
 use crate::utils::debug_if_enabled;
 use shared::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE};
@@ -12,19 +11,36 @@ use log::{debug, error};
 use path_clean::PathClean;
 use tokio::fs as tokio_fs;
 
-pub fn file_writer<W>(w: W) -> BufWriter<W>
+pub const IO_BUFFER_SIZE: usize = 256*1024; // 256kb
+
+pub fn file_writer<W>(w: W) -> std::io::BufWriter<W>
 where
-    W: Write,
+    W: std::io::Write,
 {
-    BufWriter::with_capacity(131_072, w)
+    std::io::BufWriter::with_capacity(IO_BUFFER_SIZE, w)
 }
 
-pub fn file_reader<R>(r: R) -> BufReader<R>
+pub fn file_reader<R>(r: R) -> std::io::BufReader<R>
 where
-    R: Read,
+    R: std::io::Read,
 {
-    BufReader::with_capacity(131_072, r)
+    std::io::BufReader::with_capacity(IO_BUFFER_SIZE, r)
 }
+
+pub fn async_file_writer<W>(w: W) -> tokio::io::BufWriter<W>
+where
+    W: tokio::io::AsyncWrite,
+{
+    tokio::io::BufWriter::with_capacity(IO_BUFFER_SIZE, w)
+}
+
+pub fn async_file_reader<R>(r: R) -> tokio::io::BufReader<R>
+where
+    R: tokio::io::AsyncRead,
+{
+    tokio::io::BufReader::with_capacity(IO_BUFFER_SIZE, r)
+}
+
 
 pub fn get_exe_path() -> PathBuf {
     let default_path = std::path::PathBuf::from("./");

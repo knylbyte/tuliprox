@@ -89,11 +89,8 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
                 method: InputFetchMethod::GET,
                 headers: HashMap::default(),
             };
-            let disabled_headers = config
-                .reverse_proxy
-                .as_ref()
-                .and_then(|r| r.disabled_header.clone());
-            return match download_text_content(Arc::clone(&app_state.http_client.load()), disabled_headers.as_ref(), &input_source, None, None).await {
+            let disabled_headers = app_state.get_disabled_headers();
+            return match download_text_content(&app_state.http_client.load(), disabled_headers.as_ref(), &input_source, None, None).await {
                    Ok((content, _)) => {
                        let reader = Cursor::new(content);
                        let mut geoip = GeoIp::new();
