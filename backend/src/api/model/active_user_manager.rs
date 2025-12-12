@@ -6,7 +6,7 @@ use crate::utils::GeoIp;
 use arc_swap::ArcSwapOption;
 use jsonwebtoken::get_current_timestamp;
 use log::{debug, info};
-use shared::model::{ActiveUserConnectionChange, StreamChannel, StreamInfo, UserConnectionPermission};
+use shared::model::{ActiveUserConnectionChange, StreamChannel, StreamInfo, UserConnectionPermission, VirtualId};
 use shared::utils::{current_time_secs, default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info, strip_port};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -75,6 +75,7 @@ impl UserConnectionData {
 
 #[derive(Debug, Default)]
 struct UserConnections {
+    kicked: HashMap<String, (u64, VirtualId)>,
     by_key: HashMap<String, UserConnectionData>,
     key_by_addr: HashMap<SocketAddr, String>,
 }
@@ -124,7 +125,6 @@ impl ActiveUserManager {
                 self.last_logged_user_count.store(last_user_count, Ordering::Relaxed);
                 self.last_logged_user_connection_count.store(last_connection_count, Ordering::Relaxed);
                 info!("Active Users: {user_count}, Active User Connections: {user_connection_count}");
-
             }
         }
     }
@@ -493,6 +493,22 @@ impl ActiveUserManager {
                     "Added new connection for {username} at {addr} (active user connections={active_for_user}, total connections={total_active_sockets})"
                 );
             }
+        }
+    }
+
+    pub async fn is_user_blocked_for_stream(&self, username: &str, virtual_id: VirtualId) -> bool {
+        let connections = self.connections.read().await;
+        let now = current_time_secs();
+        matches!(connections.kicked.get(username), Some((expires_at, vid)) if *vid == virtual_id && *expires_at > now)
+    }
+
+    pub async fn block_user_for_stream(&self, addr: &SocketAddr, virtual_id: VirtualId, blocked_secs: u64) {
+        let mut connections = self.connections.write().await;
+        let now = current_time_secs();
+        connections.kicked.retain(|_, (expires_at, _)| *expires_at > now);
+        if let Some(username) = connections.key_by_addr.get(addr).cloned() {
+            let expires_at = now + blocked_secs;
+            connections.kicked.insert(username, (expires_at, virtual_id));
         }
     }
 

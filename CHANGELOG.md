@@ -35,6 +35,8 @@
 - Added extended debug logging for client requests and ID chain (request/action/virtual) to trace stream resolution.
 - Fixed xtream series/catchup lookups using the series-info virtual_id so episode requests now keep their own virtual_id/session.
 - Made cache storage more robust. Incomplete downloads will be deleted from cache.
+- `kick_secs` added to config.yaml `web_ui` config. Default 30 seconds, if a user is kicked from the webui, he can't connect for this duration.
+
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
