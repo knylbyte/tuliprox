@@ -1,5 +1,6 @@
 use shared::error::TuliproxError;
 use shared::model::{ContentSecurityPolicyConfigDto, WebUiConfigDto};
+use shared::utils::default_kick_secs;
 use crate::model::{macros, WebAuthConfig};
 
 #[derive(Debug, Clone)]
@@ -16,6 +17,7 @@ pub struct WebUiConfig {
     pub path: Option<String>,
     pub auth: Option<WebAuthConfig>,
     pub player_server: Option<String>,
+    pub kick_secs: u64,
 }
 
 impl WebUiConfig {
@@ -26,6 +28,9 @@ impl WebUiConfig {
             } else {
                 self.auth = None;
             }
+        }
+        if self.kick_secs == 0 {
+            self.kick_secs = default_kick_secs();
         }
         Ok(())
     }
@@ -61,6 +66,7 @@ impl From<&WebUiConfigDto> for WebUiConfig {
             path: dto.path.clone(),
             auth: dto.auth.as_ref().map(Into::into),
             player_server: dto.player_server.clone(),
+            kick_secs: dto.kick_secs,
         }
     }
 }
@@ -73,6 +79,7 @@ impl From<&WebUiConfig> for WebUiConfigDto {
             path: instance.path.clone(),
             auth: instance.auth.as_ref().map(Into::into),
             player_server: instance.player_server.clone(),
+            kick_secs: instance.kick_secs,
         }
     }
 }

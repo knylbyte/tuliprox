@@ -1,6 +1,6 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::WebAuthConfigDto;
-use crate::utils::{default_as_true, is_blank_optional_string};
+use crate::utils::{default_as_true, is_blank_optional_string, default_kick_secs};
 
 const RESERVED_PATHS: &[&str] = &[
     "cvs",
@@ -82,6 +82,8 @@ pub struct WebUiConfigDto {
     pub auth: Option<WebAuthConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub player_server: Option<String>,
+    #[serde(default = "default_kick_secs")]
+    pub kick_secs: u64,
 }
 
 impl Default for WebUiConfigDto {
@@ -93,6 +95,7 @@ impl Default for WebUiConfigDto {
             path: None,
             auth: None,
             player_server: None,
+            kick_secs: default_kick_secs(),
         }
     }
 }
@@ -104,6 +107,7 @@ impl WebUiConfigDto {
             && self.user_ui_enabled == empty.user_ui_enabled
             && is_blank_optional_string(&self.path)
             && is_blank_optional_string(&self.player_server)
+            && self.kick_secs == default_kick_secs()
             && (self.content_security_policy.is_none()
                 || self
                     .content_security_policy
@@ -130,6 +134,7 @@ impl WebUiConfigDto {
         if is_blank_optional_string(&self.player_server) {
             self.player_server = None;
         }
+        self.kick_secs = default_kick_secs();
     }
 
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {

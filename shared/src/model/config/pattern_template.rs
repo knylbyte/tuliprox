@@ -1,9 +1,27 @@
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum TemplateValue {
     Single(String),
     Multi(Vec<String>),
+}
+
+impl Display for TemplateValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TemplateValue::Single(value) => write!(f, "{value}")?,
+            TemplateValue::Multi(values) => {
+                for (i, value) in values.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{value}")?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]

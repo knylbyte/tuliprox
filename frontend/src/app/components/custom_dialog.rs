@@ -26,12 +26,12 @@ pub fn CustomDialog(props: &CustomDialogProps) -> Html {
             || ()
         });
     }
-    
+
     // Handle backdrop click
     let on_backdrop_click = {
         let on_close = props.on_close.clone();
         let close_on_backdrop = props.close_on_backdrop_click;
-        
+
         Callback::from(move |_e: MouseEvent| {
             if close_on_backdrop {
                 if let Some(on_close) = &on_close {

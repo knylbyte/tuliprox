@@ -118,6 +118,11 @@ async fn m3u_api_stream(
         format!("Failed to read m3u item for stream id {req_virtual_id}")
     );
     let virtual_id = pli.virtual_id;
+
+    if app_state.active_users.is_user_blocked_for_stream(&user.username, virtual_id).await {
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
+
     let input = try_option_bad_request!(
       app_state
       .app_config
@@ -128,12 +133,8 @@ async fn m3u_api_stream(
     let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
     
     debug_if_enabled!(
-        "ID chain for m3u endpoint: request_stream_id={} -> action_stream_id={} -> req_virtual_id={} -> virtual_id={}",
-        stream_req.stream_id,
-        action_stream_id,
-        req_virtual_id,
-        virtual_id
-    );
+        "ID chain for m3u endpoint: request_stream_id={} -> action_stream_id={action_stream_id} -> req_virtual_id={req_virtual_id} -> virtual_id={virtual_id}",
+        stream_req.stream_id);
     let session_key = create_session_fingerprint(&fingerprint.key, &user.username, virtual_id);
     let user_session = app_state
         .active_users

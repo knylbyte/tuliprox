@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use crate::api::model::{ActiveProviderManager, ActiveUserManager, CustomVideoStreamType, EventManager, EventMessage, ProviderHandle, SharedStreamManager};
 use std::sync::Arc;
 use log::{debug, warn};
-use shared::model::{ActiveUserConnectionChange, StreamChannel};
+use shared::model::{ActiveUserConnectionChange, StreamChannel, VirtualId};
 use crate::auth::Fingerprint;
 
 pub struct ConnectionManager {
@@ -36,7 +36,10 @@ impl ConnectionManager {
         self.close_socket_signal_tx.subscribe()
     }
 
-    pub fn kick_connection(&self, addr: &SocketAddr) -> bool {
+    pub async fn kick_connection(&self, addr: &SocketAddr, virtual_id: VirtualId, block_secs: u64) -> bool {
+        if block_secs > 0 {
+            self.user_manager.block_user_for_stream(addr, virtual_id, block_secs).await;
+        }
         if let Err(e) = self.close_socket_signal_tx.send(*addr) {
             debug!("No active receivers for close signal ({addr}): {e:?}");
             return false;
@@ -74,7 +77,7 @@ impl ConnectionManager {
             self.event_manager.send_event(EventMessage::ActiveUser(ActiveUserConnectionChange::Updated(stream_info)));
         } else {
             warn!("Failed to register connection for user {username} at {}; disconnecting client", fingerprint.addr);
-            let _ = self.kick_connection(&fingerprint.addr);
+            let _ = self.kick_connection(&fingerprint.addr,0, 0).await;
         }
     }
 

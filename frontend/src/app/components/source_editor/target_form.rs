@@ -1,6 +1,6 @@
 use crate::app::components::config::HasFormData;
 use crate::app::components::select::Select;
-use crate::app::components::{BlockId, BlockInstance, Card, ClusterFlagsInput, DropDownOption, DropDownSelection, EditMode, Panel, SourceEditorContext, TextButton};
+use crate::app::components::{BlockId, BlockInstance, Card, ClusterFlagsInput, ClusterFlagsInputMode, DropDownOption, DropDownSelection, EditMode, FilterInput, Panel, SourceEditorContext, TextButton};
 use crate::{config_field_child, edit_field_bool, edit_field_list_option, edit_field_text, generate_form_reducer};
 use shared::model::{ClusterFlags, ConfigTargetDto, ConfigTargetOptions, ProcessingOrder};
 use std::fmt::Display;
@@ -149,6 +149,7 @@ pub fn ConfigTargetView(props: &ConfigTargetViewProps) -> Html {
                     <ClusterFlagsInput
                         name="force_redirect"
                         value={target_options_state.form.force_redirect}
+                        mode={ClusterFlagsInputMode::NoneIsNone}
                         on_change={Callback::from(move |(_name, flags):(String, Option<ClusterFlags>)| {
                         target_options_state_1.dispatch(ConfigTargetOptionsFormAction::ForceRedirect(flags));
                     })}
@@ -160,6 +161,7 @@ pub fn ConfigTargetView(props: &ConfigTargetViewProps) -> Html {
 
     let render_target = || {
         let target_form_state_1 = target_form_state.clone();
+        let target_form_state_2 = target_form_state.clone();
         html! {
             <Card class="tp__config-view__card">
             <div class="tp__config-view__cols-2">
@@ -167,7 +169,13 @@ pub fn ConfigTargetView(props: &ConfigTargetViewProps) -> Html {
             { edit_field_bool!(target_form_state, translate.t(LABEL_USE_MEMORY_CACHE), use_memory_cache,  ConfigTargetFormAction::UseMemoryCache) }
             </div>
             { edit_field_text!(target_form_state, translate.t(LABEL_NAME), name, ConfigTargetFormAction::Name) }
-            { edit_field_text!(target_form_state, translate.t(LABEL_FILTER), filter, ConfigTargetFormAction::Filter) }
+            { config_field_child!(translate.t(LABEL_FILTER), {
+                   html! {
+                        <FilterInput filter={target_form_state_2.form.filter.clone()} on_change={Callback::from(move |new_filter: Option<String>| {
+                            target_form_state_2.dispatch(ConfigTargetFormAction::Filter(new_filter.unwrap_or_default()));
+                        })} />
+                   }
+            })}
 
             { config_field_child!(translate.t(LABEL_PROCESSING_ORDER), {
                    html! {

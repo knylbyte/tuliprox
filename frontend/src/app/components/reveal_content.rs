@@ -29,7 +29,7 @@ pub fn RevealContent(props: &RevealContentProps) -> Html {
             let actions = actions.clone();
             let dlg = dialog.clone();
             spawn_local(async move {
-                let _result = dlg.content(content, actions).await;
+                let _result = dlg.content(content, actions, true).await;
             });
         })
     };

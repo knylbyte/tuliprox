@@ -127,6 +127,7 @@
     "SECRET": "Secret",
     "USERFILE": "Userfile",
     "PLAYER_SERVER": "Player Server",
+    "KICK_DURATION": "Kick duration (secs)",
     "VERSION": "Version",
     "SERVER_TIME": "Server time",
     "BUILD_TIME": "Build time",
@@ -343,7 +344,8 @@
     "EPG_LOGO_OVERRIDE": "Logo Override",
     "API_CONFIGURATION" : "API Configuration",
     "HEADER_NAME": "Header Name",
-    "HEADER_VALUE": "Header Value"
+    "HEADER_VALUE": "Header Value",
+    "TEMPLATES": "Templates"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "Playlist Category Selection"

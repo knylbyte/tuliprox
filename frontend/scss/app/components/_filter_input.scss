@@ -1,29 +1,27 @@
-.tp__reveal-content {
+.tp__filter-input {
   display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  gap: var(--gap-default);
   cursor: pointer;
   fill: var(--modest-text-color);
+
+  .tp__input-wrapper {
+    height: 2.5rem;
+    padding: 0 var(--padding-mini);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
 
   &:hover {
     fill: var(--text-color);
     filter: brightness(1.2);
   }
 
-  .svg-icon {
-    width: 1.2rem;
-    height: 1.2rem;
-    min-height: 1.2rem;
-    min-width: 1.2rem;
-  }
-
   &__preview {
+    flex: 1;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
     max-height: 2rem;
-    max-width: var(--max-table-cell-width);
     pointer-events: none;
   }
 
