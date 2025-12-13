@@ -235,7 +235,6 @@
     "RETRY": "Retry",
     "GRACE_PERIOD_MILLIS": "Grace Period (millis)",
     "GRACE_PERIOD_TIMEOUT_SECS": "Grace Period Timeout (secs)",
-    "FORCED_RETRY_INTERVAL_SECS": "Forced Retry Interval (secs)",
     "THROTTLE_KBPS": "Throttle kbps",
     "FRIENDLY_NAME": "Friendly Name",
     "MANUFACTURER": "Manufacturer",
