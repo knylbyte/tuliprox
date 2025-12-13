@@ -1,28 +1,37 @@
-use shared::error::{create_tuliprox_error_result, info_err};
-use shared::error::{TuliproxError, TuliproxErrorKind};
+// Import the new MediaQuality struct
+use crate::model::MediaQuality;
+use crate::model::XtreamSeriesEpisode;
 use crate::model::{ApiProxyServerInfo, AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, StrmTargetOutput};
-use crate::model::XtreamSeriesEpisode;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage::{ensure_target_storage_path, get_input_storage_path};
 use crate::repository::storage_const;
 use crate::repository::xtream_repository::{xtream_get_record_file_path, InputVodInfoRecord};
-use shared::utils::{extract_extension_from_url, hash_bytes, hash_string_as_hex, truncate_string, ExportStyleConfig, CONSTANTS};
+use crate::utils;
 use crate::utils::{async_file_reader, async_file_writer, normalize_string_path, truncate_filename, FileReadGuard, IO_BUFFER_SIZE};
 use chrono::Datelike;
 use filetime::{set_file_times, FileTime};
 use log::{error, trace};
 use regex::Regex;
 use serde::Serialize;
+use shared::error::{create_tuliprox_error_result, info_err};
+use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::model::{ClusterFlags, FieldGetAccessor, PlaylistGroup, PlaylistItem, PlaylistItemType, StrmExportStyle, UUIDType};
+use shared::utils::{extract_extension_from_url, hash_bytes, hash_string_as_hex, truncate_string, ExportStyleConfig, CONSTANTS};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::{create_dir_all, remove_dir, remove_file, File};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-use shared::model::{ClusterFlags, FieldGetAccessor, PlaylistGroup, PlaylistItem, PlaylistItemType, StrmExportStyle, UUIDType};
-use crate::utils;
-// Import the new MediaQuality struct
-use crate::model::{MediaQuality};
+
+use serde::Deserialize;
+use serde_json::value::RawValue as JsonRawValue;
+
+#[derive(Deserialize)]
+struct AdditionalProps<'a> {
+    #[serde(borrow)]
+    info: Option<&'a JsonRawValue>,
+}
 
 /// Sanitizes a string to be safe for use as a file or directory name by
 /// following a strict "allow-list" approach and discarding invalid characters.
@@ -749,7 +758,12 @@ async fn prepare_strm_files(
             let quality_string = if strm_target_output.add_quality_to_filename {
                 pli.header.additional_properties
                     .as_ref()
-                    .and_then(|props| props.get("info"))
+                    .and_then(|raw| {
+                        let props: AdditionalProps<'_> = serde_json::from_str(raw.get()).ok()?;
+                        let info = props.info?;
+                        serde_json::from_str::<serde_json::Value>(info.get()).ok()
+                    })
+                    .as_ref()
                     .and_then(MediaQuality::from_ffprobe_info)
                     .map_or_else(String::new, |quality| {
                         let formatted = quality.format_for_filename(separator);
@@ -866,7 +880,7 @@ pub async fn write_strm_playlist(
     for strm_file in strm_files {
         // file paths
         let output_path = truncate_filename(&root_path.join(&strm_file.dir_path), 255);
-        let file_path =  output_path.join(format!("{}.strm", truncate_string(&strm_file.file_name, 250)));
+        let file_path = output_path.join(format!("{}.strm", truncate_string(&strm_file.file_name, 250)));
 
         let file_exists = file_path.exists();
         let relative_file_path = get_relative_path_str(&file_path, &root_path);

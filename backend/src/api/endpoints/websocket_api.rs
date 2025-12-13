@@ -7,7 +7,7 @@ use axum::{extract::ws::{Message, WebSocket, WebSocketUpgrade},response::IntoRes
 use log::{error, trace};
 use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserCommand, UserRole, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
-use shared::utils::{concat_path_leading_slash};
+use shared::utils::{concat_path_leading_slash, default_kick_secs};
 
 // WebSocket upgrade handler
 async fn websocket_handler(
@@ -316,6 +316,10 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth_req
 
 async fn handle_user_action(app_state: &Arc<AppState>, cmd: UserCommand) -> bool {
     match cmd {
-        UserCommand::Kick(addr, virtual_id, secs) => app_state.connection_manager.kick_connection(&addr, virtual_id, secs).await,
+        UserCommand::Kick(addr, virtual_id, _secs) => {
+            // secs could be later used for different kick configurations. Currently, we only have 1.
+            let kick_secs = app_state.app_config.config.load().web_ui.as_ref().map_or_else(default_kick_secs, |wc| wc.kick_secs);
+            app_state.connection_manager.kick_connection(&addr, virtual_id, kick_secs).await
+        }
     }
 }
