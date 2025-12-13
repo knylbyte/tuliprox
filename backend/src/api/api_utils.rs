@@ -224,7 +224,6 @@ pub struct StreamOptions {
 ///
 /// If the reverse proxy or stream settings are not defined, default values are used:
 /// - retry: `false`
-/// - forced retry interval: `0`
 /// - buffering: `false`
 /// - buffer size: `0`
 ///
