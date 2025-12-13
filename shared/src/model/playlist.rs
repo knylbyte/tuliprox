@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-
+use serde_json::value::RawValue;
 // https://de.wikipedia.org/wiki/M3U
 // https://siptv.eu/howto/playlist.html
 
@@ -166,7 +166,7 @@ pub struct PlaylistItemHeader {
     pub url: String,
     pub epg_channel_id: Option<String>,
     pub xtream_cluster: XtreamCluster,
-    pub additional_properties: Option<Value>,
+    pub additional_properties: Option<Box<RawValue>>,
     #[serde(default)]
     pub item_type: PlaylistItemType,
     #[serde(default)]
@@ -192,32 +192,33 @@ impl PlaylistItemHeader {
         }
     }
 
-    pub fn get_additional_property(&self, field: &str) -> Option<&Value> {
-        self.additional_properties.as_ref().and_then(|v| match v {
-            Value::Object(map) => {
-                map.get(field)
-            }
+    pub fn get_additional_property(&self, field: &str) -> Option<Value> {
+        let raw = self.additional_properties.as_ref()?;
+        let value: Value = serde_json::from_str(raw.get()).ok()?;
+
+        match value {
+            Value::Object(map) => map.get(field).cloned(),
             _ => None,
-        })
+        }
     }
 
     pub fn get_additional_property_as_u32(&self, field: &str) -> Option<u32> {
         match self.get_additional_property(field) {
-            Some(value) => get_u32_from_serde_value(value),
+            Some(value) => get_u32_from_serde_value(&value),
             None => None
         }
     }
 
     pub fn get_additional_property_as_u64(&self, field: &str) -> Option<u64> {
         match self.get_additional_property(field) {
-            Some(value) => get_u64_from_serde_value(value),
+            Some(value) => get_u64_from_serde_value(&value),
             None => None
         }
     }
 
     pub fn get_additional_property_as_str(&self, field: &str) -> Option<String> {
         match self.get_additional_property(field) {
-            Some(value) => get_string_from_serde_value(value),
+            Some(value) => get_string_from_serde_value(&value),
             None => None
         }
     }
@@ -607,23 +608,22 @@ impl PlaylistItem {
     pub fn to_xtream(&self) -> XtreamPlaylistItem {
         let header = &self.header;
         let provider_id = header.id.parse::<u32>().unwrap_or_default();
-        let mut additional_properties = None;
+        let mut additional_properties: Option<String> = None;
+
         if header.xtream_cluster != XtreamCluster::Live {
             let add_ext = match header.get_additional_property("container_extension") {
                 None => true,
-                Some(ext) => ext.as_str().is_none_or(str::is_empty)
+                Some(ext) => ext.as_str().is_none_or(str::is_empty),
             };
+
             if add_ext {
                 if let Some(cont_ext) = extract_extension_from_url(&header.url) {
-                    let ext = if let Some(stripped) = cont_ext.strip_prefix('.') { stripped } else { cont_ext };
-                    let mut result = match header.additional_properties.as_ref() {
+                    let ext = cont_ext.strip_prefix('.').unwrap_or(cont_ext);
+                    // parse RawValue into Value on-demand
+                    let mut result: Map<String, Value> = match header.additional_properties.as_ref() {
                         None => Map::new(),
                         Some(props) => {
-                            if let Value::Object(map) = props {
-                                map.clone()
-                            } else {
-                                Map::new()
-                            }
+                            serde_json::from_str(props.get()).unwrap_or_else(|_| Map::new())
                         }
                     };
                     result.insert("container_extension".to_string(), Value::String(ext.to_string()));
@@ -631,14 +631,12 @@ impl PlaylistItem {
                 }
             }
         }
+
         if additional_properties.is_none() {
             additional_properties = header.additional_properties.as_ref().and_then(|props| {
-                serde_json::to_string(props).ok()
+                serde_json::to_string(props.get()).ok()
             });
         }
-        // let additional_properties = header.additional_properties.as_ref().and_then(|props| {
-        //     serde_json::to_string(props).ok()
-        // });
 
         XtreamPlaylistItem {
             virtual_id: header.virtual_id,
@@ -663,33 +661,35 @@ impl PlaylistItem {
 
     pub fn to_common(&self) -> CommonPlaylistItem {
         let header = &self.header;
-        let mut additional_properties = None;
+        let mut additional_properties: Option<String> = None;
+
         if header.xtream_cluster != XtreamCluster::Live {
             let add_ext = match header.get_additional_property("container_extension") {
                 None => true,
-                Some(ext) => ext.as_str().is_none_or(str::is_empty)
+                Some(ext) => ext.as_str().is_none_or(str::is_empty),
             };
+
             if add_ext {
                 if let Some(cont_ext) = extract_extension_from_url(&header.url) {
-                    let ext = if let Some(stripped) = cont_ext.strip_prefix('.') { stripped } else { cont_ext };
-                    let mut result = match header.additional_properties.as_ref() {
+                    let ext = cont_ext.strip_prefix('.').unwrap_or(cont_ext);
+
+                    // Parse RawValue on-demand
+                    let mut result: Map<String, Value> = match header.additional_properties.as_ref() {
                         None => Map::new(),
                         Some(props) => {
-                            if let Value::Object(map) = props {
-                                map.clone()
-                            } else {
-                                Map::new()
-                            }
+                            serde_json::from_str(props.get()).unwrap_or_else(|_| Map::new())
                         }
                     };
+
                     result.insert("container_extension".to_string(), Value::String(ext.to_string()));
                     additional_properties = serde_json::to_string(&Value::Object(result)).ok();
                 }
             }
         }
+
         if additional_properties.is_none() {
             additional_properties = header.additional_properties.as_ref().and_then(|props| {
-                serde_json::to_string(props).ok()
+                serde_json::to_string(props.get()).ok()
             });
         }
 

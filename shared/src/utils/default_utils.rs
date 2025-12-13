@@ -23,4 +23,4 @@ pub fn default_secret() -> String {
     out.iter().map(|b| format!("{:02X}", b)).collect()
 }
 
-pub const fn default_kick_secs() -> u64 { 30 }
+pub const fn default_kick_secs() -> u64 { 90 }

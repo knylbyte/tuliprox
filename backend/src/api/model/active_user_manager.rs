@@ -503,13 +503,20 @@ impl ActiveUserManager {
     }
 
     pub async fn block_user_for_stream(&self, addr: &SocketAddr, virtual_id: VirtualId, blocked_secs: u64) {
-        let mut connections = self.connections.write().await;
-        let now = current_time_secs();
-        connections.kicked.retain(|_, (expires_at, _)| *expires_at > now);
-        if let Some(username) = connections.key_by_addr.get(addr).cloned() {
-            let expires_at = now + blocked_secs.clamp(1,86_400); // max 1 day
-            connections.kicked.insert(username, (expires_at, virtual_id));
+        let block_for_secs = blocked_secs.clamp(0, 86_400); // max 1 day;
+        if block_for_secs > 0 {
+            let mut connections = self.connections.write().await;
+            let now = current_time_secs();
+            connections.kicked.retain(|_, (expires_at, _)| *expires_at > now);
+            if let Some(username) = connections.key_by_addr.get(addr).cloned() {
+                let expires_at = now + block_for_secs;
+                connections.kicked.insert(username, (expires_at, virtual_id));
+            }
         }
+    }
+
+    pub async fn get_username_for_addr(&self, addr: &SocketAddr) -> Option<String> {
+        self.connections.read().await.key_by_addr.get(addr).cloned()
     }
 
     fn gc(&self) {

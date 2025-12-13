@@ -22,7 +22,6 @@ const LABEL_RETRY: &str = "LABEL.RETRY";
 const LABEL_THROTTLE: &str = "LABEL.THROTTLE";
 const LABEL_GRACE_PERIOD_MILLIS: &str = "LABEL.GRACE_PERIOD_MILLIS";
 const LABEL_GRACE_PERIOD_TIMEOUT_SECS: &str = "LABEL.GRACE_PERIOD_TIMEOUT_SECS";
-//const LABEL_FORCED_RETRY_INTERVAL_SECS: &str = "LABEL.FORCED_RETRY_INTERVAL_SECS";
 const LABEL_THROTTLE_KBPS: &str = "LABEL.THROTTLE_KBPS";
 
 const LABEL_RATE_LIMIT: &str = "LABEL.RATE_LIMIT";
@@ -84,7 +83,6 @@ generate_form_reducer!(
         Throttle => throttle: Option<String>,
         GracePeriodMillis => grace_period_millis: u64,
         GracePeriodTimeoutSecs => grace_period_timeout_secs: u64,
-        //ForcedRetryIntervalSecs => forced_retry_interval_secs: u32,
         ThrottleKbps => throttle_kbps: u64,
         SharedBurstBufferMb => shared_burst_buffer_mb: u64,
     }
@@ -243,7 +241,6 @@ pub fn ReverseProxyConfigView() -> Html {
                 { config_field_optional!(stream_state.form, translate.t(LABEL_THROTTLE), throttle) }
                 { config_field!(stream_state.form, translate.t(LABEL_GRACE_PERIOD_MILLIS), grace_period_millis) }
                 { config_field!(stream_state.form, translate.t(LABEL_GRACE_PERIOD_TIMEOUT_SECS), grace_period_timeout_secs) }
-                //{ config_field!(stream_state.form, translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS), forced_retry_interval_secs) }
                 { config_field!(stream_state.form, translate.t(LABEL_THROTTLE_KBPS), throttle_kbps) }
                 { config_field!(stream_state.form, translate.t(LABEL_SHARED_BURST_BUFFER_MB), shared_burst_buffer_mb) }
             </Card>
@@ -380,7 +377,6 @@ pub fn ReverseProxyConfigView() -> Html {
             { edit_field_text_option!(stream_state, translate.t(LABEL_THROTTLE), throttle, StreamConfigFormAction::Throttle) }
             { edit_field_number_u64!(stream_state, translate.t(LABEL_GRACE_PERIOD_MILLIS), grace_period_millis, StreamConfigFormAction::GracePeriodMillis) }
             { edit_field_number_u64!(stream_state, translate.t(LABEL_GRACE_PERIOD_TIMEOUT_SECS), grace_period_timeout_secs, StreamConfigFormAction::GracePeriodTimeoutSecs) }
-            //{ edit_field_number!(stream_state, translate.t(LABEL_FORCED_RETRY_INTERVAL_SECS), forced_retry_interval_secs, StreamConfigFormAction::ForcedRetryIntervalSecs) }
             { edit_field_number_u64!(stream_state, translate.t(LABEL_THROTTLE_KBPS), throttle_kbps, StreamConfigFormAction::ThrottleKbps) }
             { edit_field_number_u64!(stream_state, translate.t(LABEL_SHARED_BURST_BUFFER_MB), shared_burst_buffer_mb, StreamConfigFormAction::SharedBurstBufferMb) }
         </Card>

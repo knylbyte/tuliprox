@@ -210,7 +210,6 @@ pub fn get_user_target<'a>(
 
 pub struct StreamOptions {
     pub stream_retry: bool,
-    pub stream_force_retry_secs: u32,
     pub buffer_enabled: bool,
     pub buffer_size: usize,
     pub pipe_provider_stream: bool,
@@ -220,13 +219,11 @@ pub struct StreamOptions {
 ///
 /// This function retrieves streaming-related settings from the `AppState`:
 /// - `stream_retry`: whether retrying the stream is enabled,
-/// - `stream_force_retry_secs`: the number of seconds to wait before a forced retry,
 /// - `buffer_enabled`: whether stream buffering is enabled,
 /// - `buffer_size`: the size of the stream buffer.
 ///
 /// If the reverse proxy or stream settings are not defined, default values are used:
 /// - retry: `false`
-/// - forced retry interval: `0`
 /// - buffering: `false`
 /// - buffer size: `0`
 ///
@@ -236,21 +233,20 @@ pub struct StreamOptions {
 ///
 /// Returns a `StreamOptions` instance with the resolved configuration.
 fn get_stream_options(app_state: &AppState) -> StreamOptions {
-    let (stream_retry, stream_force_retry_secs, buffer_enabled, buffer_size) = app_state
+    let (stream_retry, buffer_enabled, buffer_size) = app_state
         .app_config
         .config
         .load()
         .reverse_proxy
         .as_ref()
         .and_then(|reverse_proxy| reverse_proxy.stream.as_ref())
-        .map_or((false, 0, false, 0), |stream| {
+        .map_or((false, false, 0), |stream| {
             let (buffer_enabled, buffer_size) = stream
                 .buffer
                 .as_ref()
                 .map_or((false, 0), |buffer| (buffer.enabled, buffer.size));
             (
                 stream.retry,
-                stream.forced_retry_interval_secs,
                 buffer_enabled,
                 buffer_size,
             )
@@ -258,7 +254,6 @@ fn get_stream_options(app_state: &AppState) -> StreamOptions {
     let pipe_provider_stream = !stream_retry && !buffer_enabled;
     StreamOptions {
         stream_retry,
-        stream_force_retry_secs,
         buffer_enabled,
         buffer_size,
         pipe_provider_stream,
