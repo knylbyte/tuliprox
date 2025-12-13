@@ -512,6 +512,10 @@ impl ActiveUserManager {
         }
     }
 
+    pub async fn get_username_for_addr(&self, addr: &SocketAddr) -> Option<String>{
+        self.connections.read().await.key_by_addr.get(addr).cloned()
+    }
+
     fn gc(&self) {
         if let Some(gc_ts) = &self.gc_ts {
             let ts = gc_ts.load(Ordering::Acquire);
