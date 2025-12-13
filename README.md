@@ -417,7 +417,7 @@ log:
 - `content_security_policy`: configure Content-Security-Policy headers. When `enabled` is true, the default directives `default-src 'self'`, `script-src 'self' 'wasm-unsafe-eval' 'nonce-{nonce_b64}'`, and `frame-ancestors 'none'` are applied. Additional directives can be added via `custom-attributes`. Enabling CSP may block external images/logos unless allowed via directives like `img-src`.
 - `path` is for web_ui path like `/ui` for reverse proxy integration if necessary.
 - `player_server` optional, if set the server setting is used for the web-ui-player.
-- `kick_secs` default 30 seconds, if a user is kicked from the `web_ui`, they can't connect for this duration. This setting is also used for sleep-timed streams.
+- `kick_secs` default 90 seconds, if a user is kicked from the `web_ui`, they can't connect for this duration. This setting is also used for sleep-timed streams.
 - `auth` for authentication settings 
   - `enabled` can be deactivated if `enabled` is set to `false`. If not set default is `true`.
   - `issuer`

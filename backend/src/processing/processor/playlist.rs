@@ -340,9 +340,7 @@ async fn process_source(client: &reqwest::Client, cfg: Arc<AppConfig>, source_id
                 errors.append(&mut error_list);
                 errors.append(&mut tvguide_errors);
                 let group_count = playlistgroups.len();
-                let channel_count = playlistgroups.iter()
-                    .map(|group| group.channels.len())
-                    .sum();
+                let channel_count = playlistgroups.iter().map(|group| group.channels.len()).sum();
                 let input_name = &input.name;
                 if playlistgroups.is_empty() {
                     info!("Source is empty {input_name}");

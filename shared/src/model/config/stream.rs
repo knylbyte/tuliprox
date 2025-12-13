@@ -40,8 +40,6 @@ pub struct StreamConfigDto {
     pub grace_period_millis: u64,
     #[serde(default = "default_grace_period_timeout_secs")]
     pub grace_period_timeout_secs: u64,
-    #[serde(default)]
-    pub forced_retry_interval_secs: u32,
     #[serde(default, skip)]
     pub throttle_kbps: u64,
     #[serde(default = "default_shared_burst_buffer_mb")]
@@ -56,7 +54,6 @@ impl Default for StreamConfigDto {
             throttle: None,
             grace_period_millis: default_grace_period_millis(),
             grace_period_timeout_secs: default_grace_period_timeout_secs(),
-            forced_retry_interval_secs: 0,
             throttle_kbps: 0,
             shared_burst_buffer_mb: default_shared_burst_buffer_mb(),
         }
@@ -71,7 +68,6 @@ impl StreamConfigDto {
         && (self.throttle.is_none() || self.throttle.as_ref().is_some_and(|t| t.is_empty()))
         && self.grace_period_millis == empty.grace_period_millis
         && self.grace_period_timeout_secs == empty.grace_period_timeout_secs
-        && self.forced_retry_interval_secs == empty.forced_retry_interval_secs
         && self.throttle_kbps == empty.throttle_kbps
         && self.shared_burst_buffer_mb == default_shared_burst_buffer_mb()
     }
