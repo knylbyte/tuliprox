@@ -8,11 +8,12 @@ use crate::repository::xtream_repository::{write_vod_info_to_wal_file, xtream_up
 use shared::error::{notify_err};
 use crate::processing::processor::{handle_error, handle_error_and_return, create_resolve_options_function_for_xtream_target};
 use shared::utils::{get_u32_from_serde_value, get_u64_from_serde_value, get_string_from_serde_value};
-use serde_json::{from_str, Map, Value};
+use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::{Write};
 use std::time::Instant;
 use log::{info, log_enabled, Level};
+use serde_json::value::RawValue;
 use crate::utils;
 use crate::processing::processor::xtream::normalize_json_content;
 use crate::utils::IO_BUFFER_SIZE;
@@ -123,13 +124,13 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
 
                         // Update in-memory playlist items with the newly fetched vod info.
                         // This makes the data available for subsequent processing steps like STRM export.
-                        pli.header.additional_properties = from_str::<Map<String, Value>>(normalized_str).ok().and_then(|info_doc| {
-                            info_doc.get("info").cloned().map(|info_content| {
-                                let mut wrapped_info = Map::new();
-                                wrapped_info.insert("info".to_string(), info_content);
-                                Value::Object(wrapped_info)
-                            })
-                        });
+                        if let Ok(value) = serde_json::from_str::<Value>(normalized_str) {
+                            if let Some(info_content) = value.get("info") {
+                                if let Ok(raw_info) = serde_json::to_string(info_content) {
+                                    pli.header.additional_properties = serde_json::from_str::<Box<RawValue>>(&raw_info).ok();
+                                }
+                            }
+                        }
                     }
                 }
             }

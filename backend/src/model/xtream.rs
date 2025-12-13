@@ -7,6 +7,7 @@ use shared::model::{ClusterFlags, PlaylistEntry, XtreamCluster};
 use shared::utils::{deserialize_as_option_string, deserialize_as_string, deserialize_as_string_array, deserialize_number_from_string,
                     get_non_empty_str, opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
 use std::iter::FromIterator;
+use serde_json::value::RawValue;
 
 #[derive(Debug, Default)]
 pub struct XtreamLoginInfo {
@@ -153,7 +154,7 @@ impl XtreamStream {
         self.stream_id.unwrap_or_else(|| self.series_id.unwrap_or(0))
     }
 
-    pub fn get_additional_properties(&self) -> Option<Value> {
+    pub fn get_additional_properties(&self) ->  Option<Box<RawValue>> {
         let mut result = Map::new();
         if let Some(bdpath) = self.backdrop_path.as_ref() {
             if !bdpath.is_empty() {
@@ -183,7 +184,12 @@ impl XtreamStream {
         add_opt_i64_property_if_exists!(result, self.tv_archive, "tv_archive");
         add_opt_i64_property_if_exists!(result, self.tv_archive_duration, "tv_archive_duration");
         add_opt_i64_property_if_exists!(result, self.is_adult, "is_adult");
-        if result.is_empty() { None } else { Some(Value::Object(result)) }
+        if result.is_empty() {
+            None
+        } else {
+            let s = serde_json::to_string(&Value::Object(result)).ok()?;
+            RawValue::from_string(s).ok()
+        }
     }
 }
 
@@ -403,7 +409,7 @@ pub struct XtreamSeriesInfo {
 }
 
 impl XtreamSeriesInfoEpisode {
-    pub fn get_additional_properties(&self, series_info: &XtreamSeriesInfo) -> Option<Value> {
+    pub fn get_additional_properties(&self, series_info: &XtreamSeriesInfo) -> Option<Box<RawValue>> {
         let mut result = Map::new();
         let info = series_info.info.as_ref();
         let bdpath = info.and_then(|i| i.backdrop_path.as_ref());
@@ -437,7 +443,12 @@ impl XtreamSeriesInfoEpisode {
             }
         }
 
-        if result.is_empty() { None } else { Some(Value::Object(result)) }
+        if result.is_empty() {
+            None
+        } else {
+            let s = serde_json::to_string(&Value::Object(result)).ok()?;
+            RawValue::from_string(s).ok()
+        }
     }
 }
 

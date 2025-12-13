@@ -749,7 +749,10 @@ async fn prepare_strm_files(
             let quality_string = if strm_target_output.add_quality_to_filename {
                 pli.header.additional_properties
                     .as_ref()
-                    .and_then(|props| props.get("info"))
+                    .and_then(|raw| {
+                        let v: serde_json::Value = serde_json::from_str(raw.get()).ok()?;
+                        v.get("info").cloned()
+                    }).as_ref()
                     .and_then(MediaQuality::from_ffprobe_info)
                     .map_or_else(String::new, |quality| {
                         let formatted = quality.format_for_filename(separator);

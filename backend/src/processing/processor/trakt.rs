@@ -40,14 +40,13 @@ fn is_compatible_content_type(cluster: XtreamCluster, content_type: TraktContent
 /// Extract TMDB ID from playlist item
 fn extract_tmdb_id_from_playlist_item(item: &PlaylistItem) -> Option<u32> {
     if let Some(additional_props) = &item.header.additional_properties {
-        if let Some(props_str) = additional_props.as_str() {
-            if let Ok(props) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(props_str) {
-                return props
-                    .get("tmdb_id")
-                    .and_then(get_u32_from_serde_value)
-                    .filter(|&id| id != 0)
-                    .or_else(|| props.get("tmdb").and_then(get_u32_from_serde_value));
-            }
+        let props_str = additional_props.get();
+        if let Ok(props) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(props_str) {
+            return props
+                .get("tmdb_id")
+                .and_then(get_u32_from_serde_value)
+                .filter(|&id| id != 0)
+                .or_else(|| props.get("tmdb").and_then(get_u32_from_serde_value));
         }
     }
     None
