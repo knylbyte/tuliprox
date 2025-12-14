@@ -324,8 +324,8 @@ impl M3uPlaylistItem {
                                self.name, self.group);
 
         if !ignore_logo {
-            if rewrite_urls && self.t_resource_url.is_some() {
-                to_m3u_resource_non_empty_fields!(self, self.t_resource_url.as_ref().unwrap(), line, (logo, "tvg-logo"), (logo_small, "tvg-logo-small"););
+            if let (true, Some(resource_url)) = (rewrite_urls, self.t_resource_url.as_ref()) {
+                to_m3u_resource_non_empty_fields!(self, resource_url, line, (logo, "tvg-logo"), (logo_small, "tvg-logo-small"););
             } else {
                 to_m3u_non_empty_fields!(self, line, (logo, "tvg-logo"), (logo_small, "tvg-logo-small"););
             }

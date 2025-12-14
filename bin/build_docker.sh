@@ -8,7 +8,45 @@ if [ ! -f "${HOME}/.ghcr.io" ]; then
 fi
 source "${HOME}/.ghcr.io"
 
+# -----------------------------
+# Rust / Cargo Setup
+# -----------------------------
+export RUSTUP_NO_UPDATE_CHECK=1
+export CARGO_NET_GIT_FETCH_WITH_CLI=true
+export RUSTFLAGS="--remap-path-prefix $HOME=~"
+
+REQUIRED_TARGETS=(
+  "x86_64-unknown-linux-musl"
+  "aarch64-unknown-linux-musl"
+)
+
+echo "🦀 Checking Rust toolchain..."
+
+if ! rustup toolchain list | grep -q "^stable"; then
+  echo "🔧 Installing stable toolchain..."
+  rustup toolchain install stable --profile minimal
+fi
+
+rustup default stable
+
+echo "🎯 Ensuring required targets are installed..."
+for TARGET in "${REQUIRED_TARGETS[@]}"; do
+  if ! rustup target list --installed | grep -q "^${TARGET}$"; then
+    echo "➕ Installing target $TARGET"
+    rustup target add "$TARGET"
+  fi
+done
+
+WASM_TARGET="wasm32-unknown-unknown"
+
+if ! rustup target list --installed | grep -q "^${WASM_TARGET}$"; then
+  echo "➕ Installing wasm target for frontend: ${WASM_TARGET}"
+  rustup target add "${WASM_TARGET}"
+fi
+
+# -----------------------------------------
 # Function to print usage instructions
+# -----------------------------------------
 print_usage() {
     echo "Usage: $(basename "$0") <branch>"
     echo
