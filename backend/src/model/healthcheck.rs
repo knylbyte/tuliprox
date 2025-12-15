@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct Healthcheck {
     pub status: String,
     pub version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub build_time: Option<String>,
     pub server_time: String,
 }

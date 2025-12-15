@@ -1,63 +1,64 @@
 use log::{debug, info, warn};
 
-use crate::model::VodConfig;
-use crate::library::classifier::{VideoClassification, VodClassifier};
-use crate::library::metadata::{MetadataSource, MovieMetadata, SeriesMetadata, VideoMetadata};
+use crate::model::LibraryConfig;
+use crate::library::classifier::{MediaClassification, MediaClassifier};
+use crate::library::metadata::{MetadataSource, MovieMetadata, SeriesMetadata, MediaMetadata};
 use crate::library::nfo_reader::NfoReader;
-use crate::library::scanner::ScannedVideoFile;
+use crate::library::scanner::ScannedMediaFile;
+use crate::library::{MovieDbId, TMDB_API_KEY};
 use crate::library::tmdb_client::TmdbClient;
 
 /// Metadata resolver that tries multiple sources to get video metadata
 pub struct MetadataResolver {
-    classifier: VodClassifier,
+    classifier: MediaClassifier,
     tmdb_client: Option<TmdbClient>,
     fallback_to_filename: bool,
 }
 
 impl MetadataResolver {
     /// Creates a new metadata resolver from configuration
-    pub fn from_config(config: &VodConfig) -> Self {
+    pub fn from_config(config: &LibraryConfig) -> Self {
         let tmdb_client = if config.metadata.tmdb.enabled {
-            Some(TmdbClient::new(config.metadata.tmdb.api_key.clone(), config.metadata.tmdb.rate_limit_ms))
+            Some(TmdbClient::new(config.metadata.tmdb.api_key.as_ref().map_or_else(|| TMDB_API_KEY.to_string(), ToString::to_string), config.metadata.tmdb.rate_limit_ms))
         } else {
             None
         };
 
         Self {
-            classifier: VodClassifier::from_config(config),
+            classifier: MediaClassifier::from_config(config),
             tmdb_client,
             fallback_to_filename: config.metadata.fallback_to_filename,
         }
     }
 
     /// Resolves metadata for a video file using multiple sources
-    pub async fn resolve(&self, file: &ScannedVideoFile) -> Option<VideoMetadata> {
-        debug!("Resolving metadata for: {}", file.file_name);
+    pub async fn resolve(&self, file: &ScannedMediaFile) -> Option<MediaMetadata> {
+        debug!("Resolving metadata for: {}", file.file_path);
 
         // Step 1: Try to read existing NFO file
         if let Some(metadata) = NfoReader::read_metadata(&file.path).await {
-            info!("Found NFO metadata for: {}", file.file_name);
+            info!("Found NFO metadata for: {}", file.file_path);
             return Some(metadata);
         }
 
         // Step 2: Classify the file
         let classification = self.classifier.classify(file);
-        debug!("Classified {} as: {:?}", file.file_name, classification);
+        debug!("Classified {} as: {classification:?}", file.file_path);
 
         // Step 3: Try TMDB if enabled
         if let Some(ref tmdb) = self.tmdb_client {
             if let Some(metadata) = self.resolve_from_tmdb(file, &classification, tmdb).await {
-                info!("Found TMDB metadata for: {}", file.file_name);
+                info!("Found TMDB metadata for: {}", file.file_path);
                 return Some(metadata);
             }
         }
 
         // Step 4: Fallback to filename parsing
         if self.fallback_to_filename {
-            info!("Using filename-based metadata for: {}", file.file_name);
+            info!("Using filename-based metadata for: {}", file.file_path);
             Some(Self::resolve_from_filename(file, &classification))
         } else {
-            warn!("No metadata found for: {}", file.file_name);
+            warn!("No metadata found for: {}", file.file_path);
             None
         }
     }
@@ -65,18 +66,18 @@ impl MetadataResolver {
     /// Attempts to resolve metadata from TMDB
     async fn resolve_from_tmdb(
         &self,
-        file: &ScannedVideoFile,
-        classification: &VideoClassification,
+        file: &ScannedMediaFile,
+        classification: &MediaClassification,
         tmdb: &TmdbClient,
-    ) -> Option<VideoMetadata> {
+    ) -> Option<MediaMetadata> {
         match classification {
-            VideoClassification::Movie => {
-                let (title, year) = VodClassifier::extract_movie_title(file);
-                debug!("Searching TMDB for movie: {title} ({year:?})");
-                tmdb.search_movie(&title, year).await
+            MediaClassification::Movie => {
+                let (moviedb_ids, title, year) = MediaClassifier::extract_movie_search_info(file);
+                let tmdb_id = MovieDbId::get_tmdb_id(moviedb_ids.as_ref());
+                tmdb.search_movie(tmdb_id, &title, year).await
             }
-            VideoClassification::Series { .. } => {
-                let show_name = VodClassifier::extract_show_name(file);
+            MediaClassification::Series { .. } => {
+                let show_name = MediaClassifier::extract_show_name(file);
                 debug!("Searching TMDB for series: {show_name}");
                 // Try to extract year from parent directory if available
                 let year = file.path.parent()
@@ -100,15 +101,15 @@ impl MetadataResolver {
 
     /// Creates basic metadata from filename parsing
     fn resolve_from_filename(
-        file: &ScannedVideoFile,
-        classification: &VideoClassification,
-    ) -> VideoMetadata {
+        file: &ScannedMediaFile,
+        classification: &MediaClassification,
+    ) -> MediaMetadata {
         let timestamp = chrono::Utc::now().timestamp();
 
         match classification {
-            VideoClassification::Movie => {
-                let (title, year) = VodClassifier::extract_movie_title(file);
-                VideoMetadata::Movie(MovieMetadata {
+            MediaClassification::Movie => {
+                let (moviedb_id, title, year) = MediaClassifier::extract_movie_search_info(file);
+                MediaMetadata::Movie(MovieMetadata {
                     title,
                     original_title: None,
                     year,
@@ -116,8 +117,9 @@ impl MetadataResolver {
                     tagline: None,
                     runtime: None,
                     mpaa: None,
-                    imdb_id: None,
-                    tmdb_id: None,
+                    imdb_id:  None,
+                    tmdb_id: MovieDbId::get_tmdb_id(moviedb_id.as_ref()),
+                    tvdb_id: MovieDbId::get_tvdb_id(moviedb_id.as_ref()),
                     rating: None,
                     genres: Vec::new(),
                     directors: Vec::new(),
@@ -130,9 +132,9 @@ impl MetadataResolver {
                     last_updated: timestamp,
                 })
             }
-            VideoClassification::Series { season: _, episode: _ } => {
-                let show_name = VodClassifier::extract_show_name(file);
-                VideoMetadata::Series(SeriesMetadata {
+            MediaClassification::Series { season: _, episode: _ } => {
+                let show_name = MediaClassifier::extract_show_name(file);
+                MediaMetadata::Series(SeriesMetadata {
                     title: show_name,
                     original_title: None,
                     year: None,
@@ -160,42 +162,48 @@ impl MetadataResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
     use std::path::PathBuf;
+    use crate::model::{LibraryClassificationConfig, LibraryMetadataConfig, LibraryMetadataReadConfig, LibraryPlaylistConfig, LibraryTmdbConfig};
 
-    fn create_test_config(tmdb_enabled: bool) -> VodConfig {
-        VodConfig {
+    fn create_test_config(tmdb_enabled: bool) -> LibraryConfig {
+        LibraryConfig {
             enabled: true,
             scan_directories: vec![],
-            supported_extensions: HashSet::new(),
-            metadata: crate::model::VodMetadataConfig {
-                storage_location: "/tmp/vod".to_string(),
-                tmdb_enabled,
-                tmdb_api_key: if tmdb_enabled {
-                    Some("test_key".to_string())
-                } else {
-                    None
+            supported_extensions: vec![],
+            metadata: LibraryMetadataConfig {
+                path: "/tmp/vod".to_string(),
+                read_existing: LibraryMetadataReadConfig {
+                    kodi: true,
+                    jellyfin: true,
+                    plex: true,
                 },
-                tmdb_rate_limit_ms: 250,
-                fallback_to_filename_parsing: true,
-                write_json: false,
-                write_nfo: false,
+                tmdb: LibraryTmdbConfig {
+                    enabled: true,
+                    api_key: if tmdb_enabled {
+                        Some("test_key".to_string())
+                    } else {
+                        None
+                    },
+                    rate_limit_ms: 250,
+                    cache_duration_days: 0,
+                    language: "en-US".to_string(),
+                },
+                fallback_to_filename: true,
+                formats: vec![],
             },
-            classification: crate::model::VodClassificationConfig {
+            classification: LibraryClassificationConfig {
                 series_patterns: vec![],
+                series_directory_patterns: vec![]
             },
-            playlist: crate::model::VodPlaylistConfig {
-                movie_group_name: "Movies".to_string(),
-                series_group_name: "Series".to_string(),
-            },
-            file_serving: crate::model::VodFileServingConfig {
-                method: crate::model::VodFileServingMethod::XtreamApi,
+            playlist: LibraryPlaylistConfig {
+                movie_category: "Movies".to_string(),
+                series_category: "Series".to_string(),
             },
         }
     }
 
-    fn create_test_file(name: &str) -> ScannedVideoFile {
-        ScannedVideoFile {
+    fn create_test_file(name: &str) -> ScannedMediaFile {
+        ScannedMediaFile {
             path: PathBuf::from(format!("/test/{}", name)),
             file_name: name.to_string(),
             extension: "mkv".to_string(),
@@ -213,7 +221,7 @@ mod tests {
         let metadata = resolver.resolve(&file).await;
         assert!(metadata.is_some());
 
-        if let Some(VideoMetadata::Movie(movie)) = metadata {
+        if let Some(MediaMetadata::Movie(movie)) = metadata {
             assert_eq!(movie.title, "The Matrix");
             assert_eq!(movie.year, Some(1999));
             assert_eq!(movie.source, MetadataSource::FilenameParsed);
@@ -225,7 +233,7 @@ mod tests {
     #[tokio::test]
     async fn test_fallback_disabled() {
         let mut config = create_test_config(false);
-        config.metadata.fallback_to_filename_parsing = false;
+        config.metadata.fallback_to_filename = false;
         let resolver = MetadataResolver::from_config(&config);
         let file = create_test_file("Unknown.Movie.mkv");
 

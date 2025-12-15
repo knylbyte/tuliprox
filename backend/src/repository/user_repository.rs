@@ -494,6 +494,7 @@ mod tests {
                 sources_file_path: "".to_string(),
                 mapping_file_path: None,
                 api_proxy_file_path: "".to_string(),
+                library_file_path: "".to_string(),
                 custom_stream_response_path: None,
             }))),
             file_locks: Arc::new(FileLockManager::default()),

@@ -1,22 +1,22 @@
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io;
-
-use crate::model::VodConfig;
+use crate::model::{LibraryConfig, LibraryScanDirectory};
 
 /// Represents a discovered video file with its metadata
 #[derive(Debug, Clone)]
-pub struct ScannedVideoFile {
+pub struct ScannedMediaFile {
     pub path: PathBuf,
+    pub file_path: String,
     pub file_name: String,
     pub extension: String,
     pub size_bytes: u64,
     pub modified_timestamp: i64,
 }
 
-impl ScannedVideoFile {
-    /// Creates a new `ScannedVideoFile` from a path and metadata
+impl ScannedMediaFile {
+    /// Creates a new `ScannedMediaFile` from a path and metadata
     pub async fn from_path(path: PathBuf) -> io::Result<Self> {
         let metadata = fs::metadata(&path).await?;
         let file_name = path
@@ -37,6 +37,7 @@ impl ScannedVideoFile {
             .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0));
 
         Ok(Self {
+            file_path: path.display().to_string(),
             path,
             file_name,
             extension,
@@ -46,34 +47,32 @@ impl ScannedVideoFile {
     }
 }
 
-/// Video file scanner for local VOD directories
-pub struct VodScanner {
-    config: VodConfig,
+/// Library file scanner for local VOD directories
+pub struct LibraryScanner {
+    config: LibraryConfig,
 }
 
-impl VodScanner {
-    /// Creates a new `VodScanner` with the given configuration
-    pub fn new(config: VodConfig) -> Self {
+impl LibraryScanner {
+    pub fn new(config: LibraryConfig) -> Self {
         Self { config }
     }
 
-    /// Scans all configured directories for video files
-    pub async fn scan_all(&self) -> Result<Vec<ScannedVideoFile>, io::Error> {
+    pub async fn scan_all(&self) -> Result<Vec<ScannedMediaFile>, io::Error> {
         if !self.config.enabled {
-            info!("VOD scanning is disabled");
+            info!("Library media scanning is disabled");
             return Ok(Vec::new());
         }
 
         let mut all_files = Vec::new();
 
         for scan_dir in &self.config.scan_directories {
-            // if !scan_dir.enabled {
-            //     debug!("Skipping disabled scan directory: {}", scan_dir.path);
-            //     continue;
-            // }
+            if !scan_dir.enabled {
+                debug!("Skipping disabled scan directory: {}", scan_dir.path);
+                continue;
+            }
 
             info!("Scanning directory: {}", scan_dir.path);
-            match self.scan_directory(&scan_dir.path).await {
+            match self.scan_directory(scan_dir).await {
                 Ok(mut files) => {
                     info!("Found {} video files in {}", files.len(), scan_dir.path);
                     all_files.append(&mut files);
@@ -88,30 +87,30 @@ impl VodScanner {
         Ok(all_files)
     }
 
-    /// Recursively scans a single directory for video files
-    async fn scan_directory(&self, dir_path: &str) -> io::Result<Vec<ScannedVideoFile>> {
-        let path = Path::new(dir_path);
+    // Recursively scans a single directory for video files
+    async fn scan_directory(&self, scan_directory: &LibraryScanDirectory) -> io::Result<Vec<ScannedMediaFile>> {
+        let path = Path::new(&scan_directory.path);
 
         if !path.exists() {
-            warn!("Directory does not exist: {dir_path}");
+            warn!("Directory does not exist: {}", &scan_directory.path);
             return Ok(Vec::new());
         }
 
         if !path.is_dir() {
-            warn!("Path is not a directory: {dir_path}");
+            warn!("Path is not a directory: {}", &scan_directory.path);
             return Ok(Vec::new());
         }
 
         let mut files = Vec::new();
-        self.scan_directory_recursive(path, &mut files).await?;
+        self.scan_directory_recursive(path, scan_directory.recursive, &mut files).await?;
         Ok(files)
     }
 
-    /// Internal recursive directory scanning implementation
     fn scan_directory_recursive<'a>(
         &'a self,
         path: &'a Path,
-        files: &'a mut Vec<ScannedVideoFile>,
+        recursive: bool,
+        files: &'a mut Vec<ScannedMediaFile>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'a>> {
         Box::pin(async move {
             let mut entries = fs::read_dir(path).await?;
@@ -121,22 +120,24 @@ impl VodScanner {
                 let metadata = entry.metadata().await?;
 
                 if metadata.is_dir() {
-                    // Recursively scan subdirectories
-                    if let Err(err) = self.scan_directory_recursive(&entry_path, files).await {
-                        error!("Failed to scan subdirectory {}: {}", entry_path.display(), err);
+                    if recursive {
+                        // Recursively scan subdirectories
+                        if let Err(err) = self.scan_directory_recursive(&entry_path, recursive, files).await {
+                            error!("Failed to scan subdirectory {}: {err}", entry_path.display());
+                        }
                     }
                 } else if metadata.is_file() {
                     // Check if file has a supported video extension
                     if let Some(ext) = entry_path.extension().and_then(|e| e.to_str()) {
                         let ext_lower = ext.to_lowercase();
                         if self.config.supported_extensions.contains(&ext_lower) {
-                            match ScannedVideoFile::from_path(entry_path.clone()).await {
+                            match ScannedMediaFile::from_path(entry_path.clone()).await {
                                 Ok(video_file) => {
-                                    debug!("Found video file: {}", video_file.path.display());
+                                    trace!("Found video file: {}", video_file.file_path);
                                     files.push(video_file);
                                 }
                                 Err(err) => {
-                                    error!("Failed to read metadata for {}: {}", entry_path.display(), err);
+                                    error!("Failed to read metadata for {}: {err}", entry_path.display());
                                 }
                             }
                         }
@@ -148,7 +149,7 @@ impl VodScanner {
         })
     }
 
-    /// Checks if a file has been modified since a given timestamp
+    // Checks if a file has been modified since a given timestamp
     pub async fn is_file_modified_since(path: &Path, since_timestamp: i64) -> bool {
         match fs::metadata(path).await {
             Ok(metadata) => {
@@ -163,7 +164,6 @@ impl VodScanner {
         }
     }
 
-    /// Checks if a file still exists
     pub async fn file_exists(path: &Path) -> bool {
         fs::try_exists(path).await.unwrap_or(false)
     }
@@ -172,35 +172,41 @@ impl VodScanner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
+    use crate::model::{LibraryClassificationConfig, LibraryMetadataConfig, LibraryMetadataReadConfig, LibraryPlaylistConfig, LibraryTmdbConfig};
 
-    fn create_test_config() -> VodConfig {
-        VodConfig {
+    fn create_test_config() -> LibraryConfig {
+        LibraryConfig {
             enabled: true,
             scan_directories: vec![],
-            supported_extensions: HashSet::from_iter(vec![
+            supported_extensions: vec![
                 "mp4".to_string(),
                 "mkv".to_string(),
                 "avi".to_string(),
-            ]),
-            metadata: crate::model::VodMetadataConfig {
-                storage_location: "/tmp/vod_metadata".to_string(),
-                tmdb_enabled: false,
-                tmdb_api_key: None,
-                tmdb_rate_limit_ms: 250,
-                fallback_to_filename_parsing: true,
-                write_json: false,
-                write_nfo: false,
+            ],
+            metadata: LibraryMetadataConfig {
+                path: "/tmp/vod_metadata".to_string(),
+                read_existing: LibraryMetadataReadConfig {
+                    kodi: false,
+                    jellyfin: false,
+                    plex: false,
+                },
+                tmdb: LibraryTmdbConfig {
+                    enabled: false,
+                    api_key: Some(String::new()),
+                    rate_limit_ms: 250,
+                    cache_duration_days: 0,
+                    language: "".to_string(),
+                },
+                fallback_to_filename: true,
+                formats: vec![],
             },
-            classification: crate::model::VodClassificationConfig {
+            classification: LibraryClassificationConfig {
                 series_patterns: vec![],
+                series_directory_patterns: vec![],
             },
-            playlist: crate::model::VodPlaylistConfig {
-                movie_group_name: "Movies".to_string(),
-                series_group_name: "Series".to_string(),
-            },
-            file_serving: crate::model::VodFileServingConfig {
-                method: crate::model::VodFileServingMethod::XtreamApi,
+            playlist: LibraryPlaylistConfig {
+                movie_category: "Local Movies".to_string(),
+                series_category: "Local Series".to_string(),
             },
         }
     }
@@ -208,7 +214,7 @@ mod tests {
     #[tokio::test]
     async fn test_scanner_creation() {
         let config = create_test_config();
-        let scanner = VodScanner::new(config);
+        let scanner = LibraryScanner::new(config);
         assert!(scanner.config.enabled);
     }
 
@@ -216,7 +222,7 @@ mod tests {
     async fn test_disabled_scanner() {
         let mut config = create_test_config();
         config.enabled = false;
-        let scanner = VodScanner::new(config);
+        let scanner = LibraryScanner::new(config);
         let result = scanner.scan_all().await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 0);

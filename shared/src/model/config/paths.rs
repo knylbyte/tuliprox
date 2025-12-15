@@ -6,6 +6,6 @@ pub struct ConfigPaths {
     pub mapping_file_path: Option<String>,
     pub api_proxy_file_path: String,
     pub library_file_path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_stream_response_path: Option<String>,
 }

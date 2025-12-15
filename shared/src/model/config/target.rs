@@ -13,7 +13,7 @@ pub struct ConfigTargetOptions {
     pub share_live_streams: bool,
     #[serde(default)]
     pub remove_duplicates: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub force_redirect: Option<ClusterFlags>,
 }
 
@@ -94,7 +94,7 @@ impl XtreamTargetOutputDto {
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct M3uTargetOutputDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
     #[serde(default)]
     pub include_type_in_url: bool,
@@ -211,11 +211,11 @@ pub struct ConfigTargetDto {
     pub filter: String,
     #[serde(default)]
     pub output: Vec<TargetOutputDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rename: Option<Vec<ConfigRenameDto>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mapping: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub favourites: Option<Vec<ConfigFavouritesDto>>,
     #[serde(default)]
     pub processing_order: ProcessingOrder,

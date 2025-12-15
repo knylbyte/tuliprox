@@ -1,21 +1,12 @@
 use log::{debug, error, warn};
 use serde::Deserialize;
 use tokio::time::{sleep, Duration};
+use crate::library::metadata::{Actor, MetadataSource, MovieMetadata, SeriesMetadata, MediaMetadata};
+use url::{Url};
 
-use crate::library::metadata::{Actor, MetadataSource, MovieMetadata, SeriesMetadata, VideoMetadata};
-use std::fmt::Write;
+pub const TMDB_API_KEY: &str = "4219e299c89411838049ab0dab19ebd5";
 
-/// Simple URL encoding for query parameters
-fn encode_query_param(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
-            ' ' => "+".to_string(),
-            _ => format!("%{:02X}", c as u8),
-        })
-        .collect()
-}
-
+// TODO make this configurable in Library tmdb config
 const TMDB_API_BASE_URL: &str = "https://api.themoviedb.org/3";
 const TMDB_IMAGE_BASE_URL: &str = "https://image.tmdb.org/t/p/w500";
 
@@ -37,23 +28,31 @@ impl TmdbClient {
     }
 
     /// Searches for a movie by title and optional year
-    pub async fn search_movie(&self, title: &str, year: Option<u32>) -> Option<VideoMetadata> {
+    pub async fn search_movie(&self, tmdb_id: Option<u32>, title: &str, year: Option<u32>) -> Option<MediaMetadata> {
+        debug!("TMDB search movie: {title}");
+
+        if let Some(movie_id) = tmdb_id {
+            return self.fetch_movie_details(movie_id).await;
+        }
+
         // Apply rate limiting
         sleep(Duration::from_millis(self.rate_limit_ms)).await;
 
-        let mut url = format!(
-            "{TMDB_API_BASE_URL}/search/movie?api_key={}&query={}",
-            self.api_key,
-            encode_query_param(title)
-        );
-
+        let mut url = match Url::parse(&format!("{TMDB_API_BASE_URL}/search/movie")) {
+            Ok(url) => url,
+            Err(err) => {
+                error!("Failed to parse URL for tmdb movie search: {err}");
+                return None
+            }
+        };
+        url.query_pairs_mut ().append_pair("api_key", &self.api_key);
+        url.query_pairs_mut ().append_pair("query", title);
         if let Some(y) = year {
-            let _ = write!(url, "&year={y}");
+            url.query_pairs_mut ().append_pair("year", y.to_string().as_str());
         }
 
-        debug!("TMDB search movie: {title}");
 
-        match self.client.get(&url).send().await {
+        match self.client.get(url).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     match response.json::<TmdbSearchResponse>().await {
@@ -83,7 +82,7 @@ impl TmdbClient {
     }
 
     /// Fetches detailed movie information
-    async fn fetch_movie_details(&self, movie_id: u32) -> Option<VideoMetadata> {
+    async fn fetch_movie_details(&self, movie_id: u32) -> Option<MediaMetadata> {
         sleep(Duration::from_millis(self.rate_limit_ms)).await;
 
         let url = format!("{TMDB_API_BASE_URL}/movie/{movie_id}?api_key={}&append_to_response=credits", self.api_key);
@@ -92,7 +91,7 @@ impl TmdbClient {
             Ok(response) => {
                 if response.status().is_success() {
                     match response.json::<TmdbMovieDetails>().await {
-                        Ok(details) => Some(VideoMetadata::Movie(MovieMetadata {
+                        Ok(details) => Some(MediaMetadata::Movie(MovieMetadata {
                             title: details.title,
                             original_title: Some(details.original_title),
                             year: details.release_date.split('-').next().and_then(|y| y.parse().ok()),
@@ -102,6 +101,7 @@ impl TmdbClient {
                             mpaa: None, // TMDB doesn't provide MPAA rating in basic response
                             imdb_id: details.imdb_id,
                             tmdb_id: Some(details.id),
+                            tvdb_id: None,
                             rating: Some(details.vote_average),
                             genres: details.genres.iter().map(|g| g.name.clone()).collect(),
                             directors: details
@@ -176,22 +176,25 @@ impl TmdbClient {
     }
 
     /// Searches for a TV series by title and optional year
-    pub async fn search_series(&self, title: &str, year: Option<u32>) -> Option<VideoMetadata> {
+    pub async fn search_series(&self, title: &str, year: Option<u32>) -> Option<MediaMetadata> {
         sleep(Duration::from_millis(self.rate_limit_ms)).await;
 
-        let mut url = format!(
-            "{TMDB_API_BASE_URL}/search/tv?api_key={}&query={}",
-            self.api_key,
-            encode_query_param(title)
-        );
-
+        let mut url = match Url::parse(&format!("{TMDB_API_BASE_URL}/search/tv")) {
+            Ok(url) => url,
+            Err(err) => {
+                error!("Failed to parse URL for tmdb series search: {err}");
+                return None
+            }
+        };
+        url.query_pairs_mut ().append_pair("api_key", &self.api_key);
+        url.query_pairs_mut ().append_pair("query", title);
         if let Some(y) = year {
-            let _ = write!(url, "&first_air_date_year={y}");
+            url.query_pairs_mut ().append_pair("first_air_date_year", y.to_string().as_str());
         }
 
         debug!("TMDB search series: {title}");
 
-        match self.client.get(&url).send().await {
+        match self.client.get(url).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     match response.json::<TmdbTvSearchResponse>().await {
@@ -221,19 +224,16 @@ impl TmdbClient {
     }
 
     /// Fetches detailed TV series information
-    async fn fetch_series_details(&self, series_id: u32) -> Option<VideoMetadata> {
+    async fn fetch_series_details(&self, series_id: u32) -> Option<MediaMetadata> {
         sleep(Duration::from_millis(self.rate_limit_ms)).await;
 
-        let url = format!(
-            "{}/tv/{}?api_key={}&append_to_response=credits",
-            TMDB_API_BASE_URL, series_id, self.api_key
-        );
+        let url = format!("{TMDB_API_BASE_URL}/tv/{series_id}?api_key={}&append_to_response=credits", self.api_key);
 
         match self.client.get(&url).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     match response.json::<TmdbSeriesDetails>().await {
-                        Ok(details) => Some(VideoMetadata::Series(SeriesMetadata {
+                        Ok(details) => Some(MediaMetadata::Series(SeriesMetadata {
                             title: details.name,
                             original_title: Some(details.original_name),
                             year: details
@@ -326,7 +326,7 @@ struct TmdbMovieDetails {
     tagline: Option<String>,
     release_date: String,
     runtime: u32,
-    vote_average: f32,
+    vote_average: f64,
     imdb_id: Option<String>,
     poster_path: Option<String>,
     backdrop_path: Option<String>,
@@ -342,7 +342,7 @@ struct TmdbSeriesDetails {
     original_name: String,
     overview: String,
     first_air_date: String,
-    vote_average: f32,
+    vote_average: f64,
     poster_path: Option<String>,
     backdrop_path: Option<String>,
     status: String,

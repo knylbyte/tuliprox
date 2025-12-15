@@ -103,6 +103,9 @@ pub struct Constants {
     pub re_classifier_cleanup: Regex,
     pub re_classifier_episode: Regex,
     pub re_classifier_season: Regex,
+    pub re_classifier_moviedb_id: Regex,
+    pub re_classifier_camel_case: Regex,
+    pub re_classifier_brackets_info: Regex,
 }
 
 pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
@@ -159,5 +162,8 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
         re_classifier_cleanup: Regex::new(r"(?i)[\s\._-]*(?:s\d+e\d+|\d+x\d+|season[\s\._-]*\d+|episode[\s\._-]*\d+).*$").unwrap(),
         re_classifier_episode: Regex::new(r"(?i)(?:e|episode|x)[\s\._-]*(\d+)").unwrap(),
         re_classifier_season: Regex::new(r"(?i)(?:s|season)[\s\._-]*(\d+)").unwrap(),
+        re_classifier_moviedb_id: Regex::new(r"(?i)\b(tmdb|tvdb|imdb)[\s._=-]?(\d+)\b").unwrap(),
+        re_classifier_camel_case: Regex::new(r"([a-z])([A-Z])").unwrap(),
+        re_classifier_brackets_info: Regex::new(r"[\[\{\(].*?[\]\}\)]").unwrap(),
     }
 );

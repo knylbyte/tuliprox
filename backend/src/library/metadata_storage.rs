@@ -1,10 +1,10 @@
 use log::{debug, error, info};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use std::fmt::Write;
-use crate::library::metadata::{MetadataCacheEntry, VideoMetadata};
+use crate::library::metadata::{MetadataCacheEntry, MediaMetadata};
 
 /// Metadata storage for local VOD files
 /// Stores metadata as JSON files with UUID-based filenames
@@ -31,7 +31,7 @@ impl MetadataStorage {
     pub async fn store(&self, entry: &MetadataCacheEntry) -> std::io::Result<()> {
         let file_path = self.get_metadata_file_path(&entry.uuid);
 
-        debug!("Storing metadata for {}: {}", entry.file_path.display(), file_path.display());
+        debug!("Storing metadata for {}: {}", entry.file_path, file_path.display());
 
         let json = serde_json::to_string_pretty(entry)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -64,16 +64,6 @@ impl MetadataStorage {
                 None
             }
         }
-    }
-
-    /// Loads metadata for a specific file path
-    pub async fn load_by_path(&self, file_path: &Path) -> Option<MetadataCacheEntry> {
-        // This requires scanning all metadata files to find the one with matching file_path
-        // For better performance, we should maintain a separate index
-        let entries = self.load_all().await;
-        entries
-            .into_iter()
-            .find(|entry| entry.file_path == file_path)
     }
 
     /// Loads all metadata entries from storage
@@ -118,14 +108,6 @@ impl MetadataStorage {
         Ok(())
     }
 
-    /// Deletes metadata for a specific file path
-    pub async fn delete_by_path(&self, file_path: &Path) -> std::io::Result<()> {
-        if let Some(entry) = self.load_by_path(file_path).await {
-            self.delete_by_uuid(&entry.uuid).await?;
-        }
-        Ok(())
-    }
-
     /// Cleans up metadata for files that no longer exist
     pub async fn cleanup_orphaned(&self) -> std::io::Result<usize> {
         let entries = self.load_all().await;
@@ -133,7 +115,7 @@ impl MetadataStorage {
 
         for entry in entries {
             if !fs::try_exists(&entry.file_path).await.unwrap_or(false) {
-                info!("Removing orphaned metadata for missing file: {}", entry.file_path.display());
+                info!("Removing orphaned metadata for missing file: {}", entry.file_path);
                 if let Err(e) = self.delete_by_uuid(&entry.uuid).await {
                     error!("Failed to delete orphaned metadata: {e}");
                 } else {
@@ -150,7 +132,7 @@ impl MetadataStorage {
     }
 
     /// Builds a map of file paths to UUIDs for quick lookups
-    pub async fn build_path_index(&self) -> HashMap<PathBuf, String> {
+    pub async fn build_path_index(&self) -> HashMap<String, String> {
         let entries = self.load_all().await;
         entries
             .into_iter()
@@ -158,14 +140,6 @@ impl MetadataStorage {
             .collect()
     }
 
-    /// Builds a map of UUIDs to virtual IDs
-    pub async fn build_virtual_id_map(&self) -> HashMap<String, u16> {
-        let entries = self.load_all().await;
-        entries
-            .into_iter()
-            .map(|entry| (entry.uuid.clone(), entry.virtual_id))
-            .collect()
-    }
 
     /// Gets the metadata file path for a UUID
     fn get_metadata_file_path(&self, uuid: &str) -> PathBuf {
@@ -175,21 +149,22 @@ impl MetadataStorage {
     /// Writes an NFO file for the given metadata
     pub async fn write_nfo(&self, entry: &MetadataCacheEntry) -> std::io::Result<()> {
         let nfo_content = Self::generate_nfo_content(&entry.metadata);
-        let nfo_path = entry.file_path.with_extension("nfo");
+        let nfo_path = PathBuf::from(entry.file_path.clone()).with_extension("nfo");
 
-        debug!("Writing NFO file: {}", nfo_path.display());
-
-        let mut file = fs::File::create(&nfo_path).await?;
-        file.write_all(nfo_content.as_bytes()).await?;
-        file.flush().await?;
+        if !nfo_path.exists() {
+            debug!("Writing NFO file: {}", nfo_path.display());
+            let mut file = fs::File::create(&nfo_path).await?;
+            file.write_all(nfo_content.as_bytes()).await?;
+            file.flush().await?;
+        }
 
         Ok(())
     }
 
     /// Generates NFO XML content from metadata
-    fn generate_nfo_content(metadata: &VideoMetadata) -> String {
+    fn generate_nfo_content(metadata: &MediaMetadata) -> String {
         match metadata {
-            VideoMetadata::Movie(movie) => {
+            MediaMetadata::Movie(movie) => {
                 let mut nfo = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<movie>\n");
                 let _ = writeln!(nfo, "  <title>{}</title>", Self::xml_escape(&movie.title));
 
@@ -240,7 +215,7 @@ impl MetadataStorage {
                 nfo.push_str("</movie>\n");
                 nfo
             }
-            VideoMetadata::Series(series) => {
+            MediaMetadata::Series(series) => {
                 let mut nfo = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<tvshow>\n");
                 let _ = writeln!(nfo, "  <title>{}</title>", Self::xml_escape(&series.title));
 
@@ -300,20 +275,21 @@ mod tests {
         storage.initialize().await.unwrap();
 
         let entry = MetadataCacheEntry::new(
-            PathBuf::from("/test/movie.mp4"),
+            "/test/movie.mp4".to_string(),
             1024,
             1234567890,
-            VideoMetadata::Movie(MovieMetadata {
+            MediaMetadata::Movie(MovieMetadata {
                 title: "Test Movie".to_string(),
                 original_title: None,
                 year: Some(2020),
-                plot: None,
+                plot: Some("Test Movie plot".to_string()),
                 tagline: None,
                 runtime: None,
                 mpaa: None,
                 imdb_id: None,
                 tmdb_id: None,
-                rating: None,
+                tvdb_id: None,
+                rating: Some(7.23f64),
                 genres: Vec::new(),
                 directors: Vec::new(),
                 writers: Vec::new(),
@@ -324,7 +300,6 @@ mod tests {
                 source: MetadataSource::FilenameParsed,
                 last_updated: 0,
             }),
-            100,
         );
 
         // Store

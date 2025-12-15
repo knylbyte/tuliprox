@@ -12,7 +12,7 @@ use shared::create_tuliprox_error_result;
 use shared::error::{TuliproxError, TuliproxErrorKind};
 use shared::model::ConfigPaths;
 use crate::api::model::TransportStreamBuffer;
-use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Config, ConfigInput, ConfigInputOptions, ConfigTarget, CustomStreamResponse, HdHomeRunConfig, Mappings, ProxyUserCredentials, SourcesConfig, TargetOutput, VodConfig};
+use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Config, ConfigInput, ConfigInputOptions, ConfigTarget, CustomStreamResponse, HdHomeRunConfig, Mappings, ProxyUserCredentials, SourcesConfig, TargetOutput};
 use crate::utils;
 
 const CHANNEL_UNAVAILABLE: &str = "channel_unavailable.ts";
@@ -33,7 +33,6 @@ pub struct AppConfig {
     pub sources: Arc<ArcSwap<SourcesConfig>>,
     pub hdhomerun: Arc<ArcSwapOption<HdHomeRunConfig>>,
     pub api_proxy: Arc<ArcSwapOption<ApiProxyConfig>>,
-    pub library: Arc<ArcSwapOption<VodConfig>>,
     pub file_locks: Arc<utils::FileLockManager>,
     pub paths: Arc<ArcSwap<ConfigPaths>>,
     pub custom_stream_response: Arc<ArcSwapOption<CustomStreamResponse>>,
@@ -58,10 +57,6 @@ impl AppConfig {
     pub fn set_api_proxy(&self, api_proxy: ApiProxyConfig) -> Result<(), TuliproxError> {
         self.api_proxy.store(Some(Arc::new(api_proxy)));
         self.check_target_user()
-    }
-
-    pub fn set_vod(&self, vod: VodConfig) {
-        self.library.store(Some(Arc::new(vod)));
     }
 
     pub fn set_mappings(&self, mapping_path: &str, mappings_cfg: &Mappings) {

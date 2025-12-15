@@ -1,5 +1,5 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto, DEFAULT_VIDEO_EXTENSIONS};
+use crate::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LibraryConfigDto, LogConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto, DEFAULT_VIDEO_EXTENSIONS};
 use crate::utils::default_connect_timeout_secs;
 
 pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
@@ -50,6 +50,8 @@ pub struct ConfigDto {
     pub proxy: Option<ProxyConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ipcheck: Option<IpCheckConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub library: Option<LibraryConfigDto>,
 }
 
 // This MainConfigDto is a copy of ConfigDto simple fields for form editing.

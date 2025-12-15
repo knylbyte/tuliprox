@@ -14,6 +14,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use crate::utils::debug_if_enabled;
 
 const USER_GC_TTL: u64 = 900;  // 15 Min
 const USER_CON_TTL: u64 = 10_800;  // 3 hours
@@ -153,7 +154,7 @@ impl ActiveUserManager {
 
         if let Some(username) = disconnected_user {
             if !username.is_empty() {
-                debug!("Released connection for user {username} at {addr}");
+                debug_if_enabled!("Released connection for user {username} at {}", sanitize_sensitive_info(&addr.to_string()));
             }
         }
 
@@ -411,7 +412,9 @@ impl ActiveUserManager {
                         stream.addr = *addr;
                     }
                 }
-                debug!("Updated session {token} for {username} address {previous_addr} -> {addr}");
+                debug_if_enabled!("Updated session {token} for {username} address {} -> {}",
+                    sanitize_sensitive_info(&previous_addr.to_string()),
+                    sanitize_sensitive_info(&addr.to_string()));
             }
         }
     }
@@ -489,8 +492,9 @@ impl ActiveUserManager {
                     recent_sockets
                 );
             } else {
-                debug!(
-                    "Added new connection for {username} at {addr} (active user connections={active_for_user}, total connections={total_active_sockets})"
+                debug_if_enabled!(
+                    "Added new connection for {username} at {} (active user connections={active_for_user}, total connections={total_active_sockets})",
+                    sanitize_sensitive_info(&addr.to_string())
                 );
             }
         }

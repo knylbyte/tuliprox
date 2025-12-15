@@ -25,7 +25,7 @@ pub fn json_filter_file<S: ::std::hash::BuildHasher>(file_path: &Path, filter: &
                         if filter.iter().all(|(&key, filter_set)| {
                             item.get(key).is_some_and(|field_value| match field_value {
                                 Value::String(s) => filter_set.contains(s.as_str()),
-                                Value::Number(n) => filter_set.contains(n.as_str()),
+                                Value::Number(n) => filter_set.contains(&n.to_string()),
                                 _ => false,
                             })
                         }) {

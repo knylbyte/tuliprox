@@ -14,25 +14,25 @@ pub enum UserConnectionPermission {
 pub struct ProxyUserCredentialsDto {
     pub username: String,
     pub password: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(default = "ProxyType::default")]
     pub proxy: ProxyType,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epg_timeshift: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
     pub exp_date: Option<i64>,
     #[serde(default)]
     pub max_connections: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<ProxyUserStatus>,
     #[serde(default = "default_as_true")]
     pub ui_enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
 }
 

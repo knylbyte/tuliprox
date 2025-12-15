@@ -5,7 +5,7 @@ use path_clean::PathClean;
 use shared::error::{TuliproxError};
 use shared::model::{ConfigDto, HdHomeRunDeviceOverview};
 use shared::utils::set_sanitize_sensitive_info;
-use crate::model::{macros, ConfigApi, ReverseProxyConfig, ScheduleConfig};
+use crate::model::{macros, ConfigApi, LibraryConfig, ReverseProxyConfig, ScheduleConfig};
 use crate::model::{HdHomeRunConfig, IpCheckConfig, LogConfig, MessagingConfig, ProxyConfig, VideoConfig, WebUiConfig};
 use crate::{utils};
 
@@ -65,6 +65,7 @@ pub struct Config {
     pub hdhomerun: Option<HdHomeRunConfig>,
     pub proxy: Option<ProxyConfig>,
     pub ipcheck: Option<IpCheckConfig>,
+    pub library: Option<LibraryConfig>,
 }
 
 impl Config {
@@ -150,6 +151,7 @@ impl From<&ConfigDto> for Config {
             hdhomerun: dto.hdhomerun.as_ref().map(Into::into),
             proxy: dto.proxy.as_ref().map(Into::into),
             ipcheck: dto.ipcheck.as_ref().map(Into::into),
+            library: dto.library.as_ref().map(Into::into),
         }
     }
 }

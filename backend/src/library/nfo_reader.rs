@@ -3,7 +3,7 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::path::Path;
 use tokio::fs;
-use crate::library::{Actor, MetadataSource, MovieMetadata, SeriesMetadata, VideoMetadata};
+use crate::library::{Actor, MetadataSource, MovieMetadata, SeriesMetadata, MediaMetadata};
 
 /// NFO reader for parsing Kodi/Jellyfin/Emby/Plex metadata files
 pub struct NfoReader;
@@ -11,7 +11,7 @@ pub struct NfoReader;
 impl NfoReader {
     /// Attempts to find and read an NFO file for the given video file
     /// Looks for: movie.nfo, tvshow.nfo, or {filename}.nfo
-    pub async fn read_metadata(video_path: &Path) -> Option<VideoMetadata> {
+    pub async fn read_metadata(video_path: &Path) -> Option<MediaMetadata> {
         let parent_dir = video_path.parent()?;
         let file_stem = video_path.file_stem()?.to_str()?;
 
@@ -37,7 +37,7 @@ impl NfoReader {
     }
 
     /// Parses NFO XML content into `VideoMetadata`
-    fn parse_nfo(content: &str) -> Option<VideoMetadata> {
+    fn parse_nfo(content: &str) -> Option<MediaMetadata> {
         let mut reader = Reader::from_str(content);
         reader.config_mut().trim_text(true);
 
@@ -59,30 +59,14 @@ impl NfoReader {
     }
 
     /// Parses movie NFO content
-    fn parse_movie_nfo(content: &str) -> Option<VideoMetadata> {
+    fn parse_movie_nfo(content: &str) -> Option<MediaMetadata> {
         let mut reader = Reader::from_str(content);
         reader.config_mut().trim_text(true);
 
         let mut movie = MovieMetadata {
-            title: String::new(),
-            original_title: None,
-            year: None,
-            plot: None,
-            tagline: None,
-            runtime: None,
-            mpaa: None,
-            imdb_id: None,
-            tmdb_id: None,
-            rating: None,
-            genres: Vec::new(),
-            directors: Vec::new(),
-            writers: Vec::new(),
-            actors: Vec::new(),
-            studios: Vec::new(),
-            poster: None,
-            fanart: None,
             source: MetadataSource::KodiNfo,
             last_updated: chrono::Utc::now().timestamp(),
+            ..MovieMetadata::default()
         };
 
         let mut buf = Vec::new();
@@ -163,12 +147,12 @@ impl NfoReader {
         if movie.title.is_empty() {
             None
         } else {
-            Some(VideoMetadata::Movie(movie))
+            Some(MediaMetadata::Movie(movie))
         }
     }
 
     /// Parses TV series NFO content
-    fn parse_series_nfo(content: &str) -> Option<VideoMetadata> {
+    fn parse_series_nfo(content: &str) -> Option<MediaMetadata> {
         let mut reader = Reader::from_str(content);
         reader.config_mut().trim_text(true);
 
@@ -270,7 +254,7 @@ impl NfoReader {
         if series.title.is_empty() {
             None
         } else {
-            Some(VideoMetadata::Series(series))
+            Some(MediaMetadata::Series(series))
         }
     }
 }
@@ -303,7 +287,7 @@ mod tests {
         let metadata = NfoReader::parse_movie_nfo(nfo_content);
         assert!(metadata.is_some());
 
-        if let Some(VideoMetadata::Movie(movie)) = metadata {
+        if let Some(MediaMetadata::Movie(movie)) = metadata {
             assert_eq!(movie.title, "The Matrix");
             assert_eq!(movie.year, Some(1999));
             assert_eq!(movie.imdb_id, Some("tt0133093".to_string()));
@@ -337,7 +321,7 @@ mod tests {
         let metadata = NfoReader::parse_series_nfo(nfo_content);
         assert!(metadata.is_some());
 
-        if let Some(VideoMetadata::Series(series)) = metadata {
+        if let Some(MediaMetadata::Series(series)) = metadata {
             assert_eq!(series.title, "Breaking Bad");
             assert_eq!(series.year, Some(2008));
             assert_eq!(series.imdb_id, Some("tt0903747".to_string()));
