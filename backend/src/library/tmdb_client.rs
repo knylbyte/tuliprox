@@ -365,9 +365,12 @@ struct TmdbMovieDetails {
     id: u32,
     title: String,
     original_title: String,
+    #[serde(default)]
     overview: String,
     tagline: Option<String>,
+    #[serde(default)]
     release_date: String,
+    #[serde(default)]
     runtime: u32,
     vote_average: f64,
     imdb_id: Option<String>,
@@ -383,7 +386,9 @@ struct TmdbSeriesDetails {
     id: u32,
     name: String,
     original_name: String,
+    #[serde(default)]
     overview: String,
+    #[serde(default)]
     first_air_date: String,
     vote_average: f64,
     poster_path: Option<String>,

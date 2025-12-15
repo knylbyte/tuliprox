@@ -13,7 +13,7 @@ pub struct ReverseProxyDisabledHeaderConfigDto {
     pub x_header: bool,
     #[serde(default)]
     pub cloudflare_header: bool,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_header: Vec<String>,
 }
 

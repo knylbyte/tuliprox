@@ -31,13 +31,13 @@ fn default_series_patterns() -> Vec<String> {
 }
 fn default_supported_extensions() -> Vec<String> {
     [
-        ".mp4",
-        ".mkv",
-        ".avi",
-        ".mov",
-        ".ts",
-        ".m4v",
-        ".webm",
+        "mp4",
+        "mkv",
+        "avi",
+        "mov",
+        "ts",
+        "m4v",
+        "webm",
     ].iter().map(ToString::to_string).collect()
 }
 

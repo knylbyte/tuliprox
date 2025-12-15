@@ -46,7 +46,7 @@ impl NfoReader {
 
         // Determine if this is a movie or TV show NFO
         let is_movie = content.contains("<movie") || (!content.contains("<tvshow") && !content.contains("<episodedetails"));
-        let is_series = !is_movie && content.contains("<tvshow") || content.contains("<episodedetails");
+        let is_series = !is_movie && (content.contains("<tvshow") || content.contains("<episodedetails"));
 
         if is_movie {
             Self::parse_movie_nfo(content)

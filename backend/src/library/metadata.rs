@@ -267,17 +267,13 @@ mod tests {
             mpaa: Some("R".to_string()),
             imdb_id: Some("tt0133093".to_string()),
             tmdb_id: Some(603),
-            tvdb_id: None,
             rating: Some(8.7),
-            genres: vec!["Action".to_string(), "Sci-Fi".to_string()],
-            directors: vec!["Lana Wachowski".to_string(), "Lilly Wachowski".to_string()],
-            writers: vec![],
-            actors: vec![],
-            studios: vec!["Warner Bros.".to_string()],
-            poster: None,
-            fanart: None,
+            genres: Some(vec!["Action".to_string(), "Sci-Fi".to_string()]),
+            directors: Some(vec!["Lana Wachowski".to_string(), "Lilly Wachowski".to_string()]),
+            studios: Some(vec!["Warner Bros.".to_string()]),
             source: MetadataSource::Tmdb,
             last_updated: 0,
+            ..MovieMetadata::default()
         };
 
         assert_eq!(movie.title, "The Matrix");
@@ -288,25 +284,13 @@ mod tests {
     fn test_video_metadata_accessors() {
         let movie_meta = MediaMetadata::Movie(MovieMetadata {
             title: "Inception".to_string(),
-            original_title: None,
             year: Some(2010),
-            plot: None,
-            tagline: None,
-            runtime: None,
-            mpaa: None,
             imdb_id: Some("tt1375666".to_string()),
             tmdb_id: Some(27205),
-            tvdb_id: None,
-            rating: None,
-            genres: vec![],
-            directors: vec![],
-            writers: vec![],
-            actors: vec![],
-            studios: vec![],
-            poster: None,
             fanart: None,
             source: MetadataSource::Tmdb,
             last_updated: 0,
+            ..MovieMetadata::default()
         });
 
         assert_eq!(movie_meta.title(), "Inception");
