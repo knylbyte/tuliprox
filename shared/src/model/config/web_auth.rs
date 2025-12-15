@@ -13,7 +13,7 @@ pub struct WebAuthConfigDto {
     pub secret: String,
     #[serde(default = "default_token_ttl_mins")]
     pub token_ttl_mins: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub userfile: Option<String>,
 }
 

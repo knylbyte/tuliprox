@@ -7,7 +7,7 @@ pub struct LogConfigDto {
     pub sanitize_sensitive_info: bool,
     #[serde(default)]
     pub log_active_user: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub log_level: Option<String>,
 }
 

@@ -148,7 +148,9 @@ pub(in crate::api::endpoints) async fn get_playlist(client: &reqwest::Client, cf
                 match input.input_type {
                     InputType::M3u | InputType::M3uBatch => m3u::get_m3u_playlist(client, cfg, input, &cfg.working_dir).await,
                     InputType::Xtream | InputType::XtreamBatch => xtream::get_xtream_playlist(cfg, client, input, &cfg.working_dir).await,
-                    InputType::Library => (vec![], vec![])
+                    InputType::Library => {
+                        return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({ "error": "Library inputs are not supported on this endpoint"}))).into_response();
+                    }
                 };
             if result.is_empty() {
                 let error_strings: Vec<String> = errors.iter().map(std::string::ToString::to_string).collect();

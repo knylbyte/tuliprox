@@ -1,9 +1,9 @@
+use crate::library::{Actor, MediaMetadata, MetadataSource, MovieMetadata, SeriesMetadata};
 use log::{debug, error, warn};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::path::Path;
 use tokio::fs;
-use crate::library::{Actor, MetadataSource, MovieMetadata, SeriesMetadata, MediaMetadata};
 
 /// NFO reader for parsing Kodi/Jellyfin/Emby/Plex metadata files
 pub struct NfoReader;
@@ -38,15 +38,15 @@ impl NfoReader {
 
     /// Parses NFO XML content into `VideoMetadata`
     fn parse_nfo(content: &str) -> Option<MediaMetadata> {
-        let mut reader = Reader::from_str(content);
-        reader.config_mut().trim_text(true);
+        // let mut reader = Reader::from_str(content);
+        // reader.config_mut().trim_text(true);
 
         // let mut buf = Vec::new();
         // let mut current_tag = String::new();
 
         // Determine if this is a movie or TV show NFO
         let is_movie = content.contains("<movie") || (!content.contains("<tvshow") && !content.contains("<episodedetails"));
-        let is_series = content.contains("<tvshow") || content.contains("<episodedetails");
+        let is_series = !is_movie && content.contains("<tvshow") || content.contains("<episodedetails");
 
         if is_movie {
             Self::parse_movie_nfo(content)
@@ -116,17 +116,37 @@ impl NfoReader {
                         "id" | "imdb" | "imdbid" => movie.imdb_id = Some(current_text.clone()),
                         "tmdbid" => movie.tmdb_id = current_text.parse().ok(),
                         "rating" => movie.rating = current_text.parse().ok(),
-                        "genre" => movie.genres.push(current_text.clone()),
-                        "director" => movie.directors.push(current_text.clone()),
-                        "credits" | "writer" => movie.writers.push(current_text.clone()),
-                        "studio" => movie.studios.push(current_text.clone()),
+                        "genre" => if let Some(genres) = movie.genres.as_mut() {
+                            genres.push(current_text.clone());
+                        } else {
+                            movie.genres = Some(vec![current_text.clone()]);
+                        },
+                        "director" => if let Some(field) = movie.directors.as_mut() {
+                            field.push(current_text.clone());
+                        } else {
+                            movie.directors = Some(vec![current_text.clone()]);
+                        },
+                        "credits" | "writer" => if let Some(field) = movie.writers.as_mut() {
+                            field.push(current_text.clone());
+                        } else {
+                            movie.writers = Some(vec![current_text.clone()]);
+                        },
+                        "studio" => if let Some(field) = movie.studios.as_mut() {
+                            field.push(current_text.clone());
+                        } else {
+                            movie.studios = Some(vec![current_text.clone()]);
+                        },
                         "thumb" | "poster" => movie.poster = Some(current_text.clone()),
                         "fanart" => movie.fanart = Some(current_text.clone()),
                         "name" if in_actor => current_actor.name.clone_from(&current_text),
                         "role" if in_actor => current_actor.role = Some(current_text.clone()),
                         "actor" => {
                             if !current_actor.name.is_empty() {
-                                movie.actors.push(current_actor.clone());
+                                if let Some(field) = movie.actors.as_mut() {
+                                    field.push(current_actor.clone());
+                                } else {
+                                    movie.actors = Some(vec![current_actor.clone()]);
+                                }
                             }
                             in_actor = false;
                         }
@@ -157,24 +177,9 @@ impl NfoReader {
         reader.config_mut().trim_text(true);
 
         let mut series = SeriesMetadata {
-            title: String::new(),
-            original_title: None,
-            year: None,
-            plot: None,
-            mpaa: None,
-            imdb_id: None,
-            tmdb_id: None,
-            tvdb_id: None,
-            rating: None,
-            genres: Vec::new(),
-            actors: Vec::new(),
-            studios: Vec::new(),
-            poster: None,
-            fanart: None,
-            status: None,
-            episodes: Vec::new(),
             source: MetadataSource::KodiNfo,
             last_updated: chrono::Utc::now().timestamp(),
+            ..SeriesMetadata::default()
         };
 
         let mut buf = Vec::new();
@@ -224,8 +229,16 @@ impl NfoReader {
                         "tmdbid" => series.tmdb_id = current_text.parse().ok(),
                         "tvdbid" => series.tvdb_id = current_text.parse().ok(),
                         "rating" => series.rating = current_text.parse().ok(),
-                        "genre" => series.genres.push(current_text.clone()),
-                        "studio" => series.studios.push(current_text.clone()),
+                        "genre" => if let Some(genres) = series.genres.as_mut() {
+                            genres.push(current_text.clone());
+                        } else {
+                            series.genres = Some(vec![current_text.clone()]);
+                        },
+                        "studio" => if let Some(genres) = series.studios.as_mut() {
+                            genres.push(current_text.clone());
+                        } else {
+                            series.studios = Some(vec![current_text.clone()]);
+                        },
                         "thumb" | "poster" => series.poster = Some(current_text.clone()),
                         "fanart" => series.fanart = Some(current_text.clone()),
                         "status" => series.status = Some(current_text.clone()),
@@ -233,7 +246,11 @@ impl NfoReader {
                         "role" if in_actor => current_actor.role = Some(current_text.clone()),
                         "actor" => {
                             if !current_actor.name.is_empty() {
-                                series.actors.push(current_actor.clone());
+                                if let Some(actors) = series.actors.as_mut() {
+                                    actors.push(current_actor.clone());
+                                } else {
+                                    series.actors = Some(vec![current_actor.clone()]);
+                                }
                             }
                             in_actor = false;
                         }
@@ -292,8 +309,8 @@ mod tests {
             assert_eq!(movie.year, Some(1999));
             assert_eq!(movie.imdb_id, Some("tt0133093".to_string()));
             assert_eq!(movie.tmdb_id, Some(603));
-            assert_eq!(movie.genres.len(), 2);
-            assert_eq!(movie.directors.len(), 2);
+            assert_eq!(movie.genres.as_ref().map(|g| g.len()).unwrap_or_default(), 2);
+            assert_eq!(movie.directors.as_ref().map(|g| g.len()).unwrap_or_default(), 2);
         } else {
             panic!("Expected movie metadata");
         }
@@ -327,7 +344,7 @@ mod tests {
             assert_eq!(series.imdb_id, Some("tt0903747".to_string()));
             assert_eq!(series.tmdb_id, Some(1396));
             assert_eq!(series.tvdb_id, Some(81189));
-            assert_eq!(series.genres.len(), 3);
+            assert_eq!(series.genres.as_ref().map(|g| g.len()).unwrap_or_default(), 3);
             assert_eq!(series.status, Some("Ended".to_string()));
         } else {
             panic!("Expected series metadata");

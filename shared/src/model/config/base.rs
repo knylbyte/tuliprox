@@ -12,25 +12,25 @@ pub struct ConfigDto {
     pub process_parallel: bool,
     pub api: ConfigApiDto,
     pub working_dir: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub backup_dir: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_config_dir: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mapping_path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_stream_response_path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub video: Option<VideoConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub schedules: Option<Vec<ScheduleConfigDto>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub log: Option<LogConfigDto>,
     #[serde(default)]
     pub user_access_control: bool,
     #[serde(default = "default_connect_timeout_secs")]
     pub connect_timeout_secs: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sleep_timer_mins: Option<u32>,
     #[serde(default)]
     pub update_on_boot: bool,
@@ -40,17 +40,17 @@ pub struct ConfigDto {
     pub accept_insecure_ssl_certificates: bool,
     #[serde(default)]
     pub web_ui: Option<WebUiConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub messaging: Option<MessagingConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reverse_proxy: Option<ReverseProxyConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hdhomerun: Option<HdHomeRunConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy: Option<ProxyConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ipcheck: Option<IpCheckConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub library: Option<LibraryConfigDto>,
 }
 
@@ -61,19 +61,19 @@ pub struct MainConfigDto {
     #[serde(default)]
     pub process_parallel: bool,
     pub working_dir: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub backup_dir: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_config_dir: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mapping_path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_stream_response_path: Option<String>,
     #[serde(default)]
     pub user_access_control: bool,
     #[serde(default = "default_connect_timeout_secs")]
     pub connect_timeout_secs: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sleep_timer_mins: Option<u32>,
     #[serde(default)]
     pub update_on_boot: bool,
@@ -125,7 +125,7 @@ impl From<&ConfigDto> for MainConfigDto {
 // It has no other purpose than editing and saving the schedules
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 pub struct SchedulesConfigDto {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub schedules: Option<Vec<ScheduleConfigDto>>,
 }
 

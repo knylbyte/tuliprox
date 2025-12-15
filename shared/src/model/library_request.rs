@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+
+// Request to trigger a Library scan
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LibraryScanRequest {
+    // Force rescan of all files, ignoring modification timestamps
+    #[serde(default)]
+    pub force_rescan: bool,
+}
+
+
 // Scan result with statistics
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LibraryScanResult {
@@ -24,7 +34,7 @@ pub struct LibraryScanSummary {
     pub result: Option<LibraryScanResult>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LibraryStatus {
     pub enabled: bool,
     pub total_items: usize,

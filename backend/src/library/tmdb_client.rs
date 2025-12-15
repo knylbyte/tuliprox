@@ -1,8 +1,8 @@
+use crate::library::metadata::{Actor, MediaMetadata, MetadataSource, MovieMetadata, SeriesMetadata};
 use log::{debug, error, warn};
 use serde::Deserialize;
 use tokio::time::{sleep, Duration};
-use crate::library::metadata::{Actor, MetadataSource, MovieMetadata, SeriesMetadata, MediaMetadata};
-use url::{Url};
+use url::Url;
 
 pub const TMDB_API_KEY: &str = "4219e299c89411838049ab0dab19ebd5";
 
@@ -42,13 +42,13 @@ impl TmdbClient {
             Ok(url) => url,
             Err(err) => {
                 error!("Failed to parse URL for tmdb movie search: {err}");
-                return None
+                return None;
             }
         };
-        url.query_pairs_mut ().append_pair("api_key", &self.api_key);
-        url.query_pairs_mut ().append_pair("query", title);
+        url.query_pairs_mut().append_pair("api_key", &self.api_key);
+        url.query_pairs_mut().append_pair("query", title);
         if let Some(y) = year {
-            url.query_pairs_mut ().append_pair("year", y.to_string().as_str());
+            url.query_pairs_mut().append_pair("year", y.to_string().as_str());
         }
 
 
@@ -103,34 +103,49 @@ impl TmdbClient {
                             tmdb_id: Some(details.id),
                             tvdb_id: None,
                             rating: Some(details.vote_average),
-                            genres: details.genres.iter().map(|g| g.name.clone()).collect(),
+                            genres: details.genres.as_ref().and_then(|list| {
+                                let result: Vec<String> = list.iter().map(|g| g.name.clone()).collect();
+                                if result.is_empty() {
+                                    None
+                                } else {
+                                    Some(result)
+                                }
+                            }),
                             directors: details
                                 .credits
                                 .as_ref()
-                                .map(|c| {
-                                    c.crew
+                                .and_then(|c| {
+                                    let list: Vec<String> = c.crew
                                         .iter()
                                         .filter(|crew| crew.job == "Director")
                                         .map(|crew| crew.name.clone())
-                                        .collect()
-                                })
-                                .unwrap_or_default(),
+                                        .collect();
+                                    if list.is_empty() {
+                                        None
+                                    } else {
+                                        Some(list)
+                                    }
+                                }),
                             writers: details
                                 .credits
                                 .as_ref()
-                                .map(|c| {
-                                    c.crew
+                                .and_then(|c| {
+                                    let list: Vec<String> = c.crew
                                         .iter()
                                         .filter(|crew| crew.job == "Writer" || crew.job == "Screenplay")
                                         .map(|crew| crew.name.clone())
-                                        .collect()
-                                })
-                                .unwrap_or_default(),
+                                        .collect();
+                                    if list.is_empty() {
+                                        None
+                                    } else {
+                                        Some(list)
+                                    }
+                                }),
                             actors: details
                                 .credits
                                 .as_ref()
-                                .map(|c| {
-                                    c.cast
+                                .and_then(|c| {
+                                    let actors: Vec<Actor> = c.cast
                                         .iter()
                                         .take(10) // Limit to top 10 actors
                                         .map(|actor| Actor {
@@ -141,14 +156,23 @@ impl TmdbClient {
                                                 .as_ref()
                                                 .map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
                                         })
-                                        .collect()
-                                })
-                                .unwrap_or_default(),
-                            studios: details
-                                .production_companies
-                                .iter()
-                                .map(|c| c.name.clone())
-                                .collect(),
+                                        .collect();
+
+                                    if actors.is_empty() {
+                                        None
+                                    } else {
+                                        Some(actors)
+                                    }
+                                }),
+                            studios:
+                            details.production_companies.as_ref().and_then(|list| {
+                                let result: Vec<String> = list.iter().map(|n| n.name.clone()).collect();
+                                if result.is_empty() {
+                                    None
+                                } else {
+                                    Some(result)
+                                }
+                            }),
                             poster: details
                                 .poster_path
                                 .map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
@@ -183,13 +207,13 @@ impl TmdbClient {
             Ok(url) => url,
             Err(err) => {
                 error!("Failed to parse URL for tmdb series search: {err}");
-                return None
+                return None;
             }
         };
-        url.query_pairs_mut ().append_pair("api_key", &self.api_key);
-        url.query_pairs_mut ().append_pair("query", title);
+        url.query_pairs_mut().append_pair("api_key", &self.api_key);
+        url.query_pairs_mut().append_pair("query", title);
         if let Some(y) = year {
-            url.query_pairs_mut ().append_pair("first_air_date_year", y.to_string().as_str());
+            url.query_pairs_mut().append_pair("first_air_date_year", y.to_string().as_str());
         }
 
         debug!("TMDB search series: {title}");
@@ -247,14 +271,21 @@ impl TmdbClient {
                             tmdb_id: Some(details.id),
                             tvdb_id: None, // TMDB doesn't provide TVDB ID directly
                             rating: Some(details.vote_average),
-                            genres: details.genres.iter().map(|g| g.name.clone()).collect(),
+                            genres: details.genres.as_ref().and_then(|list| {
+                                let result: Vec<String> = list.iter().map(|g| g.name.clone()).collect();
+                                if result.is_empty() {
+                                    None
+                                } else {
+                                    Some(result)
+                                }
+                            }),
                             actors: details
                                 .credits
                                 .as_ref()
-                                .map(|c| {
-                                    c.cast
+                                .and_then(|c| {
+                                    let actors: Vec<Actor> = c.cast
                                         .iter()
-                                        .take(10)
+                                        .take(10) // Limit to top 10 actors
                                         .map(|actor| Actor {
                                             name: actor.name.clone(),
                                             role: Some(actor.character.clone()),
@@ -263,10 +294,22 @@ impl TmdbClient {
                                                 .as_ref()
                                                 .map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
                                         })
-                                        .collect()
-                                })
-                                .unwrap_or_default(),
-                            studios: details.networks.iter().map(|n| n.name.clone()).collect(),
+                                        .collect();
+
+                                    if actors.is_empty() {
+                                        None
+                                    } else {
+                                        Some(actors)
+                                    }
+                                }),
+                            studios: details.networks.as_ref().and_then(|list| {
+                                let result: Vec<String> = list.iter().map(|n| n.name.clone()).collect();
+                                if result.is_empty() {
+                                    None
+                                } else {
+                                    Some(result)
+                                }
+                            }),
                             poster: details
                                 .poster_path
                                 .map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
@@ -274,7 +317,7 @@ impl TmdbClient {
                                 .backdrop_path
                                 .map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
                             status: Some(details.status),
-                            episodes: Vec::new(), // Episodes would need separate API calls
+                            episodes: None, // Episodes would need separate API calls
                             source: MetadataSource::Tmdb,
                             last_updated: chrono::Utc::now().timestamp(),
                         })),
@@ -330,8 +373,8 @@ struct TmdbMovieDetails {
     imdb_id: Option<String>,
     poster_path: Option<String>,
     backdrop_path: Option<String>,
-    genres: Vec<TmdbGenre>,
-    production_companies: Vec<TmdbCompany>,
+    genres: Option<Vec<TmdbGenre>>,
+    production_companies: Option<Vec<TmdbCompany>>,
     credits: Option<TmdbCredits>,
 }
 
@@ -346,8 +389,8 @@ struct TmdbSeriesDetails {
     poster_path: Option<String>,
     backdrop_path: Option<String>,
     status: String,
-    genres: Vec<TmdbGenre>,
-    networks: Vec<TmdbNetwork>,
+    genres: Option<Vec<TmdbGenre>>,
+    networks: Option<Vec<TmdbNetwork>>,
     credits: Option<TmdbCredits>,
 }
 

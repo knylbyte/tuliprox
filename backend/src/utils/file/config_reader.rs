@@ -9,7 +9,7 @@ use chrono::Local;
 use log::{error, info, warn};
 use serde::Serialize;
 use shared::error::{create_tuliprox_error, info_err, TuliproxError, TuliproxErrorKind};
-use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto, TargetUserDto, LibraryConfigDto};
+use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto, TargetUserDto};
 use shared::utils::{CONSTANTS};
 use std::env;
 use std::fs::File;
@@ -300,25 +300,6 @@ pub async fn read_api_proxy(config: &AppConfig, resolve_env: bool) -> Option<Api
             None
         }
     }
-}
-
-pub fn read_vod_file(vod_file: &str, resolve_env: bool) -> Result<Option<LibraryConfigDto>, TuliproxError> {
-    open_file(&std::path::PathBuf::from(vod_file)).map_or(Ok(None), |file| {
-        let maybe_vod: Result<LibraryConfigDto, _> = serde_yaml::from_reader(config_file_reader(file, resolve_env));
-        match maybe_vod {
-            Ok(mut vod_dto) => {
-                if resolve_env {
-                    if let Err(err) = vod_dto.prepare() {
-                        exit!("cant read vod-config file: {err}");
-                    }
-                }
-                Ok(Some(vod_dto))
-            }
-            Err(err) => {
-                Err(info_err!(format!("cant read vod-config file: {err}")))
-            }
-        }
-    })
 }
 
 async fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str) -> Result<(), TuliproxError>

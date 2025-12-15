@@ -288,19 +288,19 @@ $port-size: 10px;
   }
 
   &-OutputM3u {
-    @include brick-handle-output-color(var(--brick-output-m3u-border-color), var(--brick-output-m3u-background-color));
+    @include brick-handle-output-color(var(--brick-output-m3u-background-color), var(--brick-output-m3u-border-color));
   }
 
   &-OutputXtream {
-    @include brick-handle-output-color(var(--brick-output-xtream-border-color), var(--brick-output-xtream-background-color));
+    @include brick-handle-output-color( var(--brick-output-xtream-background-color), var(--brick-output-xtream-border-color));
   }
 
   &-OutputHdHomeRun {
-    @include brick-handle-output-color(var(--brick-output-hdhomerun-border-color), var(--brick-output-hdhomerun-background-color));
+    @include brick-handle-output-color(var(--brick-output-hdhomerun-background-color), var(--brick-output-hdhomerun-border-color));
   }
 
   &-OutputStrm {
-    @include brick-handle-output-color(var(--brick-output-strm-border-color), var(--brick-output-strm-background-color));
+    @include brick-handle-output-color(var(--brick-output-strm-background-color), var(--brick-output-strm-border-color));
   }
 }
 

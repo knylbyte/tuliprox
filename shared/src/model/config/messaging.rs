@@ -49,11 +49,11 @@ impl PushoverMessagingConfigDto {
 pub struct MessagingConfigDto {
     #[serde(default)]
     pub notify_on: Vec<MsgKind>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub telegram: Option<TelegramMessagingConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rest: Option<RestMessagingConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub pushover: Option<PushoverMessagingConfigDto>,
 }
 

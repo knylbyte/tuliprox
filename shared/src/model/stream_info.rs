@@ -65,9 +65,9 @@ pub struct StreamInfo {
     pub user_agent: String,
     #[serde(default)]
     pub ts: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub session_token: Option<String>,
 }
 

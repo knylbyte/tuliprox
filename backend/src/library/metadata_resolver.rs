@@ -111,48 +111,21 @@ impl MetadataResolver {
                 let (moviedb_id, title, year) = MediaClassifier::extract_movie_search_info(file);
                 MediaMetadata::Movie(MovieMetadata {
                     title,
-                    original_title: None,
                     year,
-                    plot: None,
-                    tagline: None,
-                    runtime: None,
-                    mpaa: None,
-                    imdb_id:  None,
                     tmdb_id: MovieDbId::get_tmdb_id(moviedb_id.as_ref()),
                     tvdb_id: MovieDbId::get_tvdb_id(moviedb_id.as_ref()),
-                    rating: None,
-                    genres: Vec::new(),
-                    directors: Vec::new(),
-                    writers: Vec::new(),
-                    actors: Vec::new(),
-                    studios: Vec::new(),
-                    poster: None,
-                    fanart: None,
                     source: MetadataSource::FilenameParsed,
                     last_updated: timestamp,
+                    ..MovieMetadata::default()
                 })
             }
             MediaClassification::Series { season: _, episode: _ } => {
                 let show_name = MediaClassifier::extract_show_name(file);
                 MediaMetadata::Series(SeriesMetadata {
                     title: show_name,
-                    original_title: None,
-                    year: None,
-                    plot: None,
-                    mpaa: None,
-                    imdb_id: None,
-                    tmdb_id: None,
-                    tvdb_id: None,
-                    rating: None,
-                    genres: Vec::new(),
-                    actors: Vec::new(),
-                    studios: Vec::new(),
-                    poster: None,
-                    fanart: None,
-                    status: None,
-                    episodes: Vec::new(), // Single episode would be added during processing
                     source: MetadataSource::FilenameParsed,
                     last_updated: timestamp,
+                    ..SeriesMetadata::default()
                 })
             }
         }
@@ -205,6 +178,7 @@ mod tests {
     fn create_test_file(name: &str) -> ScannedMediaFile {
         ScannedMediaFile {
             path: PathBuf::from(format!("/test/{}", name)),
+            file_path: format!("/test/{}", name),
             file_name: name.to_string(),
             extension: "mkv".to_string(),
             size_bytes: 1024,

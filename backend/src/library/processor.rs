@@ -1,7 +1,6 @@
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
-use serde::Serialize;
-use shared::model::LibraryMetadataFormat;
+use shared::model::{LibraryMetadataFormat, LibraryScanResult};
 use crate::model::{AppConfig, LibraryConfig};
 use crate::library::metadata::{MetadataCacheEntry, MediaMetadata};
 use crate::library::metadata_resolver::MetadataResolver;

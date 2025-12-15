@@ -368,7 +368,7 @@ impl ActiveUserManager {
         let username = user.username.clone();
         let mut user_connections = self.connections.write().await;
         let connection_data = user_connections.by_key.entry(username.clone()).or_insert_with(|| {
-            debug!("Creating first session for user {username} {}", sanitize_sensitive_info(stream_url));
+            debug_if_enabled!("Creating first session for user {username} {}", sanitize_sensitive_info(stream_url));
             let mut data = UserConnectionData::new(0, user.max_connections);
             let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
             data.add_session(session);
@@ -386,13 +386,13 @@ impl ActiveUserManager {
                     session.provider = provider.to_string();
                 }
                 session.permission = connection_permission;
-                debug!("Using session for user {} with url: {}", user.username, sanitize_sensitive_info(stream_url));
+                debug_if_enabled!("Using session for user {} with url: {}", user.username, sanitize_sensitive_info(stream_url));
                 return session.token.clone();
             }
         }
 
         // If no session exists, create one
-        debug!("Creating session for user {} with url: {}",
+        debug_if_enabled!("Creating session for user {} with url: {}",
             user.username, sanitize_sensitive_info(stream_url));
         let session = Self::new_user_session(session_token, virtual_id, provider, stream_url, addr, connection_permission);
         let token = session.token.clone();

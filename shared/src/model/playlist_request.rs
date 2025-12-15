@@ -40,13 +40,13 @@ pub struct CommonPlaylistItem {
     pub url: String,
     pub input_name: String,
     pub item_type: PlaylistItemType,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub epg_channel_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub xtream_cluster: Option<XtreamCluster>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_properties: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub category_id: Option<u32>,
 }
 
@@ -79,22 +79,22 @@ impl From<PlaylistResponseGroup> for UiPlaylistGroup {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct PlaylistCategoriesResponse {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub live: Option<Vec<PlaylistResponseGroup>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vod: Option<Vec<PlaylistResponseGroup>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub series: Option<Vec<PlaylistResponseGroup>>,
 }
 
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct UiPlaylistCategories {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub live: Option<Vec<Rc<UiPlaylistGroup>>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vod: Option<Vec<Rc<UiPlaylistGroup>>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub series: Option<Vec<Rc<UiPlaylistGroup>>>,
 }
 

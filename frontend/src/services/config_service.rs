@@ -1,6 +1,6 @@
 use crate::model::WebConfig;
 use crate::services::{get_base_href, request_get, request_post, EventService};
-use shared::model::{AppConfigDto, ConfigDto, ConfigInputDto, IpCheckDto, TargetOutputDto};
+use shared::model::{AppConfigDto, ConfigDto, ConfigInputDto, IpCheckDto, LibraryScanRequest, TargetOutputDto};
 use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
@@ -152,6 +152,9 @@ impl ConfigService {
 
     pub async fn update_library(&self) -> Result<Option<()>, Error> {
         let path = concat_path(&self.library_path, "scan");
-        request_get::<()>(&path, None, None).await
+        let params = LibraryScanRequest {
+            force_rescan: false,
+        };
+        request_post::<LibraryScanRequest, ()>(&path, params, None, None).await
     }
 }

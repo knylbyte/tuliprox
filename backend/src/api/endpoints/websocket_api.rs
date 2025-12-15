@@ -5,7 +5,7 @@ use crate::auth::{verify_token_admin, verify_token_user};
 use axum::extract::ws::CloseFrame;
 use axum::{extract::ws::{Message, WebSocket, WebSocketUpgrade},response::IntoResponse};
 use log::{error, trace};
-use shared::model::{LibraryScanSummary, ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserCommand, UserRole, WsCloseCode, PROTOCOL_VERSION};
+use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserCommand, UserRole, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
 use shared::utils::{concat_path_leading_slash, default_kick_secs};
 

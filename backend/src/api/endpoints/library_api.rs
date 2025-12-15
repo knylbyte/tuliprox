@@ -1,27 +1,17 @@
 use crate::api::model::{AppState, EventMessage};
 use axum::response::IntoResponse;
-use log::{error, info};
-use serde::{Deserialize, Serialize};
+use log::{debug, error, info};
 use std::sync::Arc;
 use serde_json::json;
-use shared::model::{LibraryScanSummary, LibraryScanSummaryStatus, LibraryStatus};
+use shared::model::{LibraryScanRequest, LibraryScanSummary, LibraryScanSummaryStatus, LibraryStatus};
 use crate::library::{LibraryProcessor};
-
-// Request to trigger a Library scan
-#[derive(Debug, Deserialize)]
-pub struct LibraryScanRequest {
-    // Force rescan of all files, ignoring modification timestamps
-    #[serde(default)]
-    pub force_rescan: bool,
-}
-
 
 // Triggers a library scan
 async fn scan_library(
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
     axum::Json(request): axum::Json<LibraryScanRequest>,
 ) -> axum::response::Response {
-    info!("Library scan requested (force_rescan: {})", request.force_rescan);
+    debug!("Library scan requested (force_rescan: {})", request.force_rescan);
 
     // Check if Library is enabled
     let lib_config = match app_state.app_config.config.load().library.as_ref() {
@@ -76,49 +66,35 @@ async fn get_library_status(
 ) -> axum::response::Response {
 
     if let Some(config) = app_state.app_config.config.load().library.as_ref() {
-        if !config.enabled {
+        if config.enabled {
+            // Get statistics from processor
+            let processor = LibraryProcessor::new(config.clone());
+            let entries = processor.get_all_entries().await;
+
+            let movies = entries
+                .iter()
+                .filter(|e| e.metadata.is_movie())
+                .count();
+            let series = entries
+                .iter()
+                .filter(|e| e.metadata.is_series())
+                .count();
+
             let response = LibraryStatus {
-                enabled: false,
-                total_items: 0,
-                movies: 0,
-                series: 0,
-                path: None,
+                enabled: true,
+                total_items: entries.len(),
+                movies,
+                series,
+                path: Some(config.metadata.path.clone()),
             };
+
             return axum::Json(response).into_response();
         }
-
-        // Get statistics from processor
-        let processor = LibraryProcessor::new(config.clone());
-        let entries = processor.get_all_entries().await;
-
-        let movies = entries
-            .iter()
-            .filter(|e| e.metadata.is_movie())
-            .count();
-        let series = entries
-            .iter()
-            .filter(|e| e.metadata.is_series())
-            .count();
-
-        let response = LibraryStatus {
-            enabled: true,
-            total_items: entries.len(),
-            movies,
-            series,
-            path: Some(config.metadata.path.clone()),
-        };
-
-        axum::Json(response).into_response()
-    } else {
-        let response = LibraryStatus {
-            enabled: false,
-            total_items: 0,
-            movies: 0,
-            series: 0,
-            path: None,
-        };
-        axum::Json(response).into_response()
     }
+
+    let response = LibraryStatus::default();
+    axum::Json(response).into_response()
+
 }
 
 

@@ -176,10 +176,8 @@ impl MediaClassifier {
 
         // Remove year and everything after it, and quality tags
         let mut title = file_name.to_string();
-        if let Some(y) = year {
-            if let Some(pos) = title.find(&y.to_string()) {
-                title = title[..pos].to_string();
-            }
+        if let Some(mat) = CONSTANTS.re_classifier_year.find(file_name) {
+            title = file_name[..mat.start()].to_string();
         }
 
         title = clear_filename(&title);

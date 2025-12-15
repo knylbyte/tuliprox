@@ -27,7 +27,7 @@ const RESERVED_PATHS: &[&str] = &[
 pub struct ContentSecurityPolicyConfigDto {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_attributes: Option<Vec<String>>,
 }
 
@@ -74,13 +74,13 @@ pub struct WebUiConfigDto {
     pub enabled: bool,
     #[serde(default = "default_as_true")]
     pub user_ui_enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content_security_policy: Option<ContentSecurityPolicyConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auth: Option<WebAuthConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub player_server: Option<String>,
     #[serde(default = "default_kick_secs")]
     pub kick_secs: u64,

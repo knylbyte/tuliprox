@@ -1,6 +1,7 @@
+use crate::model::macros;
+use log::error;
 use regex::Regex;
 use shared::model::{LibraryConfigDto, LibraryContentType, LibraryMetadataFormat};
-use crate::model::{macros};
 
 #[derive(Debug, Clone, Default)]
 pub struct LibraryScanDirectory {
@@ -73,7 +74,15 @@ impl From<&LibraryConfigDto> for LibraryConfig {
             .classification
             .series_patterns
             .iter()
-            .filter_map(|pattern| Regex::new(pattern).ok())
+            .filter_map(|pattern| {
+                match Regex::new(pattern) {
+                    Ok(re) => Some(re),
+                    Err(e) => {
+                        error!("Invalid series pattern '{pattern}': {e}");
+                        None
+                    }
+                }
+            })
             .collect();
 
         // Compile directory patterns
@@ -81,7 +90,15 @@ impl From<&LibraryConfigDto> for LibraryConfig {
             .classification
             .series_directory_patterns
             .iter()
-            .filter_map(|pattern| Regex::new(pattern).ok())
+            .filter_map(|pattern| {
+                match Regex::new(pattern) {
+                    Ok(re) => Some(re),
+                    Err(e) => {
+                        error!("Invalid series directory pattern '{pattern}': {e}");
+                        None
+                    }
+                }
+            })
             .collect();
 
         Self {

@@ -42,7 +42,7 @@ macro_rules! trace_if_enabled {
 
     ($txt:expr) => {
         if log::log_enabled!(log::Level::Trace) {
-            log::log!(Level::Trace, $txt);
+            log::log!(log::Level::Trace, $txt);
         }
     };
 }

@@ -320,7 +320,7 @@
     "COUNTRY": "Country",
     "GEOIP": "Geo-IP",
     "UPDATE_GEOIP_DB": "Update Geo-IP db",
-    "UPDATE_LOCAL_LIBRARY": "Update local Library",
+    "UPDATE_LOCAL_LIBRARY": "Update Local Library",
     "SOURCE_EDITOR": "Sources",
     "SKIP_LIVE": "Skip Live",
     "SKIP_VOD": "Skip VOD",
@@ -419,6 +419,10 @@
     },
     "SOURCE_SELECTOR": {
       "MISSING_SELECTION": "No entry selected"
+    },
+    "LIBRARY_UPDATE": {
+      "SUCCESS": "Successfully started library update!",
+      "FAIL": "Library update failed!"
     }
   },
   "INFO": {

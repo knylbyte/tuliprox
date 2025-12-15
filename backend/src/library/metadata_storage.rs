@@ -1,10 +1,10 @@
+use crate::library::metadata::{MediaMetadata, MetadataCacheEntry};
 use log::{debug, error, info};
 use std::collections::HashMap;
-use std::path::{PathBuf};
+use std::fmt::Write;
+use std::path::PathBuf;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
-use std::fmt::Write;
-use crate::library::metadata::{MetadataCacheEntry, MediaMetadata};
 
 /// Metadata storage for local VOD files
 /// Stores metadata as JSON files with UUID-based filenames
@@ -20,7 +20,7 @@ impl MetadataStorage {
 
     /// Initializes the storage directory
     pub async fn initialize(&self) -> std::io::Result<()> {
-        if !self.storage_dir.exists() {
+        if !fs::try_exists(&self.storage_dir).await.unwrap_or(false) {
             info!("Creating metadata storage directory: {}", self.storage_dir.display());
             fs::create_dir_all(&self.storage_dir).await?;
         }
@@ -151,7 +151,7 @@ impl MetadataStorage {
         let nfo_content = Self::generate_nfo_content(&entry.metadata);
         let nfo_path = PathBuf::from(entry.file_path.clone()).with_extension("nfo");
 
-        if !nfo_path.exists() {
+        if !fs::try_exists(&nfo_path).await.unwrap_or(false) {
             debug!("Writing NFO file: {}", nfo_path.display());
             let mut file = fs::File::create(&nfo_path).await?;
             file.write_all(nfo_content.as_bytes()).await?;
@@ -200,12 +200,16 @@ impl MetadataStorage {
                     let _ = writeln!(nfo, "  <rating>{rating}</rating>");
                 }
 
-                for genre in &movie.genres {
-                    let _ = writeln!(nfo, "  <genre>{}</genre>", Self::xml_escape(genre));
+                if let Some(genres) = movie.genres.as_ref() {
+                    for genre in genres {
+                        let _ = writeln!(nfo, "  <genre>{}</genre>", Self::xml_escape(genre));
+                    }
                 }
 
-                for director in &movie.directors {
-                    let _ = writeln!(nfo, "  <director>{}</director>", Self::xml_escape(director));
+                if let Some(directors) = movie.directors.as_ref() {
+                    for director in directors {
+                        let _ = writeln!(nfo, "  <director>{}</director>", Self::xml_escape(director));
+                    }
                 }
 
                 if let Some(ref poster) = movie.poster {
@@ -239,12 +243,14 @@ impl MetadataStorage {
                     let _ = writeln!(nfo, "  <tvdbid>{tvdb_id}</tvdbid>");
                 }
 
-                for genre in &series.genres {
-                    let _ = writeln!(nfo, "  <genre>{}</genre>", Self::xml_escape(genre));
+                if let Some(genres) = series.genres.as_ref() {
+                    for genre in genres {
+                        let _ = writeln!(nfo, "  <genre>{}</genre>", Self::xml_escape(genre));
+                    }
                 }
 
                 if let Some(ref status) = series.status {
-                    let _ = writeln!(nfo,"  <status>{}</status>", Self::xml_escape(status));
+                    let _ = writeln!(nfo, "  <status>{}</status>", Self::xml_escape(status));
                 }
 
                 nfo.push_str("</tvshow>\n");
@@ -280,25 +286,11 @@ mod tests {
             1234567890,
             MediaMetadata::Movie(MovieMetadata {
                 title: "Test Movie".to_string(),
-                original_title: None,
                 year: Some(2020),
                 plot: Some("Test Movie plot".to_string()),
-                tagline: None,
-                runtime: None,
-                mpaa: None,
-                imdb_id: None,
-                tmdb_id: None,
-                tvdb_id: None,
                 rating: Some(7.23f64),
-                genres: Vec::new(),
-                directors: Vec::new(),
-                writers: Vec::new(),
-                actors: Vec::new(),
-                studios: Vec::new(),
-                poster: None,
-                fanart: None,
                 source: MetadataSource::FilenameParsed,
-                last_updated: 0,
+                ..MovieMetadata::default()
             }),
         );
 

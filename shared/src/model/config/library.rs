@@ -12,7 +12,7 @@ fn default_tmdb_language() -> String {
     "en-US".to_string()
 }
 fn default_storage_formats() -> Vec<LibraryMetadataFormat> {
-    vec![LibraryMetadataFormat::Json, LibraryMetadataFormat::Nfo]
+    vec![LibraryMetadataFormat::Nfo]
 }
 fn default_movie_category() -> String {
     "Local Movies".to_string()
@@ -109,7 +109,7 @@ pub struct LibraryMetadataReadConfigDto {
 pub struct LibraryTmdbConfigDto {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     #[serde(default = "default_tmdb_rate_limit_ms")]
     pub rate_limit_ms: u64,
@@ -119,11 +119,9 @@ pub struct LibraryTmdbConfigDto {
     pub language: String,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum LibraryMetadataFormat {
-    #[default]
-    Json,
     Nfo,
 }
 

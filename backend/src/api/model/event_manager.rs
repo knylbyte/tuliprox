@@ -11,7 +11,7 @@ pub enum EventMessage {
     PlaylistUpdate(PlaylistUpdateState),
     PlaylistUpdateProgress(String, String),
     SystemInfoUpdate(SystemInfo),
-    LibraryScanProgress(LibraryScanSummary)
+    LibraryScanProgress(LibraryScanSummary),
 }
 
 pub struct EventManager {

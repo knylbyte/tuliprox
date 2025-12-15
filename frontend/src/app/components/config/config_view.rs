@@ -219,8 +219,8 @@ pub fn ConfigView() -> Html {
                     }
                     "update_library" => {
                         match services.config.update_library().await {
-                            Ok(_) => services.toastr.success(translate.t("MESSAGES.DOWNLOAD.GEOIP.SUCCESS")),
-                            Err(_err) => services.toastr.error(translate.t("MESSAGES.DOWNLOAD.GEOIP.FAIL")),
+                            Ok(_) => services.toastr.success(translate.t("MESSAGES.LIBRARY_UPDATE.SUCCESS")),
+                            Err(_err) => services.toastr.error(translate.t("MESSAGES.LIBRARY_UPDATE.FAIL")),
                         }
                     }
                     _ => {}

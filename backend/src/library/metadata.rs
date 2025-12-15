@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Source of metadata information
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,42 +25,42 @@ pub enum MetadataSource {
 pub struct MovieMetadata {
     pub title: String,
     // Original title (if different from title)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub original_title: Option<String>,
     // Release year
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub year: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub plot: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tagline: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime: Option<u32>,
     // MPAA rating (e.g., "PG-13", "R")
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mpaa: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub imdb_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tmdb_id: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tvdb_id: Option<u32>,
     // Rating (0.0 - 10.0)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rating: Option<f64>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub genres: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub directors: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub writers: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub actors: Vec<Actor>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub studios: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub genres: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub directors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub writers: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actors: Option<Vec<Actor>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub studios: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub poster: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fanart: Option<String>,
     pub source: MetadataSource,
     pub last_updated: i64,
@@ -71,39 +72,39 @@ pub struct MovieMetadata {
 pub struct SeriesMetadata {
     pub title: String,
     // Original title (if different)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub original_title: Option<String>,
     // First aired year
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub year: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub plot: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mpaa: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub imdb_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tmdb_id: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tvdb_id: Option<u32>,
     // Rating (0.0 - 10.0)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rating: Option<f64>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub genres: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub actors: Vec<Actor>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub studios: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub genres: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actors: Option<Vec<Actor>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub studios: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub poster: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fanart: Option<String>,
     // Status (e.g., "Continuing", "Ended")
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub episodes: Vec<EpisodeMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub episodes: Option<Vec<EpisodeMetadata>>,
     pub source: MetadataSource,
     /// Last updated timestamp (Unix epoch)
     pub last_updated: i64,
@@ -116,16 +117,16 @@ pub struct EpisodeMetadata {
     pub season: u32,
     pub episode: u32,
     /// Aired date (ISO 8601 format)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aired: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub plot: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime: Option<u32>,
     // Rating (0.0 - 10.0)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rating: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thumb: Option<String>,
     pub file_path: String,
 }
@@ -135,9 +136,9 @@ pub struct EpisodeMetadata {
 #[serde(deny_unknown_fields)]
 pub struct Actor {
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thumb: Option<String>,
 }
 
@@ -241,14 +242,7 @@ impl MetadataCacheEntry {
 
     /// Generates a simple UUID-like identifier
     fn generate_uuid() -> String {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-
-        // Create a simple unique ID from timestamp and random value
-        format!("{:x}-{:x}", timestamp, fastrand::u64(..))
+        Uuid::new_v4().to_string()
     }
 
     /// Checks if the file has been modified since this entry was created

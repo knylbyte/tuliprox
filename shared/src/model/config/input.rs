@@ -199,9 +199,9 @@ impl ConfigInputOptionsDto {
 pub struct StagedInputDto {
     pub name: String,
     pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
     #[serde(default)]
     pub method: InputFetchMethod,
@@ -239,9 +239,9 @@ pub struct ConfigInputAliasDto {
     pub id: u16,
     pub name: String,
     pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
     #[serde(default)]
     pub priority: i16,
@@ -282,19 +282,19 @@ pub struct ConfigInputDto {
     #[serde(default)]
     pub headers: HashMap<String, String>,
     pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub epg: Option<EpgConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub persist: Option<String>,
     #[serde(default = "default_as_true")]
     pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<ConfigInputOptionsDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aliases: Option<Vec<ConfigInputAliasDto>>,
     #[serde(default)]
     pub priority: i16,
@@ -302,7 +302,7 @@ pub struct ConfigInputDto {
     pub max_connections: u16,
     #[serde(default)]
     pub method: InputFetchMethod,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub staged: Option<StagedInputDto>,
     #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
     pub exp_date: Option<i64>,
