@@ -5,7 +5,7 @@ use crate::auth::{verify_token_admin, verify_token_user};
 use axum::extract::ws::CloseFrame;
 use axum::{extract::ws::{Message, WebSocket, WebSocketUpgrade},response::IntoResponse};
 use log::{error, trace};
-use shared::model::{ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserCommand, UserRole, WsCloseCode, PROTOCOL_VERSION};
+use shared::model::{LibraryScanSummary, ProtocolHandler, ProtocolHandlerMemory, ProtocolMessage, UserCommand, UserRole, WsCloseCode, PROTOCOL_VERSION};
 use std::sync::Arc;
 use shared::utils::{concat_path_leading_slash, default_kick_secs};
 
@@ -275,6 +275,15 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage, handl
                             .send(Message::Binary(msg))
                             .await
                             .map_err(|e| format!("System info event: {e} "))?;
+                    }
+                    EventMessage::LibraryScanProgress(summary) => {
+                        let msg = ProtocolMessage::LibraryScanProgressResponse(summary)
+                            .to_bytes()
+                            .map_err(|e| e.to_string())?;
+                        socket
+                            .send(Message::Binary(msg))
+                            .await
+                            .map_err(|e| format!("Library scan progress event: {e} "))?;
                     }
                 }
             }

@@ -258,4 +258,8 @@ impl ConfigDto {
         self.reverse_proxy.as_ref().is_some_and(|r| r.geoip.as_ref().is_some_and(|g| g.enabled))
     }
 
+    pub fn is_library_enabled(&self) -> bool {
+        self.library.as_ref().is_some_and(|l| l.enabled)
+    }
+
 }

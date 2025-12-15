@@ -16,16 +16,6 @@ pub struct LibraryProcessor {
     storage: MetadataStorage,
 }
 
-/// Scan result with statistics
-#[derive(Debug, Clone, Serialize)]
-pub struct LibraryScanResult {
-    pub files_scanned: usize,
-    pub files_added: usize,
-    pub files_updated: usize,
-    pub files_removed: usize,
-    pub errors: usize,
-}
-
 impl LibraryProcessor {
     /// Creates a new Library processor from application config
     pub fn from_app_config(app_config: &AppConfig) -> Option<Self> {

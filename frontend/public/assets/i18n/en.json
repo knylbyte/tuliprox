@@ -320,6 +320,7 @@
     "COUNTRY": "Country",
     "GEOIP": "Geo-IP",
     "UPDATE_GEOIP_DB": "Update Geo-IP db",
+    "UPDATE_LOCAL_LIBRARY": "Update local Library",
     "SOURCE_EDITOR": "Sources",
     "SKIP_LIVE": "Skip Live",
     "SKIP_VOD": "Skip VOD",

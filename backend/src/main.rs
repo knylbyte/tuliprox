@@ -113,7 +113,7 @@ async fn main() {
         std::process::exit(i32::from(!healthy));
     }
 
-    // Handle VOD scan before starting main application
+    // Handle Library scan before starting main application
     if args.scan_library || args.force_library_rescan {
         info!("Library scan mode requested");
         let app_config = utils::read_initial_app_config(&mut config_paths, true, true, false).await.unwrap_or_else(|err| exit!("{}", err));

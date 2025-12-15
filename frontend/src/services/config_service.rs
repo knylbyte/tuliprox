@@ -22,6 +22,7 @@ pub struct ConfigService {
     ip_check_path: String,
     batch_input_content_path: String,
     geoip_path: String,
+    library_path: String,
     event_service: Rc<EventService>
 }
 
@@ -37,6 +38,7 @@ impl ConfigService {
             ip_check_path: concat_path_leading_slash(&base_href, "api/v1/ipinfo"),
             batch_input_content_path: concat_path_leading_slash(&base_href, "api/v1/config/batchContent"),
             geoip_path: concat_path_leading_slash(&base_href, "api/v1/geoip/update"),
+            library_path: concat_path_leading_slash(&base_href, "api/v1/library"),
             event_service
         }
     }
@@ -148,4 +150,8 @@ impl ConfigService {
         request_get::<()>(&self.geoip_path, None, None).await
     }
 
+    pub async fn update_library(&self) -> Result<Option<()>, Error> {
+        let path = concat_path(&self.library_path, "scan");
+        request_get::<()>(&path, None, None).await
+    }
 }

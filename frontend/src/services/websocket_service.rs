@@ -294,6 +294,9 @@ fn handle_socket_protocol_msg(event: MessageEvent, event_service: &Rc<EventServi
                     ProtocolMessage::SystemInfoResponse(system_info) => {
                         event_service.broadcast(EventMessage::SystemInfoUpdate(system_info));
                     }
+                    ProtocolMessage::LibraryScanProgressResponse(msg) => {
+                        event_service.broadcast(EventMessage::LibraryScanProgress(msg));
+                    }
                     ProtocolMessage::Version(_) => {
                         attempt_counter.set(0);
                         event_service.broadcast(EventMessage::WebSocketStatus(true));

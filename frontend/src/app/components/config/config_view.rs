@@ -17,6 +17,7 @@ const LABEL_EDIT: &str = "LABEL.EDIT";
 const LABEL_VIEW: &str = "LABEL.VIEW";
 const LABEL_SAVE: &str = "LABEL.SAVE";
 const LABEL_UPDATE_GEOIP: &str = "LABEL.UPDATE_GEOIP_DB";
+const LABEL_UPDATE_LOCAL_LIBRARY: &str = "LABEL.UPDATE_LOCAL_LIBRARY";
 
 macro_rules! collect_modified {
     ($forms:expr, [ $($field:ident),+ $(,)? ]) => {{
@@ -202,38 +203,59 @@ pub fn ConfigView() -> Html {
     };
 
 
-    let handle_update_geoip = {
+    let handle_update_content = {
         let services = services_ctx.clone();
         let translate = translate.clone();
-        Callback::from(move |_| {
+        Callback::from(move |name: String| {
             let services = services.clone();
             let translate = translate.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                match services.config.update_geoip().await {
-                    Ok(_) => services.toastr.success(translate.t("MESSAGES.DOWNLOAD.GEOIP.SUCCESS")),
-                    Err(_err) => services.toastr.error(translate.t("MESSAGES.DOWNLOAD.GEOIP.FAIL")),
+                match name.as_str() {
+                    "update_geo_ip" => {
+                        match services.config.update_geoip().await {
+                            Ok(_) => services.toastr.success(translate.t("MESSAGES.DOWNLOAD.GEOIP.SUCCESS")),
+                            Err(_err) => services.toastr.error(translate.t("MESSAGES.DOWNLOAD.GEOIP.FAIL")),
+                        }
+                    }
+                    "update_library" => {
+                        match services.config.update_library().await {
+                            Ok(_) => services.toastr.success(translate.t("MESSAGES.DOWNLOAD.GEOIP.SUCCESS")),
+                            Err(_err) => services.toastr.error(translate.t("MESSAGES.DOWNLOAD.GEOIP.FAIL")),
+                        }
+                    }
+                    _ => {}
                 }
             });
         })
     };
-
 
     let context = ConfigViewContext {
         edit_mode: edit_mode.clone(),
         on_form_change: on_form_change.clone(),
     };
 
+    let geo_ip_enabled = config_ctx.config.as_ref().is_some_and(|c| c.config.is_geoip_enabled());
+    let library_enabled = config_ctx.config.as_ref().is_some_and(|c| c.config.is_library_enabled());
+
     html! {
         <ContextProvider<ConfigViewContext> context={context}>
         <div class="tp__config-view">
             <div class="tp__config-view__header">
                 <h1>{ translate.t(LABEL_CONFIG) } </h1>
-                {html_if!(config_ctx.config.is_some_and(|c| c.config.is_geoip_enabled()), {
+                <div class="tp__config-view__header-tools">
+                {html_if!(geo_ip_enabled, {
                     <TextButton class="tertiary" name="update_geo_ip"
                         icon="Refresh"
                         title={ translate.t(LABEL_UPDATE_GEOIP)}
-                        onclick={handle_update_geoip}></TextButton>
+                        onclick={handle_update_content.clone()}></TextButton>
                 })}
+                {html_if!(library_enabled, {
+                    <TextButton class="tertiary" name="update_library"
+                        icon="Refresh"
+                        title={ translate.t(LABEL_UPDATE_LOCAL_LIBRARY)}
+                        onclick={handle_update_content.clone()}></TextButton>
+                })}
+                </div>
                <TextButton name="config_edit"
                     class={ if *edit_mode { "secondary" } else { "primary" }}
                     icon={ if *edit_mode { "Unlocked" } else { "Locked" }}
