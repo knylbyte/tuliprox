@@ -2,7 +2,7 @@
 # 3.3.0 (2025-11-xx)
 - !BREAKING CHANGE! config.yml threads attribute is now renamed to process_parallel and is a boolean (true or false).
 - !BREAKING CHANGE! config.yml adds a reverse proxy config field rewrite_secret to keep resource URLs valid after restart.
-- !BREAKING_CHANGE! removed `forced_retry_interval_secs`.
+- !BREAKING CHANGE! removed `forced_retry_interval_secs`.
 - Avoid blocking the runtime when warming the cache.
 - Normalize FileLockManager paths so aliases share the same lock.
 - Use async file operations for playlist persistence to avoid blocking the async runtime.

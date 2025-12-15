@@ -27,9 +27,10 @@ async fn scan_library(
         }
     };
 
+    let client = app_state.http_client.load_full().as_ref().clone();
     tokio::spawn(async move {
         // Create processor and run scan
-        let processor = LibraryProcessor::new(lib_config);
+        let processor = LibraryProcessor::new(lib_config, client);
 
         match processor.scan(request.force_rescan).await {
             Ok(result) => {
@@ -67,8 +68,9 @@ async fn get_library_status(
 
     if let Some(config) = app_state.app_config.config.load().library.as_ref() {
         if config.enabled {
+            let client = app_state.http_client.load_full().as_ref().clone();
             // Get statistics from processor
-            let processor = LibraryProcessor::new(config.clone());
+            let processor = LibraryProcessor::new(config.clone(), client);
             let entries = processor.get_all_entries().await;
 
             let movies = entries

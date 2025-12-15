@@ -2,6 +2,10 @@ use serde::{Deserialize, Serialize};
 use crate::error::{TuliproxError, info_err};
 use crate::utils::default_as_true;
 
+fn default_metadata_path() -> String {
+   "library_metadata".to_string()
+}
+
 fn default_tmdb_rate_limit_ms() -> u64 {
     250
 }
@@ -82,6 +86,7 @@ pub enum LibraryContentType {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct LibraryMetadataConfigDto {
+    #[serde(default = "default_metadata_path")]
     pub path: String,
     #[serde(default)]
     pub read_existing: LibraryMetadataReadConfigDto,

@@ -1,6 +1,7 @@
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use shared::model::{LibraryMetadataFormat, LibraryScanResult};
+use crate::api::model::create_http_client;
 use crate::model::{AppConfig, LibraryConfig};
 use crate::library::metadata::{MetadataCacheEntry, MediaMetadata};
 use crate::library::metadata_resolver::MetadataResolver;
@@ -18,14 +19,15 @@ pub struct LibraryProcessor {
 impl LibraryProcessor {
     /// Creates a new Library processor from application config
     pub fn from_app_config(app_config: &AppConfig) -> Option<Self> {
-        app_config.config.load().library.as_ref().map(|lib_cfg| Self::new(lib_cfg.clone()))
+        let client = create_http_client(&app_config);
+        app_config.config.load().library.as_ref().map(|lib_cfg| Self::new(lib_cfg.clone(), client))
     }
 
     /// Creates a new VOD processor with the given configuration
-    pub fn new(config: LibraryConfig) -> Self {
+    pub fn new(config: LibraryConfig, client: reqwest::Client) -> Self {
         let storage_path = std::path::PathBuf::from(&config.metadata.path);
         let scanner = LibraryScanner::new(config.clone());
-        let resolver = MetadataResolver::from_config(&config);
+        let resolver = MetadataResolver::from_config(&config, client);
         let storage = MetadataStorage::new(storage_path);
 
         Self {

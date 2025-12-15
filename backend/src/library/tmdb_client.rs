@@ -19,10 +19,10 @@ pub struct TmdbClient {
 
 impl TmdbClient {
     /// Creates a new TMDB client
-    pub fn new(api_key: String, rate_limit_ms: u64) -> Self {
+    pub fn new(api_key: String, rate_limit_ms: u64, client: reqwest::Client) -> Self {
         Self {
             api_key,
-            client: reqwest::Client::new(),
+            client,
             rate_limit_ms,
         }
     }
@@ -372,6 +372,7 @@ struct TmdbMovieDetails {
     release_date: String,
     #[serde(default)]
     runtime: u32,
+    #[serde(default)]
     vote_average: f64,
     imdb_id: Option<String>,
     poster_path: Option<String>,
@@ -416,13 +417,16 @@ struct TmdbNetwork {
 
 #[derive(Debug, Deserialize)]
 struct TmdbCredits {
+    #[serde(default)]
     cast: Vec<TmdbCast>,
+    #[serde(default)]
     crew: Vec<TmdbCrew>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TmdbCast {
     name: String,
+    #[serde(default)]
     character: String,
     profile_path: Option<String>,
 }
