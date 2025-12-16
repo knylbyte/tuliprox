@@ -533,7 +533,7 @@ fn format_for_plex(
             (dir_path, final_filename)
         }
         PlaylistItemType::Series
-        | PlaylistItemType::LocalSeries=> {
+        | PlaylistItemType::LocalSeries => {
             let id_string = if tmdb_id > 0 { format!("{separator}{{tmdb-{tmdb_id}}}") } else { String::new() };
             let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
             let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());

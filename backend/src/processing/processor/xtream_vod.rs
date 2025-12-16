@@ -1,22 +1,22 @@
-use shared::model::InputType;
-use shared::error::{TuliproxError};
 use crate::model::{AppConfig, ConfigTarget};
-use crate::model::{FetchedPlaylist};
-use shared::model::{PlaylistItem, PlaylistItemType, XtreamCluster};
+use crate::model::FetchedPlaylist;
+use crate::processing::processor::xtream::normalize_json_content;
 use crate::processing::processor::xtream::{create_resolve_info_wal_files, playlist_resolve_download_playlist_item, read_processed_info_ids, should_update_info};
+use crate::processing::processor::{create_resolve_options_function_for_xtream_target, handle_error, handle_error_and_return};
 use crate::repository::xtream_repository::{write_vod_info_to_wal_file, xtream_update_input_info_file, xtream_update_input_vod_record_from_wal_file, InputVodInfoRecord};
-use shared::error::{notify_err};
-use crate::processing::processor::{handle_error, handle_error_and_return, create_resolve_options_function_for_xtream_target};
-use shared::utils::{get_u32_from_serde_value, get_u64_from_serde_value, get_string_from_serde_value};
-use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
-use std::io::{Write};
-use std::time::Instant;
+use crate::utils;
+use crate::utils::IO_BUFFER_SIZE;
 use log::{info, log_enabled, Level};
 use serde_json::value::RawValue;
-use crate::utils;
-use crate::processing::processor::xtream::normalize_json_content;
-use crate::utils::IO_BUFFER_SIZE;
+use serde_json::{Map, Value};
+use shared::error::notify_err;
+use shared::error::TuliproxError;
+use shared::model::{InputType, PlaylistEntry};
+use shared::model::{PlaylistItem, PlaylistItemType, XtreamCluster};
+use shared::utils::{get_string_from_serde_value, get_u32_from_serde_value, get_u64_from_serde_value};
+use std::collections::{HashMap, HashSet};
+use std::io::Write;
+use std::time::Instant;
 
 create_resolve_options_function_for_xtream_target!(vod);
 
@@ -101,7 +101,11 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
             }
             let (should_update, provider_id, _ts) = should_update_vod_info(pli, &processed_info_ids);
             if should_update && provider_id != 0 && fetched_in_run.insert(provider_id) {
-                if let Some(content) = playlist_resolve_download_playlist_item(client, pli, fpl.input, errors, resolve_delay, XtreamCluster::Video).await {
+                if let Some(content) = if pli.get_item_type().is_local() {
+                    pli.header.additional_properties.as_ref().map(ToString::to_string)
+                } else {
+                    playlist_resolve_download_playlist_item(client, pli, fpl.input, errors, resolve_delay, XtreamCluster::Video).await
+                } {
                     let normalized_content = normalize_json_content(content);
                     let normalized_str: &str = &normalized_content;
                     if let Some((provider_id, info_record)) = extract_info_record_from_vod_info(normalized_str) {

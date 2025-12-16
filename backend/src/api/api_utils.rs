@@ -1051,9 +1051,12 @@ pub async fn local_stream_response(
         .and_then(|v| v.to_str().ok())
         .and_then(parse_range);
 
-    let (start, end) = if let Some((start, end)) = range {
-        let end = end.unwrap_or(file_size - 1);
-        (start, end.min(file_size - 1))
+    let (start, end) = if let Some((req_start, req_end)) = range {
+        if file_size == 0 || req_start >= file_size {
+            return StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+        }
+        let end = req_end.unwrap_or(file_size - 1).min(file_size - 1);
+        (req_start, end)
     } else {
         if file_size == 0 {
             // Serve empty file

@@ -224,6 +224,7 @@ pub struct XtreamMovieInfoDetails {
     pub plot: Option<String>,
     pub age: Option<String>,
     pub mpaa_rating: Option<String>,
+    #[serde(default)]
     pub rating_count_kinopoisk: u32,
     pub country: Option<String>,
     pub genre: Option<String>,

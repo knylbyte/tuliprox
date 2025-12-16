@@ -17,7 +17,7 @@ pub struct ScannedMediaFile {
 
 impl ScannedMediaFile {
     /// Creates a new `ScannedMediaFile` from a path and metadata
-    pub async fn from_path(path: PathBuf) -> io::Result<Self> {
+    pub async fn from_path(path: &Path) -> io::Result<Self> {
         let metadata = fs::metadata(&path).await?;
         let file_name = path
             .file_name()
@@ -38,7 +38,7 @@ impl ScannedMediaFile {
 
         Ok(Self {
             file_path: path.display().to_string(),
-            path,
+            path: path.to_path_buf(),
             file_name,
             extension,
             size_bytes: metadata.len(),
@@ -138,7 +138,7 @@ impl LibraryScanner {
                     if let Some(ext) = entry_path.extension().and_then(|e| e.to_str()) {
                         let ext_lower = ext.to_lowercase();
                         if self.config.supported_extensions.contains(&ext_lower) {
-                            match ScannedMediaFile::from_path(entry_path.clone()).await {
+                            match ScannedMediaFile::from_path(&entry_path).await {
                                 Ok(video_file) => {
                                     trace!("Found video file: {}", video_file.file_path);
                                     files.push(video_file);

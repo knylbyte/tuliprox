@@ -1005,7 +1005,7 @@ async fn xtream_get_stream_info_response(
                     axum::http::header::CONTENT_TYPE,
                     mime::APPLICATION_JSON.to_string()
                 )
-                .body(axum::body::Body::from(additional_properties.clone())));
+                .body(axum::body::Body::from(additional_properties.to_owned())));
             }
         }
 
