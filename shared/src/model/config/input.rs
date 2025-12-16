@@ -281,6 +281,7 @@ pub struct ConfigInputDto {
     pub input_type: InputType,
     #[serde(default)]
     pub headers: HashMap<String, String>,
+    #[serde(default)]
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub epg: Option<EpgConfigDto>,

@@ -1,5 +1,4 @@
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
-use crate::api::model::{tee_stream, UserSession};
 use crate::api::model::{
     create_channel_unavailable_stream, create_custom_video_stream_response,
     create_provider_connections_exhausted_stream, create_provider_stream,
@@ -8,21 +7,22 @@ use crate::api::model::{
     ProviderStreamFactoryOptions, SharedStreamManager,
     StreamError, ThrottledStream, UserApiRequest,
 };
+use crate::api::model::{tee_stream, UserSession};
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
 use crate::model::{ConfigInput, ResourceRetryConfig};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::lru_cache::LRUResourceCache;
-use crate::utils::{async_file_reader, async_file_writer, create_new_file_for_write};
 use crate::utils::request;
+use crate::utils::{async_file_reader, async_file_writer, create_new_file_for_write, get_file_extension};
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::BUILD_TIMESTAMP;
 use arc_swap::ArcSwapOption;
-use axum::http::{HeaderMap};
+use axum::http::{header, HeaderMap, HeaderValue, Response, StatusCode};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-use log::{debug, error,  log_enabled, trace, warn};
+use log::{debug, error, log_enabled, trace, warn};
 use reqwest::header::RETRY_AFTER;
 use serde::Serialize;
 use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
@@ -32,10 +32,13 @@ use shared::utils::{
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::path::Path;
+use std::io::SeekFrom;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::Mutex;
+use tokio_util::io::ReaderStream;
 use url::Url;
 
 const CONTENT_TYPE_BIN: &str = "application/cbor";
@@ -122,6 +125,7 @@ pub use try_result_bad_request;
 pub use try_result_not_found;
 pub use try_unwrap_body;
 use crate::auth::Fingerprint;
+use crate::utils::request::{content_type_from_ext, parse_range};
 
 pub fn get_server_time() -> String {
     chrono::offset::Local::now()
@@ -142,7 +146,7 @@ pub fn get_build_time() -> Option<String> {
 pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoResponse + Send {
     match tokio::fs::try_exists(file_path).await {
         Ok(exists) => {
-            if ! exists {
+            if !exists {
                 return axum::http::StatusCode::NOT_FOUND.into_response();
             }
         }
@@ -371,7 +375,7 @@ async fn resolve_streaming_strategy(
                         ProviderAllocation::Exhausted => {
                             let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
                             ProviderStreamState::Custom(stream)
-                        },
+                        }
                         ProviderAllocation::Available(_) => ProviderStreamState::Available(Some(provider), url),
                         ProviderAllocation::GracePeriod(_) => ProviderStreamState::GracePeriod(Some(provider), url),
                     }
@@ -1008,6 +1012,101 @@ async fn try_shared_stream_response_if_any(
     }
     None
 }
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub async fn local_stream_response(
+    fingerprint: &Fingerprint,
+    app_state: &Arc<AppState>,
+    pli: StreamChannel,
+    req_headers: &HeaderMap,
+    _input: &ConfigInput,
+    _target: &ConfigTarget,
+    _user: &ProxyUserCredentials,
+    connection_permission: UserConnectionPermission,
+) -> impl IntoResponse + Send {
+    if log_enabled!(log::Level::Trace) {
+        trace!("Try to open stream {}", sanitize_sensitive_info(&pli.url));
+    }
+
+    if connection_permission == UserConnectionPermission::Exhausted {
+        return create_custom_video_stream_response(
+            app_state,
+            &fingerprint.addr,
+            CustomVideoStreamType::UserConnectionsExhausted,
+        ).await
+            .into_response();
+    }
+
+    let path = PathBuf::from(pli.url.strip_prefix("file://").unwrap_or(&pli.url));
+
+    let Ok(mut file) = tokio::fs::File::open(&path).await else { return StatusCode::NOT_FOUND.into_response() };
+    let Ok(metadata) = file.metadata().await else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
+    let file_size = metadata.len();
+
+    let range = req_headers
+        .get("range")
+        .and_then(|v| v.to_str().ok())
+        .and_then(parse_range);
+
+    let (start, end) = if let Some((start, end)) = range {
+        let end = end.unwrap_or(file_size - 1);
+        (start, end.min(file_size - 1))
+    } else {
+        if file_size == 0 {
+            // Serve empty file
+            let body = axum::body::Body::empty();
+            let mut response = Response::new(body);
+            *response.status_mut() = StatusCode::OK;
+            let headers = response.headers_mut();
+            if let Some(ext) = get_file_extension(&pli.url) {
+                let ct = content_type_from_ext(&ext);
+                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(ct));
+            } else {
+                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+            }
+            headers.insert("Accept-Ranges", HeaderValue::from_static("bytes"));
+            headers.insert(header::CONTENT_LENGTH, HeaderValue::from_static("0"));
+            return response.into_response();
+        }
+        (0, file_size - 1)
+    };
+
+    let content_length = end - start + 1;
+
+    if start > 0 {
+        if let Err(_err) = file.seek(SeekFrom::Start(start)).await {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    }
+
+    let stream = ReaderStream::new(file.take(content_length));
+    let body = axum::body::Body::from_stream(stream);
+
+    let mut response = Response::new(body);
+
+    *response.status_mut() = if range.is_some() {
+        StatusCode::PARTIAL_CONTENT
+    } else {
+        StatusCode::OK
+    };
+
+    let headers = response.headers_mut();
+    if let Some(ext) = get_file_extension(&pli.url) {
+        let ct = content_type_from_ext(&ext);
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(ct));
+    } else {
+        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+    }
+    headers.insert("Accept-Ranges", HeaderValue::from_static("bytes"));
+    headers.insert(header::CONTENT_LENGTH, HeaderValue::from_str(&content_length.to_string()).unwrap_or_else(|_| HeaderValue::from_static("0")));
+
+    if range.is_some() {
+        headers.insert(header::CONTENT_RANGE, HeaderValue::from_str(&format!("bytes {start}-{end}/{file_size}")).unwrap_or_else(|_| HeaderValue::from_static("bytes=0-")));
+    }
+
+    response
+}
+
 
 pub fn is_stream_share_enabled(item_type: PlaylistItemType, target: &ConfigTarget) -> bool {
     (item_type == PlaylistItemType::Live/* || item_type == PlaylistItemType::LiveHls */)

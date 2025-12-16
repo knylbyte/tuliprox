@@ -1,7 +1,7 @@
 // https://github.com/tellytv/go.xtream-codes/blob/master/structs.go
 
 use crate::api::api_utils;
-use crate::api::api_utils::{create_session_fingerprint, try_unwrap_body};
+use crate::api::api_utils::{create_session_fingerprint, local_stream_response, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_user_target, get_user_target_by_credentials,
     is_seek_request, redirect_response, resource_response, separate_number_and_remainder,
@@ -265,6 +265,20 @@ async fn xtream_player_api_stream(
       format!( "Cant find input {} for target {target_name}, context {}, stream_id {virtual_id}", pli.input_name, stream_req.context)
     );
 
+    if pli.url.starts_with("file://") {
+        let connection_permission = user.connection_permission(app_state).await;
+        return local_stream_response(
+            fingerprint,
+            app_state,
+            pli.to_stream_channel(target.id),
+            req_headers,
+            &input,
+            &target,
+            &user,
+            connection_permission,
+        ).await.into_response();
+    }
+
     let (cluster, item_type) = if stream_req.context == ApiStreamContext::Timeshift {
       (XtreamCluster::Video, PlaylistItemType::Catchup)
     } else {
@@ -446,12 +460,8 @@ async fn xtream_player_api_stream_with_token(
             )
         );
 
-        let session_key = create_session_fingerprint(&fingerprint.key, "webui", virtual_id);
-
-        let is_hls_request =
-            pli.item_type == PlaylistItemType::LiveHls || stream_ext.as_deref() == Some(HLS_EXT);
-
         let config = app_state.app_config.config.load();
+
         let server = config
             .web_ui
             .as_ref()
@@ -472,6 +482,23 @@ async fn xtream_player_api_stream_with_token(
             ui_enabled: false,
             comment: None,
         };
+
+        if pli.url.starts_with("file://") {
+            return local_stream_response(fingerprint,
+                                  app_state,
+                                  pli.to_stream_channel(target.id),
+                                  req_headers,
+                                  &input,
+                                  &target,
+                                  &user,
+                                  UserConnectionPermission::Allowed,
+            ).await.into_response();
+        }
+
+        let session_key = create_session_fingerprint(&fingerprint.key, "webui", virtual_id);
+
+        let is_hls_request =
+            pli.item_type == PlaylistItemType::LiveHls || stream_ext.as_deref() == Some(HLS_EXT);
 
         // TODO how should we use fixed provider for hls in multi provider config?
 

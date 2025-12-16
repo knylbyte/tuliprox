@@ -1,8 +1,8 @@
+use crate::model::{LibraryConfig, LibraryScanDirectory};
 use log::{debug, error, info, trace, warn};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io;
-use crate::model::{LibraryConfig, LibraryScanDirectory};
 
 /// Represents a discovered video file with its metadata
 #[derive(Debug, Clone)]
@@ -91,12 +91,13 @@ impl LibraryScanner {
     async fn scan_directory(&self, scan_directory: &LibraryScanDirectory) -> io::Result<Vec<ScannedMediaFile>> {
         let path = Path::new(&scan_directory.path);
 
-        if !path.exists() {
+        if !fs::try_exists(path).await.unwrap_or(false) {
             warn!("Directory does not exist: {}", &scan_directory.path);
             return Ok(Vec::new());
         }
 
-        if !path.is_dir() {
+        let dir_metadata = fs::metadata(path).await?;
+        if !dir_metadata.is_dir() {
             warn!("Path is not a directory: {}", &scan_directory.path);
             return Ok(Vec::new());
         }
@@ -111,13 +112,19 @@ impl LibraryScanner {
         path: &'a Path,
         recursive: bool,
         files: &'a mut Vec<ScannedMediaFile>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = io::Result<()>> + Send + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output=io::Result<()>> + Send + 'a>> {
         Box::pin(async move {
             let mut entries = fs::read_dir(path).await?;
 
             while let Some(entry) = entries.next_entry().await? {
                 let entry_path = entry.path();
-                let metadata = entry.metadata().await?;
+                let metadata = match entry.metadata().await {
+                    Ok(m) => m,
+                    Err(err) => {
+                        error!("Failed to read metadata for {}: {err}", entry_path.display());
+                        continue;
+                    }
+                };
 
                 if metadata.is_dir() {
                     if recursive {
@@ -195,7 +202,7 @@ mod tests {
                     api_key: Some(String::new()),
                     rate_limit_ms: 250,
                     cache_duration_days: 0,
-                    language: "".to_string(),
+                    language: String::new(),
                 },
                 fallback_to_filename: true,
                 formats: vec![],

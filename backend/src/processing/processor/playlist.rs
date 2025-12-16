@@ -34,6 +34,7 @@ use shared::foundation::filter::{get_field_value, set_field_value, Filter, Value
 use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
 use shared::utils::{default_as_default, hash_bytes};
 use std::time::Instant;
+use crate::processing::processor::library;
 
 fn is_valid(pli: &PlaylistItem, filter: &Filter) -> bool {
     let provider = ValueProvider { pli };
@@ -304,20 +305,21 @@ fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bo
     (!user_targets.enabled && target.enabled) || (user_targets.enabled && user_targets.has_target(target.id))
 }
 
-async fn playlist_download_from_input(client: &reqwest::Client, config: &Arc<Config>, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
-    let working_dir = &config.working_dir;
+async fn playlist_download_from_input(client: &reqwest::Client, app_config: &Arc<AppConfig>, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
+    let config = &*app_config.config.load();
     match input.input_type {
-        InputType::M3u => m3u::get_m3u_playlist(client, config, input, working_dir).await,
-        InputType::Xtream => xtream::get_xtream_playlist(config, client, input, working_dir).await,
-        InputType::Library | InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![]),
+        InputType::M3u => m3u::get_m3u_playlist(client, config, input).await,
+        InputType::Xtream => xtream::get_xtream_playlist(config, client, input).await,
+        InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![]),
+        InputType::Library => library::get_library_playlist(client, app_config, input).await,
     }
 }
 
-async fn process_source(client: &reqwest::Client, cfg: Arc<AppConfig>, source_idx: usize,
+async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, source_idx: usize,
                         user_targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>,
                         playlist_state: Option<&Arc<PlaylistStorageState>>,
 ) -> (Vec<InputStats>, Vec<TargetStats>, Vec<TuliproxError>) {
-    let sources = cfg.sources.load();
+    let sources = app_config.sources.load();
     let mut errors = vec![];
     let mut input_stats = HashMap::<String, InputStats>::new();
     let mut target_stats = Vec::<TargetStats>::new();
@@ -327,12 +329,12 @@ async fn process_source(client: &reqwest::Client, cfg: Arc<AppConfig>, source_id
         let mut source_downloaded = false;
         for input in &source.inputs {
             if is_input_enabled(input, &user_targets) {
-                let config = cfg.config.load();
-                let working_dir = &config.working_dir;
                 source_downloaded = true;
                 let start_time = Instant::now();
-                let (mut playlistgroups, mut error_list) = playlist_download_from_input(client, &config, input).await;
+                let (mut playlistgroups, mut error_list) = playlist_download_from_input(client, &app_config, input).await;
                 let (tvguide, mut tvguide_errors) = if error_list.is_empty() {
+                    let working_dir = &app_config.config.load().working_dir;
+
                     epg::get_xmltv(client, input, working_dir).await
                 } else {
                     (None, vec![])
@@ -370,7 +372,7 @@ async fn process_source(client: &reqwest::Client, cfg: Arc<AppConfig>, source_id
                 for target in &source.targets {
                     let event_manager_clone = event_manager_clone.clone();
                     if is_target_enabled(target, &user_targets) {
-                        match process_playlist_for_target(&cfg, client, &mut source_playlists, target, &mut input_stats, &mut errors, event_manager_clone, playlist_state).await {
+                        match process_playlist_for_target(&app_config, client, &mut source_playlists, target, &mut input_stats, &mut errors, event_manager_clone, playlist_state).await {
                             Ok(()) => {
                                 target_stats.push(TargetStats::success(&target.name));
                             }
@@ -415,7 +417,11 @@ async fn process_sources(client: &reqwest::Client, config: &Arc<AppConfig>, user
     }
     let errors = Arc::new(Mutex::<Vec<TuliproxError>>::new(vec![]));
     let stats = Arc::new(Mutex::<Vec<SourceStats>>::new(vec![]));
-    for (index, _) in sources.sources.iter().enumerate() {
+    for (index, source) in sources.sources.iter().enumerate() {
+        if !source.should_process_for_user_targets(&user_targets) {
+            continue;
+        }
+
         // We're using the file lock this way on purpose
         let source_lock_path = PathBuf::from(format!("source_{index}"));
         let Ok(update_lock) = config.file_locks.try_write_lock(&source_lock_path).await else {

@@ -17,7 +17,8 @@ const LABEL_EDIT: &str = "LABEL.EDIT";
 const LABEL_VIEW: &str = "LABEL.VIEW";
 const LABEL_SAVE: &str = "LABEL.SAVE";
 const LABEL_UPDATE_GEOIP: &str = "LABEL.UPDATE_GEOIP_DB";
-const LABEL_UPDATE_LOCAL_LIBRARY: &str = "LABEL.UPDATE_LOCAL_LIBRARY";
+
+const ACTION_UPDATE_GEO_IP: &str = "update_geo_ip";
 
 macro_rules! collect_modified {
     ($forms:expr, [ $($field:ident),+ $(,)? ]) => {{
@@ -210,20 +211,11 @@ pub fn ConfigView() -> Html {
             let services = services.clone();
             let translate = translate.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                match name.as_str() {
-                    "update_geo_ip" => {
-                        match services.config.update_geoip().await {
-                            Ok(_) => services.toastr.success(translate.t("MESSAGES.DOWNLOAD.GEOIP.SUCCESS")),
-                            Err(_err) => services.toastr.error(translate.t("MESSAGES.DOWNLOAD.GEOIP.FAIL")),
-                        }
+                if name.as_str() == ACTION_UPDATE_GEO_IP {
+                    match services.config.update_geoip().await {
+                        Ok(_) => services.toastr.success(translate.t("MESSAGES.DOWNLOAD.GEOIP.SUCCESS")),
+                        Err(_err) => services.toastr.error(translate.t("MESSAGES.DOWNLOAD.GEOIP.FAIL")),
                     }
-                    "update_library" => {
-                        match services.config.update_library().await {
-                            Ok(_) => services.toastr.success(translate.t("MESSAGES.LIBRARY_UPDATE.SUCCESS")),
-                            Err(_err) => services.toastr.error(translate.t("MESSAGES.LIBRARY_UPDATE.FAIL")),
-                        }
-                    }
-                    _ => {}
                 }
             });
         })
@@ -235,7 +227,6 @@ pub fn ConfigView() -> Html {
     };
 
     let geo_ip_enabled = config_ctx.config.as_ref().is_some_and(|c| c.config.is_geoip_enabled());
-    let library_enabled = config_ctx.config.as_ref().is_some_and(|c| c.config.is_library_enabled());
 
     html! {
         <ContextProvider<ConfigViewContext> context={context}>
@@ -244,15 +235,9 @@ pub fn ConfigView() -> Html {
                 <h1>{ translate.t(LABEL_CONFIG) } </h1>
                 <div class="tp__config-view__header-tools">
                 {html_if!(geo_ip_enabled, {
-                    <TextButton class="tertiary" name="update_geo_ip"
+                    <TextButton class="tertiary" name={ACTION_UPDATE_GEO_IP}
                         icon="Refresh"
                         title={ translate.t(LABEL_UPDATE_GEOIP)}
-                        onclick={handle_update_content.clone()}></TextButton>
-                })}
-                {html_if!(library_enabled, {
-                    <TextButton class="tertiary" name="update_library"
-                        icon="Refresh"
-                        title={ translate.t(LABEL_UPDATE_LOCAL_LIBRARY)}
                         onclick={handle_update_content.clone()}></TextButton>
                 })}
                 </div>
