@@ -803,28 +803,29 @@ mod tests {
     }
 
     // Helper function to create a ConfigInput instance
-    fn create_config_input(id: u16, name: &str, priority: i16, max_connections: u16) -> ConfigInput {
-        ConfigInput {
-            id,
-            name: name.to_string(),
-            url: "http://example.com".to_string(),
-            epg: Option::default(),
-            username: None,
-            password: None,
-            persist: None,
-            enabled: true,
-            input_type: InputType::Xtream, // You can use a default value here
-            max_connections,
-            priority,
-            aliases: None,
-            headers: HashMap::default(),
-            options: None,
-            method: InputFetchMethod::default(),
-            staged: None,
-            exp_date: None,
-            t_batch_url: None,
-        }
-    }
+	    fn create_config_input(id: u16, name: &str, priority: i16, max_connections: u16) -> ConfigInput {
+	        ConfigInput {
+	            id,
+	            name: name.to_string(),
+	            url: "http://example.com".to_string(),
+	            epg: Option::default(),
+	            username: None,
+	            password: None,
+	            persist: None,
+	            enabled: true,
+	            input_type: InputType::Xtream, // You can use a default value here
+	            max_connections,
+	            priority,
+	            aliases: None,
+	            headers: HashMap::default(),
+	            options: None,
+	            method: InputFetchMethod::default(),
+	            staged: None,
+	            exp_date: None,
+	            t_batch_url: None,
+	            panel_api: None,
+	        }
+	    }
 
     // Helper function to create a ConfigInputAlias instance
     fn create_config_input_alias(id: u16, url: &str, priority: i16, max_connections: u16) -> ConfigInputAlias {

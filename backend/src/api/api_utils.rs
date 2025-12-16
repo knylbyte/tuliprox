@@ -9,6 +9,7 @@ use crate::api::model::{
     StreamError, ThrottledStream, UserApiRequest,
 };
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
+use crate::api::panel_api::try_provision_account_on_exhausted;
 use crate::model::{ConfigInput, ResourceRetryConfig};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::lru_cache::LRUResourceCache;
@@ -341,10 +342,19 @@ async fn resolve_streaming_strategy(
     force_provider: Option<&str>,
 ) -> StreamingStrategy {
     // allocate a provider connection
-    let provider_connection_handle = match force_provider {
+    let mut provider_connection_handle = match force_provider {
         Some(provider) => app_state.active_provider.force_exact_acquire_connection(provider, &fingerprint.addr).await,
         None => app_state.active_provider.acquire_connection(&input.name, &fingerprint.addr).await,
     };
+
+    if provider_connection_handle.is_none() && force_provider.is_none() {
+        if try_provision_account_on_exhausted(app_state, input).await {
+            provider_connection_handle = app_state
+                .active_provider
+                .acquire_connection(&input.name, &fingerprint.addr)
+                .await;
+        }
+    }
 
     let stream_response_params =
         if let Some(allocation) = provider_connection_handle.as_ref().map(|ph| &ph.allocation) {

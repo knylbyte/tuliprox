@@ -3,7 +3,7 @@ use crate::utils::get_csv_file_path;
 use chrono::Utc;
 use log::warn;
 use shared::error::TuliproxError;
-use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, StagedInputDto};
+use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, PanelApiConfigDto, StagedInputDto};
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};
 use shared::{check_input_connections, info_err, write_if_some};
 use shared::check_input_credentials;
@@ -142,6 +142,7 @@ pub struct ConfigInput {
     pub staged: Option<StagedInput>,
     pub exp_date: Option<i64>,
     pub t_batch_url: Option<String>,
+    pub panel_api: Option<PanelApiConfigDto>,
 }
 
 impl ConfigInput {
@@ -242,6 +243,7 @@ impl ConfigInput {
             staged: None,
             exp_date: None,
             t_batch_url: None,
+            panel_api: self.panel_api.clone(),
         }
     }
 }
@@ -268,6 +270,7 @@ impl From<&ConfigInputDto> for ConfigInput {
             exp_date: dto.exp_date,
             staged: dto.staged.as_ref().map(StagedInput::from),
             t_batch_url: None,
+            panel_api: dto.panel_api.clone(),
         }
     }
 }
