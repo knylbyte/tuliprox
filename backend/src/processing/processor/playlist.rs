@@ -6,10 +6,10 @@ use crate::Config;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::task::JoinSet;
 use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 
-use crate::api::model::{EventManager, EventMessage, PlaylistStorageState};
+use crate::api::model::{EventManager, EventMessage, PlaylistStorageState, UpdateGuard};
 use crate::messaging::send_message_json;
 use crate::model::Epg;
 use crate::model::FetchedPlaylist;
@@ -24,8 +24,8 @@ use crate::processing::processor::trakt::process_trakt_categories_for_target;
 use crate::processing::processor::xtream_series::playlist_resolve_series;
 use crate::processing::processor::xtream_vod::playlist_resolve_vod;
 use crate::repository::playlist_repository::persist_playlist;
-use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::utils::StepMeasure;
+use crate::utils::{debug_if_enabled, trace_if_enabled};
 use deunicode::deunicode;
 use futures::StreamExt;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
@@ -654,9 +654,25 @@ async fn process_watch(cfg: &Config, client: &reqwest::Client, target: &ConfigTa
     }
 }
 
-pub async fn exec_processing(client: &reqwest::Client, app_config: Arc<AppConfig>, targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>, playlist_state: Option<Arc<PlaylistStorageState>>) {
-    let start_time = Instant::now();
+pub async fn exec_processing(client: &reqwest::Client, app_config: Arc<AppConfig>, targets: Arc<ProcessTargets>,
+                             event_manager: Option<Arc<EventManager>>, playlist_state: Option<Arc<PlaylistStorageState>>,
+                             update_guard: Option<UpdateGuard>) {
+    let _guard = if let Some(guard) = update_guard {
+        if let Some(permit) = guard.try_playlist() {
+            Some(permit)
+        } else {
+            warn!("Playlist update already in progress; update skipped.");
+            if let Some(events) = event_manager.as_ref() {
+                events.send_event(EventMessage::PlaylistUpdate(PlaylistUpdateState::Failure));
+            }
+            return;
+        }
+    } else {
+        None
+    };
+
     let event_manager_clone = event_manager.clone();
+    let start_time = Instant::now();
     let (stats, errors) = process_sources(client, &app_config, targets.clone(), event_manager_clone, playlist_state.as_ref()).await;
     // log errors
     for err in &errors {

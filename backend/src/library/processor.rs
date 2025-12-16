@@ -19,11 +19,11 @@ pub struct LibraryProcessor {
 impl LibraryProcessor {
     /// Creates a new Library processor from application config
     pub fn from_app_config(app_config: &AppConfig) -> Option<Self> {
-        let client = create_http_client(&app_config);
+        let client = create_http_client(app_config);
         app_config.config.load().library.as_ref().map(|lib_cfg| Self::new(lib_cfg.clone(), client))
     }
 
-    /// Creates a new VOD processor with the given configuration
+    /// Creates a new Library processor with the given configuration
     pub fn new(config: LibraryConfig, client: reqwest::Client) -> Self {
         let storage_path = std::path::PathBuf::from(&config.metadata.path);
         let scanner = LibraryScanner::new(config.clone());
@@ -38,9 +38,9 @@ impl LibraryProcessor {
         }
     }
 
-    /// Performs a full VOD scan
+    /// Performs a full Library scan
     pub async fn scan(&self, force_rescan: bool) -> Result<LibraryScanResult, std::io::Error> {
-        info!("Starting VOD scan (force_rescan: {force_rescan})");
+        info!("Starting Library scan (force_rescan: {force_rescan})");
 
         // Initialize storage
         self.storage.initialize().await?;

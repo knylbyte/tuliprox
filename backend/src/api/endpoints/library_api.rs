@@ -1,6 +1,6 @@
 use crate::api::model::{AppState, EventMessage};
 use axum::response::IntoResponse;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::sync::Arc;
 use serde_json::json;
 use shared::model::{LibraryScanRequest, LibraryScanSummary, LibraryScanSummaryStatus, LibraryStatus};
@@ -12,6 +12,17 @@ async fn scan_library(
     axum::Json(request): axum::Json<LibraryScanRequest>,
 ) -> axum::response::Response {
     debug!("Library scan requested (force_rescan: {})", request.force_rescan);
+
+    let Some(_update_guard) = app_state.update_guard.try_library() else {
+        warn!("Library update already in progress; update skipped.");
+        let response = LibraryScanSummary {
+            status: LibraryScanSummaryStatus::Error,
+            message: "Library update already in progress.".to_string(),
+            result: None,
+        };
+        let _ = app_state.event_manager.send_event(EventMessage::LibraryScanProgress(response));
+        return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Library update already in progress.".to_string()}))).into_response();
+    };
 
     // Check if Library is enabled
     let lib_config = match app_state.app_config.config.load().library.as_ref() {
@@ -27,8 +38,9 @@ async fn scan_library(
         }
     };
 
-    let client = app_state.http_client.load_full().as_ref().clone();
     tokio::spawn(async move {
+        let client = app_state.http_client.load_full().as_ref().clone();
+
         // Create processor and run scan
         let processor = LibraryProcessor::new(lib_config, client);
 

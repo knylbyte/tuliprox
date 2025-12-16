@@ -10,6 +10,23 @@ pub const TMDB_API_KEY: &str = "4219e299c89411838049ab0dab19ebd5";
 const TMDB_API_BASE_URL: &str = "https://api.themoviedb.org/3";
 const TMDB_IMAGE_BASE_URL: &str = "https://image.tmdb.org/t/p/w500";
 
+
+// Helper function: Vec<T> -> Option<Vec<T>>
+fn some_if_nonempty<T>(v: Vec<T>) -> Option<Vec<T>> {
+    if v.is_empty() { None } else { Some(v) }
+}
+
+// helper function: Crew-Filter
+fn crew_names(credits: Option<&TmdbCredits>, jobs: &[&str]) -> Option<Vec<String>> {
+    credits.as_ref().map(|c| {
+        c.crew
+            .iter()
+            .filter(|crew| jobs.contains(&crew.job.as_str()))
+            .map(|crew| crew.name.clone())
+            .collect::<Vec<_>>()
+    }).and_then(some_if_nonempty)
+}
+
 /// TMDB API client with rate limiting
 pub struct TmdbClient {
     api_key: String,
@@ -83,121 +100,49 @@ impl TmdbClient {
 
     /// Fetches detailed movie information
     async fn fetch_movie_details(&self, movie_id: u32) -> Option<MediaMetadata> {
+
         sleep(Duration::from_millis(self.rate_limit_ms)).await;
 
         let url = format!("{TMDB_API_BASE_URL}/movie/{movie_id}?api_key={}&append_to_response=credits", self.api_key);
 
-        match self.client.get(&url).send().await {
-            Ok(response) => {
-                if response.status().is_success() {
-                    match response.json::<TmdbMovieDetails>().await {
-                        Ok(details) => Some(MediaMetadata::Movie(MovieMetadata {
-                            title: details.title,
-                            original_title: Some(details.original_title),
-                            year: details.release_date.split('-').next().and_then(|y| y.parse().ok()),
-                            plot: Some(details.overview),
-                            tagline: details.tagline,
-                            runtime: Some(details.runtime),
-                            mpaa: None, // TMDB doesn't provide MPAA rating in basic response
-                            imdb_id: details.imdb_id,
-                            tmdb_id: Some(details.id),
-                            tvdb_id: None,
-                            rating: Some(details.vote_average),
-                            genres: details.genres.as_ref().and_then(|list| {
-                                let result: Vec<String> = list.iter().map(|g| g.name.clone()).collect();
-                                if result.is_empty() {
-                                    None
-                                } else {
-                                    Some(result)
-                                }
-                            }),
-                            directors: details
-                                .credits
-                                .as_ref()
-                                .and_then(|c| {
-                                    let list: Vec<String> = c.crew
-                                        .iter()
-                                        .filter(|crew| crew.job == "Director")
-                                        .map(|crew| crew.name.clone())
-                                        .collect();
-                                    if list.is_empty() {
-                                        None
-                                    } else {
-                                        Some(list)
-                                    }
-                                }),
-                            writers: details
-                                .credits
-                                .as_ref()
-                                .and_then(|c| {
-                                    let list: Vec<String> = c.crew
-                                        .iter()
-                                        .filter(|crew| crew.job == "Writer" || crew.job == "Screenplay")
-                                        .map(|crew| crew.name.clone())
-                                        .collect();
-                                    if list.is_empty() {
-                                        None
-                                    } else {
-                                        Some(list)
-                                    }
-                                }),
-                            actors: details
-                                .credits
-                                .as_ref()
-                                .and_then(|c| {
-                                    let actors: Vec<Actor> = c.cast
-                                        .iter()
-                                        .take(10) // Limit to top 10 actors
-                                        .map(|actor| Actor {
-                                            name: actor.name.clone(),
-                                            role: Some(actor.character.clone()),
-                                            thumb: actor
-                                                .profile_path
-                                                .as_ref()
-                                                .map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
-                                        })
-                                        .collect();
-
-                                    if actors.is_empty() {
-                                        None
-                                    } else {
-                                        Some(actors)
-                                    }
-                                }),
-                            studios:
-                            details.production_companies.as_ref().and_then(|list| {
-                                let result: Vec<String> = list.iter().map(|n| n.name.clone()).collect();
-                                if result.is_empty() {
-                                    None
-                                } else {
-                                    Some(result)
-                                }
-                            }),
-                            poster: details
-                                .poster_path
-                                .map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
-                            fanart: details
-                                .backdrop_path
-                                .map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
-                            source: MetadataSource::Tmdb,
-                            last_updated: chrono::Utc::now().timestamp(),
-                        })),
-                        Err(e) => {
-                            error!("Failed to parse TMDB movie details: {e}");
-                            None
-                        }
-                    }
-                } else {
-                    warn!("TMDB API error fetching movie details: {}", response.status());
-                    None
-                }
-            }
-            Err(e) => {
-                error!("TMDB API request failed: {e}");
-                None
-            }
+        let response = self.client.get(&url).send().await.ok()?;
+        if !response.status().is_success() {
+            warn!("TMDB API error fetching movie details: {}", response.status());
+            return None;
         }
+
+        let details: TmdbMovieDetails = response.json().await.ok()?;
+
+        Some(MediaMetadata::Movie(MovieMetadata {
+            title: details.title,
+            original_title: Some(details.original_title),
+            year: details.release_date.split('-').next().and_then(|y| y.parse().ok()),
+            plot: Some(details.overview),
+            tagline: details.tagline,
+            runtime: Some(details.runtime),
+            mpaa: None,
+            imdb_id: details.imdb_id,
+            tmdb_id: Some(details.id),
+            tvdb_id: None,
+            rating: Some(details.vote_average),
+            genres: details.genres.as_ref().map(|list| list.iter().map(|g| g.name.clone()).collect()).and_then(some_if_nonempty),
+            directors: crew_names(details.credits.as_ref(), &["Director"]),
+            writers: crew_names(details.credits.as_ref(), &["Writer", "Screenplay"]),
+            actors: details.credits.as_ref().and_then(|c| {
+                some_if_nonempty(c.cast.iter().take(10).map(|actor| Actor {
+                    name: actor.name.clone(),
+                    role: Some(actor.character.clone()),
+                    thumb: actor.profile_path.as_ref().map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
+                }).collect::<Vec<_>>())
+            }),
+            studios: details.production_companies.as_ref().map(|list| list.iter().map(|n| n.name.clone()).collect()).and_then(some_if_nonempty),
+            poster: details.poster_path.map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
+            fanart: details.backdrop_path.map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
+            source: MetadataSource::Tmdb,
+            last_updated: chrono::Utc::now().timestamp(),
+        }))
     }
+
 
     /// Searches for a TV series by title and optional year
     pub async fn search_series(&self, title: &str, year: Option<u32>) -> Option<MediaMetadata> {

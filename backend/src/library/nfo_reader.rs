@@ -5,6 +5,16 @@ use quick_xml::Reader;
 use std::path::Path;
 use tokio::fs;
 
+macro_rules! push_to_field_list {
+    ($field:expr, $current:expr) => {
+        if let Some(field) = $field.as_mut() {
+            field.push($current.clone());
+        } else {
+            $field = Some(vec![$current.clone()]);
+        }
+    };
+}
+
 /// NFO reader for parsing Kodi/Jellyfin/Emby/Plex metadata files
 pub struct NfoReader;
 
@@ -116,37 +126,17 @@ impl NfoReader {
                         "id" | "imdb" | "imdbid" => movie.imdb_id = Some(current_text.clone()),
                         "tmdbid" => movie.tmdb_id = current_text.parse().ok(),
                         "rating" => movie.rating = current_text.parse().ok(),
-                        "genre" => if let Some(genres) = movie.genres.as_mut() {
-                            genres.push(current_text.clone());
-                        } else {
-                            movie.genres = Some(vec![current_text.clone()]);
-                        },
-                        "director" => if let Some(field) = movie.directors.as_mut() {
-                            field.push(current_text.clone());
-                        } else {
-                            movie.directors = Some(vec![current_text.clone()]);
-                        },
-                        "credits" | "writer" => if let Some(field) = movie.writers.as_mut() {
-                            field.push(current_text.clone());
-                        } else {
-                            movie.writers = Some(vec![current_text.clone()]);
-                        },
-                        "studio" => if let Some(field) = movie.studios.as_mut() {
-                            field.push(current_text.clone());
-                        } else {
-                            movie.studios = Some(vec![current_text.clone()]);
-                        },
+                        "genre" => push_to_field_list!(movie.genres, current_text),
+                        "director" => push_to_field_list!(movie.directors, current_text),
+                        "credits" | "writer" => push_to_field_list!(movie.writers, current_text),
+                        "studio" => push_to_field_list!(movie.studios, current_text),
                         "thumb" | "poster" => movie.poster = Some(current_text.clone()),
                         "fanart" => movie.fanart = Some(current_text.clone()),
                         "name" if in_actor => current_actor.name.clone_from(&current_text),
                         "role" if in_actor => current_actor.role = Some(current_text.clone()),
                         "actor" => {
                             if !current_actor.name.is_empty() {
-                                if let Some(field) = movie.actors.as_mut() {
-                                    field.push(current_actor.clone());
-                                } else {
-                                    movie.actors = Some(vec![current_actor.clone()]);
-                                }
+                                push_to_field_list!(movie.actors, current_actor);
                             }
                             in_actor = false;
                         }
@@ -229,16 +219,8 @@ impl NfoReader {
                         "tmdbid" => series.tmdb_id = current_text.parse().ok(),
                         "tvdbid" => series.tvdb_id = current_text.parse().ok(),
                         "rating" => series.rating = current_text.parse().ok(),
-                        "genre" => if let Some(genres) = series.genres.as_mut() {
-                            genres.push(current_text.clone());
-                        } else {
-                            series.genres = Some(vec![current_text.clone()]);
-                        },
-                        "studio" => if let Some(genres) = series.studios.as_mut() {
-                            genres.push(current_text.clone());
-                        } else {
-                            series.studios = Some(vec![current_text.clone()]);
-                        },
+                        "genre" => push_to_field_list!(series.genres, current_text),
+                        "studio" => push_to_field_list!(series.studios, current_text),
                         "thumb" | "poster" => series.poster = Some(current_text.clone()),
                         "fanart" => series.fanart = Some(current_text.clone()),
                         "status" => series.status = Some(current_text.clone()),
@@ -246,11 +228,7 @@ impl NfoReader {
                         "role" if in_actor => current_actor.role = Some(current_text.clone()),
                         "actor" => {
                             if !current_actor.name.is_empty() {
-                                if let Some(actors) = series.actors.as_mut() {
-                                    actors.push(current_actor.clone());
-                                } else {
-                                    series.actors = Some(vec![current_actor.clone()]);
-                                }
+                                push_to_field_list!(series.actors, current_actor);
                             }
                             in_actor = false;
                         }
