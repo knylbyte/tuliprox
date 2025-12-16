@@ -18,7 +18,7 @@ pub struct ScannedMediaFile {
 impl ScannedMediaFile {
     /// Creates a new `ScannedMediaFile` from a path and metadata
     pub async fn from_path(path: &Path) -> io::Result<Self> {
-        let metadata = fs::metadata(&path).await?;
+        let metadata = fs::metadata(path).await?;
         let file_name = path
             .file_name()
             .and_then(|n| n.to_str())

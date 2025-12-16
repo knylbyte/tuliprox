@@ -69,7 +69,7 @@ fn sanitize_for_filename(text: &str, underscore_whitespace: bool) -> String {
         sanitized.remove(0);
     }
 
-    // 4. Remove empty paaren
+    // 4. Remove empty parentheses
     sanitized = CONSTANTS.export_style_config.paaren.replace_all(sanitized.as_str(), "").trim().to_string();
 
     // 5. Final check: If sanitization resulted in an empty string, return a default.
@@ -130,7 +130,7 @@ fn style_rename_year<'a>(
     name: &'a str,
     style: &ExportStyleConfig,
     release_date: Option<&'a String>,
-) -> (&'a str, Option<u32>) {
+) -> (std::borrow::Cow<'a, str>, Option<u32>) {
     let mut years = Vec::new();
 
     let cur_year = u32::try_from(chrono::Utc::now().year()).unwrap_or(0);
@@ -160,12 +160,12 @@ fn style_rename_year<'a>(
                 .1
                 .and_then(|y| y.parse::<u32>().ok())
             {
-                return (name, Some(year));
+                return (std::borrow::Cow::Borrowed(name), Some(year));
             }
         }
     }
 
-    (Box::leak(new_name.into_boxed_str()), smallest_year)
+    (std::borrow::Cow::Owned(new_name), smallest_year)
 }
 
 #[derive(Clone)]

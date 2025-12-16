@@ -1056,6 +1056,9 @@ pub async fn local_stream_response(
             return StatusCode::RANGE_NOT_SATISFIABLE.into_response();
         }
         let end = req_end.unwrap_or(file_size - 1).min(file_size - 1);
+        if end < req_start {
+            return StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+        }
         (req_start, end)
     } else {
         if file_size == 0 {
