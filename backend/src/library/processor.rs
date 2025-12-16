@@ -73,7 +73,7 @@ impl LibraryProcessor {
                     ProcessAction::Unchanged => {}
                 },
                 Err(e) => {
-                    error!("Error processing {}: {}", file.file_name, e);
+                    error!("Error processing {}: {}", file.file_path, e);
                     result.errors += 1;
                 }
             }

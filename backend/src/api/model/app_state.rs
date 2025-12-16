@@ -19,7 +19,7 @@ use std::time::Duration;
 use tokio::sync::{Mutex};
 use tokio::task;
 use tokio_util::sync::CancellationToken;
-use crate::api::model::update_guard::UpdateGuard;
+use crate::api::model::UpdateGuard;
 use crate::repository::storage::get_geoip_path;
 use crate::utils::GeoIp;
 

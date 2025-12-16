@@ -104,7 +104,7 @@ impl NfoReader {
                 }
                 Ok(Event::Text(e)) => {
                     if let Ok(decoded) = e.decode() {
-                        current_text = decoded.trim().to_string();
+                        current_text.push_str(decoded.trim());
                     } else {
                         current_text.clear();
                     }
@@ -197,7 +197,7 @@ impl NfoReader {
                 }
                 Ok(Event::Text(e)) => {
                     if let Ok(decoded) = e.decode() {
-                        current_text = decoded.trim().to_string();
+                        current_text.push_str(decoded.trim());
                     } else {
                         current_text.clear();
                     }
