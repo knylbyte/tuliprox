@@ -123,6 +123,10 @@ impl PlaylistItemType {
     const SERIES: &'static str = "series";
     const SERIES_INFO: &'static str = "series-info";
     const CATCHUP: &'static str = "catchup";
+
+    pub fn is_local(&self) -> bool {
+        matches!(self, PlaylistItemType::LocalVideo | PlaylistItemType::LocalSeries | PlaylistItemType::LocalSeriesInfo)
+    }
 }
 
 impl Display for PlaylistItemType {

@@ -131,7 +131,7 @@ async fn m3u_api_stream(
       format!("Cant find input {} for target {target_name}, stream_id {virtual_id}", pli.input_name)
     );
 
-    if matches!(pli.item_type, PlaylistItemType::LocalVideo | PlaylistItemType::LocalSeries | PlaylistItemType::LocalSeriesInfo) {
+    if pli.item_type.is_local() {
         let connection_permission = user.connection_permission(app_state).await;
         return local_stream_response(
             fingerprint,

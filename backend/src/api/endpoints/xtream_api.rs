@@ -265,7 +265,7 @@ async fn xtream_player_api_stream(
       format!( "Cant find input {} for target {target_name}, context {}, stream_id {virtual_id}", pli.input_name, stream_req.context)
     );
 
-    if matches!(pli.item_type, PlaylistItemType::LocalVideo | PlaylistItemType::LocalSeries | PlaylistItemType::LocalSeriesInfo) {
+    if pli.item_type.is_local() {
         let connection_permission = user.connection_permission(app_state).await;
         return local_stream_response(
             fingerprint,
@@ -483,7 +483,7 @@ async fn xtream_player_api_stream_with_token(
             comment: None,
         };
 
-        if matches!(pli.item_type, PlaylistItemType::LocalVideo | PlaylistItemType::LocalSeries | PlaylistItemType::LocalSeriesInfo) {
+        if pli.item_type.is_local() {
             return local_stream_response(fingerprint,
                                          app_state,
                                          pli.to_stream_channel(target.id),
@@ -997,7 +997,7 @@ async fn xtream_get_stream_info_response(
         target,
         Some(cluster),
     ).await {
-        if matches!(pli.item_type, PlaylistItemType::LocalVideo | PlaylistItemType::LocalSeries | PlaylistItemType::LocalSeriesInfo) {
+        if pli.item_type.is_local() {
             if let Some(additional_properties) = pli.additional_properties.as_ref() {
                 return try_unwrap_body!(axum::response::Response::builder()
                 .status(axum::http::StatusCode::OK)
