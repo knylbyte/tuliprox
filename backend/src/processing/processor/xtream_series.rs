@@ -67,7 +67,7 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
     let series_info_count = fpl.playlistgroups.iter()
         .filter(|&plg| plg.xtream_cluster == XtreamCluster::Series)
         .flat_map(|plg| &plg.channels)
-        .filter(|&pli| pli.header.item_type == PlaylistItemType::SeriesInfo).count();
+        .filter(|&pli| matches!(pli.header.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo)).count();
 
 
     info!("Found {series_info_count} series info to resolve");
@@ -80,7 +80,7 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
             continue;
         }
         for pli in &mut plg.channels {
-            if pli.header.item_type != PlaylistItemType::SeriesInfo {
+            if !matches!(pli.header.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo) {
                 continue;
             }
             let (should_update, provider_id, ts) = should_update_series_info(pli, &processed_info_ids);
@@ -179,7 +179,7 @@ async fn process_series_info(
         for pli in plg
             .channels
             .iter_mut()
-            .filter(|pli| pli.header.item_type == PlaylistItemType::SeriesInfo)
+            .filter(|pli| matches!(pli.header.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo))
         {
             let Some(provider_id) = pli.header.get_provider_id() else { continue; };
             let Ok(content) = info_reader.get(&provider_id)  else { continue; };

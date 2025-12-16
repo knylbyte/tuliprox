@@ -8,7 +8,59 @@ use shared::utils::{deserialize_as_option_string, deserialize_as_string, deseria
                     get_non_empty_str, opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
 use std::iter::FromIterator;
 use serde_json::value::RawValue;
-use crate::model::{add_f64_property_if_exists, add_i64_property_if_exists, add_opt_f64_property_if_exists, add_opt_i64_property_if_exists, add_rc_str_property_if_exists, add_str_property_if_exists, add_to_doc_str_property_if_not_exists};
+
+macro_rules! add_str_property_if_exists {
+    ($vec:expr, $prop:expr, $prop_name:expr) => {
+        $vec.insert(String::from($prop_name), Value::String($prop.to_string()));
+    }
+}
+
+macro_rules! add_rc_str_property_if_exists {
+    ($vec:expr, $prop:expr, $prop_name:expr) => {
+        if let Some(v) = $prop.as_ref() {
+           $vec.insert(String::from($prop_name), Value::String(v.to_string()));
+       }
+    }
+}
+
+macro_rules! add_opt_i64_property_if_exists {
+    ($vec:expr, $prop:expr, $prop_name:expr) => {
+        if let Some(v) = $prop.as_ref() {
+           $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from(i64::from(*v))));
+        }
+    }
+}
+
+macro_rules! add_opt_f64_property_if_exists {
+    ($vec:expr, $prop:expr, $prop_name:expr) => {
+       $prop.as_ref().map(|v| $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from_f64(f64::from(*v)).unwrap_or_else(|| serde_json::Number::from(0)))));
+    }
+}
+
+macro_rules! add_f64_property_if_exists {
+    ($vec:expr, $prop:expr, $prop_name:expr) => {
+       $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from_f64(f64::from($prop)).unwrap_or_else(|| serde_json::Number::from(0))));
+    }
+}
+
+macro_rules! add_i64_property_if_exists {
+    ($vec:expr, $prop:expr, $prop_name:expr) => {
+       $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from(i64::from($prop))));
+    }
+}
+
+macro_rules! add_to_doc_str_property_if_not_exists {
+    ($document:expr, $prop_name:expr, $prop_value:expr) => {
+          match $document.get($prop_name) {
+            None => {
+                $document.insert(String::from($prop_name), $prop_value);
+            }
+            Some(value) => { if Value::is_null(value) {
+                $document.insert(String::from($prop_name), $prop_value);
+            }}
+          }
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct XtreamLoginInfo {
@@ -108,6 +160,7 @@ impl XtreamStream {
     }
 
     pub fn get_additional_properties(&self) ->  Option<Box<RawValue>> {
+
         let mut result = serde_json::Map::new();
         if let Some(bdpath) = self.backdrop_path.as_ref() {
             if !bdpath.is_empty() {
@@ -200,7 +253,7 @@ pub struct XtreamMovieData {
     pub stream_id: u32,
     pub name: String,
     pub added: Option<String>,
-    pub category_id: Option<String>,
+    pub category_id: u32,
     #[serde(default)]
     pub category_ids: Vec<u32>,
     pub container_extension: Option<String>,
@@ -591,7 +644,15 @@ pub fn xtream_playlistitem_to_document(pli: &XtreamPlaylistItem, url: &str, opti
     let props = pli.additional_properties.as_ref().and_then(|add_props| serde_json::from_str::<serde_json::Map<String, Value>>(add_props).ok());
 
     if let Some(ref add_props) = props {
-        for (field_name, field_value) in add_props {
+        let doc = if pli.xtream_cluster == XtreamCluster::Video {
+            match add_props.get("info") {
+                Some(Value::Object(info_doc)) => info_doc,
+                _ => add_props,
+            }
+        } else {
+            add_props
+        };
+        for (field_name, field_value) in doc {
             if !document.contains_key(field_name) {
                 document.insert(field_name.clone(), field_value.to_owned());
             }

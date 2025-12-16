@@ -230,8 +230,12 @@ impl std::fmt::Display for Filter {
             Self::TypeComparison(field, item_type) => {
                 write!(f, "{} = {}", field, match item_type {
                     PlaylistItemType::Live => Self::LIVE,
-                    PlaylistItemType::Video => Self::MOVIE,
-                    PlaylistItemType::Series | PlaylistItemType::SeriesInfo => Self::SERIES, // yes series-info is handled as series in filter
+                    PlaylistItemType::Video
+                    | PlaylistItemType::LocalVideo => Self::MOVIE,
+                    PlaylistItemType::Series
+                    | PlaylistItemType::SeriesInfo
+                    | PlaylistItemType::LocalSeries
+                    | PlaylistItemType::LocalSeriesInfo => Self::SERIES, // yes series-info is handled as series in filter
                     _ => Self::UNSUPPORTED
                 })
             }

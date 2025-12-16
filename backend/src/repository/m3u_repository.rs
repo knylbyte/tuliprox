@@ -93,7 +93,7 @@ pub async fn m3u_write_playlist(
         new_playlist
             .iter()
             .flat_map(|pg| &pg.channels)
-            .filter(|&pli| pli.header.item_type != PlaylistItemType::SeriesInfo)
+            .filter(|&pli| !matches!(pli.header.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo))
             .map(PlaylistItem::to_m3u)
             .collect::<Vec<M3uPlaylistItem>>(),
     );

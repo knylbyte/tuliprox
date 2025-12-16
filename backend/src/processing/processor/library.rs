@@ -61,10 +61,10 @@ fn to_playlist_item(entry: &MetadataCacheEntry, input_name: &str, group_name: &s
                     let raw = serde_json::to_string(&info).ok()?;
                     RawValue::from_string(raw).ok()
                 });
-                (XtreamCluster::Video, PlaylistItemType::Video, add_props)
+                (XtreamCluster::Video, PlaylistItemType::LocalVideo, add_props)
             }
             MediaMetadata::Series(_s) => {
-                (XtreamCluster::Series, PlaylistItemType::SeriesInfo, None)
+                (XtreamCluster::Series, PlaylistItemType::LocalSeriesInfo, None)
             }
         }
     };
@@ -142,7 +142,14 @@ pub fn metadata_cache_entry_to_xtream_movie_info(
         backdrop_path: movie
             .fanart
             .as_ref()
+            .filter(|s| !s.is_empty())
             .map(|f| vec![f.clone()])
+            .or_else(|| {
+                movie.poster
+                    .as_ref()
+                    .filter(|s| !s.is_empty())
+                    .map(|p| vec![p.clone()])
+            })
             .unwrap_or_default(),
 
         duration_secs: movie.runtime.map(|r| (r * 60).to_string()),
@@ -159,7 +166,7 @@ pub fn metadata_cache_entry_to_xtream_movie_info(
 
         rating: movie.rating.map(|r| format!("{r:.2}")),
         runtime: movie.runtime.map(|r| (r * 60).to_string()),
-        status: None,
+        status: Some("Released".to_string()),
     };
 
     let movie_data = XtreamMovieData {
@@ -168,8 +175,8 @@ pub fn metadata_cache_entry_to_xtream_movie_info(
 
         added: Some(entry.file_modified.to_string()),
 
-        category_id: None,
-        category_ids: Vec::new(),
+        category_id: 0,
+        category_ids: vec![0],
 
         container_extension,
         custom_sid: None,

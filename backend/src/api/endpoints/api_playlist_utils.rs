@@ -59,11 +59,14 @@ fn group_playlist_items_by_cluster(params: Option<(utils::FileReadGuard,
                         live.push(item);
                     }
                     PlaylistItemType::Catchup
-                    | PlaylistItemType::Video => {
+                    | PlaylistItemType::Video
+                    | PlaylistItemType::LocalVideo => {
                         video.push(item);
                     }
                     PlaylistItemType::Series
-                    | PlaylistItemType::SeriesInfo => {
+                    | PlaylistItemType::SeriesInfo
+                    | PlaylistItemType::LocalSeries
+                    | PlaylistItemType::LocalSeriesInfo => {
                         series.push(item);
                     }
                 }

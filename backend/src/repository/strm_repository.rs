@@ -213,7 +213,8 @@ async fn get_tmdb_value(
                 {
                     let file_lock = cfg.file_locks.read_lock(&tmdb_path).await;
                     match item_type {
-                        PlaylistItemType::Series => {
+                        PlaylistItemType::Series
+                        | PlaylistItemType::LocalSeries => {
                             if let Ok(tree) =
                                 BPlusTree::<u32, XtreamSeriesEpisode>::load(&tmdb_path)
                             {
@@ -227,7 +228,8 @@ async fn get_tmdb_value(
                                 return tmdb_id;
                             }
                         }
-                        PlaylistItemType::Video => {
+                        PlaylistItemType::Video
+                        | PlaylistItemType::LocalVideo => {
                             if let Ok(tree) =
                                 BPlusTree::<u32, InputVodInfoRecord>::load(&tmdb_path)
                             {
@@ -289,7 +291,8 @@ fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
     let input_name = header.input_name.clone();
     let url = header.url.clone();
     let (series_name, release_date, added, season, episode, tmdb_id) = match header.item_type {
-        PlaylistItemType::Series => {
+        PlaylistItemType::Series
+        | PlaylistItemType::LocalSeries => {
             let series_name = match header.get_field("name") {
                 Some(name) if !name.is_empty() => Some(name.to_string()),
                 _ => header.get_additional_property_as_str("series_name"),
@@ -306,7 +309,8 @@ fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
                 .or_else(|| header.get_additional_property_as_u32("tmdb"));
             (series_name, release_date, added, season, episode, tmdb_id)
         }
-        PlaylistItemType::Video => {
+        PlaylistItemType::Video
+        | PlaylistItemType::LocalVideo => {
             let name = header.get_field("name").map(|v| v.to_string());
             let release_date = header.get_additional_property_as_str("release_date");
             let added = header.get_additional_property_as_u64("added");
@@ -413,9 +417,7 @@ async fn cleanup_strm_output_directory(
 
 fn filter_strm_item(pli: &PlaylistItem) -> bool {
     let item_type = pli.header.item_type;
-    item_type == PlaylistItemType::Live
-        || item_type == PlaylistItemType::Video
-        || item_type == PlaylistItemType::Series
+    matches!(item_type, PlaylistItemType::Live | PlaylistItemType::Video | PlaylistItemType::LocalVideo | PlaylistItemType::Series | PlaylistItemType::LocalSeries)
 }
 
 fn get_relative_path_str(full_path: &Path, root_path: &Path) -> String {
@@ -447,7 +449,8 @@ fn format_for_kodi(
     let category = sanitize_for_filename(&strm_item_info.group, false);
 
     match strm_item_info.item_type {
-        PlaylistItemType::Video => {
+        PlaylistItemType::Video
+        | PlaylistItemType::LocalVideo => {
             let id_string = if tmdb_id > 0 { format!("{separator}{{tmdb={tmdb_id}}}") } else { String::new() };
             let (name, year) = style_rename_year(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
             let sanitized_title = sanitize_for_filename(name.trim(), false);
@@ -465,7 +468,8 @@ fn format_for_kodi(
             }
             (dir_path, final_filename)
         }
-        PlaylistItemType::Series => {
+        PlaylistItemType::Series
+        | PlaylistItemType::LocalSeries => {
             let id_string = if tmdb_id > 0 { format!("{separator}{{tmdb={tmdb_id}}}") } else { String::new() };
             let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
             let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
@@ -509,7 +513,8 @@ fn format_for_plex(
     let category = sanitize_for_filename(&strm_item_info.group, false);
 
     match strm_item_info.item_type {
-        PlaylistItemType::Video => {
+        PlaylistItemType::Video
+        | PlaylistItemType::LocalVideo => {
             let id_string = if tmdb_id > 0 { format!("{separator}{{tmdb-{tmdb_id}}}") } else { String::new() };
             let (name, year) = style_rename_year(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
             let sanitized_title = sanitize_for_filename(name.trim(), false);
@@ -527,7 +532,8 @@ fn format_for_plex(
             }
             (dir_path, final_filename)
         }
-        PlaylistItemType::Series => {
+        PlaylistItemType::Series
+        | PlaylistItemType::LocalSeries=> {
             let id_string = if tmdb_id > 0 { format!("{separator}{{tmdb-{tmdb_id}}}") } else { String::new() };
             let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
             let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
@@ -572,7 +578,8 @@ fn format_for_emby(
     let category = sanitize_for_filename(&strm_item_info.group, false);
 
     match strm_item_info.item_type {
-        PlaylistItemType::Video => {
+        PlaylistItemType::Video
+        | PlaylistItemType::LocalVideo => {
             // Emby prefers the ID in the filename.
             let id_string = if tmdb_id > 0 { format!("{separator}[tmdbid={tmdb_id}]") } else { String::new() };
             let (name, year) = style_rename_year(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
@@ -591,7 +598,8 @@ fn format_for_emby(
             }
             (dir_path, final_filename)
         }
-        PlaylistItemType::Series => {
+        PlaylistItemType::Series
+        | PlaylistItemType::LocalSeries => {
             // For series, the ID goes in the folder name.
             let id_string = if tmdb_id > 0 { format!("{separator}[tmdbid={tmdb_id}]") } else { String::new() };
             let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
@@ -637,7 +645,8 @@ fn format_for_jellyfin(
     let category = sanitize_for_filename(&strm_item_info.group, false);
 
     match strm_item_info.item_type {
-        PlaylistItemType::Video => {
+        PlaylistItemType::Video
+        | PlaylistItemType::LocalVideo => {
             let id_string = if tmdb_id > 0 { format!("{separator}[tmdbid-{tmdb_id}]") } else { String::new() };
             let (name, year) = style_rename_year(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
             let sanitized_title = sanitize_for_filename(name.trim(), false);
@@ -655,7 +664,8 @@ fn format_for_jellyfin(
             }
             (dir_path, final_filename)
         }
-        PlaylistItemType::Series => {
+        PlaylistItemType::Series
+        | PlaylistItemType::LocalSeries => {
             let id_string = if tmdb_id > 0 { format!("{separator}[tmdbid-{tmdb_id}]") } else { String::new() };
             let series_name_raw = strm_item_info.series_name.as_ref().unwrap_or(&strm_item_info.title);
             let (name, year) = style_rename_year(series_name_raw, &CONSTANTS.export_style_config, strm_item_info.release_date.as_ref());
@@ -1066,9 +1076,13 @@ fn get_strm_url(
     }
 
     if let Some(stream_type) = match str_item_info.item_type {
-        PlaylistItemType::Series => Some("series"),
         PlaylistItemType::Live => Some("live"),
-        PlaylistItemType::Video => Some("movie"),
+        PlaylistItemType::Series
+        | PlaylistItemType::SeriesInfo
+        | PlaylistItemType::LocalSeries
+        | PlaylistItemType::LocalSeriesInfo => Some("series"),
+        PlaylistItemType::Video
+        | PlaylistItemType::LocalVideo => Some("movie"),
         _ => None,
     } {
         let url = str_item_info.url.as_str();

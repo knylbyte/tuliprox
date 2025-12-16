@@ -695,6 +695,9 @@ fn is_throttled_stream(item_type: PlaylistItemType, throttle_kbps: usize) -> boo
                 | PlaylistItemType::Series
                 | PlaylistItemType::SeriesInfo
                 | PlaylistItemType::Catchup
+                | PlaylistItemType::LocalVideo
+                | PlaylistItemType::LocalSeries
+                | PlaylistItemType::LocalSeriesInfo
         )
 }
 
