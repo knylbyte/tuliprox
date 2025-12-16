@@ -6,6 +6,7 @@ mod xtream_series;
 pub mod epg;
 mod sort;
 pub mod trakt;
+mod library;
 
 #[macro_export]
 macro_rules! handle_error {

@@ -1,13 +1,14 @@
 use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, XtreamTargetOutput};
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Value};
 use shared::model::{xtream_const, PlaylistItem, ProxyUserStatus, XtreamPlaylistItem};
 use shared::model::{ClusterFlags, PlaylistEntry, XtreamCluster};
 use shared::utils::{deserialize_as_option_string, deserialize_as_string, deserialize_as_string_array, deserialize_number_from_string,
                     get_non_empty_str, opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
 use std::iter::FromIterator;
 use serde_json::value::RawValue;
+use crate::model::{add_f64_property_if_exists, add_i64_property_if_exists, add_opt_f64_property_if_exists, add_opt_i64_property_if_exists, add_rc_str_property_if_exists, add_str_property_if_exists, add_to_doc_str_property_if_not_exists};
 
 #[derive(Debug, Default)]
 pub struct XtreamLoginInfo {
@@ -101,61 +102,13 @@ pub struct XtreamStream {
 
 }
 
-macro_rules! add_str_property_if_exists {
-    ($vec:expr, $prop:expr, $prop_name:expr) => {
-        $vec.insert(String::from($prop_name), Value::String($prop.to_string()));
-    }
-}
-macro_rules! add_rc_str_property_if_exists {
-    ($vec:expr, $prop:expr, $prop_name:expr) => {
-       $prop.as_ref().map(|v| $vec.insert(String::from($prop_name), Value::String(v.to_string())));
-    }
-}
-
-macro_rules! add_opt_i64_property_if_exists {
-    ($vec:expr, $prop:expr, $prop_name:expr) => {
-       $prop.as_ref().map(|v| $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from(i64::from(*v)))));
-    }
-}
-
-macro_rules! add_opt_f64_property_if_exists {
-    ($vec:expr, $prop:expr, $prop_name:expr) => {
-       $prop.as_ref().map(|v| $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from_f64(f64::from(*v)).unwrap_or_else(|| serde_json::Number::from(0)))));
-    }
-}
-
-macro_rules! add_f64_property_if_exists {
-    ($vec:expr, $prop:expr, $prop_name:expr) => {
-       $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from_f64(f64::from($prop)).unwrap_or_else(|| serde_json::Number::from(0))));
-    }
-}
-
-macro_rules! add_i64_property_if_exists {
-    ($vec:expr, $prop:expr, $prop_name:expr) => {
-       $vec.insert(String::from($prop_name), Value::Number(serde_json::value::Number::from(i64::from($prop))));
-    }
-}
-
-macro_rules! add_to_doc_str_property_if_not_exists {
-    ($document:expr, $prop_name:expr, $prop_value:expr) => {
-          match $document.get($prop_name) {
-            None => {
-                $document.insert(String::from($prop_name), $prop_value);
-            }
-            Some(value) => { if Value::is_null(value) {
-                $document.insert(String::from($prop_name), $prop_value);
-            }}
-          }
-    }
-}
-
 impl XtreamStream {
     pub fn get_stream_id(&self) -> u32 {
         self.stream_id.unwrap_or_else(|| self.series_id.unwrap_or(0))
     }
 
     pub fn get_additional_properties(&self) ->  Option<Box<RawValue>> {
-        let mut result = Map::new();
+        let mut result = serde_json::Map::new();
         if let Some(bdpath) = self.backdrop_path.as_ref() {
             if !bdpath.is_empty() {
                 result.insert(String::from(xtream_const::XC_PROP_BACKDROP_PATH), Value::Array(Vec::from([Value::String(String::from(bdpath.first()?))])));
@@ -191,6 +144,68 @@ impl XtreamStream {
             RawValue::from_string(s).ok()
         }
     }
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct XtreamMovieInfo {
+    pub info: XtreamMovieInfoDetails,
+    pub movie_data: XtreamMovieData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct XtreamMovieInfoDetails {
+    pub kinopoisk_url: Option<String>,
+    pub tmdb_id: Option<String>,
+    pub name: Option<String>,
+    pub o_name: Option<String>,
+    pub cover_big: Option<String>,
+    pub movie_image: Option<String>,
+    pub releasedate: Option<String>,
+    pub episode_run_time: Option<u32>,
+    pub youtube_trailer: Option<String>,
+    pub director: Option<String>,
+    pub actors: Option<String>,
+    pub cast: Option<String>,
+    pub description: Option<String>,
+    pub plot: Option<String>,
+    pub age: Option<String>,
+    pub mpaa_rating: Option<String>,
+    pub rating_count_kinopoisk: u32,
+    pub country: Option<String>,
+    pub genre: Option<String>,
+    #[serde(default)]
+    pub backdrop_path: Vec<String>,
+    pub duration_secs: Option<String>,
+    pub duration: Option<String>,
+    #[serde(default)]
+    pub video: Vec<XtreamStreamInfo>,
+    #[serde(default)]
+    pub audio: Vec<XtreamStreamInfo>,
+    #[serde(default)]
+    pub bitrate: u32,
+    pub rating: Option<String>,
+    pub runtime: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct XtreamStreamInfo {
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct XtreamMovieData {
+    pub stream_id: u32,
+    pub name: String,
+    pub added: Option<String>,
+    pub category_id: Option<String>,
+    #[serde(default)]
+    pub category_ids: Vec<u32>,
+    pub container_extension: Option<String>,
+    pub custom_sid: Option<String>,
+    pub direct_source: String,
 }
 
 
@@ -410,7 +425,7 @@ pub struct XtreamSeriesInfo {
 
 impl XtreamSeriesInfoEpisode {
     pub fn get_additional_properties(&self, series_info: &XtreamSeriesInfo) -> Option<Box<RawValue>> {
-        let mut result = Map::new();
+        let mut result = serde_json::Map::new();
         let info = series_info.info.as_ref();
         let bdpath = info.and_then(|i| i.backdrop_path.as_ref());
         let bdpath_is_set = bdpath.as_ref().is_some_and(|bdpath| !bdpath.is_empty());
@@ -501,7 +516,7 @@ fn append_mandatory_fields(document: &mut serde_json::Map<String, Value>, fields
     }
 }
 
-fn append_prepared_series_properties(add_props: Option<&Map<String, Value>>, document: &mut Map<String, Value>) {
+fn append_prepared_series_properties(add_props: Option<&serde_json::Map<String, Value>>, document: &mut serde_json::Map<String, Value>) {
     if let Some(props) = add_props {
         match props.get("rating") {
             Some(value) => {
@@ -573,7 +588,7 @@ pub fn xtream_playlistitem_to_document(pli: &XtreamPlaylistItem, url: &str, opti
         }
     }
 
-    let props = pli.additional_properties.as_ref().and_then(|add_props| serde_json::from_str::<Map<String, Value>>(add_props).ok());
+    let props = pli.additional_properties.as_ref().and_then(|add_props| serde_json::from_str::<serde_json::Map<String, Value>>(add_props).ok());
 
     if let Some(ref add_props) = props {
         for (field_name, field_value) in add_props {
@@ -605,7 +620,7 @@ pub fn xtream_playlistitem_to_document(pli: &XtreamPlaylistItem, url: &str, opti
     Value::Object(document)
 }
 
-pub fn rewrite_doc_urls(resource_url: Option<&String>, document: &mut Map<String, Value>, fields: &[&str], field_prefix: &str) {
+pub fn rewrite_doc_urls(resource_url: Option<&String>, document: &mut serde_json::Map<String, Value>, fields: &[&str], field_prefix: &str) {
     if let Some(rewrite_url) = resource_url {
         if let Some(bdpath) = document.get(xtream_const::XC_PROP_BACKDROP_PATH) {
             match bdpath {

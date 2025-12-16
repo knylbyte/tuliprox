@@ -48,12 +48,6 @@ impl NfoReader {
 
     /// Parses NFO XML content into `VideoMetadata`
     fn parse_nfo(content: &str) -> Option<MediaMetadata> {
-        // let mut reader = Reader::from_str(content);
-        // reader.config_mut().trim_text(true);
-
-        // let mut buf = Vec::new();
-        // let mut current_tag = String::new();
-
         // Determine if this is a movie or TV show NFO
         let is_movie = content.contains("<movie") || (!content.contains("<tvshow") && !content.contains("<episodedetails"));
         let is_series = !is_movie && (content.contains("<tvshow") || content.contains("<episodedetails"));

@@ -73,7 +73,7 @@ impl LibraryProcessor {
                     ProcessAction::Unchanged => {}
                 },
                 Err(e) => {
-                    error!("Error processing {}: {}", file.file_path, e);
+                    error!("Error processing {}: {e}", file.file_path);
                     result.errors += 1;
                 }
             }
@@ -117,7 +117,7 @@ impl LibraryProcessor {
             let metadata = self.resolve_metadata(file).await?;
             let entry = MetadataCacheEntry {
                 uuid: existing_entry.uuid.clone(),
-                file_path: file.file_name.clone(),
+                file_path: file.file_path.clone(),
                 file_size: file.size_bytes,
                 file_modified: file.modified_timestamp,
                 metadata,

@@ -1,13 +1,16 @@
 #[macro_export]
 macro_rules! check_input_credentials {
     ($this:ident, $input_type:expr, $definition:expr ) => {
-        $this.url = $this.url.trim().to_string();
-        if $this.url.is_empty() {
-            return Err(info_err!("url for input is mandatory".to_string()));
-        }
-     $this.username = $crate::utils::get_trimmed_string(&$this.username);
-     $this.password = $crate::utils::get_trimmed_string(&$this.password);
+     if !matches!($input_type, InputType::Library) {
 
+            $this.url = $this.url.trim().to_string();
+            if $this.url.is_empty() {
+                return Err(info_err!("url for input is mandatory".to_string()));
+            }
+
+            $this.username = $crate::utils::get_trimmed_string(&$this.username);
+            $this.password = $crate::utils::get_trimmed_string(&$this.password);
+     }
      match $input_type {
             InputType::M3u => {
                 if $this.username.is_some() || $this.password.is_some() {

@@ -195,7 +195,7 @@ mod tests {
                     api_key: Some(String::new()),
                     rate_limit_ms: 250,
                     cache_duration_days: 0,
-                    language: "".to_string(),
+                    language: String::new(),
                 },
                 fallback_to_filename: true,
                 formats: vec![],

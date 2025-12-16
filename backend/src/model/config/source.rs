@@ -25,6 +25,20 @@ impl ConfigSource {
         }
         None
     }
+
+    pub fn should_for_user_targets(&self, user_targets: &ProcessTargets) -> bool {
+        if user_targets.targets.is_empty() {
+            return true;
+        }
+
+        for target in &self.targets {
+            if user_targets.targets.contains(&target.id) {
+                return true;
+            }
+        }
+        false
+    }
+
 }
 
 macros::try_from_impl!(ConfigSource);
