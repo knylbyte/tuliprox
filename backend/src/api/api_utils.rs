@@ -347,13 +347,14 @@ async fn resolve_streaming_strategy(
         None => app_state.active_provider.acquire_connection(&input.name, &fingerprint.addr).await,
     };
 
-    if provider_connection_handle.is_none() && force_provider.is_none() {
-        if try_provision_account_on_exhausted(app_state, input).await {
-            provider_connection_handle = app_state
-                .active_provider
-                .acquire_connection(&input.name, &fingerprint.addr)
-                .await;
-        }
+    if provider_connection_handle.is_none()
+        && force_provider.is_none()
+        && try_provision_account_on_exhausted(app_state, input).await
+    {
+        provider_connection_handle = app_state
+            .active_provider
+            .acquire_connection(&input.name, &fingerprint.addr)
+            .await;
     }
 
     let stream_response_params =

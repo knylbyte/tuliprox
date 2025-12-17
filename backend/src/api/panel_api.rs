@@ -225,7 +225,7 @@ async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfigDto) -> Resu
     let Some(obj) = first_json_object(&json) else {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_new response is not a JSON object/array");
     };
-    let status_ok = obj.get("status").map(parse_boolish).unwrap_or(false);
+    let status_ok = obj.get("status").is_some_and(parse_boolish);
     if !status_ok {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_new status=false");
     }
@@ -253,7 +253,7 @@ async fn panel_client_renew(app_state: &AppState, cfg: &PanelApiConfigDto, usern
     let Some(obj) = first_json_object(&json) else {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_renew response is not a JSON object/array");
     };
-    let status_ok = obj.get("status").map(parse_boolish).unwrap_or(false);
+    let status_ok = obj.get("status").is_some_and(parse_boolish);
     if !status_ok {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_renew status=false");
     }
@@ -272,7 +272,7 @@ async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfigDto, userna
     let Some(obj) = first_json_object(&json) else {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_info response is not a JSON object/array");
     };
-    let status_ok = obj.get("status").map(parse_boolish).unwrap_or(false);
+    let status_ok = obj.get("status").is_some_and(parse_boolish);
     if !status_ok {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_info status=false");
     }
@@ -457,7 +457,7 @@ async fn patch_batch_csv_append(
     exp_date: Option<i64>,
 ) -> Result<(), TuliproxError> {
     let raw = tokio::fs::read_to_string(csv_path).await.unwrap_or_default();
-    let mut lines: Vec<String> = raw.lines().map(|l| l.to_string()).collect();
+    let mut lines: Vec<String> = raw.lines().map(ToString::to_string).collect();
     let header_line_idx = lines.iter().position(|l| l.trim_start().starts_with('#'));
     let header = header_line_idx
         .and_then(|idx| lines.get(idx).map(|s| s.trim_start_matches('#').trim().to_string()))
@@ -469,9 +469,9 @@ async fn patch_batch_csv_append(
     if header_line_idx.is_none() {
         lines.insert(0, format!("#{header}"));
     }
-    let mut row: Vec<String> = vec![String::new(); cols.len()];
+    let mut record: Vec<String> = vec![String::new(); cols.len()];
     for (i, c) in cols.iter().enumerate() {
-        row[i] = match c.as_str() {
+        record[i] = match c.as_str() {
             "name" => alias_name.to_string(),
             "username" => username.to_string(),
             "password" => password.to_string(),
@@ -493,7 +493,7 @@ async fn patch_batch_csv_append(
             _ => String::new(),
         };
     }
-    lines.push(row.join(";"));
+    lines.push(record.join(";"));
     tokio::fs::write(csv_path, lines.join("\n") + "\n")
         .await
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write csv: {e}")))?;
@@ -510,7 +510,7 @@ async fn patch_batch_csv_update_exp_date(
     let raw = tokio::fs::read_to_string(csv_path)
         .await
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read csv: {e}")))?;
-    let mut lines: Vec<String> = raw.lines().map(|l| l.to_string()).collect();
+    let mut lines: Vec<String> = raw.lines().map(ToString::to_string).collect();
     let header_line_idx = lines.iter().position(|l| l.trim_start().starts_with('#'));
     let Some(header_idx) = header_line_idx else {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: csv missing header line");
@@ -532,7 +532,7 @@ async fn patch_batch_csv_update_exp_date(
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let mut fields: Vec<String> = line.split(';').map(|s| s.to_string()).collect();
+        let mut fields: Vec<String> = line.split(';').map(ToString::to_string).collect();
         fields.resize(cols.len(), String::new());
 
         let mut matches = false;
@@ -562,7 +562,7 @@ async fn patch_batch_csv_update_exp_date(
             return Ok(());
         }
     }
-    warn!("panel_api: could not find batch csv row for account {}", account_name);
+    warn!("panel_api: could not find batch csv row for account {account_name}");
     Ok(())
 }
 
@@ -580,75 +580,63 @@ fn derive_unique_alias_name(existing: &[String], input_name: &str, username: &st
     base
 }
 
-pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &ConfigInput) -> bool {
-    let Some(panel_cfg) = input.panel_api.as_ref() else {
-        return false;
-    };
-    if panel_cfg.url.trim().is_empty() {
-        return false;
-    }
-
-    let _input_lock = app_state
-        .app_config
-        .file_locks
-        .write_lock_str(format!("panel_api:{}", input.name).as_str())
-        .await;
-
-    if let Err(err) = validate_panel_api_config(panel_cfg) {
-        debug_if_enabled!("panel_api config invalid: {}", sanitize_sensitive_info(err.to_string().as_str()));
-        return false;
-    }
-
-    let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
-    let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
-    let sources_path = PathBuf::from(&sources_file_path);
-
-    // prefer renew of expired accounts
+async fn try_renew_expired_account(
+    app_state: &AppState,
+    input: &ConfigInput,
+    panel_cfg: &PanelApiConfigDto,
+    is_batch: bool,
+    sources_path: &Path,
+) -> bool {
     let expired = collect_expired_accounts(input);
-    if !expired.is_empty() {
-        for acct in &expired {
-            match panel_client_renew(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str()).await {
-                Ok(()) => {
-                    let new_exp = panel_client_info(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str())
-                        .await
-                        .ok()
-                        .flatten();
-                    if let Some(new_exp) = new_exp.or_else(|| acct.exp_date) {
-                        if is_batch {
-                            let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
-                            if let Ok(csv_path) = get_csv_file_path(batch_url) {
-                                let _csv_lock = app_state.app_config.file_locks.write_lock(&csv_path).await;
-                                if let Err(err) = patch_batch_csv_update_exp_date(&csv_path, &acct.name, &acct.username, &acct.password, new_exp).await {
-                                    debug_if_enabled!("panel_api failed to persist renew exp_date to csv: {}", err);
-                                }
-                            }
-                        } else {
-                            let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                            if let Err(err) = patch_source_yml_update_exp_date(&sources_path, &input.name, &acct.name, new_exp).await {
-                                debug_if_enabled!("panel_api failed to persist renew exp_date to source.yml: {}", err);
+    for acct in &expired {
+        match panel_client_renew(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str()).await {
+            Ok(()) => {
+                let refreshed_exp = panel_client_info(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str())
+                    .await
+                    .ok()
+                    .flatten();
+
+                if let Some(new_exp) = refreshed_exp.or(acct.exp_date) {
+                    if is_batch {
+                        let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
+                        if let Ok(csv_path) = get_csv_file_path(batch_url) {
+                            let _csv_lock = app_state.app_config.file_locks.write_lock(&csv_path).await;
+                            if let Err(err) = patch_batch_csv_update_exp_date(&csv_path, &acct.name, &acct.username, &acct.password, new_exp).await {
+                                debug_if_enabled!("panel_api failed to persist renew exp_date to csv: {}", err);
                             }
                         }
+                    } else {
+                        let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
+                        if let Err(err) = patch_source_yml_update_exp_date(sources_path, &input.name, &acct.name, new_exp).await {
+                            debug_if_enabled!("panel_api failed to persist renew exp_date to source.yml: {}", err);
+                        }
                     }
+                }
 
-                    // reload sources + provider lineup
-                    if let Err(err) = reload_sources(app_state).await {
-                        debug_if_enabled!("panel_api reload sources failed: {}", err);
-                    }
-                    return true;
+                if let Err(err) = reload_sources(app_state).await {
+                    debug_if_enabled!("panel_api reload sources failed: {}", err);
                 }
-                Err(err) => {
-                    debug_if_enabled!(
-                        "panel_api client_renew failed for {}: {}",
-                        sanitize_sensitive_info(&acct.name),
-                        sanitize_sensitive_info(err.to_string().as_str())
-                    );
-                    continue;
-                }
+                return true;
+            }
+            Err(err) => {
+                debug_if_enabled!(
+                    "panel_api client_renew failed for {}: {}",
+                    sanitize_sensitive_info(&acct.name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
             }
         }
     }
+    false
+}
 
-    // otherwise create new client and append as alias / batch row
+async fn try_create_new_account(
+    app_state: &AppState,
+    input: &ConfigInput,
+    panel_cfg: &PanelApiConfigDto,
+    is_batch: bool,
+    sources_path: &Path,
+) -> bool {
     match panel_client_new(app_state, panel_cfg).await {
         Ok((username, password, base_url_from_resp)) => {
             let base_url = base_url_from_resp.unwrap_or_else(|| input.url.clone());
@@ -675,20 +663,28 @@ pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &Co
                             InputType::M3uBatch
                         };
                         let _csv_lock = app_state.app_config.file_locks.write_lock(&csv_path).await;
-                        if let Err(err) = patch_batch_csv_append(&csv_path, batch_type, &alias_name, &base_url, &username, &password, exp_date).await {
-                            warn!("panel_api failed to append new account to csv: {}", err);
+                        if let Err(err) =
+                            patch_batch_csv_append(&csv_path, batch_type, &alias_name, &base_url, &username, &password, exp_date).await
+                        {
+                            warn!("panel_api failed to append new account to csv: {err}");
                             return false;
                         }
                     }
                     Err(err) => {
-                        warn!("panel_api cannot resolve batch csv path {}: {}", sanitize_sensitive_info(batch_url), err);
+                        warn!(
+                            "panel_api cannot resolve batch csv path {}: {}",
+                            sanitize_sensitive_info(batch_url),
+                            err
+                        );
                         return false;
                     }
                 }
             } else {
-                let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                if let Err(err) = patch_source_yml_add_alias(&sources_path, &input.name, &alias_name, &base_url, &username, &password, exp_date).await {
-                    warn!("panel_api failed to persist new alias to source.yml: {}", err);
+                let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
+                if let Err(err) =
+                    patch_source_yml_add_alias(sources_path, &input.name, &alias_name, &base_url, &username, &password, exp_date).await
+                {
+                    warn!("panel_api failed to persist new alias to source.yml: {err}");
                     return false;
                 }
             }
@@ -704,6 +700,35 @@ pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &Co
             false
         }
     }
+}
+
+pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &ConfigInput) -> bool {
+    let Some(panel_cfg) = input.panel_api.as_ref() else {
+        return false;
+    };
+    if panel_cfg.url.trim().is_empty() {
+        return false;
+    }
+
+    let _input_lock = app_state
+        .app_config
+        .file_locks
+        .write_lock_str(format!("panel_api:{}", input.name).as_str())
+        .await;
+
+    if let Err(err) = validate_panel_api_config(panel_cfg) {
+        debug_if_enabled!("panel_api config invalid: {}", sanitize_sensitive_info(err.to_string().as_str()));
+        return false;
+    }
+
+    let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
+    let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
+    let sources_path = PathBuf::from(&sources_file_path);
+
+    if try_renew_expired_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await {
+        return true;
+    }
+    try_create_new_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await
 }
 
 pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) {
