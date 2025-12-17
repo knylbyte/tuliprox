@@ -840,7 +840,9 @@ Use the literal value `auto` to fill sensitive values at runtime:
   ```json
   [{"status":"true","credits":"20","enabled":"1"}]
   ```
-For `client_new`, the Panel API call would look like this in the example shown: `https://panel.example.tld/api.php?action=new&type=m3u&sub=1&api_key=1234567890` 
+For `client_new`, the Panel API call would look like this in the example shown:
+
+  ```https://panel.example.tld/api.php?action=new&type=m3u&sub=1&api_key=1234567890```
 
 Example:
 ```yaml
