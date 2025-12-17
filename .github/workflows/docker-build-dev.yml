@@ -297,8 +297,9 @@ jobs:
             echo "- CHANGELOG version: **${{ steps.version.outputs.version }}**"
             echo ""
             echo "### 📦 Exported artifacts"
-            echo "- scratch-final:  \`dev-slim-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
-            echo "- alpine-final:   \`dev-${{ steps.version.outputs.version }}-${{ matrix.arch_tag }}\`"
+            echo "- scratch-final:  \`${{ env.GHCR_NS }}\`"
+            echo "- alpine-final:   \`${{ env.GHCR_NS }}\`"
+            echo "- cache-export:   \`${{ env.GHCR_NS }}\`"
             echo ""
             echo "### 🧷 Cache"
             echo "- cache-from: \`type=gha,scope=dev-cache-export-${{ matrix.arch_tag }}\`"
@@ -341,6 +342,8 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.build.outputs.version }}"
 
+          ls -al
+
           docker buildx imagetools create \
             -t "${{ env.GHCR_NS }}:dev-slim" \
             -t "${{ env.GHCR_NS }}:dev-slim-${VERSION}" \
@@ -359,6 +362,8 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.build.outputs.version }}"
 
+          ls -al 
+
           docker buildx imagetools create \
             -t "${{ env.GHCR_NS }}:dev" \
             -t "${{ env.GHCR_NS }}:dev-${VERSION}" \
@@ -369,19 +374,6 @@ jobs:
 
           echo "Inspect: ${{ env.GHCR_NS }}:dev-${VERSION}"
           docker buildx imagetools inspect "${{ env.GHCR_NS }}:dev-${VERSION}"
-
-      - name: Create manifest and push (cache-export)
-        working-directory: ${{ runner.temp }}/digests/cache-export
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          docker buildx imagetools create \
-            -t "${{ env.GHCR_NS }}:cache" \
-            $(printf '${{ env.GHCR_NS }}@sha256:%s ' *)
-
-          echo "Inspect: ${{ env.GHCR_NS }}:cache"
-          docker buildx imagetools inspect "${{ env.GHCR_NS }}:cache"
 
       - name: Summary (manifests)
         if: always()
@@ -406,7 +398,6 @@ jobs:
 
           SCRATCH_CNT="$(count_digests "${ROOT}/scratch-final")"
           ALPINE_CNT="$(count_digests "${ROOT}/alpine-final")"
-          CACHE_CNT="$(count_digests "${ROOT}/cache-export")"
 
           {
             echo "## 📚 Multi-arch manifests"
@@ -439,9 +430,6 @@ jobs:
             if [[ -n "$VERSION" ]]; then
               echo "  - \`${NS}:dev-${VERSION}\`"
             fi
-            echo ""
-            echo "- **cache-export** (${CACHE_CNT} digests)"
-            echo "  - \`${NS}:cache\`"
             echo ""
 
             echo "### 📦 Registry"

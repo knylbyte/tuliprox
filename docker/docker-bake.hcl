@@ -75,7 +75,8 @@ target "cache-export" {
   ]
 
   output = [
-    "type=image,name=${GHCR_NS},push-by-digest=true,name-canonical=true,push=true"
+    # "type=image,name=${GHCR_NS},push-by-digest=true,name-canonical=true,push=true",
+    "type=local,dest=${CACHE_DEST}"
   ]
 }
 
@@ -100,8 +101,7 @@ target "scratch-final" {
   ]
 
   output = [
-    "type=image,name=${GHCR_NS},push-by-digest=true,name-canonical=true,push=true",
-    "type=local,dest=${CACHE_DEST}"
+    "type=image,name=${GHCR_NS},push-by-digest=true,name-canonical=true,push=true"
   ]
 }
 
