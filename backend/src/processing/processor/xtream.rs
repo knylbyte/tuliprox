@@ -7,7 +7,6 @@ use crate::model::normalize_release_date;
 use crate::repository::storage::get_input_storage_path;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::File;
 use std::path::PathBuf;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::storage_const;
@@ -47,18 +46,18 @@ pub(in crate::processing) fn normalize_json_content(content: String) -> String {
     }
 }
 
-pub(in crate::processing) fn create_resolve_episode_wal_files(cfg: &Config, input: &ConfigInput) -> Option<(File, PathBuf)> {
+pub(in crate::processing) async fn create_resolve_episode_wal_files(cfg: &Config, input: &ConfigInput) -> Option<(tokio::fs::File, PathBuf)> {
     match get_input_storage_path(&input.name, &cfg.working_dir) {
         Ok(storage_path) => {
             let info_path = storage_path.join(format!("{}.{}", crate::model::XC_FILE_SERIES_EPISODE_RECORD, storage_const::FILE_SUFFIX_WAL));
-            let info_file = utils::append_or_crate_file(&info_path).ok()?;
+            let info_file = utils::async_append_or_create_file(&info_path).await.ok()?;
             Some((info_file, info_path))
         }
         Err(_) => None
     }
 }
 
-pub(in crate::processing) fn create_resolve_info_wal_files(cfg: &Config, input: &ConfigInput, cluster: XtreamCluster) -> Option<(File, File, PathBuf, PathBuf)> {
+pub(in crate::processing) async fn create_resolve_info_wal_files(cfg: &Config, input: &ConfigInput, cluster: XtreamCluster) -> Option<(tokio::fs::File, tokio::fs::File, PathBuf, PathBuf)> {
     match get_input_storage_path(&input.name, &cfg.working_dir) {
         Ok(storage_path) => {
             if let Some(file_prefix) = match cluster {
@@ -68,8 +67,8 @@ pub(in crate::processing) fn create_resolve_info_wal_files(cfg: &Config, input: 
             } {
                 let content_path = storage_path.join(format!("{file_prefix}_content.{}", storage_const::FILE_SUFFIX_WAL));
                 let info_path = storage_path.join(format!("{file_prefix}_record.{}", storage_const::FILE_SUFFIX_WAL));
-                let content_file = utils::append_or_crate_file(&content_path).ok()?;
-                let info_file = utils::append_or_crate_file(&info_path).ok()?;
+                let content_file = utils::async_append_or_create_file(&content_path).await.ok()?;
+                let info_file = utils::async_append_or_create_file(&info_path).await.ok()?;
                 return Some((content_file, info_file, content_path, info_path));
             }
             None

@@ -1,25 +1,24 @@
-use shared::model::InputType;
-use shared::error::{TuliproxError};
 use crate::model::{AppConfig, ConfigTarget};
-use crate::model::{FetchedPlaylist};
-use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster};
-use crate::processing::processor::playlist::ProcessingPipe;
+use crate::model::FetchedPlaylist;
+use crate::model::{XtreamSeriesEpisode, XtreamSeriesInfoEpisode};
 use crate::processing::parser::xtream::parse_xtream_series_info;
+use crate::processing::processor::playlist::ProcessingPipe;
+use crate::processing::processor::xtream::normalize_json_content;
 use crate::processing::processor::xtream::{create_resolve_episode_wal_files, create_resolve_info_wal_files, playlist_resolve_download_playlist_item, read_processed_info_ids, should_update_info};
+use crate::processing::processor::{create_resolve_options_function_for_xtream_target, handle_error, handle_error_and_return};
 use crate::repository::storage::get_input_storage_path;
 use crate::repository::xtream_repository::{write_series_info_to_wal_file, xtream_get_info_file_paths, xtream_update_input_info_file, xtream_update_input_series_episodes_record_from_wal_file, xtream_update_input_series_record_from_wal_file};
 use crate::repository::IndexedDocumentReader;
-use shared::error::{notify_err, info_err};
-use crate::processing::processor::{handle_error, handle_error_and_return, create_resolve_options_function_for_xtream_target};
-use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{BufWriter, Write};
-use std::time::Instant;
-use log::{error, info, log_enabled, warn, Level};
-use crate::model::{XtreamSeriesEpisode, XtreamSeriesInfoEpisode};
 use crate::utils;
-use crate::processing::processor::xtream::normalize_json_content;
 use crate::utils::{bincode_serialize, IO_BUFFER_SIZE};
+use log::{error, info, log_enabled, warn, Level};
+use shared::error::{info_err, notify_err};
+use shared::error::TuliproxError;
+use shared::model::InputType;
+use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster};
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
+use tokio::io::AsyncWriteExt;
 
 create_resolve_options_function_for_xtream_target!(series);
 
@@ -27,19 +26,19 @@ async fn read_processed_series_info_ids(cfg: &AppConfig, errors: &mut Vec<Tulipr
     read_processed_info_ids(cfg, errors, fpl, PlaylistItemType::SeriesInfo, |ts: &u64| *ts).await
 }
 
-fn write_series_episode_record_to_wal_file(
-    writer: &mut BufWriter<&File>,
+async fn write_series_episode_record_to_wal_file(
+    writer: &mut tokio::io::BufWriter<&mut tokio::fs::File>,
     provider_id: u32,
     episode: &XtreamSeriesInfoEpisode,
 ) -> std::io::Result<usize> {
     let series_episode = XtreamSeriesEpisode::from(episode);
     if let Ok(content_bytes) = bincode_serialize(&series_episode) {
-        writer.write_all(&provider_id.to_le_bytes())?;
+        writer.write_all(&provider_id.to_le_bytes()).await?;
         let content_len = content_bytes.len();
-        if let Ok(len)  = u32::try_from(content_len) {
-            writer.write_all(&len.to_le_bytes())?;
-            writer.write_all(&content_bytes)?;
-            return Ok(content_len + 4usize)
+        if let Ok(len) = u32::try_from(content_len) {
+            writer.write_all(&len.to_le_bytes()).await?;
+            writer.write_all(&content_bytes).await?;
+            return Ok(content_len + 4usize);
         }
         error!("Cant write to WAL file, content length exceeds u32");
     }
@@ -52,16 +51,20 @@ fn should_update_series_info(pli: &mut PlaylistItem, processed_provider_ids: &Ha
 
 async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client, errors: &mut Vec<TuliproxError>,
                                       fpl: &mut FetchedPlaylist<'_>, resolve_delay: u16) -> bool {
+    // TODO read existing WAL File and import it to avoid duplicate requests
+
+
     let mut processed_info_ids: HashMap<u32, u64> = read_processed_series_info_ids(cfg, errors, fpl).await;
     let mut fetched_in_run: HashSet<u32> = HashSet::new();
-    // we cant write to the indexed-document directly because of the write lock and time-consuming operation.
+    // we can't write to the indexed-document directly because of the write lock and time-consuming operation.
     // All readers would be waiting for the lock and the app would be unresponsive.
     // We collect the content into a wal file and write it once we collected everything.
-    let Some((wal_content_file, wal_record_file, wal_content_path, wal_record_path)) = create_resolve_info_wal_files(&cfg.config.load(), fpl.input, XtreamCluster::Series)
+    let Some((mut wal_content_file, mut wal_record_file, wal_content_path, wal_record_path))
+        = create_resolve_info_wal_files(&cfg.config.load(), fpl.input, XtreamCluster::Series).await
     else { return !processed_info_ids.is_empty(); };
 
-    let mut content_writer = utils::file_writer(&wal_content_file);
-    let mut record_writer = utils::file_writer(&wal_record_file);
+    let mut content_writer = utils::async_file_writer(&mut wal_content_file);
+    let mut record_writer = utils::async_file_writer(&mut wal_record_file);
     let mut content_updated = false;
 
     let series_info_count = fpl.playlistgroups.iter()
@@ -88,7 +91,7 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
                 if let Some(content) = playlist_resolve_download_playlist_item(client, pli, fpl.input, errors, resolve_delay, XtreamCluster::Series).await {
                     let normalized_content = normalize_json_content(content);
                     let normalized_str = normalized_content.as_str();
-                    handle_error_and_return!(write_series_info_to_wal_file(provider_id, ts, normalized_str, &mut content_writer, &mut record_writer),
+                    handle_error_and_return!(write_series_info_to_wal_file(provider_id, ts, normalized_str, &mut content_writer, &mut record_writer).await,
                             |err| errors.push(notify_err!(format!("Failed to resolve series, could not write to wal file {err}"))));
                     processed_info_ids.insert(provider_id, ts);
                     content_updated = true;
@@ -97,10 +100,10 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
                     // periodic flush to bound BufWriter memory
                     if write_counter >= IO_BUFFER_SIZE {
                         write_counter = 0;
-                        if let Err(err) = content_writer.flush() {
+                        if let Err(err) = content_writer.flush().await {
                             errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
                         }
-                        if let Err(err) = record_writer.flush() {
+                        if let Err(err) = record_writer.flush().await {
                             errors.push(notify_err!(format!("Failed periodic flush of wal record writer {err}")));
                         }
                     }
@@ -119,12 +122,12 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
     // content_wal contains the provider_id and series_info with episode listing
     // record_wal contains provider_id and timestamp
     if content_updated {
-        handle_error!(content_writer.flush(),
+        handle_error!(content_writer.flush().await,
             |err| errors.push(notify_err!(format!("Failed to resolve series, could not write to wal file {err}"))));
-        handle_error!(record_writer.flush(),
+        handle_error!(record_writer.flush().await,
             |err| errors.push(notify_err!(format!("Failed to resolve series tmdb, could not write to wal file {err}"))));
-        handle_error!(content_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync series info to wal file {err}"))));
-        handle_error!(record_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync series info record to wal file {err}"))));
+        handle_error!(content_writer.get_ref().sync_all().await, |err| errors.push(notify_err!(format!("Failed to sync series info to wal file {err}"))));
+        handle_error!(record_writer.get_ref().sync_all().await, |err| errors.push(notify_err!(format!("Failed to sync series info record to wal file {err}"))));
         drop(content_writer);
         drop(record_writer);
         drop(wal_content_file);
@@ -135,7 +138,6 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
             |err| errors.push(err));
     }
 
-    // TODO better approach for transactional updates is multiplexed WAL file.
     // we updated now
     // - series_info.db  which contains the original series_info json
     // - series_record.db which contains the series_info provider_id and timestamp
@@ -163,11 +165,11 @@ async fn process_series_info(
     // Contains the Series Info with episode listing
     let Ok(mut info_reader) = IndexedDocumentReader::<u32, String>::new(&info_path, &idx_path) else { return result; };
 
-    let Some((wal_file, wal_path)) = create_resolve_episode_wal_files(&config, input) else {
+    let Some((mut wal_file, wal_path)) = create_resolve_episode_wal_files(&config, input).await else {
         errors.push(notify_err!("Could not create wal file for series episodes record".to_string()));
         return result;
     };
-    let mut wal_writer = utils::file_writer(&wal_file);
+    let mut wal_writer = utils::async_file_writer(&mut wal_file);
 
     for plg in fpl
         .playlistgroups
@@ -191,24 +193,24 @@ async fn process_series_info(
                 Ok(series_content) => {
                     let (group, series_name) = {
                         let header = &pli.header;
-                        (header.group.clone(), if header.name.is_empty() {header.title.clone()} else { header.name.clone()})
+                        (header.group.clone(), if header.name.is_empty() { header.title.clone() } else { header.name.clone() })
                     };
                     match parse_xtream_series_info(&series_content, &group, &series_name, input) {
                         Ok(Some(mut series)) => {
                             for (episode, pli_episode) in &mut series {
                                 let Some(provider_id) = &pli_episode.header.get_provider_id() else { continue; };
-                                match write_series_episode_record_to_wal_file(&mut wal_writer, *provider_id, episode) {
+                                match write_series_episode_record_to_wal_file(&mut wal_writer, *provider_id, episode).await {
                                     Ok(written_bytes) => {
                                         write_counter += written_bytes;
                                         // periodic flush to bound BufWriter memory
                                         if write_counter >= IO_BUFFER_SIZE {
                                             write_counter = 0;
-                                            if let Err(err) = wal_writer.flush() {
+                                            if let Err(err) = wal_writer.flush().await {
                                                 errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
                                             }
                                         }
                                     }
-                                    Err(err) => {errors.push(info_err!(format!("Failed to write to series episode wal file: {err}"))) }
+                                    Err(err) => { errors.push(info_err!(format!("Failed to write to series episode wal file: {err}"))) }
                                 }
                             }
                             group_series.extend(series.into_iter().map(|(_, pli)| pli));
@@ -232,8 +234,8 @@ async fn process_series_info(
         }
     }
 
-    handle_error!(wal_writer.flush(), |err| errors.push(notify_err!(format!("Failed to resolve series episodes, could not write to wal file {err}"))));
-    handle_error!(wal_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync series info to wal file {err}"))));
+    handle_error!(wal_writer.flush().await, |err| errors.push(notify_err!(format!("Failed to resolve series episodes, could not write to wal file {err}"))));
+    handle_error!(wal_writer.get_ref().sync_all().await, |err| errors.push(notify_err!(format!("Failed to sync series info to wal file {err}"))));
 
     drop(wal_writer);
     drop(wal_file);

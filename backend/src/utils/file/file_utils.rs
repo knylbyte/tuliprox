@@ -215,8 +215,13 @@ pub fn sanitize_filename(file_name: &str) -> String {
 }
 
 #[inline]
-pub fn append_or_crate_file(path: &Path) -> std::io::Result<File> {
+pub fn append_or_create_file(path: &Path) -> std::io::Result<File> {
     OpenOptions::new().create(true).append(true).open(path)
+}
+
+#[inline]
+pub async fn async_append_or_create_file(path: &Path) -> std::io::Result<tokio::fs::File> {
+    tokio::fs::OpenOptions::new().create(true).append(true).open(path).await
 }
 
 #[inline]
@@ -242,6 +247,11 @@ pub fn open_read_write_file(path: &Path) -> std::io::Result<File> {
 #[inline]
 pub fn open_readonly_file(path: &Path) -> std::io::Result<File> {
     OpenOptions::new().read(true).write(false).truncate(false).create(false).open(path)
+}
+
+#[inline]
+pub async fn async_open_readonly_file(path: &Path) -> std::io::Result<tokio::fs::File> {
+    tokio::fs::OpenOptions::new().read(true).write(false).truncate(false).create(false).open(path).await
 }
 
 pub fn rename_or_copy(src: &Path, dest: &Path, remove_old: bool) -> std::io::Result<()> {
