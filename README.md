@@ -836,10 +836,9 @@ The API is configured generically via predefined query parameters; only `type: m
 Use the literal value `auto` to fill sensitive values at runtime:
 - `api_key: auto` is replaced by `panel_api.api_key`
 - in `client_renew`, `username: auto` / `password: auto` are replaced by the account being renewed
-- `panel_info` is used as a healthcheck and must return JSON with truthy `status` and `credits > 0`, e.g.:
-  ```json
-  [{"status":"true","credits":"20","enabled":"1"}]
-  ```
+
+`client_info` is used to fetch the exact `exp_date` (via the `expire` field) and is also executed on boot to sync `exp_date` for existing inputs/aliases.
+
 For `client_new`, the Panel API call would look like this in the example shown:
 
   ```https://panel.example.tld/api.php?action=new&type=m3u&sub=1&api_key=1234567890```
@@ -857,11 +856,8 @@ Example:
       url: 'https://panel.example.tld/api.php'
       api_key: '1234567890'
       query_parameter:
-        panel_info:
-          - { key: action, value: reseller_info }
-          - { key: api_key, value: auto }
         client_info:
-          - { key: action, value: device_info }
+          - { key: action, value: client_info }
           - { key: username, value: auto }
           - { key: password, value: auto }
           - { key: api_key, value: auto }

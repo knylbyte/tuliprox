@@ -6,9 +6,9 @@ use log::{debug, error, warn};
 use serde_json::Value;
 use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use shared::model::{InputType, PanelApiConfigDto, PanelApiQueryParamDto};
-use shared::utils::{get_credentials_from_url, sanitize_sensitive_info, trim_last_slash};
-use std::collections::HashSet;
+use shared::utils::{get_credentials_from_url, parse_timestamp, sanitize_sensitive_info, trim_last_slash};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -25,14 +25,6 @@ fn parse_boolish(value: &Value) -> bool {
         Value::Number(n) => n.as_i64().unwrap_or(0) != 0,
         Value::String(s) => matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "y" | "ok"),
         _ => false,
-    }
-}
-
-fn parse_i64ish(value: &Value) -> Option<i64> {
-    match value {
-        Value::Number(n) => n.as_i64(),
-        Value::String(s) => s.trim().parse::<i64>().ok(),
-        _ => None,
     }
 }
 
@@ -79,20 +71,84 @@ fn validate_type_is_m3u(params: &[PanelApiQueryParamDto]) -> Result<(), Tuliprox
     }
 }
 
-fn validate_new_client_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
-    validate_type_is_m3u(params)?;
-    if params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("user")) {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: new_client must not contain query param 'user'");
+fn require_api_key_param(params: &[PanelApiQueryParamDto], section: &str) -> Result<(), TuliproxError> {
+    let api_key = params.iter().find(|p| p.key.trim().eq_ignore_ascii_case("api_key"));
+    let Some(api_key) = api_key else {
+        return create_tuliprox_error_result!(
+            TuliproxErrorKind::Info,
+            "panel_api: {section} must contain query param 'api_key' (use value 'auto')"
+        );
+    };
+    if api_key.value.trim().is_empty() {
+        return create_tuliprox_error_result!(
+            TuliproxErrorKind::Info,
+            "panel_api: {section} query param 'api_key' must not be empty (use value 'auto')"
+        );
     }
     Ok(())
 }
 
-fn validate_renew_client_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
-    validate_type_is_m3u(params)?;
-    let keys: HashSet<String> = params.iter().map(|p| p.key.trim().to_lowercase()).collect();
-    if !(keys.contains("username") && keys.contains("password")) {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: renew_client must contain query params 'username' and 'password' (use value 'auto')");
+fn require_username_password_params_auto(params: &[PanelApiQueryParamDto], section: &str) -> Result<(), TuliproxError> {
+    let username = params.iter().find(|p| p.key.trim().eq_ignore_ascii_case("username"));
+    let password = params.iter().find(|p| p.key.trim().eq_ignore_ascii_case("password"));
+    if username.is_none() || password.is_none() {
+        return create_tuliprox_error_result!(
+            TuliproxErrorKind::Info,
+            "panel_api: {section} must contain query params 'username' and 'password' (use value 'auto')"
+        );
     }
+    if !username.is_some_and(|p| p.value.trim().eq_ignore_ascii_case("auto"))
+        || !password.is_some_and(|p| p.value.trim().eq_ignore_ascii_case("auto"))
+    {
+        return create_tuliprox_error_result!(
+            TuliproxErrorKind::Info,
+            "panel_api: {section} requires 'username: auto' and 'password: auto' (credentials must not be hardcoded)"
+        );
+    }
+    Ok(())
+}
+
+fn validate_client_new_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    require_api_key_param(params, "query_parameter.client_new")?;
+    validate_type_is_m3u(params)?;
+    if params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("user")) {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_new must not contain query param 'user'");
+    }
+    Ok(())
+}
+
+fn validate_client_renew_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    require_api_key_param(params, "query_parameter.client_renew")?;
+    validate_type_is_m3u(params)?;
+    require_username_password_params_auto(params, "query_parameter.client_renew")?;
+    Ok(())
+}
+
+fn validate_client_info_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    require_api_key_param(params, "query_parameter.client_info")?;
+    require_username_password_params_auto(params, "query_parameter.client_info")?;
+    Ok(())
+}
+
+fn validate_panel_api_config(cfg: &PanelApiConfigDto) -> Result<(), TuliproxError> {
+    if cfg.url.trim().is_empty() {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: url is missing");
+    }
+    if cfg.api_key.as_ref().is_none_or(|k| k.trim().is_empty()) {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: api_key is missing");
+    }
+    if cfg.query_parameter.client_info.is_empty()
+        || cfg.query_parameter.client_new.is_empty()
+        || cfg.query_parameter.client_renew.is_empty()
+    {
+        return create_tuliprox_error_result!(
+            TuliproxErrorKind::Info,
+            "panel_api: query_parameter.client_info/client_new/client_renew must be configured"
+        );
+    }
+    validate_client_info_params(&cfg.query_parameter.client_info)?;
+    validate_client_new_params(&cfg.query_parameter.client_new)?;
+    validate_client_renew_params(&cfg.query_parameter.client_renew)?;
     Ok(())
 }
 
@@ -161,35 +217,17 @@ async fn panel_get_json(app_state: &AppState, url: Url) -> Result<Value, Tulipro
     Ok(json)
 }
 
-async fn panel_healthcheck(app_state: &AppState, cfg: &PanelApiConfigDto) -> Result<(), TuliproxError> {
-    if cfg.query_parameter.panel_info.is_empty() {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: query_parameter.panel_info is missing/empty");
-    }
-    let params = resolve_query_params(&cfg.query_parameter.panel_info, cfg.api_key.as_deref(), None)?;
+async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfigDto) -> Result<(String, String, Option<String>), TuliproxError> {
+    validate_client_new_params(&cfg.query_parameter.client_new)?;
+    let params = resolve_query_params(&cfg.query_parameter.client_new, cfg.api_key.as_deref(), None)?;
     let url = build_panel_url(cfg.url.as_str(), &params)?;
     let json = panel_get_json(app_state, url).await?;
     let Some(obj) = first_json_object(&json) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: panel_info response is not a JSON object/array");
-    };
-    let status_ok = obj.get("status").map(parse_boolish).unwrap_or(false);
-    let credits = obj.get("credits").and_then(parse_i64ish).unwrap_or(0);
-    if !status_ok || credits <= 0 {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: healthcheck failed (status={status_ok}, credits={credits})");
-    }
-    Ok(())
-}
-
-async fn panel_new_client(app_state: &AppState, cfg: &PanelApiConfigDto) -> Result<(String, String, Option<String>), TuliproxError> {
-    validate_new_client_params(&cfg.query_parameter.new_client)?;
-    let params = resolve_query_params(&cfg.query_parameter.new_client, cfg.api_key.as_deref(), None)?;
-    let url = build_panel_url(cfg.url.as_str(), &params)?;
-    let json = panel_get_json(app_state, url).await?;
-    let Some(obj) = first_json_object(&json) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: new_client response is not a JSON object/array");
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_new response is not a JSON object/array");
     };
     let status_ok = obj.get("status").map(parse_boolish).unwrap_or(false);
     if !status_ok {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: new_client status=false");
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_new status=false");
     }
     if let Some((u, p)) = extract_username_password_from_json(obj) {
         return Ok((u, p, None));
@@ -200,47 +238,46 @@ async fn panel_new_client(app_state: &AppState, cfg: &PanelApiConfigDto) -> Resu
             return Ok((u, p, base));
         }
     }
-    create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: new_client response missing username/password (and no parsable url)")
+    create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_new response missing username/password (and no parsable url)")
 }
 
-async fn panel_renew_client(app_state: &AppState, cfg: &PanelApiConfigDto, username: &str, password: &str) -> Result<(), TuliproxError> {
-    validate_renew_client_params(&cfg.query_parameter.renew_client)?;
+async fn panel_client_renew(app_state: &AppState, cfg: &PanelApiConfigDto, username: &str, password: &str) -> Result<(), TuliproxError> {
+    validate_client_renew_params(&cfg.query_parameter.client_renew)?;
     let params = resolve_query_params(
-        &cfg.query_parameter.renew_client,
+        &cfg.query_parameter.client_renew,
         cfg.api_key.as_deref(),
         Some((username, password)),
     )?;
     let url = build_panel_url(cfg.url.as_str(), &params)?;
     let json = panel_get_json(app_state, url).await?;
     let Some(obj) = first_json_object(&json) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: renew_client response is not a JSON object/array");
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_renew response is not a JSON object/array");
     };
     let status_ok = obj.get("status").map(parse_boolish).unwrap_or(false);
     if !status_ok {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: renew_client status=false");
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_renew status=false");
     }
     Ok(())
 }
 
-fn derive_exp_date_from_params(params: &[PanelApiQueryParamDto]) -> Option<i64> {
-    use chrono::{Duration, Months, Utc};
-    let now = Utc::now();
-    let raw = params
-        .iter()
-        .find(|p| {
-            let k = p.key.trim();
-            k.eq_ignore_ascii_case("sub") || k.eq_ignore_ascii_case("package")
-        })
-        .map(|p| p.value.trim().to_string())?;
-    let months = raw.parse::<i64>().ok()?;
-    if months <= 0 {
-        return Some((now + Duration::days(1)).timestamp());
+async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfigDto, username: &str, password: &str) -> Result<Option<i64>, TuliproxError> {
+    validate_client_info_params(&cfg.query_parameter.client_info)?;
+    let params = resolve_query_params(
+        &cfg.query_parameter.client_info,
+        cfg.api_key.as_deref(),
+        Some((username, password)),
+    )?;
+    let url = build_panel_url(cfg.url.as_str(), &params)?;
+    let json = panel_get_json(app_state, url).await?;
+    let Some(obj) = first_json_object(&json) else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_info response is not a JSON object/array");
+    };
+    let status_ok = obj.get("status").map(parse_boolish).unwrap_or(false);
+    if !status_ok {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_info status=false");
     }
-    if months == 99 {
-        return Some((now + Duration::days(1)).timestamp());
-    }
-    let months_u32: u32 = months.try_into().ok()?;
-    now.checked_add_months(Months::new(months_u32)).map(|dt| dt.timestamp())
+    let expire = obj.get("expire").and_then(|v| v.as_str()).unwrap_or_default();
+    Ok(parse_timestamp(expire).ok().flatten())
 }
 
 fn extract_account_creds_from_input(input: &ConfigInput) -> Option<(String, String)> {
@@ -557,8 +594,8 @@ pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &Co
         .write_lock_str(format!("panel_api:{}", input.name).as_str())
         .await;
 
-    if let Err(err) = panel_healthcheck(app_state, panel_cfg).await {
-        debug_if_enabled!("panel_api healthcheck failed: {}", sanitize_sensitive_info(err.to_string().as_str()));
+    if let Err(err) = validate_panel_api_config(panel_cfg) {
+        debug_if_enabled!("panel_api config invalid: {}", sanitize_sensitive_info(err.to_string().as_str()));
         return false;
     }
 
@@ -570,11 +607,13 @@ pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &Co
     let expired = collect_expired_accounts(input);
     if !expired.is_empty() {
         for acct in &expired {
-            match panel_renew_client(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str()).await {
+            match panel_client_renew(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str()).await {
                 Ok(()) => {
-                    let new_exp = derive_exp_date_from_params(&panel_cfg.query_parameter.renew_client)
-                        .or_else(|| derive_exp_date_from_params(&panel_cfg.query_parameter.new_client));
-                    if let Some(new_exp) = new_exp {
+                    let new_exp = panel_client_info(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str())
+                        .await
+                        .ok()
+                        .flatten();
+                    if let Some(new_exp) = new_exp.or_else(|| acct.exp_date) {
                         if is_batch {
                             let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
                             if let Ok(csv_path) = get_csv_file_path(batch_url) {
@@ -599,7 +638,7 @@ pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &Co
                 }
                 Err(err) => {
                     debug_if_enabled!(
-                        "panel_api renew failed for {}: {}",
+                        "panel_api client_renew failed for {}: {}",
                         sanitize_sensitive_info(&acct.name),
                         sanitize_sensitive_info(err.to_string().as_str())
                     );
@@ -610,7 +649,7 @@ pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &Co
     }
 
     // otherwise create new client and append as alias / batch row
-    match panel_new_client(app_state, panel_cfg).await {
+    match panel_client_new(app_state, panel_cfg).await {
         Ok((username, password, base_url_from_resp)) => {
             let base_url = base_url_from_resp.unwrap_or_else(|| input.url.clone());
             let base_url = extract_base_url(base_url.as_str()).unwrap_or_else(|| base_url.clone());
@@ -621,8 +660,10 @@ pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &Co
             }
             let alias_name = derive_unique_alias_name(&existing_names, &input.name, &username);
 
-            let exp_date = derive_exp_date_from_params(&panel_cfg.query_parameter.new_client)
-                .or_else(|| derive_exp_date_from_params(&panel_cfg.query_parameter.renew_client));
+            let exp_date = panel_client_info(app_state, panel_cfg, &username, &password)
+                .await
+                .ok()
+                .flatten();
 
             if is_batch {
                 let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
@@ -659,8 +700,97 @@ pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &Co
             true
         }
         Err(err) => {
-            debug_if_enabled!("panel_api new_client failed: {}", sanitize_sensitive_info(err.to_string().as_str()));
+            debug_if_enabled!("panel_api client_new failed: {}", sanitize_sensitive_info(err.to_string().as_str()));
             false
+        }
+    }
+}
+
+pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) {
+    let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
+    let sources_path = PathBuf::from(&sources_file_path);
+    let mut any_change = false;
+
+    let sources = app_state.app_config.sources.load();
+    for source in &sources.sources {
+        for input in &source.inputs {
+            let Some(panel_cfg) = input.panel_api.as_ref() else { continue; };
+            if panel_cfg.url.trim().is_empty() {
+                continue;
+            }
+            if let Err(err) = validate_panel_api_config(panel_cfg) {
+                debug_if_enabled!(
+                    "panel_api boot sync skipped for {}: {}",
+                    sanitize_sensitive_info(&input.name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+                continue;
+            }
+
+            let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
+            let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
+            let csv_path = if is_batch { get_csv_file_path(batch_url).ok() } else { None };
+
+            let mut accounts: Vec<AccountCredentials> = vec![];
+            if let Some((u, p)) = extract_account_creds_from_input(input.as_ref()) {
+                accounts.push(AccountCredentials {
+                    name: input.name.clone(),
+                    username: u,
+                    password: p,
+                    exp_date: input.exp_date,
+                });
+            }
+            if let Some(aliases) = input.aliases.as_ref() {
+                for a in aliases {
+                    if let (Some(u), Some(p)) = (a.username.as_deref(), a.password.as_deref()) {
+                        accounts.push(AccountCredentials {
+                            name: a.name.clone(),
+                            username: u.to_string(),
+                            password: p.to_string(),
+                            exp_date: a.exp_date,
+                        });
+                    }
+                }
+            }
+
+            for acct in &accounts {
+                let new_exp = match panel_client_info(app_state.as_ref(), panel_cfg, &acct.username, &acct.password).await {
+                    Ok(v) => v,
+                    Err(err) => {
+                        debug_if_enabled!(
+                            "panel_api client_info failed for {}: {}",
+                            sanitize_sensitive_info(&acct.name),
+                            sanitize_sensitive_info(err.to_string().as_str())
+                        );
+                        None
+                    }
+                };
+                let Some(new_exp) = new_exp else { continue; };
+                if acct.exp_date == Some(new_exp) {
+                    continue;
+                }
+
+                if let Some(csv_path) = csv_path.as_ref() {
+                    let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
+                    if let Err(err) = patch_batch_csv_update_exp_date(csv_path, &acct.name, &acct.username, &acct.password, new_exp).await {
+                        debug_if_enabled!("panel_api boot sync failed to persist exp_date to csv: {}", err);
+                        continue;
+                    }
+                } else {
+                    let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
+                    if let Err(err) = patch_source_yml_update_exp_date(&sources_path, &input.name, &acct.name, new_exp).await {
+                        debug_if_enabled!("panel_api boot sync failed to persist exp_date to source.yml: {}", err);
+                        continue;
+                    }
+                }
+                any_change = true;
+            }
+        }
+    }
+
+    if any_change {
+        if let Err(err) = reload_sources(app_state).await {
+            debug_if_enabled!("panel_api boot sync reload sources failed: {}", err);
         }
     }
 }
