@@ -113,6 +113,9 @@ jobs:
     runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
 
     steps:
+      - name: Delete huge unnecessary tools folder
+        run: rm -rf /opt/hostedtoolcache
+
       - name: Checkout
         uses: actions/checkout@v5
 
