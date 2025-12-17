@@ -180,7 +180,7 @@ jobs:
 
           rm -rf *.tar || true
 
-      - name: Step 2.10 - Resolve Bake targets
+      - name: Resolve Bake targets
         id: bake-targets
         shell: bash
         run: |
@@ -192,7 +192,7 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Step 2.11 - Build images with docker buildx bake
+      - name: Build images with docker buildx bake
         id: build
         shell: bash
         env:
@@ -226,7 +226,7 @@ jobs:
 
           cat ${{ runner.temp }}/metadata.json
 
-      - name: Step 2.12 - Archive cache artifacts for upload
+      - name: Archive cache artifacts for upload
         shell: bash
         working-directory: ${{ env.CACHE_CONTEXT }}
         run: |
@@ -264,7 +264,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      # - name: Step 2.11 - Archive image artifacts for upload
+      # - name: Archive image artifacts for upload
       #   shell: bash
       #   working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
       #   run: |
@@ -273,14 +273,14 @@ jobs:
       #     tar -cvf ${{ matrix.arch_tag}}.tar ${{ matrix.arch_tag }}
       #     ls -al 
 
-      # - name: Step 2.12 - Upload image artifacts
+      # - name: Upload image artifacts
       #   uses: actions/upload-artifact@v4
       #   with:
       #     name: dev-images-${{ matrix.arch_tag }}
       #     path: ${{ env.BUILD_ARTIFACTS_DEST }}/${{ matrix.arch_tag }}.tar
           # overwrite: true
 
-      - name: Step 2.13 - Summary
+      - name: Summary
         if: always()
         shell: bash
         run: |
@@ -302,8 +302,6 @@ jobs:
             echo "### 🧭 Platforms"
             echo "- ${{ matrix.platform }}"
           } >> "$GITHUB_STEP_SUMMARY"
-
-  ### TEST: CI build with push by digest
 
   manifests:
     name: Manifests
