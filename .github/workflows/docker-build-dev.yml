@@ -207,6 +207,8 @@ jobs:
         run: |
           set -euo pipefail
 
+
+
           targets="${{ steps.bake-targets.outputs.targets }}"
           echo ""
           echo "Targets (raw):"
@@ -219,12 +221,12 @@ jobs:
             --allow=fs.write=${DOCKER_TAR_DEST} \
             --allow=fs.write=${CACHE_DEST} \
             --allow=fs.read=${CACHE_CONTEXT} \
-            --metadata-file metadata-${{ matrix.arch_tag }}.json \
+            --metadata-file ${{ runner.temp }}/metadata.json \
             --load \
             --progress plain \
             "${target_list[@]}"
 
-          cat metadata-${{ matrix.arch_tag }}.json
+          cat metadata.json
 
       - name: Step 2.12 - Archive cache artifacts for upload
         shell: bash
@@ -236,6 +238,33 @@ jobs:
           tar -cvf ${{ matrix.arch_tag}}.tar ${{ matrix.arch_tag }}
           rm -rf ${{ matrix.arch_tag }}
           ls -al
+
+      - name: Export digests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          META="${{ runner.temp }}/metadata.json"
+          mkdir -p "${{ runner.temp }}/digests"
+
+          jq -er '
+            to_entries[]
+            | select(.value["containerimage.digest"]?)
+            | "\(.key) \(.value["containerimage.digest"])"
+          ' "$META" | while read -r target digest; do
+            mkdir -p "${{ runner.temp }}/digests/${target}"
+            touch "${{ runner.temp }}/digests/${target}/${digest#sha256:}"
+          done
+
+          ls -al ${{ runner.temp }}/digests/*/*
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch_tag }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
       # - name: Step 2.11 - Archive image artifacts for upload
       #   shell: bash
