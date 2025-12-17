@@ -656,13 +656,15 @@ impl ProviderLineupManager {
 
 
     fn log_allocation(allocation: &ProviderAllocation) {
-        if log_enabled!(log::Level::Debug) {
-            match allocation {
-                ProviderAllocation::Exhausted => {}
-                ProviderAllocation::Available(ref cfg) |
-                ProviderAllocation::GracePeriod(ref cfg) => {
-                    debug!("Using provider {}", cfg.name);
-                }
+        match allocation {
+            ProviderAllocation::Exhausted => {}
+            ProviderAllocation::Available(ref cfg) | ProviderAllocation::GracePeriod(ref cfg) => {
+                debug_if_enabled!(
+                    "Using provider {} (pool user: {})",
+                    sanitize_sensitive_info(&cfg.name),
+                    cfg.get_user_info()
+                        .map_or_else(|| "?".to_string(), |ui| sanitize_sensitive_info(&ui.username).to_string())
+                );
             }
         }
     }

@@ -365,26 +365,51 @@ async fn resolve_streaming_strategy(
                     let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
                     ProviderStreamState::Custom(stream)
                 }
-                ProviderAllocation::Available(ref provider)
-                | ProviderAllocation::GracePeriod(ref provider) => {
+                ProviderAllocation::Available(ref provider_cfg)
+                | ProviderAllocation::GracePeriod(ref provider_cfg) => {
+                    let allocation_kind = match allocation {
+                        ProviderAllocation::Available(_) => "available",
+                        ProviderAllocation::GracePeriod(_) => "grace_period",
+                        ProviderAllocation::Exhausted => "exhausted",
+                    };
+
                     // force_stream_provider means we keep the url and the provider.
                     // If force_stream_provider or the input is the same as the config we don't need to get new url
-                    let (provider, url) = if force_provider.is_some() || provider.id == input.id {
+                    let (selected_provider_name, url) = if force_provider.is_some() || provider_cfg.id == input.id {
                         (input.name.clone(), stream_url.to_string())
                     } else {
                         (
-                            provider.name.clone(),
-                            get_stream_alternative_url(stream_url, input, provider),
+                            provider_cfg.name.clone(),
+                            get_stream_alternative_url(stream_url, input, provider_cfg),
                         )
                     };
+
+                    if let Some(user_info) = provider_cfg.get_user_info() {
+                        debug_if_enabled!(
+                            "provider session: input={} provider_cfg={} user={} allocation={} stream_url={}",
+                            sanitize_sensitive_info(&input.name),
+                            sanitize_sensitive_info(&provider_cfg.name),
+                            sanitize_sensitive_info(&user_info.username),
+                            allocation_kind,
+                            sanitize_sensitive_info(&url)
+                        );
+                    } else {
+                        debug_if_enabled!(
+                            "provider session: input={} provider_cfg={} user=? allocation={} stream_url={}",
+                            sanitize_sensitive_info(&input.name),
+                            sanitize_sensitive_info(&provider_cfg.name),
+                            allocation_kind,
+                            sanitize_sensitive_info(&url)
+                        );
+                    }
 
                     match allocation {
                         ProviderAllocation::Exhausted => {
                             let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
                             ProviderStreamState::Custom(stream)
                         },
-                        ProviderAllocation::Available(_) => ProviderStreamState::Available(Some(provider), url),
-                        ProviderAllocation::GracePeriod(_) => ProviderStreamState::GracePeriod(Some(provider), url),
+                        ProviderAllocation::Available(_) => ProviderStreamState::Available(Some(selected_provider_name), url),
+                        ProviderAllocation::GracePeriod(_) => ProviderStreamState::GracePeriod(Some(selected_provider_name), url),
                     }
                 }
             }
