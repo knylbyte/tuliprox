@@ -207,8 +207,6 @@ jobs:
         run: |
           set -euo pipefail
 
-
-
           targets="${{ steps.bake-targets.outputs.targets }}"
           echo ""
           echo "Targets (raw):"
@@ -226,7 +224,7 @@ jobs:
             --progress plain \
             "${target_list[@]}"
 
-          cat metadata.json
+          cat ${{ runner.temp }}/metadata.json
 
       - name: Step 2.12 - Archive cache artifacts for upload
         shell: bash
@@ -307,195 +305,142 @@ jobs:
 
   ### TEST: CI build with push by digest
 
-  # manifests:
-  #   name: Manifests
-  #   needs:
-  #     - prebuilds
-  #     - build
-  #   env:
-  #     BUILD_ARTIFACTS_DEST: ${{ github.workspace }}/.ci-artifacts
-  #   runs-on: ubuntu-24.04
+  manifests:
+    name: Manifests
+    needs:
+      - prebuilds
+      - build
+    runs-on: ubuntu-24.04
 
-  #   steps:
-  #     - name: Set up Docker
-  #       uses: docker/setup-docker-action@v4
+    steps:
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v4
 
-  #     - name: GHCR Login
-  #       uses: docker/login-action@v3
-  #       with:
-  #         registry: ghcr.io
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
+      - name: GHCR Login
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-  #     - name: Download image artifacts
-  #       uses: actions/download-artifact@v5
-  #       with:
-  #         pattern: dev-images-*
-  #         path: ${{ env.BUILD_ARTIFACTS_DEST }}
-  #         merge-multiple: true
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
 
-      # - name: Extract build artefacts
-      #   shell: bash
-      #   working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
-      #   run: |
-      #     set -euo pipefail
-      #     shopt -s nullglob
+      - name: Create manifest and push (scratch-final)
+        working-directory: ${{ runner.temp }}/digests/scratch-final
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.build.outputs.version }}"
 
-      #     for tar_arch in *.tar; do
-      #       tar -xvf $tar_arch
-      #       rm -rf $tar_arch
-      #     done;
+          docker buildx imagetools create \
+            -t "${{ env.GHCR_NS }}:dev-slim" \
+            -t "${{ env.GHCR_NS }}:dev-slim-${VERSION}" \
+            $(printf '${{ env.GHCR_NS }}@sha256:%s ' *)
 
-      #     ls -al ./**
+          echo "Inspect: ${{ env.GHCR_NS }}:dev-slim"
+          docker buildx imagetools inspect "${{ env.GHCR_NS }}:dev-slim"
 
-      # - name: Load images
-      #   shell: bash
-      #   working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
-      #   run: |
-      #     set -euo pipefail
-      #     shopt -s nullglob
+          echo "Inspect: ${{ env.GHCR_NS }}:dev-slim-${VERSION}"
+          docker buildx imagetools inspect "${{ env.GHCR_NS }}:dev-slim-${VERSION}"
 
-      #     for archdir in ./*; do
-      #       [ -d "$archdir" ] || continue
-            
-      #       arch_tag=$(basename $archdir)
-      #       echo "::group::Loading images for ${arch_tag}"
-      #       ls -al .
+      - name: Create manifest and push (alpine-final)
+        working-directory: ${{ runner.temp }}/digests/alpine-final
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.build.outputs.version }}"
 
-      #       for img in "$archdir"/*.docker; do
-      #         [ -f "$img" ] || continue
+          docker buildx imagetools create \
+            -t "${{ env.GHCR_NS }}:dev" \
+            -t "${{ env.GHCR_NS }}:dev-${VERSION}" \
+            $(printf '${{ env.GHCR_NS }}@sha256:%s ' *)
 
-      #         ls -al $img
-      #         docker image load -i $img
-      #       done
-          
-      #     done
-      #     echo "::endgroup::"
+          echo "Inspect: ${{ env.GHCR_NS }}:dev"
+          docker buildx imagetools inspect "${{ env.GHCR_NS }}:dev"
 
-      #     docker image ls
+          echo "Inspect: ${{ env.GHCR_NS }}:dev-${VERSION}"
+          docker buildx imagetools inspect "${{ env.GHCR_NS }}:dev-${VERSION}"
 
-      # - name: Create and publish manifests
-      #   id: create
-      #   shell: bash
-      #   working-directory: ${{ env.BUILD_ARTIFACTS_DEST }}
-      #   env:
-      #     GHCR_NS: ${{ env.GHCR_NS }}
-      #     VERSION: ${{ needs.build.outputs.version }}
-      #   run: |
-      #     declare -a dev_images=()
-      #     declare -a dev_slim_images=()
-      #     declare -a manifest_summaries=()
+      - name: Create manifest and push (cache-export)
+        working-directory: ${{ runner.temp }}/digests/cache-export
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      #     create_or_replace_manifest() {
-      #       local ref="$1"
-      #       shift
-      #       local -a images=("$@")
+          docker buildx imagetools create \
+            -t "${{ env.GHCR_NS }}:cache" \
+            $(printf '${{ env.GHCR_NS }}@sha256:%s ' *)
 
-      #       if docker manifest inspect "$ref" >/dev/null 2>&1; then
-      #         docker manifest create --amend "$ref" "${images[@]}"
-      #       else
-      #         docker manifest create "$ref" "${images[@]}"
-      #       fi
+          echo "Inspect: ${{ env.GHCR_NS }}:cache"
+          docker buildx imagetools inspect "${{ env.GHCR_NS }}:cache"
 
-      #       docker manifest push "$ref"
-      #       build_summary_block "$ref"
-      #     }
+      - name: Summary (manifests)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      #     build_summary_block() {
-      #       local ref="$1"
-      #       local inspect_json
-      #       inspect_json="$(docker manifest inspect --verbose "$ref")"
+          STATUS="${{ job.status }}"
+          VERSION="${{ needs.build.outputs.version }}"
+          ROOT="${{ runner.temp }}/digests"
+          NS="${{ env.GHCR_NS }}"
 
-      #       local arches digest
-      #       arches="$(jq -r '
-      #         (.manifests // [])
-      #         | map(
-      #             (.platform.os // "linux")
-      #             + "/"
-      #             + (.platform.architecture // "unknown")
-      #             + (if (.platform.variant // "") != "" then "/" + .platform.variant else "")
-      #           )
-      #         | unique
-      #         | join(", ")
-      #       ' <<<"$inspect_json")"
+          count_digests() {
+            local dir="$1"
+            if [[ -d "$dir" ]]; then
+              # count only regular files
+              find "$dir" -maxdepth 1 -type f | wc -l | tr -d ' '
+            else
+              echo "0"
+            fi
+          }
 
-      #       digest="$(jq -r '.Descriptor.digest // empty' <<<"$inspect_json")"
+          SCRATCH_CNT="$(count_digests "${ROOT}/scratch-final")"
+          ALPINE_CNT="$(count_digests "${ROOT}/alpine-final")"
+          CACHE_CNT="$(count_digests "${ROOT}/cache-export")"
 
-      #       if [[ -z "$arches" ]]; then
-      #         arches="N/A"
-      #       fi
-      #       if [[ -z "$digest" ]]; then
-      #         digest="N/A"
-      #       fi
+          {
+            echo "## 📚 Multi-arch manifests"
+            echo ""
+            case "$STATUS" in
+              success)   echo "✅ All requested manifests were created." ;;
+              cancelled) echo "⚠️ Manifest creation was cancelled." ;;
+              *)         echo "❌ Manifest creation encountered an error." ;;
+            esac
+            echo ""
 
-      #       manifest_summaries+=("<Image> ${ref}"$'\n'"- Architectures: ${arches}"$'\n'"- Digest: ${digest}")
-      #     }
+            echo "### 🔖 Version"
+            if [[ -n "$VERSION" ]]; then
+              echo "- CHANGELOG version: **$VERSION**"
+            else
+              echo "- CHANGELOG version: *(unavailable)*"
+            fi
+            echo ""
 
-      #     for archdir in ./*; do
-      #       [ -d "$archdir" ] || continue
-      #       arch_tag=$(basename $archdir)
+            echo "### 🏷️ Final tags"
+            echo ""
+            echo "- **scratch-final** (${SCRATCH_CNT} digests)"
+            echo "  - \`${NS}:dev-slim\`"
+            if [[ -n "$VERSION" ]]; then
+              echo "  - \`${NS}:dev-slim-${VERSION}\`"
+            fi
+            echo ""
+            echo "- **alpine-final** (${ALPINE_CNT} digests)"
+            echo "  - \`${NS}:dev\`"
+            if [[ -n "$VERSION" ]]; then
+              echo "  - \`${NS}:dev-${VERSION}\`"
+            fi
+            echo ""
+            echo "- **cache-export** (${CACHE_CNT} digests)"
+            echo "  - \`${NS}:cache\`"
+            echo ""
 
-      #       for img in "$archdir"/*.docker; do
-      #         [ -f "$img" ] || continue
-      #         build_target=$(basename "$img")
-              
-      #         if [ "$build_target" == "scratch-final.docker" ]; then
-      #           dev_slim_images+=("${{ env.GHCR_NS }}:dev-slim-${{ env.VERSION }}-${arch_tag}")
-      #         fi;
-              
-      #         if [ "$build_target" == "alpine-final.docker" ]; then
-      #           dev_images+=("${{ env.GHCR_NS }}:dev-${{ env.VERSION }}-${arch_tag}")
-      #         fi;
-      #       done;
-      #     done;
+            echo "### 📦 Registry"
+            echo "- ghcr.io"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      #     if (( ${#dev_slim_images[@]} > 0 )); then 
-      #       create_or_replace_manifest "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev-slim" "${dev_slim_images[@]}"
-      #       create_or_replace_manifest "${{ env.GHCR_NS }}:dev-slim" "${dev_slim_images[@]}"
-      #     fi
-
-      #     if (( ${#dev_images[@]} > 0 )); then
-      #       create_or_replace_manifest "${{ env.GHCR_NS }}:${{ env.VERSION }}-dev" "${dev_images[@]}"
-      #       create_or_replace_manifest "${{ env.GHCR_NS }}:dev" "${dev_images[@]}"
-      #     fi
-
-      #     if (( ${#manifest_summaries[@]} > 0 )); then
-      #       {
-      #         echo 'manifest_summary<<EOF'
-      #         printf '%s\n\n' "${manifest_summaries[@]}"
-      #         echo 'EOF'
-      #       } >> "$GITHUB_OUTPUT"
-      #     fi
-
-      # - name: Summary (manifests)
-      #   if: always()
-      #   shell: bash
-      #   run: |
-      #     {
-      #       echo "## 📚 Multi-arch manifests"
-      #       echo ""
-      #       if [[ "${{ steps.create.outcome }}" == "success" ]]; then
-      #         echo "✅ All requested manifests were created."
-      #       else
-      #         echo "❌ Manifest creation encountered an error."
-      #       fi
-      #       echo ""
-      #       echo "### 🔖 Version"
-      #       if [[ -n "${{ needs.build.outputs.version }}" ]]; then
-      #         echo "- CHANGELOG version: **${{ needs.build.outputs.version }}**"
-      #       else
-      #         echo "- CHANGELOG version: *(unavailable)*"
-      #       fi
-      #       echo ""
-      #       echo "### 🏷️ Final tags"
-      #       echo ""
-      #       SUMMARY_OUTPUT='${{ steps.create.outputs.manifest_summary }}'
-      #       if [[ -n "$SUMMARY_OUTPUT" ]]; then
-      #         printf '%s\n' "$SUMMARY_OUTPUT"
-      #       else
-      #         echo "- *(no manifest information available)*"
-      #       fi
-      #       echo ""
-      #       echo "### 📦 Registry"
-      #       echo "- ghcr.io"
-      #     } >> "$GITHUB_STEP_SUMMARY"
