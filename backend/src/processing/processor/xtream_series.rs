@@ -7,7 +7,9 @@ use crate::processing::processor::xtream::normalize_json_content;
 use crate::processing::processor::xtream::{create_resolve_episode_wal_files, create_resolve_info_wal_files, playlist_resolve_download_playlist_item, read_processed_info_ids, should_update_info};
 use crate::processing::processor::{create_resolve_options_function_for_xtream_target, handle_error, handle_error_and_return};
 use crate::repository::storage::get_input_storage_path;
-use crate::repository::xtream_repository::{write_series_info_to_wal_file, xtream_get_info_file_paths, xtream_update_input_info_file, xtream_update_input_series_episodes_record_from_wal_file, xtream_update_input_series_record_from_wal_file};
+use crate::repository::xtream_repository::{write_series_info_to_wal_file, xtream_get_info_file_paths,
+                                           xtream_update_input_info_file, xtream_update_input_series_episodes_record_from_wal_file,
+                                           xtream_update_input_series_record_from_wal_file};
 use crate::repository::IndexedDocumentReader;
 use crate::utils;
 use crate::utils::{bincode_serialize, IO_BUFFER_SIZE};
@@ -53,7 +55,6 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
                                       fpl: &mut FetchedPlaylist<'_>, resolve_delay: u16) -> bool {
     // TODO read existing WAL File and import it to avoid duplicate requests
 
-
     let mut processed_info_ids: HashMap<u32, u64> = read_processed_series_info_ids(cfg, errors, fpl).await;
     let mut fetched_in_run: HashSet<u32> = HashSet::new();
     // we can't write to the indexed-document directly because of the write lock and time-consuming operation.
@@ -70,20 +71,21 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
     let series_info_count = fpl.playlistgroups.iter()
         .filter(|&plg| plg.xtream_cluster == XtreamCluster::Series)
         .flat_map(|plg| &plg.channels)
-        .filter(|&pli| matches!(pli.header.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo)).count();
-
+        .filter(|&pli| pli.header.item_type == PlaylistItemType::SeriesInfo).count();
 
     info!("Found {series_info_count} series info to resolve");
     let mut last_log_time = Instant::now();
     let mut processed_series_info_count = 0;
     let mut write_counter = 0usize;
 
+    // LocalSeriesInfo entries are not resolved!
+
     for plg in &mut fpl.playlistgroups {
         if plg.xtream_cluster != XtreamCluster::Series {
             continue;
         }
         for pli in &mut plg.channels {
-            if !matches!(pli.header.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo) {
+            if pli.header.item_type != PlaylistItemType::SeriesInfo {
                 continue;
             }
             let (should_update, provider_id, ts) = should_update_series_info(pli, &processed_info_ids);
@@ -178,10 +180,11 @@ async fn process_series_info(
     {
         let mut group_series = vec![];
 
+        // Resolve does not handle LocalSeriesInfo
         for pli in plg
             .channels
             .iter_mut()
-            .filter(|pli| matches!(pli.header.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo))
+            .filter(|pli| pli.header.item_type == PlaylistItemType::SeriesInfo)
         {
             let Some(provider_id) = pli.header.get_provider_id() else { continue; };
             let Ok(content) = info_reader.get(&provider_id)  else { continue; };

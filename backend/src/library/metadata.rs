@@ -4,24 +4,32 @@ use uuid::Uuid;
 /// Source of metadata information
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MetadataSource {
-    /// Metadata from Kodi NFO file
     #[default]
+    /// Metadata from TMDB API
+    Tmdb,
+    /// Metadata from Kodi NFO file
     KodiNfo,
     /// Metadata from Jellyfin/Emby metadata files
     JellyfinEmby,
     /// Metadata from Plex metadata files
     Plex,
-    /// Metadata from TMDB API
-    Tmdb,
     /// Metadata parsed from filename
     FilenameParsed,
     /// Manually entered metadata
     Manual,
 }
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalVideoMetadata {
+    pub name: String, //"Official Trailer",
+    pub key: String,
+    pub site: String, // "YouTube",
+    pub video_type: String, // "Trailer", "Teaser"
+    pub official: bool,
+}
+
 /// Movie metadata
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct MovieMetadata {
     pub title: String,
     // Original title (if different from title)
@@ -64,11 +72,11 @@ pub struct MovieMetadata {
     pub fanart: Option<String>,
     pub source: MetadataSource,
     pub last_updated: i64,
+    pub videos: Option<Vec<ExternalVideoMetadata>>,
 }
 
 /// Series/TV show metadata
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct SeriesMetadata {
     pub title: String,
     // Original title (if different)
@@ -133,7 +141,6 @@ pub struct EpisodeMetadata {
 
 /// Actor information
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Actor {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -144,7 +151,6 @@ pub struct Actor {
 
 /// Complete video metadata (either movie or series)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[serde(tag = "type")]
 pub enum MediaMetadata {
     #[serde(rename = "movie")]
@@ -214,7 +220,6 @@ impl MediaMetadata {
 
 /// Metadata cache entry that links a file to its metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct MetadataCacheEntry {
     pub uuid: String,
     pub file_path: String,

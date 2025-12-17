@@ -85,10 +85,12 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
     let mut record_writer = utils::async_file_writer(&mut wal_record_file);
     let mut content_updated = false;
 
+    // LocalVideo entries are not resolved!
+
     // TODO merge both filters to one
     let vod_info_count = fpl.playlistgroups.iter()
         .flat_map(|plg| &plg.channels)
-        .filter(|&pli| pli.header.xtream_cluster == XtreamCluster::Video).count();
+        .filter(|&pli| pli.header.xtream_cluster == XtreamCluster::Video &&  pli.header.item_type == PlaylistItemType::Video).count();
 
     info!("Found {vod_info_count} vod info to resolve");
     let mut last_log_time = Instant::now();
@@ -97,7 +99,8 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
 
     for plg in &mut fpl.playlistgroups {
         for pli in &mut plg.channels {
-            if pli.header.xtream_cluster != XtreamCluster::Video {
+            // LocalVideo files are not resolved
+            if pli.header.xtream_cluster != XtreamCluster::Video && pli.header.item_type != PlaylistItemType::Video {
                 continue;
             }
             let (should_update, provider_id, _ts) = should_update_vod_info(pli, &processed_info_ids);

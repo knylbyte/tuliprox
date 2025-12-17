@@ -27,8 +27,8 @@ impl LibraryProcessor {
     pub fn new(config: LibraryConfig, client: reqwest::Client) -> Self {
         let storage_path = std::path::PathBuf::from(&config.metadata.path);
         let scanner = LibraryScanner::new(config.clone());
-        let resolver = MetadataResolver::from_config(&config, client);
         let storage = MetadataStorage::new(storage_path);
+        let resolver = MetadataResolver::from_config(&config, client, storage.clone());
 
         Self {
             config,
@@ -157,7 +157,8 @@ impl LibraryProcessor {
     /// Writes metadata files (JSON, NFO) based on configuration
     async fn write_metadata_files(&self, entry: &MetadataCacheEntry) -> Result<(), std::io::Error> {
         // JSON is always written by storage.store()
-        // TODO should we remove json from formats ?
+
+        // TODO enrich nfo with al information, we are currently storing a subset, and rebuilding json from nfo ends in information loss!
         // Write NFO if enabled
         if self.config.metadata.formats.contains(&LibraryMetadataFormat::Nfo) {
             if let Err(e) = self.storage.write_nfo(entry).await {

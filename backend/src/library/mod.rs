@@ -7,6 +7,7 @@ mod metadata_storage;
 mod metadata_resolver;
 mod processor;
 mod metadata_iterator;
+mod tmdb;
 
 pub use scanner::*;
 pub use classifier::*;

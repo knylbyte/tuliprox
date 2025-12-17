@@ -136,16 +136,28 @@ impl MediaClassifier {
 
     /// Extracts show name from file path for series
     /// Removes season/episode patterns and cleans up the name
-    pub fn extract_show_name(file: &ScannedMediaFile) -> String {
+    pub fn extract_show_name(file: &ScannedMediaFile) -> (Option<Vec<MovieDbId>>, String) {
         let file_name = Path::new(&file.file_name)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or(&file.file_name);
 
+        let moviedb_ids: Vec<MovieDbId> = CONSTANTS.re_classifier_moviedb_id.captures_iter(file_name)
+            .filter_map(|caps| {
+                let id = caps[2].parse::<u32>().ok()?;
+                match &caps[1].to_lowercase()[..] {
+                    "tmdb" => Some(MovieDbId::Tmdb(id)),
+                    "tvdb" => Some(MovieDbId::Tvdb(id)),
+                    _ => None,
+                }
+            })
+            .collect();
+
+
         // Remove common series patterns
         let cleaned = CONSTANTS.re_classifier_cleanup.replace(file_name, "").trim().to_string();
         // Clean up remaining special characters
-        clear_filename(&cleaned)
+        ((!moviedb_ids.is_empty()).then_some(moviedb_ids), clear_filename(&cleaned))
     }
 
     /// Extracts movie title from file path

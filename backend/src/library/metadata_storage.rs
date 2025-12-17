@@ -6,19 +6,20 @@ use std::path::PathBuf;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-/// Metadata storage for local VOD files
-/// Stores metadata as JSON files with UUID-based filenames
+// Metadata storage for local VOD files
+// Stores metadata as JSON files with UUID-based filenames
+#[derive(Clone)]
 pub struct MetadataStorage {
     storage_dir: PathBuf,
 }
 
 impl MetadataStorage {
-    /// Creates a new metadata storage instance
+    // Creates a new metadata storage instance
     pub fn new(storage_dir: PathBuf) -> Self {
         Self { storage_dir }
     }
 
-    /// Initializes the storage directory
+    // Initializes the storage directory
     pub async fn initialize(&self) -> std::io::Result<()> {
         if !fs::try_exists(&self.storage_dir).await.unwrap_or(false) {
             info!("Creating metadata storage directory: {}", self.storage_dir.display());
@@ -27,7 +28,7 @@ impl MetadataStorage {
         Ok(())
     }
 
-    /// Stores metadata for a video file
+    // Stores metadata for a video file
     pub async fn store(&self, entry: &MetadataCacheEntry) -> std::io::Result<()> {
         let file_path = self.get_metadata_file_path(&entry.uuid);
 
@@ -43,7 +44,7 @@ impl MetadataStorage {
         Ok(())
     }
 
-    /// Loads metadata for a specific UUID
+    // Loads metadata for a specific UUID
     pub async fn load_by_uuid(&self, uuid: &str) -> Option<MetadataCacheEntry> {
         let file_path = self.get_metadata_file_path(uuid);
 
@@ -66,7 +67,7 @@ impl MetadataStorage {
         }
     }
 
-    /// Loads all metadata entries from storage
+    // Loads all metadata entries from storage
     pub async fn load_all(&self) -> Vec<MetadataCacheEntry> {
         let mut entries = Vec::new();
 
@@ -96,7 +97,7 @@ impl MetadataStorage {
         entries
     }
 
-    /// Deletes metadata for a specific UUID
+    // Deletes metadata for a specific UUID
     pub async fn delete_by_uuid(&self, uuid: &str) -> std::io::Result<()> {
         let file_path = self.get_metadata_file_path(uuid);
 
@@ -108,7 +109,7 @@ impl MetadataStorage {
         Ok(())
     }
 
-    /// Cleans up metadata for files that no longer exist
+    // Cleans up metadata for files that no longer exist
     pub async fn cleanup_orphaned(&self) -> std::io::Result<usize> {
         let entries = self.load_all().await;
         let mut deleted_count = 0;
@@ -131,7 +132,7 @@ impl MetadataStorage {
         Ok(deleted_count)
     }
 
-    /// Builds a map of file paths to UUIDs for quick lookups
+    // Builds a map of file paths to UUIDs for quick lookups
     pub async fn build_path_index(&self) -> HashMap<String, String> {
         let entries = self.load_all().await;
         entries
@@ -141,27 +142,53 @@ impl MetadataStorage {
     }
 
 
-    /// Gets the metadata file path for a UUID
+    // Gets the metadata file path for a UUID
     fn get_metadata_file_path(&self, uuid: &str) -> PathBuf {
         self.storage_dir.join(format!("{uuid}.json"))
     }
 
-    /// Writes an NFO file for the given metadata
+    // write raw tmdb movie info
+    pub async fn store_tmdb_movie_info(&self, movie_id: u32, content: &[u8]) -> std::io::Result<PathBuf> {
+        let file_path = self.get_metadata_file_path(&format!("tmdb_movie_{movie_id}"));
+        debug!("Storing raw tmdb movie metadata for {}", file_path.display());
+        self.store_file(content, file_path).await
+    }
+
+    // write raw tmdb series info
+    pub async fn store_tmdb_series_info(&self, series_id: u32, content: &[u8]) -> std::io::Result<PathBuf> {
+        let file_path = self.get_metadata_file_path(&format!("tmdb_series_{series_id}"));
+        debug!("Storing raw tmdb series metadata for {}", file_path.display());
+        self.store_file(content, file_path).await
+    }
+    
+    // write raw tmdb series season info
+    pub async fn store_tmdb_series_info_season(&self, series_id: u32, season: u32, content: &[u8]) -> std::io::Result<PathBuf> {
+        let file_path = self.get_metadata_file_path(&format!("tmdb_series_{series_id}_{season}"));
+        debug!("Storing raw tmdb series season metadata for {}", file_path.display());
+        self.store_file(content, file_path).await
+    }
+
+    async fn store_file(&self, content: &[u8], file_path: PathBuf) -> std::io::Result<PathBuf> {
+        let mut file = fs::File::create(&file_path).await?;
+        file.write_all(content).await?;
+        file.flush().await?;
+        Ok(file_path)
+    }
+
+    // Writes an NFO file for the given metadata
     pub async fn write_nfo(&self, entry: &MetadataCacheEntry) -> std::io::Result<()> {
         let nfo_content = Self::generate_nfo_content(&entry.metadata);
         let nfo_path = PathBuf::from(entry.file_path.clone()).with_extension("nfo");
 
         if !fs::try_exists(&nfo_path).await.unwrap_or(false) {
             debug!("Writing NFO file: {}", nfo_path.display());
-            let mut file = fs::File::create(&nfo_path).await?;
-            file.write_all(nfo_content.as_bytes()).await?;
-            file.flush().await?;
+            self.store_file(nfo_content.as_bytes(), nfo_path).await?;
         }
 
         Ok(())
     }
 
-    /// Generates NFO XML content from metadata
+    // Generates NFO XML content from metadata
     fn generate_nfo_content(metadata: &MediaMetadata) -> String {
         match metadata {
             MediaMetadata::Movie(movie) => {
@@ -259,7 +286,7 @@ impl MetadataStorage {
         }
     }
 
-    /// Escapes XML special characters
+    // Escapes XML special characters
     fn xml_escape(s: &str) -> String {
         s.replace('&', "&amp;")
             .replace('<', "&lt;")

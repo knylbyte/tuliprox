@@ -5,7 +5,7 @@ use crate::library::metadata::{MediaMetadata, MetadataSource, MovieMetadata, Ser
 use crate::library::nfo_reader::NfoReader;
 use crate::library::scanner::ScannedMediaFile;
 use crate::library::tmdb_client::TmdbClient;
-use crate::library::{MovieDbId, TMDB_API_KEY};
+use crate::library::{MetadataStorage, MovieDbId, TMDB_API_KEY};
 use crate::model::LibraryConfig;
 
 /// Metadata resolver that tries multiple sources to get video metadata
@@ -17,10 +17,10 @@ pub struct MetadataResolver {
 
 impl MetadataResolver {
     /// Creates a new metadata resolver from configuration
-    pub fn from_config(config: &LibraryConfig, client: reqwest::Client) -> Self {
+    pub fn from_config(config: &LibraryConfig, client: reqwest::Client, storage: MetadataStorage) -> Self {
         let tmdb_client = if config.metadata.tmdb.enabled {
             let api_key = config.metadata.tmdb.api_key.as_ref().map_or_else(|| TMDB_API_KEY.to_string(), ToString::to_string);
-            Some(TmdbClient::new(api_key, config.metadata.tmdb.rate_limit_ms, client))
+            Some(TmdbClient::new(api_key, config.metadata.tmdb.rate_limit_ms, client, storage))
         } else {
             None
         };
@@ -36,22 +36,28 @@ impl MetadataResolver {
     pub async fn resolve(&self, file: &ScannedMediaFile) -> Option<MediaMetadata> {
         debug!("Resolving metadata for: {}", file.file_path);
 
-        // Step 1: Try to read existing NFO file
-        if let Some(metadata) = NfoReader::read_metadata(&file.path).await {
-            info!("Found NFO metadata for: {}", file.file_path);
-            return Some(metadata);
-        }
-
-        // Step 2: Classify the file
+        // Step 1: Classify the file
         let classification = self.classifier.classify(file);
         debug!("Classified {} as: {classification:?}", file.file_path);
 
-        // Step 3: Try TMDB if enabled
+        // Step 2: Try TMDB if enabled
         if let Some(ref tmdb) = self.tmdb_client {
-            if let Some(metadata) = self.resolve_from_tmdb(file, &classification, tmdb).await {
-                info!("Found TMDB metadata for: {}", file.file_path);
-                return Some(metadata);
+            match self.resolve_from_tmdb(file, &classification, tmdb).await {
+                Ok(Some(metadata)) => {
+                    info!("Found TMDB metadata for: {}", file.file_path);
+                    return Some(metadata);
+                }
+                Ok(None) => {
+                    return None;
+                }
+                Err(_err) => {},
             }
+        }
+
+        // Step 3: Try to read existing NFO file
+        if let Some(metadata) = NfoReader::read_metadata(&file.path).await {
+            info!("Found NFO metadata for: {}", file.file_path);
+            return Some(metadata);
         }
 
         // Step 4: Fallback to filename parsing
@@ -70,7 +76,7 @@ impl MetadataResolver {
         file: &ScannedMediaFile,
         classification: &MediaClassification,
         tmdb: &TmdbClient,
-    ) -> Option<MediaMetadata> {
+    ) -> Result<Option<MediaMetadata>, String> {
         match classification {
             MediaClassification::Movie => {
                 let (moviedb_ids, title, year) = MediaClassifier::extract_movie_search_info(file);
@@ -78,7 +84,8 @@ impl MetadataResolver {
                 tmdb.search_movie(tmdb_id, &title, year).await
             }
             MediaClassification::Series { .. } => {
-                let show_name = MediaClassifier::extract_show_name(file);
+                let (seriesdb_id, show_name) = MediaClassifier::extract_show_name(file);
+                let tmdb_id = MovieDbId::get_tmdb_id(seriesdb_id.as_ref());
                 debug!("Searching TMDB for series: {show_name}");
                 // Try to extract year from parent directory if available
                 let year = file.path.parent()
@@ -95,7 +102,7 @@ impl MetadataResolver {
                                     .filter(|&y| (1900..=2100).contains(&y))
                             })
                     });
-                tmdb.search_series(&show_name, year).await
+                tmdb.search_series(tmdb_id, &show_name, year).await
             }
         }
     }
@@ -121,7 +128,7 @@ impl MetadataResolver {
                 })
             }
             MediaClassification::Series { season: _, episode: _ } => {
-                let show_name = MediaClassifier::extract_show_name(file);
+                let (_moviedb_id, show_name) = MediaClassifier::extract_show_name(file);
                 MediaMetadata::Series(SeriesMetadata {
                     title: show_name,
                     source: MetadataSource::FilenameParsed,
@@ -196,7 +203,7 @@ mod tests {
             .timeout(Duration::from_secs(30))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        let resolver = MetadataResolver::from_config(&config, client);
+        let resolver = MetadataResolver::from_config(&config, client, MetadataStorage::new(PathBuf::from("/tmp")));
         let file = create_test_file("The.Matrix.1999.1080p.mkv");
 
         let metadata = resolver.resolve(&file).await;
@@ -220,7 +227,7 @@ mod tests {
             .unwrap_or_else(|_| reqwest::Client::new());
         let mut config = create_test_config(false);
         config.metadata.fallback_to_filename = false;
-        let resolver = MetadataResolver::from_config(&config, client);
+        let resolver = MetadataResolver::from_config(&config, client, MetadataStorage::new(PathBuf::from("/tmp")));
         let file = create_test_file("Unknown.Movie.mkv");
 
         let metadata = resolver.resolve(&file).await;
