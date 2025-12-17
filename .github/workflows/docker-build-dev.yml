@@ -114,7 +114,10 @@ jobs:
 
     steps:
       - name: Delete huge unnecessary tools folder
-        run: rm -rf /opt/hostedtoolcache
+        run: |
+          df -h  
+          rm -rf /opt/hostedtoolcache
+          df -h
 
       - name: Checkout
         uses: actions/checkout@v5
