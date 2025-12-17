@@ -1,28 +1,18 @@
-# Preinstall all tools needed to speed up final image builds:
-# - Stage 1 (build precompiled .ts resources via ffmpeg)
-# - Stage 2 (native Rust binary; musl on amd64/arm64/armv7)
-# - Stage 3 (WASM via trunk + wasm-bindgen)
-# No OpenSSL dev packages are needed (the app uses rustls).
-# sccache is built with all upstream features enabled
-# (dist-client, redis, s3, memcached, gcs, azure, gha, webdav, oss) and vendored OpenSSL.
-# This avoids cross-compiling OpenSSL system libraries for the build-tools image.
-# The sccache cache dir is /var/cache/sccache.
-
 ############################################
 # Global args and versions
 ############################################
-ARG RUST_DISTRO=1.90.0-trixie \
-    TRUNK_VER=0.21.14 \
-    BINDGEN_VER=0.2.104 \
-    CARGO_CHEF_VER=0.1.73 \
-    SCCACHE_VER=0.11.0 \
-    ALPINE_VER=3.22.2 \
-    CARGO_HOME=/usr/local/cargo \
-    BUILDPLATFORM_TAG=latest
+ARG RUST_DISTRO=1.90.0-alpine3.22
+ARG TRUNK_VER=0.21.14
+ARG BINDGEN_VER=0.2.104
+ARG CARGO_CHEF_VER=0.1.73
+ARG SCCACHE_VER=0.11.0
+ARG ALPINE_VER=3.22.2
+
+ARG CARGO_HOME=/usr/local/cargo
+ARG BUILDPLATFORM_TAG=latest
 
 ############################################
 # Build stage to produce ffmpeg resources
-# -> contains prebuilt .ts files from .jpg
 ############################################
 FROM alpine:${ALPINE_VER} AS resources
 
@@ -30,125 +20,88 @@ RUN apk add --no-cache ffmpeg
 WORKDIR /src
 COPY resources ./resources
 
-# Combine ffmpeg commands into a single layer to reduce image size
 RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/channel_unavailable.ts && \
-  ffmpeg -loop 1 -i ./resources/user_connections_exhausted.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/user_connections_exhausted.ts && \
-  ffmpeg -loop 1 -i ./resources/provider_connections_exhausted.jpg -t 10 -r 1 -an \
-    -vf "scale=1920:1080" \
-    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-    ./resources/provider_connections_exhausted.ts && \
-   ffmpeg -loop 1 -i ./resources/user_account_expired.jpg -t 10 -r 1 -an \
-     -vf "scale=1920:1080" \
-     -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
-     ./resources/user_account_expired.ts
+      -vf "scale=1920:1080" \
+      -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
+      ./resources/channel_unavailable.ts && \
+    ffmpeg -loop 1 -i ./resources/user_connections_exhausted.jpg -t 10 -r 1 -an \
+      -vf "scale=1920:1080" \
+      -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
+      ./resources/user_connections_exhausted.ts && \
+    ffmpeg -loop 1 -i ./resources/provider_connections_exhausted.jpg -t 10 -r 1 -an \
+      -vf "scale=1920:1080" \
+      -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
+      ./resources/provider_connections_exhausted.ts && \
+    ffmpeg -loop 1 -i ./resources/user_account_expired.jpg -t 10 -r 1 -an \
+      -vf "scale=1920:1080" \
+      -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p \
+      ./resources/user_account_expired.ts
 
 ############################################
-# Builder runs on the BUILDPLATFORM (no QEMU)
-# -> builds the tool binaries (trunk/wasm-bindgen) for TARGETPLATFORM
+# Tool builder runs on TARGETPLATFORM (native, no cross toolchains)
+# -> builds trunk/wasm-bindgen/cargo-chef/sccache for that platform
 ############################################
-FROM --platform=$BUILDPLATFORM rust:${RUST_DISTRO} AS builder
+FROM --platform=$TARGETPLATFORM rust:${RUST_DISTRO} AS toolbuilder
 
-SHELL ["/bin/bash", "-e", "-u", "-x", "-o", "pipefail", "-c"]
+ARG BUILDPLATFORM_TAG
+ARG TARGETARCH
+ARG TARGETVARIANT
 
-ARG BUILDPLATFORM_TAG \
-    TARGETPLATFORM  \
-    TRUNK_VER \
-    BINDGEN_VER \
-    CARGO_CHEF_VER \
-    SCCACHE_VER \
-    CARGO_HOME
+ARG TRUNK_VER
+ARG BINDGEN_VER
+ARG CARGO_CHEF_VER
+ARG SCCACHE_VER
+ARG CARGO_HOME
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
-    DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=${CARGO_HOME} \
-    PATH=${CARGO_HOME}:$PATH \
-    SCCACHE_DIR=${CARGO_HOME}/sccache \
+    PATH=${CARGO_HOME}/bin:$PATH \
     SCCACHE_FEATURE_LIST=dist-client,redis,s3,memcached,gcs,azure,gha,webdav,oss,vendored-openssl
 
-# Map Docker TARGETPLATFORM -> Rust target triple for *tool binaries*.
-# Tools must run inside the final image for that platform (gnu is fine here).
-RUN case "$TARGETPLATFORM" in \
-      "linux/arm/v7")  echo armv7-unknown-linux-gnueabihf  > /rust-target ;; \
-      "linux/arm64")   echo aarch64-unknown-linux-gnu      > /rust-target ;; \
-      "linux/amd64")   echo x86_64-unknown-linux-gnu       > /rust-target ;; \
-      *) echo "Unsupported TARGETPLATFORM: $TARGETPLATFORM" && exit 1 ;; \
-    esac
-
-# Cross toolchains so we can produce tool binaries for the platform above
-RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATFORM_TAG},sharing=locked \
-    rm -f /etc/apt/apt.conf.d/docker-clean; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-      curl ca-certificates pkg-config make perl \
-      gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
-      gcc-aarch64-linux-gnu    binutils-aarch64-linux-gnu; \
-    case "$(cat /rust-target)" in \
-      armv7-unknown-linux-gnueabihf) \
-        apt-get install -y --no-install-recommends \
-          libc6-dev-armhf-cross linux-libc-dev-armhf-cross ;; \
-      aarch64-unknown-linux-gnu) \
-        apt-get install -y --no-install-recommends \
-          libc6-dev-arm64-cross linux-libc-dev-arm64-cross ;; \
-      *) : ;; \
-    esac
-
-# Targets required for tool builds
-RUN rustup target add wasm32-unknown-unknown $(cat /rust-target)
-
-# Linkers for cross tool builds
-ENV CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc \
-    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-
-# Speed up (tools are not perf-critical)
-ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=64 \
-    CARGO_PROFILE_RELEASE_LTO=off \
-    CARGO_PROFILE_RELEASE_DEBUG=false \
-    CARGO_PROFILE_RELEASE_OPT_LEVEL=2
-
-# Build trunk & wasm-bindgen for the platform-specific tool image
-RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG} \
-    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG} \
-    cargo install --locked trunk --version ${TRUNK_VER} \
-      --target "$(cat /rust-target)" --root /out; \
-    cargo install --locked wasm-bindgen-cli --version ${BINDGEN_VER} \
-      --target "$(cat /rust-target)" --root /out; \
-    cargo install --locked cargo-chef --version ${CARGO_CHEF_VER} \
-      --target "$(cat /rust-target)" --root /out; \
-    cargo install --locked sccache --no-default-features --features ${SCCACHE_FEATURE_LIST} \
-      --target "$(cat /rust-target)" \
-      --root /out \
-      --version ${SCCACHE_VER}
-
-# Strip (best-effort)
-RUN case "$(cat /rust-target)" in \
-      armv7-unknown-linux-gnueabihf)  arm-linux-gnueabihf-strip /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/sccache || true ;; \
-      aarch64-unknown-linux-gnu)      aarch64-linux-gnu-strip   /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/sccache || true ;; \
-      x86_64-unknown-linux-gnu)       strip                     /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/sccache || true ;; \
-    esac
-
-############################################
-# Final image runs on the TARGETPLATFORM
-# -> contains all build deps + rust targets for tuliprox app
-############################################
-FROM rust:${RUST_DISTRO}
+# Install build deps for cargo-install (no cross compilers needed on Alpine)
+RUN apk add --no-cache \
+      bash \
+      build-base \
+      pkgconf \
+      git \
+      perl \
+      ca-certificates
 
 SHELL ["/bin/bash", "-e", "-u", "-x", "-o", "pipefail", "-c"]
 
-ARG BUILDPLATFORM_TAG \
-    RUST_DISTRO \
-    TRUNK_VER \
-    BINDGEN_VER \
-    CARGO_CHEF_VER \
-    SCCACHE_VER \
-    CARGO_HOME \
-    SCCACHE_DIR
+# wasm target required for trunk builds (frontend)
+RUN rustup target add wasm32-unknown-unknown
+
+# Build toolchain binaries (native to the image arch; on Alpine this is musl-host)
+RUN --mount=type=cache,target=${CARGO_HOME}/registry,id=cargo-registry-${BUILDPLATFORM_TAG}-${TARGETARCH}${TARGETVARIANT},sharing=locked \
+    --mount=type=cache,target=${CARGO_HOME}/git,id=cargo-git-${BUILDPLATFORM_TAG}-${TARGETARCH}${TARGETVARIANT},sharing=locked \
+    cargo install --locked trunk --version ${TRUNK_VER} --root /out && \
+    cargo install --locked wasm-bindgen-cli --version ${BINDGEN_VER} --root /out && \
+    cargo install --locked cargo-chef --version ${CARGO_CHEF_VER} --root /out && \
+    cargo install --locked sccache \
+      --no-default-features --features ${SCCACHE_FEATURE_LIST} \
+      --version ${SCCACHE_VER} \
+      --root /out
+
+# Strip (best-effort)
+RUN strip /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/sccache || true
+
+############################################
+# Final image runs on TARGETPLATFORM
+# -> contains all build deps + rust targets for tuliprox app
+############################################
+FROM --platform=$TARGETPLATFORM rust:${RUST_DISTRO}
+
+ARG BUILDPLATFORM_TAG
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+ARG RUST_DISTRO
+ARG TRUNK_VER
+ARG BINDGEN_VER
+ARG CARGO_CHEF_VER
+ARG SCCACHE_VER
+ARG CARGO_HOME
 
 LABEL io.tuliprox.rust.version="${RUST_DISTRO%%-*}" \
       io.tuliprox.trunk.version="${TRUNK_VER}" \
@@ -157,69 +110,53 @@ LABEL io.tuliprox.rust.version="${RUST_DISTRO%%-*}" \
       io.tuliprox.sccache.version="${SCCACHE_VER}"
 
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
-    DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=${CARGO_HOME} \
     RUSTUP_HOME=/usr/local/rustup \
-    PATH=${CARGO_HOME}:$PATH \
-    SCCACHE_DIR=${CARGO_HOME}/sccache \
+    PATH=${CARGO_HOME}/bin:$PATH \
+    SCCACHE_DIR=/var/cache/sccache \
     RUSTC_WRAPPER=${CARGO_HOME}/bin/sccache
 
-RUN mkdir -p \
-  ${SCCACHE_DIR} \
-  ${CARGO_HOME} \
-  ${RUSTUP_HOME}
+# System deps for building tuliprox (native + wasm)
+# - build-base: compiler toolchain (musl host)
+# - clang20-dev: libclang for bindgen use-cases
+# - binaryen: wasm-opt
+# - mold: fast linker (optional; you can enable via RUSTFLAGS outside)
+RUN apk add --no-cache \
+      bash \
+      build-base \
+      pkgconf \
+      git \
+      curl \
+      ca-certificates \
+      clang20-dev \
+      binaryen \
+      mold
 
-# System deps for both stages of the app:
-# - Stage 1 (native binary): musl-tools (for musl static builds)
-# - Stage 2 (WASM): libclang-dev, binaryen
-# Keep it lean; no OpenSSL dev packages (we use rustls). <- not yet implemented
-RUN --mount=type=cache,target=/var/cache/apt,id=var-cache-apt-${BUILDPLATFORM_TAG},sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,id=var-lib-apt-${BUILDPLATFORM_TAG},sharing=locked \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-      pkg-config musl-tools mold \
-      curl ca-certificates \
-      libclang-dev binaryen \
-      libssl-dev
+RUN mkdir -p "${SCCACHE_DIR}"
 
-# Add rust targets used by the application:
-# - wasm32 (frontend)
-# - musl on amd64/arm64/armv7 (static)
-RUN rustup target add \
-      wasm32-unknown-unknown \
-      x86_64-unknown-linux-musl \
-      aarch64-unknown-linux-musl \
-      armv7-unknown-linux-musleabihf
+# wasm target for frontend builds
+RUN rustup target add wasm32-unknown-unknown
 
-# Tell cargo which C compiler/linker to use for musl targets
-# (when building *inside* the platform-native tool image)
-ENV CC_x86_64_unknown_linux_musl=musl-gcc \
-    CC_aarch64_unknown_linux_musl=musl-gcc \
-    CC_armv7_unknown_linux_musleabihf=musl-gcc \
-    CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-    CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=musl-gcc
-
-# Ship tool binaries built in the builder stage
-COPY --from=builder /out/bin/trunk /usr/local/cargo/bin/trunk
-COPY --from=builder /out/bin/wasm-bindgen /usr/local/cargo/bin/wasm-bindgen
-COPY --from=builder /out/bin/cargo-chef /usr/local/cargo/bin/cargo-chef
-COPY --from=builder /out/bin/sccache /usr/local/cargo/bin/sccache
+# Ship tool binaries built in toolbuilder stage
+COPY --from=toolbuilder /out/bin/trunk        ${CARGO_HOME}/bin/trunk
+COPY --from=toolbuilder /out/bin/wasm-bindgen ${CARGO_HOME}/bin/wasm-bindgen
+COPY --from=toolbuilder /out/bin/cargo-chef   ${CARGO_HOME}/bin/cargo-chef
+COPY --from=toolbuilder /out/bin/sccache      ${CARGO_HOME}/bin/sccache
 
 # Copy precompiled .ts resources from resources stage
 COPY --from=resources /src/resources /src/resources
 
-# Quick sanity
-RUN chmod +x  /usr/local/cargo/bin/trunk \
-              /usr/local/cargo/bin/wasm-bindgen \
-              /usr/local/cargo/bin/cargo-chef \
-              /usr/local/cargo/bin/sccache
+RUN chmod +x ${CARGO_HOME}/bin/trunk \
+              ${CARGO_HOME}/bin/wasm-bindgen \
+              ${CARGO_HOME}/bin/cargo-chef \
+              ${CARGO_HOME}/bin/sccache
 
 RUN trunk --version \
  && wasm-bindgen --version \
  && cargo-chef --version \
  && sccache --version \
- && mold --version
+ && mold --version \
+ && wasm-opt --version
 
 
 # note: package translation 
