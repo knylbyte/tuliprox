@@ -1,7 +1,7 @@
 use crate::api::model::AppState;
 use crate::model::{ConfigInput, is_input_expired};
 use crate::utils::debug_if_enabled;
-use crate::utils::{get_csv_file_path, read_sources_file};
+use crate::utils::{format_sources_yaml_panel_api_query_params_flow_style, get_csv_file_path, read_sources_file};
 use log::{debug, error, warn};
 use serde_json::Value;
 use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
@@ -391,6 +391,7 @@ async fn patch_source_yml_add_alias(
 
     let serialized = serde_yaml::to_string(&doc)
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
+    let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
     tokio::fs::write(source_file_path, serialized)
         .await
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
@@ -438,6 +439,7 @@ async fn patch_source_yml_update_exp_date(
             }
             let serialized = serde_yaml::to_string(&doc)
                 .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
+            let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
             tokio::fs::write(source_file_path, serialized)
                 .await
                 .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
