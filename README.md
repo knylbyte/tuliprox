@@ -694,6 +694,7 @@ Each input has the following attributes:
 - `method` can be `GET` or `POST`
 - `username` only mandatory for type `xtream`
 - `password` only mandatory for type `xtream`
+- `panel_api` _optional_ for provider panel api operations
 - `exp_date` optional, i a date as "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12` or Unix timestamp (seconds since epoch)
 - `options` is optional,
   + `xtream_skip_live` true or false, live section can be skipped.
@@ -826,7 +827,7 @@ Input alias definition for same provider with same content but different credent
   - name: test
 ```
 
-#### `panel_api` (optional)
+#### `panel_api`
 If provider connections are exhausted, tuliprox can optionally call a provider panel API to:
 - renew expired accounts first (based on `exp_date`)
 - otherwise create a new alias account and persist it
@@ -834,14 +835,12 @@ If provider connections are exhausted, tuliprox can optionally call a provider p
 The API is configured generically via predefined query parameters; only `type: m3u` is supported.
 Use the literal value `auto` to fill sensitive values at runtime:
 - `api_key: auto` is replaced by `panel_api.api_key`
-- in `renew_client`, `username: auto` / `password: auto` are replaced by the account being renewed
-
-`new_client` must not include a `user` query parameter; tuliprox expects the response to contain `username`/`password` or a `url` that contains them as query parameters.
-
-`panel_info` is used as a healthcheck and must return JSON with truthy `status` and `credits > 0`, e.g.:
-```json
-[{"status":"true","credits":"20","enabled":"1"}]
-```
+- in `client_renew`, `username: auto` / `password: auto` are replaced by the account being renewed
+- `panel_info` is used as a healthcheck and must return JSON with truthy `status` and `credits > 0`, e.g.:
+  ```json
+  [{"status":"true","credits":"20","enabled":"1"}]
+  ```
+For `client_new`, the Panel API call would look like this in the example shown: `https://panel.example.tld/api.php?action=new&type=m3u&sub=1&api_key=1234567890` 
 
 Example:
 ```yaml
@@ -854,17 +853,22 @@ Example:
     password: secret1
     panel_api:
       url: 'https://panel.example.tld/api.php'
-      api_key: '${env:PANEL_API_KEY}'
+      api_key: '1234567890'
       query_parameter:
         panel_info:
           - { key: action, value: reseller_info }
           - { key: api_key, value: auto }
-        new_client:
+        client_info:
+          - { key: action, value: device_info }
+          - { key: username, value: auto }
+          - { key: password, value: auto }
+          - { key: api_key, value: auto }
+        client_new:
           - { key: action, value: new }
           - { key: type, value: m3u }
           - { key: sub, value: '1' }
           - { key: api_key, value: auto }
-        renew_client:
+        client_renew:
           - { key: action, value: renew }
           - { key: type, value: m3u }
           - { key: username, value: auto }
