@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn test_sources_yaml_panel_api_query_params_flow_style() {
-        let input = r#"sources:
+        let input = r"sources:
 - inputs:
   - name: demo
     panel_api:
@@ -485,7 +485,7 @@ mod tests {
         client_new:
         - key: type
           value: m3u
-"#;
+";
         let out = format_sources_yaml_panel_api_query_params_flow_style(input);
         assert!(out.contains("- { key: api_key, value: auto }"));
         assert!(out.contains("- { key: sub, value: '1' }"));

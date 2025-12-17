@@ -28,6 +28,19 @@ fn parse_boolish(value: &Value) -> bool {
     }
 }
 
+fn is_date_only_yyyy_mm_dd(value: &str) -> bool {
+    let value = value.trim();
+    if value.len() != 10 {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes[0..4].iter().all(u8::is_ascii_digit)
+        && bytes[5..7].iter().all(u8::is_ascii_digit)
+        && bytes[8..10].iter().all(u8::is_ascii_digit)
+}
+
 fn first_json_object(value: &Value) -> Option<&serde_json::Map<String, Value>> {
     match value {
         Value::Array(arr) => arr.first().and_then(|v| v.as_object()),
@@ -276,8 +289,19 @@ async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfigDto, userna
     if !status_ok {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_info status=false");
     }
-    let expire = obj.get("expire").and_then(|v| v.as_str()).unwrap_or_default();
-    Ok(parse_timestamp(expire).ok().flatten())
+    let expire = obj.get("expire").and_then(|v| v.as_str()).unwrap_or_default().trim();
+    let parsed = parse_timestamp(expire).ok().flatten();
+    if parsed.is_some() {
+        return Ok(parsed);
+    }
+
+    // Some panels return only a date ("YYYY-MM-DD") without time. Normalize to midnight.
+    if is_date_only_yyyy_mm_dd(expire) {
+        let normalized = format!("{expire} 00:00:00");
+        return Ok(parse_timestamp(&normalized).ok().flatten());
+    }
+
+    Ok(None)
 }
 
 fn extract_account_creds_from_input(input: &ConfigInput) -> Option<(String, String)> {
