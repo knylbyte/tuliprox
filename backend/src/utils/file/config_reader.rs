@@ -333,6 +333,10 @@ pub async fn save_main_config(file_path: &str, backup_dir: &str, config: &Config
     write_config_file(file_path, backup_dir, config, "config.yml").await
 }
 
+pub async fn save_sources_config(file_path: &str, backup_dir: &str, config: &SourcesConfigDto) -> Result<(), TuliproxError> {
+    write_config_file(file_path, backup_dir, config, "source.yml").await
+}
+
 pub fn resolve_env_var(value: &str) -> String {
     if value.is_empty() {
         return String::new();

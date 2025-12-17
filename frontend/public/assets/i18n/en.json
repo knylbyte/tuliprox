@@ -330,6 +330,7 @@
     "EXPORT_STYLE": "Export Style",
     "STRM_PROPS": "Properties",
     "ADD_PROPERTY": "Add Property",
+    "API_KEY": "API-Key",
     "TRAKT_API_KEY":  "API-Key",
     "TRAKT_API_VERSION":  "API-Version",
     "TRAKT_API_URL":  "API-URL",
@@ -344,6 +345,14 @@
     "API_CONFIGURATION" : "API Configuration",
     "HEADER_NAME": "Header Name",
     "HEADER_VALUE": "Header Value",
+    "PANEL": "Panel",
+    "PANEL_CLIENT_INFO": "Client info",
+    "PANEL_CLIENT_NEW": "Client new",
+    "PANEL_CLIENT_RENEW": "Client renew",
+    "PANEL_STATUS_READY": "Ready",
+    "PANEL_STATUS_INVALID": "Invalid",
+    "PANEL_STATUS_DISABLED": "Disabled",
+    "VALIDATION": "Validation",
     "TEMPLATES": "Templates"
   },
   "TITLE": {
@@ -387,6 +396,10 @@
       "MAIN_CONFIG": {
         "SUCCESS": "Main config saved!",
         "FAIL": "Failed to save the main config!"
+      },
+      "SOURCES_CONFIG": {
+        "SUCCESS": "Sources config saved!",
+        "FAIL": "Failed to save the sources config!"
       },
       "BOUQUET": {
         "SUCCESS": "Successfully saved bouquet",
@@ -446,6 +459,10 @@
       },
       "WEB_UI": {
         "PATH": "Configuration of a path prefix, allowing it to be accessed behind a reverse proxy under a custom subpath. like https://yourdomain.com/tuliprox"
+      },
+      "PANEL": {
+        "INFO": "Configure provisioning via a generic provider panel API per input. Use query param value 'auto' for api_key and credentials where required.",
+        "ENABLE": "Enable panel API for this input to configure provisioning."
       }
     }
   },
