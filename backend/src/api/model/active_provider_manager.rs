@@ -69,10 +69,10 @@ impl ActiveProviderManager {
         (grace_period_millis, grace_period_timeout_secs)
     }
 
-    pub async fn update_config(&self, cfg: &AppConfig) {
+    pub fn update_config(&self, cfg: &AppConfig) {
         let (grace_period_millis, grace_period_timeout_secs) = Self::get_grace_options(cfg);
         let inputs = Self::get_config_inputs(cfg);
-        self.providers.update_config(inputs, grace_period_millis, grace_period_timeout_secs).await;
+        self.providers.update_config(inputs, grace_period_millis, grace_period_timeout_secs);
     }
 
     async fn acquire_connection_inner(

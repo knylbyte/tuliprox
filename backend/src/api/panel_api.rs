@@ -702,7 +702,7 @@ async fn try_renew_expired_account(
                     }
                 }
 
-                if let Err(err) = reload_sources(app_state).await {
+                if let Err(err) = reload_sources(app_state) {
                     debug_if_enabled!("panel_api reload sources failed: {}", err);
                 }
                 return true;
@@ -778,7 +778,7 @@ async fn try_create_new_account(
                 }
             }
 
-            if let Err(err) = reload_sources(app_state).await {
+            if let Err(err) = reload_sources(app_state) {
                 error!("panel_api reload sources failed: {err}");
                 return false;
             }
@@ -918,18 +918,18 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
     }
 
     if any_change {
-        if let Err(err) = reload_sources(app_state).await {
+        if let Err(err) = reload_sources(app_state) {
             debug_if_enabled!("panel_api boot sync reload sources failed: {}", err);
         }
     }
 }
 
-async fn reload_sources(app_state: &AppState) -> Result<(), TuliproxError> {
+fn reload_sources(app_state: &AppState) -> Result<(), TuliproxError> {
     let paths = app_state.app_config.paths.load();
     let sources_file = paths.sources_file_path.as_str();
     let dto = read_sources_file(sources_file, true, true, None)?;
     let sources = crate::model::SourcesConfig::try_from(&dto)?;
     app_state.app_config.set_sources(sources)?;
-    app_state.active_provider.update_config(&app_state.app_config).await;
+    app_state.active_provider.update_config(&app_state.app_config);
     Ok(())
 }

@@ -45,7 +45,7 @@ pub struct ProviderConfig {
     max_connections: usize,
     priority: i16,
     exp_date: Option<i64>,
-    connection: RwLock<ProviderConfigConnection>,
+    connection: Arc<RwLock<ProviderConfigConnection>>,
     on_connection_change: ProviderConnectionChangeCallback,
 }
 
@@ -101,10 +101,7 @@ macro_rules! modify_connections {
 }
 
 impl ProviderConfig {
-    pub fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>, on_connection_change: ProviderConnectionChangeCallback) -> Self
-    where
-        F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
-    {
+    pub fn new(cfg: &ConfigInput, connection: Arc<RwLock<ProviderConfigConnection>>, on_connection_change: ProviderConnectionChangeCallback) -> Self {
         let panel_api_enabled = cfg.panel_api.is_some();
         let effective_max_connections = if panel_api_enabled && cfg.max_connections == 0 {
             debug_if_enabled!(
@@ -125,15 +122,17 @@ impl ProviderConfig {
             max_connections: effective_max_connections,
             priority: cfg.priority,
             exp_date: cfg.exp_date,
-            connection: RwLock::new(get_connection.and_then(|f| f(cfg.name.as_str())).map_or_else(Default::default, Clone::clone)),
+            connection,
             on_connection_change
         }
     }
 
-    pub fn new_alias<'a, F>(cfg: &ConfigInput, alias: &ConfigInputAlias, get_connection: Option<F>, on_connection_change: ProviderConnectionChangeCallback) -> Self
-    where
-        F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
-    {
+    pub fn new_alias(
+        cfg: &ConfigInput,
+        alias: &ConfigInputAlias,
+        connection: Arc<RwLock<ProviderConfigConnection>>,
+        on_connection_change: ProviderConnectionChangeCallback,
+    ) -> Self {
         let panel_api_enabled = cfg.panel_api.is_some();
         let effective_max_connections = if panel_api_enabled && alias.max_connections == 0 {
             debug_if_enabled!(
@@ -154,7 +153,7 @@ impl ProviderConfig {
             max_connections: effective_max_connections,
             priority: alias.priority,
             exp_date: alias.exp_date,
-            connection: RwLock::new(get_connection.and_then(|f| f(alias.name.as_str())).map_or_else(Default::default, Clone::clone)),
+            connection,
             on_connection_change,
         }
     }
@@ -363,15 +362,6 @@ impl ProviderConfigWrapper {
             return Some(Arc::clone(&self.inner));
         }
         None
-    }
-
-    pub async fn get_connection_info(&self) -> ProviderConfigConnection {
-        let guard = self.inner.connection.read().await;
-        ProviderConfigConnection {
-            current_connections: guard.current_connections,
-            granted_grace: guard.granted_grace,
-            grace_ts: guard.grace_ts,
-        }
     }
 }
 impl Deref for ProviderConfigWrapper {

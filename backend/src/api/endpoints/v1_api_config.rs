@@ -77,7 +77,7 @@ async fn save_config_sources(
             if let Err(err) = app_state.app_config.set_sources(src) {
                 return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
             }
-            app_state.active_provider.update_config(&app_state.app_config).await;
+            app_state.active_provider.update_config(&app_state.app_config);
             axum::http::StatusCode::OK.into_response()
         }
         Err(err) => (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": err.to_string()}))).into_response(),
