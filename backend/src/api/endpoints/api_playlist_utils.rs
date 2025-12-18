@@ -110,7 +110,7 @@ async fn grouped_channels(
     xtream_repository::iter_raw_xtream_playlist(cfg, target, cluster).await
         .map(|(_guard, iter)| group_playlist_items::<CommonPlaylistItem>(
             cluster,
-            iter.map(|(v, _)| v.to_common()),
+            iter.filter(|(item, _)| item.item_type != PlaylistItemType::LocalSeries).map(|(v, _)| v.to_common()),
             |item| item.group.clone(),
         ))
 }

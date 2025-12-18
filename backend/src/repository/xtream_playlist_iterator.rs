@@ -9,12 +9,13 @@ use log::error;
 use serde_json::Value;
 use shared::error::info_err;
 use shared::error::TuliproxError;
-use shared::model::{TargetType, XtreamCluster, XtreamPlaylistItem};
+use shared::model::{PlaylistItemType, TargetType, XtreamCluster, XtreamPlaylistItem};
 use std::collections::HashSet;
 
 pub struct XtreamPlaylistIterator {
     reader: IndexedDocumentIterator<u32, XtreamPlaylistItem>,
     options: XtreamMappingOptions,
+    cluster: XtreamCluster,
     // Use parsed numeric filter to avoid per-item String allocations (no to_string per check)
     filter_ids: Option<HashSet<u32>>,
     base_url: String,
@@ -63,6 +64,7 @@ impl XtreamPlaylistIterator {
             Ok(Self {
                 reader,
                 options,
+                cluster,
                 filter_ids,
                 _file_lock: file_lock,
                 base_url: server_info.get_base_url(),
@@ -74,21 +76,47 @@ impl XtreamPlaylistIterator {
         }
     }
 
+    fn matches_filters(cluster: XtreamCluster, filter_ids: Option<&HashSet<u32>>, item: &XtreamPlaylistItem) -> bool {
+
+        if cluster == XtreamCluster::Series {
+            if !matches!(item.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo) {
+                return false;
+            }
+        }
+
+        // category_id-Filter
+        if let Some(set) = filter_ids {
+            if !set.contains(&item.category_id) {
+                return false;
+            }
+        }
+
+        true
+    }
+
     fn get_next(&mut self) -> Option<(XtreamPlaylistItem, bool)> {
         if self.reader.has_error() {
             error!("Could not deserialize xtream item: {}", self.reader.get_path().display());
             return None;
         }
-        if let Some(set) = &self.filter_ids {
+
+        let filter_ids = self.filter_ids.as_ref();
+        let cluster = self.cluster;
+
+        let predicate = |(item, _): &(XtreamPlaylistItem, bool)| {
+            Self::matches_filters(cluster, filter_ids, item)
+        };
+
+        if self.cluster == XtreamCluster::Series || self.filter_ids.is_some() {
             if let Some((current_item, _)) = self.lookup_item.take() {
-                let next_valid = self.reader.find(|(pli, _)| set.contains(&pli.category_id));
+                let next_valid = self.reader.find(predicate);
                 self.lookup_item = next_valid;
                 let has_next = self.lookup_item.is_some();
                 Some((current_item, has_next))
             } else {
-                let current_item = self.reader.find(|(item, _)| set.contains(&item.category_id));
+                let current_item = self.reader.find(predicate);
                 if let Some((item, _)) = current_item {
-                    self.lookup_item = self.reader.find(|(item, _)| set.contains(&item.category_id));
+                    self.lookup_item = self.reader.find(predicate);
                     let has_next = self.lookup_item.is_some();
                     Some((item, has_next))
                 } else {

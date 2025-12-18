@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use crate::library::ScannedMediaFile;
+use crate::library::tmdb::{TmdbCredits, TmdbNetwork, TmdbSeriesInfoEpisodeDetails};
 
 // Source of metadata information
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +102,10 @@ pub struct SeriesMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub genres: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub directors: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub writers: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub actors: Option<Vec<Actor>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub studios: Option<Vec<String>>,
@@ -112,8 +117,12 @@ pub struct SeriesMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub seasons: Option<Vec<SeasonMetadata>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub episodes: Option<Vec<EpisodeMetadata>>,
     pub source: MetadataSource,
+    pub number_of_episodes: u32,
+    pub number_of_seasons: u32,
     // Last updated timestamp (Unix epoch)
     pub last_updated: i64,
     pub videos: Option<Vec<VideoClipMetadata>>
@@ -122,6 +131,8 @@ pub struct SeriesMetadata {
 // Episode metadata for TV series
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpisodeMetadata {
+    pub id: u32,
+    pub tmdb_id: u32,
     pub title: String,
     pub season: u32,
     pub episode: u32,
@@ -140,6 +151,26 @@ pub struct EpisodeMetadata {
     pub file_path: String,
     pub file_size: u64,
     pub file_modified: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeasonMetadata {
+    pub id: u32,
+    pub air_date: Option<String>,
+    #[serde(default)]
+    pub episode_count: u32,
+    #[serde(default)]
+    pub name: String,
+    pub overview: Option<String>,
+    pub poster_path: Option<String>,
+    #[serde(default)]
+    pub(crate) season_number: u32,
+    #[serde(default)]
+    pub vote_average: f64,
+
+    pub episodes: Option<Vec<TmdbSeriesInfoEpisodeDetails>>,
+    pub networks: Option<Vec<TmdbNetwork>>,
+    pub credits: Option<TmdbCredits>,
 }
 
 // Actor information

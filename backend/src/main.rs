@@ -148,7 +148,6 @@ fn print_info(app_config: &AppConfig) {
     info!("Config file: {:?}", &paths.config_file_path);
     info!("Source file: {:?}", &paths.sources_file_path);
     info!("Api Proxy File: {:?}", &paths.api_proxy_file_path);
-    info!("Library File: {:?}", &paths.library_file_path);
     info!("Mapping file: {:?}", &paths.mapping_file_path.as_ref().map_or_else(|| "not used",  |v| v.as_str()));
 
     if let Some(cache) = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
@@ -167,7 +166,6 @@ fn get_file_paths(args: &Args) -> ConfigPaths {
     let api_proxy_file = resolve_env_var(&args.api_proxy.as_ref().map_or_else(|| utils::get_default_api_proxy_config_path(config_path.as_str()), ToString::to_string));
     let sources_file: String = resolve_env_var(&args.source_file.as_ref().map_or_else(|| utils::get_default_sources_file_path(&config_path), ToString::to_string));
     let mappings_file = args.mapping_file.as_ref().map(|p| resolve_env_var(p));
-    let library_file = resolve_env_var(&utils::get_default_library_file_path(config_path.as_str()));
 
     ConfigPaths {
         config_path,
@@ -175,7 +173,6 @@ fn get_file_paths(args: &Args) -> ConfigPaths {
         sources_file_path: sources_file,
         mapping_file_path: mappings_file, // need to be set after config read
         api_proxy_file_path: api_proxy_file,
-        library_file_path: library_file,
         custom_stream_response_path: None,
     }
 }

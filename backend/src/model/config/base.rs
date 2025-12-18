@@ -79,6 +79,16 @@ impl Config {
             webui.prepare(config_path)?;
         }
 
+        if let Some(library) = self.library.as_mut() {
+            for dir in &mut library.scan_directories {
+                if let Ok(path_buf) = PathBuf::from(&dir.path).canonicalize() {
+                    if let Some(path) = path_buf.to_str() {
+                        dir.path = path.to_string();
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 

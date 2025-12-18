@@ -334,7 +334,6 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
                 let (mut playlistgroups, mut error_list) = playlist_download_from_input(client, &app_config, input).await;
                 let (tvguide, mut tvguide_errors) = if error_list.is_empty() {
                     let working_dir = &app_config.config.load().working_dir;
-
                     epg::get_xmltv(client, input, working_dir).await
                 } else {
                     (None, vec![])

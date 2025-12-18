@@ -111,6 +111,9 @@ async fn write_playlists_to_file(
     collections: Vec<(XtreamCluster, &[&mut PlaylistItem])>,
 ) -> Result<(), TuliproxError> {
     for (cluster, playlist) in collections {
+        if playlist.is_empty() {
+            continue;
+        }
         let (xtream_path, idx_path) = xtream_get_file_paths(storage_path, cluster);
         {
             let _file_lock = cfg.file_locks.write_lock(&xtream_path).await;
@@ -214,6 +217,13 @@ async fn xtream_garbage_collect(config: &AppConfig, target_name: &str) -> std::i
     Ok(())
 }
 
+#[derive(Serialize)]
+struct CategoryEntry {
+    category_id: u32,
+    category_name: String,
+    parent_id: u32,
+}
+
 pub async fn xtream_write_playlist(
     cfg: &AppConfig,
     target: &ConfigTarget,
@@ -247,10 +257,10 @@ pub async fn xtream_write_playlist(
                 XtreamCluster::Live => &mut cat_live_col,
                 XtreamCluster::Series => &mut cat_series_col,
                 XtreamCluster::Video => &mut cat_vod_col,
-            }.push(json!({
-              crate::model::XC_TAG_CATEGORY_ID: format!("{}", &cat_id),
-              crate::model::XC_TAG_CATEGORY_NAME: plg.title.clone(),
-              crate::model::XC_TAG_PARENT_ID: 0
+            }.push(json!(CategoryEntry {
+                category_id: *cat_id,
+                category_name: plg.title.clone(),
+                parent_id: 0
             }));
 
             for pli in &mut plg.channels {

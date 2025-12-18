@@ -66,6 +66,9 @@ impl ProxyType {
     const REDIRECT: &'static str = "redirect";
 
     pub fn is_redirect(&self, item_type: PlaylistItemType) -> bool {
+        if item_type.is_local() {
+            return false;
+        }
         match self {
             ProxyType::Reverse(Some(flags)) => {
                 if flags.is_empty() {
@@ -82,6 +85,9 @@ impl ProxyType {
     }
 
     pub fn is_reverse(&self, item_type: PlaylistItemType) -> bool {
+        if item_type.is_local() {
+            return true;
+        }
         !self.is_redirect(item_type)
     }
 }

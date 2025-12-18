@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn test_extract_show_name() {
         let file = create_test_file("Breaking.Bad.S01E01.mkv", "/tv/Breaking.Bad");
-        let show_name = MediaClassifier::extract_show_name(&file);
+        let (_,  show_name) = MediaClassifier::extract_show_name(&file);
         assert_eq!(show_name, "Breaking Bad");
     }
 

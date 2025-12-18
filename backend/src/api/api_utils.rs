@@ -705,7 +705,7 @@ fn prepare_body_stream<S>(
     stream: S,
 ) -> axum::body::Body
 where
-    S: futures::Stream<Item = Result<bytes::Bytes, StreamError>> + Send + 'static,
+    S: futures::Stream<Item=Result<bytes::Bytes, StreamError>> + Send + 'static,
 {
     let throttle_kbps = usize::try_from(get_stream_throttle(app_state)).unwrap_or_default();
     let body_stream = if is_throttled_stream(item_type, throttle_kbps) {
@@ -1032,6 +1032,19 @@ pub async fn local_stream_response(
         trace!("Try to open stream {}", sanitize_sensitive_info(&pli.url));
     }
 
+    let Some(library_paths) = app_state.app_config.config.load()
+        .library.as_ref()
+        .map(|lib| {
+            lib.scan_directories
+                .iter()
+                .map(|dir| dir.path.clone())
+                .collect::<Vec<_>>()
+        })
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+
     if connection_permission == UserConnectionPermission::Exhausted {
         return create_custom_video_stream_response(
             app_state,
@@ -1047,13 +1060,13 @@ pub async fn local_stream_response(
         Ok(canonical) => canonical,
         Err(err) => {
             error!("Local library file path is corrupt {}: {err}", path.display());
-            return StatusCode::NOT_FOUND.into_response()
-        },
+            return StatusCode::NOT_FOUND.into_response();
+        }
     };
 
     // Verify path is within allowed media directories
     // (requires configuration of allowed base paths)
-    if !is_path_within_allowed_directories(&path, &app_state.app_config.paths.load().library_file_path) {
+    if !is_path_within_allowed_directories(&path, &library_paths) {
         return StatusCode::FORBIDDEN.into_response();
     }
 
@@ -1131,17 +1144,13 @@ pub async fn local_stream_response(
     response
 }
 
-fn is_path_within_allowed_directories(sub_path: &PathBuf, root_path: &str) -> bool {
-    let sub_path = match sub_path.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-    let root_path = match PathBuf::from(root_path).canonicalize() {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-
-    sub_path.starts_with(&root_path)
+fn is_path_within_allowed_directories(sub_path: &Path, root_paths: &[String]) -> bool {
+    for root_path in root_paths {
+        if sub_path.starts_with(&PathBuf::from(root_path)) {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn is_stream_share_enabled(item_type: PlaylistItemType, target: &ConfigTarget) -> bool {

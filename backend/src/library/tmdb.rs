@@ -1,6 +1,6 @@
 use crate::library::metadata::{Actor, MetadataSource, MovieMetadata, SeriesMetadata};
-use crate::library::{EpisodeMetadata, VideoClipMetadata};
-use serde::Deserialize;
+use crate::library::{EpisodeMetadata, SeasonMetadata, VideoClipMetadata};
+use serde::{Deserialize, Serialize};
 
 const TMDB_IMAGE_BASE_URL: &str = "https://image.tmdb.org/t/p/w500";
 
@@ -172,10 +172,10 @@ impl TmdbMovieDetails {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbSeriesInfoEpisodeDetails {
-    // pub id: u32,
-    // pub show_id: u32,
+    pub id: u32,
+    pub show_id: u32,
 
     pub air_date: Option<String>,
     pub episode_number: u32,
@@ -200,6 +200,8 @@ pub struct TmdbSeriesInfoEpisodeDetails {
 impl TmdbSeriesInfoEpisodeDetails {
     pub fn to_meta_data(&self) -> EpisodeMetadata {
         EpisodeMetadata {
+            id: self.id,
+            tmdb_id: self.show_id,
             title: self.name.clone(),
             season: self.season_number,
             episode: self.episode_number,
@@ -216,11 +218,11 @@ impl TmdbSeriesInfoEpisodeDetails {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct TmdbSeriesInfoSeasonDetails {
+pub struct  TmdbSeriesInfoSeasonDetails {
     // #[serde(rename = "_id")]
     // pub internal_id: String,
     // pub id: u32,
-
+    //
     // pub air_date: Option<String>,
     // pub name: String,
     // pub overview: String,
@@ -233,7 +235,6 @@ pub struct TmdbSeriesInfoSeasonDetails {
     pub credits: Option<TmdbCredits>,
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct TmdbSeriesInfoDetails {
     id: u32,
@@ -244,8 +245,8 @@ pub struct TmdbSeriesInfoDetails {
     #[serde(default)]
     first_air_date: String,
     // last_air_date: Option<String>,
-    // #[serde(default)]
-    // number_of_episodes: u32,
+    #[serde(default)]
+    pub number_of_episodes: u32,
     #[serde(default)]
     pub(crate) number_of_seasons: u32,
     #[serde(default)]
@@ -294,6 +295,8 @@ impl TmdbSeriesInfoDetails {
                     Some(result)
                 }
             }),
+            directors: crew_names(self.credits.as_ref(), &["Director"]),
+            writers: crew_names(self.credits.as_ref(), &["Writer", "Screenplay"]),
             actors: self.credits
                 .as_ref()
                 .and_then(|c| c.cast.as_ref())
@@ -325,6 +328,7 @@ impl TmdbSeriesInfoDetails {
                 .backdrop_path.clone()
                 .map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
             status: Some(self.status.clone()),
+            seasons: self.seasons.as_ref().map(|seasons| seasons.iter().map(TmdbSeason::to_meta_data).collect()),
             episodes: self.seasons
                 .as_ref()
                 .map(|season_list| {
@@ -339,6 +343,8 @@ impl TmdbSeriesInfoDetails {
                         .collect::<Vec<_>>()
                 }),
             source: MetadataSource::Tmdb,
+            number_of_episodes: self.number_of_episodes,
+            number_of_seasons: self.number_of_seasons,
             last_updated: chrono::Utc::now().timestamp(),
             videos: self.videos
                 .as_ref()
@@ -362,7 +368,7 @@ pub struct TmdbCompany {
     name: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbNetwork {
     name: String,
     // id: u32,
@@ -370,13 +376,13 @@ pub struct TmdbNetwork {
     // origin_country: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbCredits {
     cast: Option<Vec<TmdbCast>>,
     crew: Option<Vec<TmdbCrew>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct TmdbCast {
     name: String,
     #[serde(default)]
@@ -393,7 +399,7 @@ struct TmdbCast {
     // order: u32,
 }
 
-#[derive(Debug, Clone,Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TmdbCrew {
     pub name: String,
     pub job: Option<String>,
@@ -411,20 +417,39 @@ pub struct TmdbCrew {
 
 #[derive(Debug, Deserialize)]
 pub struct TmdbSeason {
-    // id: u32,
-    // air_date: Option<String>,
-    // #[serde(default)]
-    // episode_count: u32,
-    // #[serde(default)]
-    // name: String,
-    // overview: Option<String>,
-    // poster_path: Option<String>,
+    id: u32,
+    air_date: Option<String>,
+    #[serde(default)]
+    episode_count: u32,
+    #[serde(default)]
+    name: String,
+    overview: Option<String>,
+    poster_path: Option<String>,
     #[serde(default)]
     pub(crate) season_number: u32,
-    // #[serde(default)]
-    // vote_average: f64,
+    #[serde(default)]
+    vote_average: f64,
 
     pub episodes: Option<Vec<TmdbSeriesInfoEpisodeDetails>>,
     pub networks: Option<Vec<TmdbNetwork>>,
     pub credits: Option<TmdbCredits>,
 }
+
+impl TmdbSeason {
+    pub fn to_meta_data(&self) -> SeasonMetadata {
+        SeasonMetadata {
+            id: self.id.clone(),
+            air_date: self.air_date.clone(),
+            episode_count: self.episode_count.clone(),
+            name: self.name.clone(),
+            overview: self.overview.clone(),
+            poster_path: self.poster_path.clone(),
+            season_number: self.season_number.clone(),
+            vote_average: self.vote_average.clone(),
+            episodes: self.episodes.clone(),
+            networks: self.networks.clone(),
+            credits: self.credits.clone(),
+        }
+    }
+}
+

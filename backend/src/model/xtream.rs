@@ -1,12 +1,14 @@
+use std::collections::BTreeMap;
 use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, XtreamTargetOutput};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Value};
 use shared::model::{xtream_const, PlaylistItem, ProxyUserStatus, XtreamPlaylistItem};
 use shared::model::{ClusterFlags, PlaylistEntry, XtreamCluster};
 use shared::utils::{deserialize_as_option_string, deserialize_as_string, deserialize_as_string_array, deserialize_number_from_string,
                     get_non_empty_str, opt_string_or_number_u32, string_default_on_null, string_or_number_f64, string_or_number_u32};
 use std::iter::FromIterator;
+use serde::ser::SerializeMap;
 use serde_json::value::RawValue;
 
 macro_rules! add_str_property_if_exists {
@@ -262,7 +264,6 @@ pub struct XtreamMovieData {
     pub direct_source: String,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XtreamSeriesInfoSeason {
     #[serde(default, deserialize_with = "string_default_on_null")]
@@ -283,7 +284,6 @@ pub struct XtreamSeriesInfoSeason {
     pub cover: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub cover_big: String,
-
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -292,46 +292,50 @@ pub struct XtreamSeriesInfoInfo {
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub(crate) name: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    cover: String,
+    pub cover: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    plot: String,
+    pub plot: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    cast: String,
+    pub cast: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    director: String,
+    pub director: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    genre: String,
+    pub genre: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    release_date: String,
+    pub release_date: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    releaseDate: String,
+    pub releaseDate: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    releasedate: String,
+    pub releasedate: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    last_modified: String,
+    pub last_modified: String,
     #[serde(default, deserialize_with = "string_or_number_f64")]
-    rating: f64,
+    pub rating: f64,
     #[serde(default, deserialize_with = "string_or_number_f64")]
-    rating_5based: f64,
+    pub rating_5based: f64,
     #[serde(default, deserialize_with = "deserialize_as_string_array")]
     pub backdrop_path: Option<Vec<String>>,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    trailer: String,
+    pub trailer: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    youtube_trailer: String,
+    pub youtube_trailer: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
-    episode_run_time: String,
+    pub episode_run_time: String,
     #[serde(default, deserialize_with = "string_or_number_u32")]
-    category_id: u32,
+    pub category_id: u32,
     #[serde(default, deserialize_with = "opt_string_or_number_u32")]
     pub tmdb_id: Option<u32>,
     #[serde(default, deserialize_with = "opt_string_or_number_u32")]
     pub tmdb: Option<u32>,
+    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    pub year: Option<u32>,
 }
 
 #[allow(non_snake_case)]
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct XtreamSeriesInfoEpisodeInfo {
+    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    pub id: Option<u32>,
     #[serde(default, deserialize_with = "opt_string_or_number_u32")]
     pub tmdb_id: Option<u32>,
     #[serde(default, deserialize_with = "opt_string_or_number_u32")]
@@ -351,9 +355,9 @@ pub struct XtreamSeriesInfoEpisodeInfo {
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub movie_image: String,
     #[serde(default)]
-    pub video: Value,
+    pub video: Option<Box<RawValue>>,
     #[serde(default)]
-    pub audio: Value,
+    pub audio: Option<Box<RawValue>>,
     #[serde(default, deserialize_with = "string_or_number_u32")]
     pub bitrate: u32,
     #[serde(default, deserialize_with = "string_or_number_f64")]
@@ -421,6 +425,7 @@ impl XtreamSeriesEpisode {
     }
 }
 
+// sometimes episodes are a map with season as key, sometimes an array
 fn deserialize_episodes<'de, D>(deserializer: D) -> Result<Option<Vec<XtreamSeriesInfoEpisode>>, D::Error>
 where
     D: Deserializer<'de>,
@@ -467,13 +472,41 @@ where
     }
 }
 
+fn serialize_episodes<S>(
+    episodes: &Option<Vec<XtreamSeriesInfoEpisode>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match episodes {
+        None => {
+            let map = serializer.serialize_map(Some(0))?;
+            map.end()
+        },
+        Some(list) => {
+            if list.is_empty() {
+                let map = serializer.serialize_map(Some(0))?;
+                return map.end();
+            }
+            let mut seasons: BTreeMap<String, Vec<&XtreamSeriesInfoEpisode>> = BTreeMap::new();
+            for ep in list {
+                seasons.entry(ep.season.to_string()).or_default().push(ep);
+            }
+
+            seasons.serialize(serializer)
+        }
+    }
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XtreamSeriesInfo {
     #[serde(default)]
     pub seasons: Option<Vec<XtreamSeriesInfoSeason>>,
     #[serde(default)]
     pub info: Option<XtreamSeriesInfoInfo>,
-    #[serde(default, deserialize_with = "deserialize_episodes")]
+    #[serde(default, serialize_with = "serialize_episodes", deserialize_with = "deserialize_episodes")]
     pub episodes: Option<Vec<XtreamSeriesInfoEpisode>>,
 }
 
@@ -645,7 +678,7 @@ pub fn xtream_playlistitem_to_document(pli: &XtreamPlaylistItem, url: &str, opti
     let props = pli.additional_properties.as_ref().and_then(|add_props| serde_json::from_str::<serde_json::Map<String, Value>>(add_props).ok());
 
     if let Some(ref add_props) = props {
-        let doc = if pli.xtream_cluster == XtreamCluster::Video {
+        let doc = if matches!(pli.xtream_cluster, XtreamCluster::Video | XtreamCluster::Series) {
             match add_props.get("info") {
                 Some(Value::Object(info_doc)) => info_doc,
                 _ => add_props,

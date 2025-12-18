@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use crate::api::model::{AppState, PlaylistM3uStorage, PlaylistStorage, PlaylistStorageState, PlaylistXtreamStorage};
-use crate::model::Epg;
+use crate::model::{Epg, XtreamSeriesInfo};
 use crate::model::{AppConfig, ConfigTarget, TargetOutput};
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::epg_repository::epg_write;
@@ -12,13 +13,19 @@ use crate::repository::xtream_repository::{xtream_get_file_paths, xtream_get_sto
 use crate::utils;
 use shared::error::{info_err, TuliproxErrorKind};
 use shared::error::TuliproxError;
-use shared::model::{M3uPlaylistItem, PlaylistGroup, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
+use shared::model::{M3uPlaylistItem, PlaylistGroup, PlaylistItemHeader, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::{is_dash_url, is_hls_url};
 use shared::create_tuliprox_error;
 use std::path::Path;
 use std::sync::Arc;
 use log::info;
+use serde_json::value::RawValue;
 use crate::processing::processor::playlist::apply_filter_to_playlist;
+
+struct LocalEpisodeKey {
+    path: String,
+    virtual_id: u32,
+}
 
 pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGroup], epg: Option<&Epg>,
                               target: &ConfigTarget, playlist_state: Option<&Arc<PlaylistStorageState>>) -> Result<(), Vec<TuliproxError>> {
@@ -30,6 +37,8 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
     };
 
     let (mut target_id_mapping, file_lock) = get_target_id_mapping(app_config, &target_path).await;
+
+    let mut local_library_series = HashMap::<String, Vec<LocalEpisodeKey>>::new();
 
     // Virtual IDs assignment
     for group in playlist.iter_mut() {
@@ -53,8 +62,12 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
             let uuid = header.get_uuid();
             let item_type = header.item_type;
             header.virtual_id = target_id_mapping.get_and_update_virtual_id(uuid, provider_id, item_type, 0);
+
+            assign_local_series_info_episode_key(&mut local_library_series, header, item_type);
         }
     }
+
+    rewrite_local_series_info_episode_virtual_id(playlist, &mut local_library_series);
 
     for output in &target.output {
         let mut filtered = match output {
@@ -115,6 +128,58 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
     }
 
     if errors.is_empty() { Ok(()) } else { Err(errors) }
+}
+
+fn assign_local_series_info_episode_key(local_library_series: &mut HashMap<String, Vec<LocalEpisodeKey>>, header: &mut PlaylistItemHeader, item_type: PlaylistItemType) {
+    // we need to rewrite local series info with the new virtual ids
+    if item_type == PlaylistItemType::LocalSeries {
+        match local_library_series.entry(header.parent_code.clone()) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let episode_keys = entry.get_mut();
+                episode_keys.push(LocalEpisodeKey {
+                    path: header.url.clone(),
+                    virtual_id: header.virtual_id,
+                });
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(vec![LocalEpisodeKey {
+                    path: header.url.clone(),
+                    virtual_id: header.virtual_id,
+                }]);
+            }
+        }
+    }
+}
+
+fn rewrite_local_series_info_episode_virtual_id(playlist: &mut [PlaylistGroup], local_library_series: &mut HashMap<String, Vec<LocalEpisodeKey>>) {
+    // assign local series virtual ids
+    for group in playlist.iter_mut() {
+        for channel in &mut group.channels {
+            let header = &mut channel.header;
+            if header.item_type == PlaylistItemType::LocalSeriesInfo {
+                if let Some(episode_keys) = local_library_series.get(&header.id) {
+                    if let Some(props) = &header.additional_properties {
+                        let props_str = props.get();
+                        if let Ok(mut series_info) = serde_json::from_str::<XtreamSeriesInfo>(props_str) {
+                            if let Some(episodes) = series_info.episodes.as_mut() {
+                                for episode in episodes.iter_mut() {
+                                    for episode_key in episode_keys {
+                                        if episode.direct_source == episode_key.path {
+                                            episode.id = episode_key.virtual_id;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if let Ok(s) = serde_json::to_string(&series_info) {
+                                    header.additional_properties = RawValue::from_string(s).ok()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub async fn get_target_id_mapping(cfg: &AppConfig, target_path: &Path) -> (TargetIdMapping, utils::FileWriteGuard) {
