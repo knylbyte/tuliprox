@@ -701,11 +701,14 @@ fn is_throttled_stream(item_type: PlaylistItemType, throttle_kbps: usize) -> boo
         )
 }
 
-fn prepare_body_stream(
+fn prepare_body_stream<S>(
     app_state: &AppState,
     item_type: PlaylistItemType,
-    stream: ActiveClientStream,
-) -> axum::body::Body {
+    stream: S,
+) -> axum::body::Body
+where
+    S: futures::Stream<Item = Result<bytes::Bytes, StreamError>> + Send + 'static,
+{
     let throttle_kbps = usize::try_from(get_stream_throttle(app_state)).unwrap_or_default();
     let body_stream = if is_throttled_stream(item_type, throttle_kbps) {
         axum::body::Body::from_stream(ThrottledStream::new(stream.boxed(), throttle_kbps))
@@ -765,7 +768,7 @@ pub async fn force_provider_stream_response(
             response = response.header(key, value);
         }
 
-        let body_stream = prepare_body_stream(app_state, item_type, stream);
+        let body_stream = prepare_body_stream::<ActiveClientStream>(app_state, item_type, stream);
         debug_if_enabled!(
             "Streaming provider forced stream request from {}",
             sanitize_sensitive_info(&user_session.stream_url)
@@ -951,7 +954,7 @@ pub async fn stream_response(
                 }
             }
 
-            let body_stream = prepare_body_stream(app_state, item_type, stream);
+            let body_stream = prepare_body_stream::<ActiveClientStream>(app_state, item_type, stream);
             try_unwrap_body!(response.body(body_stream))
         };
 
@@ -1042,6 +1045,21 @@ pub async fn local_stream_response(
 
     let path = PathBuf::from(pli.url.strip_prefix("file://").unwrap_or(&pli.url));
 
+    // Canonicalize and validate the path
+    let path = match path.canonicalize() {
+        Ok(canonical) => canonical,
+        Err(err) => {
+            error!("Local library file path is corrupt {}: {err}", path.display());
+            return StatusCode::NOT_FOUND.into_response()
+        },
+    };
+
+    // Verify path is within allowed media directories
+    // (requires configuration of allowed base paths)
+    // if !is_path_within_allowed_directories(&path, app_state) {
+    //     return StatusCode::FORBIDDEN.into_response();
+    // }
+
     let Ok(mut file) = tokio::fs::File::open(&path).await else { return StatusCode::NOT_FOUND.into_response() };
     let Ok(metadata) = file.metadata().await else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
     let file_size = metadata.len();
@@ -1089,9 +1107,9 @@ pub async fn local_stream_response(
     }
 
     let stream = ReaderStream::new(file.take(content_length));
-    let body = axum::body::Body::from_stream(stream);
+    let body_stream = prepare_body_stream::<_>(app_state, pli.item_type, stream.map_err(|err| StreamError::Stream(err.to_string())));
 
-    let mut response = Response::new(body);
+    let mut response = Response::new(body_stream);
 
     *response.status_mut() = if range.is_some() {
         StatusCode::PARTIAL_CONTENT

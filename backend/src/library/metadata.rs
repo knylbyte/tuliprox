@@ -1,34 +1,34 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use crate::library::ScannedMediaFile;
 
-/// Source of metadata information
+// Source of metadata information
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MetadataSource {
     #[default]
-    /// Metadata from TMDB API
+    // Metadata from TMDB API
     Tmdb,
-    /// Metadata from Kodi NFO file
+    // Metadata from Kodi NFO file
     KodiNfo,
-    /// Metadata from Jellyfin/Emby metadata files
+    // Metadata from Jellyfin/Emby metadata files
     JellyfinEmby,
-    /// Metadata from Plex metadata files
+    // Metadata from Plex metadata files
     Plex,
-    /// Metadata parsed from filename
+    // Metadata parsed from filename
     FilenameParsed,
-    /// Manually entered metadata
+    // Manually entered metadata
     Manual,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct ExternalVideoMetadata {
+pub struct VideoClipMetadata {
     pub name: String, //"Official Trailer",
     pub key: String,
     pub site: String, // "YouTube",
     pub video_type: String, // "Trailer", "Teaser"
-    pub official: bool,
 }
 
-/// Movie metadata
+// Movie metadata
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct MovieMetadata {
     pub title: String,
@@ -72,10 +72,10 @@ pub struct MovieMetadata {
     pub fanart: Option<String>,
     pub source: MetadataSource,
     pub last_updated: i64,
-    pub videos: Option<Vec<ExternalVideoMetadata>>,
+    pub videos: Option<Vec<VideoClipMetadata>>,
 }
 
-/// Series/TV show metadata
+// Series/TV show metadata
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SeriesMetadata {
     pub title: String,
@@ -114,17 +114,18 @@ pub struct SeriesMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub episodes: Option<Vec<EpisodeMetadata>>,
     pub source: MetadataSource,
-    /// Last updated timestamp (Unix epoch)
+    // Last updated timestamp (Unix epoch)
     pub last_updated: i64,
+    pub videos: Option<Vec<VideoClipMetadata>>
 }
 
-/// Episode metadata for TV series
+// Episode metadata for TV series
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpisodeMetadata {
     pub title: String,
     pub season: u32,
     pub episode: u32,
-    /// Aired date (ISO 8601 format)
+    // Aired date (ISO 8601 format)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aired: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -137,9 +138,11 @@ pub struct EpisodeMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thumb: Option<String>,
     pub file_path: String,
+    pub file_size: u64,
+    pub file_modified: i64,
 }
 
-/// Actor information
+// Actor information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Actor {
     pub name: String,
@@ -149,7 +152,7 @@ pub struct Actor {
     pub thumb: Option<String>,
 }
 
-/// Complete video metadata (either movie or series)
+// Complete video metadata (either movie or series)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum MediaMetadata {
@@ -218,7 +221,7 @@ impl MediaMetadata {
     }
 }
 
-/// Metadata cache entry that links a file to its metadata
+// Metadata cache entry that links a file to its metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetadataCacheEntry {
     pub uuid: String,
@@ -229,7 +232,7 @@ pub struct MetadataCacheEntry {
 }
 
 impl MetadataCacheEntry {
-    /// Creates a new cache entry with a generated UUID
+    // Creates a new cache entry with a generated UUID
     pub fn new(
         file_path: String,
         file_size: u64,
@@ -245,14 +248,34 @@ impl MetadataCacheEntry {
         }
     }
 
-    /// Generates a simple UUID-like identifier
+    // Generates a simple UUID-like identifier
     fn generate_uuid() -> String {
         Uuid::new_v4().to_string()
     }
 
-    /// Checks if the file has been modified since this entry was created
-    pub fn is_file_modified(&self, current_size: u64, current_modified: i64) -> bool {
-        self.file_size != current_size || self.file_modified != current_modified
+    // Checks if the file has been modified since this entry was created
+    pub fn is_file_modified(&self, file: &ScannedMediaFile, season_num: u32, episode_num: u32) -> bool {
+        match &self.metadata {
+            MediaMetadata::Movie(_) => {
+                self.file_size != file.size_bytes || self.file_modified != file.modified_timestamp || self.file_path != file.file_path
+            }
+
+            MediaMetadata::Series(series) => {
+                let Some(episodes) = series.episodes.as_ref() else {
+                    // no epsiodes -> update
+                    return true;
+                };
+
+                for episode in episodes {
+                    if episode.season == season_num && episode.episode == episode_num && episode.file_path == file.file_path {
+                        return episode.file_size != file.size_bytes || episode.file_modified != file.modified_timestamp;
+                    }
+                }
+
+                // episode not found -> update
+                true
+            }
+        }
     }
 }
 

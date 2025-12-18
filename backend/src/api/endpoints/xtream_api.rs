@@ -66,9 +66,7 @@ impl ApiStreamContext {
 
 impl Display for ApiStreamContext {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
+        write!(f, "{}",
             match self {
                 Self::Live | Self::LiveAlt => Self::LIVE,
                 Self::Movie => Self::MOVIE,

@@ -4,6 +4,7 @@ use std::path::Path;
 use shared::utils::CONSTANTS;
 use crate::model::LibraryConfig;
 use crate::library::scanner::ScannedMediaFile;
+use crate::library::{SeriesEpisodeFile, SeriesKey};
 
 fn clear_filename(file_name: &str) -> String {
     // Remove quality indicators (1080p, 720p, BluRay, etc.)
@@ -82,7 +83,7 @@ impl MediaClassifier {
         }
     }
 
-    /// Classifies a video file as either Movie or Series
+    // Classifies a video file as either Movie or Series
     pub fn classify(&self, file: &ScannedMediaFile) -> MediaClassification {
         let file_name = &file.file_name;
         let parent_path = file.path.parent().and_then(|p| p.to_str()).unwrap_or("");
@@ -98,6 +99,36 @@ impl MediaClassifier {
         // If no series pattern matches, classify as movie
         debug!("File '{file_name}' classified as Movie (no series pattern match)");
         MediaClassification::Movie
+    }
+
+    pub fn classify_series_file(file: &ScannedMediaFile) -> Option<(SeriesKey, u32, u32)> {
+        let file_name = Path::new(&file.file_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&file.file_name);
+
+        let (ids, show_name) = Self::extract_show_name(file);
+
+        let parent_path = file.path.parent()
+            .and_then(|p| p.to_str())
+            .unwrap_or("");
+
+        let classification = Self::extract_series_info(file_name, parent_path);
+
+        if let MediaClassification::Series { season, episode } = classification {
+            if let (Some(season), Some(episode)) = (season, episode) {
+                let tmdb_id = MovieDbId::get_tmdb_id(ids.as_ref());
+                let year = None; // TODO extract from somewhere
+                let key = SeriesKey {
+                    title: show_name,
+                    tmdb_id,
+                    year,
+                };
+                return Some((key, season, episode));
+            }
+        }
+
+        None
     }
 
     /// Extracts season and episode information from file name or path
@@ -195,6 +226,17 @@ impl MediaClassifier {
         title = clear_filename(&title);
 
         ((!moviedb_ids.is_empty()).then_some(moviedb_ids), title, year)
+    }
+
+    pub fn build_series_key(episodes: &[SeriesEpisodeFile]) -> SeriesKey {
+        if let Some(first) = episodes.first() {
+            if let Some((key, _season, _episode)) = Self::classify_series_file(&first.file) {
+                return key;
+            }
+        }
+
+        // fallback, not really helpful
+        SeriesKey {title: "Unknown".to_string(), tmdb_id: None, year: None}
     }
 }
 

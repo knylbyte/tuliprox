@@ -14,6 +14,7 @@ pub struct LibraryScanRequest {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LibraryScanResult {
     pub files_scanned: usize,
+    pub groups_scanned: usize,
     pub files_added: usize,
     pub files_updated: usize,
     pub files_removed: usize,

@@ -1,8 +1,102 @@
+use crate::library::MediaClassifier;
 use crate::model::{LibraryConfig, LibraryScanDirectory};
 use log::{debug, error, info, trace, warn};
+use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io;
+
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+pub struct SeriesKey {
+    pub title: String,
+    pub year: Option<u32>,
+    pub tmdb_id: Option<u32>,
+}
+
+impl Display for SeriesKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.title)?;
+        if let Some(year) = self.year {
+            write!(f, "-{year}")?;
+        }
+        if let Some(tmdb_id) = self.tmdb_id {
+            write!(f, "-{tmdb_id}")?;
+        }
+        Ok(())
+    }
+}
+
+pub enum MediaGroup {
+    Movie {
+        file: ScannedMediaFile,
+    },
+    Series {
+        show_key: SeriesKey,
+        episodes: Vec<SeriesEpisodeFile>,
+    },
+}
+
+impl Display for MediaGroup {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MediaGroup::Movie { file } => write!(f, "{}", file.file_path),
+            MediaGroup::Series { show_key, .. } => write!(f, "{}", show_key.title),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SeriesEpisodeFile {
+    pub file: ScannedMediaFile,
+    pub season: u32,
+    pub episode: u32,
+}
+
+pub struct MediaGrouper;
+
+impl MediaGrouper {
+    pub fn group(files: Vec<ScannedMediaFile>) -> Vec<MediaGroup> {
+        let mut series_map: HashMap<SeriesKey, Vec<SeriesEpisodeFile>> = HashMap::new();
+        let mut movies = Vec::new();
+
+        for file in files {
+            if let Some((key, season, episode)) = MediaClassifier::classify_series_file(&file) {
+                series_map
+                    .entry(key)
+                    .or_default()
+                    .push(SeriesEpisodeFile {
+                        file,
+                        season,
+                        episode,
+                    });
+            } else {
+                movies.push(MediaGroup::Movie { file });
+            }
+        }
+
+        let mut result = movies;
+        result.extend(
+            series_map.into_iter()
+                .map(|(key, mut episodes)| {
+                    episodes.sort_by(|a, b| a.file.file_path.cmp(&b.file.file_path));
+                    MediaGroup::Series {
+                        show_key: key,
+                        episodes,
+                    }
+                }),
+        );
+
+        // remove empty groups
+        result.into_iter().filter(|group| {
+            match group {
+                MediaGroup::Movie { .. } => true,
+                MediaGroup::Series { episodes, .. } => !episodes.is_empty(),
+            }
+        }).collect()
+    }
+}
+
 
 /// Represents a discovered video file with its metadata
 #[derive(Debug, Clone)]
@@ -34,7 +128,8 @@ impl ScannedMediaFile {
             .modified()
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0));
+            .and_then(|d| i64::try_from(d.as_secs()).ok())
+            .unwrap_or(0);
 
         Ok(Self {
             file_path: path.display().to_string(),
@@ -92,7 +187,7 @@ impl LibraryScanner {
         let path = Path::new(&scan_directory.path);
 
         if !fs::try_exists(path).await.unwrap_or(false) {
-            warn!("Directory does not exist: {}", &scan_directory.path);
+            warn!("Directory does not exist or is not readable: {}", &scan_directory.path);
             return Ok(Vec::new());
         }
 

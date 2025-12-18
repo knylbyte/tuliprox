@@ -1,14 +1,23 @@
-use log::{debug, error, info, warn};
-use std::collections::HashMap;
-use shared::model::{LibraryMetadataFormat, LibraryScanResult};
 use crate::api::model::create_http_client;
-use crate::model::{AppConfig, LibraryConfig};
-use crate::library::metadata::{MetadataCacheEntry, MediaMetadata};
+use crate::library::metadata::{MediaMetadata, MetadataCacheEntry};
 use crate::library::metadata_resolver::MetadataResolver;
 use crate::library::metadata_storage::MetadataStorage;
-use crate::library::scanner::{ScannedMediaFile, LibraryScanner};
+use crate::library::scanner::LibraryScanner;
+use crate::library::{MediaGroup, MediaGrouper};
+use crate::model::{AppConfig, LibraryConfig};
+use log::{debug, error, info, warn};
+use shared::model::{LibraryMetadataFormat, LibraryScanResult};
+use std::collections::HashMap;
 
-/// VOD processor that orchestrates scanning, classification, metadata resolution, and storage
+// Action taken when processing a file
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessAction {
+    Added,
+    Updated,
+    Unchanged,
+}
+
+// VOD processor that orchestrates scanning, classification, metadata resolution, and storage
 pub struct LibraryProcessor {
     config: LibraryConfig,
     scanner: LibraryScanner,
@@ -17,13 +26,13 @@ pub struct LibraryProcessor {
 }
 
 impl LibraryProcessor {
-    /// Creates a new Library processor from application config
+    // Creates a new Library processor from application config
     pub fn from_app_config(app_config: &AppConfig) -> Option<Self> {
         let client = create_http_client(app_config);
         app_config.config.load().library.as_ref().map(|lib_cfg| Self::new(lib_cfg.clone(), client))
     }
 
-    /// Creates a new Library processor with the given configuration
+    // Creates a new Library processor with the given configuration
     pub fn new(config: LibraryConfig, client: reqwest::Client) -> Self {
         let storage_path = std::path::PathBuf::from(&config.metadata.path);
         let scanner = LibraryScanner::new(config.clone());
@@ -38,7 +47,7 @@ impl LibraryProcessor {
         }
     }
 
-    /// Performs a full Library scan
+    // Performs a full Library scan
     pub async fn scan(&self, force_rescan: bool) -> Result<LibraryScanResult, std::io::Error> {
         info!("Starting Library scan (force_rescan: {force_rescan})");
 
@@ -54,10 +63,14 @@ impl LibraryProcessor {
 
         // Scan for video files
         let scanned_files = self.scanner.scan_all().await?;
-        info!("Scanned {} video files", scanned_files.len());
+        let scanned_files_count = scanned_files.len();
+        info!("Scanned {scanned_files_count} video files");
+        let media_groups = MediaGrouper::group(scanned_files);
+        info!("Scanned {} file groups", media_groups.len());
 
         let mut result = LibraryScanResult {
-            files_scanned: scanned_files.len(),
+            files_scanned: scanned_files_count,
+            groups_scanned: media_groups.len(),
             files_added: 0,
             files_updated: 0,
             files_removed: 0,
@@ -65,22 +78,28 @@ impl LibraryProcessor {
         };
 
         // Process each scanned file
-        for file in &scanned_files {
-            match self.process_file(file, &existing_map, force_rescan).await {
+        for group in &media_groups {
+            match self.process_group(group, &existing_map, force_rescan).await {
                 Ok(action) => match action {
                     ProcessAction::Added => result.files_added += 1,
                     ProcessAction::Updated => result.files_updated += 1,
                     ProcessAction::Unchanged => {}
                 },
                 Err(e) => {
-                    error!("Error processing {}: {e}", file.file_path);
+                    error!("Error processing {group}: {e}");
                     result.errors += 1;
                 }
             }
         }
 
         // Cleanup orphaned entries (files that no longer exist)
-        let scanned_paths: std::collections::HashSet<_> = scanned_files.iter().map(|f| f.file_path.as_str()).collect();
+        let scanned_paths: std::collections::HashSet<_> = media_groups
+            .iter()
+            .flat_map(|group| match group {
+                MediaGroup::Movie { file } => vec![file.file_path.as_str()],
+                MediaGroup::Series { episodes, .. } => episodes.iter().map(|ep| ep.file.file_path.as_str()).collect(),
+            })
+            .collect();
 
         for entry in existing_entries {
             if !scanned_paths.contains(entry.file_path.as_str()) {
@@ -97,24 +116,32 @@ impl LibraryProcessor {
         Ok(result)
     }
 
+    async fn process_group(&self, group: &MediaGroup, existing_map: &HashMap<String, MetadataCacheEntry>, force_rescan: bool) -> Result<ProcessAction, String> {
+        match group {
+            MediaGroup::Movie { file: _ } => {
+                self.process_movie(group, existing_map, force_rescan).await
+            }
+            MediaGroup::Series { show_key: _, episodes: _ } => {
+                self.process_series_group(group, existing_map, force_rescan).await
+            }
+        }
+    }
+
     // Processes a single video file
-    async fn process_file(
-        &self,
-        file: &ScannedMediaFile,
-        existing_map: &HashMap<String, MetadataCacheEntry>,
-        force_rescan: bool,
-    ) -> Result<ProcessAction, std::io::Error> {
+    async fn process_movie(&self, group: &MediaGroup, existing_map: &HashMap<String, MetadataCacheEntry>, force_rescan: bool,
+    ) -> Result<ProcessAction, String> {
+        let MediaGroup::Movie { file } = group else { return Err(format!("Expected movie to resolve but got {group}")) };
         // Check if file already exists in cache
-        if let Some(existing_entry) = existing_map.get(&file.file_path) {
+        let (cache_entry, status) = if let Some(existing_entry) = existing_map.get(&file.file_path) {
             // Check if file has been modified
-            if !force_rescan && !existing_entry.is_file_modified(file.size_bytes, file.modified_timestamp) {
+            if !force_rescan && !existing_entry.is_file_modified(file, 0, 0) {
                 debug!("File unchanged, skipping: {}", file.file_path);
                 return Ok(ProcessAction::Unchanged);
             }
 
             debug!("File modified, updating metadata: {}", file.file_path);
             // Reuse existing UUID
-            let metadata = self.resolve_metadata(file).await?;
+            let metadata = self.resolve_metadata(group).await?;
             let entry = MetadataCacheEntry {
                 uuid: existing_entry.uuid.clone(),
                 file_path: file.file_path.clone(),
@@ -123,42 +150,123 @@ impl LibraryProcessor {
                 metadata,
             };
 
-            self.storage.store(&entry).await?;
-            self.write_metadata_files(&entry).await?;
-            return Ok(ProcessAction::Updated);
+            (entry, ProcessAction::Updated)
+        } else {
+            debug!("New file, resolving metadata: {}", file.file_path);
+            let metadata = self.resolve_metadata(group).await?;
+
+            let entry = MetadataCacheEntry::new(
+                file.file_path.clone(),
+                file.size_bytes,
+                file.modified_timestamp,
+                metadata,
+            );
+
+            (entry, ProcessAction::Added)
+        };
+
+        self.storage.store(&cache_entry).await.map_err(|e| e.to_string())?;
+        self.write_metadata_files(&cache_entry).await.map_err(|e| e.to_string())?;
+        Ok(status)
+    }
+
+    async fn process_series_group(
+        &self,
+        group: &MediaGroup,
+        existing_map: &HashMap<String, MetadataCacheEntry>,
+        force_rescan: bool,
+    ) -> Result<ProcessAction, String> {
+        let MediaGroup::Series { show_key, episodes } = group else { return Err(format!("Expected series to resolve but got {group}")) };
+        let series_file_path = episodes
+            .iter()
+            .find_map(|episode| {
+                if episode.file.file_path.is_empty() {
+                    None
+                } else {
+                    Some(episode.file.file_path.clone())
+                }
+            })
+            .unwrap_or_else(|| show_key.to_string());
+
+        // Check if file already exists in cache
+        let (mut chache_entry, status) = if let Some(existing_entry) = existing_map.get(&series_file_path) {
+            if !force_rescan {
+                // Check if file has been modified
+                if !episodes.iter().any(|episode| existing_entry.is_file_modified(&episode.file, episode.season, episode.episode)) {
+                    debug!("File unchanged, skipping: {show_key}");
+                    return Ok(ProcessAction::Unchanged);
+                }
+            }
+
+            debug!("File modified, updating metadata: {show_key}");
+            // Reuse existing UUID
+            let metadata = self.resolve_metadata(group).await?;
+
+            let entry = MetadataCacheEntry {
+                uuid: existing_entry.uuid.clone(),
+                file_path: series_file_path,
+                file_size: 0,
+                file_modified: 0,
+                metadata,
+            };
+            (entry, ProcessAction::Updated)
+        } else {
+            debug!("New series, resolving metadata: {show_key}");
+            let metadata = self.resolve_metadata(group).await?;
+
+            let entry = MetadataCacheEntry::new(
+                series_file_path,
+                0,
+                0,
+                metadata,
+            );
+
+            (entry, ProcessAction::Added)
+        };
+
+        if let (MediaMetadata::Series(ref mut series_metadata), MediaGroup::Series { episodes, .. }) = (&mut chache_entry.metadata, group) {
+            if let Some(series_episodes) = series_metadata.episodes.as_mut() {
+                // maybe we have the same episode as 2 different files
+                let mut double_episodes = vec![];
+                for episode in episodes {
+                    for series_episode in &mut *series_episodes {
+                        if episode.episode == series_episode.episode && episode.season == series_episode.season {
+                            if series_episode.file_path.is_empty() {
+                                let mut new_episode = series_episode.clone();
+                                new_episode.file_path.clone_from(&episode.file.file_path);
+                                new_episode.file_modified = episode.file.modified_timestamp;
+                                new_episode.file_size = episode.file.size_bytes;
+                                double_episodes.push(new_episode);
+                            } else {
+                                series_episode.file_path.clone_from(&episode.file.file_path);
+                                series_episode.file_modified = episode.file.modified_timestamp;
+                                series_episode.file_size = episode.file.size_bytes;
+                            }
+                        }
+                    }
+                }
+                if !double_episodes.is_empty() {
+                    series_episodes.append(&mut double_episodes);
+                    series_episodes.sort_by_key(|episode| (episode.season, episode.episode));
+                }
+            }
         }
 
-        debug!("New file, resolving metadata: {}", file.file_path);
-        let metadata = self.resolve_metadata(file).await?;
-
-        let entry = MetadataCacheEntry::new(
-            file.file_path.clone(),
-            file.size_bytes,
-            file.modified_timestamp,
-            metadata,
-        );
-
-        self.storage.store(&entry).await?;
-        self.write_metadata_files(&entry).await?;
-        Ok(ProcessAction::Added)
+        self.storage.store(&chache_entry).await.map_err(|e| e.to_string())?;
+        self.write_metadata_files(&chache_entry).await.map_err(|e| e.to_string())?;
+        Ok(status)
     }
 
-    /// Resolves metadata for a video file
-    async fn resolve_metadata(&self, file: &ScannedMediaFile) -> Result<MediaMetadata, std::io::Error> {
-        self.resolver
-            .resolve(file)
-            .await
-            .ok_or_else(|| std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Could not resolve metadata for {}", file.file_path),
-            ))
+    // Resolves metadata for a video file
+    async fn resolve_metadata(&self, file: &MediaGroup) -> Result<MediaMetadata, String> {
+        self.resolver.resolve(file).await.ok_or_else(|| format!("Could not resolve metadata for {file}"))
     }
 
-    /// Writes metadata files (JSON, NFO) based on configuration
+    // Writes metadata files (JSON, NFO) based on configuration
     async fn write_metadata_files(&self, entry: &MetadataCacheEntry) -> Result<(), std::io::Error> {
         // JSON is always written by storage.store()
 
-        // TODO enrich nfo with al information, we are currently storing a subset, and rebuilding json from nfo ends in information loss!
+        // TODO enrich nfo with all information, we are currently storing a subset, and rebuilding json from nfo ends in information loss!
         // Write NFO if enabled
         if self.config.metadata.formats.contains(&LibraryMetadataFormat::Nfo) {
             if let Err(e) = self.storage.write_nfo(entry).await {
@@ -169,20 +277,12 @@ impl LibraryProcessor {
         Ok(())
     }
 
-    /// Gets all cached metadata entries
+    // Gets all cached metadata entries
     pub async fn get_all_entries(&self) -> Vec<MetadataCacheEntry> {
         self.storage.load_all().await
     }
-
 }
 
-/// Action taken when processing a file
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProcessAction {
-    Added,
-    Updated,
-    Unchanged,
-}
 
 #[cfg(test)]
 mod tests {
@@ -192,6 +292,7 @@ mod tests {
     fn test_scan_result_creation() {
         let result = LibraryScanResult {
             files_scanned: 100,
+            groups_scanned: 0,
             files_added: 50,
             files_updated: 20,
             files_removed: 5,
