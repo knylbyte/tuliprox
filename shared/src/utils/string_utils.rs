@@ -74,7 +74,7 @@ pub fn trim_slash(s: &str) -> Cow<'_, str> {
 pub fn trim_last_slash(s: &str) -> Cow<'_, str> {
     if s.ends_with('/') {
         if let Some(stripped) = s.strip_suffix('/') {
-          return  Cow::Owned(stripped.to_string())
+            return Cow::Owned(stripped.to_string());
         }
     }
     Cow::Borrowed(s)
@@ -89,7 +89,6 @@ impl Substring for String {
         self.chars().skip(from).take(to - from).collect()
     }
 }
-
 
 pub fn truncate_string(s: &str, max_len: usize) -> String {
     if s.chars().count() <= max_len {
@@ -128,7 +127,11 @@ pub fn humanize_snake_case(s: &str) -> String {
 }
 
 pub fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
-   if a.len() >= b.len() { a } else { b }
+    if a.len() >= b.len() {
+        a
+    } else {
+        b
+    }
 }
 
 // ------------------------------------------------------------
@@ -155,10 +158,10 @@ macro_rules! concat_string {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashSet;
-    use crate::utils::Capitalize;
     use super::generate_random_string;
-    use crate as shared; // allow path-based macro call in tests
+    use crate as shared;
+    use crate::utils::Capitalize;
+    use std::collections::HashSet; // allow path-based macro call in tests
 
     #[test]
     fn test_generate_random_string() {
@@ -189,5 +192,4 @@ mod test {
         let s = shared::concat_string!(cap = 16; part, "/", 123);
         assert_eq!(s, "abc/123");
     }
-
 }

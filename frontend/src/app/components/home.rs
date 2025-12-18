@@ -1,18 +1,22 @@
-use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputRow, Panel, PlaylistEditorView, PlaylistExplorerView, PlaylistUpdateView, Sidebar, SourceEditor, StatsView, StreamsView, ToastrView, UserlistView, WebsocketStatus};
+use crate::app::components::config::ConfigView;
+use crate::app::components::loading_indicator::BusyIndicator;
+use crate::app::components::theme::Theme;
+use crate::app::components::{
+    AppIcon, DashboardView, EpgView, IconButton, InputRow, Panel, PlaylistEditorView,
+    PlaylistExplorerView, PlaylistUpdateView, Sidebar, SourceEditor, StatsView, StreamsView,
+    ToastrView, UserlistView, WebsocketStatus,
+};
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
+use crate::provider::DialogProvider;
+use crate::services::{ToastCloseMode, ToastOptions};
 use shared::model::{AppConfigDto, PlaylistUpdateState, StatusCheck, SystemInfo};
 use std::future;
 use std::rc::Rc;
 use yew::prelude::*;
 use yew::suspense::use_future;
 use yew_i18n::use_translation;
-use crate::app::components::config::{ConfigView};
-use crate::app::components::loading_indicator::{BusyIndicator};
-use crate::provider::DialogProvider;
-use crate::services::{ToastCloseMode, ToastOptions};
-use crate::app::components::theme::Theme;
 
 #[function_component]
 pub fn Home() -> Html {
@@ -27,7 +31,11 @@ pub fn Home() -> Html {
     let handle_theme_switch = {
         let set_theme = theme.clone();
         Callback::from(move |_| {
-            let new_theme = if *set_theme == Theme::Dark { Theme::Bright } else { Theme::Dark };
+            let new_theme = if *set_theme == Theme::Dark {
+                Theme::Bright
+            } else {
+                Theme::Dark
+            };
             new_theme.switch_theme();
             set_theme.set(new_theme);
         })
@@ -45,27 +53,31 @@ pub fn Home() -> Html {
             let services_ctx = services_ctx.clone();
             let services_ctx_clone = services_ctx.clone();
             let translate_clone = translate_clone.clone();
-            let subid = services_ctx.event.subscribe(move |msg| {
-                match msg {
-                    EventMessage::Unauthorized => {
-                        services_ctx_clone.auth.logout()
-                    },
-                    EventMessage::ServerError(msg) => {
-                        services_ctx_clone.toastr.error(msg);
-                    },
-                    EventMessage::ConfigChange(config_type) => {
-                        services_ctx_clone.toastr.warning_with_options(
-                            format!("{}: {config_type}", translate_clone.t("MESSAGES.CONFIG_CHANGED")),
-                            ToastOptions { close_mode: ToastCloseMode::Manual });
-                    },
-                    EventMessage::PlaylistUpdate(update_state) => {
-                        match update_state {
-                          PlaylistUpdateState::Success => services_ctx_clone.toastr.success(translate_clone.t("MESSAGES.PLAYLIST_UPDATE.SUCCESS_FINISH")),
-                          PlaylistUpdateState::Failure => services_ctx_clone.toastr.error(translate_clone.t("MESSAGES.PLAYLIST_UPDATE.FAIL_FINISH")),
-                        }
-                    },
-                    _=> {}
+            let subid = services_ctx.event.subscribe(move |msg| match msg {
+                EventMessage::Unauthorized => services_ctx_clone.auth.logout(),
+                EventMessage::ServerError(msg) => {
+                    services_ctx_clone.toastr.error(msg);
                 }
+                EventMessage::ConfigChange(config_type) => {
+                    services_ctx_clone.toastr.warning_with_options(
+                        format!(
+                            "{}: {config_type}",
+                            translate_clone.t("MESSAGES.CONFIG_CHANGED")
+                        ),
+                        ToastOptions {
+                            close_mode: ToastCloseMode::Manual,
+                        },
+                    );
+                }
+                EventMessage::PlaylistUpdate(update_state) => match update_state {
+                    PlaylistUpdateState::Success => services_ctx_clone
+                        .toastr
+                        .success(translate_clone.t("MESSAGES.PLAYLIST_UPDATE.SUCCESS_FINISH")),
+                    PlaylistUpdateState::Failure => services_ctx_clone
+                        .toastr
+                        .error(translate_clone.t("MESSAGES.PLAYLIST_UPDATE.FAIL_FINISH")),
+                },
+                _ => {}
             });
             move || services_ctx.event.unsubscribe(subid)
         });
@@ -78,12 +90,13 @@ pub fn Home() -> Html {
         let services_ctx = services.clone();
         let config_state = config.clone();
         let _ = use_future(|| async move {
-            services_ctx.config.config_subscribe(
-                &mut |cfg| {
+            services_ctx
+                .config
+                .config_subscribe(&mut |cfg| {
                     config_state.set(cfg.clone());
                     future::ready(())
-                }
-            ).await
+                })
+                .await
         });
     }
 
@@ -104,7 +117,10 @@ pub fn Home() -> Html {
                     inputs.push(Rc::new(InputRow::Input(Rc::clone(&input))));
                     if let Some(aliases) = input_cfg.aliases.as_ref() {
                         for alias in aliases {
-                            inputs.push(Rc::new(InputRow::Alias(Rc::new(alias.clone()), Rc::clone(&input))));
+                            inputs.push(Rc::new(InputRow::Alias(
+                                Rc::new(alias.clone()),
+                                Rc::clone(&input),
+                            )));
                         }
                     }
                 }
@@ -131,8 +147,6 @@ pub fn Home() -> Html {
     let playlist_context = PlaylistContext {
         sources: sources.clone(),
     };
-
-
 
     let handle_view_change = {
         let view_vis = view_visible.clone();

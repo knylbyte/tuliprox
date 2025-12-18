@@ -7,7 +7,9 @@ use crate::utils::t_safe;
 use gloo_timers::callback::Interval;
 use gloo_utils::window;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
-use shared::model::{PlaylistItemType, ProtocolMessage, SortOrder, StreamChannel, StreamInfo, UserCommand};
+use shared::model::{
+    PlaylistItemType, ProtocolMessage, SortOrder, StreamChannel, StreamInfo, UserCommand,
+};
 use shared::utils::{current_time_secs, default_kick_secs, strip_port};
 use std::fmt::Display;
 use std::rc::Rc;
@@ -43,7 +45,7 @@ const HEADERS: [&str; 12] = [
     "PROVIDER",
     "SHARED",
     "USER_AGENT",
-    "DURATION"
+    "DURATION",
 ];
 
 fn format_duration(seconds: u64) -> String {
@@ -94,7 +96,8 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         let visible_headers: Vec<&str> = if include_country {
             HEADERS.to_vec() // all headers
         } else {
-            HEADERS.iter()
+            HEADERS
+                .iter()
                 .filter(|h| **h != "COUNTRY")
                 .copied()
                 .collect()
@@ -102,12 +105,10 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         visible_headers
     });
 
-
     use_effect_with((), move |_| {
         let interval = Interval::new(1000, update_timestamps);
         move || drop(interval)
     });
-
 
     let handle_popup_close = {
         let set_is_open = popup_is_open.clone();
@@ -147,14 +148,12 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
 
     let render_cluster = |channel: &StreamChannel| -> &str {
         match channel.item_type {
-            PlaylistItemType::LiveUnknown
-            | PlaylistItemType::Live => LIVE,
+            PlaylistItemType::LiveUnknown | PlaylistItemType::Live => LIVE,
             PlaylistItemType::Video => MOVIE,
-            PlaylistItemType::Series
-            | PlaylistItemType::SeriesInfo => SERIES,
+            PlaylistItemType::Series | PlaylistItemType::SeriesInfo => SERIES,
             PlaylistItemType::Catchup => CATCHUP,
             PlaylistItemType::LiveHls => HLS,
-            PlaylistItemType::LiveDash => DASH
+            PlaylistItemType::LiveDash => DASH,
         }
     };
 
@@ -163,42 +162,45 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         let headers = headers.clone();
         let translate = translate.clone();
         Callback::<(usize, usize, Rc<StreamInfo>), Html>::from(
-            move |(row, col, dto): (usize, usize, Rc<StreamInfo>)| {
-                match headers[col] {
-                    "EMPTY" => {
-                        let popup_onclick = popup_onclick.clone();
-                        html! {
-                            <button class="tp__icon-button"
-                                onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((dto.clone(), event)))}
-                                data-row={row.to_string()}>
-                                <AppIcon name="Popup"></AppIcon>
-                            </button>
-                        }
+            move |(row, col, dto): (usize, usize, Rc<StreamInfo>)| match headers[col] {
+                "EMPTY" => {
+                    let popup_onclick = popup_onclick.clone();
+                    html! {
+                        <button class="tp__icon-button"
+                            onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((dto.clone(), event)))}
+                            data-row={row.to_string()}>
+                            <AppIcon name="Popup"></AppIcon>
+                        </button>
                     }
-                    "USERNAME" => html! {dto.username.as_str()},
-                    "STREAM_ID" => html! { <>
-                            { dto.channel.virtual_id.to_string() }
-                            {" ("}
-                            { dto.channel.provider_id.to_string() }
-                            {")"}
-                        </>},
-                    "CLUSTER" => html! { render_cluster(&dto.channel) },
-                    "CHANNEL" => html! {dto.channel.title.as_str()},
-                    "GROUP" => html! {dto.channel.group.as_str()},
-                    "CLIENT_IP" => html! { strip_port(&dto.client_ip)},
-                    "COUNTRY" => html! { dto.country.as_ref().map_or_else(String::new, |c| t_safe(&translate, &format!("COUNTRY.{c}")).unwrap_or_else(||c.to_string())) },
-                    "PROVIDER" => html! {dto.provider.as_str()},
-                    "SHARED" => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
-                    "USER_AGENT" => html! { <RevealContent preview={Some(html! { dto.user_agent.as_str() })}>{dto.user_agent.as_str()}</RevealContent> },
-                    "DURATION" => html! { <span class="tp__stream-table__duration" data-ts={dto.ts.to_string()}>{format_duration(current_time_secs() - dto.ts)}</span> },
-                    _ => html! {""},
                 }
-            })
+                "USERNAME" => html! {dto.username.as_str()},
+                "STREAM_ID" => html! { <>
+                    { dto.channel.virtual_id.to_string() }
+                    {" ("}
+                    { dto.channel.provider_id.to_string() }
+                    {")"}
+                </>},
+                "CLUSTER" => html! { render_cluster(&dto.channel) },
+                "CHANNEL" => html! {dto.channel.title.as_str()},
+                "GROUP" => html! {dto.channel.group.as_str()},
+                "CLIENT_IP" => html! { strip_port(&dto.client_ip)},
+                "COUNTRY" => {
+                    html! { dto.country.as_ref().map_or_else(String::new, |c| t_safe(&translate, &format!("COUNTRY.{c}")).unwrap_or_else(||c.to_string())) }
+                }
+                "PROVIDER" => html! {dto.provider.as_str()},
+                "SHARED" => html! { <ToggleSwitch value={dto.channel.shared} readonly={true} /> },
+                "USER_AGENT" => {
+                    html! { <RevealContent preview={Some(html! { dto.user_agent.as_str() })}>{dto.user_agent.as_str()}</RevealContent> }
+                }
+                "DURATION" => {
+                    html! { <span class="tp__stream-table__duration" data-ts={dto.ts.to_string()}>{format_duration(current_time_secs() - dto.ts)}</span> }
+                }
+                _ => html! {""},
+            },
+        )
     };
 
-    let is_sortable = Callback::<usize, bool>::from(move |_col| {
-        false
-    });
+    let is_sortable = Callback::<usize, bool>::from(move |_col| false);
 
     let on_sort = Callback::<Option<(usize, SortOrder)>, ()>::from(move |_args| {});
 
@@ -209,17 +211,25 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         let is_sortable = is_sortable.clone();
         let on_sort = on_sort.clone();
         let num_cols = headers.len();
-        use_memo((props.streams.clone(), (*headers).clone()), move |(streams, _)| {
-            streams.as_ref().map(|list|
-                Rc::new(TableDefinition::<StreamInfo> {
-                    items: if list.is_empty() { None } else { Some(Rc::new(list.clone())) },
-                    num_cols,
-                    is_sortable,
-                    on_sort,
-                    render_header_cell: render_header_cell_cb,
-                    render_data_cell: render_data_cell_cb,
-                }))
-        })
+        use_memo(
+            (props.streams.clone(), (*headers).clone()),
+            move |(streams, _)| {
+                streams.as_ref().map(|list| {
+                    Rc::new(TableDefinition::<StreamInfo> {
+                        items: if list.is_empty() {
+                            None
+                        } else {
+                            Some(Rc::new(list.clone()))
+                        },
+                        num_cols,
+                        is_sortable,
+                        on_sort,
+                        render_header_cell: render_header_cell_cb,
+                        render_data_cell: render_data_cell_cb,
+                    })
+                })
+            },
+        )
     };
 
     let copy_to_clipboard: Callback<String> = {
@@ -230,7 +240,9 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
             if *clipboard.is_supported {
                 clipboard.write_text(text);
             } else {
-                services.toastr.error(translate.t("MESSAGES.CLIPBOARD_NOT_SUPPORTED"));
+                services
+                    .toastr
+                    .error(translate.t("MESSAGES.CLIPBOARD_NOT_SUPPORTED"));
             }
         })
     };
@@ -241,7 +253,10 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         let services = service_ctx.clone();
         let selected_dto = selected_dto.clone();
         let copy_to_clipboard = copy_to_clipboard.clone();
-        let kick_secs = config_ctx.config.as_ref().and_then(|app_cfg| app_cfg.config.web_ui.as_ref())
+        let kick_secs = config_ctx
+            .config
+            .as_ref()
+            .and_then(|app_cfg| app_cfg.config.web_ui.as_ref())
             .map(|web_ui| web_ui.kick_secs)
             .unwrap_or_else(default_kick_secs);
         Callback::from(move |(name, _): (String, _)| {
@@ -249,8 +264,12 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                 match action {
                     StreamsTableAction::Kick => {
                         if let Some(dto) = (*selected_dto).as_ref() {
-                            if !services.websocket.send_message(ProtocolMessage::UserAction(UserCommand::Kick(dto.addr, dto.channel.virtual_id, kick_secs))) {
-                                services.toastr.error(translate.t("MESSAGES.FAILED_TO_KICK_USER_STREAM"));
+                            if !services.websocket.send_message(ProtocolMessage::UserAction(
+                                UserCommand::Kick(dto.addr, dto.channel.virtual_id, kick_secs),
+                            )) {
+                                services
+                                    .toastr
+                                    .error(translate.t("MESSAGES.FAILED_TO_KICK_USER_STREAM"));
                             }
                         }
                     }
@@ -273,10 +292,16 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
                             let translate = translate.clone();
                             let copy_to_clipboard = copy_to_clipboard.clone();
                             spawn_local(async move {
-                                if let Some(url) = services.playlist.get_playlist_webplayer_url(target_id, virtual_id, cluster).await {
+                                if let Some(url) = services
+                                    .playlist
+                                    .get_playlist_webplayer_url(target_id, virtual_id, cluster)
+                                    .await
+                                {
                                     copy_to_clipboard.emit(url);
                                 } else {
-                                    services.toastr.error(translate.t("MESSAGES.FAILED_TO_RETRIEVE_WEBPLAYER_URL"));
+                                    services.toastr.error(
+                                        translate.t("MESSAGES.FAILED_TO_RETRIEVE_WEBPLAYER_URL"),
+                                    );
                                 }
                             });
                         }
@@ -320,12 +345,16 @@ enum StreamsTableAction {
 
 impl Display for StreamsTableAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Kick => KICK,
-            Self::CopyLinkTuliproxVirtualId => COPY_LINK_TULIPROX_VIRTUAL_ID,
-            Self::CopyLinkTuliproxWebPlayerUrl => COPY_LINK_TULIPROX_WEBPLAYER_URL,
-            Self::CopyLinkProviderUrl => COPY_LINK_PROVIDER_URL,
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Kick => KICK,
+                Self::CopyLinkTuliproxVirtualId => COPY_LINK_TULIPROX_VIRTUAL_ID,
+                Self::CopyLinkTuliproxWebPlayerUrl => COPY_LINK_TULIPROX_WEBPLAYER_URL,
+                Self::CopyLinkProviderUrl => COPY_LINK_PROVIDER_URL,
+            }
+        )
     }
 }
 

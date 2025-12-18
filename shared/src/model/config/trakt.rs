@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-const  TRAKT_API_KEY: &str = "0183a05ad97098d87287fe46da4ae286f434f32e8e951caad4cc147c947d79a3";
-const  TRAKT_API_VERSION: &str = "2";
-const  TRAKT_API_URL: &str = "https://api.trakt.tv";
+const TRAKT_API_KEY: &str = "0183a05ad97098d87287fe46da4ae286f434f32e8e951caad4cc147c947d79a3";
+const TRAKT_API_VERSION: &str = "2";
+const TRAKT_API_URL: &str = "https://api.trakt.tv";
 fn default_fuzzy_threshold() -> u8 {
     80
 }
@@ -20,11 +20,15 @@ pub enum TraktContentType {
 
 impl fmt::Display for TraktContentType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self {
-            TraktContentType::Vod => "Vod",
-            TraktContentType::Series => "Series",
-            TraktContentType::Both => "Both",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                TraktContentType::Vod => "Vod",
+                TraktContentType::Series => "Series",
+                TraktContentType::Both => "Both",
+            }
+        )
     }
 }
 
@@ -41,7 +45,6 @@ impl FromStr for TraktContentType {
     }
 }
 
-
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TraktApiConfigDto {
@@ -55,15 +58,18 @@ pub struct TraktApiConfigDto {
 
 impl TraktApiConfigDto {
     pub fn prepare(&mut self) {
-        let key  =  self.key.trim();
+        let key = self.key.trim();
         self.key = String::from(if key.is_empty() { TRAKT_API_KEY } else { key });
         let version = self.version.trim();
-        self.version = String::from(if version.is_empty() { TRAKT_API_VERSION } else { version });
+        self.version = String::from(if version.is_empty() {
+            TRAKT_API_VERSION
+        } else {
+            version
+        });
         let url = self.url.trim();
         self.url = String::from(if url.is_empty() { TRAKT_API_URL } else { url });
     }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -95,7 +101,6 @@ pub struct TraktConfigDto {
     pub api: TraktApiConfigDto,
     pub lists: Vec<TraktListConfigDto>,
 }
-
 
 impl TraktConfigDto {
     pub fn prepare(&mut self) {

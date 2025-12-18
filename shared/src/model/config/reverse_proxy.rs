@@ -1,7 +1,9 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{CacheConfigDto, GeoIpConfigDto, RateLimitConfigDto, StreamConfigDto};
-use crate::utils::{default_resource_retry_attempts, default_resource_retry_backoff_ms,
-                   default_resource_retry_backoff_multiplier, hex_to_u8_16};
+use crate::utils::{
+    default_resource_retry_attempts, default_resource_retry_backoff_ms,
+    default_resource_retry_backoff_multiplier, hex_to_u8_16,
+};
 use log::warn;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -84,7 +86,11 @@ impl ReverseProxyConfigDto {
         if self.cache.as_ref().is_some_and(CacheConfigDto::is_empty) {
             self.cache = None;
         }
-        if self.rate_limit.as_ref().is_some_and(RateLimitConfigDto::is_empty) {
+        if self
+            .rate_limit
+            .as_ref()
+            .is_some_and(RateLimitConfigDto::is_empty)
+        {
             self.rate_limit = None;
         }
         if self.geoip.as_ref().is_some_and(GeoIpConfigDto::is_empty) {
@@ -93,8 +99,8 @@ impl ReverseProxyConfigDto {
     }
 
     pub(crate) fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {
-
-        hex_to_u8_16(&self.rewrite_secret).map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, e))?;
+        hex_to_u8_16(&self.rewrite_secret)
+            .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, e))?;
 
         if let Some(stream) = self.stream.as_mut() {
             stream.prepare()?;
@@ -141,6 +147,7 @@ impl ResourceRetryConfigDto {
     pub fn is_default(&self) -> bool {
         self.max_attempts == default_resource_retry_attempts()
             && self.backoff_millis == default_resource_retry_backoff_ms()
-            && (self.backoff_multiplier - default_resource_retry_backoff_multiplier()).abs() < f64::EPSILON
+            && (self.backoff_multiplier - default_resource_retry_backoff_multiplier()).abs()
+                < f64::EPSILON
     }
 }

@@ -1,13 +1,19 @@
-use std::cmp::Ordering;
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
-use crate::app::components::{convert_bool_to_chip_style, AppIcon, CellValue, Chip, HideContent, MaxConnections, ProxyTypeView, RevealContent, Table, TableDefinition, UserStatus, UserlistContext, UserlistPage};
+use crate::app::components::{
+    convert_bool_to_chip_style, AppIcon, CellValue, Chip, HideContent, MaxConnections,
+    ProxyTypeView, RevealContent, Table, TableDefinition, UserStatus, UserlistContext,
+    UserlistPage,
+};
 use crate::app::context::TargetUser;
+use crate::app::TargetUserList;
+use crate::hooks::use_service_context;
 use crate::model::DialogResult;
 use crate::services::DialogService;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
-use shared::model::{SortOrder};
+use shared::model::SortOrder;
 use shared::utils::{unix_ts_to_str, Substring};
+use std::cmp::Ordering;
 use std::fmt::Display;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -15,8 +21,6 @@ use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_hooks::use_clipboard;
 use yew_i18n::use_translation;
-use crate::app::TargetUserList;
-use crate::hooks::use_service_context;
 
 const HEADERS: [&str; 15] = [
     "LABEL.EMPTY",
@@ -39,21 +43,36 @@ const HEADERS: [&str; 15] = [
 fn get_cell_value(user: &TargetUser, col: usize) -> CellValue<'_> {
     match col {
         1 => CellValue::Bool(user.credentials.is_active()),
-        2 => user.credentials.status.as_ref().map_or(CellValue::Empty, |s| CellValue::Status(*s)),
+        2 => user
+            .credentials
+            .status
+            .as_ref()
+            .map_or(CellValue::Empty, |s| CellValue::Status(*s)),
         3 => CellValue::Text(user.target.as_str()),
         4 => CellValue::Text(user.credentials.username.as_str()),
         7 => CellValue::Proxy(user.credentials.proxy),
-        8 => user.credentials.server.as_ref().map_or(CellValue::Empty, |s|CellValue::Text(s)),
-        12 => user.credentials.created_at.as_ref().map_or(CellValue::Empty, |d| CellValue::Date(*d)),
-        13 => user.credentials.exp_date.as_ref().map_or(CellValue::Empty, |d| CellValue::Date(*d)),
+        8 => user
+            .credentials
+            .server
+            .as_ref()
+            .map_or(CellValue::Empty, |s| CellValue::Text(s)),
+        12 => user
+            .credentials
+            .created_at
+            .as_ref()
+            .map_or(CellValue::Empty, |d| CellValue::Date(*d)),
+        13 => user
+            .credentials
+            .exp_date
+            .as_ref()
+            .map_or(CellValue::Empty, |d| CellValue::Date(*d)),
         _ => CellValue::Empty,
     }
 }
 
 fn is_col_sortable(col: usize) -> bool {
-    matches!(col, 1 | 2 | 3 | 4 | 7 | 8 | 12  | 13)
+    matches!(col, 1 | 2 | 3 | 4 | 7 | 8 | 12 | 13)
 }
-
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum TableAction {
@@ -65,12 +84,16 @@ enum TableAction {
 
 impl Display for TableAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Edit => "edit",
-            Self::Refresh => "refresh",
-            Self::Delete => "delete",
-            Self::CopyCredentials => "copy_credentials",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Edit => "edit",
+                Self::Refresh => "refresh",
+                Self::Delete => "delete",
+                Self::CopyCredentials => "copy_credentials",
+            }
+        )
     }
 }
 
@@ -194,19 +217,18 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                                      |comment| html! { <RevealContent preview={Some(html! {comment.substring(0, 50)})}>{comment}</RevealContent> }),
                     _ => html! {""},
                 }
-            })
+            },
+        )
     };
 
-    let is_sortable = Callback::<usize, bool>::from(move |col| {
-            is_col_sortable(col)
-    });
+    let is_sortable = Callback::<usize, bool>::from(move |col| is_col_sortable(col));
 
     let on_sort = {
         let users = props.users.clone();
         let user_list = user_list.clone();
         Callback::<Option<(usize, SortOrder)>, ()>::from(move |args| {
             if let Some((col, order)) = args {
-                if let Some(new_user_list)= users.as_ref() {
+                if let Some(new_user_list) = users.as_ref() {
                     let mut new_user_list = new_user_list.as_ref().clone();
                     new_user_list.sort_by(|a, b| {
                         let a_value = get_cell_value(a, col);
@@ -234,7 +256,11 @@ pub fn UserTable(props: &UserTableProps) -> Html {
         let num_cols = HEADERS.len();
         let user_list_clone = user_list.clone();
         use_memo(user_list_clone.clone(), move |targets| {
-            let items = if (*targets).as_ref().is_none_or(|l| l.is_empty()) {None} else {(**targets).clone()};
+            let items = if (*targets).as_ref().is_none_or(|l| l.is_empty()) {
+                None
+            } else {
+                (**targets).clone()
+            };
             TableDefinition::<TargetUser> {
                 items,
                 num_cols,
@@ -245,7 +271,6 @@ pub fn UserTable(props: &UserTableProps) -> Html {
             }
         })
     };
-
 
     let handle_menu_click = {
         let popup_is_open_state = popup_is_open.clone();
@@ -273,21 +298,40 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                         let userlist = ul_context.clone();
                         let selected_user = selected_dto.clone();
                         spawn_local(async move {
-                            let result = confirm.confirm(&translator.t("MESSAGES.CONFIRM_DELETE")).await;
+                            let result = confirm
+                                .confirm(&translator.t("MESSAGES.CONFIRM_DELETE"))
+                                .await;
                             if result == DialogResult::Ok {
                                 if let Some(dto) = &*selected_user {
-                                    match services.user.delete_user(dto.target.clone(), dto.credentials.username.clone()).await {
+                                    match services
+                                        .user
+                                        .delete_user(
+                                            dto.target.clone(),
+                                            dto.credentials.username.clone(),
+                                        )
+                                        .await
+                                    {
                                         Ok(()) => {
                                             if let Some(user_list) = userlist.users.as_ref() {
-                                                let new_list: Vec<Rc<TargetUser>> = user_list.iter().filter(|target_user|
-                                                    !(target_user.target.eq(&dto.target) && target_user.credentials.username.eq(&dto.credentials.username))
-                                                ).map(Rc::clone).collect();
+                                                let new_list: Vec<Rc<TargetUser>> = user_list
+                                                    .iter()
+                                                    .filter(|target_user| {
+                                                        !(target_user.target.eq(&dto.target)
+                                                            && target_user
+                                                                .credentials
+                                                                .username
+                                                                .eq(&dto.credentials.username))
+                                                    })
+                                                    .map(Rc::clone)
+                                                    .collect();
                                                 userlist.users.set(Some(Rc::new(new_list)));
-                                                services.toastr.success(translator.t("MESSAGES.USER_DELETED"));
+                                                services
+                                                    .toastr
+                                                    .success(translator.t("MESSAGES.USER_DELETED"));
                                             }
-                                        },
+                                        }
                                         Err(err) => {
-                                           services.toastr.error(err.to_string());
+                                            services.toastr.error(err.to_string());
                                         }
                                     }
                                 }
@@ -297,12 +341,20 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                     TableAction::CopyCredentials => {
                         if *clipboard.is_supported {
                             if let Some(dto) = &*selected_dto {
-                                clipboard.write_text(format!("username: {} password: {} token: {}",
-                                                             dto.credentials.username, dto.credentials.password,
-                                                             dto.credentials.token.as_ref().map_or_else(String::new, |t| t.to_string())));
+                                clipboard.write_text(format!(
+                                    "username: {} password: {} token: {}",
+                                    dto.credentials.username,
+                                    dto.credentials.password,
+                                    dto.credentials
+                                        .token
+                                        .as_ref()
+                                        .map_or_else(String::new, |t| t.to_string())
+                                ));
                             }
                         } else {
-                            services.toastr.error(translate.t("MESSAGES.CLIPBOARD_NOT_SUPPORTED"));
+                            services
+                                .toastr
+                                .error(translate.t("MESSAGES.CLIPBOARD_NOT_SUPPORTED"));
                         }
                     }
                 }

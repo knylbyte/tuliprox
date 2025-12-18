@@ -1,13 +1,20 @@
 use crate::app::components::config::config_page::{ConfigForm, LABEL_MESSAGING_CONFIG};
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::{Card, Chip, RadioButtonGroup};
-use crate::{config_field, config_field_bool, config_field_bool_empty, config_field_child, config_field_empty, config_field_hide, config_field_optional, edit_field_bool, edit_field_list, edit_field_text, edit_field_text_option, generate_form_reducer};
-use shared::model::{MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto, TelegramMessagingConfigDto};
+use crate::app::ConfigContext;
+use crate::{
+    config_field, config_field_bool, config_field_bool_empty, config_field_child,
+    config_field_empty, config_field_hide, config_field_optional, edit_field_bool, edit_field_list,
+    edit_field_text, edit_field_text_option, generate_form_reducer,
+};
+use shared::model::{
+    MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto,
+    TelegramMessagingConfigDto,
+};
 use std::rc::Rc;
 use std::str::FromStr;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::app::ConfigContext;
 
 const LABEL_NOTIFY_ON: &str = "LABEL.NOTIFY_ON";
 const LABEL_TELEGRAM: &str = "LABEL.TELEGRAM";
@@ -94,9 +101,13 @@ pub fn MessagingConfigView() -> Html {
         ]
     });
 
-    let notify_on_options_text = use_memo((*notify_on_options).clone(), |options: &Vec<MsgKind>| {
-        options.iter().map(ToString::to_string).collect::<Vec<String>>()
-    });
+    let notify_on_options_text =
+        use_memo((*notify_on_options).clone(), |options: &Vec<MsgKind>| {
+            options
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<String>>()
+        });
 
     {
         let on_form_change = config_view_ctx.on_form_change.clone();
@@ -126,41 +137,65 @@ pub fn MessagingConfigView() -> Html {
         });
     }
 
-
     {
         let msg_state = messaging_state.clone();
         let t_state = telegram_state.clone();
         let p_state = pushover_state.clone();
         let r_state = rest_state.clone();
 
-        let msg_config : MessagingConfigDto = config_ctx
+        let msg_config: MessagingConfigDto = config_ctx
             .config
             .as_ref()
             .and_then(|c| c.config.messaging.as_ref())
             .map_or_else(MessagingConfigDto::default, |m| m.clone());
 
-        let telegram_cfg = msg_config.telegram.as_ref().map_or_else(TelegramMessagingConfigDto::default, |t| t.clone());
-        use_effect_with((telegram_cfg, config_view_ctx.edit_mode.clone()), move |(telegram_cfg, _mode)| {
-            t_state.dispatch(TelegramMessagingConfigFormAction::SetAll(telegram_cfg.clone()));
-            || ()
-        });
+        let telegram_cfg = msg_config
+            .telegram
+            .as_ref()
+            .map_or_else(TelegramMessagingConfigDto::default, |t| t.clone());
+        use_effect_with(
+            (telegram_cfg, config_view_ctx.edit_mode.clone()),
+            move |(telegram_cfg, _mode)| {
+                t_state.dispatch(TelegramMessagingConfigFormAction::SetAll(
+                    telegram_cfg.clone(),
+                ));
+                || ()
+            },
+        );
 
-        let rest_cfg = msg_config.rest.as_ref().map_or_else(RestMessagingConfigDto::default, |t| t.clone());
-        use_effect_with((rest_cfg, config_view_ctx.edit_mode.clone()), move |(rest_cfg, _mode)| {
-            r_state.dispatch(RestMessagingConfigFormAction::SetAll(rest_cfg.clone()));
-            || ()
-        });
+        let rest_cfg = msg_config
+            .rest
+            .as_ref()
+            .map_or_else(RestMessagingConfigDto::default, |t| t.clone());
+        use_effect_with(
+            (rest_cfg, config_view_ctx.edit_mode.clone()),
+            move |(rest_cfg, _mode)| {
+                r_state.dispatch(RestMessagingConfigFormAction::SetAll(rest_cfg.clone()));
+                || ()
+            },
+        );
 
-        let pushover_cfg = msg_config.pushover.as_ref().map_or_else(PushoverMessagingConfigDto::default, |t| t.clone());
-        use_effect_with((pushover_cfg, config_view_ctx.edit_mode.clone()), move |(pushover_cfg, _mode)| {
-            p_state.dispatch(PushoverMessagingConfigFormAction::SetAll(pushover_cfg.clone()));
-            || ()
-        });
+        let pushover_cfg = msg_config
+            .pushover
+            .as_ref()
+            .map_or_else(PushoverMessagingConfigDto::default, |t| t.clone());
+        use_effect_with(
+            (pushover_cfg, config_view_ctx.edit_mode.clone()),
+            move |(pushover_cfg, _mode)| {
+                p_state.dispatch(PushoverMessagingConfigFormAction::SetAll(
+                    pushover_cfg.clone(),
+                ));
+                || ()
+            },
+        );
 
-        use_effect_with((msg_config, config_view_ctx.edit_mode.clone()), move |(msg_config, _mode)| {
-            msg_state.dispatch(MessagingConfigFormAction::SetAll(msg_config.clone()));
-            || ()
-        });
+        use_effect_with(
+            (msg_config, config_view_ctx.edit_mode.clone()),
+            move |(msg_config, _mode)| {
+                msg_state.dispatch(MessagingConfigFormAction::SetAll(msg_config.clone()));
+                || ()
+            },
+        );
     }
 
     let render_telegram = |telegram: Option<&TelegramMessagingConfigDto>| match telegram {

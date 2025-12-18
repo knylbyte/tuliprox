@@ -1,13 +1,13 @@
-use std::cell::RefCell;
 use crate::app::components::{AppIcon, Card, CollapsePanel};
+use crate::html_if;
 use shared::model::{PlaylistClusterBouquetDto, PlaylistClusterCategoriesDto, XtreamCluster};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::str::FromStr;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::html_if;
 
 fn normalize(s: &str) -> String {
     let cleaned: String = s
@@ -66,39 +66,42 @@ pub fn UserTargetPlaylist(props: &UserTargetPlaylistProps) -> Html {
         let in_cats = props.categories.clone();
         let in_bouquet = props.bouquet.clone();
         let force_update = force_update.clone();
-        use_effect_with((in_cats, in_bouquet), move |(maybe_categories, maybe_bouquet)| {
-            let mut selections = BouquetSelection::default();
-            if let Some(categories) = maybe_categories.as_ref() {
-                if let Some(bouquet) = maybe_bouquet.as_ref() {
-                    create_selection!(bouquet, categories, selections, live);
-                    create_selection!(bouquet, categories, selections, vod);
-                    create_selection!(bouquet, categories, selections, series);
-                } else {
-                    if let Some(cats) = categories.live.as_ref() {
-                        for c in cats {
-                            selections.live.insert(c.clone(), true);
+        use_effect_with(
+            (in_cats, in_bouquet),
+            move |(maybe_categories, maybe_bouquet)| {
+                let mut selections = BouquetSelection::default();
+                if let Some(categories) = maybe_categories.as_ref() {
+                    if let Some(bouquet) = maybe_bouquet.as_ref() {
+                        create_selection!(bouquet, categories, selections, live);
+                        create_selection!(bouquet, categories, selections, vod);
+                        create_selection!(bouquet, categories, selections, series);
+                    } else {
+                        if let Some(cats) = categories.live.as_ref() {
+                            for c in cats {
+                                selections.live.insert(c.clone(), true);
+                            }
+                        }
+                        if let Some(cats) = categories.vod.as_ref() {
+                            for c in cats {
+                                selections.vod.insert(c.clone(), true);
+                            }
+                        }
+                        if let Some(cats) = categories.series.as_ref() {
+                            for c in cats {
+                                selections.series.insert(c.clone(), true);
+                            }
                         }
                     }
-                    if let Some(cats) = categories.vod.as_ref() {
-                        for c in cats {
-                            selections.vod.insert(c.clone(), true);
-                        }
-                    }
-                    if let Some(cats) = categories.series.as_ref() {
-                        for c in cats {
-                            selections.series.insert(c.clone(), true);
-                        }
-                    }
+                    *bouquet_selection.borrow_mut() = selections;
+                    let mut new_categories = categories.clone();
+                    sort_opt_vec(&mut new_categories.live);
+                    sort_opt_vec(&mut new_categories.vod);
+                    sort_opt_vec(&mut new_categories.series);
+                    playlist_categories.set(new_categories);
+                    force_update.set(*force_update + 1);
                 }
-                *bouquet_selection.borrow_mut() = selections;
-                let mut new_categories = categories.clone();
-                sort_opt_vec(&mut new_categories.live);
-                sort_opt_vec(&mut new_categories.vod);
-                sort_opt_vec(&mut new_categories.series);
-                playlist_categories.set(new_categories);
-                force_update.set(*force_update + 1);
-            }
-        });
+            },
+        );
     }
 
     let handle_category_click = {
@@ -115,15 +118,18 @@ pub fn UserTargetPlaylist(props: &UserTargetPlaylistProps) -> Html {
                                 let mut selections = bouquet_selection.borrow_mut();
                                 match cluster {
                                     XtreamCluster::Live => {
-                                        let selected = *selections.live.get(&category).unwrap_or(&false);
+                                        let selected =
+                                            *selections.live.get(&category).unwrap_or(&false);
                                         selections.live.insert(category, !selected);
                                     }
                                     XtreamCluster::Video => {
-                                        let selected = *selections.vod.get(&category).unwrap_or(&false);
+                                        let selected =
+                                            *selections.vod.get(&category).unwrap_or(&false);
                                         selections.vod.insert(category, !selected);
                                     }
                                     XtreamCluster::Series => {
-                                        let selected = *selections.series.get(&category).unwrap_or(&false);
+                                        let selected =
+                                            *selections.series.get(&category).unwrap_or(&false);
                                         selections.series.insert(category, !selected);
                                     }
                                 }
@@ -137,32 +143,33 @@ pub fn UserTargetPlaylist(props: &UserTargetPlaylistProps) -> Html {
         })
     };
 
-    let render_category_cluster = |cluster: XtreamCluster, cats: Option<&Vec<String>>, selections: &HashMap<String, bool>| {
-        if let Some(c) = cats {
-            html_if!(!c.is_empty(), {
-               <Card>
-                  <CollapsePanel title={translate.t( match cluster {
-                        XtreamCluster::Live =>  "LABEL.LIVE",
-                        XtreamCluster::Video =>  "LABEL.MOVIE",
-                        XtreamCluster::Series =>  "LABEL.SERIES"
-                  })}>
-                    <div class="tp__api-user-target-playlist__categories">
-                        { for c.iter().map(|cat| {
-                            let selected = *selections.get(cat).unwrap_or(&false);
-                            html! {
-                            <div key={cat.clone()} data-cluster={cluster.to_string()} data-category={cat.clone()} class={classes!("tp__api-user-target-playlist__categories-category", if selected {"selected"} else {""})}
-                                onclick={handle_category_click.clone()}>
-                                <AppIcon name={if selected {"Checked"} else {"Unchecked"}}/> { &cat }
-                            </div>
-                        }})}
-                    </div>
-                 </CollapsePanel>
-                </Card>
-            })
-        } else {
-            html! {}
-        }
-    };
+    let render_category_cluster =
+        |cluster: XtreamCluster, cats: Option<&Vec<String>>, selections: &HashMap<String, bool>| {
+            if let Some(c) = cats {
+                html_if!(!c.is_empty(), {
+                   <Card>
+                      <CollapsePanel title={translate.t( match cluster {
+                            XtreamCluster::Live =>  "LABEL.LIVE",
+                            XtreamCluster::Video =>  "LABEL.MOVIE",
+                            XtreamCluster::Series =>  "LABEL.SERIES"
+                      })}>
+                        <div class="tp__api-user-target-playlist__categories">
+                            { for c.iter().map(|cat| {
+                                let selected = *selections.get(cat).unwrap_or(&false);
+                                html! {
+                                <div key={cat.clone()} data-cluster={cluster.to_string()} data-category={cat.clone()} class={classes!("tp__api-user-target-playlist__categories-category", if selected {"selected"} else {""})}
+                                    onclick={handle_category_click.clone()}>
+                                    <AppIcon name={if selected {"Checked"} else {"Unchecked"}}/> { &cat }
+                                </div>
+                            }})}
+                        </div>
+                     </CollapsePanel>
+                    </Card>
+                })
+            } else {
+                html! {}
+            }
+        };
 
     let selections = &*bouquet_selection.borrow();
     html! {

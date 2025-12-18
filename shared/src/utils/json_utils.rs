@@ -1,6 +1,6 @@
-use serde::{Deserialize};
+use crate::utils::humanize_snake_case;
+use serde::Deserialize;
 use serde_json::{self, Value};
-use crate::utils::{humanize_snake_case};
 
 pub fn string_or_number_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
@@ -130,7 +130,8 @@ fn json_to_markdown(value: &Value) -> String {
             Value::Object(map) => {
                 let mut entries: Vec<_> = map.iter().collect();
                 entries.sort_by_key(|(k, _)| *k);
-                entries.into_iter()
+                entries
+                    .into_iter()
                     .map(|(k, v)| {
                         let formatted = format_value(v, indent + 2);
                         let key = escape_markdown_v2(&humanize_snake_case(k));
@@ -142,11 +143,10 @@ fn json_to_markdown(value: &Value) -> String {
                     })
                     .collect::<Vec<_>>()
                     .join("\n")
-            },
-            Value::Array(arr) => arr.iter()
-                .map(|v| {
-                    format!("{pad}\\- {}", format_value(v, indent + 3).trim())
-                })
+            }
+            Value::Array(arr) => arr
+                .iter()
+                .map(|v| format!("{pad}\\- {}", format_value(v, indent + 3).trim()))
                 .collect::<Vec<_>>()
                 .join("\n"),
             Value::String(s) => escape_markdown_v2(s),

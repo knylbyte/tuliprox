@@ -23,7 +23,9 @@ impl Default for LogConfigDto {
 
 impl LogConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.sanitize_sensitive_info && !self.log_active_user && is_blank_optional_string(&self.log_level)
+        self.sanitize_sensitive_info
+            && !self.log_active_user
+            && is_blank_optional_string(&self.log_level)
     }
 
     pub fn clean(&mut self) {

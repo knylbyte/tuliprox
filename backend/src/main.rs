@@ -10,19 +10,21 @@ mod modules;
 include_modules!();
 
 use crate::auth::generate_password;
-use crate::model::{AppConfig, Config, Healthcheck, HealthcheckConfig, ProcessTargets, SourcesConfig};
+use crate::model::{
+    AppConfig, Config, Healthcheck, HealthcheckConfig, ProcessTargets, SourcesConfig,
+};
 use crate::processing::processor::playlist;
+use crate::utils::init_logger;
+use crate::utils::request::create_client;
 use crate::utils::{config_file_reader, resolve_env_var};
-use crate::utils::request::{create_client};
-use chrono::{DateTime, Utc};
-use clap::{Parser};
-use log::{error, info};
-use std::fs::File;
-use std::sync::Arc;
 use arc_swap::access::Access;
 use arc_swap::ArcSwap;
+use chrono::{DateTime, Utc};
+use clap::Parser;
+use log::{error, info};
 use shared::model::ConfigPaths;
-use crate::utils::init_logger;
+use std::fs::File;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "tuliprox")]
@@ -55,7 +57,12 @@ struct Args {
     api_proxy: Option<String>,
 
     /// Run in server mode
-    #[arg(short = 's', long, default_value_t = false, default_missing_value = "true")]
+    #[arg(
+        short = 's',
+        long,
+        default_value_t = false,
+        default_missing_value = "true"
+    )]
     server: bool,
 
     /// log level
@@ -69,7 +76,6 @@ struct Args {
     )]
     healthcheck: bool,
 }
-
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const BUILD_TIMESTAMP: &str = env!("VERGEN_BUILD_TIMESTAMP");
@@ -96,7 +102,10 @@ async fn main() {
 
     let mut config_paths = get_file_paths(&args);
 
-    init_logger(args.log_level.as_ref(), config_paths.config_file_path.as_str());
+    init_logger(
+        args.log_level.as_ref(),
+        config_paths.config_file_path.as_str(),
+    );
 
     if args.healthcheck {
         let healthy = healthcheck(config_paths.config_file_path.as_str()).await;
@@ -104,14 +113,23 @@ async fn main() {
     }
 
     info!("Version: {VERSION}");
-    if let Some(bts) = BUILD_TIMESTAMP.to_string().parse::<DateTime<Utc>>().ok().map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string()) {
+    if let Some(bts) = BUILD_TIMESTAMP
+        .to_string()
+        .parse::<DateTime<Utc>>()
+        .ok()
+        .map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S %Z").to_string())
+    {
         info!("Build time: {bts}");
     }
-    let app_config = utils::read_initial_app_config(&mut config_paths, true, true, args.server).await.unwrap_or_else(|err| exit!("{}", err));
+    let app_config = utils::read_initial_app_config(&mut config_paths, true, true, args.server)
+        .await
+        .unwrap_or_else(|err| exit!("{}", err));
     print_info(&app_config);
 
     let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&app_config.sources);
-    let targets = sources.validate_targets(args.target.as_ref()).unwrap_or_else(|err| exit!("{}", err));
+    let targets = sources
+        .validate_targets(args.target.as_ref())
+        .unwrap_or_else(|err| exit!("{}", err));
 
     if args.server {
         start_in_server_mode(Arc::new(app_config), Arc::new(targets)).await;
@@ -123,14 +141,23 @@ async fn main() {
 fn print_info(app_config: &AppConfig) {
     let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_config.config);
     let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&app_config.paths);
-    info!("Current time: {}", chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S"));
+    info!(
+        "Current time: {}",
+        chrono::offset::Local::now().format("%Y-%m-%d %H:%M:%S")
+    );
     info!("Temp dir: {}", tempfile::env::temp_dir().display());
     info!("Working dir: {:?}", &config.working_dir);
     info!("Config dir: {:?}", &paths.config_path);
     info!("Config file: {:?}", &paths.config_file_path);
     info!("Source file: {:?}", &paths.sources_file_path);
     info!("Api Proxy File: {:?}", &paths.api_proxy_file_path);
-    info!("Mapping file: {:?}", &paths.mapping_file_path.as_ref().map_or_else(|| "not used",  |v| v.as_str()));
+    info!(
+        "Mapping file: {:?}",
+        &paths
+            .mapping_file_path
+            .as_ref()
+            .map_or_else(|| "not used", |v| v.as_str())
+    );
 
     if let Some(cache) = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
         if cache.enabled {
@@ -143,10 +170,24 @@ fn print_info(app_config: &AppConfig) {
 }
 
 fn get_file_paths(args: &Args) -> ConfigPaths {
-    let config_path: String = utils::resolve_directory_path(&resolve_env_var(&args.config_path.as_ref().map_or_else(utils::get_default_config_path, ToString::to_string)));
-    let config_file: String = resolve_env_var(&args.config_file.as_ref().map_or_else(|| utils::get_default_config_file_path(&config_path), ToString::to_string));
-    let api_proxy_file = resolve_env_var(&args.api_proxy.as_ref().map_or_else(|| utils::get_default_api_proxy_config_path(config_path.as_str()), ToString::to_string));
-    let sources_file: String = resolve_env_var(&args.source_file.as_ref().map_or_else(|| utils::get_default_sources_file_path(&config_path),  ToString::to_string));
+    let config_path: String = utils::resolve_directory_path(&resolve_env_var(
+        &args
+            .config_path
+            .as_ref()
+            .map_or_else(utils::get_default_config_path, ToString::to_string),
+    ));
+    let config_file: String = resolve_env_var(&args.config_file.as_ref().map_or_else(
+        || utils::get_default_config_file_path(&config_path),
+        ToString::to_string,
+    ));
+    let api_proxy_file = resolve_env_var(&args.api_proxy.as_ref().map_or_else(
+        || utils::get_default_api_proxy_config_path(config_path.as_str()),
+        ToString::to_string,
+    ));
+    let sources_file: String = resolve_env_var(&args.source_file.as_ref().map_or_else(
+        || utils::get_default_sources_file_path(&config_path),
+        ToString::to_string,
+    ));
     let mappings_file = args.mapping_file.as_ref().map(|p| resolve_env_var(p));
 
     ConfigPaths {
@@ -184,21 +225,21 @@ async fn healthcheck(config_file: &str) -> bool {
                         .send()
                         .await
                     {
-                        Ok(response) => matches!(response.json::<Healthcheck>().await, Ok(check) if check.status == "ok"),
+                        Ok(response) => {
+                            matches!(response.json::<Healthcheck>().await, Ok(check) if check.status == "ok")
+                        }
                         Err(_) => false,
                     }
-
                 }
                 Err(err) => {
                     error!("Failed to parse config file for healthcheck {err:?}");
                     false
                 }
             }
-        },
+        }
         Err(err) => {
             error!("Failed to open config file for healthcheck {err:?}");
             false
         }
-     }
-
+    }
 }

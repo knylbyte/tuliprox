@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::borrow::BorrowMut;
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::DEFAULT_USER_AGENT;
 use crate::utils::is_blank_optional_string;
+use std::borrow::BorrowMut;
+use std::collections::HashMap;
 
 pub const DEFAULT_VIDEO_EXTENSIONS: [&str; 6] = ["mkv", "avi", "mp4", "mpeg", "divx", "mov"];
 
@@ -40,11 +40,11 @@ pub struct VideoConfigDto {
     pub web_search: Option<String>,
 }
 
-
 impl VideoConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.extensions.is_empty() && is_blank_optional_string(&self.web_search)
-        && (self.download.is_none() || self.download.as_ref().is_some_and(|d| d.is_empty()))
+        self.extensions.is_empty()
+            && is_blank_optional_string(&self.web_search)
+            && (self.download.is_none() || self.download.as_ref().is_some_and(|d| d.is_empty()))
     }
 
     pub fn clean(&mut self) {
@@ -67,13 +67,22 @@ impl VideoConfigDto {
             None => {}
             Some(downl) => {
                 if downl.headers.is_empty() {
-                    downl.headers.borrow_mut().insert("Accept".to_string(), "video/*".to_string());
-                    downl.headers.borrow_mut().insert("User-Agent".to_string(), DEFAULT_USER_AGENT.to_string());
+                    downl
+                        .headers
+                        .borrow_mut()
+                        .insert("Accept".to_string(), "video/*".to_string());
+                    downl
+                        .headers
+                        .borrow_mut()
+                        .insert("User-Agent".to_string(), DEFAULT_USER_AGENT.to_string());
                 }
 
                 if let Some(episode_pattern) = &downl.episode_pattern {
                     if let Err(err) = regex::Regex::new(episode_pattern) {
-                         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse regex: {episode_pattern} {err}");
+                        return create_tuliprox_error_result!(
+                            TuliproxErrorKind::Info,
+                            "cant parse regex: {episode_pattern} {err}"
+                        );
                     }
                 }
             }

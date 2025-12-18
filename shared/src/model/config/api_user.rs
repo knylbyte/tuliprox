@@ -1,6 +1,6 @@
-use crate::utils::{default_as_true, deserialize_timestamp};
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ProxyType, ProxyUserStatus};
+use crate::utils::{default_as_true, deserialize_timestamp};
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum UserConnectionPermission {
@@ -24,7 +24,11 @@ pub struct ProxyUserCredentialsDto {
     pub epg_timeshift: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<i64>,
-    #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_timestamp",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub exp_date: Option<i64>,
     #[serde(default)]
     pub max_connections: u32,
@@ -54,20 +58,29 @@ impl ProxyUserCredentialsDto {
 
     pub fn validate(&self) -> Result<(), TuliproxError> {
         if self.username.is_empty() {
-            return Err(TuliproxError::new(TuliproxErrorKind::Info, "Username required".to_string()));
+            return Err(TuliproxError::new(
+                TuliproxErrorKind::Info,
+                "Username required".to_string(),
+            ));
         }
         if self.password.is_empty() {
-            return Err(TuliproxError::new(TuliproxErrorKind::Info, "Password required".to_string()));
+            return Err(TuliproxError::new(
+                TuliproxErrorKind::Info,
+                "Password required".to_string(),
+            ));
         }
         Ok(())
     }
 
     pub fn is_active(&self) -> bool {
         if let Some(status) = &self.status {
-            if matches!(status, ProxyUserStatus::Expired
-            | ProxyUserStatus::Banned
-            | ProxyUserStatus::Disabled
-            | ProxyUserStatus::Pending) {
+            if matches!(
+                status,
+                ProxyUserStatus::Expired
+                    | ProxyUserStatus::Banned
+                    | ProxyUserStatus::Disabled
+                    | ProxyUserStatus::Pending
+            ) {
                 return false;
             }
         }
@@ -80,5 +93,3 @@ impl ProxyUserCredentialsDto {
         true
     }
 }
-
-

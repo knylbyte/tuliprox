@@ -1,16 +1,35 @@
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::utils::{default_as_true, generate_hdhr_device_id, generate_hdhr_device_id_from_base, hash_string, hex_encode, validate_hdhr_device_id};
+use crate::utils::{
+    default_as_true, generate_hdhr_device_id, generate_hdhr_device_id_from_base, hash_string,
+    hex_encode, validate_hdhr_device_id,
+};
 use log::warn;
 use std::collections::HashSet;
 
-fn default_friendly_name() -> String { String::from("TuliproxTV") }
-fn default_manufacturer() -> String { String::from("Silicondust") }
-fn default_model_name() -> String { String::from("HDTC-2US") }
-fn default_firmware_name() -> String { String::from("hdhomeruntc_atsc") }
-fn default_firmware_version() -> String { String::from("20170930") }
-fn default_device_type() -> String { String::from("urn:schemas-upnp-org:device:MediaServer:1") }
-fn default_device_udn() -> String { String::from("uuid:12345678-90ab-cdef-1234-567890abcdef::urn:dial-multicast:com.silicondust.hdhomerun") }
+fn default_friendly_name() -> String {
+    String::from("TuliproxTV")
+}
+fn default_manufacturer() -> String {
+    String::from("Silicondust")
+}
+fn default_model_name() -> String {
+    String::from("HDTC-2US")
+}
+fn default_firmware_name() -> String {
+    String::from("hdhomeruntc_atsc")
+}
+fn default_firmware_version() -> String {
+    String::from("20170930")
+}
+fn default_device_type() -> String {
+    String::from("urn:schemas-upnp-org:device:MediaServer:1")
+}
+fn default_device_udn() -> String {
+    String::from(
+        "uuid:12345678-90ab-cdef-1234-567890abcdef::urn:dial-multicast:com.silicondust.hdhomerun",
+    )
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -94,7 +113,11 @@ impl HdHomeRunDeviceConfigDto {
         } else {
             // Ensure only the UUID part is stored.
             if let Some(uuid_part) = self.device_udn.strip_prefix("uuid:") {
-                self.device_udn = uuid_part.split("::").next().unwrap_or(uuid_part).to_string();
+                self.device_udn = uuid_part
+                    .split("::")
+                    .next()
+                    .unwrap_or(uuid_part)
+                    .to_string();
             }
         }
 
@@ -115,7 +138,6 @@ impl HdHomeRunDeviceConfigDto {
     }
 }
 
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HdHomeRunConfigDto {
@@ -132,7 +154,11 @@ pub struct HdHomeRunConfigDto {
 
 impl HdHomeRunConfigDto {
     pub fn is_empty(&self) -> bool {
-        !self.enabled && !self.auth && self.devices.is_empty() && !self.ssdp_discovery && !self.proprietary_discovery
+        !self.enabled
+            && !self.auth
+            && self.devices.is_empty()
+            && !self.ssdp_discovery
+            && !self.proprietary_discovery
     }
 
     pub fn clean(&mut self) {
@@ -148,13 +174,25 @@ impl HdHomeRunConfigDto {
         for (device_num, device) in (0_u8..).zip(self.devices.iter_mut()) {
             device.prepare(device_num, include_computed)?;
             if !names.insert(device.name.clone()) {
-                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun duplicate device name {}", device.name);
+                return create_tuliprox_error_result!(
+                    TuliproxErrorKind::Info,
+                    "HdHomeRun duplicate device name {}",
+                    device.name
+                );
             }
             if device.port > 0 && !ports.insert(device.port) {
-                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun duplicate port {}", device.port);
+                return create_tuliprox_error_result!(
+                    TuliproxErrorKind::Info,
+                    "HdHomeRun duplicate port {}",
+                    device.port
+                );
             }
             if !device_ids.insert(device.device_id.clone()) {
-                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "HdHomeRun duplicate device_id {}", device.device_id);
+                return create_tuliprox_error_result!(
+                    TuliproxErrorKind::Info,
+                    "HdHomeRun duplicate device_id {}",
+                    device.device_id
+                );
             }
         }
         let mut current_port = api_port.saturating_add(1);
@@ -162,8 +200,12 @@ impl HdHomeRunConfigDto {
             if device.port == 0 {
                 while ports.contains(&current_port) || current_port == 0 {
                     current_port = current_port.wrapping_add(1);
-                    if current_port == api_port { // full cycle guard
-                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "No free port available for HdHomeRun devices");
+                    if current_port == api_port {
+                        // full cycle guard
+                        return create_tuliprox_error_result!(
+                            TuliproxErrorKind::Info,
+                            "No free port available for HdHomeRun devices"
+                        );
                     }
                 }
 

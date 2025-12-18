@@ -42,25 +42,31 @@ fn newline(pretty: bool) -> Html {
     if pretty {
         html! { <br /> }
     } else {
-        html!{}
+        html! {}
     }
 }
 
-fn render_filter(filter: &Filter, pretty: bool, level: usize, do_indent: bool, p_count: usize) -> Html {
+fn render_filter(
+    filter: &Filter,
+    pretty: bool,
+    level: usize,
+    do_indent: bool,
+    p_count: usize,
+) -> Html {
     match filter {
         Filter::Group(inner) => {
             html! {
-            <>
-                { indent(level, do_indent &&  pretty) }
-                <span class={format!("bracket bracket-{}", p_count % 6)}>{"("}</span>
-                {newline(pretty)}
-                { indent(level +1 , pretty) }
-                { render_filter(inner, pretty, level + 1, false, p_count+1) }
-                {newline(pretty)}
-                { indent(level , pretty) }
-                <span class={format!("bracket bracket-{}", p_count % 6)}>{ ")" }</span>
-            </>
-         }
+               <>
+                   { indent(level, do_indent &&  pretty) }
+                   <span class={format!("bracket bracket-{}", p_count % 6)}>{"("}</span>
+                   {newline(pretty)}
+                   { indent(level +1 , pretty) }
+                   { render_filter(inner, pretty, level + 1, false, p_count+1) }
+                   {newline(pretty)}
+                   { indent(level , pretty) }
+                   <span class={format!("bracket bracket-{}", p_count % 6)}>{ ")" }</span>
+               </>
+            }
         }
         Filter::FieldComparison(field, regex) => html! {
             <>
@@ -91,7 +97,7 @@ fn render_filter(filter: &Filter, pretty: bool, level: usize, do_indent: bool, p
                     { render_filter(inner, pretty, level, do_indent && pretty, p_count) }
                 </>
             }
-        },
+        }
         Filter::BinaryExpression(left, op, right) => html! {
             <span class="binary_op-wrapper">
                  { render_filter(left, pretty, level, do_indent && pretty, p_count) }

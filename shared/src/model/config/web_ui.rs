@@ -1,6 +1,6 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::WebAuthConfigDto;
-use crate::utils::{default_as_true, is_blank_optional_string, default_kick_secs};
+use crate::utils::{default_as_true, default_kick_secs, is_blank_optional_string};
 
 const RESERVED_PATHS: &[&str] = &[
     "cvs",

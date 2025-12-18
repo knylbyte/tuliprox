@@ -490,7 +490,7 @@ impl ActiveUserManager {
                 );
             } else {
                 debug!(
-                    "Added new connection for {username} at {addr} (active user connections={active_for_user}, total connections={total_active_sockets})"
+                    "Added new connection for {username} at {addr} (active user connections={active_for_user}, total sockets={total_active_sockets})"
                 );
             }
         }

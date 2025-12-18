@@ -1,7 +1,7 @@
-use std::fmt;
-use std::str::FromStr;
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
+use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum MsgKind {

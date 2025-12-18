@@ -1,8 +1,8 @@
+use crate::app::components::CustomDialog;
+use crate::app::components::TextButton;
+use crate::model::DialogResult;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::app::components::TextButton;
-use crate::app::components::CustomDialog;
-use crate::model::DialogResult;
 
 #[derive(Properties, PartialEq)]
 pub struct ConfirmDialogProps {

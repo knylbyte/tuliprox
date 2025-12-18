@@ -1,11 +1,23 @@
 use crate::app::components::config::HasFormData;
-use crate::app::components::{BlockId, BlockInstance, Card, EditMode, IconButton, Panel, SourceEditorContext, TextButton, TraktListItemForm, TitledCard, FilterInput};
-use crate::{config_field_child, edit_field_bool, edit_field_number_u16, edit_field_text, generate_form_reducer};
-use shared::model::{TargetOutputDto, TraktApiConfigDto, TraktConfigDto, TraktContentType, TraktListConfigDto, XtreamTargetOutputDto};
+use crate::app::components::{
+    BlockId, BlockInstance, Card, EditMode, FilterInput, IconButton, Panel, SourceEditorContext,
+    TextButton, TitledCard, TraktListItemForm,
+};
+use crate::{
+    config_field_child, edit_field_bool, edit_field_number_u16, edit_field_text,
+    generate_form_reducer,
+};
+use shared::model::{
+    TargetOutputDto, TraktApiConfigDto, TraktConfigDto, TraktContentType, TraktListConfigDto,
+    XtreamTargetOutputDto,
+};
 use std::fmt::Display;
 use std::rc::Rc;
 use web_sys::MouseEvent;
-use yew::{classes, function_component, html, use_context, use_effect_with, use_reducer, use_state, Callback, Html, Properties, UseReducerHandle};
+use yew::{
+    classes, function_component, html, use_context, use_effect_with, use_reducer, use_state,
+    Callback, Html, Properties, UseReducerHandle,
+};
 use yew_i18n::use_translation;
 
 const LABEL_SKIP_DIRECT_SOURCE: &str = "LABEL.SKIP_DIRECT_SOURCE";
@@ -30,10 +42,14 @@ enum OutputFormPage {
 
 impl Display for OutputFormPage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", match *self {
-            OutputFormPage::Main => "Main",
-            OutputFormPage::Trakt => "Trakt",
-        })
+        write!(
+            f,
+            "{}",
+            match *self {
+                OutputFormPage::Main => "Main",
+                OutputFormPage::Trakt => "Trakt",
+            }
+        )
     }
 }
 generate_form_reducer!(
@@ -70,7 +86,8 @@ pub struct XtreamTargetOutputViewProps {
 #[function_component]
 pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
     let translate = use_translation();
-    let source_editor_ctx = use_context::<SourceEditorContext>().expect("SourceEditorContext not found");
+    let source_editor_ctx =
+        use_context::<SourceEditorContext>().expect("SourceEditorContext not found");
 
     let output_form_state: UseReducerHandle<XtreamTargetOutputFormState> =
         use_reducer(|| XtreamTargetOutputFormState {
@@ -106,19 +123,27 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
 
         use_effect_with(config_output, move |cfg| {
             if let Some(target) = cfg {
-                output_form_state.dispatch(XtreamTargetOutputFormAction::SetAll(target.as_ref().clone()));
+                output_form_state.dispatch(XtreamTargetOutputFormAction::SetAll(
+                    target.as_ref().clone(),
+                ));
 
                 // Load Trakt configuration
                 if let Some(trakt) = &target.trakt {
                     trakt_api_state.dispatch(TraktApiConfigFormAction::SetAll(trakt.api.clone()));
                     trakt_lists_state.set(trakt.lists.clone());
                 } else {
-                    trakt_api_state.dispatch(TraktApiConfigFormAction::SetAll(TraktApiConfigDto::default()));
+                    trakt_api_state.dispatch(TraktApiConfigFormAction::SetAll(
+                        TraktApiConfigDto::default(),
+                    ));
                     trakt_lists_state.set(Vec::new());
                 }
             } else {
-                output_form_state.dispatch(XtreamTargetOutputFormAction::SetAll(XtreamTargetOutputDto::default()));
-                trakt_api_state.dispatch(TraktApiConfigFormAction::SetAll(TraktApiConfigDto::default()));
+                output_form_state.dispatch(XtreamTargetOutputFormAction::SetAll(
+                    XtreamTargetOutputDto::default(),
+                ));
+                trakt_api_state.dispatch(TraktApiConfigFormAction::SetAll(
+                    TraktApiConfigDto::default(),
+                ));
                 trakt_lists_state.set(Vec::new());
             }
             || ()
@@ -332,7 +357,10 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
                 })
             };
 
-            source_editor_ctx.on_form_change.emit((block_id, BlockInstance::Output(Rc::new(TargetOutputDto::Xtream(output)))));
+            source_editor_ctx.on_form_change.emit((
+                block_id,
+                BlockInstance::Output(Rc::new(TargetOutputDto::Xtream(output))),
+            ));
             source_editor_ctx.edit_mode.set(EditMode::Inactive);
         })
     };
@@ -344,18 +372,18 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
     };
 
     html! {
-        <div class="tp__source-editor-form tp__config-view-page">
-             <div class="tp__source-editor-form__toolbar tp__form-page__toolbar">
-             <TextButton class="secondary" name="cancel_input"
-                icon="Cancel"
-                title={ translate.t("LABEL.CANCEL")}
-                onclick={handle_cancel}></TextButton>
-             <TextButton class="primary" name="apply_input"
-                icon="Accept"
-                title={ translate.t("LABEL.OK")}
-                onclick={handle_apply_target}></TextButton>
-          </div>
-            { render_edit_mode() }
-        </div>
-        }
+    <div class="tp__source-editor-form tp__config-view-page">
+         <div class="tp__source-editor-form__toolbar tp__form-page__toolbar">
+         <TextButton class="secondary" name="cancel_input"
+            icon="Cancel"
+            title={ translate.t("LABEL.CANCEL")}
+            onclick={handle_cancel}></TextButton>
+         <TextButton class="primary" name="apply_input"
+            icon="Accept"
+            title={ translate.t("LABEL.OK")}
+            onclick={handle_apply_target}></TextButton>
+      </div>
+        { render_edit_mode() }
+    </div>
+    }
 }

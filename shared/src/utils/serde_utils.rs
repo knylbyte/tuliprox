@@ -54,7 +54,6 @@ where
     })
 }
 
-
 pub fn deserialize_number_from_string<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -92,7 +91,12 @@ where
                     num_pos = Some(i);
                     break;
                 }
-                if c == '.' && s[i + 1..].chars().next().is_some_and(|n| n.is_ascii_digit()) {
+                if c == '.'
+                    && s[i + 1..]
+                        .chars()
+                        .next()
+                        .is_some_and(|n| n.is_ascii_digit())
+                {
                     num_pos = Some(i);
                     break;
                 }
@@ -100,7 +104,9 @@ where
                     last_non_ws = Some((i, c));
                 }
             }
-            let Some(num_i) = num_pos else { return Ok(None); };
+            let Some(num_i) = num_pos else {
+                return Ok(None);
+            };
 
             let start = match last_non_ws {
                 Some((i, '-')) | Some((i, '+')) => i,
@@ -176,7 +182,6 @@ where
 {
     ciborium::de::from_reader(value).map_err(to_io_error)
 }
-
 
 pub fn u8_16_to_hex(bytes: &[u8; 16]) -> String {
     bytes.iter().map(|b| format!("{:02X}", b)).collect()

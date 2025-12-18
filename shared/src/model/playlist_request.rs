@@ -20,7 +20,7 @@ pub enum PlaylistRequest {
     Target(u16),
     Input(u16),
     CustomXtream(PlaylistRequestXtream),
-    CustomM3u(PlaylistRequestM3u)
+    CustomM3u(PlaylistRequestM3u),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -87,7 +87,6 @@ pub struct PlaylistCategoriesResponse {
     pub series: Option<Vec<PlaylistResponseGroup>>,
 }
 
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct UiPlaylistCategories {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -101,9 +100,15 @@ pub struct UiPlaylistCategories {
 impl From<PlaylistCategoriesResponse> for UiPlaylistCategories {
     fn from(response: PlaylistCategoriesResponse) -> Self {
         Self {
-            live: response.live.map(|groups| groups.into_iter().map(Into::into).map(Rc::new).collect()),
-            vod: response.vod.map(|groups| groups.into_iter().map(Into::into).map(Rc::new).collect()),
-            series: response.series.map(|groups| groups.into_iter().map(Into::into).map(Rc::new).collect()),
+            live: response
+                .live
+                .map(|groups| groups.into_iter().map(Into::into).map(Rc::new).collect()),
+            vod: response
+                .vod
+                .map(|groups| groups.into_iter().map(Into::into).map(Rc::new).collect()),
+            series: response
+                .series
+                .map(|groups| groups.into_iter().map(Into::into).map(Rc::new).collect()),
         }
     }
 }
@@ -149,7 +154,10 @@ fn filter_channels(
     })
 }
 
-fn filter_channels_re(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) -> Option<Vec<Rc<UiPlaylistGroup>>> {
+fn filter_channels_re(
+    groups: &Option<Vec<Rc<UiPlaylistGroup>>>,
+    regex: &Regex,
+) -> Option<Vec<Rc<UiPlaylistGroup>>> {
     groups.as_ref().map(|gs| {
         gs.iter()
             .filter_map(|group| {
@@ -179,17 +187,15 @@ fn filter_channels_re(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) 
     })
 }
 
-fn build_result(live: Option<Vec<Rc<UiPlaylistGroup>>>,
-                vod: Option<Vec<Rc<UiPlaylistGroup>>>,
-                series: Option<Vec<Rc<UiPlaylistGroup>>>) -> Option<UiPlaylistCategories> {
+fn build_result(
+    live: Option<Vec<Rc<UiPlaylistGroup>>>,
+    vod: Option<Vec<Rc<UiPlaylistGroup>>>,
+    series: Option<Vec<Rc<UiPlaylistGroup>>>,
+) -> Option<UiPlaylistCategories> {
     if live.is_none() && vod.is_none() && series.is_none() {
         None
     } else {
-        Some(UiPlaylistCategories {
-            live,
-            vod,
-            series,
-        })
+        Some(UiPlaylistCategories { live, vod, series })
     }
 }
 

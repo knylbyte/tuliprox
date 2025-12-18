@@ -11,10 +11,17 @@ pub struct ConfigRenameDto {
 }
 
 impl ConfigRenameDto {
-    pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
+    pub fn prepare(
+        &mut self,
+        templates: Option<&Vec<PatternTemplate>>,
+    ) -> Result<(), TuliproxError> {
         self.pattern = apply_templates_to_pattern_single(&self.pattern, templates)?;
         if let Err(err) = regex::Regex::new(&self.pattern) {
-            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse regex: {} {err}", &self.pattern);
+            return create_tuliprox_error_result!(
+                TuliproxErrorKind::Info,
+                "cant parse regex: {} {err}",
+                &self.pattern
+            );
         }
         Ok(())
     }

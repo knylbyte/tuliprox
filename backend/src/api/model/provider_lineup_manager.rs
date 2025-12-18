@@ -1,7 +1,7 @@
 use crate::api::model::provider_config::ProviderConfigWrapper;
 use crate::api::model::{EventManager, ProviderConfig, ProviderConfigConnection, ProviderConnectionChangeCallback};
 use crate::utils::debug_if_enabled;
-use crate::model::ConfigInput;
+use crate::model::{is_input_expired, ConfigInput};
 use arc_swap::ArcSwap;
 use log::{debug, log_enabled};
 use shared::utils::{display_vec, sanitize_sensitive_info};
@@ -656,13 +656,17 @@ impl ProviderLineupManager {
 
 
     fn log_allocation(allocation: &ProviderAllocation) {
-        if log_enabled!(log::Level::Debug) {
-            match allocation {
-                ProviderAllocation::Exhausted => {}
-                ProviderAllocation::Available(ref cfg) |
-                ProviderAllocation::GracePeriod(ref cfg) => {
-                    debug!("Using provider {}", cfg.name);
-                }
+        match allocation {
+            ProviderAllocation::Exhausted => {}
+            ProviderAllocation::Available(ref cfg) | ProviderAllocation::GracePeriod(ref cfg) => {
+                debug_if_enabled!(
+                    "Using provider {} (pool user: {}, max_connections: {})",
+                    sanitize_sensitive_info(&cfg.name),
+                    cfg.get_user_info()
+                        .map_or_else(|| "?".to_string(), |ui| sanitize_sensitive_info(&ui.username).to_string())
+                    ,
+                    cfg.max_connections()
+                );
             }
         }
     }
@@ -679,14 +683,76 @@ impl ProviderLineupManager {
 
     // Returns the next available provider connection
     pub(crate) async fn acquire_connection(&self, input_name: &str) -> ProviderAllocation {
+        self.acquire_connection_with_grace_override(input_name, true).await
+    }
+
+    /// Acquire a provider connection, optionally allowing provider-side grace allocations.
+    ///
+    /// When `allow_grace` is `false`, the lineup will not allocate providers in `GracePeriod`,
+    /// even if a global grace period is configured.
+    pub(crate) async fn acquire_connection_with_grace_override(
+        &self,
+        input_name: &str,
+        allow_grace: bool,
+    ) -> ProviderAllocation {
         let providers = self.providers.load();
-        let allocation = match Self::get_provider_config_by_name(input_name, &providers) {
+        let lineup_opt = Self::get_provider_config_by_name(input_name, &providers);
+        let with_grace = allow_grace && self.grace_period_millis.load(Ordering::Acquire) > 0;
+        let allocation = match lineup_opt {
             None => ProviderAllocation::Exhausted, // No Name matched, we don't have this provider
-            Some((lineup, _config)) => lineup.acquire(self.grace_period_millis.load(Ordering::Acquire) > 0,
-                                                      self.grace_period_timeout_secs.load(Ordering::Acquire)).await
+            Some((lineup, _config)) => {
+                lineup
+                    .acquire(with_grace, self.grace_period_timeout_secs.load(Ordering::Acquire))
+                    .await
+            }
         };
+        if matches!(allocation, ProviderAllocation::Exhausted) {
+            if let Some((lineup, _cfg)) = lineup_opt {
+                Self::log_exhausted_pool_snapshot(input_name, lineup).await;
+            }
+        }
         Self::log_allocation(&allocation);
         allocation
+    }
+
+    async fn log_exhausted_pool_snapshot(input_name: &str, lineup: &ProviderLineup) {
+        if !log_enabled!(log::Level::Debug) {
+            return;
+        }
+
+        let mut entries: Vec<String> = Vec::new();
+        match lineup {
+            ProviderLineup::Single(single) => {
+                entries.push(Self::format_provider_snapshot_entry(&single.provider).await);
+            }
+            ProviderLineup::Multi(multi) => {
+                for group in &multi.providers {
+                    match group {
+                        ProviderPriorityGroup::SingleProviderGroup(cfg) => {
+                            entries.push(Self::format_provider_snapshot_entry(cfg).await);
+                        }
+                        ProviderPriorityGroup::MultiProviderGroup(_, cfgs) => {
+                            for cfg in cfgs {
+                                entries.push(Self::format_provider_snapshot_entry(cfg).await);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        debug_if_enabled!(
+            "Provider pool exhausted for input {} (pool_snapshot=[{}])",
+            sanitize_sensitive_info(input_name),
+            sanitize_sensitive_info(&entries.join(", "))
+        );
+    }
+
+    async fn format_provider_snapshot_entry(cfg: &ProviderConfigWrapper) -> String {
+        let current = cfg.get_current_connections().await;
+        let max = cfg.max_connections();
+        let expired = is_input_expired(cfg.exp_date());
+        format!("{}:{}/{} expired={expired}", cfg.name, current, max)
     }
 
     // This method is used for redirects to cycle through provider
@@ -803,28 +869,29 @@ mod tests {
     }
 
     // Helper function to create a ConfigInput instance
-    fn create_config_input(id: u16, name: &str, priority: i16, max_connections: u16) -> ConfigInput {
-        ConfigInput {
-            id,
-            name: name.to_string(),
-            url: "http://example.com".to_string(),
-            epg: Option::default(),
-            username: None,
-            password: None,
-            persist: None,
-            enabled: true,
-            input_type: InputType::Xtream, // You can use a default value here
-            max_connections,
-            priority,
-            aliases: None,
-            headers: HashMap::default(),
-            options: None,
-            method: InputFetchMethod::default(),
-            staged: None,
-            exp_date: None,
-            t_batch_url: None,
-        }
-    }
+	    fn create_config_input(id: u16, name: &str, priority: i16, max_connections: u16) -> ConfigInput {
+	        ConfigInput {
+	            id,
+	            name: name.to_string(),
+	            url: "http://example.com".to_string(),
+	            epg: Option::default(),
+	            username: None,
+	            password: None,
+	            persist: None,
+	            enabled: true,
+	            input_type: InputType::Xtream, // You can use a default value here
+	            max_connections,
+	            priority,
+	            aliases: None,
+	            headers: HashMap::default(),
+	            options: None,
+	            method: InputFetchMethod::default(),
+	            staged: None,
+	            exp_date: None,
+	            t_batch_url: None,
+	            panel_api: None,
+	        }
+	    }
 
     // Helper function to create a ConfigInputAlias instance
     fn create_config_input_alias(id: u16, url: &str, priority: i16, max_connections: u16) -> ConfigInputAlias {

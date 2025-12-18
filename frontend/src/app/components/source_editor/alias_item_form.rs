@@ -1,5 +1,8 @@
 use crate::app::components::{Card, TextButton};
-use crate::{edit_field_date, edit_field_number_i16, edit_field_number_u16, edit_field_text, edit_field_text_option, generate_form_reducer};
+use crate::{
+    edit_field_date, edit_field_number_i16, edit_field_number_u16, edit_field_text,
+    edit_field_text_option, generate_form_reducer,
+};
 use shared::model::ConfigInputAliasDto;
 use yew::{function_component, html, use_reducer, Callback, Html, Properties, UseReducerHandle};
 use yew_i18n::use_translation;
@@ -38,9 +41,11 @@ pub struct AliasItemFormProps {
 pub fn AliasItemForm(props: &AliasItemFormProps) -> Html {
     let translate = use_translation();
 
-    let form_state: UseReducerHandle<AliasFormState> = use_reducer(|| {
-        AliasFormState {
-            form: props.initial.clone().unwrap_or_else(|| ConfigInputAliasDto {
+    let form_state: UseReducerHandle<AliasFormState> = use_reducer(|| AliasFormState {
+        form: props
+            .initial
+            .clone()
+            .unwrap_or_else(|| ConfigInputAliasDto {
                 id: 0,
                 name: String::new(),
                 url: String::new(),
@@ -50,8 +55,7 @@ pub fn AliasItemForm(props: &AliasItemFormProps) -> Html {
                 max_connections: 1,
                 exp_date: None,
             }),
-            modified: false,
-        }
+        modified: false,
     });
 
     let handle_submit = {
