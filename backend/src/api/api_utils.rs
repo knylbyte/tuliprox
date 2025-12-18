@@ -427,9 +427,7 @@ async fn create_stream_response_details(
     force_provider: Option<&str>,
 ) -> StreamDetails {
     let mut streaming_strategy = resolve_streaming_strategy(app_state, stream_url, fingerprint, input, force_provider).await;
-    let config_grace_period_millis = app_state
-        .app_config
-        .config
+    let config_grace_period_millis = app_state.app_config.config
         .load()
         .reverse_proxy
         .as_ref()
@@ -1039,8 +1037,7 @@ pub async fn local_stream_response(
             app_state,
             &fingerprint.addr,
             CustomVideoStreamType::UserConnectionsExhausted,
-        ).await
-            .into_response();
+        ).await.into_response();
     }
 
     let path = PathBuf::from(pli.url.strip_prefix("file://").unwrap_or(&pli.url));
@@ -1056,9 +1053,9 @@ pub async fn local_stream_response(
 
     // Verify path is within allowed media directories
     // (requires configuration of allowed base paths)
-    // if !is_path_within_allowed_directories(&path, app_state) {
-    //     return StatusCode::FORBIDDEN.into_response();
-    // }
+    if !is_path_within_allowed_directories(&path, &app_state.app_config.paths.load().library_file_path) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
 
     let Ok(mut file) = tokio::fs::File::open(&path).await else { return StatusCode::NOT_FOUND.into_response() };
     let Ok(metadata) = file.metadata().await else { return StatusCode::INTERNAL_SERVER_ERROR.into_response() };
@@ -1134,6 +1131,18 @@ pub async fn local_stream_response(
     response
 }
 
+fn is_path_within_allowed_directories(sub_path: &PathBuf, root_path: &str) -> bool {
+    let sub_path = match sub_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let root_path = match PathBuf::from(root_path).canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+
+    sub_path.starts_with(&root_path)
+}
 
 pub fn is_stream_share_enabled(item_type: PlaylistItemType, target: &ConfigTarget) -> bool {
     (item_type == PlaylistItemType::Live/* || item_type == PlaylistItemType::LiveHls */)

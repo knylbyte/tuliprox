@@ -100,7 +100,7 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
     for plg in &mut fpl.playlistgroups {
         for pli in &mut plg.channels {
             // LocalVideo files are not resolved
-            if pli.header.xtream_cluster != XtreamCluster::Video && pli.header.item_type != PlaylistItemType::Video {
+            if pli.header.xtream_cluster != XtreamCluster::Video || pli.header.item_type != PlaylistItemType::Video {
                 continue;
             }
             let (should_update, provider_id, _ts) = should_update_vod_info(pli, &processed_info_ids);

@@ -156,7 +156,7 @@ impl TmdbMovieDetails {
                 })
                 .and_then(some_if_nonempty),
             studios: self.production_companies.as_ref().map(|list| list.iter().map(|n| n.name.clone()).collect()).and_then(some_if_nonempty),
-            poster: <std::option::Option<std::string::String> as Clone>::clone(&self.poster_path).map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
+            poster: self.poster_path.as_ref().map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
             fanart: self.backdrop_path.clone().map(|p| format!("{TMDB_IMAGE_BASE_URL}{p}")),
             source: MetadataSource::Tmdb,
             last_updated: chrono::Utc::now().timestamp(),
