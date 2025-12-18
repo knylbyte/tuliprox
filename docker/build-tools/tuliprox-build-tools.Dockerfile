@@ -41,7 +41,7 @@ RUN ffmpeg -loop 1 -i ./resources/channel_unavailable.jpg -t 10 -r 1 -an \
 # Tool builder runs on TARGETPLATFORM (native, no cross toolchains)
 # -> builds trunk/wasm-bindgen/cargo-chef/sccache for that platform
 ############################################
-FROM --platform=$TARGETPLATFORM rust:${RUST_DISTRO} AS toolbuilder
+FROM rust:${RUST_DISTRO} AS toolbuilder
 
 ARG BUILDPLATFORM_TAG
 ARG TARGETARCH
@@ -90,7 +90,7 @@ RUN strip /out/bin/trunk /out/bin/wasm-bindgen /out/bin/cargo-chef /out/bin/scca
 # Final image runs on TARGETPLATFORM
 # -> contains all build deps + rust targets for tuliprox app
 ############################################
-FROM --platform=$TARGETPLATFORM rust:${RUST_DISTRO}
+FROM rust:${RUST_DISTRO}
 
 ARG BUILDPLATFORM_TAG
 ARG TARGETARCH
