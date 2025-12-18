@@ -428,16 +428,16 @@ impl SharedStreamManager {
         manager: Arc<SharedStreamManager>,
     ) -> Option<(BoxedProviderStream, Option<String>)> {
         let shared_state_opt = {
-            let shared_streams = self.shared_streams.read().await;
-            shared_streams.by_key.get(stream_url).cloned()
+            let mut shared_streams = self.shared_streams.write().await;
+            if let Some(shared_state) = shared_streams.by_key.get(stream_url).cloned() {
+                shared_streams.key_by_addr.insert(*addr, stream_url.to_owned());
+                Some(shared_state)
+            } else {
+                None
+            }
         };
 
         if let Some(shared_state) = shared_state_opt {
-            {
-                let mut shared_streams = self.shared_streams.write().await;
-                shared_streams.key_by_addr.insert(*addr, stream_url.to_owned());
-            }
-
             debug_if_enabled!("Responding to existing shared client stream {addr} {}",sanitize_sensitive_info(stream_url)
         );
             Some(shared_state.subscribe(addr, manager).await)
