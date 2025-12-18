@@ -32,7 +32,7 @@ use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -348,38 +348,15 @@ async fn resolve_streaming_strategy(
             .force_exact_acquire_connection(provider, &fingerprint.addr)
             .await
     } else {
-        // For panel-managed pools we must not allocate providers in grace period, otherwise
-        // the pool may never reach `Exhausted` and panel provisioning won't be triggered.
-        let allow_provider_grace = input.panel_api.is_none();
-        if !allow_provider_grace {
-            debug_if_enabled!(
-                "panel_api: disabling provider grace allocations for input {}",
-                sanitize_sensitive_info(&input.name)
-            );
-        }
         app_state
             .active_provider
-            .acquire_connection_with_grace_override(&input.name, &fingerprint.addr, allow_provider_grace)
+            .acquire_connection(&input.name, &fingerprint.addr)
             .await
     };
 
-    if provider_connection_handle.is_none()
-        && force_provider.is_none()
-        && try_provision_account_on_exhausted(app_state, input).await
-    {
-        debug_if_enabled!(
-            "panel_api: provider pool exhausted for input {}, provision succeeded; re-acquiring connection",
-            sanitize_sensitive_info(&input.name)
-        );
-        provider_connection_handle = app_state
-            .active_provider
-            .acquire_connection_with_grace_override(&input.name, &fingerprint.addr, input.panel_api.is_none())
-            .await;
-    } else if provider_connection_handle.is_none() && force_provider.is_none() && input.panel_api.is_some() {
-        debug_if_enabled!(
-            "panel_api: provider pool exhausted for input {}, provision skipped/failed",
-            sanitize_sensitive_info(&input.name)
-        );
+    if provider_connection_handle.is_none() && force_provider.is_none() && input.panel_api.is_some() {
+        provider_connection_handle =
+            try_provision_and_reacquire_on_provider_pool_exhausted(app_state, fingerprint, input).await;
     }
 
     let stream_response_params =
@@ -449,6 +426,40 @@ async fn resolve_streaming_strategy(
         provider_handle: provider_connection_handle,
         provider_stream_state: stream_response_params,
         input_headers: Some(input.headers.clone()),
+    }
+}
+
+async fn try_provision_and_reacquire_on_provider_pool_exhausted(
+    app_state: &AppState,
+    fingerprint: &Fingerprint,
+    input: &ConfigInput,
+) -> Option<crate::api::model::ProviderHandle> {
+    let active_provider_connections = app_state
+        .active_provider
+        .active_connections()
+        .await
+        .map(|c| c.into_iter().collect::<BTreeMap<_, _>>());
+    debug_if_enabled!(
+        "panel_api: provider pool exhausted for input {} (active_provider_connections={:?})",
+        sanitize_sensitive_info(&input.name),
+        active_provider_connections
+    );
+
+    if try_provision_account_on_exhausted(app_state, input).await {
+        debug_if_enabled!(
+            "panel_api: provider pool exhausted for input {}, provision succeeded; re-acquiring connection",
+            sanitize_sensitive_info(&input.name)
+        );
+        app_state
+            .active_provider
+            .acquire_connection(&input.name, &fingerprint.addr)
+            .await
+    } else {
+        debug_if_enabled!(
+            "panel_api: provider pool exhausted for input {}, provision skipped/failed",
+            sanitize_sensitive_info(&input.name)
+        );
+        None
     }
 }
 

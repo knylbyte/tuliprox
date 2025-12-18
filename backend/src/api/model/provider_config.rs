@@ -164,6 +164,11 @@ impl ProviderConfig {
         self.max_connections
     }
 
+    #[inline]
+    pub(crate) fn exp_date(&self) -> Option<i64> {
+        self.exp_date
+    }
+
     pub fn get_user_info(&self) -> Option<InputUserInfo> {
         InputUserInfo::new(self.input_type, self.username.as_deref(), self.password.as_deref(), &self.url)
     }

@@ -1,7 +1,7 @@
 use crate::api::model::provider_config::ProviderConfigWrapper;
 use crate::api::model::{EventManager, ProviderConfig, ProviderConfigConnection, ProviderConnectionChangeCallback};
 use crate::utils::debug_if_enabled;
-use crate::model::ConfigInput;
+use crate::model::{is_input_expired, ConfigInput};
 use arc_swap::ArcSwap;
 use log::{debug, log_enabled};
 use shared::utils::{display_vec, sanitize_sensitive_info};
@@ -696,8 +696,9 @@ impl ProviderLineupManager {
         allow_grace: bool,
     ) -> ProviderAllocation {
         let providers = self.providers.load();
+        let lineup_opt = Self::get_provider_config_by_name(input_name, &providers);
         let with_grace = allow_grace && self.grace_period_millis.load(Ordering::Acquire) > 0;
-        let allocation = match Self::get_provider_config_by_name(input_name, &providers) {
+        let allocation = match lineup_opt {
             None => ProviderAllocation::Exhausted, // No Name matched, we don't have this provider
             Some((lineup, _config)) => {
                 lineup
@@ -705,8 +706,53 @@ impl ProviderLineupManager {
                     .await
             }
         };
+        if matches!(allocation, ProviderAllocation::Exhausted) {
+            if let Some((lineup, _cfg)) = lineup_opt {
+                Self::log_exhausted_pool_snapshot(input_name, lineup).await;
+            }
+        }
         Self::log_allocation(&allocation);
         allocation
+    }
+
+    async fn log_exhausted_pool_snapshot(input_name: &str, lineup: &ProviderLineup) {
+        if !log_enabled!(log::Level::Debug) {
+            return;
+        }
+
+        let mut entries: Vec<String> = Vec::new();
+        match lineup {
+            ProviderLineup::Single(single) => {
+                entries.push(Self::format_provider_snapshot_entry(&single.provider).await);
+            }
+            ProviderLineup::Multi(multi) => {
+                for group in &multi.providers {
+                    match group {
+                        ProviderPriorityGroup::SingleProviderGroup(cfg) => {
+                            entries.push(Self::format_provider_snapshot_entry(cfg).await);
+                        }
+                        ProviderPriorityGroup::MultiProviderGroup(_, cfgs) => {
+                            for cfg in cfgs {
+                                entries.push(Self::format_provider_snapshot_entry(cfg).await);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        debug_if_enabled!(
+            "Provider pool exhausted for input {} (pool_snapshot=[{}])",
+            sanitize_sensitive_info(input_name),
+            sanitize_sensitive_info(&entries.join(", "))
+        );
+    }
+
+    async fn format_provider_snapshot_entry(cfg: &ProviderConfigWrapper) -> String {
+        let current = cfg.get_current_connections().await;
+        let max = cfg.max_connections();
+        let expired = is_input_expired(cfg.exp_date());
+        format!("{}:{}/{} expired={expired}", cfg.name, current, max)
     }
 
     // This method is used for redirects to cycle through provider
