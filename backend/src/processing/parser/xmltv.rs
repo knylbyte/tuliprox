@@ -531,8 +531,7 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
-    use std::collections::{HashSet};
-    use std::io;
+    use std::collections::HashSet;
     use std::path::PathBuf;
     use crate::model::{EpgSmartMatchConfig, PersistedEpgSource, TVGuide};
     use crate::processing::parser::xmltv::normalize_channel_name;
@@ -554,7 +553,7 @@ mod tests {
 
 
     #[test]
-    fn parse_test() -> io::Result<()> {
+    fn parse_test() {
         let run_test = async move || {
             //let file_path = PathBuf::from("/tmp/epg.xml.gz");
             let file_path = PathBuf::from("/tmp/invalid_epg.xml");
@@ -568,19 +567,18 @@ mod tests {
 
                 let channel_ids = HashSet::from(["342".to_string()]);
                 match tv_guide.filter(&mut id_cache).await {
-                    None => assert!(false, "No epg filtered"),
+                    None => panic!("No epg filtered"),
                     Some(epgs) => {
                         for epg in epgs {
-                            assert_eq!(epg.children.len(), channel_ids.len() * 2, "Epg size does not match")
+                            assert_eq!(epg.children.len(), channel_ids.len() * 2, "Epg size does not match");
                         }
                     }
                 }
             }
         };
-        let _result = tokio::runtime::Runtime::new()
+        tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(run_test());
-        Ok(())
     }
 
     #[test]

@@ -3,6 +3,7 @@ use std::fmt;
 use std::str::FromStr;
 use yew::prelude::*;
 
+#[allow(dead_code)]
 enum PlaylistAssistantStep {
     Name,
     Type,

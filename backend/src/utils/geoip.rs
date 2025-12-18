@@ -114,7 +114,7 @@ mod test {
         if let Some(cc) = geo_ip.lookup("72.13.24.23") {
             assert_eq!(cc, "US");
         } else {
-            assert!(false);
+            panic!("GeoIP lookup returned no result");
         }
     }
 }

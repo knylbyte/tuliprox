@@ -92,7 +92,7 @@ pub fn ApiUserPlaylist() -> Html {
 
     // Selection reference
     let selections =
-        use_mut_ref(|| HashMap::<ApiUserPlaylistPage, Rc<RefCell<BouquetSelection>>>::new());
+        use_mut_ref(HashMap::<ApiUserPlaylistPage, Rc<RefCell<BouquetSelection>>>::new);
 
     let handle_tab_select = {
         let active_tab_clone = active_tab.clone();

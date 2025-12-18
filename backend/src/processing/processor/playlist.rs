@@ -61,8 +61,8 @@ pub fn apply_filter_to_playlist(playlist: &mut [PlaylistGroup], filter: &Filter)
 }
 
 pub fn apply_favourites_to_playlist(
-    _playlist: &mut Vec<PlaylistGroup>,
-    _favourites_cfg: Option<&Vec<ConfigFavourites>>,
+    _playlist: &mut [PlaylistGroup],
+    _favourites_cfg: Option<&[ConfigFavourites]>,
 ) {
     // if let Some(favourites) = favourites_cfg {
     //     let mut fav_groups: HashMap<String, Vec<PlaylistItem>> = HashMap::new();
@@ -100,7 +100,7 @@ pub fn apply_favourites_to_playlist(
 
 fn filter_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {
     if let Some(mut filtered_playlist) = apply_filter_to_playlist(playlist, &target.filter) {
-        apply_favourites_to_playlist(&mut filtered_playlist, target.favourites.as_ref());
+        apply_favourites_to_playlist(&mut filtered_playlist, target.favourites.as_deref());
         Some(filtered_playlist)
     } else {
         None

@@ -521,10 +521,10 @@ mod tests {
     fn test_parse_timezone() {
         // This will depend on current DST; we just check it’s within a valid range
         let berlin = parse_timeshift(Some(&"Europe/Berlin".to_string())).unwrap();
-        assert!(berlin == 60 || berlin == 120, "Berlin offset should be 60 or 120, got {}", berlin);
+        assert!(berlin == 60 || berlin == 120, "Berlin offset should be 60 or 120, got {berlin}");
 
         let new_york = parse_timeshift(Some(&"America/New_York".to_string())).unwrap();
-        assert!(new_york == -300 || new_york == -240, "New York offset should be -300 or -240, got {}", new_york);
+        assert!(new_york == -300 || new_york == -240, "New York offset should be -300 or -240, got {new_york}");
 
         let tokyo = parse_timeshift(Some(&"Asia/Tokyo".to_string())).unwrap();
         assert_eq!(tokyo, 540); // always UTC+9
