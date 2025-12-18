@@ -232,7 +232,7 @@ impl ActiveProviderManager {
 
             if released.is_none() {
                 let mut remove_key: Option<String> = None;
-                for (key, shared) in connections.shared.by_key.iter() {
+                for (key, shared) in &connections.shared.by_key {
                     if shared.allocation_id == handle.allocation_id {
                         remove_key = Some(key.clone());
                         break;
