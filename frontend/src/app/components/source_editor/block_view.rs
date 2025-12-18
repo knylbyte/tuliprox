@@ -1,25 +1,24 @@
+use crate::app::components::{Block, BlockId, BlockInstance, BlockType, PortStatus};
+use crate::html_if;
 use web_sys::MouseEvent;
 use yew::{classes, function_component, html, Callback, Html, Properties, TargetCast};
 use yew_i18n::use_translation;
-use crate::html_if;
-use crate::app::components::{Block, BlockId, BlockInstance, BlockType, PortStatus};
 #[derive(Properties, PartialEq)]
 pub struct BlockProps {
     pub(crate) block: Block,
-    pub(crate) edited:bool,
-    pub(crate) selected:bool,
+    pub(crate) edited: bool,
+    pub(crate) selected: bool,
     pub(crate) delete_mode: bool,
     pub(crate) delete_block: Callback<BlockId>,
     pub(crate) port_status: PortStatus,
     pub(crate) on_edit: Callback<BlockId>,
     pub(crate) on_mouse_down: Callback<(BlockId, MouseEvent)>,
     pub(crate) on_connection_drop: Callback<BlockId>, // to_id
-    pub(crate) on_connection_start:  Callback<BlockId>, // from_id
+    pub(crate) on_connection_start: Callback<BlockId>, // from_id
 }
 
 #[function_component]
 pub fn BlockView(props: &BlockProps) -> Html {
-
     let translate = use_translation();
 
     let delete_mode = props.delete_mode;
@@ -29,17 +28,20 @@ pub fn BlockView(props: &BlockProps) -> Html {
 
     let block_id = block.id;
     let block_type = block.block_type;
-    let style = format!("transform: translate({}px, {}px)", block.position.0, block.position.1);
+    let style = format!(
+        "transform: translate({}px, {}px)",
+        block.position.0, block.position.1
+    );
     let from_id = block_id;
     let to_id = block_id;
 
     let is_target = matches!(block_type, BlockType::Target);
     let is_input = !is_target && matches!(block_type, BlockType::InputM3u | BlockType::InputXtream);
-    let is_output =  !is_input && !is_target;
+    let is_output = !is_input && !is_target;
 
     let port_style = match port_status {
-        PortStatus::Valid =>  "tp__source-editor__block-port--valid",
-        PortStatus::Invalid =>  "tp__source-editor__block-port--invalid",
+        PortStatus::Valid => "tp__source-editor__block-port--valid",
+        PortStatus::Invalid => "tp__source-editor__block-port--invalid",
         _ => "",
     };
 
@@ -60,32 +62,43 @@ pub fn BlockView(props: &BlockProps) -> Html {
 
     let handle_edit = {
         let on_edit = props.on_edit.clone();
-        Callback::from(move |_| {
-           on_edit.emit(block_id)
-        })
+        Callback::from(move |_| on_edit.emit(block_id))
     };
 
     let (title, show_type, is_batch) = {
         let (dto_title, show_type, is_batch) = match &block.instance {
             BlockInstance::Input(dto) => {
-                dto.aliases.as_ref().map_or(
-                    (dto.name.clone(), true, false),
-                    |a| {
+                dto.aliases
+                    .as_ref()
+                    .map_or((dto.name.clone(), true, false), |a| {
                         if a.is_empty() {
                             (dto.name.clone(), true, false)
                         } else {
-                            (if dto.name.is_empty() {a[0].name.clone()} else {dto.name.clone()}, true, true)
+                            (
+                                if dto.name.is_empty() {
+                                    a[0].name.clone()
+                                } else {
+                                    dto.name.clone()
+                                },
+                                true,
+                                true,
+                            )
                         }
-                    }
-                )
-            },
-            BlockInstance::Target(dto) => (dto.name.clone(), true, false),
-            BlockInstance::Output(_output) => {
-                (translate.t(&format!("SOURCE_EDITOR.BRICK_{}", block_type)), false, false)
+                    })
             }
+            BlockInstance::Target(dto) => (dto.name.clone(), true, false),
+            BlockInstance::Output(_output) => (
+                translate.t(&format!("SOURCE_EDITOR.BRICK_{}", block_type)),
+                false,
+                false,
+            ),
         };
         if dto_title.is_empty() {
-            (translate.t(&format!("SOURCE_EDITOR.BRICK_{}", block_type)), false, is_batch)
+            (
+                translate.t(&format!("SOURCE_EDITOR.BRICK_{}", block_type)),
+                false,
+                is_batch,
+            )
         } else {
             (dto_title, show_type, is_batch)
         }

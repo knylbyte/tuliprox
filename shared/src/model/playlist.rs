@@ -1,11 +1,14 @@
 use crate::model::{xtream_const, CommonPlaylistItem, ConfigTargetOptions};
-use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id, get_string_from_serde_value, get_u32_from_serde_value, get_u64_from_serde_value};
+use crate::utils::{
+    extract_extension_from_url, generate_playlist_uuid, get_provider_id,
+    get_string_from_serde_value, get_u32_from_serde_value, get_u64_from_serde_value,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use serde_json::value::RawValue;
 // https://de.wikipedia.org/wiki/M3U
 // https://siptv.eu/howto/playlist.html
 
@@ -61,7 +64,10 @@ impl TryFrom<PlaylistItemType> for XtreamCluster {
     type Error = String;
     fn try_from(item_type: PlaylistItemType) -> Result<Self, Self::Error> {
         match item_type {
-            PlaylistItemType::Live | PlaylistItemType::LiveHls | PlaylistItemType::LiveDash | PlaylistItemType::LiveUnknown => Ok(Self::Live),
+            PlaylistItemType::Live
+            | PlaylistItemType::LiveHls
+            | PlaylistItemType::LiveDash
+            | PlaylistItemType::LiveUnknown => Ok(Self::Live),
             PlaylistItemType::Catchup | PlaylistItemType::Video => Ok(Self::Video),
             PlaylistItemType::Series | PlaylistItemType::SeriesInfo => Ok(Self::Series),
         }
@@ -74,12 +80,12 @@ pub enum PlaylistItemType {
     #[default]
     Live = 1,
     Video = 2,
-    Series = 3, //  xtream series description
+    Series = 3,     //  xtream series description
     SeriesInfo = 4, //  xtream series info fetched for series description
     Catchup = 5,
     LiveUnknown = 6, // No Provider id
-    LiveHls = 7, // m3u8 entry
-    LiveDash = 8, // mpd
+    LiveHls = 7,     // m3u8 entry
+    LiveDash = 8,    // mpd
 }
 
 impl From<XtreamCluster> for PlaylistItemType {
@@ -91,7 +97,6 @@ impl From<XtreamCluster> for PlaylistItemType {
         }
     }
 }
-
 
 impl FromStr for PlaylistItemType {
     type Err = String;
@@ -121,13 +126,17 @@ impl PlaylistItemType {
 
 impl Display for PlaylistItemType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Live | Self::LiveHls | Self::LiveDash | Self::LiveUnknown => Self::LIVE,
-            Self::Video => Self::VIDEO,
-            Self::Series => Self::SERIES,
-            Self::SeriesInfo => Self::SERIES_INFO,
-            Self::Catchup => Self::CATCHUP,
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Live | Self::LiveHls | Self::LiveDash | Self::LiveUnknown => Self::LIVE,
+                Self::Video => Self::VIDEO,
+                Self::Series => Self::SERIES,
+                Self::SeriesInfo => Self::SERIES_INFO,
+                Self::Catchup => Self::CATCHUP,
+            }
+        )
     }
 }
 
@@ -151,7 +160,7 @@ pub trait PlaylistEntry: Send + Sync {
 pub struct PlaylistItemHeader {
     #[serde(skip)]
     pub uuid: UUIDType, // calculated
-    pub id: String, // provider id
+    pub id: String,            // provider id
     pub virtual_id: VirtualId, // virtual id
     pub name: String,
     pub chno: String,
@@ -205,21 +214,21 @@ impl PlaylistItemHeader {
     pub fn get_additional_property_as_u32(&self, field: &str) -> Option<u32> {
         match self.get_additional_property(field) {
             Some(value) => get_u32_from_serde_value(&value),
-            None => None
+            None => None,
         }
     }
 
     pub fn get_additional_property_as_u64(&self, field: &str) -> Option<u64> {
         match self.get_additional_property(field) {
             Some(value) => get_u64_from_serde_value(&value),
-            None => None
+            None => None,
         }
     }
 
     pub fn get_additional_property_as_str(&self, field: &str) -> Option<String> {
         match self.get_additional_property(field) {
             Some(value) => get_string_from_serde_value(&value),
-            None => None
+            None => None,
         }
     }
 }
@@ -316,12 +325,19 @@ pub struct M3uPlaylistItem {
 
 impl M3uPlaylistItem {
     #[allow(clippy::missing_panics_doc)]
-    pub fn to_m3u(&self, target_options: Option<&ConfigTargetOptions>, rewrite_urls: bool) -> String {
+    pub fn to_m3u(
+        &self,
+        target_options: Option<&ConfigTargetOptions>,
+        rewrite_urls: bool,
+    ) -> String {
         let options = target_options.as_ref();
         let ignore_logo = options.is_some_and(|o| o.ignore_logo);
-        let mut line = format!("#EXTINF:-1 tvg-id=\"{}\" tvg-name=\"{}\" group-title=\"{}\"",
-                               self.epg_channel_id.as_ref().map_or("", |o| o.as_ref()),
-                               self.name, self.group);
+        let mut line = format!(
+            "#EXTINF:-1 tvg-id=\"{}\" tvg-name=\"{}\" group-title=\"{}\"",
+            self.epg_channel_id.as_ref().map_or("", |o| o.as_ref()),
+            self.name,
+            self.group
+        );
 
         if !ignore_logo {
             if let (true, Some(resource_url)) = (rewrite_urls, self.t_resource_url.as_ref()) {
@@ -338,8 +354,12 @@ impl M3uPlaylistItem {
             (time_shift, "timeshift"),
             (rec, "tvg-rec"););
 
-        let url = if self.t_stream_url.is_empty() { &self.url } else { &self.t_stream_url };
-        format!("{line},{}\n{url}", self.title, )
+        let url = if self.t_stream_url.is_empty() {
+            &self.url
+        } else {
+            &self.t_stream_url
+        };
+        format!("{line},{}\n{url}", self.title,)
     }
 
     pub fn to_common(&self) -> CommonPlaylistItem {
@@ -386,7 +406,12 @@ impl PlaylistEntry for M3uPlaylistItem {
     }
 
     fn get_uuid(&self) -> UUIDType {
-        generate_playlist_uuid(&self.input_name, &self.provider_id, self.item_type, &self.url)
+        generate_playlist_uuid(
+            &self.input_name,
+            &self.provider_id,
+            self.item_type,
+            &self.url,
+        )
     }
 
     #[inline]
@@ -497,7 +522,12 @@ impl PlaylistEntry for XtreamPlaylistItem {
 
     #[inline]
     fn get_uuid(&self) -> UUIDType {
-        generate_playlist_uuid(&self.input_name, &self.provider_id.to_string(), self.item_type, &self.url)
+        generate_playlist_uuid(
+            &self.input_name,
+            &self.provider_id.to_string(),
+            self.item_type,
+            &self.url,
+        )
     }
     #[inline]
     fn get_item_type(&self) -> PlaylistItemType {
@@ -505,29 +535,30 @@ impl PlaylistEntry for XtreamPlaylistItem {
     }
 }
 
-pub fn get_backdrop_path_value<'a>(field: &'a str, value: Option<&'a Value>) -> Option<Cow<'a, str>> {
+pub fn get_backdrop_path_value<'a>(
+    field: &'a str,
+    value: Option<&'a Value>,
+) -> Option<Cow<'a, str>> {
     match value {
         Some(Value::String(url)) => Some(Cow::Borrowed(url)),
-        Some(Value::Array(values)) => {
-            match values.as_slice() {
-                [Value::String(single)] => Some(Cow::Borrowed(single)),
-                multiple if !multiple.is_empty() => {
-                    if let Some(index) = field.rfind('_') {
-                        if let Ok(bd_index) = field[index + 1..].parse::<usize>() {
-                            if let Some(Value::String(selected)) = multiple.get(bd_index) {
-                                return Some(Cow::Borrowed(selected));
-                            }
+        Some(Value::Array(values)) => match values.as_slice() {
+            [Value::String(single)] => Some(Cow::Borrowed(single)),
+            multiple if !multiple.is_empty() => {
+                if let Some(index) = field.rfind('_') {
+                    if let Ok(bd_index) = field[index + 1..].parse::<usize>() {
+                        if let Some(Value::String(selected)) = multiple.get(bd_index) {
+                            return Some(Cow::Borrowed(selected));
                         }
                     }
-                    if let Value::String(url) = &multiple[0] {
-                        Some(Cow::Borrowed(url))
-                    } else {
-                        None
-                    }
                 }
-                _ => None,
+                if let Value::String(url) = &multiple[0] {
+                    Some(Cow::Borrowed(url))
+                } else {
+                    None
+                }
             }
-        }
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -571,7 +602,6 @@ impl From<XtreamPlaylistItem> for CommonPlaylistItem {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaylistItem {
     #[serde(flatten)]
@@ -586,7 +616,12 @@ impl PlaylistItem {
         M3uPlaylistItem {
             virtual_id: header.virtual_id,
             provider_id: header.id.to_string(),
-            name: if header.item_type == PlaylistItemType::Series { &header.title } else { &header.name }.to_string(),
+            name: if header.item_type == PlaylistItemType::Series {
+                &header.title
+            } else {
+                &header.name
+            }
+            .to_string(),
             chno: header.chno.to_string(),
             logo: header.logo.to_string(),
             logo_small: header.logo_small.to_string(),
@@ -620,28 +655,38 @@ impl PlaylistItem {
                 if let Some(cont_ext) = extract_extension_from_url(&header.url) {
                     let ext = cont_ext.strip_prefix('.').unwrap_or(cont_ext);
                     // parse RawValue into Value on-demand
-                    let mut result: Map<String, Value> = match header.additional_properties.as_ref() {
+                    let mut result: Map<String, Value> = match header.additional_properties.as_ref()
+                    {
                         None => Map::new(),
                         Some(props) => {
                             serde_json::from_str(props.get()).unwrap_or_else(|_| Map::new())
                         }
                     };
-                    result.insert("container_extension".to_string(), Value::String(ext.to_string()));
+                    result.insert(
+                        "container_extension".to_string(),
+                        Value::String(ext.to_string()),
+                    );
                     additional_properties = serde_json::to_string(&Value::Object(result)).ok();
                 }
             }
         }
 
         if additional_properties.is_none() {
-            additional_properties = header.additional_properties.as_ref().and_then(|props| {
-                serde_json::to_string(props.get()).ok()
-            });
+            additional_properties = header
+                .additional_properties
+                .as_ref()
+                .and_then(|props| serde_json::to_string(props.get()).ok());
         }
 
         XtreamPlaylistItem {
             virtual_id: header.virtual_id,
             provider_id,
-            name: if header.item_type == PlaylistItemType::Series { &header.title } else { &header.name }.to_string(),
+            name: if header.item_type == PlaylistItemType::Series {
+                &header.title
+            } else {
+                &header.name
+            }
+            .to_string(),
             logo: header.logo.to_string(),
             logo_small: header.logo_small.to_string(),
             group: header.group.to_string(),
@@ -674,29 +719,39 @@ impl PlaylistItem {
                     let ext = cont_ext.strip_prefix('.').unwrap_or(cont_ext);
 
                     // Parse RawValue on-demand
-                    let mut result: Map<String, Value> = match header.additional_properties.as_ref() {
+                    let mut result: Map<String, Value> = match header.additional_properties.as_ref()
+                    {
                         None => Map::new(),
                         Some(props) => {
                             serde_json::from_str(props.get()).unwrap_or_else(|_| Map::new())
                         }
                     };
 
-                    result.insert("container_extension".to_string(), Value::String(ext.to_string()));
+                    result.insert(
+                        "container_extension".to_string(),
+                        Value::String(ext.to_string()),
+                    );
                     additional_properties = serde_json::to_string(&Value::Object(result)).ok();
                 }
             }
         }
 
         if additional_properties.is_none() {
-            additional_properties = header.additional_properties.as_ref().and_then(|props| {
-                serde_json::to_string(props.get()).ok()
-            });
+            additional_properties = header
+                .additional_properties
+                .as_ref()
+                .and_then(|props| serde_json::to_string(props.get()).ok());
         }
 
         CommonPlaylistItem {
             virtual_id: header.virtual_id,
             provider_id: header.id.clone(),
-            name: if header.item_type == PlaylistItemType::Series { &header.title } else { &header.name }.clone(),
+            name: if header.item_type == PlaylistItemType::Series {
+                &header.title
+            } else {
+                &header.name
+            }
+            .clone(),
             logo: header.logo.clone(),
             logo_small: header.logo_small.clone(),
             group: header.group.clone(),
@@ -740,7 +795,12 @@ impl PlaylistEntry for PlaylistItem {
     #[inline]
     fn get_uuid(&self) -> UUIDType {
         let header = &self.header;
-        generate_playlist_uuid(&header.input_name, &header.id, header.item_type, &header.url)
+        generate_playlist_uuid(
+            &header.input_name,
+            &header.id,
+            header.item_type,
+            &header.url,
+        )
     }
 
     #[inline]

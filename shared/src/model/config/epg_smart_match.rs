@@ -1,6 +1,6 @@
-use std::fmt::Display;
-use log::warn;
 use crate::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use log::warn;
+use std::fmt::Display;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -62,7 +62,6 @@ impl Default for EpgSmartMatchConfigDto {
 }
 
 impl EpgSmartMatchConfigDto {
-
     /// # Panics
     ///
     /// Prepares the EPG smart match configuration by validating thresholds, compiling normalization regex, and setting default values as needed.
@@ -87,14 +86,21 @@ impl EpgSmartMatchConfigDto {
             self.match_threshold = 100;
         }
 
-        if self.best_match_threshold == 0 || self.best_match_threshold > 100 || self.best_match_threshold < self.match_threshold {
+        if self.best_match_threshold == 0
+            || self.best_match_threshold > 100
+            || self.best_match_threshold < self.match_threshold
+        {
             self.best_match_threshold = 99;
         }
 
         if let Some(regstr) = self.normalize_regex.as_ref() {
             let re = regex::Regex::new(regstr.as_str());
             if re.is_err() {
-                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "cant parse regex: {}", regstr);
+                return create_tuliprox_error_result!(
+                    TuliproxErrorKind::Info,
+                    "cant parse regex: {}",
+                    regstr
+                );
             }
         };
 

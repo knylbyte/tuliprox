@@ -1,7 +1,7 @@
-use base64::Engine;
-use base64::engine::general_purpose;
-use std::fmt::Write;
 use crate::model::{PlaylistItemType, UUIDType};
+use base64::engine::general_purpose;
+use base64::Engine;
+use std::fmt::Write;
 
 #[inline]
 pub fn hash_bytes(bytes: &[u8]) -> UUIDType {
@@ -19,7 +19,6 @@ pub fn short_hash(text: &str) -> String {
     hex_encode(&hash.as_bytes()[..8])
 }
 
-
 #[inline]
 pub fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().fold(String::new(), |mut output, b| {
@@ -35,7 +34,7 @@ pub fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
     (0..hex.len())
         .step_by(2)
         .map(|i| {
-            u8::from_str_radix(&hex[i..i+2], 16)
+            u8::from_str_radix(&hex[i..i + 2], 16)
                 .map_err(|e| format!("invalid hex at position {i}: {e}"))
         })
         .collect()
@@ -47,18 +46,27 @@ pub fn hash_string_as_hex(url: &str) -> String {
 
 pub fn extract_id_from_url(url: &str) -> Option<String> {
     if let Some(possible_id_and_ext) = url.split('/').next_back() {
-        return possible_id_and_ext.rfind('.').map_or_else(|| Some(possible_id_and_ext.to_string()), |index| Some(possible_id_and_ext[..index].to_string()));
+        return possible_id_and_ext.rfind('.').map_or_else(
+            || Some(possible_id_and_ext.to_string()),
+            |index| Some(possible_id_and_ext[..index].to_string()),
+        );
     }
     None
 }
 
 pub fn get_provider_id(provider_id: &str, url: &str) -> Option<u32> {
-    provider_id.parse::<u32>().ok().or_else(|| {
-        extract_id_from_url(url)?.parse::<u32>().ok()
-    })
+    provider_id
+        .parse::<u32>()
+        .ok()
+        .or_else(|| extract_id_from_url(url)?.parse::<u32>().ok())
 }
 
-pub fn generate_playlist_uuid(key: &str, provider_id: &str, item_type: PlaylistItemType, url: &str) -> UUIDType {
+pub fn generate_playlist_uuid(
+    key: &str,
+    provider_id: &str,
+    item_type: PlaylistItemType,
+    url: &str,
+) -> UUIDType {
     if let Some(id) = get_provider_id(provider_id, url) {
         if id > 0 {
             return hash_string(&format!("{key}{id}{item_type}"));
@@ -80,8 +88,6 @@ pub fn base64_to_u32(encoded: &str) -> Option<u32> {
         return None;
     }
 
-    let arr: [u8; 4] = decoded
-        .as_slice()
-        .try_into().ok()?;
+    let arr: [u8; 4] = decoded.as_slice().try_into().ok()?;
     Some(u32::from_be_bytes(arr))
 }

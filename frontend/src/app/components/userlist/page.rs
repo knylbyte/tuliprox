@@ -1,7 +1,7 @@
+use shared::error::TuliproxError;
+use shared::info_err;
 use std::fmt::Display;
 use std::str::FromStr;
-use shared::error::{TuliproxError};
-use shared::info_err;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UserlistPage {
@@ -23,9 +23,13 @@ impl FromStr for UserlistPage {
 
 impl Display for UserlistPage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", match *self {
-            Self::List => "list",
-            Self::Edit => "edit",
-        })
+        write!(
+            f,
+            "{}",
+            match *self {
+                Self::List => "list",
+                Self::Edit => "edit",
+            }
+        )
     }
 }

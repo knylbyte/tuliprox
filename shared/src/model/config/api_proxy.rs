@@ -1,6 +1,6 @@
-use std::collections::HashSet;
 use crate::error::{info_err, TuliproxError};
-use crate::model::{ProxyUserCredentialsDto};
+use crate::model::ProxyUserCredentialsDto;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct TargetUserDto {
@@ -39,11 +39,15 @@ impl ApiProxyServerInfoDto {
         }
         self.protocol = self.protocol.trim().to_string();
         if self.protocol.is_empty() {
-            return Err(info_err!("protocol cant be empty for api server config".to_string()));
+            return Err(info_err!(
+                "protocol cant be empty for api server config".to_string()
+            ));
         }
         self.host = self.host.trim().to_string();
         if self.host.is_empty() {
-            return Err(info_err!("host cant be empty for api server config".to_string()));
+            return Err(info_err!(
+                "host cant be empty for api server config".to_string()
+            ));
         }
         if let Some(port) = self.port.as_ref() {
             let port = port.trim().to_string();
@@ -86,7 +90,6 @@ impl ApiProxyServerInfoDto {
 }
 
 impl ApiProxyConfigDto {
-
     fn prepare_server_config(&mut self, errors: &mut Vec<String>) {
         let mut name_set = HashSet::new();
         for server in &mut self.server {
@@ -94,7 +97,10 @@ impl ApiProxyConfigDto {
                 errors.push(err.to_string());
             }
             if name_set.contains(server.name.as_str()) {
-                errors.push(format!("Non-unique server info name found {}", &server.name));
+                errors.push(format!(
+                    "Non-unique server info name found {}",
+                    &server.name
+                ));
             } else {
                 name_set.insert(server.name.clone());
             }
@@ -116,14 +122,23 @@ impl ApiProxyConfigDto {
                     if token.is_empty() {
                         user.token = None;
                     } else if tokens.contains(token) {
-                        errors.push(format!("Non unique user token found {} for user {}", &user.token.as_ref().map_or_else(String::new, ToString::to_string), &user.username));
+                        errors.push(format!(
+                            "Non unique user token found {} for user {}",
+                            &user
+                                .token
+                                .as_ref()
+                                .map_or_else(String::new, ToString::to_string),
+                            &user.username
+                        ));
                     } else {
                         tokens.insert(token.to_string());
                     }
                 }
 
                 if let Some(server_info_name) = &user.server {
-                    if !&self.server.iter()
+                    if !&self
+                        .server
+                        .iter()
                         .any(|server_info| server_info.name.eq(server_info_name))
                     {
                         errors.push(format!(

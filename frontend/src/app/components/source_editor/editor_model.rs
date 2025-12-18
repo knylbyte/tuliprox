@@ -1,8 +1,8 @@
+use serde::{Deserialize, Serialize};
+use shared::model::{ConfigInputDto, ConfigTargetDto, InputType, TargetOutputDto};
 use std::fmt;
 use std::rc::Rc;
-use serde::{Deserialize, Serialize};
 use yew::{Callback, UseStateHandle};
-use shared::model::{ConfigInputDto, ConfigTargetDto, InputType, TargetOutputDto};
 
 pub const BLOCK_WIDTH: f32 = 100.0;
 pub const BLOCK_HEIGHT: f32 = 50.0;
@@ -69,14 +69,11 @@ impl From<String> for BlockType {
 impl From<InputType> for BlockType {
     fn from(s: InputType) -> Self {
         match s {
-            InputType::M3uBatch
-            | InputType::M3u => BlockType::InputM3u,
-            InputType::XtreamBatch
-            | InputType::Xtream => BlockType::InputXtream,
+            InputType::M3uBatch | InputType::M3u => BlockType::InputM3u,
+            InputType::XtreamBatch | InputType::Xtream => BlockType::InputXtream,
         }
     }
 }
-
 
 // Display trait using constants
 impl fmt::Display for BlockType {
@@ -133,13 +130,9 @@ impl Block {
         let r_right = x1.max(x2);
         let r_bottom = y1.max(y2);
 
-        b_right >= r_left &&
-            b_left <= r_right &&
-            b_bottom >= r_top &&
-            b_top <= r_bottom
+        b_right >= r_left && b_left <= r_right && b_bottom >= r_top && b_top <= r_bottom
     }
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Connection {
@@ -151,14 +144,14 @@ pub struct Connection {
 pub enum PortStatus {
     Valid,
     Invalid,
-    Inactive
+    Inactive,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BlockInstance {
     Input(Rc<ConfigInputDto>),
     Target(Rc<ConfigTargetDto>),
-    Output(Rc<TargetOutputDto>)
+    Output(Rc<TargetOutputDto>),
 }
 
 #[derive(Clone, PartialEq)]
@@ -170,5 +163,5 @@ pub enum EditMode {
 #[derive(Clone, PartialEq)]
 pub struct SourceEditorContext {
     pub on_form_change: Callback<(BlockId, BlockInstance)>,
-    pub edit_mode: UseStateHandle<EditMode>
+    pub edit_mode: UseStateHandle<EditMode>,
 }

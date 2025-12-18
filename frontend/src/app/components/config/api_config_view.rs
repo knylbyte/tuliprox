@@ -1,11 +1,14 @@
+use crate::app::components::config::config_page::{ConfigForm, LABEL_API_CONFIG};
+use crate::app::components::config::config_view_context::ConfigViewContext;
+use crate::app::components::AppIcon;
 use crate::app::context::ConfigContext;
+use crate::{
+    config_field, config_field_empty, edit_field_number_u16, edit_field_text,
+    generate_form_reducer, html_if,
+};
+use shared::model::ConfigApiDto;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::{ConfigApiDto};
-use crate::{config_field, config_field_empty, edit_field_number_u16, edit_field_text, generate_form_reducer, html_if};
-use crate::app::components::AppIcon;
-use crate::app::components::config::config_view_context::ConfigViewContext;
-use crate::app::components::config::config_page::{ConfigForm, LABEL_API_CONFIG};
 
 const LABEL_HOST: &str = "LABEL.HOST";
 const LABEL_PORT: &str = "LABEL.PORT";
@@ -28,8 +31,9 @@ pub fn ApiConfigView() -> Html {
     let config_ctx = use_context::<ConfigContext>().expect("Config context not found");
     let config_view_ctx = use_context::<ConfigViewContext>().expect("ConfigViewContext not found");
 
-    let form_state: UseReducerHandle<ApiConfigFormState> = use_reducer(|| {
-        ApiConfigFormState { form: ConfigApiDto::default(), modified: false }
+    let form_state: UseReducerHandle<ApiConfigFormState> = use_reducer(|| ApiConfigFormState {
+        form: ConfigApiDto::default(),
+        modified: false,
     });
 
     {
@@ -43,10 +47,7 @@ pub fn ApiConfigView() -> Html {
 
     {
         let form_state = form_state.clone();
-        let api_config = config_ctx
-            .config
-            .as_ref()
-            .map(|c| c.config.api.clone());
+        let api_config = config_ctx.config.as_ref().map(|c| c.config.api.clone());
 
         let deps = (api_config, *config_view_ctx.edit_mode);
         use_effect_with(deps, move |(cfg, _mode)| {
@@ -57,7 +58,6 @@ pub fn ApiConfigView() -> Html {
             }
             || ()
         });
-
     }
 
     let render_empty = || {

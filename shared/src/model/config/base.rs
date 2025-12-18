@@ -1,5 +1,9 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto, DEFAULT_VIDEO_EXTENSIONS};
+use crate::model::{
+    ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MessagingConfigDto,
+    ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto,
+    DEFAULT_VIDEO_EXTENSIONS,
+};
 use crate::utils::default_connect_timeout_secs;
 
 pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
@@ -141,7 +145,6 @@ impl From<&ConfigDto> for SchedulesConfigDto {
     }
 }
 
-
 pub struct HdHomeRunDeviceOverview {
     pub enabled: bool,
     pub devices: Vec<String>,
@@ -151,7 +154,10 @@ impl ConfigDto {
     pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         if let Some(mins) = self.sleep_timer_mins {
             if mins == 0 {
-                return Err(TuliproxError::new(TuliproxErrorKind::Info, "`sleep_timer_mins` must be > 0 when specified".to_string()));
+                return Err(TuliproxError::new(
+                    TuliproxErrorKind::Info,
+                    "`sleep_timer_mins` must be > 0 when specified".to_string(),
+                ));
             }
         }
 
@@ -193,17 +199,18 @@ impl ConfigDto {
         match &mut self.video {
             None => {
                 self.video = Some(VideoConfigDto {
-                    extensions: DEFAULT_VIDEO_EXTENSIONS.iter().map(ToString::to_string).collect(),
+                    extensions: DEFAULT_VIDEO_EXTENSIONS
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
                     download: None,
                     web_search: None,
                 });
             }
-            Some(video) => {
-                match video.prepare() {
-                    Ok(()) => {}
-                    Err(err) => return Err(err)
-                }
-            }
+            Some(video) => match video.prepare() {
+                Ok(()) => {}
+                Err(err) => return Err(err),
+            },
         }
         Ok(())
     }
@@ -229,11 +236,14 @@ impl ConfigDto {
     }
 
     pub fn get_hdhr_device_overview(&self) -> Option<HdHomeRunDeviceOverview> {
-        self.hdhomerun.as_ref().map(|hdhr|
-            HdHomeRunDeviceOverview {
-                enabled: hdhr.enabled,
-                devices: hdhr.devices.iter().map(|d| d.name.to_string()).collect::<Vec<String>>(),
-            })
+        self.hdhomerun.as_ref().map(|hdhr| HdHomeRunDeviceOverview {
+            enabled: hdhr.enabled,
+            devices: hdhr
+                .devices
+                .iter()
+                .map(|d| d.name.to_string())
+                .collect::<Vec<String>>(),
+        })
     }
 
     pub fn update_from_main_config(&mut self, main_config: &MainConfigDto) {
@@ -249,11 +259,11 @@ impl ConfigDto {
         self.update_on_boot = main_config.update_on_boot;
         self.config_hot_reload = main_config.config_hot_reload;
         self.accept_insecure_ssl_certificates = main_config.accept_insecure_ssl_certificates;
-
     }
 
     pub fn is_geoip_enabled(&self) -> bool {
-        self.reverse_proxy.as_ref().is_some_and(|r| r.geoip.as_ref().is_some_and(|g| g.enabled))
+        self.reverse_proxy
+            .as_ref()
+            .is_some_and(|r| r.geoip.as_ref().is_some_and(|g| g.enabled))
     }
-
 }

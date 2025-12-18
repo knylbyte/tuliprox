@@ -41,7 +41,6 @@ macro_rules! info_err {
 }
 pub use info_err;
 
-
 #[macro_export]
 macro_rules! create_tuliprox_error {
      ($kind: expr, $($arg:tt)*) => {
@@ -73,7 +72,7 @@ macro_rules! handle_tuliprox_error_result_list {
         if !&errors.is_empty() {
             return Err($crate::error::TuliproxError::new($kind, errors.join("\n")));
         }
-    }
+    };
 }
 
 pub use handle_tuliprox_error_result_list;
@@ -84,11 +83,10 @@ macro_rules! handle_tuliprox_error_result {
         if let Err(err) = $result {
             return Err($crate::error::TuliproxError::new($kind, err.to_string()));
         }
-    }
+    };
 }
 
 pub use handle_tuliprox_error_result;
-
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TuliproxErrorKind {
@@ -120,7 +118,9 @@ impl Error for TuliproxError {}
 pub fn to_io_error<E>(err: E) -> std::io::Error
 where
     E: std::error::Error,
-{ std::io::Error::other(err.to_string()) }
+{
+    std::io::Error::other(err.to_string())
+}
 
 pub fn str_to_io_error(err: &str) -> std::io::Error {
     std::io::Error::other(err.to_string())

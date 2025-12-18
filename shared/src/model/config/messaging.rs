@@ -61,7 +61,7 @@ impl MessagingConfigDto {
     pub fn is_empty(&self) -> bool {
         self.notify_on.is_empty()
             && (self.telegram.is_none() || self.telegram.as_ref().is_some_and(|c| c.is_empty()))
-            && (self.rest.is_none()  || self.rest.as_ref().is_some_and(|c| c.is_empty()))
+            && (self.rest.is_none() || self.rest.as_ref().is_some_and(|c| c.is_empty()))
             && (self.pushover.is_none() || self.pushover.as_ref().is_some_and(|c| c.is_empty()))
     }
 
@@ -75,6 +75,5 @@ impl MessagingConfigDto {
         if self.pushover.as_ref().is_some_and(|c| c.is_empty()) {
             self.pushover = None;
         }
-
     }
 }

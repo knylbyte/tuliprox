@@ -730,9 +730,11 @@ async fn try_create_new_account(
 
 pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &ConfigInput) -> bool {
     let Some(panel_cfg) = input.panel_api.as_ref() else {
+        debug_if_enabled!("panel_api: skipped (no panel_api config) for input {}", sanitize_sensitive_info(&input.name));
         return false;
     };
     if panel_cfg.url.trim().is_empty() {
+        debug_if_enabled!("panel_api: skipped (panel_api.url empty) for input {}", sanitize_sensitive_info(&input.name));
         return false;
     }
 
@@ -747,14 +749,27 @@ pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &Co
         return false;
     }
 
+    debug_if_enabled!(
+        "panel_api: exhausted -> provisioning for input {} (aliases={})",
+        sanitize_sensitive_info(&input.name),
+        input.aliases.as_ref().map_or(0, Vec::len)
+    );
+
     let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
     let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
     let sources_path = PathBuf::from(&sources_file_path);
 
     if try_renew_expired_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await {
+        debug_if_enabled!("panel_api: provisioning succeeded via client_renew for input {}", sanitize_sensitive_info(&input.name));
         return true;
     }
-    try_create_new_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await
+    let created = try_create_new_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await;
+    debug_if_enabled!(
+        "panel_api: provisioning via client_new for input {} => {}",
+        sanitize_sensitive_info(&input.name),
+        if created { "success" } else { "failed" }
+    );
+    created
 }
 
 pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) {

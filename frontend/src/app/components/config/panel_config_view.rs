@@ -1,7 +1,7 @@
-use crate::app::components::input::Input;
-use crate::app::components::{Card, Chip, IconButton, ToggleSwitch};
 use crate::app::components::config::config_page::{ConfigForm, LABEL_PANEL_CONFIG};
 use crate::app::components::config::config_view_context::ConfigViewContext;
+use crate::app::components::input::Input;
+use crate::app::components::{Card, Chip, IconButton, ToggleSwitch};
 use crate::app::context::ConfigContext;
 use crate::html_if;
 use shared::model::{ConfigInputDto, PanelApiConfigDto, PanelApiQueryParamDto, SourcesConfigDto};
@@ -46,17 +46,57 @@ struct PanelConfigFormState {
 #[derive(Clone)]
 enum PanelConfigFormAction {
     SetAll(SourcesConfigDto),
-    SetEnabled { source_idx: usize, input_idx: usize, enabled: bool },
-    SetPanelUrl { source_idx: usize, input_idx: usize, url: String },
-    SetApiKey { source_idx: usize, input_idx: usize, api_key: String },
-    AddParam { source_idx: usize, input_idx: usize, section: PanelSection },
-    RemoveParam { source_idx: usize, input_idx: usize, section: PanelSection, param_idx: usize },
-    SetParamKey { source_idx: usize, input_idx: usize, section: PanelSection, param_idx: usize, key: String },
-    SetParamValue { source_idx: usize, input_idx: usize, section: PanelSection, param_idx: usize, value: String },
-    EnsureRequired { source_idx: usize, input_idx: usize, section: PanelSection },
+    SetEnabled {
+        source_idx: usize,
+        input_idx: usize,
+        enabled: bool,
+    },
+    SetPanelUrl {
+        source_idx: usize,
+        input_idx: usize,
+        url: String,
+    },
+    SetApiKey {
+        source_idx: usize,
+        input_idx: usize,
+        api_key: String,
+    },
+    AddParam {
+        source_idx: usize,
+        input_idx: usize,
+        section: PanelSection,
+    },
+    RemoveParam {
+        source_idx: usize,
+        input_idx: usize,
+        section: PanelSection,
+        param_idx: usize,
+    },
+    SetParamKey {
+        source_idx: usize,
+        input_idx: usize,
+        section: PanelSection,
+        param_idx: usize,
+        key: String,
+    },
+    SetParamValue {
+        source_idx: usize,
+        input_idx: usize,
+        section: PanelSection,
+        param_idx: usize,
+        value: String,
+    },
+    EnsureRequired {
+        source_idx: usize,
+        input_idx: usize,
+        section: PanelSection,
+    },
 }
 
-fn params_mut(panel: &mut PanelApiConfigDto, section: PanelSection) -> &mut Vec<PanelApiQueryParamDto> {
+fn params_mut(
+    panel: &mut PanelApiConfigDto,
+    section: PanelSection,
+) -> &mut Vec<PanelApiQueryParamDto> {
     match section {
         PanelSection::Info => &mut panel.query_parameter.client_info,
         PanelSection::New => &mut panel.query_parameter.client_new,
@@ -65,7 +105,9 @@ fn params_mut(panel: &mut PanelApiConfigDto, section: PanelSection) -> &mut Vec<
 }
 
 fn has_param(params: &[PanelApiQueryParamDto], key: &str) -> bool {
-    params.iter().any(|p| p.key.trim().eq_ignore_ascii_case(key))
+    params
+        .iter()
+        .any(|p| p.key.trim().eq_ignore_ascii_case(key))
 }
 
 fn get_param_value(params: &[PanelApiQueryParamDto], key: &str) -> Option<String> {
@@ -169,7 +211,12 @@ fn ensure_required_params(params: &mut Vec<PanelApiQueryParamDto>, section: Pane
     }
 }
 
-fn with_input_mut(form: &mut SourcesConfigDto, source_idx: usize, input_idx: usize, f: impl FnOnce(&mut ConfigInputDto)) {
+fn with_input_mut(
+    form: &mut SourcesConfigDto,
+    source_idx: usize,
+    input_idx: usize,
+    f: impl FnOnce(&mut ConfigInputDto),
+) {
     if let Some(source) = form.sources.get_mut(source_idx) {
         if let Some(input) = source.inputs.get_mut(input_idx) {
             f(input);
@@ -182,8 +229,16 @@ impl Reducible for PanelConfigFormState {
 
     fn reduce(self: Rc<Self>, action: Self::Action) -> Rc<Self> {
         match action {
-            PanelConfigFormAction::SetAll(form) => Self { form, modified: false }.into(),
-            PanelConfigFormAction::SetEnabled { source_idx, input_idx, enabled } => {
+            PanelConfigFormAction::SetAll(form) => Self {
+                form,
+                modified: false,
+            }
+            .into(),
+            PanelConfigFormAction::SetEnabled {
+                source_idx,
+                input_idx,
+                enabled,
+            } => {
                 let mut form = self.form.clone();
                 with_input_mut(&mut form, source_idx, input_idx, |input| {
                     if enabled {
@@ -194,33 +249,79 @@ impl Reducible for PanelConfigFormState {
                         input.panel_api = None;
                     }
                 });
-                Self { form, modified: true }.into()
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
             }
-            PanelConfigFormAction::SetPanelUrl { source_idx, input_idx, url } => {
+            PanelConfigFormAction::SetPanelUrl {
+                source_idx,
+                input_idx,
+                url,
+            } => {
                 let mut form = self.form.clone();
                 with_input_mut(&mut form, source_idx, input_idx, |input| {
-                    let panel = input.panel_api.get_or_insert_with(PanelApiConfigDto::default);
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
                     panel.url = url;
                 });
-                Self { form, modified: true }.into()
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
             }
-            PanelConfigFormAction::SetApiKey { source_idx, input_idx, api_key } => {
+            PanelConfigFormAction::SetApiKey {
+                source_idx,
+                input_idx,
+                api_key,
+            } => {
                 let mut form = self.form.clone();
                 with_input_mut(&mut form, source_idx, input_idx, |input| {
-                    let panel = input.panel_api.get_or_insert_with(PanelApiConfigDto::default);
-                    panel.api_key = if api_key.trim().is_empty() { None } else { Some(api_key) };
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
+                    panel.api_key = if api_key.trim().is_empty() {
+                        None
+                    } else {
+                        Some(api_key)
+                    };
                 });
-                Self { form, modified: true }.into()
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
             }
-            PanelConfigFormAction::AddParam { source_idx, input_idx, section } => {
+            PanelConfigFormAction::AddParam {
+                source_idx,
+                input_idx,
+                section,
+            } => {
                 let mut form = self.form.clone();
                 with_input_mut(&mut form, source_idx, input_idx, |input| {
-                    let panel = input.panel_api.get_or_insert_with(PanelApiConfigDto::default);
-                    params_mut(panel, section).push(PanelApiQueryParamDto { key: String::new(), value: String::new() });
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
+                    params_mut(panel, section).push(PanelApiQueryParamDto {
+                        key: String::new(),
+                        value: String::new(),
+                    });
                 });
-                Self { form, modified: true }.into()
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
             }
-            PanelConfigFormAction::RemoveParam { source_idx, input_idx, section, param_idx } => {
+            PanelConfigFormAction::RemoveParam {
+                source_idx,
+                input_idx,
+                section,
+                param_idx,
+            } => {
                 let mut form = self.form.clone();
                 with_input_mut(&mut form, source_idx, input_idx, |input| {
                     if let Some(panel) = input.panel_api.as_mut() {
@@ -230,9 +331,19 @@ impl Reducible for PanelConfigFormState {
                         }
                     }
                 });
-                Self { form, modified: true }.into()
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
             }
-            PanelConfigFormAction::SetParamKey { source_idx, input_idx, section, param_idx, key } => {
+            PanelConfigFormAction::SetParamKey {
+                source_idx,
+                input_idx,
+                section,
+                param_idx,
+                key,
+            } => {
                 let mut form = self.form.clone();
                 with_input_mut(&mut form, source_idx, input_idx, |input| {
                     if let Some(panel) = input.panel_api.as_mut() {
@@ -242,9 +353,19 @@ impl Reducible for PanelConfigFormState {
                         }
                     }
                 });
-                Self { form, modified: true }.into()
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
             }
-            PanelConfigFormAction::SetParamValue { source_idx, input_idx, section, param_idx, value } => {
+            PanelConfigFormAction::SetParamValue {
+                source_idx,
+                input_idx,
+                section,
+                param_idx,
+                value,
+            } => {
                 let mut form = self.form.clone();
                 with_input_mut(&mut form, source_idx, input_idx, |input| {
                     if let Some(panel) = input.panel_api.as_mut() {
@@ -254,15 +375,29 @@ impl Reducible for PanelConfigFormState {
                         }
                     }
                 });
-                Self { form, modified: true }.into()
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
             }
-            PanelConfigFormAction::EnsureRequired { source_idx, input_idx, section } => {
+            PanelConfigFormAction::EnsureRequired {
+                source_idx,
+                input_idx,
+                section,
+            } => {
                 let mut form = self.form.clone();
                 with_input_mut(&mut form, source_idx, input_idx, |input| {
-                    let panel = input.panel_api.get_or_insert_with(PanelApiConfigDto::default);
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
                     ensure_required_params(params_mut(panel, section), section);
                 });
-                Self { form, modified: true }.into()
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
             }
         }
     }
@@ -281,7 +416,11 @@ fn render_param_editor(
         let form_state = form_state.clone();
         Callback::from(move |(name, _): (String, web_sys::MouseEvent)| {
             if name == "required" {
-                form_state.dispatch(PanelConfigFormAction::EnsureRequired { source_idx, input_idx, section });
+                form_state.dispatch(PanelConfigFormAction::EnsureRequired {
+                    source_idx,
+                    input_idx,
+                    section,
+                });
             }
         })
     };
@@ -290,7 +429,11 @@ fn render_param_editor(
         let form_state = form_state.clone();
         Callback::from(move |(name, _): (String, web_sys::MouseEvent)| {
             if name == "add" {
-                form_state.dispatch(PanelConfigFormAction::AddParam { source_idx, input_idx, section });
+                form_state.dispatch(PanelConfigFormAction::AddParam {
+                    source_idx,
+                    input_idx,
+                    section,
+                });
             }
         })
     };
@@ -387,14 +530,17 @@ pub fn PanelConfigView() -> Html {
     {
         let form_state = form_state.clone();
         let sources_cfg = config_ctx.config.as_ref().map(|c| c.sources.clone());
-        use_effect_with((sources_cfg, config_view_ctx.edit_mode.clone()), move |(sources_cfg, _mode)| {
-            if let Some(src) = sources_cfg {
-                form_state.dispatch(PanelConfigFormAction::SetAll((*src).clone()));
-            } else {
-                form_state.dispatch(PanelConfigFormAction::SetAll(SourcesConfigDto::default()));
-            }
-            || ()
-        });
+        use_effect_with(
+            (sources_cfg, config_view_ctx.edit_mode.clone()),
+            move |(sources_cfg, _mode)| {
+                if let Some(src) = sources_cfg {
+                    form_state.dispatch(PanelConfigFormAction::SetAll((*src).clone()));
+                } else {
+                    form_state.dispatch(PanelConfigFormAction::SetAll(SourcesConfigDto::default()));
+                }
+                || ()
+            },
+        );
     }
 
     let render_input_card = |source_idx: usize, input_idx: usize, input: &ConfigInputDto| -> Html {
@@ -414,30 +560,48 @@ pub fn PanelConfigView() -> Html {
         let on_toggle = {
             let form_state = form_state.clone();
             Callback::from(move |enabled: bool| {
-                form_state.dispatch(PanelConfigFormAction::SetEnabled { source_idx, input_idx, enabled });
+                form_state.dispatch(PanelConfigFormAction::SetEnabled {
+                    source_idx,
+                    input_idx,
+                    enabled,
+                });
             })
         };
 
         let on_url = {
             let form_state = form_state.clone();
             Callback::from(move |value: String| {
-                form_state.dispatch(PanelConfigFormAction::SetPanelUrl { source_idx, input_idx, url: value });
+                form_state.dispatch(PanelConfigFormAction::SetPanelUrl {
+                    source_idx,
+                    input_idx,
+                    url: value,
+                });
             })
         };
 
         let on_api_key = {
             let form_state = form_state.clone();
             Callback::from(move |value: String| {
-                form_state.dispatch(PanelConfigFormAction::SetApiKey { source_idx, input_idx, api_key: value });
+                form_state.dispatch(PanelConfigFormAction::SetApiKey {
+                    source_idx,
+                    input_idx,
+                    api_key: value,
+                });
             })
         };
 
         let panel = input.panel_api.as_ref();
         let url_val = panel.map(|p| p.url.clone()).unwrap_or_default();
         let api_key_val = panel.and_then(|p| p.api_key.clone()).unwrap_or_default();
-        let client_info = panel.map(|p| p.query_parameter.client_info.as_slice()).unwrap_or(&[]);
-        let client_new = panel.map(|p| p.query_parameter.client_new.as_slice()).unwrap_or(&[]);
-        let client_renew = panel.map(|p| p.query_parameter.client_renew.as_slice()).unwrap_or(&[]);
+        let client_info = panel
+            .map(|p| p.query_parameter.client_info.as_slice())
+            .unwrap_or(&[]);
+        let client_new = panel
+            .map(|p| p.query_parameter.client_new.as_slice())
+            .unwrap_or(&[]);
+        let client_renew = panel
+            .map(|p| p.query_parameter.client_renew.as_slice())
+            .unwrap_or(&[]);
 
         html! {
             <Card class="tp__config-view__card tp__panel-config-view__input-card">
@@ -524,7 +688,12 @@ pub fn PanelConfigView() -> Html {
         .sources
         .iter()
         .enumerate()
-        .flat_map(|(sidx, s)| s.inputs.iter().enumerate().map(move |(iidx, inp)| (sidx, iidx, inp)))
+        .flat_map(|(sidx, s)| {
+            s.inputs
+                .iter()
+                .enumerate()
+                .map(move |(iidx, inp)| (sidx, iidx, inp))
+        })
         .collect::<Vec<_>>();
 
     html! {

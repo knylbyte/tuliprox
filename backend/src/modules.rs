@@ -10,8 +10,7 @@ macro_rules! include_modules {
         pub mod model;
         pub mod processing;
         pub mod repository;
-        pub mod utils;
         pub mod tools;
-    }
+        pub mod utils;
+    };
 }
-

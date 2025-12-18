@@ -1,6 +1,10 @@
 use shared::error::TuliproxError;
 use shared::info_err;
-use shared::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MainConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, SchedulesConfigDto, SourcesConfigDto, VideoConfigDto, WebUiConfigDto};
+use shared::model::{
+    ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MainConfigDto,
+    MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, SchedulesConfigDto,
+    SourcesConfigDto, VideoConfigDto, WebUiConfigDto,
+};
 use std::fmt;
 use std::str::FromStr;
 
@@ -106,17 +110,20 @@ pub enum ConfigForm {
 
 impl ConfigForm {
     pub(crate) fn is_modified(&self) -> bool {
-        matches!(self, ConfigForm::Main(true, _)
-              | ConfigForm::Api(true, _)
-              | ConfigForm::Log(true, _)
-              | ConfigForm::Schedules(true, _)
-              | ConfigForm::Video(true, _)
-              | ConfigForm::Messaging(true, _)
-              | ConfigForm::WebUi(true, _)
-              | ConfigForm::ReverseProxy(true, _)
-              | ConfigForm::HdHomerun(true, _)
-              | ConfigForm::Proxy(true, _)
-              | ConfigForm::IpCheck(true, _)
-              | ConfigForm::Panel(true, _))
+        matches!(
+            self,
+            ConfigForm::Main(true, _)
+                | ConfigForm::Api(true, _)
+                | ConfigForm::Log(true, _)
+                | ConfigForm::Schedules(true, _)
+                | ConfigForm::Video(true, _)
+                | ConfigForm::Messaging(true, _)
+                | ConfigForm::WebUi(true, _)
+                | ConfigForm::ReverseProxy(true, _)
+                | ConfigForm::HdHomerun(true, _)
+                | ConfigForm::Proxy(true, _)
+                | ConfigForm::IpCheck(true, _)
+                | ConfigForm::Panel(true, _)
+        )
     }
 }

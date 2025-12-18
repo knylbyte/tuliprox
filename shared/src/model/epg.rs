@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 pub fn parse_xmltv_time(t: &str) -> Option<i64> {
     let fmt = "%Y%m%d%H%M%S %z";
     if let Ok(result) = DateTime::parse_from_str(t, fmt) {
-            Some(result
-            .with_timezone(&Utc)
-            .timestamp())
+        Some(result.with_timezone(&Utc).timestamp())
     } else {
         None
     }
@@ -21,8 +19,7 @@ pub struct EpgTv {
 
 impl PartialEq for EpgTv {
     fn eq(&self, other: &Self) -> bool {
-            self.start == other.start
-            && self.stop == other.stop
+        self.start == other.start && self.stop == other.stop
         // Note: self.channels is skipped
     }
 }

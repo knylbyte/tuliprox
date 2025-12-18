@@ -45,21 +45,41 @@ pub const XC_FILE_VOD_INFO: &str = "xtream_vod_info";
 pub const XC_FILE_SERIES_EPISODE_RECORD: &str = "series_episode_record";
 pub const XC_TAG_SERIES_INFO_LAST_MODIFIED: &str = "last_modified";
 
-
 pub const LIVE_STREAM_FIELDS: &[&str] = &[];
 
 pub const VIDEO_STREAM_FIELDS: &[&str] = &[
-    "release_date", "cast",
-    "director", "episode_run_time", "genre",
-    "stream_type", "title", "year", "youtube_trailer", "trailer",
-    "plot", "rating_5based", "stream_icon", "container_extension"
+    "release_date",
+    "cast",
+    "director",
+    "episode_run_time",
+    "genre",
+    "stream_type",
+    "title",
+    "year",
+    "youtube_trailer",
+    "trailer",
+    "plot",
+    "rating_5based",
+    "stream_icon",
+    "container_extension",
 ];
 
 pub const SERIES_STREAM_FIELDS: &[&str] = &[
-    XC_PROP_BACKDROP_PATH, "cast", XC_PROP_COVER, "director", "episode_run_time", "genre",
-    "last_modified", "name", "plot", "rating_5based",
-    "stream_type", "title", "year", "youtube_trailer", "trailer"
+    XC_PROP_BACKDROP_PATH,
+    "cast",
+    XC_PROP_COVER,
+    "director",
+    "episode_run_time",
+    "genre",
+    "last_modified",
+    "name",
+    "plot",
+    "rating_5based",
+    "stream_type",
+    "title",
+    "year",
+    "youtube_trailer",
+    "trailer",
 ];
 
 pub const XTREAM_VOD_REWRITE_URL_PROPS: &[&str] = &[XC_PROP_COVER];
-

@@ -1,27 +1,31 @@
 use crate::app::components::{Breadcrumbs, Card, PlaylistContext, TextButton};
+use crate::hooks::use_service_context;
+use shared::model::ConfigTargetDto;
 use std::rc::Rc;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_hooks::use_list;
 use yew_i18n::use_translation;
-use shared::model::ConfigTargetDto;
-use crate::hooks::use_service_context;
 
 #[function_component]
 pub fn PlaylistUpdateView() -> Html {
     let translate = use_translation();
     let playlist_ctx = use_context::<PlaylistContext>().expect("Playlist context not found");
     let services_ctx = use_service_context();
-    let breadcrumbs = use_state(|| Rc::new(vec![translate.t("LABEL.PLAYLISTS"), translate.t("LABEL.UPDATE")]));
+    let breadcrumbs = use_state(|| {
+        Rc::new(vec![
+            translate.t("LABEL.PLAYLISTS"),
+            translate.t("LABEL.UPDATE"),
+        ])
+    });
     let selected_targets = use_list::<Rc<ConfigTargetDto>>(vec![]);
 
     let handle_all_select = {
         let selected_targets = selected_targets.clone();
         Callback::from(move |_| {
-           selected_targets.clear();
+            selected_targets.clear();
         })
     };
-
 
     let handle_target_select = {
         let selected_targets = selected_targets.clone();
@@ -35,7 +39,6 @@ pub fn PlaylistUpdateView() -> Html {
         })
     };
 
-
     let handle_update = {
         let translate = translate.clone();
         let services = services_ctx.clone();
@@ -47,12 +50,26 @@ pub fn PlaylistUpdateView() -> Html {
             spawn_local(async move {
                 let target_names = {
                     let targets = selected_targets.current();
-                    targets.iter().map(|t| t.name.clone()).collect::<Vec<String>>()
+                    targets
+                        .iter()
+                        .map(|t| t.name.clone())
+                        .collect::<Vec<String>>()
                 };
-                let update_target_names = target_names.iter().map(|t|t.as_str()).collect::<Vec<&str>>();
+                let update_target_names = target_names
+                    .iter()
+                    .map(|t| t.as_str())
+                    .collect::<Vec<&str>>();
                 match services.playlist.update_targets(&update_target_names).await {
-                    true => { services.toastr.success(translate.t("MESSAGES.PLAYLIST_UPDATE.SUCCESS")); }
-                    false => { services.toastr.error(translate.t("MESSAGES.PLAYLIST_UPDATE.FAIL")); }
+                    true => {
+                        services
+                            .toastr
+                            .success(translate.t("MESSAGES.PLAYLIST_UPDATE.SUCCESS"));
+                    }
+                    false => {
+                        services
+                            .toastr
+                            .error(translate.t("MESSAGES.PLAYLIST_UPDATE.FAIL"));
+                    }
                 }
             });
         })

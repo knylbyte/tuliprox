@@ -1,13 +1,13 @@
+use crate::app::components::{NameStep, Panel, PlaylistAssistantContext, TypeStep};
 use std::fmt;
 use std::str::FromStr;
 use yew::prelude::*;
-use crate::app::components::{NameStep, Panel, PlaylistAssistantContext, TypeStep};
 
 enum PlaylistAssistantStep {
     Name,
     Type,
     Scheduling,
-    Processing
+    Processing,
 }
 
 impl fmt::Display for PlaylistAssistantStep {
@@ -27,15 +27,14 @@ impl FromStr for PlaylistAssistantStep {
 
     fn from_str(s: &str) -> Result<Self, ()> {
         match s {
-             "name" => Ok(PlaylistAssistantStep::Name),
-             "type" => Ok(PlaylistAssistantStep::Type),
-             "scheduling" => Ok(PlaylistAssistantStep::Scheduling),
-             "processing" => Ok(PlaylistAssistantStep::Processing),
-            _ => Err(())
+            "name" => Ok(PlaylistAssistantStep::Name),
+            "type" => Ok(PlaylistAssistantStep::Type),
+            "scheduling" => Ok(PlaylistAssistantStep::Scheduling),
+            "processing" => Ok(PlaylistAssistantStep::Processing),
+            _ => Err(()),
         }
     }
 }
-
 
 #[function_component]
 pub fn PlaylistAssistant() -> Html {
