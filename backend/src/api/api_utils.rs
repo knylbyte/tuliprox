@@ -1131,16 +1131,8 @@ pub async fn local_stream_response(
     response
 }
 
-fn is_path_within_allowed_directories(sub_path: &PathBuf, root_path: &str) -> bool {
-    let sub_path = match sub_path.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-    let root_path = match PathBuf::from(root_path).canonicalize() {
-        Ok(p) => p,
-        Err(_) => return false,
-    };
-
+fn is_path_within_allowed_directories(sub_path: &Path, root_path: &str) -> bool {
+    let Ok(root_path) = PathBuf::from(root_path).canonicalize() else { return false };
     sub_path.starts_with(&root_path)
 }
 

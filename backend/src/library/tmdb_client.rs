@@ -278,7 +278,6 @@ impl TmdbClient {
 
         let Ok(response) = self.client.get(&url).send().await else { return (None, None) };
         let Ok(bytes) = response.bytes().await else { return (None, None) };
-        //let _ = self.storage.store_tmdb_series_info_season(series_id, season, &bytes).await;
         (match serde_json::from_slice::<TmdbSeriesInfoSeasonDetails>(&bytes) {
             Ok(details) => Some(details),
             Err(e) => {

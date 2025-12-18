@@ -155,10 +155,6 @@ impl MetadataStorage {
         self.storage_dir.join(format!("series_{tmdb_id}.tmdb"))
     }
 
-    fn get_tmdb_series_seson_data_file_path(&self, tmdb_id: u32, season: u32) -> PathBuf {
-        self.storage_dir.join(format!("series_{tmdb_id}_{season}.tmdb"))
-    }
-
     // write raw tmdb movie info
     pub async fn store_tmdb_movie_info(&self, movie_id: u32, content: &[u8]) -> std::io::Result<PathBuf> {
         let file_path = self.get_tmdb_movie_data_file_path(movie_id);
@@ -170,13 +166,6 @@ impl MetadataStorage {
     pub async fn store_tmdb_series_info(&self, series_id: u32, content: &[u8]) -> std::io::Result<PathBuf> {
         let file_path = self.get_tmdb_series_data_file_path(series_id);
         debug!("Storing raw tmdb series metadata for {}", file_path.display());
-        self.store_file(content, file_path).await
-    }
-    
-    // write raw tmdb series season info
-    pub async fn store_tmdb_series_info_season(&self, series_id: u32, season: u32, content: &[u8]) -> std::io::Result<PathBuf> {
-        let file_path = self.get_tmdb_series_seson_data_file_path(series_id, season);
-        debug!("Storing raw tmdb series season metadata for {}", file_path.display());
         self.store_file(content, file_path).await
     }
 
