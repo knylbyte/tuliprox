@@ -211,6 +211,34 @@ fn build_panel_url(base_url: &str, query_params: &[(String, String)]) -> Result<
     Ok(url)
 }
 
+fn sanitize_panel_api_json_for_log(value: &Value) -> Value {
+    match value {
+        Value::Array(arr) => Value::Array(arr.iter().map(sanitize_panel_api_json_for_log).collect()),
+        Value::Object(obj) => {
+            let mut out = serde_json::Map::with_capacity(obj.len());
+            for (k, v) in obj {
+                if k.eq_ignore_ascii_case("api_key") || k.eq_ignore_ascii_case("apikey") || k.eq_ignore_ascii_case("token") {
+                    out.insert(k.clone(), Value::String("***".to_string()));
+                    continue;
+                }
+                if k.eq_ignore_ascii_case("username") || k.eq_ignore_ascii_case("password") {
+                    out.insert(k.clone(), Value::String("***".to_string()));
+                    continue;
+                }
+                if k.eq_ignore_ascii_case("url") {
+                    if let Some(s) = v.as_str() {
+                        out.insert(k.clone(), Value::String(sanitize_sensitive_info(s).into_owned()));
+                        continue;
+                    }
+                }
+                out.insert(k.clone(), sanitize_panel_api_json_for_log(v));
+            }
+            Value::Object(out)
+        }
+        other => other.clone(),
+    }
+}
+
 async fn panel_get_json(app_state: &AppState, url: Url) -> Result<Value, TuliproxError> {
     let client = app_state.http_client.load();
     let sanitized = sanitize_sensitive_info(url.as_str());
@@ -227,6 +255,10 @@ async fn panel_get_json(app_state: &AppState, url: Url) -> Result<Value, Tulipro
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api read response failed: {e}")))?;
     let json: Value = serde_json::from_str(&body)
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api invalid json (http {status}): {e}")))?;
+    let json_for_log = sanitize_panel_api_json_for_log(&json);
+    if let Ok(json_str) = serde_json::to_string(&json_for_log) {
+        debug_if_enabled!("panel_api response (http {}): {}", status, sanitize_sensitive_info(&json_str));
+    }
     Ok(json)
 }
 
@@ -395,10 +427,29 @@ async fn patch_source_yml_add_alias(
     };
 
     let aliases_key = serde_yaml::Value::String("aliases".to_string());
-    if !inp_map.contains_key(&aliases_key) {
-        inp_map.insert(aliases_key.clone(), serde_yaml::Value::Sequence(vec![]));
+    let aliases_value = inp_map
+        .entry(aliases_key.clone())
+        .or_insert_with(|| serde_yaml::Value::Sequence(vec![]));
+    match aliases_value {
+        serde_yaml::Value::Sequence(_) => {}
+        serde_yaml::Value::Null => {
+            *aliases_value = serde_yaml::Value::Sequence(vec![]);
+        }
+        serde_yaml::Value::Mapping(_) => {
+            // Some users might have a single alias stored as a mapping instead of a list.
+            // Normalize to a list so we can append safely.
+            let old = std::mem::replace(aliases_value, serde_yaml::Value::Sequence(vec![]));
+            if let serde_yaml::Value::Mapping(map) = old {
+                if let serde_yaml::Value::Sequence(seq) = aliases_value {
+                    seq.push(serde_yaml::Value::Mapping(map));
+                }
+            }
+        }
+        _ => {
+            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: input.aliases is not a list in source.yml");
+        }
     }
-    let Some(alias_seq) = inp_map.get_mut(&aliases_key).and_then(|v| v.as_sequence_mut()) else {
+    let Some(alias_seq) = aliases_value.as_sequence_mut() else {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: input.aliases is not a list in source.yml");
     };
 
@@ -452,12 +503,24 @@ async fn patch_source_yml_update_exp_date(
             if account_name == input_name {
                 inp_map.insert(serde_yaml::Value::String("exp_date".to_string()), serde_yaml::Value::Number(exp_date.into()));
                 inp_map.insert(serde_yaml::Value::String("enabled".to_string()), serde_yaml::Value::Bool(true));
-            } else if let Some(aliases) = inp_map.get_mut(serde_yaml::Value::String("aliases".to_string())).and_then(|v| v.as_sequence_mut()) {
-                for a in aliases.iter_mut() {
-                    let Some(a_map) = a.as_mapping_mut() else { continue; };
-                    let a_name = a_map.get(serde_yaml::Value::String("name".to_string())).and_then(|v| v.as_str());
-                    if a_name == Some(account_name) {
-                        a_map.insert(serde_yaml::Value::String("exp_date".to_string()), serde_yaml::Value::Number(exp_date.into()));
+            } else if let Some(aliases_value) = inp_map.get_mut(serde_yaml::Value::String("aliases".to_string())) {
+                // Normalize aliases to a sequence if the file contains a single mapping.
+                if matches!(aliases_value, serde_yaml::Value::Mapping(_)) {
+                    let old = std::mem::replace(aliases_value, serde_yaml::Value::Sequence(vec![]));
+                    if let serde_yaml::Value::Mapping(map) = old {
+                        if let serde_yaml::Value::Sequence(seq) = aliases_value {
+                            seq.push(serde_yaml::Value::Mapping(map));
+                        }
+                    }
+                }
+
+                if let Some(aliases) = aliases_value.as_sequence_mut() {
+                    for a in aliases.iter_mut() {
+                        let Some(a_map) = a.as_mapping_mut() else { continue; };
+                        let a_name = a_map.get(serde_yaml::Value::String("name".to_string())).and_then(|v| v.as_str());
+                        if a_name == Some(account_name) {
+                            a_map.insert(serde_yaml::Value::String("exp_date".to_string()), serde_yaml::Value::Number(exp_date.into()));
+                        }
                     }
                 }
             }
