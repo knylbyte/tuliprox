@@ -828,22 +828,51 @@ Input alias definition for same provider with same content but different credent
 ```
 
 #### `panel_api`
+
 If provider connections are exhausted, tuliprox can optionally call a provider panel API to:
 - renew expired accounts first (based on `exp_date`)
 - otherwise create a new alias account and persist it
 
 The API is configured generically via predefined query parameters; only `type: m3u` is supported.
+
 Use the literal value `auto` to fill sensitive values at runtime:
 - `api_key: auto` is replaced by `panel_api.api_key`
 - in `client_renew`, `username: auto` / `password: auto` are replaced by the account being renewed
+- in `client_info`, `username: auto` / `password: auto` are replaced by the account being queried
 
 `client_info` is used to fetch the exact `exp_date` (via the `expire` field) and is also executed on boot to sync `exp_date` for existing inputs/aliases.
 
 For `client_new`, the Panel API call would look like this in the example shown:
 
-  ```https://panel.example.tld/api.php?action=new&type=m3u&sub=1&api_key=1234567890```
+```text
+https://panel.example.tld/api.php?action=new&type=m3u&sub=1&api_key=1234567890
+```
 
-Example:
+Response evaluation logic
+Tuliprox evaluates Panel API responses as JSON with the following logic, depending on the operation:
+
+`Common rule (all operations)`
+  - The response must contain `status: true`. If status is missing or not true, the operation is treated as failed.
+
+`client_new (create alias)`
+	
+  -	Require `status: true`.
+  -	Attempt to extract credentials directly from the JSON response:
+    - username
+    - password
+  -	If one or both fields are missing, tuliprox attempts a fallback extraction from a URL contained in the JSON:
+    -	If the JSON contains a url field, tuliprox parses it and tries to extract username/password from it (e.g., query string or embedded credentials depending on the provider’s URL format).
+  -	If credentials cannot be derived from either the direct fields or the url fallback, the operation is treated as failed and no alias is persisted.
+
+`client_renew (renew existing account)`
+ 
+  -	Only `status: true` is evaluated. No credentials are extracted or updated as part of renew.
+
+`client_info (sync expiration)`
+
+  -	Require `status: true`.
+  -	Extract the expiration timestamp/date from the JSON field:
+    -	`expire` → used to populate/update exp_date for the corresponding input/alias.
 ```yaml
 - sources:
 - inputs:
