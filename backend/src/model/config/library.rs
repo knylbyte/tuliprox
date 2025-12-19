@@ -1,7 +1,9 @@
 use crate::model::macros;
 use log::error;
 use regex::Regex;
-use shared::model::{LibraryConfigDto, LibraryContentType, LibraryMetadataFormat};
+use shared::error::TuliproxError;
+use shared::model::{default_metadata_path, LibraryConfigDto, LibraryContentType, LibraryMetadataFormat};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default)]
 pub struct LibraryScanDirectory {
@@ -57,6 +59,27 @@ pub struct LibraryConfig {
     pub metadata: LibraryMetadataConfig,
     pub classification: LibraryClassificationConfig,
     pub playlist: LibraryPlaylistConfig,
+}
+
+impl LibraryConfig {
+    pub fn prepare(&mut self) -> Result<(), TuliproxError> {
+        if self.enabled {
+            if self.metadata.path.is_empty() {
+                self.metadata.path = default_metadata_path();
+            }
+            for dir in &mut self.scan_directories {
+                match PathBuf::from(&dir.path).canonicalize() {
+                    Ok(path_buf) => {
+                        if let Some(path) = path_buf.to_str() {
+                            dir.path = path.to_string();
+                        }
+                    }
+                    Err(err) => error!("Failed to canonicalize directory path: {err}"),
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for LibraryConfig {

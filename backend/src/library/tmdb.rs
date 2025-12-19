@@ -76,7 +76,7 @@ impl TmdbVideo {
         VideoClipMetadata {
             name: self.name.clone(),
             key: self.key.clone(),
-            site: self.site.to_lowercase(),
+            site: self.site.clone(),
             video_type: self.video_type.clone(),
         }
     }
@@ -436,6 +436,8 @@ pub struct TmdbSeason {
 }
 
 impl TmdbSeason {
+
+    // TODO maybe use Arc for episodes, networks, credits to avoid memory usage
     pub fn to_meta_data(&self) -> SeasonMetadata {
         SeasonMetadata {
             id: self.id,

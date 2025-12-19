@@ -85,9 +85,6 @@ impl ProxyType {
     }
 
     pub fn is_reverse(&self, item_type: PlaylistItemType) -> bool {
-        if item_type.is_local() {
-            return true;
-        }
         !self.is_redirect(item_type)
     }
 }

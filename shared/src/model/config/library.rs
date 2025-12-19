@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{TuliproxError, info_err};
 use crate::utils::default_as_true;
 
-fn default_metadata_path() -> String {
+pub fn default_metadata_path() -> String {
    "library_metadata".to_string()
 }
 

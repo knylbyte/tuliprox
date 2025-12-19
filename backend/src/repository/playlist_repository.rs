@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use crate::api::model::{AppState, PlaylistM3uStorage, PlaylistStorage, PlaylistStorageState, PlaylistXtreamStorage};
-use crate::model::{Epg, XtreamSeriesInfo};
 use crate::model::{AppConfig, ConfigTarget, TargetOutput};
+use crate::model::{Epg, XtreamSeriesInfo};
+use crate::processing::processor::playlist::apply_filter_to_playlist;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::epg_repository::epg_write;
 use crate::repository::indexed_document::IndexedDocumentIterator;
@@ -11,16 +11,16 @@ use crate::repository::strm_repository::write_strm_playlist;
 use crate::repository::target_id_mapping::{TargetIdMapping, VirtualIdRecord};
 use crate::repository::xtream_repository::{xtream_get_file_paths, xtream_get_storage_path, xtream_write_playlist};
 use crate::utils;
-use shared::error::{info_err, TuliproxErrorKind};
-use shared::error::TuliproxError;
-use shared::model::{M3uPlaylistItem, PlaylistGroup, PlaylistItemHeader, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
-use shared::utils::{is_dash_url, is_hls_url};
-use shared::create_tuliprox_error;
-use std::path::Path;
-use std::sync::Arc;
 use log::info;
 use serde_json::value::RawValue;
-use crate::processing::processor::playlist::apply_filter_to_playlist;
+use shared::create_tuliprox_error;
+use shared::error::TuliproxError;
+use shared::error::{info_err, TuliproxErrorKind};
+use shared::model::{M3uPlaylistItem, PlaylistGroup, PlaylistItemHeader, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
+use shared::utils::{is_dash_url, is_hls_url};
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
 
 struct LocalEpisodeKey {
     path: String,
@@ -72,9 +72,9 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
     for output in &target.output {
         let mut filtered = match output {
             TargetOutput::Xtream(out) => out.filter.as_ref().and_then(|flt| apply_filter_to_playlist(playlist, flt)),
-            TargetOutput::M3u(out) =>  out.filter.as_ref().and_then(|flt| apply_filter_to_playlist(playlist, flt)),
-            TargetOutput::Strm(out) =>  out.filter.as_ref().and_then(|flt| apply_filter_to_playlist(playlist, flt)),
-            TargetOutput::HdHomeRun(_) =>  None,
+            TargetOutput::M3u(out) => out.filter.as_ref().and_then(|flt| apply_filter_to_playlist(playlist, flt)),
+            TargetOutput::Strm(out) => out.filter.as_ref().and_then(|flt| apply_filter_to_playlist(playlist, flt)),
+            TargetOutput::HdHomeRun(_) => None,
         };
 
         let pl: &mut [PlaylistGroup] = if let Some(filtered_playlist) = filtered.as_mut() {
@@ -115,12 +115,12 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
                         if let Ok(storage) = load_xtream_target_storage(app_config, target).await {
                             playlist_storage.cache_playlist(&target.name, PlaylistStorage::XtreamPlaylist(Box::new(storage))).await;
                         }
-                    },
+                    }
                     TargetOutput::M3u(_) => {
                         if let Ok(storage) = load_m3u_target_storage(app_config, target).await {
                             playlist_storage.cache_playlist(&target.name, PlaylistStorage::M3uPlaylist(Box::new(storage))).await;
                         }
-                    },
+                    }
                     _ => {}
                 }
             }
@@ -133,21 +133,13 @@ pub async fn persist_playlist(app_config: &AppConfig, playlist: &mut [PlaylistGr
 fn assign_local_series_info_episode_key(local_library_series: &mut HashMap<String, Vec<LocalEpisodeKey>>, header: &mut PlaylistItemHeader, item_type: PlaylistItemType) {
     // we need to rewrite local series info with the new virtual ids
     if item_type == PlaylistItemType::LocalSeries {
-        match local_library_series.entry(header.parent_code.clone()) {
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                let episode_keys = entry.get_mut();
-                episode_keys.push(LocalEpisodeKey {
-                    path: header.url.clone(),
-                    virtual_id: header.virtual_id,
-                });
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(vec![LocalEpisodeKey {
-                    path: header.url.clone(),
-                    virtual_id: header.virtual_id,
-                }]);
-            }
-        }
+        local_library_series
+            .entry(header.parent_code.clone())
+            .or_default()
+            .push(LocalEpisodeKey {
+                path: header.url.clone(),
+                virtual_id: header.virtual_id,
+            });
     }
 }
 

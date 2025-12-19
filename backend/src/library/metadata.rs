@@ -293,7 +293,7 @@ impl MetadataCacheEntry {
 
             MediaMetadata::Series(series) => {
                 let Some(episodes) = series.episodes.as_ref() else {
-                    // no epsiodes -> update
+                    // no episodes -> update
                     return true;
                 };
 
