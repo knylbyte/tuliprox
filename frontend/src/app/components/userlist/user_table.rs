@@ -197,9 +197,8 @@ pub fn UserTable(props: &UserTableProps) -> Html {
             })
     };
 
-    let is_sortable = Callback::<usize, bool>::from(move |col| {
-            is_col_sortable(col)
-    });
+
+    let is_sortable = Callback::<usize, bool>::from(is_col_sortable);
 
     let on_sort = {
         let users = props.users.clone();

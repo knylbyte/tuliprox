@@ -32,9 +32,9 @@ use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
@@ -352,38 +352,15 @@ async fn resolve_streaming_strategy(
             .force_exact_acquire_connection(provider, &fingerprint.addr)
             .await
     } else {
-        // For panel-managed pools we must not allocate providers in grace period, otherwise
-        // the pool may never reach `Exhausted` and panel provisioning won't be triggered.
-        let allow_provider_grace = input.panel_api.is_none();
-        if !allow_provider_grace {
-            debug_if_enabled!(
-                "panel_api: disabling provider grace allocations for input {}",
-                sanitize_sensitive_info(&input.name)
-            );
-        }
         app_state
             .active_provider
-            .acquire_connection_with_grace_override(&input.name, &fingerprint.addr, allow_provider_grace)
+            .acquire_connection(&input.name, &fingerprint.addr)
             .await
     };
 
-    if provider_connection_handle.is_none()
-        && force_provider.is_none()
-        && try_provision_account_on_exhausted(app_state, input).await
-    {
-        debug_if_enabled!(
-            "panel_api: provider pool exhausted for input {}, provision succeeded; re-acquiring connection",
-            sanitize_sensitive_info(&input.name)
-        );
-        provider_connection_handle = app_state
-            .active_provider
-            .acquire_connection_with_grace_override(&input.name, &fingerprint.addr, input.panel_api.is_none())
-            .await;
-    } else if provider_connection_handle.is_none() && force_provider.is_none() && input.panel_api.is_some() {
-        debug_if_enabled!(
-            "panel_api: provider pool exhausted for input {}, provision skipped/failed",
-            sanitize_sensitive_info(&input.name)
-        );
+    if provider_connection_handle.is_none() && force_provider.is_none() && input.panel_api.is_some() {
+        provider_connection_handle =
+            try_provision_and_reacquire_on_provider_pool_exhausted(app_state, fingerprint, input).await;
     }
 
     let stream_response_params =
@@ -456,6 +433,40 @@ async fn resolve_streaming_strategy(
     }
 }
 
+async fn try_provision_and_reacquire_on_provider_pool_exhausted(
+    app_state: &AppState,
+    fingerprint: &Fingerprint,
+    input: &ConfigInput,
+) -> Option<crate::api::model::ProviderHandle> {
+    let active_provider_connections = app_state
+        .active_provider
+        .active_connections()
+        .await
+        .map(|c| c.into_iter().collect::<BTreeMap<_, _>>());
+    debug_if_enabled!(
+        "panel_api: provider pool exhausted for input {} (active_provider_connections={:?})",
+        sanitize_sensitive_info(&input.name),
+        active_provider_connections
+    );
+
+    if try_provision_account_on_exhausted(app_state, input).await {
+        debug_if_enabled!(
+            "panel_api: provider pool exhausted for input {}, provision succeeded; re-acquiring connection",
+            sanitize_sensitive_info(&input.name)
+        );
+        app_state
+            .active_provider
+            .acquire_connection(&input.name, &fingerprint.addr)
+            .await
+    } else {
+        debug_if_enabled!(
+            "panel_api: provider pool exhausted for input {}, provision skipped/failed",
+            sanitize_sensitive_info(&input.name)
+        );
+        None
+    }
+}
+
 fn get_grace_period_millis(
     connection_permission: UserConnectionPermission,
     stream_response_params: &ProviderStreamState,
@@ -494,94 +505,7 @@ async fn create_stream_response_details(
         .as_ref()
         .and_then(|r| r.stream.as_ref())
         .map_or_else(default_grace_period_millis, |s| s.grace_period_millis);
-    let mut grace_period_millis = get_grace_period_millis(
-        connection_permission,
-        &streaming_strategy.provider_stream_state,
-        config_grace_period_millis,
-    );
-
-    if let ProviderStreamState::GracePeriod(ref provider_grace_check, ref request_url) =
-        streaming_strategy.provider_stream_state
-    {
-        tokio::time::sleep(tokio::time::Duration::from_millis(grace_period_millis)).await;
-        if let Some(provider_name) = provider_grace_check.as_ref() {
-            if app_state.active_provider.is_over_limit(provider_name).await {
-                debug!("Provider connections exhausted after grace period for provider: {provider_name}");
-
-                let provider_handle = streaming_strategy.provider_handle.take();
-                app_state.connection_manager.release_provider_handle(provider_handle).await;
-
-                // If panel_api is configured, try to recover by provisioning a new account (if needed)
-                // and then re-acquire without provider grace allocations.
-                let mut recovered = false;
-                if force_provider.is_none() && input.panel_api.is_some() {
-                    debug_if_enabled!(
-                        "panel_api: provider {} over limit after grace; attempting re-acquire/provision for input {}",
-                        sanitize_sensitive_info(provider_name),
-                        sanitize_sensitive_info(&input.name)
-                    );
-
-                    let mut new_handle = app_state
-                        .active_provider
-                        .acquire_connection_with_grace_override(&input.name, &fingerprint.addr, false)
-                        .await;
-
-                    if new_handle.is_none()
-                        && try_provision_account_on_exhausted(app_state, input).await
-                    {
-                        debug_if_enabled!(
-                            "panel_api: provision succeeded after grace exhaustion for input {}; re-acquiring (no grace)",
-                            sanitize_sensitive_info(&input.name)
-                        );
-                        new_handle = app_state
-                            .active_provider
-                            .acquire_connection_with_grace_override(&input.name, &fingerprint.addr, false)
-                            .await;
-                    }
-
-                    if let Some(handle) = new_handle {
-                        if let Some(provider_cfg) = handle.allocation.get_provider_config() {
-                            let (selected_provider_name, url) = if provider_cfg.id == input.id {
-                                (input.name.clone(), stream_url.to_string())
-                            } else {
-                                (
-                                    provider_cfg.name.clone(),
-                                    get_stream_alternative_url(stream_url, input, &provider_cfg),
-                                )
-                            };
-                            streaming_strategy.provider_stream_state =
-                                ProviderStreamState::Available(Some(selected_provider_name), url);
-                            streaming_strategy.provider_handle = Some(handle);
-                            recovered = true;
-                        } else {
-                            app_state
-                                .connection_manager
-                                .release_provider_handle(Some(handle))
-                                .await;
-                        }
-                    }
-                }
-
-                if !recovered {
-                    app_state
-                        .connection_manager
-                        .update_stream_detail(
-                            &fingerprint.addr,
-                            CustomVideoStreamType::ProviderConnectionsExhausted,
-                        )
-                        .await;
-                    let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
-                    streaming_strategy.provider_stream_state = ProviderStreamState::Custom(stream);
-                }
-            }
-        } else {
-            streaming_strategy.provider_stream_state =
-                ProviderStreamState::Available(provider_grace_check.clone(), request_url.clone());
-        }
-    }
-
-    // Recompute grace period after potential recovery/strategy changes.
-    grace_period_millis = get_grace_period_millis(
+    let grace_period_millis = get_grace_period_millis(
         connection_permission,
         &streaming_strategy.provider_stream_state,
         config_grace_period_millis,

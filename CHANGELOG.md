@@ -28,6 +28,8 @@
 - WebUI API-User category selection implemented.
 - Stream table "Copy-To-Clipboard" functions added.
 - Refactored provider connection handling to avoid potential race conditions.
+- Added optional `panel_api` integration to renew expired accounts or provision new aliases when provider connections are exhausted.
+- WebUI: Added Panel API config view and new `/api/v1/config/sources` endpoint to persist + hot-reload `sources.yml`.
 - Added exp_date field to inputs, aliases, and CSV batch files; accepts dates in "YYYY-MM-DD HH:MM:SS" format or Unix timestamps (seconds since epoch).
 - Added cloudflare_header to reverse proxy disable_header settings.
 - Added CPU usage to the WebUI view.

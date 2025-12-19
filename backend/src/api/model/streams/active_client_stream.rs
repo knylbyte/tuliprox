@@ -19,9 +19,8 @@ use futures::task::AtomicWaker;
 use crate::auth::Fingerprint;
 
 const INNER_STREAM: u8 = 0_u8;
-const GRACE_BLOCK_STREAM: u8 = 1_u8;
-const USER_EXHAUSTED_STREAM: u8 = 2_u8;
-const PROVIDER_EXHAUSTED_STREAM: u8 = 3_u8;
+const USER_EXHAUSTED_STREAM: u8 = 1_u8;
+const PROVIDER_EXHAUSTED_STREAM: u8 = 2_u8;
 
 pub(in crate::api) struct ActiveClientStream {
     inner: BoxedProviderStream,
@@ -59,9 +58,10 @@ impl ActiveClientStream {
             app_state.connection_manager.update_stream_detail(&fingerprint.addr, *cvt).await;
         }
         let cfg = &app_state.app_config;
-        let waker = Some(Arc::new(AtomicWaker::new()));
-        let waker_clone = waker.clone();
-        let grace_stop_flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, fingerprint, waker_clone.clone());
+        let waker = Arc::new(AtomicWaker::new());
+        let grace_stop_flag =
+            Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, fingerprint, Some(Arc::clone(&waker)));
+        let waker = if grace_stop_flag.is_some() { Some(waker) } else { None };
         let custom_response = cfg.custom_stream_response.load();
         let custom_video = custom_response.as_ref()
             .map_or((None, None), |c|
@@ -128,11 +128,10 @@ impl ActiveClientStream {
         };
 
         if provider_grace_check.is_some() || user_grace_check.is_some() {
-            let stream_strategy_flag = Arc::new(AtomicU8::new(GRACE_BLOCK_STREAM));
+            let stream_strategy_flag = Arc::new(AtomicU8::new(INNER_STREAM));
             let stream_strategy_flag_copy = Arc::clone(&stream_strategy_flag);
             let grace_period_millis = stream_details.grace_period_millis;
 
-            let address = fingerprint.addr;
             let user_manager = Arc::clone(&active_users);
             let provider_manager = Arc::clone(&active_provider);
             let connection_manager = Arc::clone(&connection_manager);
@@ -168,7 +167,6 @@ impl ActiveClientStream {
                 }
 
                 if updated {
-                    connection_manager.release_provider_connection(&address).await;
                     if let Some(flag) = reconnect_flag {
                          flag.notify();
                     }
@@ -182,11 +180,25 @@ impl ActiveClientStream {
         }
         None
     }
+
+    fn stop_provider_stream(&mut self) {
+        if self.provider_handle.is_some() {
+            let mgr = Arc::clone(&self.connection_manager);
+            let handle = self.provider_handle.take();
+            self.inner = futures::stream::empty::<Result<Bytes, StreamError>>().boxed();
+            tokio::spawn(async move {
+                mgr.release_provider_handle(handle).await;
+            });
+        }
+    }
 }
 impl Stream for ActiveClientStream {
     type Item = Result<Bytes, StreamError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(waker) = &self.waker {
+            waker.register(cx.waker());
+        }
         let flag = {
             match &self.send_custom_stream_flag {
                 Some(flag) => flag.load(std::sync::atomic::Ordering::Acquire),
@@ -194,16 +206,11 @@ impl Stream for ActiveClientStream {
             }
         };
 
-        if flag == GRACE_BLOCK_STREAM {
-            if let Some(waker) = &self.waker {
-                waker.register(cx.waker());
-            }
-            return Poll::Pending;
-        }
-
         if flag == INNER_STREAM {
             return Pin::new(&mut self.inner).poll_next(cx);
         }
+
+        self.stop_provider_stream();
 
         let buffer_opt = match flag {
             USER_EXHAUSTED_STREAM => {

@@ -4,28 +4,40 @@ use crate::model::{AppConfig, ConfigInput};
 use crate::utils::trace_if_enabled;
 use log::{error};
 use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info};
+use log::{debug, error};
+use crate::utils::{debug_if_enabled, trace_if_enabled};
+use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs};
+use shared::utils::sanitize_sensitive_info;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::utils::debug_if_enabled;
 
 pub type ClientConnectionId = SocketAddr;
+type AllocationId = u64;
 
 #[derive(Debug, Clone)]
 pub struct ProviderHandle {
     pub client_id: ClientConnectionId,
+    pub allocation_id: AllocationId,
     pub allocation: ProviderAllocation,
 }
 
 impl ProviderHandle {
-    pub fn new(client_id: ClientConnectionId, allocation: ProviderAllocation) -> Self {
-        Self { client_id, allocation }
+    pub fn new(client_id: ClientConnectionId, allocation_id: AllocationId, allocation: ProviderAllocation) -> Self {
+        Self {
+            client_id,
+            allocation_id,
+            allocation,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 struct SharedAllocation {
+    allocation_id: AllocationId,
     allocation: ProviderAllocation,
     connections: HashSet<ClientConnectionId>,
 }
@@ -38,13 +50,14 @@ struct SharedConnections {
 
 #[derive(Debug, Clone, Default)]
 struct Connections {
-    single: HashMap<ClientConnectionId, ProviderAllocation>,
+    single: HashMap<ClientConnectionId, HashMap<AllocationId, ProviderAllocation>>,
     shared: SharedConnections,
 }
 
 pub struct ActiveProviderManager {
     providers: ProviderLineupManager,
     connections: RwLock<Connections>,
+    next_allocation_id: AtomicU64,
 }
 
 impl ActiveProviderManager {
@@ -54,6 +67,7 @@ impl ActiveProviderManager {
         Self {
             providers: ProviderLineupManager::new(inputs, grace_period_millis, grace_period_timeout_secs, event_manager),
             connections: RwLock::new(Connections::default()),
+            next_allocation_id: AtomicU64::new(1),
         }
     }
 
@@ -69,10 +83,10 @@ impl ActiveProviderManager {
         (grace_period_millis, grace_period_timeout_secs)
     }
 
-    pub async fn update_config(&self, cfg: &AppConfig) {
+    pub fn update_config(&self, cfg: &AppConfig) {
         let (grace_period_millis, grace_period_timeout_secs) = Self::get_grace_options(cfg);
         let inputs = Self::get_config_inputs(cfg);
-        self.providers.update_config(inputs, grace_period_millis, grace_period_timeout_secs).await;
+        self.providers.update_config(inputs, grace_period_millis, grace_period_timeout_secs);
     }
 
     async fn acquire_connection_inner(
@@ -100,19 +114,19 @@ impl ActiveProviderManager {
             ProviderAllocation::Exhausted => {}
             ProviderAllocation::Available(_) | ProviderAllocation::GracePeriod(_) => {
                 let provider_name = allocation.get_provider_name().unwrap_or_default();
+                let allocation_id = self.next_allocation_id.fetch_add(1, Ordering::Relaxed);
                 let mut connections = self.connections.write().await;
-                if let Some(old) = connections.single.insert(*addr, allocation.clone()) {
+                let per_addr = connections.single.entry(*addr).or_default();
+                if !per_addr.is_empty() {
                     trace_if_enabled!(
-                      "register_connection: address {} already had a allocation for provider {:?} — forcing release on the old allocation",
-                      sanitize_sensitive_info(&addr.to_string()),
-                      old.get_provider_name().unwrap_or_default());
-
-                    drop(connections);
-                    old.release().await;
+                        "register_connection: address {addr} already has {} provider allocations",
+                        per_addr.len()
+                    );
+                    per_addr.release().await();
                 }
-
-                debug_if_enabled!("Added provider connection {provider_name:?} for {}", sanitize_sensitive_info(&addr.to_string()));
-                return Some(ProviderHandle::new(*addr, allocation));
+                per_addr.insert(allocation_id, allocation.clone());
+                 debug_if_enabled!("Added provider connection {provider_name:?} for {}", sanitize_sensitive_info(&addr.to_string()));
+                return Some(ProviderHandle::new(*addr, allocation_id, allocation));
             }
         }
 
@@ -153,18 +167,20 @@ impl ActiveProviderManager {
 
     pub async fn release_connection(&self, addr: &SocketAddr) {
         // Single connection
-        let single_allocation = {
+        let single_allocations = {
             let mut connections = self.connections.write().await;
             connections.single.remove(addr)
         };
 
-        if let Some(allocation) = single_allocation {
-            debug_if_enabled!(
-              "Released provider connection {:?} for {}",
-              allocation.get_provider_name().unwrap_or_default(),
-              sanitize_sensitive_info(&addr.to_string())
-        );
-            allocation.release().await;
+        if let Some(allocations) = single_allocations {
+            for (_id, allocation) in allocations {
+              debug_if_enabled!(
+                  "Released provider connection {:?} for {}",
+                  allocation.get_provider_name().unwrap_or_default(),
+                  sanitize_sensitive_info(&addr.to_string())
+                );
+                allocation.release().await;
+            }
             return;
         }
 
@@ -211,27 +227,104 @@ impl ActiveProviderManager {
     }
 
     pub async fn release_handle(&self, handle: &ProviderHandle) {
-        self.release_connection(&handle.client_id).await;
+        let mut released = None;
+        {
+            let mut connections = self.connections.write().await;
+            if let Some(per_addr) = connections.single.get_mut(&handle.client_id) {
+                released = per_addr.remove(&handle.allocation_id);
+                if per_addr.is_empty() {
+                    connections.single.remove(&handle.client_id);
+                }
+            }
+
+            if released.is_none() {
+                let mut remove_key: Option<String> = None;
+                for (key, shared) in &connections.shared.by_key {
+                    if shared.allocation_id == handle.allocation_id {
+                        remove_key = Some(key.clone());
+                        break;
+                    }
+                }
+
+                if let Some(key) = remove_key {
+                    if let Some(shared) = connections.shared.by_key.remove(&key) {
+                        released = Some(shared.allocation);
+                        for addr in shared.connections {
+                            connections.shared.key_by_addr.remove(&addr);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(allocation) = released {
+            allocation.release().await;
+        }
     }
 
     pub async fn make_shared_connection(&self, addr: &SocketAddr, key: &str) {
-        let mut connections = self.connections.write().await;
-        let handle = connections.single.remove(addr);
-        if let Some(allocation) = handle {
-            debug_if_enabled!("Shared connection: Promoted connection {} to shared with key {key:?}", sanitize_sensitive_info(&addr.to_string()));
-            connections.shared.by_key.insert(key.to_string(), SharedAllocation { allocation, connections: HashSet::from([*addr]) });
-            connections.shared.key_by_addr.insert(*addr, key.to_string());
+        let extras = {
+            let mut connections = self.connections.write().await;
+            let mut extras = Vec::new();
+            let handle = connections.single.remove(addr).and_then(|m| {
+                if m.is_empty() {
+                    return None;
+                }
+                let mut iter = m.into_iter();
+                let (id, allocation) = iter.next().expect("non-empty map");
+                for (_extra_id, extra_alloc) in iter {
+                    extras.push(extra_alloc);
+                }
+                if !extras.is_empty() {
+                    trace_if_enabled!(
+                        "Shared connection promotion expects a single allocation for {addr}, found {}",
+                        extras.len() + 1
+                    );
+                }
+                Some(ProviderHandle::new(*addr, id, allocation))
+            });
+
+            if let Some(handle) = &handle {
+                let provider_name = handle.allocation.get_provider_name().unwrap_or_default();
+                debug_if_enabled!(
+                    "Shared connection: promoted addr {addr} provider={} key={}",
+                    sanitize_sensitive_info(&provider_name),
+                    sanitize_sensitive_info(key)
+                );
+                connections.shared.by_key.insert(
+                    key.to_string(),
+                    SharedAllocation {
+                        allocation_id: handle.allocation_id,
+                        allocation: handle.allocation.clone(),
+                        connections: HashSet::from([*addr]),
+                    },
+                );
+                connections.shared.key_by_addr.insert(*addr, key.to_string());
+            }
+            extras
+        };
+
+        for allocation in extras {
+            allocation.release().await;
         }
     }
 
     pub async fn add_shared_connection(&self, addr: &SocketAddr, key: &str) {
         let mut connections = self.connections.write().await;
         if let Some(shared_allocation) = connections.shared.by_key.get_mut(key) {
-            debug_if_enabled!("Shared connection: Added connection {} to shared with key {key:?}", sanitize_sensitive_info(&addr.to_string()));
+            let provider_name = shared_allocation.allocation.get_provider_name().unwrap_or_default();
+            debug_if_enabled!(
+                "Shared connection: added addr {addr} provider={} key={}",
+                sanitize_sensitive_info(&provider_name),
+                sanitize_sensitive_info(key)
+            );
             shared_allocation.connections.insert(*addr);
             connections.shared.key_by_addr.insert(*addr, key.to_string());
         } else {
-            error!("Failed to add shared connection for {}: url: {key:?} not found", sanitize_sensitive_info(&addr.to_string()));
+            error!(
+                "Failed to add shared connection for {addr}: url {} not found",
+                sanitize_sensitive_info(key)
+            );
         }
     }
 

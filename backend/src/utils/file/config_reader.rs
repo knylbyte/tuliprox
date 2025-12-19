@@ -328,7 +328,7 @@ where
         .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
 }
 
-pub fn format_sources_yaml_panel_api_query_params_flow_style(yaml: &str) -> String {
+fn format_sources_yaml_panel_api_query_params_flow_style_impl(yaml: &str) -> String {
     let has_trailing_newline = yaml.ends_with('\n');
     let lines: Vec<&str> = yaml.split_terminator('\n').collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
@@ -420,6 +420,97 @@ pub fn format_sources_yaml_panel_api_query_params_flow_style(yaml: &str) -> Stri
     }
 }
 
+fn parse_yaml_key_value_line(s: &str) -> Option<(String, String)> {
+    let (key, value) = s.split_once(':')?;
+    let key = key.trim();
+    if key.is_empty() {
+        return None;
+    }
+    let value = value.trim();
+    let value = if value.is_empty() { "null" } else { value };
+    Some((key.to_string(), value.to_string()))
+}
+
+fn format_sources_yaml_aliases_flow_style_impl(yaml: &str) -> String {
+    let has_trailing_newline = yaml.ends_with('\n');
+    let lines: Vec<&str> = yaml.split_terminator('\n').collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+
+    let mut aliases_indent: Option<usize> = None;
+
+    let mut i = 0usize;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        let indent = line.len().saturating_sub(trimmed.len());
+
+        if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            if let Some(ai) = aliases_indent {
+                if indent < ai || (indent == ai && trimmed != "aliases:" && !trimmed.starts_with("- ")) {
+                    aliases_indent = None;
+                }
+            }
+            if trimmed == "aliases:" {
+                aliases_indent = Some(indent);
+            }
+        }
+
+        // Convert:
+        //   aliases:
+        //   - name: foo
+        //     url: http://...
+        // Into:
+        //   - { name: foo, url: http://... }
+        if aliases_indent.is_some() && trimmed.starts_with("- ") && !trimmed.starts_with("- {") {
+            let item_indent = indent;
+            let first = trimmed.strip_prefix("- ").unwrap_or(trimmed);
+            if let Some((k, v)) = parse_yaml_key_value_line(first) {
+                let mut parts: Vec<(String, String)> = vec![(k, v)];
+                let mut j = i + 1;
+                while j < lines.len() {
+                    let l2 = lines[j];
+                    let t2 = l2.trim_start();
+                    let ind2 = l2.len().saturating_sub(t2.len());
+                    if t2.is_empty() || t2.starts_with('#') {
+                        break;
+                    }
+                    if ind2 == item_indent.saturating_add(2) && !t2.starts_with("- ") {
+                        if let Some((k2, v2)) = parse_yaml_key_value_line(t2) {
+                            parts.push((k2, v2));
+                            j += 1;
+                            continue;
+                        }
+                    }
+                    break;
+                }
+
+                let formatted = parts
+                    .iter()
+                    .map(|(kk, vv)| format!("{kk}: {vv}"))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                out.push(format!("{}- {{ {} }}", " ".repeat(item_indent), formatted));
+                i = j;
+                continue;
+            }
+        }
+
+        out.push(line.to_string());
+        i += 1;
+    }
+
+    if has_trailing_newline {
+        out.join("\n") + "\n"
+    } else {
+        out.join("\n")
+    }
+}
+
+pub fn format_sources_yaml_panel_api_query_params_flow_style(yaml: &str) -> String {
+    let yaml = format_sources_yaml_panel_api_query_params_flow_style_impl(yaml);
+    format_sources_yaml_aliases_flow_style_impl(&yaml)
+}
+
 pub async fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfigDto) -> Result<(), TuliproxError> {
     write_config_file(file_path, backup_dir, config, "api-proxy.yml", None).await
 }
@@ -478,5 +569,26 @@ mod tests {
         assert!(out.contains("- { key: sub, value: '1' }"));
         assert!(out.contains("- { key: type, value: m3u }"));
         assert!(!out.contains("- key: api_key\n"));
+    }
+
+    #[test]
+    fn test_sources_yaml_aliases_flow_style() {
+        let input = r"sources:
+- inputs:
+  - name: demo
+    aliases:
+    - name: demo-u1
+      url: http://line.example.invalid
+      username: u1
+      password: p1
+      priority: 0
+      max_connections: 1
+      exp_date: 123
+";
+        let out = format_sources_yaml_panel_api_query_params_flow_style(input);
+        assert!(
+            out.contains("- { name: demo-u1, url: http://line.example.invalid, username: u1, password: p1, priority: 0, max_connections: 1, exp_date: 123 }"),
+            "out:\n{out}"
+        );
     }
 }

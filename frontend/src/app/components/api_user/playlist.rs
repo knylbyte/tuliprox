@@ -68,7 +68,6 @@ fn to_playlist_cluster(count: (usize, usize, usize), bouquet: Option<&Rc<RefCell
     }
 }
 
-
 #[function_component]
 pub fn ApiUserPlaylist() -> Html {
     let translate = use_translation();
