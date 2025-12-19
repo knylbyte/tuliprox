@@ -6,8 +6,10 @@ use std::ops::Deref;
 use std::sync::{Arc};
 use tokio::sync::RwLock;
 use shared::model::InputType;
+use shared::utils::sanitize_sensitive_info;
 use shared::write_if_some;
 use crate::api::model::ProviderAllocation;
+use crate::utils::debug_if_enabled;
 
 
 pub type ProviderConnectionChangeCallback = Arc<dyn Fn(&str, usize) + Send + Sync>;
@@ -103,6 +105,16 @@ impl ProviderConfig {
     where
         F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
     {
+        let panel_api_enabled = cfg.panel_api.is_some();
+        let effective_max_connections = if panel_api_enabled && cfg.max_connections == 0 {
+            debug_if_enabled!(
+                "panel_api: input '{}' has max_connections=0; defaulting effective max_connections to 1 for pool accounting",
+                cfg.name
+            );
+            1usize
+        } else {
+            cfg.max_connections as usize
+        };
         Self {
             id: cfg.id,
             name: cfg.name.clone(),
@@ -110,7 +122,7 @@ impl ProviderConfig {
             username: cfg.username.clone(),
             password: cfg.password.clone(),
             input_type: cfg.input_type,
-            max_connections: cfg.max_connections as usize,
+            max_connections: effective_max_connections,
             priority: cfg.priority,
             exp_date: cfg.exp_date,
             connection: RwLock::new(get_connection.and_then(|f| f(cfg.name.as_str())).map_or_else(Default::default, Clone::clone)),
@@ -122,6 +134,16 @@ impl ProviderConfig {
     where
         F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
     {
+        let panel_api_enabled = cfg.panel_api.is_some();
+        let effective_max_connections = if panel_api_enabled && alias.max_connections == 0 {
+            debug_if_enabled!(
+                "panel_api: alias '{}' has max_connections=0; defaulting effective max_connections to 1 for pool accounting",
+                alias.name
+            );
+            1usize
+        } else {
+            alias.max_connections as usize
+        };
         Self {
             id: alias.id,
             name: alias.name.clone(),
@@ -129,12 +151,17 @@ impl ProviderConfig {
             username: alias.username.clone(),
             password: alias.password.clone(),
             input_type: cfg.input_type,
-            max_connections: alias.max_connections as usize,
+            max_connections: effective_max_connections,
             priority: alias.priority,
             exp_date: alias.exp_date,
             connection: RwLock::new(get_connection.and_then(|f| f(alias.name.as_str())).map_or_else(Default::default, Clone::clone)),
             on_connection_change,
         }
+    }
+
+    #[inline]
+    pub fn max_connections(&self) -> usize {
+        self.max_connections
     }
 
     pub fn get_user_info(&self) -> Option<InputUserInfo> {
@@ -222,6 +249,12 @@ impl ProviderConfig {
                 guard.granted_grace = false;
                 guard.grace_ts = 0;
             }
+            debug_if_enabled!(
+                "Provider {} granting grace allocation (current_connections={}, max_connections={})",
+                sanitize_sensitive_info(&self.name),
+                connections,
+                self.max_connections
+            );
             guard.granted_grace = true;
             guard.grace_ts = now;
             modify_connections!(self, guard, +1);

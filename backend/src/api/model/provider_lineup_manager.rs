@@ -656,13 +656,17 @@ impl ProviderLineupManager {
 
 
     fn log_allocation(allocation: &ProviderAllocation) {
-        if log_enabled!(log::Level::Debug) {
-            match allocation {
-                ProviderAllocation::Exhausted => {}
-                ProviderAllocation::Available(ref cfg) |
-                ProviderAllocation::GracePeriod(ref cfg) => {
-                    debug!("Using provider {}", cfg.name);
-                }
+        match allocation {
+            ProviderAllocation::Exhausted => {}
+            ProviderAllocation::Available(ref cfg) | ProviderAllocation::GracePeriod(ref cfg) => {
+                debug_if_enabled!(
+                    "Using provider {} (pool user: {}, max_connections: {})",
+                    sanitize_sensitive_info(&cfg.name),
+                    cfg.get_user_info()
+                        .map_or_else(|| "?".to_string(), |ui| sanitize_sensitive_info(&ui.username).to_string())
+                    ,
+                    cfg.max_connections()
+                );
             }
         }
     }
@@ -679,11 +683,27 @@ impl ProviderLineupManager {
 
     // Returns the next available provider connection
     pub(crate) async fn acquire_connection(&self, input_name: &str) -> ProviderAllocation {
+        self.acquire_connection_with_grace_override(input_name, true).await
+    }
+
+    /// Acquire a provider connection, optionally allowing provider-side grace allocations.
+    ///
+    /// When `allow_grace` is `false`, the lineup will not allocate providers in `GracePeriod`,
+    /// even if a global grace period is configured.
+    pub(crate) async fn acquire_connection_with_grace_override(
+        &self,
+        input_name: &str,
+        allow_grace: bool,
+    ) -> ProviderAllocation {
         let providers = self.providers.load();
+        let with_grace = allow_grace && self.grace_period_millis.load(Ordering::Acquire) > 0;
         let allocation = match Self::get_provider_config_by_name(input_name, &providers) {
             None => ProviderAllocation::Exhausted, // No Name matched, we don't have this provider
-            Some((lineup, _config)) => lineup.acquire(self.grace_period_millis.load(Ordering::Acquire) > 0,
-                                                      self.grace_period_timeout_secs.load(Ordering::Acquire)).await
+            Some((lineup, _config)) => {
+                lineup
+                    .acquire(with_grace, self.grace_period_timeout_secs.load(Ordering::Acquire))
+                    .await
+            }
         };
         Self::log_allocation(&allocation);
         allocation

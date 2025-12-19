@@ -75,12 +75,25 @@ impl ActiveProviderManager {
         self.providers.update_config(inputs, grace_period_millis, grace_period_timeout_secs).await;
     }
 
-    async fn acquire_connection_inner(&self, provider_or_input_name: &str, addr: &SocketAddr, force: bool) -> Option<ProviderHandle> {
+    async fn acquire_connection_inner(
+        &self,
+        provider_or_input_name: &str,
+        addr: &SocketAddr,
+        force: bool,
+        allow_grace_override: Option<bool>,
+    ) -> Option<ProviderHandle> {
         // Call the specific acquisition function
         let allocation = if force {
             self.providers.force_exact_acquire_connection(provider_or_input_name).await
         } else {
-            self.providers.acquire_connection(provider_or_input_name).await
+            match allow_grace_override {
+                Some(allow_grace) => {
+                    self.providers
+                        .acquire_connection_with_grace_override(provider_or_input_name, allow_grace)
+                        .await
+                }
+                None => self.providers.acquire_connection(provider_or_input_name).await,
+            }
         };
 
         match &allocation {
@@ -107,12 +120,22 @@ impl ActiveProviderManager {
     }
 
     pub async fn force_exact_acquire_connection(&self, provider_name: &str, addr: &SocketAddr) -> Option<ProviderHandle> {
-        self.acquire_connection_inner(provider_name, addr, true).await
+        self.acquire_connection_inner(provider_name, addr, true, None).await
     }
 
     // Returns the next available provider connection
     pub async fn acquire_connection(&self, input_name: &str, addr: &SocketAddr) -> Option<ProviderHandle> {
-        self.acquire_connection_inner(input_name, addr, false).await
+        self.acquire_connection_inner(input_name, addr, false, None).await
+    }
+
+    /// Acquire a provider connection while optionally disabling provider grace allocations.
+    pub async fn acquire_connection_with_grace_override(
+        &self,
+        input_name: &str,
+        addr: &SocketAddr,
+        allow_grace: bool,
+    ) -> Option<ProviderHandle> {
+        self.acquire_connection_inner(input_name, addr, false, Some(allow_grace)).await
     }
 
     // This method is used for redirects to cycle through provider

@@ -325,6 +325,98 @@ where
         .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
 }
 
+pub fn format_sources_yaml_panel_api_query_params_flow_style(yaml: &str) -> String {
+    let has_trailing_newline = yaml.ends_with('\n');
+    let lines: Vec<&str> = yaml.split_terminator('\n').collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+
+    let mut panel_api_indent: Option<usize> = None;
+    let mut query_indent: Option<usize> = None;
+    let mut section_indent: Option<usize> = None;
+
+    let mut i = 0usize;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        let indent = line.len().saturating_sub(trimmed.len());
+
+        if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            if let Some(pi) = panel_api_indent {
+                if indent <= pi && trimmed != "panel_api:" {
+                    panel_api_indent = None;
+                    query_indent = None;
+                    section_indent = None;
+                }
+            }
+            if let Some(qi) = query_indent {
+                if indent <= qi && trimmed != "query_parameter:" {
+                    query_indent = None;
+                    section_indent = None;
+                }
+            }
+            if let Some(si) = section_indent {
+                if indent < si {
+                    section_indent = None;
+                }
+            }
+
+            if panel_api_indent.is_none() && trimmed == "panel_api:" {
+                panel_api_indent = Some(indent);
+            } else if panel_api_indent.is_some() && query_indent.is_none() && trimmed == "query_parameter:" {
+                query_indent = Some(indent);
+            } else if query_indent.is_some()
+                && matches!(trimmed, "client_info:" | "client_new:" | "client_renew:")
+            {
+                section_indent = Some(indent);
+            }
+        }
+
+        let in_target_section = panel_api_indent.is_some() && query_indent.is_some() && section_indent.is_some();
+        if in_target_section
+            && indent == section_indent.unwrap_or(usize::MAX)
+            && trimmed.starts_with("- key:")
+            && !trimmed.starts_with("- {")
+            && i + 1 < lines.len()
+        {
+            let next = lines[i + 1];
+            let next_trimmed = next.trim_start();
+            let next_indent = next.len().saturating_sub(next_trimmed.len());
+
+            if next_trimmed.starts_with("value:")
+                && next_indent == indent.saturating_add(2)
+            {
+                let key_val = trimmed
+                    .strip_prefix("- key:")
+                    .unwrap_or_default()
+                    .trim();
+                let value_val = next_trimmed
+                    .strip_prefix("value:")
+                    .unwrap_or_default()
+                    .trim();
+
+                let new_line = format!(
+                    "{}- {{ key: {}, value: {} }}",
+                    " ".repeat(indent),
+                    key_val,
+                    value_val
+                );
+                out.push(new_line);
+                i += 2;
+                continue;
+            }
+        }
+
+        out.push(line.to_string());
+        i += 1;
+    }
+
+    if has_trailing_newline {
+        out.join("\n") + "\n"
+    } else {
+        out.join("\n")
+    }
+}
+
 pub async fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfigDto) -> Result<(), TuliproxError> {
     write_config_file(file_path, backup_dir, config, "api-proxy.yml").await
 }
@@ -334,7 +426,23 @@ pub async fn save_main_config(file_path: &str, backup_dir: &str, config: &Config
 }
 
 pub async fn save_sources_config(file_path: &str, backup_dir: &str, config: &SourcesConfigDto) -> Result<(), TuliproxError> {
-    write_config_file(file_path, backup_dir, config, "source.yml").await
+    let path = PathBuf::from(file_path);
+    let filename = path.file_name().map_or("source.yml".to_string(), |f| f.to_string_lossy().to_string());
+    let backup_path = PathBuf::from(backup_dir).join(format!("{filename}_{}", Local::now().format("%Y%m%d_%H%M%S")));
+
+    match fs::copy(&path, &backup_path).await {
+        Ok(_) => {}
+        Err(err) => { error!("Could not backup file {}:{}", &backup_path.to_str().unwrap_or("?"), err) }
+    }
+    info!("Saving file to {}", &path.to_str().unwrap_or("?"));
+
+    let serialized = serde_yaml::to_string(config)
+        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not serialize file {}: {}", &path.to_str().unwrap_or("?"), err))?;
+    let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
+
+    fs::write(&path, serialized)
+        .await
+        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
 }
 
 pub fn resolve_env_var(value: &str) -> String {
@@ -353,10 +461,35 @@ pub fn resolve_env_var(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use crate::utils::resolve_env_var;
+    use crate::utils::format_sources_yaml_panel_api_query_params_flow_style;
 
     #[test]
     fn test_resolve() {
         let resolved = resolve_env_var("${env:HOME}");
         assert_eq!(resolved, std::env::var("HOME").unwrap());
+    }
+
+    #[test]
+    fn test_sources_yaml_panel_api_query_params_flow_style() {
+        let input = r"sources:
+- inputs:
+  - name: demo
+    panel_api:
+      url: https://example.invalid/api.php
+      query_parameter:
+        client_info:
+        - key: api_key
+          value: auto
+        - key: sub
+          value: '1'
+        client_new:
+        - key: type
+          value: m3u
+";
+        let out = format_sources_yaml_panel_api_query_params_flow_style(input);
+        assert!(out.contains("- { key: api_key, value: auto }"));
+        assert!(out.contains("- { key: sub, value: '1' }"));
+        assert!(out.contains("- { key: type, value: m3u }"));
+        assert!(!out.contains("- key: api_key\n"));
     }
 }

@@ -1,7 +1,7 @@
 use crate::api::model::AppState;
 use crate::model::{ConfigInput, is_input_expired};
 use crate::utils::debug_if_enabled;
-use crate::utils::{get_csv_file_path};
+use crate::utils::{format_sources_yaml_panel_api_query_params_flow_style, get_csv_file_path, read_sources_file};
 use log::{debug, error, warn};
 use serde_json::Value;
 use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
@@ -27,6 +27,19 @@ fn parse_boolish(value: &Value) -> bool {
         Value::String(s) => matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "y" | "ok"),
         _ => false,
     }
+}
+
+fn is_date_only_yyyy_mm_dd(value: &str) -> bool {
+    let value = value.trim();
+    if value.len() != 10 {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes[0..4].iter().all(u8::is_ascii_digit)
+        && bytes[5..7].iter().all(u8::is_ascii_digit)
+        && bytes[8..10].iter().all(u8::is_ascii_digit)
 }
 
 fn first_json_object(value: &Value) -> Option<&serde_json::Map<String, Value>> {
@@ -277,8 +290,19 @@ async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfigDto, userna
     if !status_ok {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_info status=false");
     }
-    let expire = obj.get("expire").and_then(|v| v.as_str()).unwrap_or_default();
-    Ok(parse_timestamp(expire).ok().flatten())
+    let expire = obj.get("expire").and_then(|v| v.as_str()).unwrap_or_default().trim();
+    let parsed = parse_timestamp(expire).ok().flatten();
+    if parsed.is_some() {
+        return Ok(parsed);
+    }
+
+    // Some panels return only a date ("YYYY-MM-DD") without time. Normalize to midnight.
+    if is_date_only_yyyy_mm_dd(expire) {
+        let normalized = format!("{expire} 00:00:00");
+        return Ok(parse_timestamp(&normalized).ok().flatten());
+    }
+
+    Ok(None)
 }
 
 fn extract_account_creds_from_input(input: &ConfigInput) -> Option<(String, String)> {
@@ -392,6 +416,7 @@ async fn patch_source_yml_add_alias(
 
     let serialized = serde_yaml::to_string(&doc)
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
+    let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
     tokio::fs::write(source_file_path, serialized)
         .await
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
@@ -439,6 +464,7 @@ async fn patch_source_yml_update_exp_date(
             }
             let serialized = serde_yaml::to_string(&doc)
                 .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
+            let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
             tokio::fs::write(source_file_path, serialized)
                 .await
                 .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
@@ -707,9 +733,11 @@ async fn try_create_new_account(
 
 pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input: &ConfigInput) -> bool {
     let Some(panel_cfg) = input.panel_api.as_ref() else {
+        debug_if_enabled!("panel_api: skipped (no panel_api config) for input {}", sanitize_sensitive_info(&input.name));
         return false;
     };
     if panel_cfg.url.trim().is_empty() {
+        debug_if_enabled!("panel_api: skipped (panel_api.url empty) for input {}", sanitize_sensitive_info(&input.name));
         return false;
     }
 
@@ -724,14 +752,27 @@ pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input
         return false;
     }
 
+    debug_if_enabled!(
+        "panel_api: exhausted -> provisioning for input {} (aliases={})",
+        sanitize_sensitive_info(&input.name),
+        input.aliases.as_ref().map_or(0, Vec::len)
+    );
+
     let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
     let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
     let sources_path = PathBuf::from(&sources_file_path);
 
     if try_renew_expired_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await {
+        debug_if_enabled!("panel_api: provisioning succeeded via client_renew for input {}", sanitize_sensitive_info(&input.name));
         return true;
     }
-    try_create_new_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await
+    let created = try_create_new_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await;
+    debug_if_enabled!(
+        "panel_api: provisioning via client_new for input {} => {}",
+        sanitize_sensitive_info(&input.name),
+        if created { "success" } else { "failed" }
+    );
+    created
 }
 
 pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) {
