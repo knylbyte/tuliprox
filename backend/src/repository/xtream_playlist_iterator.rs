@@ -78,11 +78,10 @@ impl XtreamPlaylistIterator {
 
     fn matches_filters(cluster: XtreamCluster, filter_ids: Option<&HashSet<u32>>, item: &XtreamPlaylistItem) -> bool {
 
-        if cluster == XtreamCluster::Series {
-            if !matches!(item.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo) {
+        if cluster == XtreamCluster::Series
+            && !matches!(item.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo) {
                 return false;
             }
-        }
 
         // category_id-Filter
         if let Some(set) = filter_ids {

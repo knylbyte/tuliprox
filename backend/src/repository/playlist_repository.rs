@@ -171,7 +171,7 @@ fn rewrite_local_series_info_episode_virtual_id(playlist: &mut [PlaylistGroup], 
                                     }
                                 }
                                 if let Ok(s) = serde_json::to_string(&series_info) {
-                                    header.additional_properties = RawValue::from_string(s).ok()
+                                    header.additional_properties = RawValue::from_string(s).ok();
                                 }
                             }
                         }

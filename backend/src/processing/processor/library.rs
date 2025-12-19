@@ -104,7 +104,7 @@ fn to_playlist_item(entry: &MetadataCacheEntry, input_name: &str, group_name: &s
                                 id: episode.id.to_string(),
                                 // we use parent_code for local series to find the parent series info and straighten the virtual_ids
                                 parent_code: entry.uuid.clone(),
-                                uuid: generate_playlist_uuid(&input_name, &episode.id.to_string(), PlaylistItemType::LocalSeries, &episode.direct_source),
+                                uuid: generate_playlist_uuid(input_name, &episode.id.to_string(), PlaylistItemType::LocalSeries, &episode.direct_source),
                                 name: episode.title.clone(),
                                 group: group_name.to_string(),
                                 title: episode.title.clone(),
@@ -241,9 +241,9 @@ pub fn metadata_cache_entry_to_xtream_series_info(
         youtube_trailer,
         episode_run_time: String::from("0"),
         category_id: 0,
-        tmdb_id: series.tmdb_id.clone(),
-        tmdb: series.tmdb_id.clone(),
-        year: series.year.clone(),
+        tmdb_id: series.tmdb_id,
+        tmdb: series.tmdb_id,
+        year: series.year,
     };
 
     // seasons are not delivered through xtream get_series_info.
@@ -288,7 +288,7 @@ pub fn metadata_cache_entry_to_xtream_series_info(
                     releaseDate: episode_release_date.clone(),
                     releasedate: episode_release_date,
                     plot: episode.plot.clone().unwrap_or_default(),
-                    duration_secs: episode.runtime.map(|r| r * 60).unwrap_or(0),
+                    duration_secs: episode.runtime.map_or(0, |r| r * 60),
                     duration: episode.runtime
                         .map(|r| format!("{:02}:{:02}:00", r / 60, r % 60))
                         .unwrap_or_default(),

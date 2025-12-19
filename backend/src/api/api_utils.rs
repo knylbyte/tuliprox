@@ -1146,7 +1146,7 @@ pub async fn local_stream_response(
 
 fn is_path_within_allowed_directories(sub_path: &Path, root_paths: &[String]) -> bool {
     for root_path in root_paths {
-        if sub_path.starts_with(&PathBuf::from(root_path)) {
+        if sub_path.starts_with(PathBuf::from(root_path)) {
             return true;
         }
     }

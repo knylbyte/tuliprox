@@ -438,14 +438,14 @@ pub struct TmdbSeason {
 impl TmdbSeason {
     pub fn to_meta_data(&self) -> SeasonMetadata {
         SeasonMetadata {
-            id: self.id.clone(),
+            id: self.id,
             air_date: self.air_date.clone(),
-            episode_count: self.episode_count.clone(),
+            episode_count: self.episode_count,
             name: self.name.clone(),
             overview: self.overview.clone(),
             poster_path: self.poster_path.clone(),
-            season_number: self.season_number.clone(),
-            vote_average: self.vote_average.clone(),
+            season_number: self.season_number,
+            vote_average: self.vote_average,
             episodes: self.episodes.clone(),
             networks: self.networks.clone(),
             credits: self.credits.clone(),
