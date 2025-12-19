@@ -302,7 +302,7 @@ pub async fn read_api_proxy(config: &AppConfig, resolve_env: bool) -> Option<Api
     }
 }
 
-async fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str) -> Result<(), TuliproxError>
+async fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str, formatter: Option<&(dyn Fn(&str) -> String  + Send + Sync)>) -> Result<(), TuliproxError>
 where
     T: ?Sized + Serialize,
 {
@@ -317,8 +317,11 @@ where
     }
     info!("Saving file to {}", &path.to_str().unwrap_or("?"));
 
-    let serialized = serde_yaml::to_string(config)
+    let mut serialized = serde_yaml::to_string(config)
         .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not serialize file {}: {}", &path.to_str().unwrap_or("?"), err))?;
+    if let Some(format) = formatter {
+        serialized = format(&serialized);
+    }
 
     fs::write(&path, serialized)
         .await
@@ -418,31 +421,15 @@ pub fn format_sources_yaml_panel_api_query_params_flow_style(yaml: &str) -> Stri
 }
 
 pub async fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfigDto) -> Result<(), TuliproxError> {
-    write_config_file(file_path, backup_dir, config, "api-proxy.yml").await
+    write_config_file(file_path, backup_dir, config, "api-proxy.yml", None).await
 }
 
 pub async fn save_main_config(file_path: &str, backup_dir: &str, config: &ConfigDto) -> Result<(), TuliproxError> {
-    write_config_file(file_path, backup_dir, config, "config.yml").await
+    write_config_file(file_path, backup_dir, config, "config.yml", None).await
 }
 
 pub async fn save_sources_config(file_path: &str, backup_dir: &str, config: &SourcesConfigDto) -> Result<(), TuliproxError> {
-    let path = PathBuf::from(file_path);
-    let filename = path.file_name().map_or("source.yml".to_string(), |f| f.to_string_lossy().to_string());
-    let backup_path = PathBuf::from(backup_dir).join(format!("{filename}_{}", Local::now().format("%Y%m%d_%H%M%S")));
-
-    match fs::copy(&path, &backup_path).await {
-        Ok(_) => {}
-        Err(err) => { error!("Could not backup file {}:{}", &backup_path.to_str().unwrap_or("?"), err) }
-    }
-    info!("Saving file to {}", &path.to_str().unwrap_or("?"));
-
-    let serialized = serde_yaml::to_string(config)
-        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not serialize file {}: {}", &path.to_str().unwrap_or("?"), err))?;
-    let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
-
-    fs::write(&path, serialized)
-        .await
-        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
+    write_config_file(file_path, backup_dir, config, "source.yml", Some(&format_sources_yaml_panel_api_query_params_flow_style)).await
 }
 
 pub fn resolve_env_var(value: &str) -> String {

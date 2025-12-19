@@ -1,7 +1,7 @@
 use crate::api::model::AppState;
 use crate::model::{ConfigInput, is_input_expired};
 use crate::utils::debug_if_enabled;
-use crate::utils::{format_sources_yaml_panel_api_query_params_flow_style, get_csv_file_path, read_sources_file};
+use crate::utils::{format_sources_yaml_panel_api_query_params_flow_style, get_csv_file_path};
 use log::{debug, error, warn};
 use serde_json::Value;
 use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
@@ -414,12 +414,7 @@ async fn patch_source_yml_add_alias(
     }
     alias_seq.push(serde_yaml::Value::Mapping(alias_map));
 
-    let serialized = serde_yaml::to_string(&doc)
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
-    let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
-    tokio::fs::write(source_file_path, serialized)
-        .await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
+    persist_source_config(source_file_path, &doc).await?;
     Ok(())
 }
 
@@ -462,16 +457,24 @@ async fn patch_source_yml_update_exp_date(
                     }
                 }
             }
-            let serialized = serde_yaml::to_string(&doc)
-                .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
-            let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
-            tokio::fs::write(source_file_path, serialized)
-                .await
-                .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
+            persist_source_config(source_file_path, &doc).await?;
             return Ok(());
         }
     }
     create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml")
+}
+
+async fn persist_source_config(source_file_path: &Path, doc: &serde_yaml::Value) -> Result<(), TuliproxError> {
+
+    // TODO write backup!! Why not user ConfigFiles::save_sources_config
+
+    let serialized = serde_yaml::to_string(&doc)
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
+    let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
+    tokio::fs::write(source_file_path, serialized)
+        .await
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
+    Ok(())
 }
 
 async fn patch_batch_csv_append(
