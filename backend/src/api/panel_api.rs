@@ -246,6 +246,7 @@ async fn panel_get_json(app_state: &AppState, url: Url) -> Result<Value, Tulipro
     debug_if_enabled!("panel_api request {}", sanitized);
     let resp = client
         .get(url)
+        .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
         .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api request failed: {e}")))?;
@@ -672,6 +673,7 @@ fn derive_unique_alias_name(existing: &[String], input_name: &str, username: &st
             return cand;
         }
     }
+    warn!("derive_unique_alias_name: exhausted {MAX_ALIAS_NAME_ATTEMPTS} attempts for base '{base}'; returning potentially duplicate name");
     base
 }
 
@@ -708,7 +710,7 @@ async fn try_renew_expired_account(
                     }
                 }
 
-                if let Err(err) = reload_sources(app_state) {
+                if let Err(err) = reload_sources(app_state).await {
                     debug_if_enabled!("panel_api reload sources failed: {}", err);
                 }
                 return true;
@@ -784,7 +786,7 @@ async fn try_create_new_account(
                 }
             }
 
-            if let Err(err) = reload_sources(app_state) {
+            if let Err(err) = reload_sources(app_state).await {
                 error!("panel_api reload sources failed: {err}");
                 return false;
             }
@@ -924,7 +926,7 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
     }
 
     if any_change {
-        if let Err(err) = reload_sources(app_state) {
+        if let Err(err) = reload_sources(app_state).await {
             debug_if_enabled!("panel_api boot sync reload sources failed: {}", err);
         }
     }

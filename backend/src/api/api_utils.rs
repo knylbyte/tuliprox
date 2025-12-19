@@ -178,7 +178,7 @@ pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoRes
 
 pub fn get_user_target_by_username(
     username: &str,
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
 ) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
     if !username.is_empty() {
         return app_state.app_config.get_target_for_username(username);
@@ -237,7 +237,7 @@ pub struct StreamOptions {
 /// from the provider without additional handling.
 ///
 /// Returns a `StreamOptions` instance with the resolved configuration.
-fn get_stream_options(app_state: &AppState) -> StreamOptions {
+fn get_stream_options(app_state: &Arc<AppState>) -> StreamOptions {
     let (stream_retry, buffer_enabled, buffer_size) = app_state
         .app_config
         .config
@@ -292,7 +292,7 @@ pub fn get_stream_alternative_url(
 }
 
 async fn get_redirect_alternative_url<'a>(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     redirect_url: &'a str,
     input: &ConfigInput,
 ) -> Cow<'a, str> {
@@ -434,7 +434,7 @@ async fn resolve_streaming_strategy(
 }
 
 async fn try_provision_and_reacquire_on_provider_pool_exhausted(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     fingerprint: &Fingerprint,
     input: &ConfigInput,
 ) -> Option<crate::api::model::ProviderHandle> {
@@ -634,7 +634,7 @@ where
 }
 
 pub async fn redirect_response<'a, P>(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     params: &'a RedirectParams<'a, P>,
 ) -> Option<impl IntoResponse + Send>
 where
@@ -757,7 +757,7 @@ fn is_throttled_stream(item_type: PlaylistItemType, throttle_kbps: usize) -> boo
 }
 
 fn prepare_body_stream<S>(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     item_type: PlaylistItemType,
     stream: S,
 ) -> axum::body::Body
@@ -1019,7 +1019,7 @@ pub async fn stream_response(
     axum::http::StatusCode::BAD_REQUEST.into_response()
 }
 
-fn get_stream_throttle(app_state: &AppState) -> u64 {
+fn get_stream_throttle(app_state: &Arc<AppState>) -> u64 {
     app_state
         .app_config
         .config
@@ -1254,7 +1254,7 @@ fn get_add_cache_content(
 }
 
 async fn build_stream_response(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     resource_url: &str,
     response: reqwest::Response,
 ) -> axum::response::Response {
@@ -1314,7 +1314,7 @@ async fn build_stream_response(
 }
 
 async fn fetch_resource_with_retry(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     url: &Url,
     resource_url: &str,
     req_headers: &HashMap<String, Vec<u8>>,
@@ -1418,7 +1418,7 @@ fn calculate_retry_backoff(base_delay_ms: u64, multiplier: f64, attempt: u32) ->
 
 /// # Panics
 pub async fn resource_response(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     resource_url: &str,
     req_headers: &HeaderMap,
     input: Option<&ConfigInput>,

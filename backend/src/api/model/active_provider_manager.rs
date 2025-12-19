@@ -1,19 +1,14 @@
 use crate::api::model::provider_lineup_manager::{ProviderAllocation, ProviderLineupManager};
 use crate::api::model::{EventManager, ProviderConfig};
 use crate::model::{AppConfig, ConfigInput};
-use crate::utils::trace_if_enabled;
-use log::{error};
 use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs, sanitize_sensitive_info};
-use log::{debug, error};
+use log::{error};
 use crate::utils::{debug_if_enabled, trace_if_enabled};
-use shared::utils::{default_grace_period_millis, default_grace_period_timeout_secs};
-use shared::utils::sanitize_sensitive_info;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::utils::debug_if_enabled;
 
 pub type ClientConnectionId = SocketAddr;
 type AllocationId = u64;
@@ -122,7 +117,6 @@ impl ActiveProviderManager {
                         "register_connection: address {addr} already has {} provider allocations",
                         per_addr.len()
                     );
-                    per_addr.release().await();
                 }
                 per_addr.insert(allocation_id, allocation.clone());
                  debug_if_enabled!("Added provider connection {provider_name:?} for {}", sanitize_sensitive_info(&addr.to_string()));
