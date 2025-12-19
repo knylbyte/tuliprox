@@ -14,7 +14,7 @@ use arc_swap::access::Access;
 use arc_swap::ArcSwap;
 use tokio_util::sync::CancellationToken;
 
-enum ConfigFile {
+pub enum ConfigFile {
     Config,
     ApiProxy,
     Mapping,
@@ -77,7 +77,7 @@ impl ConfigFile {
         Ok(())
     }
 
-    async fn load_sources(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+    pub async fn load_sources(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
         let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&app_state.app_config.paths);
         let sources_file = paths.sources_file_path.as_str();
         let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.app_config.config);

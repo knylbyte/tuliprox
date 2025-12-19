@@ -788,6 +788,7 @@ Each input has the following attributes:
 - `method` can be `GET` or `POST`
 - `username` only mandatory for type `xtream`
 - `password` only mandatory for type `xtream`
+- `panel_api` _optional_ for provider panel api operations
 - `exp_date` optional, i a date as "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12` or Unix timestamp (seconds since epoch)
 - `options` is optional,
   + `xtream_skip_live` true or false, live section can be skipped.
@@ -918,6 +919,54 @@ Input alias definition for same provider with same content but different credent
       max_connections: 2
   targets:
   - name: test
+```
+
+#### `panel_api`
+If provider connections are exhausted, tuliprox can optionally call a provider panel API to:
+- renew expired accounts first (based on `exp_date`)
+- otherwise create a new alias account and persist it
+
+The API is configured generically via predefined query parameters; only `type: m3u` is supported.
+Use the literal value `auto` to fill sensitive values at runtime:
+- `api_key: auto` is replaced by `panel_api.api_key`
+- in `client_renew`, `username: auto` / `password: auto` are replaced by the account being renewed
+
+`client_info` is used to fetch the exact `exp_date` (via the `expire` field) and is also executed on boot to sync `exp_date` for existing inputs/aliases.
+
+For `client_new`, the Panel API call would look like this in the example shown:
+
+  ```https://panel.example.tld/api.php?action=new&type=m3u&sub=1&api_key=1234567890```
+
+Example:
+```yaml
+- sources:
+- inputs:
+  - type: xtream
+    name: my_provider
+    url: 'http://provider.net'
+    username: xyz
+    password: secret1
+    panel_api:
+      url: 'https://panel.example.tld/api.php'
+      api_key: '1234567890'
+      query_parameter:
+        client_info:
+          - { key: action, value: client_info }
+          - { key: username, value: auto }
+          - { key: password, value: auto }
+          - { key: api_key, value: auto }
+        client_new:
+          - { key: action, value: new }
+          - { key: type, value: m3u }
+          - { key: sub, value: '1' }
+          - { key: api_key, value: auto }
+        client_renew:
+          - { key: action, value: renew }
+          - { key: type, value: m3u }
+          - { key: username, value: auto }
+          - { key: password, value: auto }
+          - { key: sub, value: '1' }
+          - { key: api_key, value: auto }
 ```
 
 Input aliases can be defined as batches in csv files with `;` separator.

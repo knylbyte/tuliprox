@@ -291,6 +291,8 @@ pub async fn start_server(
         &targets,
     );
 
+    sync_panel_api_exp_dates_on_boot(&app_state).await;
+
     exec_file_lock_prune(&app_state);
 
     exec_config_watch(&app_state, &cancel_token_file_watch);

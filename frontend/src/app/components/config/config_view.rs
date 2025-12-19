@@ -1,13 +1,13 @@
-use crate::app::components::config::config_page::{ConfigForm, ConfigPage, LABEL_API_CONFIG, LABEL_HDHOMERUN_CONFIG, LABEL_IP_CHECK_CONFIG, LABEL_LOG_CONFIG, LABEL_MAIN_CONFIG, LABEL_MESSAGING_CONFIG, LABEL_PROXY_CONFIG, LABEL_REVERSE_PROXY_CONFIG, LABEL_SCHEDULES_CONFIG, LABEL_VIDEO_CONFIG, LABEL_WEB_UI_CONFIG};
+use crate::app::components::config::config_page::{ConfigForm, ConfigPage, LABEL_API_CONFIG, LABEL_HDHOMERUN_CONFIG, LABEL_IP_CHECK_CONFIG, LABEL_LOG_CONFIG, LABEL_MAIN_CONFIG, LABEL_MESSAGING_CONFIG, LABEL_PANEL_CONFIG, LABEL_PROXY_CONFIG, LABEL_REVERSE_PROXY_CONFIG, LABEL_SCHEDULES_CONFIG, LABEL_VIDEO_CONFIG, LABEL_WEB_UI_CONFIG};
 use crate::app::components::config::config_view_context::ConfigViewContext;
-use crate::app::components::config::{ApiConfigView, HdHomerunConfigView, IpCheckConfigView, LogConfigView, MainConfigView, MessagingConfigView, ProxyConfigView, ReverseProxyConfigView, SchedulesConfigView, VideoConfigView, WebUiConfigView};
+use crate::app::components::config::{ApiConfigView, HdHomerunConfigView, IpCheckConfigView, LogConfigView, MainConfigView, MessagingConfigView, PanelConfigView, ProxyConfigView, ReverseProxyConfigView, SchedulesConfigView, VideoConfigView, WebUiConfigView};
 use crate::app::components::{Card, TabItem, TabSet, TextButton};
 use crate::html_if;
 use std::str::FromStr;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use shared::model::ConfigDto;
+use shared::model::{ConfigDto, SourcesConfigDto};
 use crate::app::components::config::config_update::update_config;
 use crate::app::{ConfigContext};
 use crate::hooks::use_service_context;
@@ -46,7 +46,8 @@ fn config_form_to_config_page(form: &ConfigForm) -> ConfigPage {
         ConfigForm::ReverseProxy(_, _) => ConfigPage::ReverseProxy,
         ConfigForm::HdHomerun(_, _) => ConfigPage::HdHomerun,
         ConfigForm::Proxy(_, _) => ConfigPage::Proxy,
-        ConfigForm::IpCheck(_, _) => ConfigPage::IpCheck
+        ConfigForm::IpCheck(_, _) => ConfigPage::IpCheck,
+        ConfigForm::Panel(_, _) => ConfigPage::Panel,
     }
 }
 
@@ -63,6 +64,7 @@ struct ConfigFormState {
     pub hd_homerun: Option<ConfigForm>,
     pub proxy: Option<ConfigForm>,
     pub ipcheck: Option<ConfigForm>,
+    pub panel: Option<ConfigForm>,
 }
 
 #[function_component]
@@ -93,7 +95,7 @@ pub fn ConfigView() -> Html {
             let forms: &ConfigFormState = forms;
             let modified_pages = collect_modified!(forms, [
                 main, api, log, schedules, video, messaging, web_ui,
-                reverse_proxy, hd_homerun, proxy, ipcheck
+                reverse_proxy, hd_homerun, proxy, ipcheck, panel
             ]).iter()
                 .map(config_form_to_config_page)
                 .collect::<Vec<ConfigPage>>();
@@ -109,6 +111,7 @@ pub fn ConfigView() -> Html {
                 (ConfigPage::HdHomerun, LABEL_HDHOMERUN_CONFIG, html! { <HdHomerunConfigView/> }, "HdHomerunConfig"),
                 (ConfigPage::Proxy, LABEL_PROXY_CONFIG, html! { <ProxyConfigView/> }, "ProxyConfig"),
                 (ConfigPage::IpCheck, LABEL_IP_CHECK_CONFIG, html! { <IpCheckConfigView/> }, "IpCheckConfig"),
+                (ConfigPage::Panel, LABEL_PANEL_CONFIG, html! { <PanelConfigView/> }, "Settings"),
                 (ConfigPage::Video, LABEL_VIDEO_CONFIG, html! { <VideoConfigView/> }, "VideoConfig"),
             ];
 
@@ -145,39 +148,81 @@ pub fn ConfigView() -> Html {
             let forms = &*get_form_state;
             let modified_forms: Vec<ConfigForm> = collect_modified!(forms, [
                 main, api, log, schedules, video, messaging, web_ui,
-                reverse_proxy, hd_homerun, proxy, ipcheck
+                reverse_proxy, hd_homerun, proxy, ipcheck, panel
             ]);
 
-            if !modified_forms.is_empty() {
-                let mut config_dto = config_ctx.config.as_ref().map_or_else(ConfigDto::default,
-                                                                            |app_cfg| app_cfg.config.clone());
-                update_config(&mut config_dto, modified_forms);
-                match config_dto.prepare(false) {
-                    Ok(_) => {
-                        let services = services.clone();
-                        let translate = translate.clone();
-                        let set_edit_mode = set_edit_mode.clone();
-                        spawn_local(async move {
-                            match services.config.save_config(config_dto).await{
-                                Ok(()) => {
-                                    services.toastr.success(translate.t("MESSAGES.SAVE.MAIN_CONFIG.SUCCESS"));
-                                    set_edit_mode.set(false);
-                                    let _cfg = services.config.get_server_config().await;
-                                },
-                                Err(err) => {
-                                    services.toastr.error(translate.t("MESSAGES.SAVE.MAIN_CONFIG.FAIL"));
-                                    services.toastr.error(err.to_string());
-                                }
-                            }
-                        });
-                    }
-                    Err(err) => {
-                        services.toastr.error(err.to_string());
+            if modified_forms.is_empty() {
+                set_edit_mode.set(false);
+                return;
+            }
+
+            let mut modified_main_forms = Vec::new();
+            let mut modified_sources: Option<SourcesConfigDto> = None;
+            for form in modified_forms {
+                match form {
+                    ConfigForm::Panel(_, sources) => modified_sources = Some(sources),
+                    other => modified_main_forms.push(other),
+                }
+            }
+
+            let mut modified_main_dto: Option<ConfigDto> = None;
+            if !modified_main_forms.is_empty() {
+                let mut config_dto = config_ctx
+                    .config
+                    .as_ref()
+                    .map_or_else(ConfigDto::default, |app_cfg| app_cfg.config.clone());
+                update_config(&mut config_dto, modified_main_forms);
+                if let Err(err) = config_dto.prepare(false) {
+                    services.toastr.error(err.to_string());
+                    return;
+                }
+                modified_main_dto = Some(config_dto);
+            }
+
+            if let Some(sources) = modified_sources.as_mut() {
+                if let Err(err) = sources.prepare(false, None) {
+                    services.toastr.error(err.to_string());
+                    return;
+                }
+            }
+
+            let services = services.clone();
+            let translate = translate.clone();
+            let set_edit_mode = set_edit_mode.clone();
+            spawn_local(async move {
+                let mut ok = true;
+
+                if let Some(config_dto) = modified_main_dto {
+                    match services.config.save_config(config_dto).await {
+                        Ok(()) => {
+                            services.toastr.success(translate.t("MESSAGES.SAVE.MAIN_CONFIG.SUCCESS"));
+                        }
+                        Err(err) => {
+                            ok = false;
+                            services.toastr.error(translate.t("MESSAGES.SAVE.MAIN_CONFIG.FAIL"));
+                            services.toastr.error(err.to_string());
+                        }
                     }
                 }
-            } else {
-                set_edit_mode.set(false);
-            }
+
+                if let Some(sources_dto) = modified_sources {
+                    match services.config.save_sources(sources_dto).await {
+                        Ok(()) => {
+                            services.toastr.success(translate.t("MESSAGES.SAVE.SOURCES_CONFIG.SUCCESS"));
+                        }
+                        Err(err) => {
+                            ok = false;
+                            services.toastr.error(translate.t("MESSAGES.SAVE.SOURCES_CONFIG.FAIL"));
+                            services.toastr.error(err.to_string());
+                        }
+                    }
+                }
+
+                if ok {
+                    set_edit_mode.set(false);
+                    let _cfg = services.config.get_server_config().await;
+                }
+            });
         })
     };
 
@@ -198,6 +243,7 @@ pub fn ConfigView() -> Html {
                 ConfigForm::HdHomerun(_, _) => new_state.hd_homerun = Some(form_data),
                 ConfigForm::Proxy(_, _) => new_state.proxy = Some(form_data),
                 ConfigForm::IpCheck(_, _) => new_state.ipcheck = Some(form_data),
+                ConfigForm::Panel(_, _) => new_state.panel = Some(form_data),
             };
             set_form_state.set(new_state);
         })
