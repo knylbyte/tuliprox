@@ -18,6 +18,8 @@ const LABEL_VIEW: &str = "LABEL.VIEW";
 const LABEL_SAVE: &str = "LABEL.SAVE";
 const LABEL_UPDATE_GEOIP: &str = "LABEL.UPDATE_GEOIP_DB";
 
+const ACTION_UPDATE_GEO_IP: &str = "update_geo_ip";
+
 macro_rules! collect_modified {
     ($forms:expr, [ $($field:ident),+ $(,)? ]) => {{
         let mut modified = Vec::new();
@@ -202,38 +204,43 @@ pub fn ConfigView() -> Html {
     };
 
 
-    let handle_update_geoip = {
+    let handle_update_content = {
         let services = services_ctx.clone();
         let translate = translate.clone();
-        Callback::from(move |_| {
+        Callback::from(move |name: String| {
             let services = services.clone();
             let translate = translate.clone();
             wasm_bindgen_futures::spawn_local(async move {
-                match services.config.update_geoip().await {
-                    Ok(_) => services.toastr.success(translate.t("MESSAGES.DOWNLOAD.GEOIP.SUCCESS")),
-                    Err(_err) => services.toastr.error(translate.t("MESSAGES.DOWNLOAD.GEOIP.FAIL")),
+                if name.as_str() == ACTION_UPDATE_GEO_IP {
+                    match services.config.update_geoip().await {
+                        Ok(_) => services.toastr.success(translate.t("MESSAGES.DOWNLOAD.GEOIP.SUCCESS")),
+                        Err(_err) => services.toastr.error(translate.t("MESSAGES.DOWNLOAD.GEOIP.FAIL")),
+                    }
                 }
             });
         })
     };
-
 
     let context = ConfigViewContext {
         edit_mode: edit_mode.clone(),
         on_form_change: on_form_change.clone(),
     };
 
+    let geo_ip_enabled = config_ctx.config.as_ref().is_some_and(|c| c.config.is_geoip_enabled());
+
     html! {
         <ContextProvider<ConfigViewContext> context={context}>
         <div class="tp__config-view">
             <div class="tp__config-view__header">
                 <h1>{ translate.t(LABEL_CONFIG) } </h1>
-                {html_if!(config_ctx.config.is_some_and(|c| c.config.is_geoip_enabled()), {
-                    <TextButton class="tertiary" name="update_geo_ip"
+                <div class="tp__config-view__header-tools">
+                {html_if!(geo_ip_enabled, {
+                    <TextButton class="tertiary" name={ACTION_UPDATE_GEO_IP}
                         icon="Refresh"
                         title={ translate.t(LABEL_UPDATE_GEOIP)}
-                        onclick={handle_update_geoip}></TextButton>
+                        onclick={handle_update_content.clone()}></TextButton>
                 })}
+                </div>
                <TextButton name="config_edit"
                     class={ if *edit_mode { "secondary" } else { "primary" }}
                     icon={ if *edit_mode { "Unlocked" } else { "Locked" }}

@@ -5,12 +5,18 @@ use yew::prelude::*;
 use yew_hooks::use_list;
 use yew_i18n::use_translation;
 use shared::model::ConfigTargetDto;
+use crate::app::ConfigContext;
 use crate::hooks::use_service_context;
+use crate::html_if;
+
+const LABEL_UPDATE_LOCAL_LIBRARY: &str = "LABEL.UPDATE_LOCAL_LIBRARY";
+const ACTION_UPDATE_LIBRARY: &str = "update_library";
 
 #[function_component]
 pub fn PlaylistUpdateView() -> Html {
     let translate = use_translation();
     let playlist_ctx = use_context::<PlaylistContext>().expect("Playlist context not found");
+    let config_ctx =  use_context::<ConfigContext>().expect("Config context not found");
     let services_ctx = use_service_context();
     let breadcrumbs = use_state(|| Rc::new(vec![translate.t("LABEL.PLAYLISTS"), translate.t("LABEL.UPDATE")]));
     let selected_targets = use_list::<Rc<ConfigTargetDto>>(vec![]);
@@ -21,7 +27,6 @@ pub fn PlaylistUpdateView() -> Html {
            selected_targets.clear();
         })
     };
-
 
     let handle_target_select = {
         let selected_targets = selected_targets.clone();
@@ -58,12 +63,39 @@ pub fn PlaylistUpdateView() -> Html {
         })
     };
 
+    let handle_update_content = {
+        let services = services_ctx.clone();
+        let translate = translate.clone();
+        Callback::from(move |name: String| {
+            let services = services.clone();
+            let translate = translate.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                if name.as_str() == ACTION_UPDATE_LIBRARY {
+                    match services.config.update_library().await {
+                        Ok(_) => services.toastr.success(translate.t("MESSAGES.LIBRARY_UPDATE.SUCCESS")),
+                        Err(_err) => services.toastr.error(translate.t("MESSAGES.LIBRARY_UPDATE.FAIL")),
+                    }
+                }
+            });
+        })
+    };
+
+    let library_enabled = config_ctx.config.as_ref().is_some_and(|c| c.config.is_library_enabled());
+
     html! {
       <div class="tp__playlist-update-view">
          <Breadcrumbs items={&*breadcrumbs}/>
          <div class="tp__playlist-update-view__header">
           <h1>{ translate.t("LABEL.UPDATE")}</h1>
-          <TextButton class="primary" name="playlist_update"
+          <div class="tp__config-view__header-tools">
+            {html_if!(library_enabled, {
+                <TextButton class="tertiary" name={ACTION_UPDATE_LIBRARY}
+                    icon="Refresh"
+                    title={ translate.t(LABEL_UPDATE_LOCAL_LIBRARY)}
+                    onclick={handle_update_content.clone()}></TextButton>
+            })}
+            </div>
+        <TextButton class="primary" name="playlist_update"
                icon="Refresh"
                title={ translate.t("LABEL.UPDATE")}
                onclick={handle_update}></TextButton>

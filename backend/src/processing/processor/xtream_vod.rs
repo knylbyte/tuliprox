@@ -1,22 +1,22 @@
-use shared::model::InputType;
-use shared::error::{TuliproxError};
 use crate::model::{AppConfig, ConfigTarget};
-use crate::model::{FetchedPlaylist};
-use shared::model::{PlaylistItem, PlaylistItemType, XtreamCluster};
+use crate::model::FetchedPlaylist;
+use crate::processing::processor::xtream::normalize_json_content;
 use crate::processing::processor::xtream::{create_resolve_info_wal_files, playlist_resolve_download_playlist_item, read_processed_info_ids, should_update_info};
+use crate::processing::processor::{create_resolve_options_function_for_xtream_target, handle_error, handle_error_and_return};
 use crate::repository::xtream_repository::{write_vod_info_to_wal_file, xtream_update_input_info_file, xtream_update_input_vod_record_from_wal_file, InputVodInfoRecord};
-use shared::error::{notify_err};
-use crate::processing::processor::{handle_error, handle_error_and_return, create_resolve_options_function_for_xtream_target};
-use shared::utils::{get_u32_from_serde_value, get_u64_from_serde_value, get_string_from_serde_value};
-use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
-use std::io::{Write};
-use std::time::Instant;
+use crate::utils;
+use crate::utils::IO_BUFFER_SIZE;
 use log::{info, log_enabled, Level};
 use serde_json::value::RawValue;
-use crate::utils;
-use crate::processing::processor::xtream::normalize_json_content;
-use crate::utils::IO_BUFFER_SIZE;
+use serde_json::{Map, Value};
+use shared::error::notify_err;
+use shared::error::TuliproxError;
+use shared::model::{InputType, PlaylistEntry};
+use shared::model::{PlaylistItem, PlaylistItemType, XtreamCluster};
+use shared::utils::{get_string_from_serde_value, get_u32_from_serde_value, get_u64_from_serde_value};
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
+use tokio::io::AsyncWriteExt;
 
 create_resolve_options_function_for_xtream_target!(vod);
 
@@ -75,19 +75,22 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
     // All readers would be waiting for the lock and the app would be unresponsive.
     // We collect the content into a wal file and write it once we collected everything.
     let config = app_config.config.load();
-    let Some((wal_content_file, wal_record_file, wal_content_path, wal_record_path)) = create_resolve_info_wal_files(&config, fpl.input, XtreamCluster::Video)
+    let Some((mut wal_content_file, mut wal_record_file, wal_content_path, wal_record_path))
+        = create_resolve_info_wal_files(&config, fpl.input, XtreamCluster::Video).await
     else { return; };
 
     let mut processed_info_ids: HashMap<u32, u64> = read_processed_vod_info_ids(app_config, errors, fpl).await;
     let mut fetched_in_run: HashSet<u32> = HashSet::new();
-    let mut content_writer = utils::file_writer(&wal_content_file);
-    let mut record_writer = utils::file_writer(&wal_record_file);
+    let mut content_writer = utils::async_file_writer(&mut wal_content_file);
+    let mut record_writer = utils::async_file_writer(&mut wal_record_file);
     let mut content_updated = false;
+
+    // LocalVideo entries are not resolved!
 
     // TODO merge both filters to one
     let vod_info_count = fpl.playlistgroups.iter()
         .flat_map(|plg| &plg.channels)
-        .filter(|&pli| pli.header.xtream_cluster == XtreamCluster::Video).count();
+        .filter(|&pli| pli.header.xtream_cluster == XtreamCluster::Video &&  pli.header.item_type == PlaylistItemType::Video).count();
 
     info!("Found {vod_info_count} vod info to resolve");
     let mut last_log_time = Instant::now();
@@ -96,17 +99,22 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
 
     for plg in &mut fpl.playlistgroups {
         for pli in &mut plg.channels {
-            if pli.header.xtream_cluster != XtreamCluster::Video {
+            // LocalVideo files are not resolved
+            if pli.header.xtream_cluster != XtreamCluster::Video || pli.header.item_type != PlaylistItemType::Video {
                 continue;
             }
             let (should_update, provider_id, _ts) = should_update_vod_info(pli, &processed_info_ids);
             if should_update && provider_id != 0 && fetched_in_run.insert(provider_id) {
-                if let Some(content) = playlist_resolve_download_playlist_item(client, pli, fpl.input, errors, resolve_delay, XtreamCluster::Video).await {
+                if let Some(content) = if pli.get_item_type().is_local() {
+                    pli.header.additional_properties.as_ref().map(ToString::to_string)
+                } else {
+                    playlist_resolve_download_playlist_item(client, pli, fpl.input, errors, resolve_delay, XtreamCluster::Video).await
+                } {
                     let normalized_content = normalize_json_content(content);
                     let normalized_str: &str = &normalized_content;
                     if let Some((provider_id, info_record)) = extract_info_record_from_vod_info(normalized_str) {
                         let ts = info_record.ts;
-                        handle_error_and_return!(write_vod_info_to_wal_file(provider_id, normalized_str, &info_record, &mut content_writer, &mut record_writer),
+                        handle_error_and_return!(write_vod_info_to_wal_file(provider_id, normalized_str, &info_record, &mut content_writer, &mut record_writer).await,
                             |err| errors.push(notify_err!(format!("Failed to resolve vod, could not write to wal file {err}"))));
                         processed_info_ids.insert(provider_id, ts);
                         content_updated = true;
@@ -114,10 +122,10 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
                         // periodic flush to bound BufWriter memory
                         if write_counter >= IO_BUFFER_SIZE {
                             write_counter = 0;
-                            if let Err(err) = content_writer.flush() {
+                            if let Err(err) = content_writer.flush().await {
                                 errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
                             }
-                            if let Err(err) = record_writer.flush() {
+                            if let Err(err) = record_writer.flush().await {
                                 errors.push(notify_err!(format!("Failed periodic flush of wal record writer {err}")));
                             }
                         }
@@ -147,12 +155,12 @@ pub async fn playlist_resolve_vod(app_config: &AppConfig, client: &reqwest::Clie
     if content_updated {
         // TODO better approach for transactional updates is multiplexed WAL file.
         // final flush & sync with proper error handling
-        handle_error!(content_writer.flush(),
+        handle_error!(content_writer.flush().await,
             |err| errors.push(notify_err!(format!("Failed to resolve vod, could not write to wal file {err}"))));
-        handle_error!(record_writer.flush(),
+        handle_error!(record_writer.flush().await,
             |err| errors.push(notify_err!(format!("Failed to resolve vod tmdb, could not write to wal file {err}"))));
-        handle_error!(content_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync vod info to wal file {err}"))));
-        handle_error!(record_writer.get_ref().sync_all(), |err| errors.push(notify_err!(format!("Failed to sync vod info record to wal file {err}"))));
+        handle_error!(content_writer.get_ref().sync_all().await, |err| errors.push(notify_err!(format!("Failed to sync vod info to wal file {err}"))));
+        handle_error!(record_writer.get_ref().sync_all().await, |err| errors.push(notify_err!(format!("Failed to sync vod info record to wal file {err}"))));
         // drop writers and files to release handles
         drop(content_writer);
         drop(record_writer);

@@ -4,6 +4,15 @@ use std::fmt::Write;
 use crate::model::{PlaylistItemType, UUIDType};
 
 #[inline]
+pub fn string_to_uuid_type(text: &str) -> UUIDType {
+    let mut bytes = [0u8; 32];
+    let s_bytes = text.as_bytes();
+    let len = s_bytes.len().min(32);
+    bytes[..len].copy_from_slice(&s_bytes[..len]);
+    bytes
+}
+
+#[inline]
 pub fn hash_bytes(bytes: &[u8]) -> UUIDType {
     blake3::hash(bytes).into()
 }

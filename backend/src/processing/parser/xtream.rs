@@ -49,6 +49,9 @@ pub fn parse_xtream_series_info(info: &Value, group_title: &str, series_name: &s
     let username = input.username.as_ref().map_or("", |v| v);
     let password = input.password.as_ref().map_or("", |v| v);
 
+
+
+
     match serde_json::from_value::<XtreamSeriesInfo>(info.to_owned()) {
         Ok(series_info) => {
             if let Some(episodes) = &series_info.episodes {
@@ -213,7 +216,7 @@ pub async fn parse_xtream(input: &ConfigInput,
 mod tests {
     use std::fs;
     use shared::model::XtreamCluster;
-    use crate::model::XtreamSeriesInfo;
+    use crate::model::{XtreamSeriesInfo};
     use crate::processing::parser::xtream::map_to_xtream_streams;
     use crate::utils::async_file_reader;
 

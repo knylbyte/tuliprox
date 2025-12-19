@@ -14,6 +14,7 @@ pub const BLOCK_PORT_HEIGHT: f32 = 10.0;
 pub enum BlockType {
     InputXtream,
     InputM3u,
+    InputLibrary,
     Target,
     OutputM3u,
     OutputXtream,
@@ -25,6 +26,7 @@ pub enum BlockType {
 impl BlockType {
     pub const INPUT_XTREAM: &'static str = "InputXtream";
     pub const INPUT_M3U: &'static str = "InputM3u";
+    pub const INPUT_LIBRARY: &'static str = "InputLibrary";
     pub const TARGET: &'static str = "Target";
     pub const OUTPUT_M3U: &'static str = "OutputM3u";
     pub const OUTPUT_XTREAM: &'static str = "OutputXtream";
@@ -32,16 +34,16 @@ impl BlockType {
     pub const OUTPUT_STRM: &'static str = "OutputStrm";
 
     pub fn is_input(&self) -> bool {
-        matches!(self, Self::InputXtream | Self::InputM3u)
+        matches!(self, Self::InputXtream | Self::InputM3u | Self::InputLibrary)
     }
 
     pub fn is_target(&self) -> bool {
         matches!(self, Self::Target)
     }
 
-    // pub fn is_output(&self) -> bool {
-    //     matches!(self, Self::OutputXtream | Self::OutputM3u | Self::OutputHdHomeRun | Self::OutputStrm)
-    // }
+    pub fn is_output(&self) -> bool {
+        matches!(self, Self::OutputXtream | Self::OutputM3u | Self::OutputHdHomeRun | Self::OutputStrm)
+    }
 }
 
 // Convert from String to BlockType
@@ -50,6 +52,7 @@ impl From<&str> for BlockType {
         match s {
             BlockType::INPUT_XTREAM => BlockType::InputXtream,
             BlockType::INPUT_M3U => BlockType::InputM3u,
+            BlockType::INPUT_LIBRARY => BlockType::InputLibrary,
             BlockType::TARGET => BlockType::Target,
             BlockType::OUTPUT_M3U => BlockType::OutputM3u,
             BlockType::OUTPUT_XTREAM => BlockType::OutputXtream,
@@ -73,6 +76,7 @@ impl From<InputType> for BlockType {
             | InputType::M3u => BlockType::InputM3u,
             InputType::XtreamBatch
             | InputType::Xtream => BlockType::InputXtream,
+            InputType::Library => BlockType::InputLibrary,
         }
     }
 }
@@ -84,6 +88,7 @@ impl fmt::Display for BlockType {
         let s = match self {
             BlockType::InputXtream => Self::INPUT_XTREAM,
             BlockType::InputM3u => Self::INPUT_M3U,
+            BlockType::InputLibrary => Self::INPUT_LIBRARY,
             BlockType::Target => Self::TARGET,
             BlockType::OutputM3u => Self::OUTPUT_M3U,
             BlockType::OutputXtream => Self::OUTPUT_XTREAM,

@@ -1,7 +1,7 @@
 use crate::api::model::{ActiveProviderManager, ActiveUserManager, CustomVideoStreamType, EventManager, EventMessage, ProviderHandle, SharedStreamManager};
 use crate::auth::Fingerprint;
 use crate::utils::debug_if_enabled;
-use log::{debug, warn};
+use log::{warn};
 use shared::model::{ActiveUserConnectionChange, StreamChannel, VirtualId};
 use shared::utils::sanitize_sensitive_info;
 use std::borrow::Cow;
@@ -45,7 +45,7 @@ impl ConnectionManager {
             self.user_manager.block_user_for_stream(addr, virtual_id, block_secs).await;
         }
         if let Err(e) = self.close_socket_signal_tx.send(*addr) {
-            debug!("No active receivers for close signal ({addr}): {e:?}");
+            debug_if_enabled!("No active receivers for close signal ({}): {e:?}", sanitize_sensitive_info(&addr.to_string()));
             return false;
         }
         true

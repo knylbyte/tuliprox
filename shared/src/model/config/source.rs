@@ -37,7 +37,7 @@ impl ConfigSourceDto {
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SourcesConfigDto {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub templates: Option<Vec<PatternTemplate>>,
     pub sources: Vec<ConfigSourceDto>,
 }

@@ -149,9 +149,12 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
         match channel.item_type {
             PlaylistItemType::LiveUnknown
             | PlaylistItemType::Live => LIVE,
-            PlaylistItemType::Video => MOVIE,
+            PlaylistItemType::Video
+            | PlaylistItemType::LocalVideo => MOVIE,
             PlaylistItemType::Series
-            | PlaylistItemType::SeriesInfo => SERIES,
+            | PlaylistItemType::SeriesInfo
+            | PlaylistItemType::LocalSeries
+            | PlaylistItemType::LocalSeriesInfo => SERIES,
             PlaylistItemType::Catchup => CATCHUP,
             PlaylistItemType::LiveHls => HLS,
             PlaylistItemType::LiveDash => DASH

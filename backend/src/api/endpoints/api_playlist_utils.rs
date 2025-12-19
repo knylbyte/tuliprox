@@ -59,11 +59,14 @@ fn group_playlist_items_by_cluster(params: Option<(utils::FileReadGuard,
                         live.push(item);
                     }
                     PlaylistItemType::Catchup
-                    | PlaylistItemType::Video => {
+                    | PlaylistItemType::Video
+                    | PlaylistItemType::LocalVideo => {
                         video.push(item);
                     }
                     PlaylistItemType::Series
-                    | PlaylistItemType::SeriesInfo => {
+                    | PlaylistItemType::SeriesInfo
+                    | PlaylistItemType::LocalSeries
+                    | PlaylistItemType::LocalSeriesInfo => {
                         series.push(item);
                     }
                 }
@@ -107,7 +110,7 @@ async fn grouped_channels(
     xtream_repository::iter_raw_xtream_playlist(cfg, target, cluster).await
         .map(|(_guard, iter)| group_playlist_items::<CommonPlaylistItem>(
             cluster,
-            iter.map(|(v, _)| v.to_common()),
+            iter.filter(|(item, _)| item.item_type != PlaylistItemType::LocalSeries).map(|(v, _)| v.to_common()),
             |item| item.group.clone(),
         ))
 }
@@ -146,8 +149,11 @@ pub(in crate::api::endpoints) async fn get_playlist(client: &reqwest::Client, cf
         Some(input) => {
             let (result, errors) =
                 match input.input_type {
-                    InputType::M3u | InputType::M3uBatch => m3u::get_m3u_playlist(client, cfg, input, &cfg.working_dir).await,
-                    InputType::Xtream | InputType::XtreamBatch => xtream::get_xtream_playlist(cfg, client, input, &cfg.working_dir).await,
+                    InputType::M3u | InputType::M3uBatch => m3u::get_m3u_playlist(client, cfg, input).await,
+                    InputType::Xtream | InputType::XtreamBatch => xtream::get_xtream_playlist(cfg, client, input).await,
+                    InputType::Library => {
+                        return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({ "error": "Library inputs are not supported on this endpoint"}))).into_response();
+                    }
                 };
             if result.is_empty() {
                 let error_strings: Vec<String> = errors.iter().map(std::string::ToString::to_string).collect();

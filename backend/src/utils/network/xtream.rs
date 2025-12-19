@@ -202,7 +202,7 @@ pub async fn notify_account_expire(exp_date: Option<i64>, cfg: &Config, client: 
     }
 }
 
-pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Client, input: &Arc<ConfigInput>, working_dir: &str) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
+pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Client, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
     let input_source: InputSource = {
         match input.staged.as_ref() {
             None => input.as_ref().into(),
@@ -225,6 +225,8 @@ pub async fn get_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Client, in
 
     let mut playlist_groups: Vec<PlaylistGroup> = Vec::with_capacity(128);
     let skip_cluster = get_skip_cluster(input);
+
+    let working_dir = &cfg.working_dir;
 
     let mut errors = vec![];
     for (xtream_cluster, category, stream) in &ACTIONS {

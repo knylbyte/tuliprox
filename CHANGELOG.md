@@ -1,7 +1,8 @@
 # Changelog
 # 3.3.0 (2025-11-xx)
-!BREAKING CHANGE! config.yml threads attribute is now renamed to process_parallel and is a boolean (true or false).
+- !BREAKING CHANGE! config.yml threads attribute is now renamed to process_parallel and is a boolean (true or false).
 - !BREAKING CHANGE! config.yml adds a reverse proxy config field rewrite_secret to keep resource URLs valid after restart.
+- !BREAKING CHANGE! removed `forced_retry_interval_secs`.
 - Avoid blocking the runtime when warming the cache.
 - Normalize FileLockManager paths so aliases share the same lock.
 - Use async file operations for playlist persistence to avoid blocking the async runtime.
@@ -34,6 +35,18 @@
 - Fixed race conditions during simultaneous access by the same user.
 - Added extended debug logging for client requests and ID chain (request/action/virtual) to trace stream resolution.
 - Fixed xtream series/catchup lookups using the series-info virtual_id so episode requests now keep their own virtual_id/session.
+- **NEW FEATURE: Local library Module** - Comprehensive local video file scanning and metadata management
+  - Recursive directory scanning with async tokio::fs operations
+  - Automatic classification (Movies vs TV Series) using configurable regex patterns
+  - Multi-source metadata resolution with priority: NFO files → TMDB API → filename parsing
+  - JSON-based metadata storage with UUID tracking and virtual ID management
+  - TMDB API integration with configurable rate limiting (default 250ms)
+  - NFO file reading/writing support (Kodi/Jellyfin/Emby/Plex compatible)
+  - Incremental scanning (only processes changed files based on modification timestamps)
+  - Orphaned entry cleanup for deleted files
+  - New CLI flags: `--scan-library`, `--force-library-rescan`
+  - New API endpoints: `POST /api/v1/library/scan`, `GET /api/v1/library/status`
+  - New input type: `library` for source.yml integration
 - Made cache storage more robust. Incomplete downloads will be deleted from cache.
 - `kick_secs` added to config.yml `web_ui` config. Default 90 seconds, if a user is kicked from the `web_ui`, they can't connect for this duration.
   This setting is also used for sleep-timed streams.

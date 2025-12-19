@@ -11,7 +11,7 @@ use crate::api::endpoints::xmltv_api::xmltv_api_register;
 use crate::api::endpoints::xtream_api::xtream_api_register;
 use crate::api::hdhomerun_proprietary::spawn_proprietary_tasks;
 use crate::api::hdhomerun_ssdp::spawn_ssdp_discover_task;
-use crate::api::model::{create_cache, create_http_client, ActiveProviderManager, ActiveUserManager, AppState, CancelTokens, ConnectionManager, DownloadQueue, EventManager, HdHomerunAppState, PlaylistStorageState, SharedStreamManager};
+use crate::api::model::{create_cache, create_http_client, ActiveProviderManager, ActiveUserManager, AppState, CancelTokens, ConnectionManager, DownloadQueue, EventManager, HdHomerunAppState, PlaylistStorageState, SharedStreamManager, UpdateGuard};
 use crate::api::scheduler::exec_scheduler;
 use crate::api::serve::serve;
 use crate::model::{AppConfig, Config, Healthcheck, ProcessTargets, RateLimitConfig};
@@ -110,7 +110,8 @@ async fn create_shared_data(
         event_manager,
         cancel_tokens: Arc::new(ArcSwap::from_pointee(CancelTokens::default())),
         playlists: Arc::new(PlaylistStorageState::new()),
-        geoip
+        geoip,
+        update_guard: UpdateGuard::new(),
     }
 }
 
@@ -125,12 +126,13 @@ fn exec_update_on_boot(
         config.update_on_boot
     };
     if update_on_boot {
-        let app_state_clone = Arc::clone(&app_state.app_config);
+        let app_config_clone = Arc::clone(&app_state.app_config);
         let targets_clone = Arc::clone(targets);
         let playlist_state = Arc::clone(&app_state.playlists);
         let client = client.clone();
+        let update_guard = Some(app_state.update_guard.clone());
         tokio::spawn(async move {
-            playlist::exec_processing(&client, app_state_clone, targets_clone, None, Some(playlist_state)).await;
+            playlist::exec_processing(&client, app_config_clone, targets_clone, None, Some(playlist_state), update_guard).await;
         });
     }
 }
