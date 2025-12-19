@@ -4,6 +4,7 @@ use regex::Regex;
 use shared::error::TuliproxError;
 use shared::model::{default_metadata_path, LibraryConfigDto, LibraryContentType, LibraryMetadataFormat};
 use std::path::PathBuf;
+use shared::info_err;
 
 #[derive(Debug, Clone, Default)]
 pub struct LibraryScanDirectory {
@@ -74,7 +75,7 @@ impl LibraryConfig {
                             dir.path = path.to_string();
                         }
                     }
-                    Err(err) => error!("Failed to canonicalize directory path: {err}"),
+                    Err(err) => return Err(info_err!(format!("Failed to canonicalize directory path: {err}"))),
                 }
             }
         }

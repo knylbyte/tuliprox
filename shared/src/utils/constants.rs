@@ -156,12 +156,12 @@ pub static CONSTANTS: LazyLock<Constants> = LazyLock::new(||
         re_trakt_year: Regex::new(r"\(?(\d{4})\)?$").unwrap(),
         re_quality: Regex::new(r"(?i)\b(4K|UHD|8K|2160p?|1080p?|720p?|480p?|BLURAY|HDTV|DVDRIP|CAM|TS|HDR|DV|SDR)\b").unwrap(),
         re_classifier_quality: Regex::new(r"(?i)[\s\._-]*(1080p|720p|480p|2160p|4K|BluRay|BRRip|WEB-DL|WEBRip|HDTV|DVDRip|CAM|TS|HDR|DV|SDR|UHD|8K).*$").unwrap(),
-        re_classifier_year: Regex::new(r"(?:\((\d{4})\)|\[(\d{4})\]|(\d{4}))").unwrap(),
+        re_classifier_year: Regex::new(r"[\(\[]?(\d{4})[\)\]]?").unwrap(),
         re_classifier_cleanup: Regex::new(r"(?i)[\s\._-]*(?:s\d+e\d+|\d+x\d+|season[\s\._-]*\d+|episode[\s\._-]*\d+).*$").unwrap(),
         re_classifier_episode: Regex::new(r"(?i)(?:e|episode|x)[\s\._-]*(\d+)").unwrap(),
         re_classifier_season: Regex::new(r"(?i)(?:s|season)[\s\._-]*(\d+)").unwrap(),
         re_classifier_moviedb_id: Regex::new(r"(?i)\b(tmdb|tvdb|imdb)[\s._=-]?(\d+)\b").unwrap(),
         re_classifier_camel_case: Regex::new(r"([a-z])([A-Z])").unwrap(),
-        re_classifier_brackets_info: Regex::new(r"\[.*?\]|\{.*?\}|\(.*?\)").unwrap(),
+        re_classifier_brackets_info: Regex::new(r"[\[\{\(].*?[\]\}\)]").unwrap(),
     }
 );
