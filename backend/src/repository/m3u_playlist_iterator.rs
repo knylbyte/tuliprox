@@ -76,8 +76,8 @@ impl M3uPlaylistIterator {
                 | PlaylistItemType::LiveUnknown
                 | PlaylistItemType::LiveHls
                 | PlaylistItemType::LiveDash => "live",
-                PlaylistItemType::Video => "movie",
-                PlaylistItemType::Series | PlaylistItemType::SeriesInfo => "series",
+                PlaylistItemType::Video | PlaylistItemType::LocalVideo => "movie",
+                PlaylistItemType::Series | PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeries | PlaylistItemType::LocalSeriesInfo => "series",
             }
         } else {
             ""

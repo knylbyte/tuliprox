@@ -46,7 +46,12 @@ fn extract_tmdb_id_from_playlist_item(item: &PlaylistItem) -> Option<u32> {
                 .get("tmdb_id")
                 .and_then(get_u32_from_serde_value)
                 .filter(|&id| id != 0)
-                .or_else(|| props.get("tmdb").and_then(get_u32_from_serde_value));
+                .or_else(|| {
+                    props.get("info")
+                        .and_then(|info| info.get("tmdb_id"))
+                        .and_then(get_u32_from_serde_value)
+                        .filter(|&id| id != 0)
+                });
         }
     }
     None

@@ -16,6 +16,7 @@ use std::sync::Arc;
 use log::error;
 use crate::api::endpoints::extract_accept_header::ExtractAcceptHeader;
 use crate::api::endpoints::v1_api_config::v1_api_config_register;
+use crate::api::endpoints::library_api::library_api_register;
 use crate::model::InputSource;
 use crate::repository::storage::get_geoip_path;
 use crate::utils::GeoIp;
@@ -155,6 +156,7 @@ pub fn v1_api_register(web_auth_enabled: bool, app_state: Arc<AppState>, web_ui_
     router = v1_api_config_register(router);
     router = v1_api_user_register(router);
     router = v1_api_playlist_register(router);
+    router = library_api_register(router);
     if web_auth_enabled {
         router = router.route_layer(axum::middleware::from_fn_with_state(Arc::clone(&app_state), validator_admin));
     }

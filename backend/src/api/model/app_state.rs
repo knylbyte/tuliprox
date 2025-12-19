@@ -16,9 +16,10 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicI8;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex};
 use tokio::task;
 use tokio_util::sync::CancellationToken;
+use crate::api::model::UpdateGuard;
 use crate::repository::storage::get_geoip_path;
 use crate::utils::GeoIp;
 
@@ -263,6 +264,7 @@ pub struct AppState {
     pub cancel_tokens: Arc<ArcSwap<CancelTokens>>,
     pub playlists: Arc<PlaylistStorageState>,
     pub geoip: Arc<ArcSwapOption<GeoIp>>,
+    pub update_guard: UpdateGuard,
 }
 
 impl AppState {

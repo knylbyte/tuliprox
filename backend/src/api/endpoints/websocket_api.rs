@@ -276,6 +276,15 @@ async fn handle_event_message(socket: &mut WebSocket, event: EventMessage, handl
                             .await
                             .map_err(|e| format!("System info event: {e} "))?;
                     }
+                    EventMessage::LibraryScanProgress(summary) => {
+                        let msg = ProtocolMessage::LibraryScanProgressResponse(summary)
+                            .to_bytes()
+                            .map_err(|e| e.to_string())?;
+                        socket
+                            .send(Message::Binary(msg))
+                            .await
+                            .map_err(|e| format!("Library scan progress event: {e} "))?;
+                    }
                 }
             }
         }

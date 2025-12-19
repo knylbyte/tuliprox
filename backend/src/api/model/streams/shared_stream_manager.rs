@@ -165,7 +165,8 @@ impl SharedStreamState {
         {
             let mut subs = self.subscribers.write().await;
             subs.insert(*addr, cancel_token.clone());
-            debug!("Shared stream subscriber added {addr}; total subscribers={}", subs.len());
+            debug_if_enabled!("Shared stream subscriber added {}; total subscribers={}",
+                sanitize_sensitive_info(&addr.to_string()), subs.len());
         }
 
         let client_tx_clone = client_tx.clone();
@@ -403,13 +404,14 @@ impl SharedStreamManager {
                 (tx, is_empty, subs.len())
             };
 
-            debug!("Shared stream subscriber removed {addr}; remaining subscribers={remaining}");
+            debug_if_enabled!("Shared stream subscriber removed {}; remaining subscribers={remaining}", sanitize_sensitive_info(&addr.to_string()));
 
             if is_empty {
                 if let Some(url) = stream_url.as_ref() {
                     debug_if_enabled!(
-                    "No subscribers remain for {} after removing {addr}",
-                    sanitize_sensitive_info(url)
+                      "No subscribers remain for {} after removing {}",
+                      sanitize_sensitive_info(url),
+                      sanitize_sensitive_info(&addr.to_string())
                 );
                     self.unregister(url, send_stop_signal).await;
                 }
@@ -438,7 +440,8 @@ impl SharedStreamManager {
                 shared_streams.key_by_addr.insert(*addr, stream_url.to_owned());
             }
 
-            debug_if_enabled!("Responding to existing shared client stream {addr} {}",sanitize_sensitive_info(stream_url)
+            debug_if_enabled!("Responding to existing shared client stream {} {}",
+                sanitize_sensitive_info(&addr.to_string()), sanitize_sensitive_info(stream_url)
         );
             Some(shared_state.subscribe(addr, manager).await)
         } else {
@@ -451,7 +454,8 @@ impl SharedStreamManager {
         let mut shared_streams = self.shared_streams.write().await;
         shared_streams.by_key.insert(stream_url.to_string(), shared_state);
         shared_streams.key_by_addr.insert(*addr, stream_url.to_string());
-        debug_if_enabled!("Registered shared stream {} for initial subscriber {addr}", sanitize_sensitive_info(stream_url));
+        debug_if_enabled!("Registered shared stream {} for initial subscriber {}",
+            sanitize_sensitive_info(stream_url), sanitize_sensitive_info(&addr.to_string()));
     }
 
     pub(crate) async fn register_shared_stream<S, E>(

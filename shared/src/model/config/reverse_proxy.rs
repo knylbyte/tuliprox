@@ -36,17 +36,17 @@ pub struct ReverseProxyConfigDto {
     #[serde(default)]
     pub resource_rewrite_disabled: bool,
     pub rewrite_secret: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_retry: Option<ResourceRetryConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub disabled_header: Option<ReverseProxyDisabledHeaderConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<StreamConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache: Option<CacheConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rate_limit: Option<RateLimitConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub geoip: Option<GeoIpConfigDto>,
 }
 

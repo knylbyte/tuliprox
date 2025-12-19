@@ -54,6 +54,18 @@ pub fn classify_content_type(headers: &[(String, String)]) -> MimeCategory {
         })
 }
 
+pub fn content_type_from_ext(ext: &str) -> &'static str {
+    match ext.to_ascii_lowercase().as_str() {
+        "mp4" => "video/mp4",
+        "mkv" => "video/x-matroska",
+        "avi" => "video/x-msvideo",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "ts"  => "video/mp2t",
+        _ => "application/octet-stream",
+    }
+}
+
 pub async fn get_input_epg_content_as_file(client: &reqwest::Client, input: &ConfigInput, working_dir: &str, url_str: &str, persist_filepath: Option<PathBuf>) -> Result<PathBuf, TuliproxError> {
     debug_if_enabled!("getting input epg content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(url_str));
     if url_str.parse::<url::Url>().is_ok() {
@@ -606,6 +618,21 @@ pub fn create_client(cfg: &AppConfig) -> reqwest::ClientBuilder {
     client
 }
 
+pub fn parse_range(range: &str) -> Option<(u64, Option<u64>)> {
+    // expect: "bytes=START-END"
+    if !range.starts_with("bytes=") {
+        return None;
+    }
+
+    let range = &range[6..];
+    let mut parts = range.split('-');
+
+    let start = parts.next()?.parse().ok()?;
+    let end = parts.next().and_then(|s| s.parse().ok());
+
+    Some((start, end))
+}
+
 #[cfg(test)]
 mod tests {
     use shared::utils::{get_base_url_from_str, replace_url_extension, sanitize_sensitive_info};
@@ -640,3 +667,4 @@ mod tests {
         assert_eq!(get_base_url_from_str(url).unwrap(), expected);
     }
 }
+

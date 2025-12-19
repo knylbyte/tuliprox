@@ -20,6 +20,7 @@ pub fn ConfigOutputView(props: &ConfigOutputViewProps) -> Html {
             match block_instance.block_type {
                 BlockType::InputXtream
                 | BlockType::InputM3u
+                | BlockType::InputLibrary
                 | BlockType::Target => html! {},
                 BlockType::OutputM3u => {
                     let output = props.output.as_ref()

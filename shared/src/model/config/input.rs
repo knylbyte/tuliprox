@@ -56,6 +56,8 @@ pub enum InputType {
     M3uBatch,
     #[serde(rename = "xtream_batch")]
     XtreamBatch,
+    #[serde(rename = "library")]
+    Library,
 }
 
 
@@ -64,6 +66,7 @@ impl InputType {
     const XTREAM: &'static str = "xtream";
     const M3U_BATCH: &'static str = "m3u_batch";
     const XTREAM_BATCH: &'static str = "xtream_batch";
+    const LIBRARY: &'static str = "library";
 }
 
 impl Display for InputType {
@@ -73,6 +76,7 @@ impl Display for InputType {
             Self::Xtream => Self::XTREAM,
             Self::M3uBatch => Self::M3U_BATCH,
             Self::XtreamBatch => Self::XTREAM_BATCH,
+            Self::Library => Self::LIBRARY,
         })
     }
 }
@@ -89,6 +93,8 @@ impl FromStr for InputType {
             Ok(Self::M3uBatch)
         } else if s.eq(Self::XTREAM_BATCH) {
             Ok(Self::XtreamBatch)
+        } else if s.eq(Self::LIBRARY) {
+            Ok(Self::Library)
         } else {
             create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown InputType: {}", s)
         }
@@ -193,9 +199,9 @@ impl ConfigInputOptionsDto {
 pub struct StagedInputDto {
     pub name: String,
     pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
     #[serde(default)]
     pub method: InputFetchMethod,
@@ -233,9 +239,9 @@ pub struct ConfigInputAliasDto {
     pub id: u16,
     pub name: String,
     pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
     #[serde(default)]
     pub priority: i16,
@@ -275,20 +281,21 @@ pub struct ConfigInputDto {
     pub input_type: InputType,
     #[serde(default)]
     pub headers: HashMap<String, String>,
+    #[serde(default)]
     pub url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub epg: Option<EpgConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub persist: Option<String>,
     #[serde(default = "default_as_true")]
     pub enabled: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<ConfigInputOptionsDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aliases: Option<Vec<ConfigInputAliasDto>>,
     #[serde(default)]
     pub priority: i16,
@@ -296,7 +303,7 @@ pub struct ConfigInputDto {
     pub max_connections: u16,
     #[serde(default)]
     pub method: InputFetchMethod,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub staged: Option<StagedInputDto>,
     #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
     pub exp_date: Option<i64>,

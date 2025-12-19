@@ -25,7 +25,7 @@ enum EitherReader<L, R> {
     Right(R),
 }
 
-// `Read`-Trait für Either implementieren
+// `Read`-Trait for Either
 impl<L: Read, R: Read> Read for EitherReader<L, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {

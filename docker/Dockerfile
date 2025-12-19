@@ -1,6 +1,6 @@
 # =================================================================
 #
-# Dockerfile für LOKALE Builds (nativ, ohne Cross-Compilation)
+# Dockerfile for local build (nativ, without Cross-Compilation)
 #
 # =================================================================
 

@@ -1,4 +1,4 @@
-use crate::api::api_utils::{create_session_fingerprint, try_unwrap_body};
+use crate::api::api_utils::{create_session_fingerprint, local_stream_response, try_unwrap_body};
 use crate::api::api_utils::{
     force_provider_stream_response, get_user_target, get_user_target_by_credentials,
     is_seek_request, redirect, redirect_response, resource_response, separate_number_and_remainder,
@@ -130,6 +130,21 @@ async fn m3u_api_stream(
       true,
       format!("Cant find input {} for target {target_name}, stream_id {virtual_id}", pli.input_name)
     );
+
+    if pli.item_type.is_local() {
+        let connection_permission = user.connection_permission(app_state).await;
+        return local_stream_response(
+            fingerprint,
+            app_state,
+            pli.to_stream_channel(target.id),
+            req_headers,
+            &input,
+            &target,
+            &user,
+            connection_permission,
+        ).await.into_response();
+    }
+
     let cluster = XtreamCluster::try_from(pli.item_type).unwrap_or(XtreamCluster::Live);
     
     debug_if_enabled!(

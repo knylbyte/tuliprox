@@ -2,7 +2,7 @@ use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputR
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
-use shared::model::{AppConfigDto, PlaylistUpdateState, StatusCheck, SystemInfo};
+use shared::model::{AppConfigDto, LibraryScanSummaryStatus, PlaylistUpdateState, StatusCheck, SystemInfo};
 use std::future;
 use std::rc::Rc;
 use yew::prelude::*;
@@ -62,6 +62,12 @@ pub fn Home() -> Html {
                         match update_state {
                           PlaylistUpdateState::Success => services_ctx_clone.toastr.success(translate_clone.t("MESSAGES.PLAYLIST_UPDATE.SUCCESS_FINISH")),
                           PlaylistUpdateState::Failure => services_ctx_clone.toastr.error(translate_clone.t("MESSAGES.PLAYLIST_UPDATE.FAIL_FINISH")),
+                        }
+                    },
+                    EventMessage::LibraryScanProgress(summary) => {
+                        match summary.status {
+                            LibraryScanSummaryStatus::Success => services_ctx_clone.toastr.success(summary.message),
+                            LibraryScanSummaryStatus::Error => services_ctx_clone.toastr.error(summary.message),
                         }
                     },
                     _=> {}

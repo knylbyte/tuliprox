@@ -13,6 +13,11 @@ It supports M3U and M3U8 formats, Xtream Codes API, HDHomeRun and STRM, making i
 - **Flexible Proxy Support**: Acts as a reverse/redirect proxy for EXTM3U, Xtream Codes, HDHomeRun, and STRM formats (Kodi, Plex, Emby, Jellyfin) with:
   - app-specific naming conventions
   - flat directory structure option (for compatibility reasons of some media scanners)
+- **Local media library Management**: Scan and serve local video files with automatic metadata resolution:
+  - Recursive directory scanning for movies and TV series
+  - Multi-source metadata (NFO files, TMDB API, filename parsing)
+  - Automatic classification (Movies vs Series)
+  - Integration with Xtream API and M3U playlists
 - **Multi-Source Handling**: Supports multiple input and output sources. Merge various playlists and generate custom outputs.
 - **Scheduled Updates**: Keep playlists fresh with automatic updates in server mode.
 - **Web Delivery**: Run as a CLI tool to create m3u playlist to serve with web servers like Nginx or Apache.
@@ -59,6 +64,8 @@ Options:
   -V, --version                    Print version
   --genpwd                         Generate UI Password
   --healthcheck                    Healtcheck for docker
+  --scan-library                   Scan library directories
+  --force-library-rescan           Force full library rescan
 ```
 
 ## 1. `config.yml`
@@ -73,7 +80,7 @@ This means, even disabled inputs and targets are processed when the given target
 Top level entries in the config files are:
 * `api`
 * `working_dir`
-* `threads` _optional_
+* `process_parallel` _optional_
 * `messaging`  _optional_
 * `video` _optional_
 * `schedules` _optional_
@@ -91,11 +98,10 @@ Top level entries in the config files are:
 * `config_hot_reload` _optional_, default false.
 * `sleep_timer_mins` _optional_, used for closing stream after the given minutes.
 * `accept_unsecure_ssl_certificates` _optional_, default false.
+* `library` _optional_, for local media 
 
-### 1.1. `threads`
-If you are running on a cpu which has multiple cores, you can set for example `threads: 2` to run two threads.
-Don't use too many threads, you should consider max of `cpu cores * 2`.
-Default is `0`.
+### 1.1. `process_parallel`
+If you are running on a cpu which has multiple cores, you can set for example `process_parallel: true` to run multiple threads.
 If you process the same provider multiple times each thread uses a connection. Keep in mind that you hit the provider max-connection.
 
 ### 1.2. `api`
@@ -627,6 +633,94 @@ and you use `/config` in your configuration files, the file watcher will still r
 
 This means that any file paths returned by the watcher might not match the paths in your configuration.
 You need to account for this difference when handling file events, e.g., by mapping the original path to your configured path.
+
+### 1.20 `library`
+
+The local media file library module enables Tuliprox to scan, classify, and serve local video files with automatic metadata resolution.
+
+**Key Features**:
+- Recursive directory scanning for video files
+- Automatic classification (Movies vs TV Series)
+- Multi-source metadata resolution (NFO → TMDB → filename parsing)
+- JSON-based metadata storage with UUID tracking
+- TMDB API integration with rate limiting
+- NFO file reading and writing (Kodi/Jellyfin/Emby/Plex compatible)
+- Incremental scanning (only processes changed files)
+- Virtual ID management for stable playlist integration
+
+**Configuration Example**:
+```yaml
+library:
+  enabled: true
+  scan_directories:
+    - enabled: true
+      path: "/projects/media"
+      content_type: auto
+      recursive: true
+
+  supported_extensions:
+    - "mp4"
+    - "mkv"
+    - "avi"
+    - "mov"
+    - "ts"
+    - "m4v"
+    - "webm"
+
+  metadata:
+    path: "${env:TULIPROX_HOME}/library_metadata"
+    read_existing:
+      kodi: true
+      jellyfin: false
+      plex: false
+
+    tmdb:
+      enabled: true
+      # api_key: "4219e299c89411838049ab0dab19ebd5" # Get your API key from https://www.themoviedb.org/settings/api
+      rate_limit_ms: 250  # Milliseconds between API calls (default: 250ms)
+
+    fallback_to_filename: true
+
+    formats:
+      - "nfo"  # Optionally write Kodi-compatible NFO files
+
+  classification:
+    series_patterns:
+      - "(?i)s\\d+e\\d+"          # S01E02 format
+      - "(?i)\\d+x\\d+"            # 1x02 format
+      - "(?i)season[\\s._-]*\\d+"  # "Season 1" format
+      - "(?i)episode[\\s._-]*\\d+" # "Episode 1" format
+
+  playlist:
+    movie_category: "Local Movies"
+    series_category: "Local Series"
+
+```
+
+**CLI Usage**:
+```bash
+# Scan VOD directories
+./tuliprox --scan-library
+
+# Force full rescan (ignores modification timestamps)
+./tuliprox --force-library-rescan
+```
+
+**API Endpoints**:
+- `POST /api/v1/library/scan` - Trigger library scan
+  ```json
+  {"force_rescan": false}
+  ```
+- `GET /api/v1/library/status` - Get library status
+
+**Integration with source.yml**:
+```yaml
+sources:
+  - inputs:
+      - name: local-movies
+        type: library  # New input type
+        enabled: true
+```
 
 ## 2. `source.yml`
 
@@ -1701,8 +1795,7 @@ server:
       - {username: x3451, password: secret, token: abcde, proxy: redirect}
 ```
 
-
-## 4. Logging
+## 5. Logging
 Following log levels are supported:
 - `debug`
 - `info` _default_
@@ -2019,7 +2112,7 @@ sources:
       output:
         - type: xtream
       filter: "!ALL_CHAN!"
-      ...
+      
 ```
 
 We use templates to make the filters easier to maintain and read.

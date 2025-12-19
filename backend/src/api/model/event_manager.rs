@@ -1,5 +1,5 @@
 use log::{trace};
-use shared::model::{ActiveUserConnectionChange, ConfigType, PlaylistUpdateState, SystemInfo};
+use shared::model::{ActiveUserConnectionChange, ConfigType, LibraryScanSummary, PlaylistUpdateState, SystemInfo};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq)]
@@ -10,7 +10,8 @@ pub enum EventMessage {
     ConfigChange(ConfigType),
     PlaylistUpdate(PlaylistUpdateState),
     PlaylistUpdateProgress(String, String),
-    SystemInfoUpdate(SystemInfo)
+    SystemInfoUpdate(SystemInfo),
+    LibraryScanProgress(LibraryScanSummary),
 }
 
 pub struct EventManager {

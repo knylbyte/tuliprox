@@ -62,8 +62,8 @@ impl TryFrom<PlaylistItemType> for XtreamCluster {
     fn try_from(item_type: PlaylistItemType) -> Result<Self, Self::Error> {
         match item_type {
             PlaylistItemType::Live | PlaylistItemType::LiveHls | PlaylistItemType::LiveDash | PlaylistItemType::LiveUnknown => Ok(Self::Live),
-            PlaylistItemType::Catchup | PlaylistItemType::Video => Ok(Self::Video),
-            PlaylistItemType::Series | PlaylistItemType::SeriesInfo => Ok(Self::Series),
+            PlaylistItemType::Catchup | PlaylistItemType::Video | PlaylistItemType::LocalVideo => Ok(Self::Video),
+            PlaylistItemType::Series | PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeries | PlaylistItemType::LocalSeriesInfo => Ok(Self::Series),
         }
     }
 }
@@ -80,6 +80,9 @@ pub enum PlaylistItemType {
     LiveUnknown = 6, // No Provider id
     LiveHls = 7, // m3u8 entry
     LiveDash = 8, // mpd
+    LocalVideo = 9,
+    LocalSeries = 10,
+    LocalSeriesInfo = 11,
 }
 
 impl From<XtreamCluster> for PlaylistItemType {
@@ -100,8 +103,11 @@ impl FromStr for PlaylistItemType {
         match s {
             "Live" => Ok(PlaylistItemType::Live),
             "Video" => Ok(PlaylistItemType::Video),
+            "LocalVideo" => Ok(PlaylistItemType::LocalVideo),
             "Series" => Ok(PlaylistItemType::Series),
             "SeriesInfo" => Ok(PlaylistItemType::SeriesInfo),
+            "LocalSeries" => Ok(PlaylistItemType::LocalSeries),
+            "LocalSeriesInfo" => Ok(PlaylistItemType::LocalSeriesInfo),
             "Catchup" => Ok(PlaylistItemType::Catchup),
             "LiveUnknown" => Ok(PlaylistItemType::LiveUnknown),
             "LiveHls" => Ok(PlaylistItemType::LiveHls),
@@ -117,15 +123,19 @@ impl PlaylistItemType {
     const SERIES: &'static str = "series";
     const SERIES_INFO: &'static str = "series-info";
     const CATCHUP: &'static str = "catchup";
+
+    pub fn is_local(&self) -> bool {
+        matches!(self, PlaylistItemType::LocalVideo | PlaylistItemType::LocalSeries | PlaylistItemType::LocalSeriesInfo)
+    }
 }
 
 impl Display for PlaylistItemType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
             Self::Live | Self::LiveHls | Self::LiveDash | Self::LiveUnknown => Self::LIVE,
-            Self::Video => Self::VIDEO,
-            Self::Series => Self::SERIES,
-            Self::SeriesInfo => Self::SERIES_INFO,
+            Self::Video | Self::LocalVideo=> Self::VIDEO,
+            Self::Series | Self::LocalSeries => Self::SERIES,
+            Self::SeriesInfo | Self::LocalSeriesInfo => Self::SERIES_INFO,
             Self::Catchup => Self::CATCHUP,
         })
     }
@@ -196,10 +206,20 @@ impl PlaylistItemHeader {
         let raw = self.additional_properties.as_ref()?;
         let value: Value = serde_json::from_str(raw.get()).ok()?;
 
-        match value {
-            Value::Object(map) => map.get(field).cloned(),
-            _ => None,
-        }
+        let map = match value {
+            Value::Object(map) => map,
+            _ => return None,
+        };
+
+        map.get(field)
+            .cloned()
+            // fallback: info[field]
+            .or_else(|| {
+                map.get("info")
+                    .and_then(|info| info.as_object())
+                    .and_then(|info_map| info_map.get(field))
+                    .cloned()
+            })
     }
 
     pub fn get_additional_property_as_u32(&self, field: &str) -> Option<u32> {
@@ -463,8 +483,8 @@ impl XtreamPlaylistItem {
             group: self.group.clone(),
             title: self.title.clone(),
             parent_code: self.parent_code.clone(),
-            audio_track: "".to_string(),
-            time_shift: "".to_string(),
+            audio_track: String::new(),
+            time_shift: String::new(),
             rec: self.rec.clone(),
             url: self.url.clone(),
             input_name: self.input_name.clone(),
@@ -549,9 +569,15 @@ macro_rules! generate_field_accessor_impl_for_xtream_playlist_item {
                             return match props {
                                 Some(doc) => {
                                     return if field == xtream_const::XC_PROP_COVER {
-                                       doc.get(&field).and_then(|value| value.as_str()).map(|s| Cow::<str>::Owned(s.to_owned()))
+                                            doc.get(&field)
+                                                .or_else(|| doc.get("info").and_then(|d| d.get(&field)))
+                                                .and_then(|value| value.as_str())
+                                                .map(|s| Cow::<str>::Owned(s.to_owned()))
                                     } else {
-                                      get_backdrop_path_value(&field, doc.get(xtream_const::XC_PROP_BACKDROP_PATH)).map(|s| Cow::<str>::Owned(s.to_string()))
+                                      doc.get(xtream_const::XC_PROP_BACKDROP_PATH)
+                                            .or_else(|| doc.get("info").and_then(|d| d.get(xtream_const::XC_PROP_BACKDROP_PATH)))
+                                            .and_then(|value| get_backdrop_path_value(&field, Some(value)))
+                                            .map(|s| Cow::<str>::Owned(s.into_owned()))
                                     }
                                 }
                                 _=> None,
@@ -610,7 +636,7 @@ impl PlaylistItem {
         let provider_id = header.id.parse::<u32>().unwrap_or_default();
         let mut additional_properties: Option<String> = None;
 
-        if header.xtream_cluster != XtreamCluster::Live {
+        if header.xtream_cluster != XtreamCluster::Live && header.item_type != PlaylistItemType::LocalVideo {
             let add_ext = match header.get_additional_property("container_extension") {
                 None => true,
                 Some(ext) => ext.as_str().is_none_or(str::is_empty),

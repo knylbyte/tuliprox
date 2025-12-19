@@ -44,9 +44,9 @@ pub struct XtreamTargetOutputDto {
     pub resolve_vod: bool,
     #[serde(default = "default_resolve_delay_secs")]
     pub resolve_vod_delay: u16,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trakt: Option<TraktConfigDto>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
@@ -100,7 +100,7 @@ pub struct M3uTargetOutputDto {
     pub include_type_in_url: bool,
     #[serde(default)]
     pub mask_redirect_url: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
@@ -127,7 +127,7 @@ impl M3uTargetOutputDto {
 #[serde(deny_unknown_fields)]
 pub struct StrmTargetOutputDto {
     pub directory: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(default)]
     pub style: StrmExportStyle,
@@ -137,9 +137,9 @@ pub struct StrmTargetOutputDto {
     pub underscore_whitespace: bool,
     #[serde(default)]
     pub cleanup: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub strm_props: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
@@ -161,7 +161,7 @@ impl StrmTargetOutputDto {
 pub struct HdHomeRunTargetOutputDto {
     pub device: String,
     pub username: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub use_output: Option<TargetType>,
 }
 
@@ -204,9 +204,9 @@ pub struct ConfigTargetDto {
     pub enabled: bool,
     #[serde(default = "default_as_default")]
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<ConfigTargetOptions>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sort: Option<ConfigSortDto>,
     pub filter: String,
     #[serde(default)]
@@ -219,7 +219,7 @@ pub struct ConfigTargetDto {
     pub favourites: Option<Vec<ConfigFavouritesDto>>,
     #[serde(default)]
     pub processing_order: ProcessingOrder,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub watch: Option<Vec<String>>,
     #[serde(default)]
     pub use_memory_cache: bool,
@@ -282,7 +282,14 @@ impl ConfigTargetDto {
                 }
                 TargetOutputDto::M3u(m3u_output) => {
                     m3u_cnt += 1;
-                    m3u_output.filename = m3u_output.filename.as_ref().map(|s| s.trim().to_string());
+                    m3u_output.filename = m3u_output.filename.as_ref().and_then(|s| {
+                        let trimmed = s.trim();
+                        if trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(trimmed.to_string())
+                        }
+                    });
                 }
                 TargetOutputDto::Strm(strm_output) => {
                     strm_cnt += 1;
