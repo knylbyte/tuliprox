@@ -567,12 +567,14 @@ async fn patch_batch_csv_update_exp_date(
     Ok(())
 }
 
+const MAX_ALIAS_NAME_ATTEMPTS: usize = 1000;
+
 fn derive_unique_alias_name(existing: &[String], input_name: &str, username: &str) -> String {
     let base = format!("{input_name}-{username}");
     if !existing.contains(&base) {
         return base;
     }
-    for i in 2..1000 {
+    for i in 2..MAX_ALIAS_NAME_ATTEMPTS {
         let cand = format!("{base}-{i}");
         if !existing.contains(&cand) {
             return cand;

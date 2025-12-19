@@ -4,6 +4,7 @@ use crate::app::components::config::{ApiConfigView, HdHomerunConfigView, IpCheck
 use crate::app::components::{Card, TabItem, TabSet, TextButton};
 use crate::html_if;
 use std::str::FromStr;
+use log::warn;
 use yew::platform::spawn_local;
 use yew::prelude::*;
 use yew_i18n::use_translation;
@@ -153,6 +154,7 @@ pub fn ConfigView() -> Html {
 
             if modified_forms.is_empty() {
                 set_edit_mode.set(false);
+                services.toastr.info(translate.t("MESSAGES.SAVE.NO_CHANGES"));
                 return;
             }
 
@@ -220,7 +222,10 @@ pub fn ConfigView() -> Html {
 
                 if ok {
                     set_edit_mode.set(false);
-                    let _cfg = services.config.get_server_config().await;
+                    if services.config.get_server_config().await.is_none() {
+                        // Log but don't fail - save succeeded, refresh is best-effort
+                        warn!("Config refresh failed");
+                    }
                 }
             });
         })

@@ -395,6 +395,7 @@
       "MESSAGE": "Enter Your Credentials"
     },
     "SAVE": {
+      "NO_CHANGES": "No changes",
       "MAIN_CONFIG": {
         "SUCCESS": "Main config saved!",
         "FAIL": "Failed to save the main config!"

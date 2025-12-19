@@ -393,7 +393,6 @@ pub fn PanelConfigView() -> Html {
             } else {
                 form_state.dispatch(PanelConfigFormAction::SetAll(SourcesConfigDto::default()));
             }
-            || ()
         });
     }
 
