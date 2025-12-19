@@ -339,7 +339,7 @@ async fn get_redirect_alternative_url<'a>(
 ///
 /// This logic helps abstract the decision-making behind provider selection and stream URL resolution.
 async fn resolve_streaming_strategy(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     stream_url: &str,
     fingerprint: &Fingerprint,
     input: &ConfigInput,

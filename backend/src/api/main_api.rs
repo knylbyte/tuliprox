@@ -32,6 +32,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_http::services::ServeDir;
+use crate::api::panel_api::sync_panel_api_exp_dates_on_boot;
 use crate::api::sys_usage::exec_system_usage;
 use crate::repository::storage::get_geoip_path;
 use crate::utils::{exec_file_lock_prune, GeoIp};

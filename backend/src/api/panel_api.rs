@@ -1,7 +1,7 @@
 use crate::api::model::AppState;
 use crate::model::{ConfigInput, is_input_expired};
 use crate::utils::debug_if_enabled;
-use crate::utils::{get_csv_file_path, read_sources_file};
+use crate::utils::{get_csv_file_path};
 use log::{debug, error, warn};
 use serde_json::Value;
 use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
@@ -10,6 +10,7 @@ use shared::utils::{get_credentials_from_url, parse_timestamp, sanitize_sensitiv
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use url::Url;
+use crate::api::config_watch::ConfigFile;
 
 #[derive(Debug, Clone)]
 struct AccountCredentials {
@@ -581,7 +582,7 @@ fn derive_unique_alias_name(existing: &[String], input_name: &str, username: &st
 }
 
 async fn try_renew_expired_account(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     input: &ConfigInput,
     panel_cfg: &PanelApiConfigDto,
     is_batch: bool,
@@ -631,7 +632,7 @@ async fn try_renew_expired_account(
 }
 
 async fn try_create_new_account(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     input: &ConfigInput,
     panel_cfg: &PanelApiConfigDto,
     is_batch: bool,
@@ -702,7 +703,7 @@ async fn try_create_new_account(
     }
 }
 
-pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &ConfigInput) -> bool {
+pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input: &ConfigInput) -> bool {
     let Some(panel_cfg) = input.panel_api.as_ref() else {
         return false;
     };
@@ -820,12 +821,13 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
     }
 }
 
-async fn reload_sources(app_state: &AppState) -> Result<(), TuliproxError> {
-    let paths = app_state.app_config.paths.load();
-    let sources_file = paths.sources_file_path.as_str();
-    let dto = read_sources_file(sources_file, true, true, None)?;
-    let sources = crate::model::SourcesConfig::try_from(&dto)?;
-    app_state.app_config.set_sources(sources)?;
-    app_state.active_provider.update_config(&app_state.app_config).await;
-    Ok(())
+async fn reload_sources(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
+    ConfigFile::load_sources(app_state).await
+    // let paths = app_state.app_config.paths.load();
+    // let sources_file = paths.sources_file_path.as_str();
+    // let dto = read_sources_file(sources_file, true, true, None)?;
+    // let sources = crate::model::SourcesConfig::try_from(&dto)?;
+    // app_state.app_config.set_sources(sources)?;
+    // app_state.active_provider.update_config(&app_state.app_config).await;
+    // Ok(())
 }
