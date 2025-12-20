@@ -3,7 +3,7 @@ use crate::utils::get_csv_file_path;
 use chrono::Utc;
 use log::warn;
 use shared::error::TuliproxError;
-use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, PanelApiConfigDto, StagedInputDto};
+use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, StagedInputDto};
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};
 use shared::{check_input_connections, info_err, write_if_some};
 use shared::check_input_credentials;
@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use url::Url;
+use crate::model::config::panel_api::PanelApiConfig;
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
@@ -142,7 +143,7 @@ pub struct ConfigInput {
     pub staged: Option<StagedInput>,
     pub exp_date: Option<i64>,
     pub t_batch_url: Option<String>,
-    pub panel_api: Option<PanelApiConfigDto>,
+    pub panel_api: Option<PanelApiConfig>,
 }
 
 impl ConfigInput {
@@ -160,6 +161,10 @@ impl ConfigInput {
         if is_input_expired(self.exp_date) {
             warn!("Account {} expired for provider: {}", self.username.as_ref().map_or("?", |s| s.as_str()), self.name);
             self.enabled = false;
+        }
+
+        if let Some(panel_api) = &mut self.panel_api {
+            panel_api.prepare()?;
         }
 
         Ok(batch_file_path)
@@ -270,7 +275,7 @@ impl From<&ConfigInputDto> for ConfigInput {
             exp_date: dto.exp_date,
             staged: dto.staged.as_ref().map(StagedInput::from),
             t_batch_url: None,
-            panel_api: dto.panel_api.clone(),
+            panel_api: dto.panel_api.as_ref().map(PanelApiConfig::from),
         }
     }
 }

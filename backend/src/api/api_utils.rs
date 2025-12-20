@@ -346,21 +346,13 @@ async fn resolve_streaming_strategy(
     force_provider: Option<&str>,
 ) -> StreamingStrategy {
     // allocate a provider connection
-    let mut provider_connection_handle = if let Some(provider) = force_provider {
-        app_state
-            .active_provider
-            .force_exact_acquire_connection(provider, &fingerprint.addr)
-            .await
-    } else {
-        app_state
-            .active_provider
-            .acquire_connection(&input.name, &fingerprint.addr)
-            .await
+    let mut provider_connection_handle = match force_provider {
+        Some(provider) => app_state.active_provider.force_exact_acquire_connection(provider, &fingerprint.addr).await,
+        None => app_state.active_provider.acquire_connection(&input.name, &fingerprint.addr).await,
     };
 
-    if provider_connection_handle.is_none() && force_provider.is_none() && input.panel_api.is_some() {
-        provider_connection_handle =
-            try_provision_and_reacquire_on_provider_pool_exhausted(app_state, fingerprint, input).await;
+    if provider_connection_handle.is_none() && force_provider.is_none() && input.panel_api.as_ref().is_some_and(|panel_api| panel_api.enabled) {
+        provider_connection_handle = try_provision_and_reacquire_on_provider_pool_exhausted(app_state, fingerprint, input).await;
     }
 
     let stream_response_params =
@@ -373,41 +365,22 @@ async fn resolve_streaming_strategy(
                 }
                 ProviderAllocation::Available(ref provider_cfg)
                 | ProviderAllocation::GracePeriod(ref provider_cfg) => {
-                    let allocation_kind = match allocation {
-                        ProviderAllocation::Available(_) => "available",
-                        ProviderAllocation::GracePeriod(_) => "grace_period",
-                        ProviderAllocation::Exhausted => "exhausted",
-                    };
-
                     // force_stream_provider means we keep the url and the provider.
                     // If force_stream_provider or the input is the same as the config we don't need to get new url
                     let (selected_provider_name, url) = if force_provider.is_some() || provider_cfg.id == input.id {
                         (input.name.clone(), stream_url.to_string())
                     } else {
-                        (
-                            provider_cfg.name.clone(),
-                            get_stream_alternative_url(stream_url, input, provider_cfg),
-                        )
+                        (provider_cfg.name.clone(), get_stream_alternative_url(stream_url, input, provider_cfg))
                     };
 
-                    if let Some(user_info) = provider_cfg.get_user_info() {
-                        debug_if_enabled!(
-                            "provider session: input={} provider_cfg={} user={} allocation={} stream_url={}",
-                            sanitize_sensitive_info(&input.name),
-                            sanitize_sensitive_info(&provider_cfg.name),
-                            sanitize_sensitive_info(&user_info.username),
-                            allocation_kind,
-                            sanitize_sensitive_info(&url)
-                        );
-                    } else {
-                        debug_if_enabled!(
-                            "provider session: input={} provider_cfg={} user=? allocation={} stream_url={}",
-                            sanitize_sensitive_info(&input.name),
-                            sanitize_sensitive_info(&provider_cfg.name),
-                            allocation_kind,
-                            sanitize_sensitive_info(&url)
-                        );
-                    }
+                    debug_if_enabled!(
+                        "provider session: input={} provider_cfg={} user={} allocation={} stream_url={}",
+                        sanitize_sensitive_info(&input.name),
+                        sanitize_sensitive_info(&provider_cfg.name),
+                        sanitize_sensitive_info(provider_cfg.get_user_info().as_ref().map_or_else(|| "?", |u| u.username.as_str())),
+                        allocation.short_key(),
+                        sanitize_sensitive_info(&url)
+                    );
 
                     match allocation {
                         ProviderAllocation::Exhausted => {

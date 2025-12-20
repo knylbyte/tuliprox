@@ -1,7 +1,7 @@
 use crate::api::model::provider_config::ProviderConfigWrapper;
 use crate::api::model::{EventManager, ProviderConfig, ProviderConfigConnection, ProviderConnectionChangeCallback};
-use crate::utils::debug_if_enabled;
 use crate::model::{is_input_expired, ConfigInput};
+use crate::utils::debug_if_enabled;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use log::{debug, log_enabled};
@@ -65,6 +65,14 @@ pub enum ProviderAllocation {
 }
 
 impl ProviderAllocation {
+    pub fn short_key(&self) -> &str {
+        match self {
+            ProviderAllocation::Exhausted => "exhausted",
+            ProviderAllocation::Available(_) => "available",
+            ProviderAllocation::GracePeriod(_) => "grace_period",
+        }
+    }
+
     pub fn new_available(config: Arc<ProviderConfig>) -> Self {
         ProviderAllocation::Available(config)
     }
@@ -496,7 +504,6 @@ impl MultiProviderLineup {
     }
 }
 
-
 pub(in crate::api::model) struct ProviderLineupManager {
     grace_period_millis: AtomicU64,
     grace_period_timeout_secs: AtomicU64,
@@ -838,29 +845,29 @@ mod tests {
     }
 
     // Helper function to create a ConfigInput instance
-	    fn create_config_input(id: u16, name: &str, priority: i16, max_connections: u16) -> ConfigInput {
-	        ConfigInput {
-	            id,
-	            name: name.to_string(),
-	            url: "http://example.com".to_string(),
-	            epg: Option::default(),
-	            username: None,
-	            password: None,
-	            persist: None,
-	            enabled: true,
-	            input_type: InputType::Xtream, // You can use a default value here
-	            max_connections,
-	            priority,
-	            aliases: None,
-	            headers: HashMap::default(),
-	            options: None,
-	            method: InputFetchMethod::default(),
-	            staged: None,
-	            exp_date: None,
-	            t_batch_url: None,
-	            panel_api: None,
-	        }
-	    }
+    fn create_config_input(id: u16, name: &str, priority: i16, max_connections: u16) -> ConfigInput {
+        ConfigInput {
+            id,
+            name: name.to_string(),
+            url: "http://example.com".to_string(),
+            epg: Option::default(),
+            username: None,
+            password: None,
+            persist: None,
+            enabled: true,
+            input_type: InputType::Xtream, // You can use a default value here
+            max_connections,
+            priority,
+            aliases: None,
+            headers: HashMap::default(),
+            options: None,
+            method: InputFetchMethod::default(),
+            staged: None,
+            exp_date: None,
+            t_batch_url: None,
+            panel_api: None,
+        }
+    }
 
     // Helper function to create a ConfigInputAlias instance
     fn create_config_input_alias(id: u16, url: &str, priority: i16, max_connections: u16) -> ConfigInputAlias {

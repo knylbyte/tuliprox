@@ -102,7 +102,7 @@ macro_rules! modify_connections {
 
 impl ProviderConfig {
     pub fn new(cfg: &ConfigInput, connection: Arc<RwLock<ProviderConfigConnection>>, on_connection_change: ProviderConnectionChangeCallback) -> Self {
-        let panel_api_enabled = cfg.panel_api.is_some();
+        let panel_api_enabled = cfg.panel_api.as_ref().is_some_and(|panel_api| panel_api.enabled);
         let effective_max_connections = if panel_api_enabled && cfg.max_connections == 0 {
             debug_if_enabled!(
                 "panel_api: input '{}' has max_connections=0; defaulting effective max_connections to 1 for pool accounting",
@@ -133,7 +133,7 @@ impl ProviderConfig {
         connection: Arc<RwLock<ProviderConfigConnection>>,
         on_connection_change: ProviderConnectionChangeCallback,
     ) -> Self {
-        let panel_api_enabled = cfg.panel_api.is_some();
+        let panel_api_enabled = cfg.panel_api.as_ref().is_some_and(|panel_api| panel_api.enabled);
         let effective_max_connections = if panel_api_enabled && alias.max_connections == 0 {
             debug_if_enabled!(
                 "panel_api: alias '{}' has max_connections=0; defaulting effective max_connections to 1 for pool accounting",

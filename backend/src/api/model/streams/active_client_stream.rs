@@ -3,6 +3,7 @@ use crate::api::model::BoxedProviderStream;
 use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
 use crate::api::model::TransportStreamBuffer;
+use crate::utils::debug_if_enabled;
 use crate::model::ProxyUserCredentials;
 use bytes::Bytes;
 use futures::Stream;
@@ -16,20 +17,23 @@ use std::task::{Poll};
 use axum::http::header::USER_AGENT;
 use axum::http::HeaderMap;
 use futures::task::AtomicWaker;
+use shared::utils::sanitize_sensitive_info;
 use crate::auth::Fingerprint;
 
 const INNER_STREAM: u8 = 0_u8;
 const USER_EXHAUSTED_STREAM: u8 = 1_u8;
 const PROVIDER_EXHAUSTED_STREAM: u8 = 2_u8;
+const CHANNEL_UNAVAILABLE_STREAM: u8 = 3_u8;
 
 pub(in crate::api) struct ActiveClientStream {
     inner: BoxedProviderStream,
     send_custom_stream_flag: Option<Arc<AtomicU8>>,
     #[allow(dead_code)]
     provider_handle: Option<ProviderHandle>,
-    custom_video: (Option<TransportStreamBuffer>, Option<TransportStreamBuffer>),
+    custom_video: (Option<TransportStreamBuffer>, Option<TransportStreamBuffer>, Option<TransportStreamBuffer>),
     waker: Option<Arc<AtomicWaker>>,
     connection_manager: Arc<ConnectionManager>,
+    fingerprint: Arc<Fingerprint>,
 }
 
 impl ActiveClientStream {
@@ -64,10 +68,11 @@ impl ActiveClientStream {
         let waker = if grace_stop_flag.is_some() { Some(waker) } else { None };
         let custom_response = cfg.custom_stream_response.load();
         let custom_video = custom_response.as_ref()
-            .map_or((None, None), |c|
+            .map_or((None, None, None), |c|
                 (
                     c.user_connections_exhausted.clone(),
-                    c.provider_connections_exhausted.clone()
+                    c.provider_connections_exhausted.clone(),
+                    c.channel_unavailable.clone(),
                 ));
 
         let stream = match stream_details.stream.take() {
@@ -98,7 +103,8 @@ impl ActiveClientStream {
             send_custom_stream_flag: grace_stop_flag,
             custom_video,
             waker,
-            connection_manager: Arc::clone(&app_state.connection_manager)
+            connection_manager: Arc::clone(&app_state.connection_manager),
+            fingerprint: Arc::new(fingerprint.clone()),
         }
     }
 
@@ -185,8 +191,17 @@ impl ActiveClientStream {
         if self.provider_handle.is_some() {
             let mgr = Arc::clone(&self.connection_manager);
             let handle = self.provider_handle.take();
+
+            if let Some(flag) = &self.send_custom_stream_flag {
+                flag.store(CHANNEL_UNAVAILABLE_STREAM, std::sync::atomic::Ordering::Release);
+            }
+
+            let con_man = Arc::clone(&self.connection_manager);
+            let addr = self.fingerprint.addr;
             self.inner = futures::stream::empty::<Result<Bytes, StreamError>>().boxed();
             tokio::spawn(async move {
+                con_man.update_stream_detail(&addr, CustomVideoStreamType::UserConnectionsExhausted).await;
+                debug_if_enabled!("Provider stream stopped due to grace period or unavailable provider channel for {}", sanitize_sensitive_info(&addr.to_string()));
                 mgr.release_provider_handle(handle).await;
             });
         }
@@ -207,7 +222,18 @@ impl Stream for ActiveClientStream {
         };
 
         if flag == INNER_STREAM {
-            return Pin::new(&mut self.inner).poll_next(cx);
+            match Pin::new(&mut self.inner).poll_next(cx) {
+                Poll::Ready(Some(Err(e))) => {
+                    error!("Inner stream error: {e:?}");
+                    self.stop_provider_stream();
+                    return Poll::Ready(Some(Err(e)));
+                }
+                Poll::Ready(None) => {
+                    self.stop_provider_stream();
+                    return Poll::Ready(None);
+                }
+                healthy => return healthy,
+            }
         }
 
         self.stop_provider_stream();
@@ -218,6 +244,9 @@ impl Stream for ActiveClientStream {
             }
             PROVIDER_EXHAUSTED_STREAM => {
                 self.custom_video.1.as_mut()
+            }
+            CHANNEL_UNAVAILABLE_STREAM => {
+                self.custom_video.2.as_mut()
             }
             _ => None,
         };

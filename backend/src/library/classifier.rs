@@ -8,7 +8,7 @@ use crate::library::{SeriesEpisodeFile, SeriesKey};
 
 fn clear_filename(file_name: &str) -> String {
     // Remove quality indicators (1080p, 720p, BluRay, etc.)
-    let mut cleaned = CONSTANTS.re_classifier_quality.replace(file_name, "").to_string();
+    let mut cleaned = CONSTANTS.re_quality.replace(file_name, "").to_string();
 
     // Clean up special characters
     cleaned = cleaned.replace(['.', '_', '-'], " ").trim().to_string();

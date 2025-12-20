@@ -233,6 +233,7 @@ impl ActiveProviderManager {
 
             if released.is_none() {
                 let mut remove_key: Option<String> = None;
+                // TODO O(n) over all keys, maybe better approach ist to use a Hashmap shared_by_allocation_id: HashMap<AllocationId, String>
                 for (key, shared) in &connections.shared.by_key {
                     if shared.allocation_id == handle.allocation_id {
                         remove_key = Some(key.clone());
