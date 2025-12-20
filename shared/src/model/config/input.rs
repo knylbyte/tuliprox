@@ -1,6 +1,7 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{EpgConfigDto};
 use crate::utils::{default_as_true, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info, trim_last_slash, deserialize_timestamp};
+use super::PanelApiConfigDto;
 use crate::{check_input_credentials, check_input_connections, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use enum_iterator::Sequence;
 use std::collections::{HashMap, HashSet};
@@ -307,6 +308,8 @@ pub struct ConfigInputDto {
     pub staged: Option<StagedInputDto>,
     #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
     pub exp_date: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel_api: Option<PanelApiConfigDto>,
 }
 
 impl Default for ConfigInputDto {
@@ -329,6 +332,7 @@ impl Default for ConfigInputDto {
             method: InputFetchMethod::default(),
             staged: None,
             exp_date: None,
+            panel_api: None,
         }
     }
 }

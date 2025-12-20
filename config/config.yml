@@ -74,7 +74,7 @@ reverse_proxy:
     shared_burst_buffer_mb: 12 # default 12 MB
 
 library:
-  enabled: false
+  enabled: true
   scan_directories:
     - path: "/media/movies"
       enabled: true
@@ -98,20 +98,19 @@ library:
   # Metadata configuration
   metadata:
     # Location to store metadata cache (JSON files)
-    storage_location: "${env:TULIPROX_HOME}/library_metadata"
+    path: "${env:TULIPROX_HOME}/library_metadata"
 
     # TMDB (The Movie Database) API integration
     tmdb:
-      enabled: false
-      api_key: ""  # Get your API key from https://www.themoviedb.org/settings/api
+      enabled: true
+      # api_key: ""  # Get your API key from https://www.themoviedb.org/settings/api
       rate_limit_ms: 250  # Milliseconds between API calls (default: 250ms)
 
     # Fallback to filename parsing if no metadata found
-    fallback_to_filename_parsing: true
+    fallback_to_filename: true
 
     # Metadata output formats
     formats:
-      - "json"  # Always stores JSON metadata
       # - "nfo"  # Optionally write Kodi-compatible NFO files
 
   # Classification rules for movies vs series
@@ -127,7 +126,7 @@ library:
   # Playlist integration
   playlist:
     # Group name for movies in M3U/Xtream playlist
-    movie_group_name: "Local Movies"
+    movie_category: "Local Movies"
 
     # Group name for series in M3U/Xtream playlist
-    series_group_name: "Local Series"
+    series_category: "Local Series"

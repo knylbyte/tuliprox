@@ -3,7 +3,7 @@ use crate::model::{ApiProxyConfig, InputSource};
 use axum::response::IntoResponse;
 use axum::Router;
 use serde_json::json;
-use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto};
+use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, SourcesConfigDto};
 use std::sync::Arc;
 use log::error;
 use shared::error::TuliproxError;
@@ -49,6 +49,38 @@ async fn save_config_main(
         axum::http::StatusCode::OK.into_response()
     } else {
         (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid content"}))).into_response()
+    }
+}
+
+async fn save_config_sources(
+    axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Json(mut sources): axum::extract::Json<SourcesConfigDto>,
+) -> impl axum::response::IntoResponse + Send {
+    if let Err(err) = sources.prepare(false, None) {
+        return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": err.to_string()}))).into_response();
+    }
+    let paths = app_state.app_config.paths.load();
+    let file_path = paths.sources_file_path.as_str();
+    let config = app_state.app_config.config.load();
+    let backup_dir = config.get_backup_dir();
+    match utils::save_sources_config(file_path, backup_dir.as_ref(), &sources).await {
+        Ok(()) => {}
+        Err(err) => {
+            error!("Failed to save source.yml {err}");
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
+        }
+    }
+
+    // update runtime (hot reload semantics like panel_api reload)
+    match crate::model::SourcesConfig::try_from(&sources) {
+        Ok(src) => {
+            if let Err(err) = app_state.app_config.set_sources(src) {
+                return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
+            }
+            app_state.active_provider.update_config(&app_state.app_config);
+            axum::http::StatusCode::OK.into_response()
+        }
+        Err(err) => (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": err.to_string()}))).into_response(),
     }
 }
 
@@ -143,5 +175,6 @@ pub fn v1_api_config_register(router: Router<Arc<AppState>>) -> axum::Router<Arc
         .route("/config", axum::routing::get(config))
         .route("/config/batchContent/{input_id}", axum::routing::get(config_batch_content))
         .route("/config/main", axum::routing::post(save_config_main))
+        .route("/config/sources", axum::routing::post(save_config_sources))
         .route("/config/apiproxy", axum::routing::post(save_config_api_proxy_config))
 }

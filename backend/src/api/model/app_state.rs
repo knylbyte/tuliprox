@@ -120,7 +120,7 @@ pub async fn update_app_state_sources(
 ) -> Result<(), TuliproxError> {
     let targets = sources.validate_targets(Some(&app_state.forced_targets.load().target_names))?;
     app_state.forced_targets.store(Arc::new(targets));
-    let updates = app_state.set_sources(sources).await?;
+    let updates = app_state.set_sources(sources)?;
     update_target_caches(app_state, updates.targets.as_ref()).await;
     restart_services(app_state, &updates);
     Ok(())
@@ -278,9 +278,7 @@ impl AppState {
 
         self.active_users.update_config(&config);
         self.app_config.set_config(config)?;
-        self.active_provider
-            .update_config(&self.app_config)
-            .await;
+        self.active_provider.update_config(&self.app_config);
         self.update_config().await;
 
         if changes.geoip {
@@ -323,12 +321,10 @@ impl AppState {
         }
     }
 
-    pub(in crate::api::model) async fn set_sources(&self,sources: SourcesConfig) -> Result<UpdateChanges, TuliproxError> {
+    pub(in crate::api::model) fn set_sources(&self,sources: SourcesConfig) -> Result<UpdateChanges, TuliproxError> {
         let changes = self.detect_changes_for_sources(&sources);
         self.app_config.set_sources(sources)?;
-        self.active_provider
-            .update_config(&self.app_config)
-            .await;
+        self.active_provider.update_config(&self.app_config);
 
         Ok(changes)
     }

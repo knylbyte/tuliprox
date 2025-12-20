@@ -9,6 +9,7 @@ use crate::api::model::{
 };
 use crate::api::model::{tee_stream, UserSession};
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
+use crate::api::panel_api::try_provision_account_on_exhausted;
 use crate::model::{ConfigInput, ResourceRetryConfig};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::lru_cache::LRUResourceCache;
@@ -31,9 +32,9 @@ use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
@@ -177,7 +178,7 @@ pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoRes
 
 pub fn get_user_target_by_username(
     username: &str,
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
 ) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
     if !username.is_empty() {
         return app_state.app_config.get_target_for_username(username);
@@ -236,7 +237,7 @@ pub struct StreamOptions {
 /// from the provider without additional handling.
 ///
 /// Returns a `StreamOptions` instance with the resolved configuration.
-fn get_stream_options(app_state: &AppState) -> StreamOptions {
+fn get_stream_options(app_state: &Arc<AppState>) -> StreamOptions {
     let (stream_retry, buffer_enabled, buffer_size) = app_state
         .app_config
         .config
@@ -291,7 +292,7 @@ pub fn get_stream_alternative_url(
 }
 
 async fn get_redirect_alternative_url<'a>(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     redirect_url: &'a str,
     input: &ConfigInput,
 ) -> Cow<'a, str> {
@@ -338,17 +339,21 @@ async fn get_redirect_alternative_url<'a>(
 ///
 /// This logic helps abstract the decision-making behind provider selection and stream URL resolution.
 async fn resolve_streaming_strategy(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     stream_url: &str,
     fingerprint: &Fingerprint,
     input: &ConfigInput,
     force_provider: Option<&str>,
 ) -> StreamingStrategy {
     // allocate a provider connection
-    let provider_connection_handle = match force_provider {
+    let mut provider_connection_handle = match force_provider {
         Some(provider) => app_state.active_provider.force_exact_acquire_connection(provider, &fingerprint.addr).await,
         None => app_state.active_provider.acquire_connection(&input.name, &fingerprint.addr).await,
     };
+
+    if provider_connection_handle.is_none() && force_provider.is_none() && input.panel_api.as_ref().is_some_and(|panel_api| panel_api.enabled) {
+        provider_connection_handle = try_provision_and_reacquire_on_provider_pool_exhausted(app_state, fingerprint, input).await;
+    }
 
     let stream_response_params =
         if let Some(allocation) = provider_connection_handle.as_ref().map(|ph| &ph.allocation) {
@@ -358,26 +363,32 @@ async fn resolve_streaming_strategy(
                     let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
                     ProviderStreamState::Custom(stream)
                 }
-                ProviderAllocation::Available(ref provider)
-                | ProviderAllocation::GracePeriod(ref provider) => {
+                ProviderAllocation::Available(ref provider_cfg)
+                | ProviderAllocation::GracePeriod(ref provider_cfg) => {
                     // force_stream_provider means we keep the url and the provider.
                     // If force_stream_provider or the input is the same as the config we don't need to get new url
-                    let (provider, url) = if force_provider.is_some() || provider.id == input.id {
+                    let (selected_provider_name, url) = if force_provider.is_some() || provider_cfg.id == input.id {
                         (input.name.clone(), stream_url.to_string())
                     } else {
-                        (
-                            provider.name.clone(),
-                            get_stream_alternative_url(stream_url, input, provider),
-                        )
+                        (provider_cfg.name.clone(), get_stream_alternative_url(stream_url, input, provider_cfg))
                     };
+
+                    debug_if_enabled!(
+                        "provider session: input={} provider_cfg={} user={} allocation={} stream_url={}",
+                        sanitize_sensitive_info(&input.name),
+                        sanitize_sensitive_info(&provider_cfg.name),
+                        sanitize_sensitive_info(provider_cfg.get_user_info().as_ref().map_or_else(|| "?", |u| u.username.as_str())),
+                        allocation.short_key(),
+                        sanitize_sensitive_info(&url)
+                    );
 
                     match allocation {
                         ProviderAllocation::Exhausted => {
                             let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
                             ProviderStreamState::Custom(stream)
-                        }
-                        ProviderAllocation::Available(_) => ProviderStreamState::Available(Some(provider), url),
-                        ProviderAllocation::GracePeriod(_) => ProviderStreamState::GracePeriod(Some(provider), url),
+                        },
+                        ProviderAllocation::Available(_) => ProviderStreamState::Available(Some(selected_provider_name), url),
+                        ProviderAllocation::GracePeriod(_) => ProviderStreamState::GracePeriod(Some(selected_provider_name), url),
                     }
                 }
             }
@@ -392,6 +403,40 @@ async fn resolve_streaming_strategy(
         provider_handle: provider_connection_handle,
         provider_stream_state: stream_response_params,
         input_headers: Some(input.headers.clone()),
+    }
+}
+
+async fn try_provision_and_reacquire_on_provider_pool_exhausted(
+    app_state: &Arc<AppState>,
+    fingerprint: &Fingerprint,
+    input: &ConfigInput,
+) -> Option<crate::api::model::ProviderHandle> {
+    let active_provider_connections = app_state
+        .active_provider
+        .active_connections()
+        .await
+        .map(|c| c.into_iter().collect::<BTreeMap<_, _>>());
+    debug_if_enabled!(
+        "panel_api: provider pool exhausted for input {} (active_provider_connections={:?})",
+        sanitize_sensitive_info(&input.name),
+        active_provider_connections
+    );
+
+    if try_provision_account_on_exhausted(app_state, input).await {
+        debug_if_enabled!(
+            "panel_api: provider pool exhausted for input {}, provision succeeded; re-acquiring connection",
+            sanitize_sensitive_info(&input.name)
+        );
+        app_state
+            .active_provider
+            .acquire_connection(&input.name, &fingerprint.addr)
+            .await
+    } else {
+        debug_if_enabled!(
+            "panel_api: provider pool exhausted for input {}, provision skipped/failed",
+            sanitize_sensitive_info(&input.name)
+        );
+        None
     }
 }
 
@@ -438,26 +483,11 @@ async fn create_stream_response_details(
         &streaming_strategy.provider_stream_state,
         config_grace_period_millis,
     );
+
     let guard_provider_name = streaming_strategy
         .provider_handle
         .as_ref()
         .and_then(|guard| guard.allocation.get_provider_name());
-
-    if let ProviderStreamState::GracePeriod(ref provider_grace_check, ref stream_url) = streaming_strategy.provider_stream_state {
-        tokio::time::sleep(tokio::time::Duration::from_millis(grace_period_millis)).await;
-        if let Some(provider_name) = provider_grace_check.as_ref() {
-            if app_state.active_provider.is_over_limit(provider_name).await {
-                app_state.connection_manager.update_stream_detail(&fingerprint.addr, CustomVideoStreamType::ProviderConnectionsExhausted).await;
-                debug!("Provider connections exhausted after grace period for provider: {provider_name}");
-                let stream = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
-                streaming_strategy.provider_stream_state = ProviderStreamState::Custom(stream);
-                let provider_handle = streaming_strategy.provider_handle.take();
-                app_state.connection_manager.release_provider_handle(provider_handle).await;
-            }
-        } else {
-            streaming_strategy.provider_stream_state = ProviderStreamState::Available(provider_grace_check.clone(), stream_url.clone());
-        }
-    }
 
     match streaming_strategy.provider_stream_state {
         // custom stream means we display our own stream like connection exhausted, channel-unavailable...
@@ -577,7 +607,7 @@ where
 }
 
 pub async fn redirect_response<'a, P>(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     params: &'a RedirectParams<'a, P>,
 ) -> Option<impl IntoResponse + Send>
 where
@@ -700,7 +730,7 @@ fn is_throttled_stream(item_type: PlaylistItemType, throttle_kbps: usize) -> boo
 }
 
 fn prepare_body_stream<S>(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     item_type: PlaylistItemType,
     stream: S,
 ) -> axum::body::Body
@@ -962,7 +992,7 @@ pub async fn stream_response(
     axum::http::StatusCode::BAD_REQUEST.into_response()
 }
 
-fn get_stream_throttle(app_state: &AppState) -> u64 {
+fn get_stream_throttle(app_state: &Arc<AppState>) -> u64 {
     app_state
         .app_config
         .config
@@ -1197,7 +1227,7 @@ fn get_add_cache_content(
 }
 
 async fn build_stream_response(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     resource_url: &str,
     response: reqwest::Response,
 ) -> axum::response::Response {
@@ -1257,7 +1287,7 @@ async fn build_stream_response(
 }
 
 async fn fetch_resource_with_retry(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     url: &Url,
     resource_url: &str,
     req_headers: &HashMap<String, Vec<u8>>,
@@ -1361,7 +1391,7 @@ fn calculate_retry_backoff(base_delay_ms: u64, multiplier: f64, attempt: u32) ->
 
 /// # Panics
 pub async fn resource_response(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     resource_url: &str,
     req_headers: &HeaderMap,
     input: Option<&ConfigInput>,

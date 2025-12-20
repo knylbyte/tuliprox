@@ -16,7 +16,7 @@ fn default_tmdb_language() -> String {
     "en-US".to_string()
 }
 fn default_storage_formats() -> Vec<LibraryMetadataFormat> {
-    vec![LibraryMetadataFormat::Nfo]
+    vec![]
 }
 fn default_movie_category() -> String {
     "Local Movies".to_string()

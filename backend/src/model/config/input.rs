@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use url::Url;
+use crate::model::config::panel_api::PanelApiConfig;
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
@@ -142,6 +143,7 @@ pub struct ConfigInput {
     pub staged: Option<StagedInput>,
     pub exp_date: Option<i64>,
     pub t_batch_url: Option<String>,
+    pub panel_api: Option<PanelApiConfig>,
 }
 
 impl ConfigInput {
@@ -159,6 +161,10 @@ impl ConfigInput {
         if is_input_expired(self.exp_date) {
             warn!("Account {} expired for provider: {}", self.username.as_ref().map_or("?", |s| s.as_str()), self.name);
             self.enabled = false;
+        }
+
+        if let Some(panel_api) = &mut self.panel_api {
+            panel_api.prepare()?;
         }
 
         Ok(batch_file_path)
@@ -242,6 +248,7 @@ impl ConfigInput {
             staged: None,
             exp_date: None,
             t_batch_url: None,
+            panel_api: self.panel_api.clone(),
         }
     }
 }
@@ -268,6 +275,7 @@ impl From<&ConfigInputDto> for ConfigInput {
             exp_date: dto.exp_date,
             staged: dto.staged.as_ref().map(StagedInput::from),
             t_batch_url: None,
+            panel_api: dto.panel_api.as_ref().map(PanelApiConfig::from),
         }
     }
 }

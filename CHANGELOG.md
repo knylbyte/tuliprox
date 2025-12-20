@@ -28,6 +28,7 @@
 - WebUI API-User category selection implemented.
 - Stream table "Copy-To-Clipboard" functions added.
 - Refactored provider connection handling to avoid potential race conditions.
+- WebUI: Added Panel API config view and new `/api/v1/config/sources` endpoint to persist + hot-reload `sources.yml`.
 - Added exp_date field to inputs, aliases, and CSV batch files; accepts dates in "YYYY-MM-DD HH:MM:SS" format or Unix timestamps (seconds since epoch).
 - Added cloudflare_header to reverse proxy disable_header settings.
 - Added CPU usage to the WebUI view.
@@ -35,6 +36,7 @@
 - Fixed race conditions during simultaneous access by the same user.
 - Added extended debug logging for client requests and ID chain (request/action/virtual) to trace stream resolution.
 - Fixed xtream series/catchup lookups using the series-info virtual_id so episode requests now keep their own virtual_id/session.
+- **NEW FEATURE `panel_api`** Added optional `panel_api` integration to renew expired accounts or provision new aliases when provider connections are exhausted.
 - **NEW FEATURE: Local library Module** - Comprehensive local video file scanning and metadata management
   - Recursive directory scanning with async tokio::fs operations
   - Automatic classification (Movies vs TV Series) using configurable regex patterns
