@@ -1,3 +1,5 @@
+@use "../../../size" as size;
+
 .tp__panel-config-view {
   &__info-text {
     color: var(--modest-text-color);
