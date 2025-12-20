@@ -305,7 +305,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                             } else {
                                 let dlg = dialog.clone();
                                 spawn_local(async move {
-                                    let _result = dlg.content(html! {<input value={text}/>}, None, false).await;
+                                    let _result = dlg.content(html! {<input value={text} readonly={true} class="tp__copy-input"/>}, None, false).await;
                                 });
                             }
                         }
