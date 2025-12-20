@@ -254,6 +254,7 @@ pub fn UserTable(props: &UserTableProps) -> Html {
         let selected_dto = selected_dto.clone();
         let ul_context = userlist_context.clone();
         let clipboard = clipboard.clone();
+        let dialog = dialog.clone();
         Callback::from(move |(name, e): (String, MouseEvent)| {
             e.prevent_default();
             if let Ok(action) = TableAction::from_str(&name) {
@@ -294,14 +295,19 @@ pub fn UserTable(props: &UserTableProps) -> Html {
                         });
                     }
                     TableAction::CopyCredentials => {
-                        if *clipboard.is_supported {
-                            if let Some(dto) = &*selected_dto {
-                                clipboard.write_text(format!("username: {} password: {} token: {}",
-                                                             dto.credentials.username, dto.credentials.password,
-                                                             dto.credentials.token.as_ref().map_or_else(String::new, |t| t.to_string())));
+                        if let Some(dto) = &*selected_dto {
+                            let text = format!("username: {} password: {} token: {}",
+                                               dto.credentials.username, dto.credentials.password,
+                                               dto.credentials.token.as_ref().map_or_else(String::new, |t| t.to_string()));
+
+                            if *clipboard.is_supported {
+                                clipboard.write_text(text);
+                            } else {
+                                let dlg = dialog.clone();
+                                spawn_local(async move {
+                                    let _result = dlg.content(html! {<input value={text} readonly={true} class="tp__copy-input"/>}, None, false).await;
+                                });
                             }
-                        } else {
-                            services.toastr.error(translate.t("MESSAGES.CLIPBOARD_NOT_SUPPORTED"));
                         }
                     }
                 }
