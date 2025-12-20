@@ -16,6 +16,7 @@ use crate::app::components::popup_menu::PopupMenu;
 use crate::hooks::use_service_context;
 use crate::html_if;
 use crate::model::{BusyStatus, EventMessage};
+use crate::services::DialogService;
 
 const COPY_LINK_TULIPROX_VIRTUAL_ID: &str = "copy_link_tuliprox_virtual_id";
 const COPY_LINK_TULIPROX_WEBPLAYER_URL: &str = "copy_link_tuliprox_webplayer_url";
@@ -46,7 +47,7 @@ impl FromStr for ExplorerAction {
         if s.eq(COPY_LINK_TULIPROX_VIRTUAL_ID) {
             Ok(Self::CopyLinkTuliproxVirtualId)
         } else if s.eq(COPY_LINK_TULIPROX_WEBPLAYER_URL) {
-                Ok(Self::CopyLinkTuliproxWebPlayerUrl)
+            Ok(Self::CopyLinkTuliproxWebPlayerUrl)
         } else if s.eq(COPY_LINK_PROVIDER_URL) {
             Ok(Self::CopyLinkProviderUrl)
         } else {
@@ -63,6 +64,7 @@ enum ExplorerLevel {
 #[function_component]
 pub fn PlaylistExplorer() -> Html {
     let context = use_context::<PlaylistExplorerContext>().expect("PlaylistExplorer context not found");
+    let dialog = use_context::<DialogService>().expect("Dialog service not found");
     let translate = use_translation();
     let service_ctx = use_service_context();
     let current_item = use_state(|| ExplorerLevel::Categories);
@@ -111,13 +113,15 @@ pub fn PlaylistExplorer() -> Html {
 
     let copy_to_clipboard: Callback<String> = {
         let clipboard = clipboard.clone();
-        let services = service_ctx.clone();
-        let translate = translate.clone();
+        let dialog = dialog.clone();
         Callback::from(move |text: String| {
             if *clipboard.is_supported {
                 clipboard.write_text(text);
             } else {
-                services.toastr.error(translate.t("MESSAGES.CLIPBOARD_NOT_SUPPORTED"));
+                let dlg = dialog.clone();
+                spawn_local(async move {
+                    let _result = dlg.content(html! {<input value={text}/>}, None, false).await;
+                });
             }
         })
     };
@@ -138,7 +142,7 @@ pub fn PlaylistExplorer() -> Html {
                         }
                     }
                     ExplorerAction::CopyLinkTuliproxWebPlayerUrl => {
-                        if let Some(playlist_request)= playlist_ctx.playlist_request.as_ref() {
+                        if let Some(playlist_request) = playlist_ctx.playlist_request.as_ref() {
                             match playlist_request {
                                 PlaylistRequest::Target(target_id) => {
                                     if let Some(dto) = &*selected_channel {
@@ -225,7 +229,6 @@ pub fn PlaylistExplorer() -> Html {
     };
 
     let render_cluster = |cluster: XtreamCluster, list: &Vec<Rc<UiPlaylistGroup>>| {
-
         list.iter()
             .map(|group| {
                 let group_clone = group.clone();
@@ -245,7 +248,8 @@ pub fn PlaylistExplorer() -> Html {
                     }
                 }
                 { group.title.clone() }</span>
-            }})
+            }
+            })
             .collect::<Html>()
     };
 
@@ -255,7 +259,7 @@ pub fn PlaylistExplorer() -> Html {
                 <NoContent/>
             }
         } else {
-          html! {
+            html! {
             <div class="tp__playlist-explorer__categories">
                 <div class="tp__playlist-explorer__categories-list">
                     { playlist.as_ref()
@@ -282,7 +286,7 @@ pub fn PlaylistExplorer() -> Html {
     let render_channel_logo = |chan: &Rc<CommonPlaylistItem>| {
         let logo = if chan.logo.is_empty() { chan.logo_small.as_str() } else { chan.logo.as_str() };
         if logo.is_empty() {
-           html! {}
+            html! {}
         } else {
             html! { <img alt={"n/a"} src={logo.to_owned()}
                     onerror={Callback::from(move |e: web_sys::Event| {
