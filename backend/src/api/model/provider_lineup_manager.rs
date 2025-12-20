@@ -1,14 +1,16 @@
 use crate::api::model::provider_config::ProviderConfigWrapper;
 use crate::api::model::{EventManager, ProviderConfig, ProviderConfigConnection, ProviderConnectionChangeCallback};
+use crate::model::{is_input_expired, ConfigInput};
 use crate::utils::debug_if_enabled;
-use crate::model::ConfigInput;
 use arc_swap::ArcSwap;
+use dashmap::DashMap;
 use log::{debug, log_enabled};
 use shared::utils::{display_vec, sanitize_sensitive_info};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 macro_rules! gen_provider_search {
     ($fn_name:ident, $field: ident, $crit_type:ty) => {
@@ -45,6 +47,16 @@ macro_rules! gen_provider_search {
     }
 }
 
+fn get_or_create_provider_connection(
+    provider_connections: &DashMap<String, Arc<RwLock<ProviderConfigConnection>>>,
+    provider_name: &str,
+) -> Arc<RwLock<ProviderConfigConnection>> {
+    provider_connections
+        .entry(provider_name.to_string())
+        .or_insert_with(|| Arc::new(RwLock::new(ProviderConfigConnection::default())))
+        .clone()
+}
+
 #[derive(Debug, Clone)]
 pub enum ProviderAllocation {
     Exhausted,
@@ -53,6 +65,14 @@ pub enum ProviderAllocation {
 }
 
 impl ProviderAllocation {
+    pub fn short_key(&self) -> &str {
+        match self {
+            ProviderAllocation::Exhausted => "exhausted",
+            ProviderAllocation::Available(_) => "available",
+            ProviderAllocation::GracePeriod(_) => "grace_period",
+        }
+    }
+
     pub fn new_available(config: Arc<ProviderConfig>) -> Self {
         ProviderAllocation::Available(config)
     }
@@ -165,12 +185,9 @@ struct SingleProviderLineup {
 }
 
 impl SingleProviderLineup {
-    fn new<'a, F>(cfg: &ConfigInput, get_connection: Option<F>, connection_change: &ProviderConnectionChangeCallback) -> Self
-    where
-        F: Fn(&str) -> Option<&'a ProviderConfigConnection>,
-    {
+    fn new(cfg: &ConfigInput, connection: Arc<RwLock<ProviderConfigConnection>>, connection_change: &ProviderConnectionChangeCallback) -> Self {
         Self {
-            provider: ProviderConfigWrapper::new(ProviderConfig::new(cfg, get_connection, Arc::clone(connection_change))),
+            provider: ProviderConfigWrapper::new(ProviderConfig::new(cfg, connection, Arc::clone(connection_change))),
         }
     }
 
@@ -214,41 +231,31 @@ impl fmt::Display for ProviderPriorityGroup {
     }
 }
 
-impl ProviderPriorityGroup {
-    async fn is_exhausted(&self) -> bool {
-        match self {
-            ProviderPriorityGroup::SingleProviderGroup(g) => g.is_exhausted().await,
-            ProviderPriorityGroup::MultiProviderGroup(_, groups) => {
-                for g in groups {
-                    if !g.is_exhausted().await {
-                        return false;
-                    }
-                }
-                true
-            }
-        }
-    }
-}
-
-
 /// Manages multiple providers, ensuring that connections are allocated in a round-robin manner based on priority.
 #[repr(align(64))]
 #[derive(Debug)]
 struct MultiProviderLineup {
     name: String,
     providers: Vec<ProviderPriorityGroup>,
-    index: AtomicUsize,
 }
 
 impl MultiProviderLineup {
-    pub fn new<'a, F>(cfg_input: &ConfigInput, get_connection: Option<F>, connection_change: &ProviderConnectionChangeCallback) -> Self
-    where
-        F: Fn(&str) -> Option<&'a ProviderConfigConnection> + Copy,
-    {
-        let mut inputs = vec![ProviderConfigWrapper::new(ProviderConfig::new(cfg_input, get_connection, Arc::clone(connection_change)))];
+    pub fn new(
+        cfg_input: &ConfigInput,
+        provider_connections: &DashMap<String, Arc<RwLock<ProviderConfigConnection>>>,
+        connection_change: &ProviderConnectionChangeCallback,
+    ) -> Self {
+        let input_connection = get_or_create_provider_connection(provider_connections, cfg_input.name.as_str());
+        let mut inputs = vec![ProviderConfigWrapper::new(ProviderConfig::new(cfg_input, input_connection, Arc::clone(connection_change)))];
         if let Some(aliases) = &cfg_input.aliases {
             for alias in aliases {
-                inputs.push(ProviderConfigWrapper::new(ProviderConfig::new_alias(cfg_input, alias, get_connection, Arc::clone(connection_change))));
+                let alias_connection = get_or_create_provider_connection(provider_connections, alias.name.as_str());
+                inputs.push(ProviderConfigWrapper::new(ProviderConfig::new_alias(
+                    cfg_input,
+                    alias,
+                    alias_connection,
+                    Arc::clone(connection_change),
+                )));
             }
         }
         let mut providers = HashMap::new();
@@ -271,7 +278,6 @@ impl MultiProviderLineup {
         Self {
             name: cfg_input.name.clone(),
             providers,
-            index: AtomicUsize::new(0),
         }
     }
 
@@ -312,6 +318,16 @@ impl MultiProviderLineup {
             }
             ProviderPriorityGroup::MultiProviderGroup(index, pg) => {
                 let provider_count = pg.len();
+                if grace {
+                    for p in pg {
+                        let result = p.try_allocate(true, grace_period_timeout_secs).await;
+                        if !matches!(result, ProviderAllocation::Exhausted) {
+                            return result;
+                        }
+                    }
+                    return ProviderAllocation::Exhausted;
+                }
+
                 let start = index.fetch_add(1, Ordering::AcqRel) % provider_count;
                 let mut idx = start;
 
@@ -396,72 +412,50 @@ impl MultiProviderLineup {
     /// }
     /// ```
     async fn acquire(&self, with_grace: bool, grace_period_timeout_secs: u64) -> ProviderAllocation {
-        let provider_count = self.providers.len();
-        let start = self.index.fetch_add(1, Ordering::AcqRel) % provider_count;
-        let mut idx = start;
-
-        loop {
-            let priority_group = &self.providers[idx];
-            let allocation = {
-                let without_grace_allocation = Self::acquire_next_provider_from_group(priority_group, false, grace_period_timeout_secs).await;
-
-                if with_grace && matches!(without_grace_allocation, ProviderAllocation::Exhausted) {
-                    Self::acquire_next_provider_from_group(priority_group, true, grace_period_timeout_secs).await
-                } else {
-                    without_grace_allocation
-                }
-            };
-
+        // Phase 1: prefer providers with available capacity (no grace allocations),
+        // scanning priority groups from highest -> lowest.
+        for priority_group in &self.providers {
+            let allocation =
+                Self::acquire_next_provider_from_group(priority_group, false, grace_period_timeout_secs).await;
             if !matches!(allocation, ProviderAllocation::Exhausted) {
-                if priority_group.is_exhausted().await {
-                    self.index.store((idx + 1) % provider_count, Ordering::Release);
-                }
                 return allocation;
-            }
-
-            idx = (idx + 1) % provider_count;
-
-            // loop end
-            if idx == start {
-                break;
             }
         }
 
+        if !with_grace {
+            return ProviderAllocation::Exhausted;
+        }
+
+        // Phase 2: all providers are at capacity, allow grace allocations (still respecting priority order).
+        for priority_group in &self.providers {
+            let allocation =
+                Self::acquire_next_provider_from_group(priority_group, true, grace_period_timeout_secs).await;
+            if !matches!(allocation, ProviderAllocation::Exhausted) {
+                return allocation;
+            }
+        }
 
         ProviderAllocation::Exhausted
     }
 
     // it intended to use with redirects to cycle through provider
     async fn get_next(&self, grace_period_timeout_secs: u64) -> Option<Arc<ProviderConfig>> {
-        let provider_count = self.providers.len();
-
-        let start = self.index.fetch_add(1, Ordering::AcqRel) % provider_count;
-        let mut idx = start;
-
-        loop {
-            let priority_group = &self.providers[idx];
-
-            let allocation = {
-                let config = Self::get_next_provider_from_group(priority_group, false, grace_period_timeout_secs).await;
-                if config.is_none() {
-                    Self::get_next_provider_from_group(priority_group, true, grace_period_timeout_secs).await
-                } else {
-                    config
-                }
-            };
-
-            if let Some(config) = allocation {
-                if priority_group.is_exhausted().await {
-                    self.index.store((idx + 1) % provider_count, Ordering::Release);
-                }
+        // Phase 1: prefer providers with available capacity (no grace allocations),
+        // scanning priority groups from highest -> lowest.
+        for priority_group in &self.providers {
+            if let Some(config) =
+                Self::get_next_provider_from_group(priority_group, false, grace_period_timeout_secs).await
+            {
                 return Some(config);
             }
+        }
 
-            idx = (idx + 1) % provider_count;
-
-            // loop end
-            if idx == start {
-                break;
+        // Phase 2: no provider is available, allow grace.
+        for priority_group in &self.providers {
+            if let Some(config) =
+                Self::get_next_provider_from_group(priority_group, true, grace_period_timeout_secs).await
+            {
+                return Some(config);
             }
         }
 
@@ -510,40 +504,47 @@ impl MultiProviderLineup {
     }
 }
 
-
 pub(in crate::api::model) struct ProviderLineupManager {
     grace_period_millis: AtomicU64,
     grace_period_timeout_secs: AtomicU64,
     inputs: Arc<ArcSwap<Vec<Arc<ConfigInput>>>>,
     providers: Arc<ArcSwap<Vec<ProviderLineup>>>,
+    provider_connections: DashMap<String, Arc<RwLock<ProviderConfigConnection>>>,
     event_manager: Arc<EventManager>,
 }
 
 impl ProviderLineupManager {
     pub fn new(inputs: Vec<Arc<ConfigInput>>, grace_period_millis: u64, grace_period_timeout_secs: u64, event_manager: &Arc<EventManager>) -> Self {
-        let lineups = inputs.iter().map(|i| Self::create_lineup(i, None, event_manager)).collect();
+        let provider_connections: DashMap<String, Arc<RwLock<ProviderConfigConnection>>> = DashMap::new();
+        let lineups = inputs
+            .iter()
+            .map(|i| Self::create_lineup(i, &provider_connections, event_manager))
+            .collect();
         Self {
             grace_period_millis: AtomicU64::new(grace_period_millis),
             grace_period_timeout_secs: AtomicU64::new(grace_period_timeout_secs),
             inputs: Arc::new(ArcSwap::from_pointee(inputs)),
             providers: Arc::new(ArcSwap::from_pointee(lineups)),
+            provider_connections,
             event_manager: Arc::clone(event_manager),
         }
     }
 
-    fn create_lineup(cfg_input: &ConfigInput, provider_connections: Option<&HashMap<&str, ProviderConfigConnection>>, event_manager: &Arc<EventManager>) -> ProviderLineup {
-        let get_connections = provider_connections.map(|c| |name: &str| c.get(name));
-
-        //let cfg_name = cfg_input.name.clone();
+    fn create_lineup(
+        cfg_input: &ConfigInput,
+        provider_connections: &DashMap<String, Arc<RwLock<ProviderConfigConnection>>>,
+        event_manager: &Arc<EventManager>,
+    ) -> ProviderLineup {
         let event_manager = Arc::clone(event_manager);
         let on_connection_change: ProviderConnectionChangeCallback = Arc::new(move |name: &str, connections: usize| {
             event_manager.send_provider_event(name, connections);
         });
 
         if cfg_input.aliases.as_ref().is_some_and(|a| !a.is_empty()) {
-            ProviderLineup::Multi(MultiProviderLineup::new(cfg_input, get_connections, &on_connection_change))
+            ProviderLineup::Multi(MultiProviderLineup::new(cfg_input, provider_connections, &on_connection_change))
         } else {
-            ProviderLineup::Single(SingleProviderLineup::new(cfg_input, get_connections, &on_connection_change))
+            let connection = get_or_create_provider_connection(provider_connections, cfg_input.name.as_str());
+            ProviderLineup::Single(SingleProviderLineup::new(cfg_input, connection, &on_connection_change))
         }
     }
 
@@ -607,7 +608,7 @@ impl ProviderLineupManager {
         false
     }
 
-    pub async fn update_config(&self, new_inputs: Vec<Arc<ConfigInput>>, grace_period_millis: u64, grace_period_timeout_secs: u64) {
+    pub fn update_config(&self, new_inputs: Vec<Arc<ConfigInput>>, grace_period_millis: u64, grace_period_timeout_secs: u64) {
         self.grace_period_millis.store(grace_period_millis, Ordering::Relaxed);
         self.grace_period_timeout_secs.store(grace_period_timeout_secs, Ordering::Relaxed);
 
@@ -615,34 +616,9 @@ impl ProviderLineupManager {
             return;
         }
 
-        let old_lineups = self.providers.load();
-        let mut provider_connections = HashMap::new();
-        for lineup in old_lineups.iter() {
-            match lineup {
-                ProviderLineup::Single(single) => {
-                    provider_connections.insert(single.provider.name.as_str(), single.provider.get_connection_info().await);
-                }
-                ProviderLineup::Multi(multi) => {
-                    for group in &multi.providers {
-                        match group {
-                            ProviderPriorityGroup::SingleProviderGroup(cfg) => {
-                                provider_connections.insert(cfg.name.as_str(), cfg.get_connection_info().await);
-                            }
-                            ProviderPriorityGroup::MultiProviderGroup(_, cfgs) => {
-                                for cfg in cfgs {
-                                    provider_connections.insert(cfg.name.as_str(), cfg.get_connection_info().await);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         let mut new_lineups: Vec<ProviderLineup> = Vec::with_capacity(new_inputs.len());
-        let connections = Some(provider_connections);
         for input in &new_inputs {
-            new_lineups.push(Self::create_lineup(input, connections.as_ref(), &self.event_manager));
+            new_lineups.push(Self::create_lineup(input, &self.provider_connections, &self.event_manager));
         }
 
         debug_if_enabled!("inputs {}", sanitize_sensitive_info(&display_vec(&new_inputs)));
@@ -656,13 +632,17 @@ impl ProviderLineupManager {
 
 
     fn log_allocation(allocation: &ProviderAllocation) {
-        if log_enabled!(log::Level::Debug) {
-            match allocation {
-                ProviderAllocation::Exhausted => {}
-                ProviderAllocation::Available(ref cfg) |
-                ProviderAllocation::GracePeriod(ref cfg) => {
-                    debug!("Using provider {}", cfg.name);
-                }
+        match allocation {
+            ProviderAllocation::Exhausted => {}
+            ProviderAllocation::Available(ref cfg) | ProviderAllocation::GracePeriod(ref cfg) => {
+                debug_if_enabled!(
+                    "Using provider {} (pool user: {}, max_connections: {})",
+                    sanitize_sensitive_info(&cfg.name),
+                    cfg.get_user_info()
+                        .map_or_else(|| "?".to_string(), |ui| sanitize_sensitive_info(&ui.username).to_string())
+                    ,
+                    cfg.max_connections()
+                );
             }
         }
     }
@@ -679,14 +659,76 @@ impl ProviderLineupManager {
 
     // Returns the next available provider connection
     pub(crate) async fn acquire_connection(&self, input_name: &str) -> ProviderAllocation {
+        self.acquire_connection_with_grace_override(input_name, true).await
+    }
+
+    /// Acquire a provider connection, optionally allowing provider-side grace allocations.
+    ///
+    /// When `allow_grace` is `false`, the lineup will not allocate providers in `GracePeriod`,
+    /// even if a global grace period is configured.
+    pub(crate) async fn acquire_connection_with_grace_override(
+        &self,
+        input_name: &str,
+        allow_grace: bool,
+    ) -> ProviderAllocation {
         let providers = self.providers.load();
-        let allocation = match Self::get_provider_config_by_name(input_name, &providers) {
+        let lineup_opt = Self::get_provider_config_by_name(input_name, &providers);
+        let with_grace = allow_grace && self.grace_period_millis.load(Ordering::Acquire) > 0;
+        let allocation = match lineup_opt {
             None => ProviderAllocation::Exhausted, // No Name matched, we don't have this provider
-            Some((lineup, _config)) => lineup.acquire(self.grace_period_millis.load(Ordering::Acquire) > 0,
-                                                      self.grace_period_timeout_secs.load(Ordering::Acquire)).await
+            Some((lineup, _config)) => {
+                lineup
+                    .acquire(with_grace, self.grace_period_timeout_secs.load(Ordering::Acquire))
+                    .await
+            }
         };
+        if matches!(allocation, ProviderAllocation::Exhausted) {
+            if let Some((lineup, _cfg)) = lineup_opt {
+                Self::log_exhausted_pool_snapshot(input_name, lineup).await;
+            }
+        }
         Self::log_allocation(&allocation);
         allocation
+    }
+
+    async fn log_exhausted_pool_snapshot(input_name: &str, lineup: &ProviderLineup) {
+        if !log_enabled!(log::Level::Debug) {
+            return;
+        }
+
+        let mut entries: Vec<String> = Vec::new();
+        match lineup {
+            ProviderLineup::Single(single) => {
+                entries.push(Self::format_provider_snapshot_entry(&single.provider).await);
+            }
+            ProviderLineup::Multi(multi) => {
+                for group in &multi.providers {
+                    match group {
+                        ProviderPriorityGroup::SingleProviderGroup(cfg) => {
+                            entries.push(Self::format_provider_snapshot_entry(cfg).await);
+                        }
+                        ProviderPriorityGroup::MultiProviderGroup(_, cfgs) => {
+                            for cfg in cfgs {
+                                entries.push(Self::format_provider_snapshot_entry(cfg).await);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        debug_if_enabled!(
+            "Provider pool exhausted for input {} (pool_snapshot=[{}])",
+            sanitize_sensitive_info(input_name),
+            sanitize_sensitive_info(&entries.join(", "))
+        );
+    }
+
+    async fn format_provider_snapshot_entry(cfg: &ProviderConfigWrapper) -> String {
+        let current = cfg.get_current_connections().await;
+        let max = cfg.max_connections();
+        let expired = is_input_expired(cfg.exp_date());
+        format!("{}:{}/{} expired={expired}", cfg.name, current, max)
     }
 
     // This method is used for redirects to cycle through provider
@@ -823,6 +865,7 @@ mod tests {
             staged: None,
             exp_date: None,
             t_batch_url: None,
+            panel_api: None,
         }
     }
 
@@ -853,9 +896,9 @@ mod tests {
         input.aliases = Some(vec![alias]);
 
         let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
-        let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
+        let provider_connections: DashMap<String, Arc<RwLock<ProviderConfigConnection>>> = DashMap::new();
         // Create MultiProviderLineup with the provider and alias
-        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_callback);
+        let lineup = MultiProviderLineup::new(&input, &provider_connections, &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Test that the alias provider is available
@@ -878,8 +921,8 @@ mod tests {
         // Adding alias with different priority
         input.aliases = Some(vec![alias]);
         let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
-        let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_callback);
+        let provider_connections: DashMap<String, Arc<RwLock<ProviderConfigConnection>>> = DashMap::new();
+        let lineup = MultiProviderLineup::new(&input, &provider_connections, &change_callback);
         // The alias has a higher priority, so the alias should be acquired first
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
@@ -900,8 +943,8 @@ mod tests {
         // Adding multiple aliases
         input.aliases = Some(vec![alias1, alias2]);
         let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
-        let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_callback);
+        let provider_connections: DashMap<String, Arc<RwLock<ProviderConfigConnection>>> = DashMap::new();
+        let lineup = MultiProviderLineup::new(&input, &provider_connections, &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // The alias with priority 0 should be acquired first (higher priority)
@@ -931,8 +974,8 @@ mod tests {
         // Adding alias
         input.aliases = Some(vec![alias1, alias2]);
         let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
-        let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = MultiProviderLineup::new(&input, Some(dummy_get_connection), &change_callback);
+        let provider_connections: DashMap<String, Arc<RwLock<ProviderConfigConnection>>> = DashMap::new();
+        let lineup = MultiProviderLineup::new(&input, &provider_connections, &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Acquire connection from alias2
@@ -959,8 +1002,9 @@ mod tests {
     fn test_acquire_when_capacity_available() {
         let cfg = create_config_input(1, "provider5_1", 1, 2);
         let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
-        let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_callback);
+        let provider_connections: DashMap<String, Arc<RwLock<ProviderConfigConnection>>> = DashMap::new();
+        let connection = get_or_create_provider_connection(&provider_connections, cfg.name.as_str());
+        let lineup = SingleProviderLineup::new(&cfg, connection, &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // First acquire attempt should succeed
@@ -980,9 +1024,9 @@ mod tests {
     fn test_release_connection() {
         let cfg = create_config_input(1, "provider7_1", 1, 2);
         let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
-        let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-
-        let lineup = SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_callback);
+        let provider_connections: DashMap<String, Arc<RwLock<ProviderConfigConnection>>> = DashMap::new();
+        let connection = get_or_create_provider_connection(&provider_connections, cfg.name.as_str());
+        let lineup = SingleProviderLineup::new(&cfg, connection, &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Acquire two connections
@@ -1011,8 +1055,8 @@ mod tests {
 
         // Create MultiProviderLineup with the provider and alias
         let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
-        let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = MultiProviderLineup::new(&cfg1, Some(dummy_get_connection), &change_callback);
+        let provider_connections: DashMap<String, Arc<RwLock<ProviderConfigConnection>>> = DashMap::new();
+        let lineup = MultiProviderLineup::new(&cfg1, &provider_connections, &change_callback);
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             // Test acquiring the first provider
@@ -1044,8 +1088,9 @@ mod tests {
     fn test_concurrent_acquire() {
         let cfg = create_config_input(1, "provider9_1", 1, 2);
         let change_callback: ProviderConnectionChangeCallback = Arc::new(dummy_callback);
-        let dummy_get_connection = |_s: &str| -> Option<&ProviderConfigConnection> { None };
-        let lineup = Arc::new(SingleProviderLineup::new(&cfg, Some(dummy_get_connection), &change_callback));
+        let provider_connections: DashMap<String, Arc<RwLock<ProviderConfigConnection>>> = DashMap::new();
+        let connection = get_or_create_provider_connection(&provider_connections, cfg.name.as_str());
+        let lineup = Arc::new(SingleProviderLineup::new(&cfg, connection, &change_callback));
 
         let available_count = Arc::new(AtomicU16::new(2));
         let grace_period_count = Arc::new(AtomicU16::new(1));

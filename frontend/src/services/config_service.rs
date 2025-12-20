@@ -1,6 +1,6 @@
 use crate::model::WebConfig;
 use crate::services::{get_base_href, request_get, request_post, EventService};
-use shared::model::{AppConfigDto, ConfigDto, ConfigInputDto, IpCheckDto, LibraryScanRequest, TargetOutputDto};
+use shared::model::{AppConfigDto, ConfigDto, ConfigInputDto, IpCheckDto, LibraryScanRequest,  SourcesConfigDto, TargetOutputDto};
 use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
@@ -19,6 +19,7 @@ pub struct ConfigService {
     config_channel: Mutable<Option<Rc<AppConfigDto>>>,
     is_fetching: AtomicBool,
     config_path: String,
+    sources_path: String,
     ip_check_path: String,
     batch_input_content_path: String,
     geoip_path: String,
@@ -29,12 +30,14 @@ pub struct ConfigService {
 impl ConfigService {
     pub fn new(config: &WebConfig, event_service: Rc<EventService>) -> Self {
         let base_href = get_base_href();
+        let config_path = concat_path_leading_slash(&base_href, "api/v1/config");
         Self {
             ui_config: Rc::new(config.clone()),
             server_config: RefCell::new(None),
             config_channel: Mutable::new(None),
             is_fetching: AtomicBool::new(false),
-            config_path: concat_path_leading_slash(&base_href, "api/v1/config"),
+            config_path: config_path.clone(),
+            sources_path: concat_path(&config_path, "sources"),
             ip_check_path: concat_path_leading_slash(&base_href, "api/v1/ipinfo"),
             batch_input_content_path: concat_path_leading_slash(&base_href, "api/v1/config/batchContent"),
             geoip_path: concat_path_leading_slash(&base_href, "api/v1/geoip/update"),
@@ -138,6 +141,21 @@ impl ConfigService {
                 self.event_service.set_config_change_message_blocked(false);
                 Ok(())
             },
+            Err(err) => {
+                self.event_service.set_config_change_message_blocked(false);
+                error!("{err}");
+                Err(err)
+            }
+        }
+    }
+
+    pub async fn save_sources(&self, dto: SourcesConfigDto) -> Result<(), Error> {
+        self.event_service.set_config_change_message_blocked(true);
+        match request_post::<SourcesConfigDto, ()>(&self.sources_path, dto, None, None).await {
+            Ok(_) => {
+                self.event_service.set_config_change_message_blocked(false);
+                Ok(())
+            }
             Err(err) => {
                 self.event_service.set_config_change_message_blocked(false);
                 error!("{err}");

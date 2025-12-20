@@ -1,6 +1,6 @@
 use shared::error::TuliproxError;
 use shared::info_err;
-use shared::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MainConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, SchedulesConfigDto, VideoConfigDto, WebUiConfigDto};
+use shared::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LogConfigDto, MainConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, SchedulesConfigDto, SourcesConfigDto, VideoConfigDto, WebUiConfigDto};
 use std::fmt;
 use std::str::FromStr;
 
@@ -15,6 +15,7 @@ pub const LABEL_HDHOMERUN_CONFIG: &str = "LABEL.HDHOMERUN_CONFIG";
 pub const LABEL_PROXY_CONFIG: &str = "LABEL.PROXY";
 pub const LABEL_IP_CHECK_CONFIG: &str = "LABEL.IP_CHECK";
 pub const LABEL_VIDEO_CONFIG: &str = "LABEL.VIDEO";
+pub const LABEL_PANEL_CONFIG: &str = "LABEL.PANEL";
 
 const MAIN_PAGE: &str = "main";
 const API_PAGE: &str = "api";
@@ -27,6 +28,7 @@ const HDHOMERUN_PAGE: &str = "hdhomerun";
 const PROXY_PAGE: &str = "proxy";
 const IPCHECK_PAGE: &str = "ipcheck";
 const VIDEO_PAGE: &str = "video";
+const PANEL_PAGE: &str = "panel";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum ConfigPage {
@@ -41,6 +43,7 @@ pub enum ConfigPage {
     HdHomerun,
     Proxy,
     IpCheck,
+    Panel,
 }
 
 impl FromStr for ConfigPage {
@@ -59,6 +62,7 @@ impl FromStr for ConfigPage {
             HDHOMERUN_PAGE => Ok(ConfigPage::HdHomerun),
             PROXY_PAGE => Ok(ConfigPage::Proxy),
             IPCHECK_PAGE => Ok(ConfigPage::IpCheck),
+            PANEL_PAGE => Ok(ConfigPage::Panel),
             _ => Err(info_err!(format!("Unknown config page: {s}"))),
         }
     }
@@ -78,6 +82,7 @@ impl fmt::Display for ConfigPage {
             ConfigPage::HdHomerun => HDHOMERUN_PAGE,
             ConfigPage::Proxy => PROXY_PAGE,
             ConfigPage::IpCheck => IPCHECK_PAGE,
+            ConfigPage::Panel => PANEL_PAGE,
         };
         write!(f, "{s}")
     }
@@ -96,6 +101,7 @@ pub enum ConfigForm {
     HdHomerun(bool, HdHomeRunConfigDto),
     Proxy(bool, ProxyConfigDto),
     IpCheck(bool, IpCheckConfigDto),
+    Panel(bool, SourcesConfigDto),
 }
 
 impl ConfigForm {
@@ -110,6 +116,7 @@ impl ConfigForm {
               | ConfigForm::ReverseProxy(true, _)
               | ConfigForm::HdHomerun(true, _)
               | ConfigForm::Proxy(true, _)
-              | ConfigForm::IpCheck(true, _))
+              | ConfigForm::IpCheck(true, _)
+              | ConfigForm::Panel(true, _))
     }
 }
