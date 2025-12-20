@@ -789,7 +789,7 @@ Each input has the following attributes:
 - `username` only mandatory for type `xtream`
 - `password` only mandatory for type `xtream`
 - `panel_api` _optional_ for provider panel api operations
-- `exp_date` optional, i a date as "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12` or Unix timestamp (seconds since epoch)
+- `exp_date` optional, is a date as "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12` or Unix timestamp (seconds since epoch)
 - `options` is optional,
   + `xtream_skip_live` true or false, live section can be skipped.
   + `xtream_skip_vod` true or false, vod section can be skipped.
@@ -977,6 +977,8 @@ If provider connections are exhausted, tuliprox can optionally call a provider p
 - renew expired accounts first (based on `exp_date`)
 - otherwise create a new alias account and persist it
 
+**Important!** Panel api accounts are not considering unlimited provider access!
+
 The API is configured generically via predefined query parameters; only `type: m3u` is supported.
 
 Use the literal value `auto` to fill sensitive values at runtime:
@@ -1001,13 +1003,13 @@ Tuliprox evaluates Panel API responses as JSON with the following logic, dependi
 
 `client_new (create alias)`
 
--	Require `status: true`.
--	Attempt to extract credentials directly from the JSON response:
-     - username
-     - password
--	If one or both fields are missing, tuliprox attempts a fallback extraction from a URL contained in the JSON:
-     -	If the JSON contains a url field, tuliprox parses it and tries to extract username/password from it (e.g., query string or embedded credentials depending on the provider’s URL format).
--	If credentials cannot be derived from either the direct fields or the url fallback, the operation is treated as failed and no alias is persisted.
+- Require `status: true`.
+- Attempt to extract credentials directly from the JSON response:
+  - username
+  - password
+- If one or both fields are missing, tuliprox attempts a fallback extraction from a URL contained in the JSON:
+  - If the JSON contains a url field, tuliprox parses it and tries to extract username/password from it (e.g., query string or embedded credentials depending on the provider’s URL format).
+- If credentials cannot be derived from either the direct fields or the url fallback, the operation is treated as failed and no alias is persisted.
 
 `client_renew (renew existing account)`
 
@@ -1106,7 +1108,6 @@ Channels within the `Freetv` group are first sorted by `quality` (as matched by 
 
 To sort by specific parts of the content, use named capture groups such as `c1`, `c2`, `c3`, etc.
 The numeric suffix indicates the priority: `c1` is evaluated first, followed by `c2`, and so on.
-
 
 ### 2.2.2.2 `output`
 

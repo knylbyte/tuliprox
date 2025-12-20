@@ -1,7 +1,7 @@
 use crate::api::model::AppState;
 use crate::model::{ConfigInput, is_input_expired, PanelApiQueryParam, PanelApiConfig};
-use crate::utils::debug_if_enabled;
-use crate::utils::{format_sources_yaml_panel_api_query_params_flow_style, get_csv_file_path};
+use crate::utils::{debug_if_enabled, save_sources_config};
+use crate::utils::{get_csv_file_path};
 use log::{debug, error, warn};
 use serde_json::Value;
 use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
@@ -289,7 +289,9 @@ fn collect_expired_accounts(input: &ConfigInput) -> Vec<AccountCredentials> {
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn patch_source_yml_add_alias(
+    app_state: &Arc<AppState>,
     source_file_path: &Path,
     input_name: &str,
     alias_name: &str,
@@ -370,11 +372,12 @@ async fn patch_source_yml_add_alias(
     }
     alias_seq.push(serde_yaml::Value::Mapping(alias_map));
 
-    persist_source_config(source_file_path, &doc).await?;
+    persist_source_config(app_state, source_file_path, &doc).await?;
     Ok(())
 }
 
 async fn patch_source_yml_update_exp_date(
+    app_state: &Arc<AppState>,
     source_file_path: &Path,
     input_name: &str,
     account_name: &str,
@@ -425,24 +428,20 @@ async fn patch_source_yml_update_exp_date(
                     }
                 }
             }
-            persist_source_config(source_file_path, &doc).await?;
+            persist_source_config(app_state, source_file_path, &doc).await?;
             return Ok(());
         }
     }
     create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml")
 }
 
-async fn persist_source_config(source_file_path: &Path, doc: &serde_yaml::Value) -> Result<(), TuliproxError> {
+async fn persist_source_config(app_state: &Arc<AppState>, source_file_path: &Path, doc: &serde_yaml::Value) -> Result<(), TuliproxError> {
 
-    // TODO write backup!! Why not user ConfigFiles::save_sources_config
-
-    let serialized = serde_yaml::to_string(&doc)
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
-    let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
-    tokio::fs::write(source_file_path, serialized)
-        .await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
-    Ok(())
+    let paths = app_state.app_config.paths.load();
+    let source_file = paths.sources_file_path.as_str();
+    let config = app_state.app_config.config.load();
+    let backup_dir = config.get_backup_dir();
+    save_sources_config(source_file_path.to_str().unwrap_or(source_file), &backup_dir, &doc).await
 }
 
 async fn patch_batch_csv_append(
@@ -608,7 +607,7 @@ async fn try_renew_expired_account(
                         }
                     } else {
                         let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
-                        if let Err(err) = patch_source_yml_update_exp_date(sources_path, &input.name, &acct.name, new_exp).await {
+                        if let Err(err) = patch_source_yml_update_exp_date(app_state, sources_path, &input.name, &acct.name, new_exp).await {
                             debug_if_enabled!("panel_api failed to persist renew exp_date to source.yml: {}", err);
                         }
                     }
@@ -683,7 +682,7 @@ async fn try_create_new_account(
             } else {
                 let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
                 if let Err(err) =
-                    patch_source_yml_add_alias(sources_path, &input.name, &alias_name, &base_url, &username, &password, exp_date).await
+                    patch_source_yml_add_alias(app_state, sources_path, &input.name, &alias_name, &base_url, &username, &password, exp_date).await
                 {
                     warn!("panel_api failed to persist new alias to source.yml: {err}");
                     return false;
@@ -811,7 +810,7 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
                     }
                 } else {
                     let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                    if let Err(err) = patch_source_yml_update_exp_date(&sources_path, &input.name, &acct.name, new_exp).await {
+                    if let Err(err) = patch_source_yml_update_exp_date(app_state, &sources_path, &input.name, &acct.name, new_exp).await {
                         debug_if_enabled!("panel_api boot sync failed to persist exp_date to source.yml: {}", err);
                         continue;
                     }
@@ -830,11 +829,4 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
 
 async fn reload_sources(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
     ConfigFile::load_sources(app_state).await
-    // let paths = app_state.app_config.paths.load();
-    // let sources_file = paths.sources_file_path.as_str();
-    // let dto = read_sources_file(sources_file, true, true, None)?;
-    // let sources = crate::model::SourcesConfig::try_from(&dto)?;
-    // app_state.app_config.set_sources(sources)?;
-    // app_state.active_provider.update_config(&app_state.app_config).await;
-    // Ok(())
 }

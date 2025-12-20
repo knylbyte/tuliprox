@@ -65,6 +65,7 @@ pub fn apply_favourites_to_playlist(
     _playlist: &mut [PlaylistGroup],
     _favourites_cfg: Option<&[ConfigFavourites]>,
 ) {
+    // TODO implement favourites
     // if let Some(favourites) = favourites_cfg {
     //     let mut fav_groups: HashMap<String, Vec<PlaylistItem>> = HashMap::new();
     //

@@ -1,24 +1,24 @@
-use crate::api::model::{AppState, ConnectionManager, CustomVideoStreamType, ProviderHandle, StreamDetails};
 use crate::api::model::BoxedProviderStream;
 use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
 use crate::api::model::TransportStreamBuffer;
-use crate::utils::debug_if_enabled;
+use crate::api::model::{AppState, ConnectionManager, CustomVideoStreamType, ProviderHandle, StreamDetails};
+use crate::auth::Fingerprint;
 use crate::model::ProxyUserCredentials;
+use crate::utils::debug_if_enabled;
+use axum::http::header::USER_AGENT;
+use axum::http::HeaderMap;
 use bytes::Bytes;
+use futures::task::AtomicWaker;
 use futures::Stream;
 use futures::StreamExt;
 use log::{error, info};
 use shared::model::{StreamChannel, UserConnectionPermission};
+use shared::utils::sanitize_sensitive_info;
 use std::pin::Pin;
 use std::sync::atomic::AtomicU8;
-use std::sync::{Arc};
-use std::task::{Poll};
-use axum::http::header::USER_AGENT;
-use axum::http::HeaderMap;
-use futures::task::AtomicWaker;
-use shared::utils::sanitize_sensitive_info;
-use crate::auth::Fingerprint;
+use std::sync::Arc;
+use std::task::Poll;
 
 const INNER_STREAM: u8 = 0_u8;
 const USER_EXHAUSTED_STREAM: u8 = 1_u8;
@@ -34,19 +34,19 @@ pub(in crate::api) struct ActiveClientStream {
     waker: Option<Arc<AtomicWaker>>,
     connection_manager: Arc<ConnectionManager>,
     fingerprint: Arc<Fingerprint>,
+    provider_stopped: bool,
 }
 
 impl ActiveClientStream {
-
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn new(mut stream_details: StreamDetails,
-                      app_state: &Arc<AppState>,
-                      user: &ProxyUserCredentials,
-                      connection_permission: UserConnectionPermission,
-                      fingerprint: &Fingerprint,
-                      stream_channel: StreamChannel,
-                      session_token: Option<&str>,
-                      req_headers: &HeaderMap) -> Self {
+                            app_state: &Arc<AppState>,
+                            user: &ProxyUserCredentials,
+                            connection_permission: UserConnectionPermission,
+                            fingerprint: &Fingerprint,
+                            stream_channel: StreamChannel,
+                            session_token: Option<&str>,
+                            req_headers: &HeaderMap) -> Self {
         if connection_permission == UserConnectionPermission::Exhausted {
             error!("Something is wrong this should not happen");
         }
@@ -58,14 +58,19 @@ impl ActiveClientStream {
 
         let virtual_id = stream_channel.virtual_id;
         app_state.connection_manager.update_connection(username, user.max_connections, fingerprint, &provider_name, stream_channel, user_agent, session_token).await;
-        if let Some((_,_,_m_, Some(cvt))) = stream_details.stream_info.as_ref() {
+        if let Some((_, _, _m_, Some(cvt))) = stream_details.stream_info.as_ref() {
             app_state.connection_manager.update_stream_detail(&fingerprint.addr, *cvt).await;
         }
         let cfg = &app_state.app_config;
-        let waker = Arc::new(AtomicWaker::new());
-        let grace_stop_flag =
-            Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, fingerprint, Some(Arc::clone(&waker)));
-        let waker = if grace_stop_flag.is_some() { Some(waker) } else { None };
+        let (grace_stop_flag, waker) = if grant_user_grace_period || (stream_details.has_grace_period() && stream_details.provider_name.is_some()) {
+            let waker = Arc::new(AtomicWaker::new());
+            let flag = Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, fingerprint, Some(Arc::clone(&waker)));
+            let maybe_waker = flag.as_ref().map(|_| waker);
+            (flag, maybe_waker)
+        } else {
+            (Self::stream_grace_period(app_state, &stream_details, grant_user_grace_period, user, fingerprint, None), None)
+        };
+
         let custom_response = cfg.custom_stream_response.load();
         let custom_video = custom_response.as_ref()
             .map_or((None, None, None), |c|
@@ -105,6 +110,7 @@ impl ActiveClientStream {
             waker,
             connection_manager: Arc::clone(&app_state.connection_manager),
             fingerprint: Arc::new(fingerprint.clone()),
+            provider_stopped: false,
         }
     }
 
@@ -174,7 +180,7 @@ impl ActiveClientStream {
 
                 if updated {
                     if let Some(flag) = reconnect_flag {
-                         flag.notify();
+                        flag.notify();
                     }
                 }
 
@@ -187,20 +193,23 @@ impl ActiveClientStream {
         None
     }
 
-    fn stop_provider_stream(&mut self) {
+    fn stop_provider_stream(&mut self, unavailable: bool) {
+        self.provider_stopped = true;
         if self.provider_handle.is_some() {
             let mgr = Arc::clone(&self.connection_manager);
             let handle = self.provider_handle.take();
 
-            if let Some(flag) = &self.send_custom_stream_flag {
-                flag.store(CHANNEL_UNAVAILABLE_STREAM, std::sync::atomic::Ordering::Release);
+            if unavailable {
+                if let Some(flag) = &self.send_custom_stream_flag {
+                    flag.store(CHANNEL_UNAVAILABLE_STREAM, std::sync::atomic::Ordering::Release);
+                }
             }
 
             let con_man = Arc::clone(&self.connection_manager);
             let addr = self.fingerprint.addr;
             self.inner = futures::stream::empty::<Result<Bytes, StreamError>>().boxed();
             tokio::spawn(async move {
-                con_man.update_stream_detail(&addr, CustomVideoStreamType::UserConnectionsExhausted).await;
+                con_man.update_stream_detail(&addr, if unavailable { CustomVideoStreamType::ChannelUnavailable } else { CustomVideoStreamType::UserConnectionsExhausted }).await;
                 debug_if_enabled!("Provider stream stopped due to grace period or unavailable provider channel for {}", sanitize_sensitive_info(&addr.to_string()));
                 mgr.release_provider_handle(handle).await;
             });
@@ -225,18 +234,19 @@ impl Stream for ActiveClientStream {
             match Pin::new(&mut self.inner).poll_next(cx) {
                 Poll::Ready(Some(Err(e))) => {
                     error!("Inner stream error: {e:?}");
-                    self.stop_provider_stream();
+                    self.stop_provider_stream(true);
                     return Poll::Ready(Some(Err(e)));
                 }
                 Poll::Ready(None) => {
-                    self.stop_provider_stream();
+                    self.stop_provider_stream(true);
                     return Poll::Ready(None);
                 }
                 healthy => return healthy,
             }
         }
-
-        self.stop_provider_stream();
+        if !self.provider_stopped {
+           self.stop_provider_stream(false);
+        }
 
         let buffer_opt = match flag {
             USER_EXHAUSTED_STREAM => {
@@ -252,10 +262,11 @@ impl Stream for ActiveClientStream {
         };
 
         if let Some(buffer) = buffer_opt {
-            return Poll::Ready(Some(Ok(buffer.next_chunk())));
+            Poll::Ready(Some(Ok(buffer.next_chunk())))
+        } else {
+            // At this point it should be the empty stream
+            Pin::new(&mut self.inner).poll_next(cx)
         }
-
-        Poll::Ready(None)
     }
 }
 

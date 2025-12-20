@@ -172,6 +172,9 @@ impl From<&PanelApiConfig> for PanelApiConfigDto {
 
 impl PanelApiConfig {
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {
+        if !self.enabled {
+            return Ok(());
+        }
         if self.url.trim().is_empty() {
             return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: url is missing");
         }

@@ -519,7 +519,10 @@ pub async fn save_main_config(file_path: &str, backup_dir: &str, config: &Config
     write_config_file(file_path, backup_dir, config, "config.yml", None).await
 }
 
-pub async fn save_sources_config(file_path: &str, backup_dir: &str, config: &SourcesConfigDto) -> Result<(), TuliproxError> {
+pub async fn save_sources_config<T>(file_path: &str, backup_dir: &str, config: &T) -> Result<(), TuliproxError>
+where
+    T: ?Sized + Serialize
+{
     write_config_file(file_path, backup_dir, config, "source.yml", Some(&format_sources_yaml_panel_api_query_params_flow_style)).await
 }
 
