@@ -3,6 +3,7 @@ use crate::app::components::popup_menu::PopupMenu;
 use crate::app::components::{AppIcon, RevealContent, Table, TableDefinition, ToggleSwitch};
 use crate::app::ConfigContext;
 use crate::hooks::use_service_context;
+use crate::services::DialogService;
 use crate::utils::t_safe;
 use gloo_timers::callback::Interval;
 use gloo_utils::window;
@@ -78,6 +79,7 @@ pub struct StreamsTableProps {
 pub fn StreamsTable(props: &StreamsTableProps) -> Html {
     let translate = use_translation();
     let service_ctx = use_service_context();
+    let dialog = use_context::<DialogService>().expect("Dialog service not found");
     let clipboard = use_clipboard();
     let config_ctx = use_context::<ConfigContext>().expect("Config context not found");
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
@@ -227,13 +229,15 @@ pub fn StreamsTable(props: &StreamsTableProps) -> Html {
 
     let copy_to_clipboard: Callback<String> = {
         let clipboard = clipboard.clone();
-        let services = service_ctx.clone();
-        let translate = translate.clone();
+        let dialog = dialog.clone();
         Callback::from(move |text: String| {
             if *clipboard.is_supported {
                 clipboard.write_text(text);
             } else {
-                services.toastr.error(translate.t("MESSAGES.CLIPBOARD_NOT_SUPPORTED"));
+                let dlg = dialog.clone();
+                spawn_local(async move {
+                    let _result = dlg.content(html! {<input value={text} readonly={true} class="tp__copy-input"/>}, None, false).await;
+                });
             }
         })
     };
