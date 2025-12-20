@@ -997,13 +997,14 @@ async fn xtream_get_stream_info_response(
     ).await {
         if pli.item_type.is_local() {
             if let Some(additional_properties) = pli.additional_properties.as_ref() {
+                let bytes = additional_properties.as_bytes().to_vec();
                 return try_unwrap_body!(axum::response::Response::builder()
                 .status(axum::http::StatusCode::OK)
                 .header(
                     axum::http::header::CONTENT_TYPE,
-                    mime::APPLICATION_JSON.to_string()
+                    mime::APPLICATION_JSON.as_ref()
                 )
-                .body(axum::body::Body::from(additional_properties.to_owned())));
+                .body(axum::body::Body::from(bytes)));
             }
         }
 

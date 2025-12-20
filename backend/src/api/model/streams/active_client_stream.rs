@@ -195,6 +195,7 @@ impl ActiveClientStream {
 
     fn stop_provider_stream(&mut self, unavailable: bool) {
         self.provider_stopped = true;
+
         if self.provider_handle.is_some() {
             let mgr = Arc::clone(&self.connection_manager);
             let handle = self.provider_handle.take();
@@ -205,12 +206,25 @@ impl ActiveClientStream {
                 }
             }
 
+            // Ensure the stream is re-polled after state change
+            if let Some(waker) = &self.waker {
+                waker.wake();
+            }
+
             let con_man = Arc::clone(&self.connection_manager);
             let addr = self.fingerprint.addr;
             self.inner = futures::stream::empty::<Result<Bytes, StreamError>>().boxed();
+
             tokio::spawn(async move {
-                con_man.update_stream_detail(&addr, if unavailable { CustomVideoStreamType::ChannelUnavailable } else { CustomVideoStreamType::UserConnectionsExhausted }).await;
-                debug_if_enabled!("Provider stream stopped due to grace period or unavailable provider channel for {}", sanitize_sensitive_info(&addr.to_string()));
+                let stream_type = if unavailable {
+                    CustomVideoStreamType::ChannelUnavailable
+                } else {
+                    CustomVideoStreamType::UserConnectionsExhausted
+                };
+                con_man.update_stream_detail(&addr, stream_type).await;
+                debug_if_enabled!( "Provider stream stopped due to grace period or unavailable provider channel for {}", sanitize_sensitive_info(&addr.to_string())
+            );
+
                 mgr.release_provider_handle(handle).await;
             });
         }
@@ -245,7 +259,7 @@ impl Stream for ActiveClientStream {
             }
         }
         if !self.provider_stopped {
-           self.stop_provider_stream(false);
+            self.stop_provider_stream(false);
         }
 
         let buffer_opt = match flag {
