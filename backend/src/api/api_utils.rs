@@ -335,7 +335,7 @@ async fn get_redirect_alternative_url<'a>(
 ///
 /// This logic helps abstract the decision-making behind provider selection and stream URL resolution.
 async fn resolve_streaming_strategy(
-    app_state: &AppState,
+    app_state: &Arc<AppState>,
     stream_url: &str,
     fingerprint: &Fingerprint,
     input: &ConfigInput,
@@ -357,6 +357,41 @@ async fn resolve_streaming_strategy(
     if provider_connection_handle.is_none() && force_provider.is_none() && input.panel_api.is_some() {
         provider_connection_handle =
             try_provision_and_reacquire_on_provider_pool_exhausted(app_state, fingerprint, input).await;
+    }
+
+    if force_provider.is_none()
+        && input.panel_api.is_some()
+        && matches!(
+            provider_connection_handle.as_ref().map(|ph| &ph.allocation),
+            Some(ProviderAllocation::GracePeriod(_))
+        )
+    {
+        debug_if_enabled!(
+            "panel_api: provider capacity reached (grace allocation) for input {}, provisioning synchronously",
+            sanitize_sensitive_info(&input.name)
+        );
+        if try_provision_account_on_exhausted(app_state, input).await {
+            if let Some(new_handle) = app_state
+                .active_provider
+                .acquire_connection_with_grace_override(&input.name, &fingerprint.addr, false)
+                .await
+            {
+                if let Some(old_handle) = provider_connection_handle.take() {
+                    app_state.connection_manager.release_provider_handle(Some(old_handle)).await;
+                }
+                provider_connection_handle = Some(new_handle);
+            } else {
+                debug_if_enabled!(
+                    "panel_api: provisioning succeeded but no provider available without grace for input {}",
+                    sanitize_sensitive_info(&input.name)
+                );
+            }
+        } else {
+            debug_if_enabled!(
+                "panel_api: provisioning failed for input {}",
+                sanitize_sensitive_info(&input.name)
+            );
+        }
     }
 
     let stream_response_params =
