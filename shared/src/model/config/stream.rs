@@ -41,6 +41,8 @@ pub struct StreamConfigDto {
     pub grace_period_millis: u64,
     #[serde(default = "default_grace_period_timeout_secs")]
     pub grace_period_timeout_secs: u64,
+    #[serde(default)]
+    pub panel_api_provision_delay_millis: u64,
     #[serde(default, skip)]
     pub throttle_kbps: u64,
     #[serde(default = "default_shared_burst_buffer_mb")]
@@ -55,6 +57,7 @@ impl Default for StreamConfigDto {
             throttle: None,
             grace_period_millis: default_grace_period_millis(),
             grace_period_timeout_secs: default_grace_period_timeout_secs(),
+            panel_api_provision_delay_millis: 0,
             throttle_kbps: 0,
             shared_burst_buffer_mb: default_shared_burst_buffer_mb(),
         }
@@ -69,6 +72,7 @@ impl StreamConfigDto {
             && (self.throttle.is_none() || self.throttle.as_ref().is_some_and(|t| t.is_empty()))
             && self.grace_period_millis == empty.grace_period_millis
             && self.grace_period_timeout_secs == empty.grace_period_timeout_secs
+            && self.panel_api_provision_delay_millis == empty.panel_api_provision_delay_millis
             && self.throttle_kbps == empty.throttle_kbps
             && self.shared_burst_buffer_mb == default_shared_burst_buffer_mb()
     }

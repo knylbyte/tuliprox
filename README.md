@@ -218,6 +218,7 @@ Attributes:
 - `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
 - `grace_period_millis`  default set to 300 milliseconds.
 - `grace_period_timeout_secs` default set to 2 seconds.
+- `panel_api_provision_delay_millis` delay before using a newly created panel API account for a new connection (default `0`).
 - `shared_burst_buffer_mb` optional (default `12`). Minimum burst buffer size (in MB) used for shared streams.
 
 ##### 1.6.1.1 `retry`
@@ -251,6 +252,10 @@ be `1024 × 8 KB`, which is approximately `8 MB`  as stated above.
 Bandwidth throttle (speed limit).
 Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`.
 Default unit is `kbps`.
+
+##### 1.6.1.4 `panel_api_provision_delay_millis`
+Delay (in milliseconds) after a new panel API account is created/renewed before re-acquiring a provider connection.
+Use this if the upstream panel needs time to activate new accounts. Default `0`.
 
 | Resolution      |Framerate| Bitrate (kbps) | Quality     |
 |-----------------|---------|----------------|-------------|

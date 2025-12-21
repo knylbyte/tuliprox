@@ -371,6 +371,17 @@ async fn resolve_streaming_strategy(
             sanitize_sensitive_info(&input.name)
         );
         if try_provision_account_on_exhausted(app_state, input).await {
+            let panel_delay_millis = app_state
+                .app_config
+                .config
+                .load()
+                .reverse_proxy
+                .as_ref()
+                .and_then(|r| r.stream.as_ref())
+                .map_or(0, |s| s.panel_api_provision_delay_millis);
+            if panel_delay_millis > 0 {
+                tokio::time::sleep(Duration::from_millis(panel_delay_millis)).await;
+            }
             if let Some(new_handle) = app_state
                 .active_provider
                 .acquire_connection_with_grace_override(&input.name, &fingerprint.addr, false)
