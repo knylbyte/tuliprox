@@ -61,7 +61,7 @@ pub fn content_type_from_ext(ext: &str) -> &'static str {
         "avi" => "video/x-msvideo",
         "mov" => "video/quicktime",
         "webm" => "video/webm",
-        "ts"  => "video/mp2t",
+        "ts" => "video/mp2t",
         _ => "application/octet-stream",
     }
 }
@@ -456,7 +456,8 @@ pub async fn download_text_content(
     headers: Option<&HeaderMap>,
     persist_filepath: Option<PathBuf>,
 ) -> Result<(String, String), Error> {
-    if let Ok(url) = input.url.parse::<url::Url>() {
+    let start_time = Instant::now();
+    let result = if let Ok(url) = input.url.parse::<url::Url>() {
         let result = if url.scheme() == "file" {
             match url.to_file_path() {
                 Ok(file_path) => get_local_file_content(&file_path).await.map(|c| (c, url.to_string())),
@@ -479,7 +480,15 @@ pub async fn download_text_content(
         }
     } else {
         Err(str_to_io_error(&format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
+    };
+
+    if log_enabled!(log::Level::Debug) {
+        if let Ok((_content, response_url)) = result.as_ref() {
+            debug!("Request took: {} {}", format_elapsed_time(start_time.elapsed().as_secs()), sanitize_sensitive_info(response_url.as_str()));
+        }
     }
+
+    result
 }
 
 pub async fn download_text_content_as_stream(

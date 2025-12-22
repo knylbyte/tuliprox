@@ -55,7 +55,6 @@ where
     })
 }
 
-
 pub fn deserialize_number_from_string<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,

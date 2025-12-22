@@ -4,8 +4,8 @@ use serde::ser::SerializeMap;
 use serde_json::Value;
 use crate::utils::{deserialize_as_option_string, deserialize_as_string_array,
                    deserialize_number_from_string, deserialize_number_from_string_or_zero,
-                   opt_string_or_number_u32, string_default_on_null, string_or_number_u32,
-                   deserialize_json_as_string, string_or_number_f64, deserialize_release_date};
+                   string_default_on_null, string_or_number_u32,
+                   deserialize_json_as_string, deserialize_release_date};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct XtreamVideoInfoMovieData {
@@ -84,7 +84,7 @@ pub struct XtreamSeriesInfoSeason {
     pub overview: String,
     #[serde(default, deserialize_with = "string_or_number_u32")]
     pub season_number: u32,
-    #[serde(default, deserialize_with = "string_or_number_f64")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub vote_average: f64,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub cover: String,
@@ -111,13 +111,13 @@ pub struct XtreamSeriesInfoInfo {
     pub release_date: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub last_modified: String,
-    #[serde(default, deserialize_with = "string_or_number_f64")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub rating: f64,
-    #[serde(default, deserialize_with = "string_or_number_f64")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub rating_5based: f64,
     #[serde(default, deserialize_with = "deserialize_as_string_array")]
     pub backdrop_path: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub tmdb: Option<u32>,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub youtube_trailer: String,
@@ -134,9 +134,9 @@ pub struct XtreamSeriesInfoEpisodeInfo {
     pub air_date: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub crew: String,
-    #[serde(default, deserialize_with = "string_or_number_f64")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub rating: f64,
-    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub id: Option<u32>,
     #[serde(default, deserialize_with = "string_or_number_u32")]
     pub duration_secs: u32,

@@ -1060,10 +1060,6 @@ impl PlaylistItem {
             }
         }
     }
-
-    pub fn to_info_document(&self) -> serde_json::Value {
-        Value::Null
-    }
 }
 
 impl PlaylistEntry for PlaylistItem {

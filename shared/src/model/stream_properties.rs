@@ -1,7 +1,7 @@
 use crate::model::{PlaylistEntry, PlaylistItem, XtreamSeriesInfo, XtreamVideoInfo};
 use crate::utils::{deserialize_as_option_string, deserialize_as_string, deserialize_as_string_array,
                    deserialize_json_as_string, deserialize_number_from_string,
-                   deserialize_number_from_string_or_zero, opt_string_or_number_u32, string_default_on_null,
+                   deserialize_number_from_string_or_zero, string_default_on_null,
                    string_or_number_u32};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -87,7 +87,7 @@ pub struct VideoStreamProperties {
     pub added: String,
     #[serde(default)]
     pub container_extension: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub rating: Option<f64>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub rating_5based: Option<f64>,
@@ -121,7 +121,7 @@ pub struct SeriesStreamDetailEpisodeProperties {
     pub added: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub direct_source: String,
-    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub tmdb: Option<u32>,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub release_date: String,
@@ -135,7 +135,7 @@ pub struct SeriesStreamDetailEpisodeProperties {
     pub movie_image: String,
     #[serde(default, deserialize_with = "string_or_number_u32")]
     pub bitrate: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub rating: Option<f64>,
     #[serde(default, deserialize_with = "deserialize_json_as_string")]
     pub video: Option<String>,
@@ -145,7 +145,7 @@ pub struct SeriesStreamDetailEpisodeProperties {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SeriesStreamDetailProperties {
-    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub year: Option<u32>,
     pub episodes: Option<Vec<SeriesStreamDetailEpisodeProperties>>,
 }
@@ -181,7 +181,7 @@ pub struct SeriesStreamProperties {
     pub release_date: Option<String>,
     #[serde(default)]
     pub youtube_trailer: String,
-    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub tmdb: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<SeriesStreamDetailProperties>,
@@ -196,7 +196,7 @@ pub struct EpisodeStreamProperties {
     pub added: Option<String>,
     #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub release_date: Option<String>,
-    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub tmdb: Option<u32>,
     #[serde(default)]
     pub movie_image: String,
