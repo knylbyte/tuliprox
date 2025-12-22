@@ -19,6 +19,7 @@ use crate::model::{InputStats, PlaylistStats, SourceStats, TargetStats};
 use crate::processing::parser::xmltv::flatten_tvguide;
 use crate::processing::playlist_watch::process_group_watch;
 use crate::processing::processor::epg::process_playlist_epg;
+use crate::processing::processor::library;
 use crate::processing::processor::sort::sort_playlist;
 use crate::processing::processor::trakt::process_trakt_categories_for_target;
 use crate::processing::processor::xtream_series::playlist_resolve_series;
@@ -34,7 +35,6 @@ use shared::foundation::filter::{get_field_value, set_field_value, Filter, Value
 use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
 use shared::utils::{default_as_default, hash_bytes};
 use std::time::Instant;
-use crate::processing::processor::library;
 
 fn is_valid(pli: &PlaylistItem, filter: &Filter) -> bool {
     let provider = ValueProvider { pli };
@@ -111,17 +111,17 @@ fn filter_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Opt
 
 fn assign_channel_no_playlist(new_playlist: &mut [PlaylistGroup]) {
     let assigned_chnos: HashSet<u32> = new_playlist.iter().flat_map(|g| &g.channels)
-        .filter(|c| !c.header.chno.is_empty())
-        .map(|c| c.header.chno.as_str())
-        .flat_map(str::parse::<u32>).collect();
+        .filter(|c| !c.header.chno == 0)
+        .map(|c| c.header.chno)
+        .collect();
     let mut chno = 1;
     for group in new_playlist {
         for chan in &mut group.channels {
-            if chan.header.chno.is_empty() {
+            if chan.header.chno == 0 {
                 while assigned_chnos.contains(&chno) {
                     chno += 1;
                 }
-                chan.header.chno = chno.to_string();
+                chan.header.chno = chno;
                 chno += 1;
             }
         }

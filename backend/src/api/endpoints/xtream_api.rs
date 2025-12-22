@@ -15,7 +15,7 @@ use crate::api::model::UserApiRequest;
 use crate::api::model::XtreamAuthorizationResponse;
 use crate::api::model::{create_custom_video_stream_response, CustomVideoStreamType};
 use crate::auth::Fingerprint;
-use crate::model::{AppConfig, ConfigTarget};
+use crate::model::{xtream_mapping_option_from_target_options, AppConfig, ConfigTarget};
 use crate::model::{Config, ConfigInput};
 use crate::model::{InputSource, ProxyUserCredentials};
 use crate::repository::playlist_repository::get_target_id_mapping;
@@ -67,12 +67,12 @@ impl ApiStreamContext {
 impl Display for ApiStreamContext {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}",
-            match self {
-                Self::Live | Self::LiveAlt => Self::LIVE,
-                Self::Movie => Self::MOVIE,
-                Self::Series => Self::SERIES,
-                Self::Timeshift => Self::TIMESHIFT,
-            }
+               match self {
+                   Self::Live | Self::LiveAlt => Self::LIVE,
+                   Self::Movie => Self::MOVIE,
+                   Self::Series => Self::SERIES,
+                   Self::Timeshift => Self::TIMESHIFT,
+               }
         )
     }
 }
@@ -977,6 +977,16 @@ async fn xtream_player_api_timeshift_query_stream(
         .into_response()
 }
 
+fn empty_json_response() -> axum::http::Result<axum::response::Response> {
+    axum::response::Response::builder()
+        .status(axum::http::StatusCode::OK)
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.to_string(),
+        )
+        .body(axum::body::Body::from("{}".as_bytes()))
+}
+
 async fn xtream_get_stream_info_response(
     app_state: &Arc<AppState>,
     user: &ProxyUserCredentials,
@@ -996,16 +1006,12 @@ async fn xtream_get_stream_info_response(
         Some(cluster),
     ).await {
         if pli.item_type.is_local() {
-            if let Some(additional_properties) = pli.additional_properties.as_ref() {
-                let bytes = additional_properties.as_bytes().to_vec();
-                return try_unwrap_body!(axum::response::Response::builder()
-                .status(axum::http::StatusCode::OK)
-                .header(
-                    axum::http::header::CONTENT_TYPE,
-                    mime::APPLICATION_JSON.as_ref()
-                )
-                .body(axum::body::Body::from(bytes)));
-            }
+            let Ok(xtream_output) = target.get_xtream_output().ok_or_else(|| info_err!(format!("Unexpected: xtream output required for target {}", target.name))) else {
+                return try_unwrap_body!(empty_json_response());
+            };
+            let server_info = app_state.app_config.get_user_server_info(user);
+            let options = xtream_mapping_option_from_target_options(target, xtream_output, &app_state.app_config, user, Some(server_info.get_base_url().as_str()));
+            return axum::Json(pli.to_document(&options)).into_response();
         }
 
         if pli.provider_id > 0 {
@@ -1064,13 +1070,7 @@ async fn xtream_get_stream_info_response(
             }
         };
     }
-    try_unwrap_body!(axum::response::Response::builder()
-        .status(axum::http::StatusCode::OK)
-        .header(
-            axum::http::header::CONTENT_TYPE,
-            mime::APPLICATION_JSON.to_string()
-        )
-        .body(axum::body::Body::from("{}".as_bytes())))
+    try_unwrap_body!(empty_json_response())
 }
 
 async fn xtream_get_short_epg(

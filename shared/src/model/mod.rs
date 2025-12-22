@@ -23,6 +23,8 @@ mod active_user_connection_change;
 mod user_command;
 pub mod system_info;
 mod library_request;
+mod stream_properties;
+mod xtream;
 
 pub use self::cluster_flags::*;
 pub use self::playlist::*;
@@ -48,3 +50,5 @@ pub use self::active_user_connection_change::*;
 pub use self::user_command::*;
 pub use self::system_info::*;
 pub use self::library_request::*;
+pub use self::stream_properties::*;
+pub use self::xtream::*;

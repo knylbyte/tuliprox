@@ -1,6 +1,6 @@
 use crate::api::model::AppState;
-use crate::model::normalize_release_date;
-use crate::model::{rewrite_doc_urls, PlaylistXtreamCategory, XtreamMappingOptions, XtreamSeriesEpisode};
+use crate::model::{normalize_release_date, xtream_mapping_option_from_target_options};
+use crate::model::{rewrite_doc_urls, PlaylistXtreamCategory};
 use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{Config, ConfigInput, ConfigTarget, XtreamTargetOutput};
 use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery, BPlusTreeUpdate};
@@ -19,7 +19,7 @@ use log::error;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use shared::error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, to_io_error, TuliproxError, TuliproxErrorKind};
-use shared::model::{PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
+use shared::model::{EpisodeStreamProperties, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::{generate_playlist_uuid, get_u32_from_serde_value, hex_encode};
 use std::collections::HashMap;
 use std::fs;
@@ -49,7 +49,6 @@ macro_rules! try_option_ok {
         }
     };
 }
-
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct InputVodInfoRecord {
@@ -675,7 +674,7 @@ fn rewrite_xtream_vod_info<P>(
         movie_data.insert(crate::model::XC_TAG_STREAM_ID.to_string(), Value::Number(serde_json::value::Number::from(stream_id)));
         movie_data.insert(crate::model::XC_TAG_CATEGORY_ID.to_string(), Value::Number(serde_json::value::Number::from(category_id)));
         movie_data.insert(crate::model::XC_TAG_CATEGORY_IDS.to_string(), Value::Array(vec![Value::Number(serde_json::value::Number::from(category_id))]));
-        let options = XtreamMappingOptions::from_target_options(target, xtream_output, config);
+        let options = xtream_mapping_option_from_target_options(target, xtream_output, config, user, None);
         if options.skip_video_direct_source {
             movie_data.insert(crate::model::XC_TAG_DIRECT_SOURCE.to_string(), Value::String(String::new()));
         } else {
@@ -767,7 +766,7 @@ async fn rewrite_xtream_series_info<P>(
     let virtual_id = pli.get_virtual_id();
     {
         let (mut target_id_mapping, file_lock) = get_target_id_mapping(app_config, &target_path).await;
-        let options = XtreamMappingOptions::from_target_options(target, xtream_output, app_config);
+        let options = xtream_mapping_option_from_target_options(target, xtream_output, app_config, user, None);
 
         let use_memory_cache = target.use_memory_cache;
         let mut id_mapping_records = vec![];
@@ -1030,7 +1029,7 @@ pub async fn xtream_update_input_series_episodes_record_from_wal_file(
         let mut reader = async_file_reader(async_open_readonly_file(wal_path).await.map_err(|err| notify_err!(format!("Could not read series episode wal info {err}")))?);
         let mut provider_id_bytes = [0u8; 4];
         let mut len_bytes = [0u8; 4];
-        let mut tree_record_index: BPlusTree<u32, XtreamSeriesEpisode> = BPlusTree::load(&record_path).unwrap_or_else(|_| BPlusTree::new());
+        let mut tree_record_index: BPlusTree<u32, EpisodeStreamProperties> = BPlusTree::load(&record_path).unwrap_or_else(|_| BPlusTree::new());
         let mut buffer = vec![0u8; 4096];
         loop {
             if reader.read_exact(&mut provider_id_bytes).await.is_err() {

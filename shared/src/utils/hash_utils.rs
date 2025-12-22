@@ -1,6 +1,7 @@
 use base64::Engine;
 use base64::engine::general_purpose;
 use std::fmt::Write;
+use url::Url;
 use crate::model::{PlaylistItemType, UUIDType};
 
 #[inline]
@@ -67,13 +68,31 @@ pub fn get_provider_id(provider_id: &str, url: &str) -> Option<u32> {
     })
 }
 
+fn url_path_and_more(url: &str) -> Option<String> {
+    let u = Url::parse(url).ok()?;
+
+    let mut out = u.path().to_string();
+
+    if let Some(q) = u.query() {
+        out.push('?');
+        out.push_str(q);
+    }
+
+    if let Some(f) = u.fragment() {
+        out.push('#');
+        out.push_str(f);
+    }
+
+    Some(out)
+}
+
 pub fn generate_playlist_uuid(key: &str, provider_id: &str, item_type: PlaylistItemType, url: &str) -> UUIDType {
-    if let Some(id) = get_provider_id(provider_id, url) {
-        if id > 0 {
-            return hash_string(&format!("{key}{id}{item_type}"));
+    if provider_id.is_empty() || provider_id == "0" {
+        if let Some(url_path) = url_path_and_more(url) {
+            return hash_string(&url_path);
         }
     }
-    hash_string(url)
+    hash_string(&format!("{key}{provider_id}{item_type}"))
 }
 
 pub fn u32_to_base64(value: u32) -> String {

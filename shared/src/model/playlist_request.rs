@@ -1,4 +1,4 @@
-use crate::model::{PlaylistItemType, SearchRequest, XtreamCluster};
+use crate::model::{PlaylistItemType, SearchRequest, StreamProperties, XtreamCluster};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::rc::Rc;
@@ -28,7 +28,7 @@ pub struct CommonPlaylistItem {
     pub virtual_id: u32,
     pub provider_id: String,
     pub name: String,
-    pub chno: String,
+    pub chno: u32,
     pub logo: String,
     pub logo_small: String,
     pub group: String,
@@ -45,7 +45,7 @@ pub struct CommonPlaylistItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub xtream_cluster: Option<XtreamCluster>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub additional_properties: Option<String>,
+    pub additional_properties: Option<StreamProperties>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category_id: Option<u32>,
 }

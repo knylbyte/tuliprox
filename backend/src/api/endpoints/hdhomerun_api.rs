@@ -15,7 +15,7 @@ use serde_json::json;
 use shared::model::{
     M3uPlaylistItem, PlaylistItemType, TargetType, XtreamCluster, XtreamPlaylistItem,
 };
-use shared::utils::{concat_path, get_string_from_serde_value};
+use shared::utils::{concat_path};
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -112,9 +112,7 @@ where
                             o.xtream_live_stream_without_extension,
                         )
                     });
-                let container_extension = item
-                    .get_additional_property("container_extension")
-                    .map(|v| get_string_from_serde_value(&v).unwrap_or_default());
+                let container_extension = item.get_container_extension();
                 let stream_url = match &base_url {
                     None => item.url.clone(),
                     Some(url) => get_xtream_url(

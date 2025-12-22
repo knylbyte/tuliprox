@@ -1,9 +1,9 @@
 use crate::model::{Config, ConfigInput};
+use crate::utils::request::DynReader;
 use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, XtreamCluster, DEFAULT_VIDEO_EXTENSIONS};
 use shared::utils::extract_id_from_url;
 use std::borrow::BorrowMut;
 use tokio::io::AsyncBufReadExt;
-use crate::utils::request::DynReader;
 
 // other implementations like calculating text_distance on all titles took too much time
 // we keep it now as simple as possible and less memory intensive.
@@ -126,7 +126,7 @@ fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url:
         let mut c = skip_digit(&mut it);
         loop {
             match c {
-                None=> break,
+                None => break,
                 Some(chr) => {
                     if chr.is_whitespace() {
                         // skip
@@ -142,18 +142,19 @@ fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url:
                                 if !value.is_empty() {
                                     provider_id = Some(value);
                                 }
+                            } else if token == "tvg-chno" {
+                                plih.chno = value.parse::<u32>().unwrap_or(0);
                             } else {
                                 process_header_fields!(plih, token.as_str(),
-                            (id, "tvg-id"),
-                            (group, "group-title"),
-                            (name, "tvg-name"),
-                            (chno, "tvg-chno"),
-                            (parent_code, "parent-code"),
-                            (audio_track, "audio-track"),
-                            (logo, "tvg-logo"),
-                            (logo_small, "tvg-logo-small"),
-                            (time_shift, "timeshift"),
-                            (rec, "tvg-rec"); value);
+                                (id, "tvg-id"),
+                                (group, "group-title"),
+                                (name, "tvg-name"),
+                                (parent_code, "parent-code"),
+                                (audio_track, "audio-track"),
+                                (logo, "tvg-logo"),
+                                (logo_small, "tvg-logo-small"),
+                                (time_shift, "timeshift"),
+                                (rec, "tvg-rec"); value);
                             }
                         }
                     }
@@ -202,10 +203,10 @@ pub async fn consume_m3u<F: FnMut(PlaylistItem)>(cfg: &Config, input: &ConfigInp
     let input_name = input.name.as_str();
 
     let video_suffixes = match cfg.video.as_ref() {
-      Some(config) => {
-          config.extensions.iter().map(String::as_str).collect::<Vec<&str>>()
-      },
-      None => DEFAULT_VIDEO_EXTENSIONS.to_vec()
+        Some(config) => {
+            config.extensions.iter().map(String::as_str).collect::<Vec<&str>>()
+        }
+        None => DEFAULT_VIDEO_EXTENSIONS.to_vec()
     };
     let mut lines = tokio::io::BufReader::new(lines).lines();
     while let Ok(Some(line)) = lines.next_line().await {
@@ -292,7 +293,7 @@ mod test {
         assert_eq!(pli.title, "Seven");
         assert_eq!(pli.id, "abc-seven");
         assert_eq!(pli.logo, "https://abc.nz/.images/seven.png");
-        assert_eq!(pli.chno, "7");
+        assert_eq!(pli.chno, 7);
         assert_eq!(pli.group, "Sydney");
     }
 
@@ -307,7 +308,7 @@ mod test {
         assert_eq!(pli.title, "Seven");
         assert_eq!(pli.id, "abc-seven");
         assert_eq!(pli.logo, "https://abc.nz/.images/seven.png");
-        assert_eq!(pli.chno, "7");
+        assert_eq!(pli.chno, 7);
         assert_eq!(pli.group, "Sydney");
     }
 

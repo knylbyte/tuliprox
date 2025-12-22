@@ -3,7 +3,6 @@ use shared::error::{str_to_io_error, TuliproxError};
 use crate::model::{AppConfig, Config, ConfigInput, InputSource};
 use crate::model::{FetchedPlaylist};
 use shared::model::{PlaylistEntry, PlaylistItem, PlaylistItemType, XtreamCluster};
-use crate::model::normalize_release_date;
 use crate::repository::storage::get_input_storage_path;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -13,7 +12,6 @@ use crate::repository::storage_const;
 use crate::repository::xtream_repository::xtream_get_record_file_path;
 use crate::utils;
 use crate::utils::xtream;
-use serde_json::{from_str, to_string, Value};
 
 pub(in crate::processing) async fn playlist_resolve_download_playlist_item(client: &reqwest::Client, pli: &PlaylistItem, input: &ConfigInput, errors: &mut Vec<TuliproxError>, resolve_delay: u16, cluster: XtreamCluster) -> Option<String> {
     let mut result = None;
@@ -32,18 +30,6 @@ pub(in crate::processing) async fn playlist_resolve_download_playlist_item(clien
         tokio::time::sleep(std::time::Duration::new(u64::from(resolve_delay), 0)).await;
     }
     result
-}
-
-pub(in crate::processing) fn normalize_json_content(content: String) -> String {
-    match from_str::<Value>(&content) {
-        Ok(mut json_value) => {
-            if let Some(info) = json_value.get_mut("info").and_then(Value::as_object_mut) {
-                normalize_release_date(info);
-            }
-            to_string(&json_value).unwrap_or(content)
-        },
-        Err(_) => content,
-    }
 }
 
 pub(in crate::processing) async fn create_resolve_episode_wal_files(cfg: &Config, input: &ConfigInput) -> Option<(tokio::fs::File, PathBuf)> {
@@ -77,9 +63,9 @@ pub(in crate::processing) async fn create_resolve_info_wal_files(cfg: &Config, i
     }
 }
 
-pub(in crate::processing) fn should_update_info(pli: &mut PlaylistItem, processed_provider_ids: &HashMap<u32, u64>, field: &str) -> (bool, u32, u64) {
+pub(in crate::processing) fn should_update_info(pli: &mut PlaylistItem, processed_provider_ids: &HashMap<u32, u64>) -> (bool, u32, u64) {
     let Some(provider_id) = pli.header.get_provider_id() else { return (false, 0, 0) };
-    let last_modified = pli.header.get_additional_property_as_u64(field);
+    let last_modified = pli.header.additional_properties.as_ref().and_then(shared::model::StreamProperties::get_last_modified);
     let old_timestamp = processed_provider_ids.get(&provider_id);
     (old_timestamp.is_none()
          || last_modified.is_none()

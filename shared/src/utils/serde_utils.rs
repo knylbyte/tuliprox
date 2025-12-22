@@ -38,6 +38,7 @@ where
 
     match &value {
         Value::String(s) => Ok(s.to_string()),
+        Value::Number(s) => Ok(s.to_string()),
         Value::Null => Ok(String::new()),
         _ => Ok(value.to_string()),
     }
@@ -159,6 +160,18 @@ where
     }
 }
 
+pub fn deserialize_number_from_string_or_zero<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: std::str::FromStr + Default,
+{
+    match deserialize_number_from_string(deserializer) {
+        Ok(Some(v)) => Ok(v),
+        Ok(None) => Ok(T::default()),
+        Err(e) => Err(serde::de::Error::custom(e)),
+    }
+}
+
 #[inline]
 pub fn bin_serialize<T>(value: &T) -> io::Result<Vec<u8>>
 where
@@ -247,4 +260,38 @@ pub fn parse_timestamp(value: &str) -> Result<Option<i64>, ParseError> {
     let dt = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")?;
     let timestamp = Utc.from_utc_datetime(&dt).timestamp();
     Ok(Some(timestamp))
+}
+
+pub fn deserialize_json_as_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let val: Value = Deserialize::deserialize(deserializer)?;
+    Ok(Some(val.to_string()))
+}
+
+
+const RELEASE_DATES: [&str; 3] = [
+    "release_date",
+    "releaseDate",
+    "releasedata",
+];
+
+pub fn deserialize_release_date<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+
+    for key in RELEASE_DATES {
+        if let Some(v) = value.get(key) {
+            if let Some(s) = v.as_str() {
+                if !s.trim().is_empty() {
+                    return Ok(s.to_string());
+                }
+            }
+        }
+    }
+
+    Ok(String::new())
 }

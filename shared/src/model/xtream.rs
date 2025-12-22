@@ -1,0 +1,271 @@
+use std::collections::BTreeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::ser::SerializeMap;
+use serde_json::Value;
+use crate::utils::{deserialize_as_option_string, deserialize_as_string_array,
+                   deserialize_number_from_string, deserialize_number_from_string_or_zero,
+                   opt_string_or_number_u32, string_default_on_null, string_or_number_u32,
+                   deserialize_json_as_string, string_or_number_f64, deserialize_release_date};
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct XtreamVideoInfoMovieData {
+    pub name: String,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub category_id: u32,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub stream_id: u32,
+    #[serde(default)]
+    pub direct_source: String,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub custom_sid: Option<String>,
+    #[serde(default)]
+    pub added: String,
+    #[serde(default)]
+    pub container_extension: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct XtreamVideoInfoInfo {
+    pub kinopoisk_url: Option<String>,
+    #[serde(default)]
+    pub tmdb_id: String, // is in get_vod_streams
+    #[serde(default)]
+    pub name: String, // is in get_vod_streams
+    pub o_name: Option<String>,
+    pub cover_big: Option<String>,
+    pub movie_image: Option<String>,
+    pub releasedate: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub episode_run_time: Option<u32>,
+    pub youtube_trailer: Option<String>,
+    pub director: Option<String>,
+    pub actors: Option<String>,
+    pub cast: Option<String>,
+    pub description: Option<String>,
+    pub plot: Option<String>,
+    pub age: Option<String>,
+    pub mpaa_rating: Option<String>,
+    #[serde(default)]
+    pub rating_count_kinopoisk: u32,
+    pub country: Option<String>,
+    pub genre: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_string_array")]
+    pub backdrop_path: Option<Vec<String>>,
+    pub duration_secs: Option<String>,
+    pub duration: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    pub video: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    pub audio: Option<String>,
+    #[serde(default)]
+    pub bitrate: u32,
+    pub runtime: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct XtreamVideoInfo {
+    pub info: XtreamVideoInfoInfo,
+    pub movie_data: XtreamVideoInfoMovieData,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct XtreamSeriesInfoSeason {
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub air_date: String,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub episode_count: u32,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub id: u32,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub name: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub overview: String,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub season_number: u32,
+    #[serde(default, deserialize_with = "string_or_number_f64")]
+    pub vote_average: f64,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub cover: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub cover_big: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[allow(non_snake_case)]
+pub struct XtreamSeriesInfoInfo {
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub(crate) name: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub cover: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub plot: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub cast: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub director: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub genre: String,
+    #[serde(default, deserialize_with = "deserialize_release_date")]
+    pub release_date: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub last_modified: String,
+    #[serde(default, deserialize_with = "string_or_number_f64")]
+    pub rating: f64,
+    #[serde(default, deserialize_with = "string_or_number_f64")]
+    pub rating_5based: f64,
+    #[serde(default, deserialize_with = "deserialize_as_string_array")]
+    pub backdrop_path: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    pub tmdb: Option<u32>,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub youtube_trailer: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub episode_run_time: String,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub category_id: u32,
+}
+
+#[allow(non_snake_case)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct XtreamSeriesInfoEpisodeInfo {
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub air_date: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub crew: String,
+    #[serde(default, deserialize_with = "string_or_number_f64")]
+    pub rating: f64,
+    #[serde(default, deserialize_with = "opt_string_or_number_u32")]
+    pub id: Option<u32>,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub duration_secs: u32,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub duration: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub movie_image: String,
+    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    pub video: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    pub audio: Option<String>,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub bitrate: u32,
+}
+
+// Used for serde_json deserialization, cannot be used with bincode
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct XtreamSeriesInfoEpisode {
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub id: u32,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub episode_num: u32,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub title: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub container_extension: String,
+    #[serde(default)]
+    pub info: Option<XtreamSeriesInfoEpisodeInfo>,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub custom_sid: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub added: String,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub season: u32,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub direct_source: String,
+}
+
+impl XtreamSeriesInfoEpisode {
+    pub fn get_id(&self) -> u32 {
+        self.id
+    }
+}
+
+// sometimes episodes are a map with season as key, sometimes an array
+fn deserialize_episodes<'de, D>(deserializer: D) -> Result<Option<Vec<XtreamSeriesInfoEpisode>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // read as generic value
+    let value = Value::deserialize(deserializer)?;
+    match value {
+        Value::Null => Ok(None),
+        Value::Array(array) => {
+            if array.is_empty() {
+                Ok(None)
+            } else {
+                let mut result = Vec::new();
+                for inner in array {
+                    if let Some(inner_array) = inner.as_array() {
+                        for item in inner_array {
+                            let ep: XtreamSeriesInfoEpisode = serde_json::from_value(item.clone())
+                                .map_err(serde::de::Error::custom)?;
+                            result.push(ep);
+                        }
+                    }
+                }
+                Ok(Some(result))
+            }
+        }
+        Value::Object(object) => {
+            if object.is_empty() {
+                Ok(None)
+            } else {
+                let mut result = Vec::new();
+                for (_key, val) in object {
+                    if let Some(inner_array) = val.as_array() {
+                        for item in inner_array {
+                            let ep: XtreamSeriesInfoEpisode = serde_json::from_value(item.clone())
+                                .map_err(serde::de::Error::custom)?;
+                            result.push(ep);
+                        }
+                    }
+                }
+                Ok(Some(result))
+            }
+        }
+        _ => Err(serde::de::Error::custom("Invalid format for episodes")),
+    }
+}
+
+#[allow(clippy::ref_option)]
+fn serialize_episodes<S>(
+    episodes: &Option<Vec<XtreamSeriesInfoEpisode>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match episodes {
+        None => {
+            let map = serializer.serialize_map(Some(0))?;
+            map.end()
+        }
+        Some(list) => {
+            if list.is_empty() {
+                let map = serializer.serialize_map(Some(0))?;
+                return map.end();
+            }
+            let mut seasons: BTreeMap<String, Vec<&XtreamSeriesInfoEpisode>> = BTreeMap::new();
+            for ep in list {
+                seasons.entry(ep.season.to_string()).or_default().push(ep);
+            }
+
+            seasons.serialize(serializer)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct XtreamSeriesInfo {
+    #[serde(default)]
+    pub seasons: Option<Vec<XtreamSeriesInfoSeason>>,
+    #[serde(default)]
+    pub info: XtreamSeriesInfoInfo,
+    #[serde(
+        default,
+        serialize_with = "serialize_episodes",
+        deserialize_with = "deserialize_episodes"
+    )]
+    pub episodes: Option<Vec<XtreamSeriesInfoEpisode>>,
+}

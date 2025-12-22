@@ -1,9 +1,7 @@
 use crate::model::{AppConfig, ConfigTarget};
 use crate::model::FetchedPlaylist;
-use crate::model::{XtreamSeriesEpisode, XtreamSeriesInfoEpisode};
 use crate::processing::parser::xtream::parse_xtream_series_info;
 use crate::processing::processor::playlist::ProcessingPipe;
-use crate::processing::processor::xtream::normalize_json_content;
 use crate::processing::processor::xtream::{create_resolve_episode_wal_files, create_resolve_info_wal_files, playlist_resolve_download_playlist_item, read_processed_info_ids, should_update_info};
 use crate::processing::processor::{create_resolve_options_function_for_xtream_target, handle_error, handle_error_and_return};
 use crate::repository::storage::get_input_storage_path;
@@ -16,8 +14,8 @@ use crate::utils::{bincode_serialize, IO_BUFFER_SIZE};
 use log::{error, info, log_enabled, warn, Level};
 use shared::error::{info_err, notify_err};
 use shared::error::TuliproxError;
-use shared::model::InputType;
-use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster};
+use shared::model::{InputType, SeriesStreamProperties, StreamProperties, XtreamSeriesInfo};
+use shared::model::{PlaylistGroup, PlaylistItemType, XtreamCluster};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use tokio::io::AsyncWriteExt;
@@ -31,24 +29,21 @@ async fn read_processed_series_info_ids(cfg: &AppConfig, errors: &mut Vec<Tulipr
 async fn write_series_episode_record_to_wal_file(
     writer: &mut tokio::io::BufWriter<&mut tokio::fs::File>,
     provider_id: u32,
-    episode: &XtreamSeriesInfoEpisode,
+    additional_properties: Option<&StreamProperties>,
 ) -> std::io::Result<usize> {
-    let series_episode = XtreamSeriesEpisode::from(episode);
-    if let Ok(content_bytes) = bincode_serialize(&series_episode) {
-        writer.write_all(&provider_id.to_le_bytes()).await?;
-        let content_len = content_bytes.len();
-        if let Ok(len) = u32::try_from(content_len) {
-            writer.write_all(&len.to_le_bytes()).await?;
-            writer.write_all(&content_bytes).await?;
-            return Ok(content_len + 4usize);
+    if let Some(StreamProperties::Episode(series_episode)) = additional_properties {
+        if let Ok(content_bytes) = bincode_serialize(&series_episode) {
+            writer.write_all(&provider_id.to_le_bytes()).await?;
+            let content_len = content_bytes.len();
+            if let Ok(len) = u32::try_from(content_len) {
+                writer.write_all(&len.to_le_bytes()).await?;
+                writer.write_all(&content_bytes).await?;
+                return Ok(content_len + 4usize);
+            }
+            error!("Cant write to WAL file, content length exceeds u32");
         }
-        error!("Cant write to WAL file, content length exceeds u32");
     }
     Ok(0)
-}
-
-fn should_update_series_info(pli: &mut PlaylistItem, processed_provider_ids: &HashMap<u32, u64>) -> (bool, u32, u64) {
-    should_update_info(pli, processed_provider_ids, crate::model::XC_TAG_SERIES_INFO_LAST_MODIFIED)
 }
 
 async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client, errors: &mut Vec<TuliproxError>,
@@ -81,33 +76,36 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
     // LocalSeriesInfo entries are not resolved!
 
     for plg in &mut fpl.playlistgroups {
-        if plg.xtream_cluster != XtreamCluster::Series {
-            continue;
-        }
         for pli in &mut plg.channels {
             if pli.header.item_type != PlaylistItemType::SeriesInfo {
                 continue;
             }
-            let (should_update, provider_id, ts) = should_update_series_info(pli, &processed_info_ids);
+            let (should_update, provider_id, ts) = should_update_info(pli, &processed_info_ids);
             if should_update && provider_id != 0 && fetched_in_run.insert(provider_id) {
                 if let Some(content) = playlist_resolve_download_playlist_item(client, pli, fpl.input, errors, resolve_delay, XtreamCluster::Series).await {
-                    let normalized_content = normalize_json_content(content);
-                    let normalized_str = normalized_content.as_str();
-                    handle_error_and_return!(write_series_info_to_wal_file(provider_id, ts, normalized_str, &mut content_writer, &mut record_writer).await,
+                    if let Ok(info) = serde_json::from_str::<XtreamSeriesInfo>(&content) {
+                        let series_stream_props = SeriesStreamProperties::from_info(&info, pli);
+                        handle_error_and_return!(write_series_info_to_wal_file(provider_id, ts, &serde_json::to_string(&series_stream_props).unwrap_or_else(|_|String::new()),
+                            &mut content_writer, &mut record_writer).await,
                             |err| errors.push(notify_err!(format!("Failed to resolve series, could not write to wal file {err}"))));
-                    processed_info_ids.insert(provider_id, ts);
-                    content_updated = true;
-                    write_counter += normalized_str.len();
+                        processed_info_ids.insert(provider_id, ts);
+                        content_updated = true;
+                        write_counter += content.len();
 
-                    // periodic flush to bound BufWriter memory
-                    if write_counter >= IO_BUFFER_SIZE {
-                        write_counter = 0;
-                        if let Err(err) = content_writer.flush().await {
-                            errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
+                        // periodic flush to bound BufWriter memory
+                        if write_counter >= IO_BUFFER_SIZE {
+                            write_counter = 0;
+                            if let Err(err) = content_writer.flush().await {
+                                errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
+                            }
+                            if let Err(err) = record_writer.flush().await {
+                                errors.push(notify_err!(format!("Failed periodic flush of wal record writer {err}")));
+                            }
                         }
-                        if let Err(err) = record_writer.flush().await {
-                            errors.push(notify_err!(format!("Failed periodic flush of wal record writer {err}")));
-                        }
+
+                        // Update in-memory playlist items with the newly fetched vod info.
+                        // This makes the data available for subsequent processing steps like STRM export.
+                        pli.header.additional_properties = Some(StreamProperties::Series(Box::new(series_stream_props)));
                     }
                 }
             }
@@ -145,6 +143,7 @@ async fn playlist_resolve_series_info(cfg: &AppConfig, client: &reqwest::Client,
     // - series_record.db which contains the series_info provider_id and timestamp
     !processed_info_ids.is_empty()
 }
+
 async fn process_series_info(
     app_config: &AppConfig,
     fpl: &mut FetchedPlaylist<'_>,
@@ -192,36 +191,30 @@ async fn process_series_info(
                 warn!("Series info content is empty, skipping series with provider id: {provider_id}");
                 continue;
             }
-            match serde_json::from_str::<serde_json::Value>(&content) {
+            match serde_json::from_str::<SeriesStreamProperties>(&content) {
                 Ok(series_content) => {
                     let (group, series_name) = {
                         let header = &pli.header;
                         (header.group.clone(), if header.name.is_empty() { header.title.clone() } else { header.name.clone() })
                     };
-                    match parse_xtream_series_info(&series_content, &group, &series_name, input) {
-                        Ok(Some(mut series)) => {
-                            for (episode, pli_episode) in &mut series {
-                                let Some(provider_id) = &pli_episode.header.get_provider_id() else { continue; };
-                                match write_series_episode_record_to_wal_file(&mut wal_writer, *provider_id, episode).await {
-                                    Ok(written_bytes) => {
-                                        write_counter += written_bytes;
-                                        // periodic flush to bound BufWriter memory
-                                        if write_counter >= IO_BUFFER_SIZE {
-                                            write_counter = 0;
-                                            if let Err(err) = wal_writer.flush().await {
-                                                errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
-                                            }
+                    if let Some(mut series) = parse_xtream_series_info(&series_content, &group, &series_name, input) {
+                        for pli_episode in &mut series {
+                            let Some(provider_id) = &pli_episode.header.get_provider_id() else { continue; };
+                            match write_series_episode_record_to_wal_file(&mut wal_writer, *provider_id, pli.header.additional_properties.as_ref()).await {
+                                Ok(written_bytes) => {
+                                    write_counter += written_bytes;
+                                    // periodic flush to bound BufWriter memory
+                                    if write_counter >= IO_BUFFER_SIZE {
+                                        write_counter = 0;
+                                        if let Err(err) = wal_writer.flush().await {
+                                            errors.push(notify_err!(format!("Failed periodic flush of wal content writer {err}")));
                                         }
                                     }
-                                    Err(err) => { errors.push(info_err!(format!("Failed to write to series episode wal file: {err}"))) }
                                 }
+                                Err(err) => { errors.push(info_err!(format!("Failed to write to series episode wal file: {err}"))) }
                             }
-                            group_series.extend(series.into_iter().map(|(_, pli)| pli));
                         }
-                        Ok(None) => {}
-                        Err(err) => {
-                            errors.push(err);
-                        }
+                        group_series.extend(series.into_iter());
                     }
                 }
                 Err(err) => errors.push(info_err!(format!("Failed to parse JSON: {err}"))),

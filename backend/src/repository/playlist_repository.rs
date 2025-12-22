@@ -1,6 +1,6 @@
 use crate::api::model::{AppState, PlaylistM3uStorage, PlaylistStorage, PlaylistStorageState, PlaylistXtreamStorage};
 use crate::model::{AppConfig, ConfigTarget, TargetOutput};
-use crate::model::{Epg, XtreamSeriesInfo};
+use crate::model::{Epg};
 use crate::processing::processor::playlist::apply_filter_to_playlist;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::epg_repository::epg_write;
@@ -12,11 +12,10 @@ use crate::repository::target_id_mapping::{TargetIdMapping, VirtualIdRecord};
 use crate::repository::xtream_repository::{xtream_get_file_paths, xtream_get_storage_path, xtream_write_playlist};
 use crate::utils;
 use log::info;
-use serde_json::value::RawValue;
 use shared::create_tuliprox_error;
 use shared::error::TuliproxError;
 use shared::error::{info_err, TuliproxErrorKind};
-use shared::model::{M3uPlaylistItem, PlaylistGroup, PlaylistItemHeader, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
+use shared::model::{M3uPlaylistItem, PlaylistGroup, PlaylistItemHeader, PlaylistItemType, StreamProperties, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::{is_dash_url, is_hls_url};
 use std::collections::HashMap;
 use std::path::Path;
@@ -150,20 +149,23 @@ fn rewrite_local_series_info_episode_virtual_id(playlist: &mut [PlaylistGroup], 
             let header = &mut channel.header;
             if header.item_type == PlaylistItemType::LocalSeriesInfo {
                 if let Some(episode_keys) = local_library_series.get(&header.id) {
-                    if let Some(props) = &header.additional_properties {
-                        let props_str = props.get();
-                        if let Ok(mut series_info) = serde_json::from_str::<XtreamSeriesInfo>(props_str) {
-                            if let Some(episodes) = series_info.episodes.as_mut() {
-                                for episode in episodes.iter_mut() {
-                                    for episode_key in episode_keys {
-                                        if episode.direct_source == episode_key.path {
-                                            episode.id = episode_key.virtual_id;
-                                            break;
+                    if let Some(stream_props) = header.additional_properties.as_mut() {
+                        match stream_props {
+                            StreamProperties::Live(_)
+                            | StreamProperties::Video(_)
+                            | StreamProperties::Episode(_) => {}
+                            StreamProperties::Series(series) => {
+                                if let Some(episodes) =
+                                    series.details.as_mut().and_then(|d| d.episodes.as_mut())
+                                {
+                                    for episode in episodes.iter_mut() {
+                                        for episode_key in episode_keys {
+                                            if episode.direct_source == episode_key.path {
+                                                episode.id = episode_key.virtual_id;
+                                                break;
+                                            }
                                         }
                                     }
-                                }
-                                if let Ok(s) = serde_json::to_string(&series_info) {
-                                    header.additional_properties = RawValue::from_string(s).ok();
                                 }
                             }
                         }

@@ -1,8 +1,8 @@
 // backend/src/model/media_properties.rs
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::fmt;
-use serde_json::{Value, Map};
 
 // Enum for Video Resolution
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -163,10 +163,10 @@ impl MediaQuality {
 
     /// Extracts media quality information from an `ffprobe` info block.
     /// The `info_block` is expected to be a `serde_json::Value` object.
-    pub fn from_ffprobe_info(info_block: &Value) -> Option<Self> {
-        let video_info = info_block.get("video")?.as_object()?;
+    pub fn from_ffprobe_info(audio: Option<&String>, video: Option<&String>) -> Option<Self> {
+        let video_info = video.and_then(|v| serde_json::from_str::<Map<String, Value>>(v).ok())?;
         // Assuming the first audio stream is the primary one.
-        let audio_info = info_block.get("audio")?.as_object()?;
+        let audio_info = audio.and_then(|v| serde_json::from_str::<Map<String, Value>>(v).ok())?;
 
         // Helper to get a value by trying a prioritized list of field names.
         let get_value = |obj: &Map<String, Value>, fields: &[&str]| -> Option<Value> {
@@ -179,9 +179,9 @@ impl MediaQuality {
             }
             None
         };
-        
+
         // 1. Classify video resolution from width
-        let resolution = get_value(video_info, &["height", "coded_height"])
+        let resolution = get_value(&video_info, &["height", "coded_height"])
             .and_then(|v| v.as_u64())
             .map_or(VideoResolution::default(), |h| match h {
                 _ if h >= 4300 => VideoResolution::P4320,
@@ -192,7 +192,7 @@ impl MediaQuality {
             });
 
         // 2. Classify video codec
-        let video_codec = get_value(video_info, &["codec_name"])
+        let video_codec = get_value(&video_info, &["codec_name"])
             .and_then(|v| v.as_str().map(str::to_lowercase))
             .map_or(VideoCodec::default(), |name| match name.as_str() {
                 "h264" => VideoCodec::H264,
@@ -204,13 +204,13 @@ impl MediaQuality {
 
         // 3. Classify dynamic range
         let dynamic_range = {
-            let tag_string = get_value(video_info, &["codec_tag_string"])
+            let tag_string = get_value(&video_info, &["codec_tag_string"])
                 .and_then(|v| v.as_str().map(str::to_lowercase));
 
             if tag_string == Some("dovi".to_string()) {
                 VideoDynamicRange::DV
             } else {
-                get_value(video_info, &["color_transfer"])
+                get_value(&video_info, &["color_transfer"])
                     .and_then(|v| v.as_str().map(str::to_lowercase))
                     .map_or(VideoDynamicRange::SDR, |ct| match ct.as_str() {
                         "smpte2084" => VideoDynamicRange::HDR10,
@@ -219,9 +219,9 @@ impl MediaQuality {
                     })
             }
         };
-            
+
         // 4. Classify audio codec
-        let audio_codec = get_value(audio_info, &["codec_name"])
+        let audio_codec = get_value(&audio_info, &["codec_name"])
             .and_then(|v| v.as_str().map(str::to_lowercase))
             .map_or(AudioCodec::default(), |name| match name.as_str() {
                 "aac" => AudioCodec::AAC,
@@ -234,7 +234,7 @@ impl MediaQuality {
             });
 
         // 5. Classify audio channels
-        let audio_channels = get_value(audio_info, &["channel_layout"])
+        let audio_channels = get_value(&audio_info, &["channel_layout"])
             .and_then(|v| v.as_str().map(str::to_lowercase))
             .map_or(AudioChannels::default(), |layout| match layout.as_str() {
                 l if l.starts_with("7.1") => AudioChannels::Surround71,

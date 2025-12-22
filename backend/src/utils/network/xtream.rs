@@ -320,9 +320,13 @@ pub fn create_vod_info_from_item(target: &ConfigTarget, user: &ProxyUserCredenti
     let category_id = pli.category_id;
     let stream_id = if user.proxy.is_redirect(pli.item_type) || target.is_force_redirect(pli.item_type) { pli.provider_id } else { pli.virtual_id };
     let name = &pli.name;
-    let extension = pli.get_additional_property("container_extension")
-        .map_or_else(|| extract_extension_from_url(&pli.url).map_or_else(String::new, std::string::ToString::to_string),
-                     |v| get_string_from_serde_value(&v).unwrap_or_default());
+    let extension = pli
+        .get_container_extension()
+        .as_deref()
+        .filter(|ce| !ce.is_empty())
+        .or_else(|| extract_extension_from_url(&pli.url))
+        .map_or_else(String::new, std::string::ToString::to_string);
+
     let added = last_updated / 1000;
     format!(r#"{{
   "info": {{}},

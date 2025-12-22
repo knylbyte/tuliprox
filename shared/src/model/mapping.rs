@@ -14,7 +14,6 @@ pub const MAPPER_FIELDS: &[&str] = &[
     "time_shift", "rec", "url", "epg_channel_id", "epg_id"
 ];
 
-
 #[macro_export]
 macro_rules! valid_property {
   ($key:expr, $array:expr) => {{
