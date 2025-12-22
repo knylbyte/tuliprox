@@ -415,12 +415,9 @@ pub async fn get_remote_content_as_stream(
 }
 
 async fn get_remote_content(client: &reqwest::Client, input: &InputSource, headers: Option<&HeaderMap>, url: &Url, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> Result<(String, String), Error> {
-    let start_time = Instant::now();
-
     let (mut stream, response_url) = get_remote_content_as_stream(client, input, headers, url, disabled_headers).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
     let mut content = String::new();
     stream.read_to_string(&mut content).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
-    debug_if_enabled!("Request took: {} {}", format_elapsed_time(start_time.elapsed().as_secs()), sanitize_sensitive_info(url.as_str()));
     Ok((content, response_url))
 }
 
@@ -529,7 +526,7 @@ pub async fn download_text_content_as_stream(
 }
 
 async fn download_json_content(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, Error> {
-    debug_if_enabled!("downloading json content from {}", sanitize_sensitive_info(&input.url));
+    debug_if_enabled!("Downloading json content from {}", sanitize_sensitive_info(&input.url));
     match download_text_content(client, disabled_headers, input, None, persist_filepath).await {
         Ok((content, _response_url)) => {
             match serde_json::from_str::<serde_json::Value>(&content) {
@@ -549,7 +546,7 @@ pub async fn get_input_json_content(client: &reqwest::Client, disabled_headers: 
 }
 
 async fn download_json_content_as_stream(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<DynReader, Error> {
-    debug_if_enabled!("downloading json content from {}", sanitize_sensitive_info(&input.url));
+    debug_if_enabled!("Downloading json content from {}", sanitize_sensitive_info(&input.url));
     match download_text_content_as_stream(client, disabled_headers, input, None, persist_filepath).await {
         Ok((reader, _response_url)) => Ok(reader),
         Err(err) => Err(err)

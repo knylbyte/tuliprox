@@ -120,21 +120,31 @@ pub struct SeriesMetadata {
     pub seasons: Option<Vec<SeasonMetadata>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub episodes: Option<Vec<EpisodeMetadata>>,
+    #[serde(default)]
     pub source: MetadataSource,
+    #[serde(default)]
     pub number_of_episodes: u32,
+    #[serde(default)]
     pub number_of_seasons: u32,
     // Last updated timestamp (Unix epoch)
+    #[serde(default)]
     pub last_updated: i64,
+    #[serde(default)]
     pub videos: Option<Vec<VideoClipMetadata>>
 }
 
 // Episode metadata for TV series
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpisodeMetadata {
+    #[serde(default)]
     pub id: u32,
+    #[serde(default)]
     pub tmdb_id: u32,
+    #[serde(default)]
     pub title: String,
+    #[serde(default)]
     pub season: u32,
+    #[serde(default)]
     pub episode: u32,
     // Aired date (ISO 8601 format)
     #[serde(skip_serializing_if = "Option::is_none")]

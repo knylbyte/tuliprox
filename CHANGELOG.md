@@ -1,5 +1,6 @@
 # Changelog
 # 3.3.0 (2025-11-xx)
+- !BREAKING CHANGE! Diue to some structure changes the old data format is invalid. You need to clean your data folder and update the playlists
 - !BREAKING CHANGE! config.yml threads attribute is now renamed to process_parallel and is a boolean (true or false).
 - !BREAKING CHANGE! config.yml adds a reverse proxy config field rewrite_secret to keep resource URLs valid after restart.
 - !BREAKING CHANGE! removed `forced_retry_interval_secs`.

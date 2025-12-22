@@ -183,7 +183,7 @@ pub struct SeriesStreamProperties {
     pub youtube_trailer: String,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub tmdb: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub details: Option<SeriesStreamDetailProperties>,
 }
 
@@ -422,7 +422,6 @@ impl VideoStreamProperties {
         props
     }
 }
-
 
 impl SeriesStreamProperties {
     pub fn from_info(info: &XtreamSeriesInfo, pli: &PlaylistItem) -> SeriesStreamProperties {

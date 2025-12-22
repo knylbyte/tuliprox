@@ -26,6 +26,7 @@ async fn map_to_xtream_category(categories: DynReader) -> Result<Vec<XtreamCateg
 async fn map_to_xtream_streams(xtream_cluster: XtreamCluster, streams: DynReader) -> Result<Vec<StreamProperties>, TuliproxError> {
     spawn_blocking(move || {
         let reader = tokio_util::io::SyncIoBridge::new(streams);
+
         let parsed: Result<Vec<StreamProperties>, serde_json::Error> = match xtream_cluster {
             XtreamCluster::Live => serde_json::from_reader::<_, Vec<LiveStreamProperties>>(reader).map(|list| list.into_iter().map(StreamProperties::Live).collect()),
             XtreamCluster::Video => serde_json::from_reader::<_, Vec<VideoStreamProperties>>(reader).map(|list| list.into_iter().map(Box::new).map(StreamProperties::Video).collect()),
