@@ -27,7 +27,7 @@ const RESERVED_PATHS: &[&str] = &[
 pub struct ContentSecurityPolicyConfigDto {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub custom_attributes: Option<Vec<String>>,
 }
 
@@ -74,13 +74,13 @@ pub struct WebUiConfigDto {
     pub enabled: bool,
     #[serde(default = "default_as_true")]
     pub user_ui_enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub content_security_policy: Option<ContentSecurityPolicyConfigDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub auth: Option<WebAuthConfigDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub player_server: Option<String>,
     #[serde(default = "default_kick_secs")]
     pub kick_secs: u64,
@@ -105,8 +105,8 @@ impl WebUiConfigDto {
         let empty = WebUiConfigDto::default();
         self.enabled == empty.enabled
             && self.user_ui_enabled == empty.user_ui_enabled
-            && is_blank_optional_string(&self.path)
-            && is_blank_optional_string(&self.player_server)
+            && is_blank_optional_string(self.path.as_ref())
+            && is_blank_optional_string(self.player_server.as_ref())
             && self.kick_secs == default_kick_secs()
             && (self.content_security_policy.is_none()
                 || self
@@ -128,10 +128,10 @@ impl WebUiConfigDto {
             self.auth = None;
         }
 
-        if is_blank_optional_string(&self.path) {
+        if is_blank_optional_string(self.path.as_ref()) {
             self.path = None;
         }
-        if is_blank_optional_string(&self.player_server) {
+        if is_blank_optional_string(self.player_server.as_ref()) {
             self.player_server = None;
         }
         self.kick_secs = default_kick_secs();

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use shared::error::{str_to_io_error, to_io_error};
 use crate::utils;
-use crate::utils::{bincode_deserialize, bincode_serialize, IO_BUFFER_SIZE};
+use crate::utils::{binary_deserialize, binary_serialize, IO_BUFFER_SIZE};
 
 const BLOCK_SIZE: usize = 4096;
 const LEN_SIZE: usize = 4;
@@ -169,8 +169,8 @@ where
             self.main_file.seek(SeekFrom::Start(u64::from(offset)))?;
             let old_size = IndexedDocument::read_content_size(&mut self.main_file)?;
 
-            // Prepare new payload (bincode utils, compatible with project)
-            let encoded = bincode_serialize(doc)
+            // Prepare new payload (binary utils, compatible with project)
+            let encoded = binary_serialize(doc)
                 .map_err(|e| str_to_io_error(&format!("Failed to serialize document for {}: {e}", self.main_path.display())))?;
             let new_size: SizeType = SizeType::try_from(encoded.len() as u64)
                 .map_err(|e| str_to_io_error(&format!("Encoded document size does not fit into u32 for {}: {e}", self.main_path.display())))?;
@@ -206,7 +206,7 @@ where
         // New entry -> append
         self.main_file.seek(SeekFrom::End(0))?;
         // Determine size and write it, then write payload
-        let encoded = bincode_serialize(doc)
+        let encoded = binary_serialize(doc)
             .map_err(|e| str_to_io_error(&format!("Failed to serialize document for {}: {e}", self.main_path.display())))?;
         let new_size: SizeType = SizeType::try_from(encoded.len() as u64)
             .map_err(|e| str_to_io_error(&format!("Encoded document size does not fit into u32 for {}: {e}", self.main_path.display())))?;
@@ -236,7 +236,6 @@ where
         let _ = self.store();
     }
 }
-
 
 ////////////////////////////////////////////////////////
 ///
@@ -282,7 +281,7 @@ where
             let buf_size = IndexedDocument::read_content_size(&mut self.main_file)?;
             self.buffer.resize(buf_size, 0u8);
             self.main_file.read_exact(&mut self.buffer[..buf_size])?;
-            if let Ok(item) = bincode_deserialize::<T>(&self.buffer[..buf_size]) {
+            if let Ok(item) = binary_deserialize::<T>(&self.buffer[..buf_size]) {
                 return Ok(item);
             }
         }
@@ -369,7 +368,7 @@ where
         // read content
         self.main_file.read_exact(&mut self.t_buffer[0..buf_size])?;
         // deserialize buffer
-        match bincode_deserialize::<T>(&self.t_buffer[0..buf_size]) {
+        match binary_deserialize::<T>(&self.t_buffer[0..buf_size]) {
             Ok(value) => Ok(Some((value, has_next))),
             Err(err) => {
                 self.failed = true;
@@ -417,7 +416,7 @@ impl IndexedDocumentDirectAccess {
             let buf_size = IndexedDocument::read_content_size(&mut main_file)?;
             let mut buffer: Vec<u8> = vec![0; buf_size];
             main_file.read_exact(&mut buffer)?;
-            if let Ok(item) = bincode_deserialize::<T>(&buffer) {
+            if let Ok(item) = binary_deserialize::<T>(&buffer) {
                 return Ok(item);
             }
         }

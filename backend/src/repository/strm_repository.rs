@@ -2,12 +2,9 @@
 use crate::model::MediaQuality;
 use crate::model::{ApiProxyServerInfo, AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, StrmTargetOutput};
-use crate::repository::bplustree::BPlusTree;
-use crate::repository::storage::{ensure_target_storage_path, get_input_storage_path};
+use crate::repository::storage::{ensure_target_storage_path};
 use crate::repository::storage_const;
-use crate::repository::xtream_repository::{xtream_get_record_file_path, InputVodInfoRecord};
-use crate::utils;
-use crate::utils::{async_file_reader, async_file_writer, normalize_string_path, truncate_filename, FileReadGuard, IO_BUFFER_SIZE};
+use crate::utils::{async_file_reader, async_file_writer, normalize_string_path, truncate_filename, IO_BUFFER_SIZE};
 use chrono::Datelike;
 use filetime::{set_file_times, FileTime};
 use log::{error, trace};
@@ -15,7 +12,7 @@ use regex::Regex;
 use serde::Serialize;
 use shared::error::{create_tuliprox_error_result, info_err};
 use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::model::{ClusterFlags, EpisodeStreamProperties, PlaylistGroup, PlaylistItem, PlaylistItemType, StreamProperties, StrmExportStyle, UUIDType};
+use shared::model::{ClusterFlags, PlaylistGroup, PlaylistItem, PlaylistItemType, StreamProperties, StrmExportStyle, UUIDType};
 use shared::utils::{extract_extension_from_url, hash_bytes, hash_string_as_hex, truncate_string, ExportStyleConfig, CONSTANTS};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -123,91 +120,6 @@ fn style_rename_year<'a>(
     }
 
     (std::borrow::Cow::Owned(new_name), smallest_year)
-}
-
-#[derive(Clone)]
-enum InputTmdbIndexTree {
-    Video(BPlusTree<u32, InputVodInfoRecord>),
-    Series(BPlusTree<u32, EpisodeStreamProperties>),
-}
-
-#[derive(Clone)]
-enum InputTmdbIndexValue {
-    Video(InputVodInfoRecord),
-    Series(EpisodeStreamProperties),
-}
-
-type InputTmdbIndexMap = HashMap<String, Option<(FileReadGuard, InputTmdbIndexTree)>>;
-async fn get_tmdb_value(
-    cfg: &AppConfig,
-    provider_id: Option<u32>,
-    input_name: &str,
-    input_indexes: &mut InputTmdbIndexMap,
-    item_type: PlaylistItemType,
-) -> Option<InputTmdbIndexValue> {
-    // the tmdb_ids are stored inside record files for xtream input.
-    // we load this record files on request for each input and item_type.
-    let pid = provider_id?;
-    match input_indexes.entry(input_name.to_string()) {
-        std::collections::hash_map::Entry::Occupied(entry) => {
-            if let Some((_, tree_value)) = entry.get() {
-                match tree_value {
-                    InputTmdbIndexTree::Video(tree) => tree
-                        .query(&pid)
-                        .map(|vod_record| InputTmdbIndexValue::Video(vod_record.clone())),
-                    InputTmdbIndexTree::Series(tree) => tree
-                        .query(&pid)
-                        .map(|episode| InputTmdbIndexValue::Series(episode.clone())),
-                }
-            } else {
-                None
-            }
-        }
-        std::collections::hash_map::Entry::Vacant(entry) => {
-            if let Ok(Some(tmdb_path)) = get_input_storage_path(input_name, &cfg.config.load().working_dir)
-                .map(|storage_path| xtream_get_record_file_path(&storage_path, item_type))
-            {
-                {
-                    let file_lock = cfg.file_locks.read_lock(&tmdb_path).await;
-                    match item_type {
-                        PlaylistItemType::Series
-                        | PlaylistItemType::LocalSeries => {
-                            if let Ok(tree) =
-                                BPlusTree::<u32, EpisodeStreamProperties>::load(&tmdb_path)
-                            {
-                                let tmdb_id = tree.query(&pid).map(|episode| {
-                                    InputTmdbIndexValue::Series(episode.clone())
-                                });
-                                entry.insert(Some((
-                                    file_lock,
-                                    InputTmdbIndexTree::Series(tree),
-                                )));
-                                return tmdb_id;
-                            }
-                        }
-                        PlaylistItemType::Video
-                        | PlaylistItemType::LocalVideo => {
-                            if let Ok(tree) =
-                                BPlusTree::<u32, InputVodInfoRecord>::load(&tmdb_path)
-                            {
-                                let tmdb_id = tree.query(&pid).map(|vod_record| {
-                                    InputTmdbIndexValue::Video(vod_record.clone())
-                                });
-                                entry.insert(Some((
-                                    file_lock,
-                                    InputTmdbIndexTree::Video(tree),
-                                )));
-                                return tmdb_id;
-                            }
-                        }
-                        _ => {}
-                    }
-                };
-            }
-            entry.insert(None);
-            None
-        }
-    }
 }
 
 pub fn strm_get_file_paths(file_prefix: &str, target_path: &Path) -> PathBuf {
@@ -647,29 +559,17 @@ fn format_for_jellyfin(
 
 /// Generates style-compliant directory and file names by dispatching
 /// the call to a dedicated formatting function for the respective style.
-async fn style_based_rename(
-    cfg: &AppConfig,
+fn style_based_rename(
     strm_item_info: &StrmItemInfo,
-    input_tmdb_indexes: &mut InputTmdbIndexMap,
-    style: &StrmExportStyle,
+    tmdb: Option<u32>,
+    style: StrmExportStyle,
     underscore_whitespace: bool,
     flat: bool,
 ) -> (PathBuf, String) {
     let separator = if underscore_whitespace { "_" } else { " " };
 
-    let tmdb_id_val = get_tmdb_value(
-        cfg,
-        strm_item_info.provider_id,
-        strm_item_info.input_name.as_str(),
-        input_tmdb_indexes,
-        strm_item_info.item_type,
-    ).await;
 
-    let tmdb_id = match tmdb_id_val {
-        Some(InputTmdbIndexValue::Video(r)) if r.tmdb_id != 0 => r.tmdb_id,
-        Some(InputTmdbIndexValue::Series(e)) if e.tmdb.is_some_and(|e| e != 0) => e.tmdb.unwrap_or_default(),
-        _ => strm_item_info.tmdb_id.unwrap_or(0),
-    };
+    let tmdb_id = tmdb.or(strm_item_info.tmdb_id).unwrap_or(0);
 
     // Dispatch the call to the responsible function based on the style.
     match style {
@@ -680,8 +580,8 @@ async fn style_based_rename(
     }
 }
 
-async fn prepare_strm_files(
-    cfg: &AppConfig,
+fn prepare_strm_files(
+    _app_config: &AppConfig,
     new_playlist: &mut [PlaylistGroup],
     _root_path: &Path,
     strm_target_output: &StrmTargetOutput,
@@ -694,7 +594,6 @@ async fn prepare_strm_files(
     let mut all_filenames = HashSet::with_capacity(channel_count);
     // contains only collision filenames
     let mut collisions: HashSet<Arc<String>> = HashSet::new();
-    let mut input_tmdb_indexes: InputTmdbIndexMap = HashMap::with_capacity(channel_count);
     let mut result = Vec::with_capacity(channel_count);
 
     // first we create the names to identify name collisions
@@ -703,13 +602,12 @@ async fn prepare_strm_files(
             let strm_item_info = extract_item_info(pli);
 
             let (dir_path, strm_file_name) = style_based_rename(
-                cfg,
                 &strm_item_info,
-                &mut input_tmdb_indexes,
-                &strm_target_output.style,
+                pli.get_tmdb_id(),
+                strm_target_output.style,
                 strm_target_output.underscore_whitespace,
                 strm_target_output.flat,
-            ).await;
+            );
 
             // Conditionally generate the quality string based on the new config flag
             let separator = if strm_target_output.underscore_whitespace { "_" } else { " " };
@@ -803,7 +701,7 @@ pub async fn write_strm_playlist(
     }
 
     let config = app_config.config.load();
-    let Some(root_path) = utils::get_file_path(
+    let Some(root_path) = crate::utils::get_file_path(
         &config.working_dir,
         Some(std::path::PathBuf::from(&target_output.directory)),
     ) else {
@@ -839,7 +737,7 @@ pub async fn write_strm_playlist(
         new_playlist,
         &root_path,
         target_output,
-    ).await;
+    );
     for strm_file in strm_files {
         // file paths
         let output_path = truncate_filename(&root_path.join(&strm_file.dir_path), 255);

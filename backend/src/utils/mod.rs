@@ -7,11 +7,11 @@ mod step_measure;
 mod logging;
 mod trakt;
 mod json_utils;
-mod bincode_utils;
+mod binary_utils;
 mod telegram;
 mod geoip;
 
-pub use self::bincode_utils::*;
+pub use self::binary_utils::*;
 pub use self::logging::*;
 pub use self::trakt::*;
 pub use self::telegram::*;

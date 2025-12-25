@@ -174,7 +174,7 @@ pub async fn serve_epg(
                 serve_epg_with_rewrites(epg_path, timeshift, rewrite_urls, &encrypt_secret, &base_url, filter).await
             } else {
                 // Neither timeshift nor rewrite needed, serve original file
-                serve_file(epg_path, mime::TEXT_XML).await.into_response()
+                serve_file(epg_path, mime::TEXT_XML.to_string()).await.into_response()
             };
         }
     }

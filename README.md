@@ -684,13 +684,6 @@ library:
     formats:
       - "nfo"  # Optionally write Kodi-compatible NFO files
 
-  classification:
-    series_patterns:
-      - "(?i)s\\d+e\\d+"          # S01E02 format
-      - "(?i)\\d+x\\d+"            # 1x02 format
-      - "(?i)season[\\s._-]*\\d+"  # "Season 1" format
-      - "(?i)episode[\\s._-]*\\d+" # "Episode 1" format
-
   playlist:
     movie_category: "Local Movies"
     series_category: "Local Series"
@@ -930,6 +923,7 @@ There are 2 batch input types  `xtream_batch` and `m3u_batch`.
 - sources:
 - inputs:
   - type: xtream_batch
+    name: my_provider
     url: 'file:///home/tuliprox/config/my_provider_batch.csv'
   targets:
   - name: test
@@ -940,6 +934,8 @@ There are 2 batch input types  `xtream_batch` and `m3u_batch`.
 my_provider_1;user1;password1;http://my_provider_1.com:80;1;0;2028-11-23 12:34:23
 my_provider_2;user2;password2;http://my_provider_2.com:8080;1;0;2028-11-23 12:34:23
 ```
+Important: the first alias is renamed with the `name` from input definition. `my_provider_1` gets `my_provider`.
+This is necessary because of playlist uuid generation and assigning same channel numbers on each update.
 
 ##### `M3uBatch`
 ```yaml

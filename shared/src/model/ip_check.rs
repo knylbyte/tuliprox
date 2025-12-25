@@ -1,8 +1,8 @@
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub struct IpCheckDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub ipv4: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub ipv6: Option<String>,
 }

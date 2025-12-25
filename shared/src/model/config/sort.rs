@@ -42,7 +42,7 @@ impl Display for SortOrder {
 #[serde(deny_unknown_fields)]
 pub struct ConfigSortGroupDto {
     pub order: SortOrder,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub sequence: Option<Vec<String>>,
     #[serde(skip)]
     pub t_sequence: Option<Vec<Regex>>,
@@ -85,7 +85,7 @@ pub struct ConfigSortChannelDto {
     // match against group title
     pub group_pattern: String,
     pub order: SortOrder,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub sequence: Option<Vec<String>>,
     #[serde(skip)]
     pub t_sequence: Option<Vec<Regex>>,
@@ -136,9 +136,9 @@ impl ConfigSortChannelDto {
 pub struct ConfigSortDto {
     #[serde(default)]
     pub match_as_ascii: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub groups: Option<ConfigSortGroupDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub channels: Option<Vec<ConfigSortChannelDto>>,
 }
 

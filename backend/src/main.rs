@@ -32,7 +32,7 @@ use std::sync::Arc;
 #[command(name = "tuliprox")]
 #[command(author = "euzu <euzu@proton.me>")]
 #[command(version)]
-#[command(about = "Extended M3U playlist filter", long_about = None)]
+#[command(about = "Extended playlist proxy", long_about = None)]
 struct Args {
     /// The config directory
     #[arg(short = 'p', long = "config-path")]

@@ -5,7 +5,6 @@ use crate::utils::default_as_true;
 pub fn default_metadata_path() -> String {
    "library_metadata".to_string()
 }
-
 fn default_tmdb_rate_limit_ms() -> u64 {
     250
 }
@@ -23,15 +22,6 @@ fn default_movie_category() -> String {
 }
 fn default_series_category() -> String {
     "Local TV Shows".to_string()
-}
-fn default_series_patterns() -> Vec<String> {
-    [
-        r"S\d{2}E\d{2}",
-        r"s\d{2}e\d{2}",
-        r"\d{1,2}x\d{1,2}",
-        r"Season\s*\d+",
-        r"Episode\s*\d+",
-    ].iter().map(ToString::to_string).collect()
 }
 fn default_supported_extensions() -> Vec<String> {
     [
@@ -56,8 +46,6 @@ pub struct LibraryConfigDto {
     pub supported_extensions: Vec<String>,
     #[serde(default)]
     pub metadata: LibraryMetadataConfigDto,
-    #[serde(default)]
-    pub classification: LibraryClassificationConfigDto,
     #[serde(default)]
     pub playlist: LibraryPlaylistConfigDto,
 }
@@ -114,7 +102,7 @@ pub struct LibraryMetadataReadConfigDto {
 pub struct LibraryTmdbConfigDto {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub api_key: Option<String>,
     #[serde(default = "default_tmdb_rate_limit_ms")]
     pub rate_limit_ms: u64,
@@ -132,22 +120,12 @@ pub enum LibraryMetadataFormat {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
-pub struct LibraryClassificationConfigDto {
-    #[serde(default = "default_series_patterns")]
-    pub series_patterns: Vec<String>,
-    #[serde(default)]
-    pub series_directory_patterns: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(deny_unknown_fields)]
 pub struct LibraryPlaylistConfigDto {
     #[serde(default = "default_movie_category")]
     pub movie_category: String,
     #[serde(default = "default_series_category")]
     pub series_category: String,
 }
-
 
 impl LibraryConfigDto {
     pub fn prepare(&mut self) -> Result<(), TuliproxError> {

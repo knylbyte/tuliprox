@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde::ser::SerializeMap;
-use serde_json::Value;
 use crate::utils::{deserialize_as_option_string, deserialize_as_string_array,
-                   deserialize_number_from_string, deserialize_number_from_string_or_zero,
-                   string_default_on_null, string_or_number_u32,
-                   deserialize_json_as_string, deserialize_release_date};
+                   deserialize_json_as_string, deserialize_number_from_string,
+                   deserialize_number_from_string_or_zero, deserialize_release_date,
+                   string_default_on_null, string_or_number_u32};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct XtreamVideoInfoMovieData {
@@ -165,8 +165,8 @@ pub struct XtreamSeriesInfoEpisode {
     pub container_extension: String,
     #[serde(default)]
     pub info: Option<XtreamSeriesInfoEpisodeInfo>,
-    #[serde(default, deserialize_with = "string_default_on_null")]
-    pub custom_sid: String,
+    #[serde(default)]
+    pub custom_sid: Option<String>,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub added: String,
     #[serde(default, deserialize_with = "string_or_number_u32")]
@@ -197,14 +197,20 @@ where
                 let mut result = Vec::new();
                 for inner in array {
                     if let Some(inner_array) = inner.as_array() {
+                        // Nested array case: [[ep1, ep2], [ep3]]
                         for item in inner_array {
                             let ep: XtreamSeriesInfoEpisode = serde_json::from_value(item.clone())
                                 .map_err(serde::de::Error::custom)?;
                             result.push(ep);
                         }
+                    } else if inner.is_object() {
+                        // Flat array case: [ep1, ep2, ep3]
+                        let ep: XtreamSeriesInfoEpisode = serde_json::from_value(inner.clone())
+                            .map_err(serde::de::Error::custom)?;
+                        result.push(ep);
                     }
                 }
-                Ok(Some(result))
+                Ok(if result.is_empty() { None } else { Some(result) })
             }
         }
         Value::Object(object) => {

@@ -27,5 +27,4 @@ pub(in crate::repository) const FILE_SERIES_INFO_RECORD: &str = "series_info_rec
 pub(in crate::repository) const FILE_SERIES_EPISODE_RECORD: &str = "series_episode_record";
 // pub(in crate::repository) const FILE_SERIES: &str = "series";
 pub(in crate::repository) const PATH_XTREAM: &str = "xtream";
-pub(in crate::repository) const INFO_REWRITE_FIELDS: &[&str] = &["cover_big", "cover", "cover_tmdb", "movie_image", "tmdb_url", "overview", "kinopoisk_url"];
 

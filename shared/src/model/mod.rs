@@ -25,6 +25,7 @@ pub mod system_info;
 mod library_request;
 mod stream_properties;
 mod xtream;
+mod info_doc_utils;
 
 pub use self::cluster_flags::*;
 pub use self::playlist::*;

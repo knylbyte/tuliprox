@@ -1,8 +1,7 @@
-use crate::model::{AppConfig, ConfigFavourites, ConfigInput, ConfigRename};
+use crate::model::{AppConfig, Config, ConfigFavourites, ConfigInput, ConfigRename};
 use crate::utils::epg;
 use crate::utils::m3u;
 use crate::utils::xtream;
-use crate::Config;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -24,7 +23,7 @@ use crate::processing::processor::sort::sort_playlist;
 use crate::processing::processor::trakt::process_trakt_categories_for_target;
 use crate::processing::processor::xtream_series::playlist_resolve_series;
 use crate::processing::processor::xtream_vod::playlist_resolve_vod;
-use crate::repository::playlist_repository::persist_playlist;
+use crate::repository::playlist_repository::{persist_input_playlist, persist_playlist};
 use crate::utils::StepMeasure;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use deunicode::deunicode;
@@ -173,7 +172,7 @@ fn rename_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Opt
 
 fn create_alias_uuid(base_uuid: &UUIDType, mapping_id: &str) -> UUIDType {
     let mut data = Vec::with_capacity(base_uuid.len() + mapping_id.len());
-    data.extend_from_slice(base_uuid);
+    data.extend_from_slice(base_uuid.as_ref());
     data.extend_from_slice(mapping_id.as_bytes());
     hash_bytes(&data)
 }
@@ -309,10 +308,10 @@ fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bo
 async fn playlist_download_from_input(client: &reqwest::Client, app_config: &Arc<AppConfig>, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
     let config = &*app_config.config.load();
     match input.input_type {
-        InputType::M3u => m3u::get_m3u_playlist(client, config, input).await,
-        InputType::Xtream => xtream::get_xtream_playlist(config, client, input).await,
+        InputType::M3u => m3u::download_m3u_playlist(client, config, input).await,
+        InputType::Xtream => xtream::download_xtream_playlist(config, client, input).await,
         InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![]),
-        InputType::Library => library::get_library_playlist(client, app_config, input).await,
+        InputType::Library => library::download_library_playlist(client, app_config, input).await,
     }
 }
 
@@ -332,13 +331,25 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
             if is_input_enabled(input, &user_targets) {
                 source_downloaded = true;
                 let start_time = Instant::now();
-                let (mut playlistgroups, mut error_list) = playlist_download_from_input(client, &app_config, input).await;
+                // Download playlist for input
+                let (playlistgroups, mut error_list) = {
+                    let (downloaded_playlist, mut download_err) = playlist_download_from_input(client, &app_config, input).await;
+                    let (playlist, error) = persist_input_playlist(&app_config, input, downloaded_playlist).await;
+                    error!("Failed to persist input playlist {}", input.name);
+                    if let Some(err) = error {
+                        download_err.push(err);
+                    }
+                    (playlist, download_err)
+                };
+
+                // Download epg for input
                 let (tvguide, mut tvguide_errors) = if error_list.is_empty() {
                     let working_dir = &app_config.config.load().working_dir;
                     epg::get_xmltv(client, input, working_dir).await
                 } else {
                     (None, vec![])
                 };
+
                 errors.append(&mut error_list);
                 errors.append(&mut tvguide_errors);
                 let group_count = playlistgroups.len();
@@ -348,7 +359,6 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
                     info!("Source is empty {input_name}");
                     errors.push(notify_err!(format!("Source is empty {input_name}")));
                 } else {
-                    playlistgroups.iter_mut().for_each(PlaylistGroup::on_load);
                     source_playlists.push(
                         FetchedPlaylist {
                             input,
@@ -533,7 +543,7 @@ fn flatten_groups(playlistgroups: Vec<PlaylistGroup>) -> Vec<PlaylistGroup> {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn process_playlist_for_target(app_config: &AppConfig,
+async fn process_playlist_for_target(app_config: &Arc<AppConfig>,
                                      client: &reqwest::Client,
                                      playlists: &mut [FetchedPlaylist<'_>],
                                      target: &ConfigTarget,

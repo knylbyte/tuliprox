@@ -108,7 +108,6 @@ pub async fn get_input_epg_content_as_file(client: &reqwest::Client, input: &Con
     }
 }
 
-
 pub async fn get_input_text_content(client: &reqwest::Client, input: &InputSource, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<String, TuliproxError> {
     debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(&input.url));
 

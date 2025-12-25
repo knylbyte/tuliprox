@@ -32,9 +32,9 @@ impl StreamBufferConfigDto {
 pub struct StreamConfigDto {
     #[serde(default)]
     pub retry: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub buffer: Option<StreamBufferConfigDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub throttle: Option<String>,
     #[serde(default = "default_grace_period_millis")]
     pub grace_period_millis: u64,

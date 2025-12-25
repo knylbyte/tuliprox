@@ -1,6 +1,4 @@
 use crate::model::macros;
-use log::error;
-use regex::Regex;
 use shared::error::TuliproxError;
 use shared::model::{default_metadata_path, LibraryConfigDto, LibraryContentType, LibraryMetadataFormat};
 use std::path::PathBuf;
@@ -40,12 +38,6 @@ pub struct LibraryTmdbConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct LibraryClassificationConfig {
-    pub series_patterns: Vec<Regex>,
-    pub series_directory_patterns: Vec<Regex>,
-}
-
-#[derive(Debug, Clone)]
 pub struct LibraryPlaylistConfig {
     pub movie_category: String,
     pub series_category: String,
@@ -58,7 +50,6 @@ pub struct LibraryConfig {
     pub scan_directories: Vec<LibraryScanDirectory>,
     pub supported_extensions: Vec<String>,
     pub metadata: LibraryMetadataConfig,
-    pub classification: LibraryClassificationConfig,
     pub playlist: LibraryPlaylistConfig,
 }
 
@@ -93,37 +84,6 @@ macros::from_impl!(LibraryConfig);
 
 impl From<&LibraryConfigDto> for LibraryConfig {
     fn from(dto: &LibraryConfigDto) -> Self {
-        // Compile series patterns
-        let series_patterns = dto
-            .classification
-            .series_patterns
-            .iter()
-            .filter_map(|pattern| {
-                match Regex::new(pattern) {
-                    Ok(re) => Some(re),
-                    Err(e) => {
-                        error!("Invalid series pattern '{pattern}': {e}");
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        // Compile directory patterns
-        let series_directory_patterns = dto
-            .classification
-            .series_directory_patterns
-            .iter()
-            .filter_map(|pattern| {
-                match Regex::new(pattern) {
-                    Ok(re) => Some(re),
-                    Err(e) => {
-                        error!("Invalid series directory pattern '{pattern}': {e}");
-                        None
-                    }
-                }
-            })
-            .collect();
 
         Self {
             enabled: dto.enabled,
@@ -158,10 +118,6 @@ impl From<&LibraryConfigDto> for LibraryConfig {
                 },
                 fallback_to_filename: dto.metadata.fallback_to_filename,
                 formats: dto.metadata.formats.clone(),
-            },
-            classification: LibraryClassificationConfig {
-                series_patterns,
-                series_directory_patterns,
             },
             playlist: LibraryPlaylistConfig {
                 movie_category: dto.playlist.movie_category.clone(),

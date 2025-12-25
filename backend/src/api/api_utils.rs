@@ -1,3 +1,4 @@
+use crate::BUILD_TIMESTAMP;
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
 use crate::api::model::{
     create_channel_unavailable_stream, create_custom_video_stream_response,
@@ -13,10 +14,12 @@ use crate::api::panel_api::try_provision_account_on_exhausted;
 use crate::model::{ConfigInput, ResourceRetryConfig};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::lru_cache::LRUResourceCache;
-use crate::utils::request;
+use crate::utils::{request};
 use crate::utils::{async_file_reader, async_file_writer, create_new_file_for_write, get_file_extension};
 use crate::utils::{debug_if_enabled, trace_if_enabled};
-use crate::BUILD_TIMESTAMP;
+use crate::auth::Fingerprint;
+use crate::utils::request::{content_type_from_ext, parse_range};
+
 use arc_swap::ArcSwapOption;
 use axum::http::{header, HeaderMap, HeaderValue, Response, StatusCode};
 use axum::response::IntoResponse;
@@ -125,8 +128,6 @@ pub use try_option_bad_request;
 pub use try_result_bad_request;
 pub use try_result_not_found;
 pub use try_unwrap_body;
-use crate::auth::Fingerprint;
-use crate::utils::request::{content_type_from_ext, parse_range};
 
 pub fn get_server_time() -> String {
     chrono::offset::Local::now()
@@ -144,7 +145,7 @@ pub fn get_build_time() -> Option<String> {
 }
 
 #[allow(clippy::missing_panics_doc)]
-pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoResponse + Send {
+pub async fn serve_file(file_path: &Path, mime_type: String) -> impl IntoResponse + Send {
     match tokio::fs::try_exists(file_path).await {
         Ok(exists) => {
             if !exists {
@@ -165,7 +166,7 @@ pub async fn serve_file(file_path: &Path, mime_type: mime::Mime) -> impl IntoRes
 
             try_unwrap_body!(axum::response::Response::builder()
                 .status(axum::http::StatusCode::OK)
-                .header(axum::http::header::CONTENT_TYPE, mime_type.to_string())
+                .header(axum::http::header::CONTENT_TYPE, mime_type)
                 .header(
                     axum::http::header::CACHE_CONTROL,
                     axum::http::header::HeaderValue::from_static("no-cache")
@@ -1208,25 +1209,39 @@ pub fn get_headers_from_request(
 
 fn get_add_cache_content(
     res_url: &str,
+    mime_type: Option<String>,
     cache: &Arc<ArcSwapOption<Mutex<LRUResourceCache>>>,
 ) -> Arc<dyn Fn(usize) + Send + Sync> {
     let resource_url = String::from(res_url);
     let cache = Arc::clone(cache);
     let add_cache_content: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |size| {
         let res_url = resource_url.clone();
-
+        let mime_type = mime_type.clone();
         // todo spawn, replace with unboundchannel
         let cache = Arc::clone(&cache);
         tokio::spawn(async move {
             if let Some(cache) = cache.load().as_ref() {
-                let _ = cache.lock().await.add_content(&res_url, size);
+                let _ = cache.lock().await.add_content(&res_url, mime_type, size);
             }
         });
     });
     add_cache_content
 }
 
-async fn build_stream_response(
+fn get_mime_type(headers: &axum::http::HeaderMap, resource_url: &str) -> Option<String> {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())   // Option<&str>
+        .map(ToString::to_string)        // Option<String>
+        .or_else(|| {
+            // fallback auf guess
+            mime_guess::from_path(resource_url)
+                .first_raw()
+                .map(ToString::to_string)
+        })
+}
+
+async fn build_resource_stream_response(
     app_state: &Arc<AppState>,
     resource_url: &str,
     response: reqwest::Response,
@@ -1235,6 +1250,7 @@ async fn build_stream_response(
     let status = response.status();
     let mut response_builder =
         axum::response::Response::builder().status(status);
+    let mime_type = get_mime_type(response.headers(), resource_url);
     let has_content_range = response.headers().contains_key(axum::http::header::CONTENT_RANGE);
     for (key, value) in response.headers() {
         let name = key.as_str();
@@ -1261,7 +1277,7 @@ async fn build_stream_response(
     if can_cache {
         debug!( "Caching eligible resource stream {sanitized_resource_url}");
         let cache_resource_path = if let Some(cache) = app_state.cache.load().as_ref() {
-            Some(cache.lock().await.store_path(resource_url))
+            Some(cache.lock().await.store_path(resource_url, mime_type.as_deref()))
         } else {
             None
         };
@@ -1270,7 +1286,7 @@ async fn build_stream_response(
                 Ok(file) => {
                     debug!("Persisting resource stream {sanitized_resource_url} to {}", resource_path.display());
                     let writer = async_file_writer(file);
-                    let add_cache_content = get_add_cache_content(resource_url, &app_state.cache);
+                    let add_cache_content = get_add_cache_content(resource_url, mime_type, &app_state.cache);
                     let tee = tee_stream(byte_stream, writer, &resource_path, add_cache_content);
                     return try_unwrap_body!(response_builder.body(axum::body::Body::from_stream(tee)));
                 }
@@ -1313,7 +1329,7 @@ async fn fetch_resource_with_retry(
                 let status = response.status();
                 if status.is_success() {
                     return Some(
-                        build_stream_response(app_state, resource_url, response).await,
+                        build_resource_stream_response(app_state, resource_url, response).await,
                     );
                 }
                 // Retry only for 408, 425, 429 and all 5xx statuses
@@ -1405,9 +1421,9 @@ pub async fn resource_response(
     let req_headers = get_headers_from_request(req_headers, &filter);
     if let Some(cache) = app_state.cache.load().as_ref() {
         let mut guard = cache.lock().await;
-        if let Some(resource_path) = guard.get_content(resource_url) {
+        if let Some((resource_path, mime_type)) = guard.get_content(resource_url) {
             trace_if_enabled!("Responding resource from cache {}", sanitize_sensitive_info(resource_url));
-            return serve_file(&resource_path, mime::APPLICATION_OCTET_STREAM)
+            return serve_file(&resource_path, mime_type.unwrap_or_else(|| mime::APPLICATION_OCTET_STREAM.to_string()))
                 .await
                 .into_response();
         }

@@ -40,13 +40,13 @@ pub struct CommonPlaylistItem {
     pub url: String,
     pub input_name: String,
     pub item_type: PlaylistItemType,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub epg_channel_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub xtream_cluster: Option<XtreamCluster>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub additional_properties: Option<StreamProperties>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub category_id: Option<u32>,
 }
 
@@ -79,22 +79,22 @@ impl From<PlaylistResponseGroup> for UiPlaylistGroup {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct PlaylistCategoriesResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub live: Option<Vec<PlaylistResponseGroup>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub vod: Option<Vec<PlaylistResponseGroup>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub series: Option<Vec<PlaylistResponseGroup>>,
 }
 
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct UiPlaylistCategories {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub live: Option<Vec<Rc<UiPlaylistGroup>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub vod: Option<Vec<Rc<UiPlaylistGroup>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub series: Option<Vec<Rc<UiPlaylistGroup>>>,
 }
 
@@ -109,7 +109,7 @@ impl From<PlaylistCategoriesResponse> for UiPlaylistCategories {
 }
 
 fn filter_channels(
-    groups: &Option<Vec<Rc<UiPlaylistGroup>>>,
+    groups: Option<&Vec<Rc<UiPlaylistGroup>>>,
     text: &str,
 ) -> Option<Vec<Rc<UiPlaylistGroup>>> {
     // normalize search text (lowercase)
@@ -149,7 +149,7 @@ fn filter_channels(
     })
 }
 
-fn filter_channels_re(groups: &Option<Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) -> Option<Vec<Rc<UiPlaylistGroup>>> {
+fn filter_channels_re(groups: Option<&Vec<Rc<UiPlaylistGroup>>>, regex: &Regex) -> Option<Vec<Rc<UiPlaylistGroup>>> {
     groups.as_ref().map(|gs| {
         gs.iter()
             .filter_map(|group| {
@@ -199,16 +199,16 @@ impl UiPlaylistCategories {
             SearchRequest::Clear => None,
             SearchRequest::Text(text, _search_fields) => {
                 let text_lc = text.to_lowercase();
-                let live = filter_channels(&self.live, &text_lc);
-                let video = filter_channels(&self.vod, &text_lc);
-                let series = filter_channels(&self.series, &text_lc);
+                let live = filter_channels(self.live.as_ref(), &text_lc);
+                let video = filter_channels(self.vod.as_ref(), &text_lc);
+                let series = filter_channels(self.series.as_ref(), &text_lc);
                 build_result(live, video, series)
             }
             SearchRequest::Regexp(text, _search_fields) => {
                 if let Ok(regex) = Regex::new(text) {
-                    let live = filter_channels_re(&self.live, &regex);
-                    let video = filter_channels_re(&self.vod, &regex);
-                    let series = filter_channels_re(&self.series, &regex);
+                    let live = filter_channels_re(self.live.as_ref(), &regex);
+                    let video = filter_channels_re(self.vod.as_ref(), &regex);
+                    let series = filter_channels_re(self.series.as_ref(), &regex);
                     build_result(live, video, series)
                 } else {
                     None

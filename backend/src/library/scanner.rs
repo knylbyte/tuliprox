@@ -1,4 +1,4 @@
-use crate::library::MediaClassifier;
+use crate::library::{MediaClassification, MediaClassifier};
 use crate::model::{LibraryConfig, LibraryScanDirectory};
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
@@ -6,6 +6,7 @@ use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io;
+use crate::ptt::PttMetadata;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub struct SeriesKey {
@@ -30,6 +31,7 @@ impl Display for SeriesKey {
 pub enum MediaGroup {
     Movie {
         file: ScannedMediaFile,
+        metadata: Box<PttMetadata>,
     },
     Series {
         show_key: SeriesKey,
@@ -40,7 +42,7 @@ pub enum MediaGroup {
 impl Display for MediaGroup {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            MediaGroup::Movie { file } => write!(f, "{}", file.file_path),
+            MediaGroup::Movie { file, .. } => write!(f, "{}", file.file_path),
             MediaGroup::Series { show_key, .. } => write!(f, "{}", show_key.title),
         }
     }
@@ -51,6 +53,7 @@ pub struct SeriesEpisodeFile {
     pub file: ScannedMediaFile,
     pub season: u32,
     pub episode: u32,
+    pub metadata: Box<PttMetadata>,
 }
 
 pub struct MediaGrouper;
@@ -61,17 +64,22 @@ impl MediaGrouper {
         let mut movies = Vec::new();
 
         for file in files {
-            if let Some((key, season, episode)) = MediaClassifier::classify_series_file(&file) {
-                series_map
-                    .entry(key)
-                    .or_default()
-                    .push(SeriesEpisodeFile {
-                        file,
-                        season,
-                        episode,
-                    });
-            } else {
-                movies.push(MediaGroup::Movie { file });
+            let classification = MediaClassifier::classify(&file);
+            match classification {
+                MediaClassification::Movie { metadata } => {
+                    movies.push(MediaGroup::Movie { file, metadata: Box::new(metadata) });
+                }
+                MediaClassification::Series { key, metadata, season, episode,.. } => {
+                    series_map
+                        .entry(key)
+                        .or_default()
+                        .push(SeriesEpisodeFile {
+                            file,
+                            season,
+                            episode,
+                            metadata: Box::new(metadata),
+                        });
+                }
             }
         }
 
@@ -274,7 +282,7 @@ impl LibraryScanner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{LibraryClassificationConfig, LibraryMetadataConfig, LibraryMetadataReadConfig, LibraryPlaylistConfig, LibraryTmdbConfig};
+    use crate::model::{LibraryMetadataConfig, LibraryMetadataReadConfig, LibraryPlaylistConfig, LibraryTmdbConfig};
 
     fn create_test_config() -> LibraryConfig {
         LibraryConfig {
@@ -301,10 +309,6 @@ mod tests {
                 },
                 fallback_to_filename: true,
                 formats: vec![],
-            },
-            classification: LibraryClassificationConfig {
-                series_patterns: vec![],
-                series_directory_patterns: vec![],
             },
             playlist: LibraryPlaylistConfig {
                 movie_category: "Local Movies".to_string(),

@@ -36,15 +36,6 @@ fn is_compatible_content_type(cluster: XtreamCluster, content_type: TraktContent
     }
 }
 
-/// Extract TMDB ID from playlist item
-fn extract_tmdb_id_from_playlist_item(item: &PlaylistItem) -> Option<u32> {
-    if let Some(props) = &item.header.additional_properties {
-        props.get_tmdb_id()
-    } else {
-        None
-    }
-}
-
 fn calculate_year_bonus(playlist_year: Option<u32>, trakt_year: Option<u32>) -> f64 {
     if let (Some(p_year), Some(t_year)) = (playlist_year, trakt_year) {
         if p_year == t_year {
@@ -218,7 +209,7 @@ fn match_trakt_items_with_playlist<'a>(
             if is_compatible_content_type(channel.header.xtream_cluster, list_config.content_type) {
                 let normalized_title = normalize_title_for_matching(&channel.header.title);
                 let channel_year = extract_year_from_title(&channel.header.title);
-                let channel_tmdb_id = extract_tmdb_id_from_playlist_item(channel);
+                let channel_tmdb_id = channel.get_tmdb_id();
                 if let Some(matched) = find_best_match_for_item((channel, normalized_title, channel_year, channel_tmdb_id), &trakt_match_items, list_config) {
                     matches.push(matched);
                 }

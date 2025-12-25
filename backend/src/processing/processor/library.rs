@@ -1,12 +1,12 @@
 use crate::library::{MediaMetadata, MetadataAsyncIter, MetadataCacheEntry};
 use crate::model::{AppConfig, ConfigInput};
 use shared::error::TuliproxError;
-use shared::model::{EpisodeStreamProperties, PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, SeriesStreamDetailEpisodeProperties, SeriesStreamDetailProperties, SeriesStreamProperties, StreamProperties, VideoStreamDetailProperties, VideoStreamProperties, XtreamCluster};
-use shared::utils::{generate_playlist_uuid, string_to_uuid_type};
+use shared::model::{EpisodeStreamProperties, PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, SeriesStreamDetailEpisodeProperties, SeriesStreamDetailProperties, SeriesStreamProperties, StreamProperties, UUIDType, VideoStreamDetailProperties, VideoStreamProperties, XtreamCluster};
+use shared::utils::{generate_playlist_uuid};
 use std::path::Path;
 use std::sync::Arc;
 
-pub async fn get_library_playlist(_client: &reqwest::Client, app_config: &Arc<AppConfig>, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
+pub async fn download_library_playlist(_client: &reqwest::Client, app_config: &Arc<AppConfig>, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
     let config = &*app_config.config.load();
     let Some(library_config) = config.library.as_ref() else { return (vec![], vec![]) };
     if !library_config.enabled { return (vec![], vec![]); }
@@ -57,10 +57,11 @@ fn to_playlist_item(entry: &MetadataCacheEntry, input_name: &str, group_name: &s
             let additional_properties = metadata_cache_entry_to_xtream_movie_info(entry);
             vec![PlaylistItem {
                 header: PlaylistItemHeader {
-                    uuid: string_to_uuid_type(&entry.uuid),
+                    uuid: UUIDType::from_valid_uuid(&entry.uuid),
                     name: metadata.title().to_string(),
                     group: group_name.to_string(),
                     title: metadata.title().to_string(),
+                    logo: metadata.poster().map_or_else(String::new, ToString::to_string),
                     url: format!("file://{}", entry.file_path),
                     xtream_cluster: XtreamCluster::Video,
                     additional_properties,
@@ -78,6 +79,7 @@ fn to_playlist_item(entry: &MetadataCacheEntry, input_name: &str, group_name: &s
                     if let Some(details_props) = series_properties.details.as_ref() {
                         if let Some(prop_episodes) = details_props.episodes.as_ref() {
                             for episode in prop_episodes {
+                                let logo = if episode.movie_image.is_empty() { metadata.poster().map_or_else(String::new, ToString::to_string) } else { episode.movie_image.clone() };
                                 let container_extension = Path::new(&episode.direct_source)
                                     .extension()
                                     .and_then(|s| s.to_str())
@@ -88,6 +90,7 @@ fn to_playlist_item(entry: &MetadataCacheEntry, input_name: &str, group_name: &s
                                         // we use parent_code for local series to find the parent series info and straighten the virtual_ids
                                         parent_code: entry.uuid.clone(),
                                         uuid: generate_playlist_uuid(input_name, &episode.id.to_string(), PlaylistItemType::LocalSeries, &episode.direct_source),
+                                        logo: logo.clone(),
                                         name: episode.title.clone(),
                                         group: group_name.to_string(),
                                         title: episode.title.clone(),
@@ -103,7 +106,7 @@ fn to_playlist_item(entry: &MetadataCacheEntry, input_name: &str, group_name: &s
                                             added: Some(episode.added.clone()),
                                             release_date: Some(episode.release_date.clone()),
                                             tmdb: episode.tmdb,
-                                            movie_image: episode.movie_image.clone(),
+                                            movie_image: logo,
                                             container_extension,
                                             audio: None,
                                             video: None,
@@ -118,11 +121,12 @@ fn to_playlist_item(entry: &MetadataCacheEntry, input_name: &str, group_name: &s
 
                 let series_info = PlaylistItem {
                     header: PlaylistItemHeader {
-                        uuid: string_to_uuid_type(&entry.uuid),
+                        uuid: UUIDType::from_valid_uuid(&entry.uuid),
                         id: entry.uuid.clone(),
                         name: metadata.title().to_string(),
                         group: group_name.to_string(),
                         title: metadata.title().to_string(),
+                        logo: metadata.poster().map_or_else(String::new, ToString::to_string),
                         url: format!("file://{}", entry.file_path),
                         xtream_cluster: XtreamCluster::Series,
                         item_type: PlaylistItemType::LocalSeriesInfo,
@@ -167,7 +171,7 @@ pub fn metadata_cache_entry_to_xtream_movie_info(
         container_extension,
         rating: movie.rating,
         rating_5based: None,
-        stream_type: "movie".to_string(),
+        stream_type: Some("movie".to_string()),
         trailer: movie.videos.as_ref().and_then(|v| v.iter().find(|video| video.site.eq_ignore_ascii_case("youtube")).map(|video| video.key.clone())),
         tmdb: movie.tmdb_id,
         is_adult: 0,
@@ -246,7 +250,7 @@ pub fn metadata_cache_entry_to_xtream_series_info(
                 season: episode.season,
                 title: episode.title.clone(),
                 container_extension,
-                custom_sid: String::new(),
+                custom_sid: None,
                 added: episode.file_modified.to_string(),
                 direct_source: episode.file_path.clone(),
                 tmdb: tmdb_id,

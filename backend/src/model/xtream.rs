@@ -2,7 +2,7 @@ use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, XtreamTargetOutput};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use shared::model::{xtream_const, PlaylistItem, PlaylistItemType, PlaylistItemTypeSet, ProxyUserStatus, XtreamMappingOptions};
+use shared::model::{PlaylistItem, PlaylistItemType, PlaylistItemTypeSet, ProxyUserStatus, XtreamMappingOptions};
 use shared::utils::{deserialize_as_string, deserialize_number_from_string_or_zero};
 use enum_iterator::all;
 
@@ -75,43 +75,6 @@ pub fn normalize_release_date(document: &mut serde_json::Map<String, Value>) {
         document.insert("release_date".to_string(), Value::Null);
     }
 }
-
-fn make_bdpath_resource_url(resource_url: &str, bd_path: &str, index: usize, field_prefix: &str) -> String {
-    if bd_path.starts_with("http") {
-        format!("{resource_url}/{field_prefix}{}_{index}", xtream_const::XC_PROP_BACKDROP_PATH)
-    } else {
-        bd_path.to_string()
-    }
-}
-
-pub fn rewrite_doc_urls(resource_url: Option<&String>, document: &mut serde_json::Map<String, Value>, fields: &[&str], field_prefix: &str) {
-    if let Some(rewrite_url) = resource_url {
-        if let Some(bdpath) = document.get(xtream_const::XC_PROP_BACKDROP_PATH) {
-            match bdpath {
-                Value::String(bd_path) => {
-                    document.insert(xtream_const::XC_PROP_BACKDROP_PATH.to_string(), Value::Array(vec![Value::String(make_bdpath_resource_url(rewrite_url.as_str(), bd_path, 0, field_prefix))]));
-                }
-                Value::Array(bd_path) => {
-                    document.insert(xtream_const::XC_PROP_BACKDROP_PATH.to_string(), Value::Array(
-                        bd_path.iter()
-                            .filter_map(|val| val.as_str())
-                            .enumerate()
-                            .map(|(index, value)| Value::String(make_bdpath_resource_url(rewrite_url.as_str(), value, index, field_prefix)))
-                            .collect()));
-                }
-                _ => {}
-            }
-        }
-        for &field in fields {
-            if let Some(Value::String(value)) = document.get(field) {
-                if value.starts_with("http") {
-                    document.insert(field.to_string(), Value::String(format!("{rewrite_url}/{field_prefix}{field}")));
-                }
-            }
-        }
-    }
-}
-
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct PlaylistXtreamCategory {

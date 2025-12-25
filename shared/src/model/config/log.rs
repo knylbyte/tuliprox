@@ -7,7 +7,7 @@ pub struct LogConfigDto {
     pub sanitize_sensitive_info: bool,
     #[serde(default)]
     pub log_active_user: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub log_level: Option<String>,
 }
 
@@ -23,11 +23,11 @@ impl Default for LogConfigDto {
 
 impl LogConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.sanitize_sensitive_info && !self.log_active_user && is_blank_optional_string(&self.log_level)
+        self.sanitize_sensitive_info && !self.log_active_user && is_blank_optional_string(self.log_level.as_ref())
     }
 
     pub fn clean(&mut self) {
-        if is_blank_optional_string(&self.log_level) {
+        if is_blank_optional_string(self.log_level.as_ref()) {
             self.log_level = None;
         }
     }

@@ -3,11 +3,16 @@ use openssl::symm::{Cipher, Crypter, Mode};
 use rand::{RngCore, rngs::OsRng, TryRngCore};
 use shared::error::{TuliproxError, TuliproxErrorKind};
 
-fn encode_base64_string(input: &[u8]) -> String {
+pub fn encode_base64_hash(text: &str) -> String {
+    let hash = blake3::hash(text.as_bytes());
+    encode_base64_string(hash.as_bytes())
+}
+
+pub fn encode_base64_string(input: &[u8]) -> String {
     general_purpose::URL_SAFE_NO_PAD.encode(input)
 }
 
-fn decode_base64_string(input: &str) -> Vec<u8> {
+pub fn decode_base64_string(input: &str) -> Vec<u8> {
     general_purpose::URL_SAFE_NO_PAD.decode(input).unwrap_or_else(|_| input.as_bytes().to_vec())
 }
 

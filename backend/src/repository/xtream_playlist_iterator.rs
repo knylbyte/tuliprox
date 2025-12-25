@@ -5,7 +5,6 @@ use crate::repository::user_repository::user_get_bouquet_filter;
 use crate::repository::xtream_repository::{xtream_get_file_paths, xtream_get_storage_path};
 use crate::utils::FileReadGuard;
 use log::error;
-use serde_json::Value;
 use shared::error::info_err;
 use shared::error::TuliproxError;
 use shared::model::{PlaylistItemType, TargetType, XtreamCluster, XtreamMappingOptions, XtreamPlaylistItem};
@@ -148,14 +147,10 @@ impl XtreamPlaylistJsonIterator {
     }
 }
 
-pub fn to_doc(pli: &XtreamPlaylistItem, options: &XtreamMappingOptions) -> Value {
-    pli.to_document(options)
-}
-
 impl Iterator for XtreamPlaylistJsonIterator {
     type Item = (String, bool);
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.get_next().map(|(pli, has_next)| (to_doc(&pli, &self.inner.options).to_string(), has_next))
+        self.inner.get_next().map(|(pli, has_next)| (pli.to_document(&self.inner.options).to_string(), has_next))
     }
 }
 

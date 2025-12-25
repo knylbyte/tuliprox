@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-use shared::model::{M3uPlaylistItem, XtreamPlaylistItem};
+use shared::model::{M3uPlaylistItem, PlaylistItem, XtreamCluster, XtreamPlaylistItem};
 use crate::model::ConfigTarget;
 use crate::repository::bplustree::BPlusTree;
 use crate::repository::target_id_mapping::{VirtualIdRecord};
@@ -44,6 +44,38 @@ impl PlaylistStorageState {
                 if let Some(xtream) = storage.xtream.as_mut() {
                     for record in mapping {
                         xtream.id_mapping.insert(record.virtual_id, record);
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn update_playlist_items(&self, target: &ConfigTarget, pli_list: Vec<&XtreamPlaylistItem>) {
+        if target.use_memory_cache {
+            if let Some(storage) = self.data.write().await.get_mut(&target.name) {
+                if let Some(xtream) = storage.xtream.as_mut() {
+                    for pli in pli_list {
+                        match pli.xtream_cluster {
+                            XtreamCluster::Live => &mut xtream.live,
+                            XtreamCluster::Video => &mut xtream.vod,
+                            XtreamCluster::Series =>  &mut xtream.series,
+                        }.insert(pli.virtual_id, pli.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn insert_playlist_items(&self, target: &ConfigTarget, pli_list: Vec<PlaylistItem>) {
+        if target.use_memory_cache {
+            if let Some(storage) = self.data.write().await.get_mut(&target.name) {
+                if let Some(xtream) = storage.xtream.as_mut() {
+                    for pli in pli_list {
+                        match pli.header.xtream_cluster {
+                            XtreamCluster::Live => &mut xtream.live,
+                            XtreamCluster::Video => &mut xtream.vod,
+                            XtreamCluster::Series =>  &mut xtream.series,
+                        }.insert(pli.header.virtual_id, pli.to_xtream());
                     }
                 }
             }

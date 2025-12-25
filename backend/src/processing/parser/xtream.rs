@@ -4,9 +4,7 @@ use crate::model::{XtreamCategory};
 use crate::utils::request::DynReader;
 use crate::utils::xtream::get_xtream_stream_url_base;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
-use shared::model::{EpisodeStreamProperties, LiveStreamProperties, PlaylistGroup, PlaylistItem,
-                    PlaylistItemHeader, PlaylistItemType, SeriesStreamDetailEpisodeProperties,
-                    SeriesStreamProperties, StreamProperties, VideoStreamProperties, XtreamCluster};
+use shared::model::{EpisodeStreamProperties, LiveStreamProperties, PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, SeriesStreamDetailEpisodeProperties, SeriesStreamProperties, StreamProperties, UUIDType, VideoStreamProperties, XtreamCluster};
 use shared::utils::{generate_playlist_uuid, trim_last_slash};
 use std::collections::HashMap;
 use tokio::task::spawn_blocking;
@@ -57,7 +55,7 @@ fn create_xtream_series_episode_url<'a>(url: &'a str, username: &'a str, passwor
     }
 }
 
-pub fn parse_xtream_series_info(series_info: &SeriesStreamProperties, group_title: &str, series_name: &str, input: &ConfigInput) -> Option<Vec<PlaylistItem>> {
+pub fn parse_xtream_series_info(prent_uuid: &UUIDType, series_info: &SeriesStreamProperties, group_title: &str, series_name: &str, input: &ConfigInput) -> Option<Vec<PlaylistItem>> {
     let url = input.url.as_str();
     let username = input.username.as_ref().map_or("", |v| v);
     let password = input.password.as_ref().map_or("", |v| v);
@@ -65,12 +63,13 @@ pub fn parse_xtream_series_info(series_info: &SeriesStreamProperties, group_titl
     if let Some(episodes) = series_info.details.as_ref().and_then(|d| d.episodes.as_ref()) {
         let result: Vec<PlaylistItem> = episodes.iter().map(|episode| {
             let episode_url = create_xtream_series_episode_url(url, username, password, episode);
-
             let episode_info = EpisodeStreamProperties::from_series(series_info, episode);
              PlaylistItem {
                  header: PlaylistItemHeader {
                      id: episode.id.to_string(),
                      uuid: generate_playlist_uuid(&input.name, &episode.id.to_string(), PlaylistItemType::Series, &episode_url),
+                     // we use parent_code to track the parent series
+                     parent_code: prent_uuid.to_string(),
                      name: series_name.to_string(),
                      logo: episode.movie_image.clone(),
                      group: group_title.to_string(),
@@ -137,9 +136,7 @@ pub async fn parse_xtream(input: &ConfigInput,
             match map_to_xtream_streams(xtream_cluster, streams).await {
                 Ok(xtream_streams) => {
                     let mut group_map: HashMap<u32, XtreamCategory> =
-                        xtream_categories.into_iter().map(|category|
-                            (category.category_id, category)
-                        ).collect();
+                        xtream_categories.into_iter().map(|category| (category.category_id, category)).collect();
                     let mut unknown_grp = XtreamCategory {
                         category_id: 0u32,
                         category_name: "Unknown".to_string(),

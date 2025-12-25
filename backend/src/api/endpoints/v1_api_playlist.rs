@@ -80,7 +80,6 @@ async fn playlist_update(
     }
 }
 
-
 async fn playlist_content(
     ExtractAcceptHeader(accept): ExtractAcceptHeader,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,

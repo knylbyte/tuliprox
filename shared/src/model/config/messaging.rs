@@ -38,7 +38,7 @@ pub struct PushoverMessagingConfigDto {
 
 impl PushoverMessagingConfigDto {
     pub fn is_empty(&self) -> bool {
-        is_blank_optional_string(&self.url)
+        is_blank_optional_string(self.url.as_ref())
             && self.token.trim().is_empty()
             && self.user.trim().is_empty()
     }
@@ -49,11 +49,11 @@ impl PushoverMessagingConfigDto {
 pub struct MessagingConfigDto {
     #[serde(default)]
     pub notify_on: Vec<MsgKind>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub telegram: Option<TelegramMessagingConfigDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub rest: Option<RestMessagingConfigDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub pushover: Option<PushoverMessagingConfigDto>,
 }
 

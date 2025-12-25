@@ -1,21 +1,11 @@
 use base64::Engine;
 use base64::engine::general_purpose;
-use std::fmt::Write;
 use url::Url;
 use crate::model::{PlaylistItemType, UUIDType};
 
 #[inline]
-pub fn string_to_uuid_type(text: &str) -> UUIDType {
-    let mut bytes = [0u8; 32];
-    let s_bytes = text.as_bytes();
-    let len = s_bytes.len().min(32);
-    bytes[..len].copy_from_slice(&s_bytes[..len]);
-    bytes
-}
-
-#[inline]
 pub fn hash_bytes(bytes: &[u8]) -> UUIDType {
-    blake3::hash(bytes).into()
+    UUIDType(blake3::hash(bytes).into())
 }
 
 /// generates a hash from a string
@@ -29,13 +19,9 @@ pub fn short_hash(text: &str) -> String {
     hex_encode(&hash.as_bytes()[..8])
 }
 
-
 #[inline]
 pub fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::new(), |mut output, b| {
-        let _ = write!(output, "{b:02X}");
-        output
-    })
+    hex::encode_upper(bytes)
 }
 pub fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
     if !hex.len().is_multiple_of(2) {
@@ -52,7 +38,7 @@ pub fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
 }
 
 pub fn hash_string_as_hex(url: &str) -> String {
-    hex_encode(&hash_string(url))
+    hex_encode(hash_string(url).as_ref())
 }
 
 pub fn extract_id_from_url(url: &str) -> Option<String> {

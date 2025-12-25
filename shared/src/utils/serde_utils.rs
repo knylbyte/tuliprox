@@ -167,7 +167,7 @@ where
     match deserialize_number_from_string(deserializer) {
         Ok(Some(v)) => Ok(v),
         Ok(None) => Ok(T::default()),
-        Err(e) => Err(serde::de::Error::custom(e)),
+        Err(e) => Err(e),
     }
 }
 

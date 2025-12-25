@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::Path;
 use tempfile::NamedTempFile;
-use crate::utils::{bincode_deserialize, bincode_serialize};
+use crate::utils::{binary_deserialize, binary_serialize};
 
 const BLOCK_SIZE: usize = 4096;
 const BINCODE_OVERHEAD: usize = 8;
@@ -288,7 +288,7 @@ where
         let mut write_pos = FLAG_SIZE;
 
         // ---- Write keys (length + bytes) into the first block ----
-        let keys_encoded = bincode_serialize(&self.keys)?;
+        let keys_encoded = binary_serialize(&self.keys)?;
         let keys_len = keys_encoded.len();
         buffer_slice[write_pos..write_pos + LEN_SIZE]
             .copy_from_slice(&u32::try_from(keys_len).map_err(to_io_error)?.to_le_bytes());
@@ -304,7 +304,7 @@ where
         // ---- Leaf values (optional) ----
         if self.is_leaf {
             // Encode values and decide compression exactly like the old layout
-            let values_encoded = bincode_serialize(&self.values)?;
+            let values_encoded = binary_serialize(&self.values)?;
             let use_compression = values_encoded.len() + write_pos >= BLOCK_SIZE;
 
             // Compression flag
@@ -369,7 +369,7 @@ where
                 pointer_vec.push(current_offset);
                 current_offset = child.serialize_to_block(file, buffer, current_offset)?;
             }
-            let pointer_encoded = bincode_serialize(&pointer_vec)?;
+            let pointer_encoded = binary_serialize(&pointer_vec)?;
             let pointer_len = u32::try_from(pointer_encoded.len()).map_err(to_io_error)?;
             file.seek(SeekFrom::Start(pointer_offset))?;
             file.write_all(&pointer_len.to_le_bytes())?;
@@ -396,7 +396,7 @@ where
         // ---- Keys ----
         let keys_length = u32_from_bytes(&buffer[read_pos..read_pos + LEN_SIZE])? as usize;
         read_pos += LEN_SIZE;
-        let keys: Vec<K> = bincode_deserialize(&buffer[read_pos..read_pos + keys_length])?;
+        let keys: Vec<K> = binary_deserialize(&buffer[read_pos..read_pos + keys_length])?;
         read_pos += keys_length;
 
         // ---- Values for leaf nodes ----
@@ -429,7 +429,7 @@ where
                 content_bytes
             };
 
-            bincode_deserialize(&values_bytes)?
+            binary_deserialize(&values_bytes)?
         } else {
             Vec::new()
         };
@@ -440,7 +440,7 @@ where
         } else {
             let pointers_length = u32_from_bytes(&buffer[read_pos..read_pos + LEN_SIZE])? as usize;
             read_pos += LEN_SIZE;
-            let pointers: Vec<u64> = bincode_deserialize(&buffer[read_pos..read_pos + pointers_length])?;
+            let pointers: Vec<u64> = binary_deserialize(&buffer[read_pos..read_pos + pointers_length])?;
             if nested {
                 let mut nodes = Vec::with_capacity(pointers.len());
                 for &ptr in &pointers {

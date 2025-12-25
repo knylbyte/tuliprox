@@ -13,7 +13,7 @@ use shared::utils::{concat_path_leading_slash};
 use std::collections::{BTreeMap, HashMap};
 use std::io::{Cursor};
 use std::sync::Arc;
-use log::error;
+use log::{error, info};
 use crate::api::endpoints::extract_accept_header::ExtractAcceptHeader;
 use crate::api::endpoints::v1_api_config::v1_api_config_register;
 use crate::api::endpoints::library_api::library_api_register;
@@ -106,6 +106,7 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
 
                        return match result {
                            (Some(_), None) => {
+                               info!("GeoIp db updated");
                                app_state.geoip.store(Some(Arc::new(geoip)));
                                axum::http::StatusCode::OK.into_response()
                            },

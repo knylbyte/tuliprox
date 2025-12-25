@@ -1,5 +1,3 @@
-// backend/src/model/media_properties.rs
-
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fmt;
@@ -161,24 +159,39 @@ impl MediaQuality {
         parts.join(separator)
     }
 
-    /// Extracts media quality information from an `ffprobe` info block.
-    /// The `info_block` is expected to be a `serde_json::Value` object.
-    pub fn from_ffprobe_info(audio: Option<&String>, video: Option<&String>) -> Option<Self> {
-        let video_info = video.and_then(|v| serde_json::from_str::<Map<String, Value>>(v).ok())?;
+    fn from_ffprobe_info_audio(audio: Option<&String>) -> Option<(AudioCodec, AudioChannels)> {
         // Assuming the first audio stream is the primary one.
         let audio_info = audio.and_then(|v| serde_json::from_str::<Map<String, Value>>(v).ok())?;
 
-        // Helper to get a value by trying a prioritized list of field names.
-        let get_value = |obj: &Map<String, Value>, fields: &[&str]| -> Option<Value> {
-            for field in fields {
-                if let Some(value) = obj.get(*field) {
-                    if !value.is_null() {
-                        return Some(value.clone());
-                    }
-                }
-            }
-            None
-        };
+        // 4. Classify audio codec
+        let audio_codec = get_value(&audio_info, &["codec_name"])
+            .and_then(|v| v.as_str().map(str::to_lowercase))
+            .map_or(AudioCodec::default(), |name| match name.as_str() {
+                "aac" => AudioCodec::AAC,
+                "ac3" => AudioCodec::AC3,
+                "eac3" => AudioCodec::EAC3,
+                "dts" => AudioCodec::DTS,
+                "truehd" => AudioCodec::TrueHD,
+                "flac" => AudioCodec::FLAC,
+                _ => AudioCodec::default(),
+            });
+
+        // 5. Classify audio channels
+        let audio_channels = get_value(&audio_info, &["channel_layout"])
+            .and_then(|v| v.as_str().map(str::to_lowercase))
+            .map_or(AudioChannels::default(), |layout| match layout.as_str() {
+                l if l.starts_with("7.1") => AudioChannels::Surround71,
+                l if l.starts_with("5.1") => AudioChannels::Surround51,
+                "stereo" => AudioChannels::Stereo,
+                "mono" => AudioChannels::Mono,
+                _ => AudioChannels::default(),
+            });
+
+        Some((audio_codec, audio_channels))
+    }
+
+    fn from_ffprobe_info_video(video: Option<&String>) -> Option<(VideoResolution, VideoCodec, VideoDynamicRange)> {
+        let video_info = video.and_then(|v| serde_json::from_str::<Map<String, Value>>(v).ok())?;
 
         // 1. Classify video resolution from width
         let resolution = get_value(&video_info, &["height", "coded_height"])
@@ -220,36 +233,38 @@ impl MediaQuality {
             }
         };
 
-        // 4. Classify audio codec
-        let audio_codec = get_value(&audio_info, &["codec_name"])
-            .and_then(|v| v.as_str().map(str::to_lowercase))
-            .map_or(AudioCodec::default(), |name| match name.as_str() {
-                "aac" => AudioCodec::AAC,
-                "ac3" => AudioCodec::AC3,
-                "eac3" => AudioCodec::EAC3,
-                "dts" => AudioCodec::DTS,
-                "truehd" => AudioCodec::TrueHD,
-                "flac" => AudioCodec::FLAC,
-                _ => AudioCodec::default(),
-            });
-
-        // 5. Classify audio channels
-        let audio_channels = get_value(&audio_info, &["channel_layout"])
-            .and_then(|v| v.as_str().map(str::to_lowercase))
-            .map_or(AudioChannels::default(), |layout| match layout.as_str() {
-                l if l.starts_with("7.1") => AudioChannels::Surround71,
-                l if l.starts_with("5.1") => AudioChannels::Surround51,
-                "stereo" => AudioChannels::Stereo,
-                "mono" => AudioChannels::Mono,
-                _ => AudioChannels::default(),
-            });
-
-        Some(Self {
-            resolution,
-            video_codec,
-            dynamic_range,
-            audio_codec,
-            audio_channels,
-        })
+        Some((resolution, video_codec, dynamic_range))
     }
+
+    /// Extracts media quality information from an `ffprobe` info block.
+    /// The `info_block` is expected to be a `serde_json::Value` object.
+    pub fn from_ffprobe_info(audio: Option<&String>, video: Option<&String>) -> Option<Self> {
+        match (Self::from_ffprobe_info_video(video), Self::from_ffprobe_info_audio(audio)) {
+            (Some((resolution, video_codec, dynamic_range)),
+             Some((audio_codec, audio_channels))) => {
+                Some(Self {
+                    resolution,
+                    video_codec,
+                    dynamic_range,
+                    audio_codec,
+                    audio_channels,
+                })
+            }
+            // TODO to restrictive, maybe only video or audio could be processed
+            _ => None,
+        }
+    }
+}
+
+
+// Helper to get a value by trying a prioritized list of field names.
+fn get_value(obj: &Map<String, Value>, fields: &[&str]) -> Option<Value> {
+    for field in fields {
+        if let Some(value) = obj.get(*field) {
+            if !value.is_null() {
+                return Some(value.clone());
+            }
+        }
+    }
+    None
 }
