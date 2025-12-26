@@ -105,8 +105,8 @@ impl WebUiConfigDto {
         let empty = WebUiConfigDto::default();
         self.enabled == empty.enabled
             && self.user_ui_enabled == empty.user_ui_enabled
-            && is_blank_optional_string(self.path.as_ref())
-            && is_blank_optional_string(self.player_server.as_ref())
+            && is_blank_optional_string(self.path.as_deref())
+            && is_blank_optional_string(self.player_server.as_deref())
             && self.kick_secs == default_kick_secs()
             && (self.content_security_policy.is_none()
                 || self
@@ -128,10 +128,10 @@ impl WebUiConfigDto {
             self.auth = None;
         }
 
-        if is_blank_optional_string(self.path.as_ref()) {
+        if is_blank_optional_string(self.path.as_deref()) {
             self.path = None;
         }
-        if is_blank_optional_string(self.player_server.as_ref()) {
+        if is_blank_optional_string(self.player_server.as_deref()) {
             self.player_server = None;
         }
         self.kick_secs = default_kick_secs();

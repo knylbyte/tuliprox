@@ -159,7 +159,7 @@ impl MediaQuality {
         parts.join(separator)
     }
 
-    fn from_ffprobe_info_audio(audio: Option<&String>) -> Option<(AudioCodec, AudioChannels)> {
+    fn from_ffprobe_info_audio(audio: Option<&str>) -> Option<(AudioCodec, AudioChannels)> {
         // Assuming the first audio stream is the primary one.
         let audio_info = audio.and_then(|v| serde_json::from_str::<Map<String, Value>>(v).ok())?;
 
@@ -190,7 +190,7 @@ impl MediaQuality {
         Some((audio_codec, audio_channels))
     }
 
-    fn from_ffprobe_info_video(video: Option<&String>) -> Option<(VideoResolution, VideoCodec, VideoDynamicRange)> {
+    fn from_ffprobe_info_video(video: Option<&str>) -> Option<(VideoResolution, VideoCodec, VideoDynamicRange)> {
         let video_info = video.and_then(|v| serde_json::from_str::<Map<String, Value>>(v).ok())?;
 
         // 1. Classify video resolution from width
@@ -238,7 +238,7 @@ impl MediaQuality {
 
     /// Extracts media quality information from an `ffprobe` info block.
     /// The `info_block` is expected to be a `serde_json::Value` object.
-    pub fn from_ffprobe_info(audio: Option<&String>, video: Option<&String>) -> Option<Self> {
+    pub fn from_ffprobe_info(audio: Option<&str>, video: Option<&str>) -> Option<Self> {
         match (Self::from_ffprobe_info_video(video), Self::from_ffprobe_info_audio(audio)) {
             (Some((resolution, video_codec, dynamic_range)),
              Some((audio_codec, audio_channels))) => {

@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::collections::HashMap;
 use fancy_regex::{Regex as FancyRegex, Match};
 use crate::ptt::constants::{BRACKETS, PTT_CONSTANTS};
@@ -150,7 +151,7 @@ impl PttParser {
                     && match_index < end_of_title
                     && end_of_title >= raw_len
                 {
-                    end_of_title -= raw_len;
+                    end_of_title -= min(raw_len, end_of_title - match_index);
                 }
             }
         }
@@ -161,6 +162,7 @@ impl PttParser {
         result.seasons.dedup();
         result.episodes.sort_unstable();
         result.episodes.dedup();
+        result.languages.sort_unstable();
         result.languages.dedup();
 
         let final_title = if end_of_title <= context.title.len() {

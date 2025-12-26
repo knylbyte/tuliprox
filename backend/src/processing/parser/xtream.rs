@@ -55,7 +55,7 @@ fn create_xtream_series_episode_url<'a>(url: &'a str, username: &'a str, passwor
     }
 }
 
-pub fn parse_xtream_series_info(prent_uuid: &UUIDType, series_info: &SeriesStreamProperties, group_title: &str, series_name: &str, input: &ConfigInput) -> Option<Vec<PlaylistItem>> {
+pub fn parse_xtream_series_info(parent_uuid: &UUIDType, series_info: &SeriesStreamProperties, group_title: &str, series_name: &str, input: &ConfigInput) -> Option<Vec<PlaylistItem>> {
     let url = input.url.as_str();
     let username = input.username.as_ref().map_or("", |v| v);
     let password = input.password.as_ref().map_or("", |v| v);
@@ -69,7 +69,7 @@ pub fn parse_xtream_series_info(prent_uuid: &UUIDType, series_info: &SeriesStrea
                      id: episode.id.to_string(),
                      uuid: generate_playlist_uuid(&input.name, &episode.id.to_string(), PlaylistItemType::Series, &episode_url),
                      // we use parent_code to track the parent series
-                     parent_code: prent_uuid.to_string(),
+                     parent_code: parent_uuid.to_string(),
                      name: series_name.to_string(),
                      logo: episode.movie_image.clone(),
                      group: group_title.to_string(),
@@ -92,7 +92,7 @@ pub fn parse_xtream_series_info(prent_uuid: &UUIDType, series_info: &SeriesStrea
 #[allow(clippy::too_many_arguments)]
 pub fn get_xtream_url(xtream_cluster: XtreamCluster, url: &str,
                       username: &str, password: &str,
-                      stream_id: u32, container_extension: Option<&String>,
+                      stream_id: u32, container_extension: Option<&str>,
                       live_stream_use_prefix: bool, live_stream_without_extension: bool) -> String {
     let url = trim_last_slash(url);
     let stream_base_url = match xtream_cluster {
@@ -102,8 +102,11 @@ pub fn get_xtream_url(xtream_cluster: XtreamCluster, url: &str,
             format!("{url}/{ctx_path}{username}/{password}/{stream_id}{suffix}")
         }
         XtreamCluster::Video => {
-            let ext = container_extension.as_ref().map_or("mp4", |e| e.as_str());
-            format!("{url}/movie/{username}/{password}/{stream_id}.{ext}")
+            if let Some(extension) = container_extension {
+                format!("{url}/movie/{username}/{password}/{stream_id}.{extension}")
+            } else {
+                format!("{url}/movie/{username}/{password}/{stream_id}")
+            }
         }
         XtreamCluster::Series =>
             format!("{}&action={}&series_id={stream_id}", get_xtream_stream_url_base(url.as_ref(), username, password), crate::model::XC_ACTION_GET_SERIES_INFO)
@@ -111,15 +114,13 @@ pub fn get_xtream_url(xtream_cluster: XtreamCluster, url: &str,
     stream_base_url
 }
 
-pub fn create_xtream_url(xtream_cluster: XtreamCluster, url: &str, username: &str, password: &str,
-                         stream: &StreamProperties, live_stream_use_prefix: bool, live_stream_without_extension: bool) -> String {
-    if let Some(direct_source) = stream.get_direct_source() {
-        direct_source.clone()
-    } else {
-        get_xtream_url(xtream_cluster, url, username, password, stream.get_stream_id(),
-                       stream.get_container_extension().as_ref().map(std::string::ToString::to_string).as_ref(),
-                       live_stream_use_prefix, live_stream_without_extension)
-    }
+pub fn create_xtream_url<'a>(xtream_cluster: XtreamCluster, url: &'a str, username: &'a str, password: &'a str,
+                         stream: &'a StreamProperties, live_stream_use_prefix: bool, live_stream_without_extension: bool) -> Cow<'a, str> {
+    stream.get_direct_source().unwrap_or_else(||
+        Cow::Owned(get_xtream_url(xtream_cluster, url, username, password, stream.get_stream_id(),
+                       stream.get_container_extension().as_deref(),
+                       live_stream_use_prefix, live_stream_without_extension))
+    )
 }
 
 pub async fn parse_xtream(input: &ConfigInput,
@@ -159,7 +160,7 @@ pub async fn parse_xtream(input: &ConfigInput,
                                 logo: stream.get_stream_icon().to_string(),
                                 group: category_name.clone(),
                                 title: stream.get_name().to_string(),
-                                url: stream_url.clone(),
+                                url: stream_url.to_string(),
                                 epg_channel_id: stream.get_epg_channel_id(),
                                 item_type,
                                 xtream_cluster,

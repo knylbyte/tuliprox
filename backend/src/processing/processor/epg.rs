@@ -64,7 +64,7 @@ impl EpgIdCache<'_> {
     /// cache.normalize_and_store("Discovery Channel", Some(&"discovery.epg".to_string()));
     /// assert!(cache.normalized.contains_key(&cache.normalize("Discovery Channel")));
     /// ```
-    fn normalize_and_store(&mut self, name: &str, epg_id: Option<&String>) {
+    fn normalize_and_store(&mut self, name: &str, epg_id: Option<&str>) {
         self.insert_normalized(name);
 
         if let Some(chan_epg_id) = epg_id {
@@ -124,7 +124,7 @@ impl EpgIdCache<'_> {
 
             if needs_normalization {
                 let name = &channel.header.name;
-                self.normalize_and_store(name, channel.header.epg_channel_id.as_ref());
+                self.normalize_and_store(name, channel.header.epg_channel_id.as_deref());
             }
         }
     }

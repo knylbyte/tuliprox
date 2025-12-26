@@ -78,8 +78,7 @@ impl MetadataResolver {
     // Attempts to resolve metadata from TMDB
     async fn resolve_from_tmdb(&self, movie: bool, file: &ScannedMediaFile, metadata: &PttMetadata, tmdb: &TmdbClient) -> Result<Option<MediaMetadata>, String> {
         if movie {
-            let tmdb_id = metadata.tmdb.as_ref();
-            tmdb.search_movie(tmdb_id, metadata.title.as_str(), metadata.year.as_ref()).await
+            tmdb.search_movie(metadata.tmdb, metadata.title.as_str(), metadata.year).await
         } else {
             let (series_year, tmdb_id) = if metadata.year.is_some() { (metadata.year, metadata.tmdb) } else {
                 // Try to extract year from parent directory if available
@@ -189,7 +188,7 @@ mod tests {
             MediaClassification::Movie { metadata, .. } => metadata,
             MediaClassification::Series { metadata, .. } => metadata,
         };
-        let group = MediaGroup::Movie { file, metadata };
+        let group = MediaGroup::Movie { file, metadata: Box::new(metadata) };
 
         let metadata = resolver.resolve(&group).await;
         assert!(metadata.is_some());
@@ -218,7 +217,7 @@ mod tests {
             MediaClassification::Movie { metadata, .. } => metadata,
             MediaClassification::Series { metadata, .. } => metadata,
         };
-        let group = MediaGroup::Movie { file, metadata };
+        let group = MediaGroup::Movie { file, metadata: Box::new(metadata) };
 
         let metadata = resolver.resolve(&group).await;
         assert!(metadata.is_none());

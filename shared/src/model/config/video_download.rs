@@ -24,8 +24,8 @@ impl VideoDownloadConfigDto {
     pub fn is_empty(&self) -> bool {
         !self.organize_into_directories
             && self.headers.is_empty()
-            && is_blank_optional_string(self.directory.as_ref())
-            && is_blank_optional_string(self.episode_pattern.as_ref())
+            && is_blank_optional_string(self.directory.as_deref())
+            && is_blank_optional_string(self.episode_pattern.as_deref())
     }
 }
 
@@ -43,7 +43,7 @@ pub struct VideoConfigDto {
 
 impl VideoConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.extensions.is_empty() && is_blank_optional_string(self.web_search.as_ref())
+        self.extensions.is_empty() && is_blank_optional_string(self.web_search.as_deref())
         && (self.download.is_none() || self.download.as_ref().is_some_and(|d| d.is_empty()))
     }
 

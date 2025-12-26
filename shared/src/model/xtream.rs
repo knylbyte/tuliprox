@@ -1,6 +1,6 @@
 use crate::utils::{deserialize_as_option_string, deserialize_as_string_array,
-                   deserialize_json_as_string, deserialize_number_from_string,
-                   deserialize_number_from_string_or_zero, deserialize_release_date,
+                   deserialize_json_as_opt_string, deserialize_number_from_string,
+                   deserialize_number_from_string_or_zero,
                    string_default_on_null, string_or_number_u32};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -53,9 +53,9 @@ pub struct XtreamVideoInfoInfo {
     pub backdrop_path: Option<Vec<String>>,
     pub duration_secs: Option<String>,
     pub duration: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
     #[serde(default)]
     pub bitrate: u32,
@@ -107,7 +107,7 @@ pub struct XtreamSeriesInfoInfo {
     pub director: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub genre: String,
-    #[serde(default, deserialize_with = "deserialize_release_date")]
+    #[serde(default,  alias = "releaseDate", alias = "releasedate", deserialize_with = "string_default_on_null")]
     pub release_date: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub last_modified: String,
@@ -144,9 +144,9 @@ pub struct XtreamSeriesInfoEpisodeInfo {
     pub duration: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub movie_image: String,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
     #[serde(default, deserialize_with = "string_or_number_u32")]
     pub bitrate: u32,

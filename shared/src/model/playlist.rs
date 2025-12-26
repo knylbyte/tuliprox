@@ -72,7 +72,7 @@ impl UUIDType {
            bytes[16..].copy_from_slice(&hash.as_bytes()[..16]);
            bytes
        } else {
-           // falback
+           // fallback
            *blake3::hash(uuid.as_bytes()).as_bytes()
        };
 
@@ -281,7 +281,7 @@ pub trait PlaylistEntry: Send + Sync {
     fn get_virtual_id(&self) -> VirtualId;
     fn get_provider_id(&self) -> Option<u32>;
     fn get_category_id(&self) -> Option<u32>;
-    fn get_provider_url(&self) -> String;
+    fn get_provider_url(&self) ->  Cow<'_, str>;
     fn get_uuid(&self) -> UUIDType;
     fn get_item_type(&self) -> PlaylistItemType;
     fn get_group(&self) -> Cow<'_, str>;
@@ -336,7 +336,7 @@ impl PlaylistItemHeader {
         }
     }
 
-    pub fn get_container_extension(&self) -> Option<String> {
+    pub fn get_container_extension(&self) -> Option<Cow<'_, str>> {
         self.additional_properties.as_ref().and_then(|a| a.get_container_extension())
     }
 }
@@ -511,8 +511,8 @@ impl PlaylistEntry for M3uPlaylistItem {
         None
     }
     #[inline]
-    fn get_provider_url(&self) -> String {
-        self.url.to_string()
+    fn get_provider_url(&self) ->  Cow<'_, str> {
+        Cow::Borrowed(self.url.as_str())
     }
 
     fn get_uuid(&self) -> UUIDType {
@@ -532,9 +532,9 @@ impl PlaylistEntry for M3uPlaylistItem {
     #[inline]
     fn get_name(&self) -> Cow<'_, str> {
         if self.title.is_empty() {
-            Cow::Borrowed(self.title.as_str())
-        } else {
             Cow::Borrowed(self.name.as_str())
+        } else {
+            Cow::Borrowed(self.title.as_str())
         }
     }
 
@@ -659,19 +659,20 @@ impl XtreamPlaylistItem {
         }
     }
 
-    pub fn get_container_extension(&self) -> Option<String> {
+    pub fn get_container_extension(&self) -> Option<Cow<'_, str>> {
         match self.additional_properties {
             None => None,
             Some(ref props) => {
                 match props {
-                    StreamProperties::Live(_) => Some("ts".to_string()),
-                    StreamProperties::Video(video) => Some(video.container_extension.clone()),
+                    StreamProperties::Live(_) => Some(Cow::Borrowed("ts")),
+                    StreamProperties::Video(video) => Some(Cow::Borrowed(video.container_extension.as_str())),
                     StreamProperties::Series(_) => None,
-                    StreamProperties::Episode(episode) => Some(episode.container_extension.clone()),
+                    StreamProperties::Episode(episode) => Some(Cow::Borrowed(episode.container_extension.as_str())),
                 }
             }
         }
     }
+
     #[inline]
     pub fn has_details(&self) -> bool {
         self.additional_properties.as_ref().is_some_and(|p| p.has_details())
@@ -692,33 +693,33 @@ impl XtreamPlaylistItem {
         match self.xtream_cluster {
             XtreamCluster::Live => {
                 let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo, "logo")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
                 } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo_small, "logo_small")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
                 } else {
                     String::new()
                 };
                 Value::Object(serde_json::Map::from_iter([
-                    ("num".to_string(), InfoDocUtils::as_u32(self.channel_no)),
+                    ("num".to_string(), InfoDocUtils::build_u32(self.channel_no)),
                     ("name".to_string(), Value::String(self.title.clone())), // name or title ?
-                    ("stream_id".to_string(), InfoDocUtils::as_u32(self.virtual_id)),
+                    ("stream_id".to_string(), InfoDocUtils::build_u32(self.virtual_id)),
                     ("stream_icon".to_string(), Value::String(stream_icon)),
-                    ("epg_channel_id".to_string(), InfoDocUtils::as_string(self.epg_channel_id.as_ref())),
+                    ("epg_channel_id".to_string(), InfoDocUtils::build_string(self.epg_channel_id.as_deref())),
                     ("added".to_string(), InfoDocUtils::empty_string()),
-                    ("is_adult".to_string(), InfoDocUtils::as_u32(0u32)),
+                    ("is_adult".to_string(), InfoDocUtils::build_u32(0u32)),
                     ("category_id".to_string(), Value::String(self.category_id.to_string())),
                     ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
                     ("custom_sid".to_string(), Value::Null),
                     ("direct_source".to_string(), InfoDocUtils::empty_string()),
-                    ("tv_archive".to_string(), InfoDocUtils::as_u32(0u32)),
-                    ("tv_archive_duration".to_string(), InfoDocUtils::as_u32(0u32)),
+                    ("tv_archive".to_string(), InfoDocUtils::build_u32(0u32)),
+                    ("tv_archive_duration".to_string(), InfoDocUtils::build_u32(0u32)),
                 ]))
             }
             XtreamCluster::Video => {
                 let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo, "logo")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
                 } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo_small, "logo_small")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
                 } else {
                     String::new()
                 };
@@ -743,9 +744,9 @@ impl XtreamPlaylistItem {
             }
             XtreamCluster::Series => {
                 let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo, "logo")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
                 } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo_small, "logo_small")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
                 } else {
                     String::new()
                 };
@@ -802,26 +803,26 @@ impl XtreamPlaylistItem {
             ("num".to_string(), Value::Number(serde_json::Number::from(self.channel_no))),
             ("name".to_string(), Value::String(self.title.clone())),
             ("series_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
-            ("cover".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url.as_ref(), &series.cover, "cover"))),
-            ("plot".to_string(), InfoDocUtils::as_string(series.plot.as_ref())),
+            ("cover".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url.as_deref(), &series.cover, "cover"))),
+            ("plot".to_string(), InfoDocUtils::build_string(series.plot.as_deref())),
             ("cast".to_string(), Value::String(series.cast.clone())),
             ("director".to_string(), Value::String(series.director.clone())),
-            ("genre".to_string(), InfoDocUtils::as_string(series.genre.as_ref())),
-            ("release_date".to_string(), InfoDocUtils::as_string(series.release_date.as_ref())),
-            ("releaseDate".to_string(), InfoDocUtils::as_string(series.release_date.as_ref())),
-            ("last_modified".to_string(), InfoDocUtils::as_string(series.last_modified.as_ref())),
+            ("genre".to_string(), InfoDocUtils::build_string(series.genre.as_deref())),
+            ("release_date".to_string(), InfoDocUtils::build_string(series.release_date.as_deref())),
+            ("releaseDate".to_string(), InfoDocUtils::build_string(series.release_date.as_deref())),
+            ("last_modified".to_string(), InfoDocUtils::build_string(series.last_modified.as_deref())),
             ("rating".to_string(), Value::String(InfoDocUtils::limited(series.rating))),
             ("rating_5based".to_string(), Value::String(InfoDocUtils::limited(series.rating_5based))),
             ("backdrop_path".to_string(), Value::Array(
                 series.backdrop_path.as_ref().map_or_else(Vec::new, |b| b.iter().enumerate().map(|(idx, p)|
                     Value::String(
-                        InfoDocUtils::make_bdpath_resource_url(resource_url.as_ref(), p, idx, "")
+                        InfoDocUtils::make_bdpath_resource_url(resource_url.as_deref(), p, idx, "")
                     )
                 ).collect())
             )),
             ("youtube_trailer".to_string(), Value::String(series.youtube_trailer.clone())),
             ("tmdb".to_string(), Value::String(series.tmdb.as_ref().map_or_else(String::new, ToString::to_string))),
-            ("episode_runtime".to_string(), InfoDocUtils::as_string(series.episode_run_time.as_ref())),
+            ("episode_runtime".to_string(), InfoDocUtils::build_string(series.episode_run_time.as_deref())),
             ("category_id".to_string(), Value::String(self.category_id.to_string())),
             ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
         ]))
@@ -830,9 +831,9 @@ impl XtreamPlaylistItem {
     fn video_to_document(&self, options: &XtreamMappingOptions, video: &VideoStreamProperties) -> Value {
         let resource_url = options.get_resource_url(self.xtream_cluster, self.item_type, self.virtual_id);
         let stream_icon = if !self.logo.is_empty() {
-            InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo, "logo")
+            InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
         } else if !self.logo_small.is_empty() {
-            InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo_small, "logo_small")
+            InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
         } else {
             String::new()
         };
@@ -845,7 +846,7 @@ impl XtreamPlaylistItem {
             ("rating".to_string(), Value::String(InfoDocUtils::limited(video.rating.unwrap_or_default()))),
             ("rating_5based".to_string(), Value::Number(serde_json::Number::from_f64(video.rating_5based.unwrap_or_default()).unwrap_or_else(|| serde_json::Number::from(0)))),
             ("tmdb".to_string(), Value::String(video.tmdb.as_ref().map_or_else(String::new, ToString::to_string))),
-            ("trailer".to_string(), InfoDocUtils::as_string(video.trailer.as_ref())),
+            ("trailer".to_string(), InfoDocUtils::build_string(video.trailer.as_deref())),
             ("added".to_string(), Value::String(video.added.clone())),
             ("is_adult".to_string(), Value::Number(serde_json::Number::from(video.is_adult))),
             ("category_id".to_string(), Value::String(self.category_id.to_string())),
@@ -859,20 +860,20 @@ impl XtreamPlaylistItem {
     fn live_to_document(&self, options: &XtreamMappingOptions, live: &LiveStreamProperties) -> Value {
         let resource_url = options.get_resource_url(self.xtream_cluster, self.item_type, self.virtual_id);
         let stream_icon = if !self.logo.is_empty() {
-            InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo, "logo")
+            InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
         } else if !self.logo_small.is_empty() {
-            InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo_small, "logo_small")
+            InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
         } else {
             String::new()
         };
         Value::Object(serde_json::Map::from_iter([
             ("num".to_string(), Value::Number(serde_json::Number::from(self.channel_no))),
             ("name".to_string(), Value::String(self.title.clone())), // name or title ?
-            ("added".to_string(), InfoDocUtils::as_string(live.added.as_ref())),
+            ("added".to_string(), InfoDocUtils::build_string(live.added.as_deref())),
             ("stream_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
             ("stream_icon".to_string(), Value::String(stream_icon)),
             ("stream_type".to_string(), Value::String(live.stream_type.as_ref().map_or_else(|| "live".to_string(), Clone::clone))),
-            ("epg_channel_id".to_string(), InfoDocUtils::as_string(self.epg_channel_id.as_ref())),
+            ("epg_channel_id".to_string(), InfoDocUtils::build_string(self.epg_channel_id.as_deref())),
             ("added".to_string(), InfoDocUtils::empty_string()),
             ("is_adult".to_string(), Value::Number(serde_json::Number::from(live.is_adult))),
             ("category_id".to_string(), Value::String(self.category_id.to_string())),
@@ -888,9 +889,9 @@ impl XtreamPlaylistItem {
         match self.xtream_cluster {
             XtreamCluster::Live => {
                 let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo, "logo")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
                 } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo_small, "logo_small")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
                 } else {
                     String::new()
                 };
@@ -899,7 +900,7 @@ impl XtreamPlaylistItem {
                     ("name".to_string(), Value::String(self.title.clone())), // name or title ?
                     ("stream_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
                     ("stream_icon".to_string(), Value::String(stream_icon)),
-                    ("epg_channel_id".to_string(), InfoDocUtils::as_string(self.epg_channel_id.as_ref())),
+                    ("epg_channel_id".to_string(), InfoDocUtils::build_string(self.epg_channel_id.as_deref())),
                     ("added".to_string(), InfoDocUtils::empty_string()),
                     ("is_adult".to_string(), Value::Number(serde_json::Number::from(0u32))),
                     ("category_id".to_string(), Value::String(self.category_id.to_string())),
@@ -912,9 +913,9 @@ impl XtreamPlaylistItem {
             }
             XtreamCluster::Video => {
                 let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo, "logo")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
                 } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo_small, "logo_small")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
                 } else {
                     String::new()
                 };
@@ -939,9 +940,9 @@ impl XtreamPlaylistItem {
             }
             XtreamCluster::Series => {
                 let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo, "logo")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
                 } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_ref(), &self.logo_small, "logo_small")
+                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
                 } else {
                     String::new()
                 };
@@ -987,11 +988,11 @@ impl PlaylistEntry for XtreamPlaylistItem {
     }
     #[inline]
     fn get_category_id(&self) -> Option<u32> {
-        None
+        Some(self.category_id)
     }
     #[inline]
-    fn get_provider_url(&self) -> String {
-        self.url.to_string()
+    fn get_provider_url(&self) ->  Cow<'_, str> {
+        Cow::Borrowed(self.url.as_str())
     }
 
     #[inline]
@@ -1009,9 +1010,9 @@ impl PlaylistEntry for XtreamPlaylistItem {
     #[inline]
     fn get_name(&self) -> Cow<'_, str> {
         if self.title.is_empty() {
-            Cow::Borrowed(self.title.as_str())
-        } else {
             Cow::Borrowed(self.name.as_str())
+        } else {
+            Cow::Borrowed(self.title.as_str())
         }
     }
 
@@ -1313,13 +1314,14 @@ impl PlaylistEntry for PlaylistItem {
 
     #[inline]
     fn get_category_id(&self) -> Option<u32> {
-        None
+        Some(self.header.category_id)
     }
 
     #[inline]
-    fn get_provider_url(&self) -> String {
-        self.header.url.to_string()
+    fn get_provider_url(&self) ->  Cow<'_, str> {
+        Cow::Borrowed(self.header.url.as_str())
     }
+
     #[inline]
     fn get_uuid(&self) -> UUIDType {
         let header = &self.header;
@@ -1339,9 +1341,9 @@ impl PlaylistEntry for PlaylistItem {
     #[inline]
     fn get_name(&self) -> Cow<'_, str> {
         if self.header.title.is_empty() {
-            Cow::Borrowed(self.header.title.as_str())
-        } else {
             Cow::Borrowed(self.header.name.as_str())
+        } else {
+            Cow::Borrowed(self.header.title.as_str())
         }
     }
 

@@ -89,16 +89,16 @@ async fn playlist_content(
     let client = app_state.http_client.load();
     match playlist_req {
         PlaylistRequest::Target(target_id) => {
-           get_playlist_for_target(app_state.app_config.get_target_by_id(target_id).as_deref(), &app_state.app_config, accept.as_ref()).await.into_response()
+           get_playlist_for_target(app_state.app_config.get_target_by_id(target_id).as_deref(), &app_state.app_config, accept.as_deref()).await.into_response()
         }
         PlaylistRequest::Input(input_id) => {
-            get_playlist(client.as_ref(), app_state.app_config.get_input_by_id(input_id).as_ref(), &config, accept.as_ref()).await.into_response()
+            get_playlist(client.as_ref(), app_state.app_config.get_input_by_id(input_id).as_ref(), &config, accept.as_deref()).await.into_response()
         }
         PlaylistRequest::CustomXtream(xtream) => {
             match Url::parse(&xtream.url) {
                 Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => {
                     let input = Arc::new(create_config_input_for_xtream(&xtream.username, &xtream.password, &xtream.url));
-                    get_playlist(client.as_ref(), Some(&input), &config, accept.as_ref()).await.into_response()
+                    get_playlist(client.as_ref(), Some(&input), &config, accept.as_deref()).await.into_response()
                 }
                 _ => {
                     (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url scheme; only http/https are allowed"}))).into_response()
@@ -109,7 +109,7 @@ async fn playlist_content(
             match Url::parse(&m3u.url) {
                 Ok(parsed) if parsed.scheme() == "http" || parsed.scheme() == "https" => {
                     let input = Arc::new(create_config_input_for_m3u(&m3u.url));
-                    get_playlist(client.as_ref(), Some(&input), &config, accept.as_ref()).await.into_response()
+                    get_playlist(client.as_ref(), Some(&input), &config, accept.as_deref()).await.into_response()
                 }
                 _ => {
                     (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid url scheme; only http/https are allowed"}))).into_response()
@@ -142,7 +142,7 @@ async fn playlist_epg(
                 let config = &app_state.app_config.config.load();
                 if let Some(epg_path) = crate::api::endpoints::xmltv_api::get_epg_path_for_target(config, &target)  {
                     if let Ok(epg) = parse_xmltv_for_web_ui_from_file(&epg_path).await {
-                        return json_or_bin_response(accept.as_ref(), &epg).into_response();
+                        return json_or_bin_response(accept.as_deref(), &epg).into_response();
                     }
                 }
             }
@@ -160,7 +160,7 @@ async fn playlist_epg(
         }
         PlaylistEpgRequest::Custom(url) => {
             if let Ok(epg) = parse_xmltv_for_web_ui_from_url(&app_state, &url).await {
-                return json_or_bin_response(accept.as_ref(), &epg).into_response();
+                return json_or_bin_response(accept.as_deref(), &epg).into_response();
             }
         }
     }

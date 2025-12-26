@@ -110,7 +110,7 @@ fn filter_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Opt
 
 fn assign_channel_no_playlist(new_playlist: &mut [PlaylistGroup]) {
     let assigned_chnos: HashSet<u32> = new_playlist.iter().flat_map(|g| &g.channels)
-        .filter(|c| !c.header.chno == 0)
+        .filter(|c| c.header.chno != 0)
         .map(|c| c.header.chno)
         .collect();
     let mut chno = 1;
@@ -335,8 +335,8 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
                 let (playlistgroups, mut error_list) = {
                     let (downloaded_playlist, mut download_err) = playlist_download_from_input(client, &app_config, input).await;
                     let (playlist, error) = persist_input_playlist(&app_config, input, downloaded_playlist).await;
-                    error!("Failed to persist input playlist {}", input.name);
                     if let Some(err) = error {
+                        error!("Failed to persist input playlist {}", input.name);
                         download_err.push(err);
                     }
                     (playlist, download_err)

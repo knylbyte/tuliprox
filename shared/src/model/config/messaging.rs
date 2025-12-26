@@ -38,7 +38,7 @@ pub struct PushoverMessagingConfigDto {
 
 impl PushoverMessagingConfigDto {
     pub fn is_empty(&self) -> bool {
-        is_blank_optional_string(self.url.as_ref())
+        is_blank_optional_string(self.url.as_deref())
             && self.token.trim().is_empty()
             && self.user.trim().is_empty()
     }

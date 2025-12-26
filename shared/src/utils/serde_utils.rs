@@ -261,36 +261,10 @@ pub fn parse_timestamp(value: &str) -> Result<Option<i64>, ParseError> {
     Ok(Some(timestamp))
 }
 
-pub fn deserialize_json_as_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+pub fn deserialize_json_as_opt_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
     let val: Value = Deserialize::deserialize(deserializer)?;
     Ok(Some(val.to_string()))
-}
-
-
-const RELEASE_DATES: [&str; 3] = [
-    "release_date",
-    "releaseDate",
-    "releasedata",
-];
-
-pub fn deserialize_release_date<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-
-    for key in RELEASE_DATES {
-        if let Some(v) = value.get(key) {
-            if let Some(s) = v.as_str() {
-                if !s.trim().is_empty() {
-                    return Ok(s.to_string());
-                }
-            }
-        }
-    }
-
-    Ok(String::new())
 }

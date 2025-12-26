@@ -23,11 +23,11 @@ impl Default for LogConfigDto {
 
 impl LogConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.sanitize_sensitive_info && !self.log_active_user && is_blank_optional_string(self.log_level.as_ref())
+        self.sanitize_sensitive_info && !self.log_active_user && is_blank_optional_string(self.log_level.as_deref())
     }
 
     pub fn clean(&mut self) {
-        if is_blank_optional_string(self.log_level.as_ref()) {
+        if is_blank_optional_string(self.log_level.as_deref()) {
             self.log_level = None;
         }
     }

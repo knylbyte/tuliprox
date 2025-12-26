@@ -50,13 +50,6 @@ macro_rules! try_option_ok {
         }
     };
 }
-//
-// #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-// pub struct InputVodInfoRecord {
-//     pub(crate) tmdb_id: u32,
-//     pub(crate) ts: u64,
-//     pub(crate) release_date: Option<String>,
-// }
 
 #[inline]
 fn get_collection_path(path: &Path, collection: &str) -> PathBuf {
@@ -190,7 +183,7 @@ pub async fn write_playlist_item_to_file(
     let (xtream_path, idx_path) = xtream_get_file_paths(&storage_path, pli.xtream_cluster);
     {
         let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
-        match IndexedDocumentWriter::new(xtream_path.clone(), idx_path) {
+        match IndexedDocumentWriter::new_append(xtream_path.clone(), idx_path) {
             Ok(mut writer) => {
                 match writer.write_doc(pli.virtual_id, pli) {
                     Ok(()) => {}
@@ -1008,7 +1001,7 @@ where
         {
             let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
             let mut writer = IndexedDocumentWriter::new_append(xtream_path.clone(), idx_path)?;
-            writer.write_doc(provider_id, &props).map_err(|_| str_to_io_error(&format!("failed to write vod info for input {input_name}")))?;
+            writer.write_doc(provider_id, &props).map_err(|_| str_to_io_error(&format!("failed to write {cluster} info for input {input_name}")))?;
             writer.store()?;
         }
     }

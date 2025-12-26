@@ -355,7 +355,7 @@ impl ConfigInputDto {
             }
         }
 
-        self.persist = get_trimmed_string(self.persist.as_ref());
+        self.persist = get_trimmed_string(self.persist.as_deref());
 
         let mut current_index = index + 1;
         self.id = current_index;

@@ -121,7 +121,7 @@ pub(in crate::api) fn get_epg_path_for_target(config: &Config, target: &ConfigTa
 /// or a timezone name (e.g. "`Europe/Berlin`", "`UTC`", "`America/New_York`").
 ///
 /// Returns the total offset in minutes (i32).
-fn parse_timeshift(time_shift: Option<&String>) -> Option<i32> {
+fn parse_timeshift(time_shift: Option<&str>) -> Option<i32> {
     time_shift.and_then(|offset| {
         // Try to parse as timezone name first
         if let Ok(tz) = offset.parse::<Tz>() {
@@ -164,7 +164,7 @@ pub async fn serve_epg(
             let rewrite_urls = !redirect && rewrite_resources;
 
             // Use 0 for timeshift if None
-            let timeshift = parse_timeshift(user.epg_timeshift.as_ref()).unwrap_or(0);
+            let timeshift = parse_timeshift(user.epg_timeshift.as_deref()).unwrap_or(0);
 
             return if timeshift != 0 || rewrite_urls || filter.is_some() {
                 let server_info = app_state.app_config.get_user_server_info(user);

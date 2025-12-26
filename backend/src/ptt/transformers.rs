@@ -79,20 +79,6 @@ macro_rules! range_func {
 
 range_func!(range_i32, i32);
 range_func!(range_u32, u32);
-
-//
-// pub fn range_x_of_y_func(input: &str) -> Option<Vec<i32>> {
-//     let numbers: Vec<i32> = PTT_CONSTANTS.integer
-//         .find_iter(input)
-//         .filter_map(|mat| mat.as_str().parse().ok())
-//         .collect();
-//
-//     if numbers.len() != 1 {
-//         return None;
-//     }
-//     Some((1..=numbers[0]).collect())
-// }
-
 pub fn transform_resolution(input: &str) -> String {
     let lower = input.to_lowercase();
     if lower.contains("2160") || lower.contains("4k") {

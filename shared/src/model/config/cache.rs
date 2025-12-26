@@ -18,7 +18,7 @@ pub struct CacheConfigDto {
 
 impl CacheConfigDto {
     pub fn is_empty(&self) -> bool {
-        !self.enabled && is_blank_optional_string(self.size.as_ref()) && is_blank_optional_string(self.dir.as_ref())
+        !self.enabled && is_blank_optional_string(self.size.as_deref()) && is_blank_optional_string(self.dir.as_deref())
     }
 
     pub(crate) fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {

@@ -48,7 +48,9 @@ impl<C: WithCapacity> PlaylistScratch<C> {
             series: C::with_capacity(capacity),
         }
     }
+}
 
+impl<C> PlaylistScratch<C> {
     pub fn get_mut(&mut self, cluster: XtreamCluster) -> &mut C {
         match cluster {
             XtreamCluster::Live => &mut self.live,
@@ -85,7 +87,6 @@ impl<C: Default> PlaylistScratch<C> {
 }
 
 impl<C: IsEmpty> PlaylistScratch<C> {
-
     pub fn is_empty(&self, cluster: XtreamCluster) -> bool {
         match cluster {
             XtreamCluster::Live => self.live.is_empty(),

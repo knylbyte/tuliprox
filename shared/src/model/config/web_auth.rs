@@ -36,6 +36,6 @@ impl WebAuthConfigDto {
             && self.token_ttl_mins == empty.token_ttl_mins
             && self.issuer.trim().is_empty()
             && self.secret.trim().is_empty()
-            && is_blank_optional_string(self.userfile.as_ref())
+            && is_blank_optional_string(self.userfile.as_deref())
     }
 }

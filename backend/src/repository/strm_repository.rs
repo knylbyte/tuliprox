@@ -199,7 +199,7 @@ fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
         input_name,
         url,
         series_name,
-        release_date,
+        release_date: release_date.as_deref().map(ToString::to_string),
         season,
         episode,
         added: added.as_ref().map_or_else(|| Some(0), |a| a.parse::<u64>().ok()),
@@ -673,9 +673,9 @@ fn get_quality(strm_target_output: &StrmTargetOutput, pli: &PlaylistItem, separa
                     StreamProperties::Live(_)
                     | StreamProperties::Series(_) => (None, None),
                     StreamProperties::Video(video) =>
-                        video.details.as_ref().map_or_else(|| (None, None), |d| (d.audio.as_ref(), d.video.as_ref())),
+                        video.details.as_ref().map_or_else(|| (None, None), |d| (d.audio.as_deref(), d.video.as_deref())),
                     StreamProperties::Episode(episode) =>
-                        (episode.audio.as_ref(), episode.video.as_ref())
+                        (episode.audio.as_deref(), episode.video.as_deref())
                 }
             }
         };
@@ -711,7 +711,7 @@ pub async fn write_strm_playlist(
         )));
     };
 
-    let user_and_server_info = get_credentials_and_server_info(app_config, target_output.username.as_ref());
+    let user_and_server_info = get_credentials_and_server_info(app_config, target_output.username.as_deref());
     let normalized_dir = normalize_string_path(&target_output.directory);
     let strm_file_prefix = hash_string_as_hex(&normalized_dir);
     let strm_index_path =
@@ -895,7 +895,7 @@ async fn has_strm_file_same_hash(file_path: &PathBuf, content_hash: UUIDType) ->
 
 fn get_credentials_and_server_info(
     cfg: &AppConfig,
-    username: Option<&String>,
+    username: Option<&str>,
 ) -> Option<(ProxyUserCredentials, ApiProxyServerInfo)> {
     let username = username?;
     let credentials = cfg.get_user_credentials(username)?;

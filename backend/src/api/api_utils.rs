@@ -615,7 +615,7 @@ where
     P: PlaylistEntry,
 {
     let item_type = params.item.get_item_type();
-    let provider_url = &params.item.get_provider_url();
+    let provider_url = params.item.get_provider_url();
 
     let redirect_request =
         params.user.proxy.is_redirect(item_type) || params.target.is_force_redirect(item_type);
@@ -627,17 +627,17 @@ where
     if params.target_type == TargetType::M3u {
         if redirect_request || is_dash_request {
             let redirect_url = if is_hls_request {
-                &replace_url_extension(provider_url, HLS_EXT)
+                Cow::Owned(replace_url_extension(&provider_url, HLS_EXT))
             } else {
                 provider_url
             };
             let redirect_url = if is_dash_request {
-                &replace_url_extension(redirect_url, DASH_EXT)
+                Cow::Owned(replace_url_extension(&redirect_url, DASH_EXT))
             } else {
                 redirect_url
             };
             let redirect_url =
-                get_redirect_alternative_url(app_state, redirect_url, params.input).await;
+                get_redirect_alternative_url(app_state, &redirect_url, params.input).await;
             debug_if_enabled!(
                 "Redirecting stream request to {}",
                 sanitize_sensitive_info(&redirect_url)
@@ -670,8 +670,8 @@ where
             let stream_url = match get_xtream_player_api_stream_url(
                 params.input,
                 params.req_context,
-                &params.get_query_path(provider_id, provider_url),
-                provider_url,
+                &params.get_query_path(provider_id, &provider_url),
+                &provider_url,
             ) {
                 None => {
                     error!("Cant find stream url for target {target_name}, context {}, stream_id {virtual_id}", params.req_context);
@@ -1234,7 +1234,7 @@ fn get_mime_type(headers: &axum::http::HeaderMap, resource_url: &str) -> Option<
         .and_then(|v| v.to_str().ok())   // Option<&str>
         .map(ToString::to_string)        // Option<String>
         .or_else(|| {
-            // fallback auf guess
+            // fallback to guess
             mime_guess::from_path(resource_url)
                 .first_raw()
                 .map(ToString::to_string)
@@ -1529,7 +1529,7 @@ pub fn json_response<T: Serialize>(data: &T) -> impl IntoResponse + Send {
     (axum::http::StatusCode::OK, axum::Json(data)).into_response()
 }
 
-pub fn json_or_bin_response<T: Serialize>(accept: Option<&String>, data: &T) -> impl IntoResponse + Send {
+pub fn json_or_bin_response<T: Serialize>(accept: Option<&str>, data: &T) -> impl IntoResponse + Send {
     if accept.is_some_and(|a| a.contains(CONTENT_TYPE_BIN)) {
         return bin_response(data).into_response();
     }

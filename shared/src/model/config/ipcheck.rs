@@ -28,11 +28,11 @@ pub struct IpCheckConfigDto {
 
 impl IpCheckConfigDto {
     pub fn is_empty(&self) -> bool {
-        is_blank_optional_string(self.url.as_ref())
-            && is_blank_optional_string(self.url_ipv4.as_ref())
-            && is_blank_optional_string(self.url_ipv6.as_ref())
-            && is_blank_optional_string(self.pattern_ipv4.as_ref())
-            && is_blank_optional_string(self.pattern_ipv6.as_ref())
+        is_blank_optional_string(self.url.as_deref())
+            && is_blank_optional_string(self.url_ipv4.as_deref())
+            && is_blank_optional_string(self.url_ipv6.as_deref())
+            && is_blank_optional_string(self.pattern_ipv4.as_deref())
+            && is_blank_optional_string(self.pattern_ipv6.as_deref())
     }
 
     pub fn clean(&mut self) {

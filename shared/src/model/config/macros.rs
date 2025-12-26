@@ -8,8 +8,8 @@ macro_rules! check_input_credentials {
                 return Err(info_err!("url for input is mandatory".to_string()));
             }
 
-            $this.username = $crate::utils::get_trimmed_string($this.username.as_ref());
-            $this.password = $crate::utils::get_trimmed_string($this.password.as_ref());
+            $this.username = $crate::utils::get_trimmed_string($this.username.as_deref());
+            $this.password = $crate::utils::get_trimmed_string($this.password.as_deref());
      }
      match $input_type {
             InputType::M3u => {

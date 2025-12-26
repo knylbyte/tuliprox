@@ -38,11 +38,11 @@ impl TmdbClient {
     }
 
     // Searches for a movie by title and optional year
-    pub async fn search_movie(&self, tmdb_id: Option<&u32>, title: &str, year: Option<&u32>) -> Result<Option<MediaMetadata>, String> {
+    pub async fn search_movie(&self, tmdb_id: Option<u32>, title: &str, year: Option<u32>) -> Result<Option<MediaMetadata>, String> {
         debug!("TMDB search movie: {title}");
 
         if let Some(movie_id) = tmdb_id {
-            return self.fetch_movie_details(*movie_id).await;
+            return self.fetch_movie_details(movie_id).await;
         }
 
         sleep(Duration::from_millis(self.rate_limit_ms)).await;
@@ -62,7 +62,7 @@ impl TmdbClient {
         }
     }
 
-    fn build_movie_search_url(&self, title: &str, year: Option<&u32>) -> Result<Url, String> {
+    fn build_movie_search_url(&self, title: &str, year: Option<u32>) -> Result<Url, String> {
         let mut url = Url::parse(&format!("{TMDB_API_BASE_URL}/search/movie")).map_err(|e| format!("Failed to parse URL for TMDB movie search: {e}"))?;
         {
             let mut q = url.query_pairs_mut();

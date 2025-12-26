@@ -113,7 +113,7 @@ async fn main() {
     let mut config_paths = get_file_paths(&args);
 
     init_logger(
-        args.log_level.as_ref(),
+        args.log_level.as_deref(),
         config_paths.config_file_path.as_str(),
     );
 

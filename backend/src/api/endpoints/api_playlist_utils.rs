@@ -115,7 +115,7 @@ async fn grouped_channels(
         ))
 }
 
-pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Option<&ConfigTarget>, cfg: &AppConfig, accept: Option<&String>) -> impl axum::response::IntoResponse + Send {
+pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Option<&ConfigTarget>, cfg: &AppConfig, accept: Option<&str>) -> impl axum::response::IntoResponse + Send {
     if let Some(target) = cfg_target {
         if target.has_output(TargetType::Xtream) {
             let live_channels = grouped_channels(cfg, target, XtreamCluster::Live).await;
@@ -144,7 +144,7 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
     (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid Arguments"}))).into_response()
 }
 
-pub(in crate::api::endpoints) async fn get_playlist(client: &reqwest::Client, cfg_input: Option<&Arc<ConfigInput>>, cfg: &Arc<Config>, accept: Option<&String>) -> impl IntoResponse + Send {
+pub(in crate::api::endpoints) async fn get_playlist(client: &reqwest::Client, cfg_input: Option<&Arc<ConfigInput>>, cfg: &Arc<Config>, accept: Option<&str>) -> impl IntoResponse + Send {
     match cfg_input {
         Some(input) => {
             let (result, errors) =
