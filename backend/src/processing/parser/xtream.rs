@@ -102,8 +102,11 @@ pub fn get_xtream_url(xtream_cluster: XtreamCluster, url: &str,
             format!("{url}/{ctx_path}{username}/{password}/{stream_id}{suffix}")
         }
         XtreamCluster::Video => {
-            let ext = container_extension.as_ref().map_or("mp4", |e| e.as_str());
-            format!("{url}/movie/{username}/{password}/{stream_id}.{ext}")
+            if let Some(extension) = container_extension {
+                format!("{url}/movie/{username}/{password}/{stream_id}.{extension}")
+            } else {
+                format!("{url}/movie/{username}/{password}/{stream_id}")
+            }
         }
         XtreamCluster::Series =>
             format!("{}&action={}&series_id={stream_id}", get_xtream_stream_url_base(url.as_ref(), username, password), crate::model::XC_ACTION_GET_SERIES_INFO)

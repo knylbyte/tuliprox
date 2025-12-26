@@ -335,8 +335,8 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
                 let (playlistgroups, mut error_list) = {
                     let (downloaded_playlist, mut download_err) = playlist_download_from_input(client, &app_config, input).await;
                     let (playlist, error) = persist_input_playlist(&app_config, input, downloaded_playlist).await;
-                    error!("Failed to persist input playlist {}", input.name);
                     if let Some(err) = error {
+                        error!("Failed to persist input playlist {}", input.name);
                         download_err.push(err);
                     }
                     (playlist, download_err)

@@ -35,7 +35,6 @@ deunicode = "1.6.2"
 mime = "0.3"
 log = "0.4"
 env_logger = "0.11"
-#bincode = { version = "2.0",  features = ["std", "serde"] }
 rmp-serde = "1"
 rand = "0.9"
 fastrand = "2"

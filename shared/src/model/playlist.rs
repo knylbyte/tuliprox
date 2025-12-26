@@ -532,9 +532,9 @@ impl PlaylistEntry for M3uPlaylistItem {
     #[inline]
     fn get_name(&self) -> Cow<'_, str> {
         if self.title.is_empty() {
-            Cow::Borrowed(self.title.as_str())
-        } else {
             Cow::Borrowed(self.name.as_str())
+        } else {
+            Cow::Borrowed(self.title.as_str())
         }
     }
 
@@ -672,6 +672,7 @@ impl XtreamPlaylistItem {
             }
         }
     }
+
     #[inline]
     pub fn has_details(&self) -> bool {
         self.additional_properties.as_ref().is_some_and(|p| p.has_details())
@@ -987,7 +988,7 @@ impl PlaylistEntry for XtreamPlaylistItem {
     }
     #[inline]
     fn get_category_id(&self) -> Option<u32> {
-        None
+        Some(self.category_id)
     }
     #[inline]
     fn get_provider_url(&self) -> String {
@@ -1313,7 +1314,7 @@ impl PlaylistEntry for PlaylistItem {
 
     #[inline]
     fn get_category_id(&self) -> Option<u32> {
-        None
+        Some(self.header.category_id)
     }
 
     #[inline]

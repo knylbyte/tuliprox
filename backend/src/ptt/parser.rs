@@ -161,6 +161,7 @@ impl PttParser {
         result.seasons.dedup();
         result.episodes.sort_unstable();
         result.episodes.dedup();
+        result.languages.sort_unstable();
         result.languages.dedup();
 
         let final_title = if end_of_title <= context.title.len() {

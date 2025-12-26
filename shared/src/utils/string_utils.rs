@@ -59,7 +59,7 @@ pub fn get_non_empty_str<'a>(first: &'a str, second: &'a str, third: &'a str) ->
 }
 
 pub fn is_blank_optional_string(s: Option<&String>) -> bool {
-    s.is_none() || s.as_ref().is_some_and(|s| s.trim().is_empty())
+    s.is_none() || s.is_some_and(|s| s.trim().is_empty())
 }
 
 pub fn trim_slash(s: &str) -> Cow<'_, str> {

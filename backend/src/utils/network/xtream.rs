@@ -13,7 +13,7 @@ use crate::utils::request;
 use chrono::{DateTime, Utc};
 use log::{error, info, warn};
 use shared::error::{str_to_io_error, to_io_error, TuliproxError};
-use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, SeriesStreamProperties, VideoStreamProperties, XtreamCluster, XtreamPlaylistItem, XtreamSeriesInfo, XtreamVideoInfo};
+use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, SeriesStreamProperties, StreamProperties, VideoStreamProperties, XtreamCluster, XtreamPlaylistItem, XtreamSeriesInfo, XtreamVideoInfo};
 use shared::utils::{extract_extension_from_url, get_i64_from_serde_value, get_string_from_serde_value, sanitize_sensitive_info};
 use std::io::Error;
 use std::str::FromStr;
@@ -57,7 +57,7 @@ pub async fn get_xtream_stream_info_content(client: &reqwest::Client, input: &In
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub async fn get_xtream_stream_info(client: &reqwest::Client,
                                     app_state: &Arc<AppState>,
                                     user: &ProxyUserCredentials,
@@ -90,12 +90,14 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
                                 error!("Failed to persist video stream for input {}: {err}", &input.name);
                             }
 
-                            if let Err(err) = write_playlist_item_to_file(app_config, &target.name, pli).await {
+                            let mut vod_pli = pli.clone();
+                            vod_pli.additional_properties = Some(StreamProperties::Video(Box::new(video_stream_props)));
+                            if let Err(err) = write_playlist_item_to_file(app_config, &target.name, &vod_pli).await {
                                 error!("Failed to persist video stream: {err}");
                             }
 
                             if target.use_memory_cache {
-                                app_state.playlists.update_playlist_items(target, vec![pli]).await;
+                                app_state.playlists.update_playlist_items(target, vec![&vod_pli]).await;
                             }
                         }
                     }
@@ -148,6 +150,7 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
 
                                         if !provider_series.is_empty() {
                                             let mut series_pli = pli.clone();
+                                            series_pli.additional_properties = Some(StreamProperties::Series(Box::new(series_stream_props)));
                                             rewrite_provider_series_info_episode_virtual_id(&mut series_pli, &provider_series);
                                             if let Err(err) = write_playlist_item_to_file(app_config, &target.name, &series_pli).await {
                                                 error!("Failed to persist series stream: {err}");

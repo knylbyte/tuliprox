@@ -1234,7 +1234,7 @@ fn get_mime_type(headers: &axum::http::HeaderMap, resource_url: &str) -> Option<
         .and_then(|v| v.to_str().ok())   // Option<&str>
         .map(ToString::to_string)        // Option<String>
         .or_else(|| {
-            // fallback auf guess
+            // fallback to guess
             mime_guess::from_path(resource_url)
                 .first_raw()
                 .map(ToString::to_string)

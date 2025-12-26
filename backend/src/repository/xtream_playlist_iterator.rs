@@ -71,6 +71,7 @@ impl XtreamPlaylistIterator {
     }
 
     fn matches_filters(cluster: XtreamCluster, filter_ids: Option<&HashSet<u32>>, item: &XtreamPlaylistItem) -> bool {
+        // we cant serve episodes with series!
         if cluster == XtreamCluster::Series
             && !matches!(item.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo) {
             return false;

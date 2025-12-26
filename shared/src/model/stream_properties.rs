@@ -1,7 +1,7 @@
 use crate::model::{ PlaylistEntry, PlaylistItemType, VirtualId, XtreamCluster, XtreamMappingOptions, XtreamSeriesInfo, XtreamVideoInfo};
 use crate::utils::{deserialize_as_option_string, deserialize_number_from_string,
                    deserialize_number_from_string_or_zero, string_default_on_null,
-                   deserialize_as_string, deserialize_as_string_array, deserialize_json_as_string,
+                   deserialize_as_string, deserialize_as_string_array, deserialize_json_as_opt_string,
                    string_or_number_u32};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -62,9 +62,9 @@ pub struct VideoStreamDetailProperties {
     pub backdrop_path: Option<Vec<String>>,
     pub duration_secs: Option<String>,
     pub duration: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
     #[serde(default)]
     pub bitrate: u32,
@@ -140,9 +140,9 @@ pub struct SeriesStreamDetailEpisodeProperties {
     pub bitrate: u32,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub rating: Option<f64>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
 }
 
@@ -205,12 +205,11 @@ pub struct EpisodeStreamProperties {
     pub movie_image: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub container_extension: String,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
 }
-
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum StreamProperties {
@@ -321,25 +320,21 @@ impl StreamProperties {
     pub fn get_container_extension(&self) -> Option<String> {
         match self {
             StreamProperties::Live(_) => None,
-            StreamProperties::Video(video) => if video.container_extension.is_empty() { None } else { Some(video.container_extension.clone()) },
+            StreamProperties::Video(video) => non_empty_string(&video.container_extension),
             StreamProperties::Series(series) => series.details.as_ref()
                 .and_then(|d| d.episodes.as_ref())
-                .and_then(|e| e.first().and_then(|e| {
-                    if e.container_extension.is_empty() { None } else { Some(e.container_extension.clone()) }
-                })),
-            StreamProperties::Episode(episode) => if episode.container_extension.is_empty() { None } else { Some(episode.container_extension.clone()) },
+                .and_then(|e| e.first().and_then(|e| non_empty_string(&e.container_extension))),
+            StreamProperties::Episode(episode) => non_empty_string(&episode.container_extension),
         }
     }
 
     pub fn get_direct_source(&self) -> Option<String> {
         match self {
             StreamProperties::Live(_) => None,
-            StreamProperties::Video(video) => if video.direct_source.is_empty() { None } else { Some(video.direct_source.clone()) },
+            StreamProperties::Video(video) => non_empty_string(&video.direct_source),
             StreamProperties::Series(series) => series.details.as_ref()
                 .and_then(|d| d.episodes.as_ref())
-                .and_then(|e| e.first().and_then(|e| {
-                    if e.direct_source.is_empty() { None } else { Some(e.direct_source.clone()) }
-                })),
+                .and_then(|e| e.first().and_then(|e| non_empty_string(&e.direct_source))),
             StreamProperties::Episode(_episode) => None,
         }
     }
@@ -465,6 +460,7 @@ impl StreamProperties {
                             virtual_id: VirtualId, category_id: u32) -> Value {
         match self {
             StreamProperties::Live(_live) => {
+                // live has no info
                 Value::Object(serde_json::Map::new())
             }
             StreamProperties::Video(video) => {
@@ -474,6 +470,7 @@ impl StreamProperties {
                 self.series_to_info_document(options, series, item_type, virtual_id, category_id)
             }
             StreamProperties::Episode(_episode) => {
+                // episode has no info
                 Value::Object(serde_json::Map::new())
             }
         }
@@ -807,4 +804,8 @@ impl EpisodeStreamProperties {
             audio: episode.audio.clone(),
         }
     }
+}
+
+fn non_empty_string(s: &str) -> Option<String> {
+    if s.is_empty() { None } else { Some(s.to_string()) }
 }

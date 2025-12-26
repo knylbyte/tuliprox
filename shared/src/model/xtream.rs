@@ -1,5 +1,5 @@
 use crate::utils::{deserialize_as_option_string, deserialize_as_string_array,
-                   deserialize_json_as_string, deserialize_number_from_string,
+                   deserialize_json_as_opt_string, deserialize_number_from_string,
                    deserialize_number_from_string_or_zero, deserialize_release_date,
                    string_default_on_null, string_or_number_u32};
 use serde::ser::SerializeMap;
@@ -53,9 +53,9 @@ pub struct XtreamVideoInfoInfo {
     pub backdrop_path: Option<Vec<String>>,
     pub duration_secs: Option<String>,
     pub duration: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
     #[serde(default)]
     pub bitrate: u32,
@@ -144,9 +144,9 @@ pub struct XtreamSeriesInfoEpisodeInfo {
     pub duration: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub movie_image: String,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_string")]
+    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
     #[serde(default, deserialize_with = "string_or_number_u32")]
     pub bitrate: u32,

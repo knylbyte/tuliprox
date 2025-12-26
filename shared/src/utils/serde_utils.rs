@@ -261,7 +261,7 @@ pub fn parse_timestamp(value: &str) -> Result<Option<i64>, ParseError> {
     Ok(Some(timestamp))
 }
 
-pub fn deserialize_json_as_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+pub fn deserialize_json_as_opt_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {

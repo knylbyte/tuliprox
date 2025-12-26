@@ -23,9 +23,9 @@ impl InfoDocUtils {
 
     pub fn limited(n: f64) -> String {
         if n > 0.01 {
-            let s = n.to_string();
-            if s.len() > 4 {
-                s[..4].to_string()
+            let s = format!("{:.2}", n);
+            if s.ends_with(".00") {
+                s[..s.len()-3].to_string()
             } else {
                 s
             }

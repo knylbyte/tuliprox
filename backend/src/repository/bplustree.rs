@@ -13,7 +13,7 @@ use tempfile::NamedTempFile;
 use crate::utils::{binary_deserialize, binary_serialize};
 
 const BLOCK_SIZE: usize = 4096;
-const BINCODE_OVERHEAD: usize = 8;
+const ENCODE_OVERHEAD: usize = 10*8; // for bincode we used 8
 const LEN_SIZE: usize = 4;
 const FLAG_SIZE: usize = 1;
 
@@ -464,14 +464,6 @@ fn decode_content(content_bytes: &[u8]) -> Option<Vec<u8>> {
             return Some(result);
         }
     }
-
-    // TODO remove at next deployment, this is only fallback for older compressed files
-    let mut decoder = flate2::write::ZlibDecoder::new(Vec::with_capacity(content_bytes.len()));
-    if let Ok(()) = decoder.write_all(content_bytes) {
-        if let Ok(decoded) = decoder.finish() {
-            return Some(decoded);
-        }
-    }
     None
 }
 
@@ -484,7 +476,7 @@ pub struct BPlusTree<K, V> {
 }
 
 const fn calc_order<K, V>() -> (usize, usize) {
-    let overhead_size = BINCODE_OVERHEAD + LEN_SIZE + FLAG_SIZE;
+    let overhead_size = ENCODE_OVERHEAD + LEN_SIZE + FLAG_SIZE;
     let key_size = size_of::<K>() + overhead_size;
     let value_size = key_size + size_of::<V>() + overhead_size;
     let inner_order = BLOCK_SIZE / key_size;

@@ -50,13 +50,6 @@ macro_rules! try_option_ok {
         }
     };
 }
-//
-// #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-// pub struct InputVodInfoRecord {
-//     pub(crate) tmdb_id: u32,
-//     pub(crate) ts: u64,
-//     pub(crate) release_date: Option<String>,
-// }
 
 #[inline]
 fn get_collection_path(path: &Path, collection: &str) -> PathBuf {

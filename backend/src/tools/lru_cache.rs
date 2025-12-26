@@ -38,11 +38,13 @@ impl LRUResourceCache {
     ///     - `cache_dir`: The directory path where cached files are stored.
     ///
     pub fn new(capacity: usize, cache_dir: &str) -> Self {
+        // Estimate: assume average file size of 256KB
+        let estimated_entries = (capacity / (256 * 1024)).clamp(64, 16384);
         Self {
             capacity,
             cache_dir: PathBuf::from(cache_dir),
             current_size: 0,
-            cache: HashMap::<String, (PathBuf, Option<String>, usize)>::with_capacity(4096),
+            cache: HashMap::<String, (PathBuf, Option<String>, usize)>::with_capacity(estimated_entries),
             usage_order: VecDeque::new(),
         }
     }
@@ -147,7 +149,9 @@ impl LRUResourceCache {
                 if path.exists() {
                     trace_if_enabled!("Responding resource from cache with key: {key} for url: {}", sanitize_sensitive_info(url));
                     // Move to the end of the queue
-                    self.usage_order.retain(|k| k != &key);   // remove from queue
+                    if let Some(pos) = self.usage_order.iter().position(|k| k == &key) {
+                        self.usage_order.remove(pos); // remove from queue
+                    }
                     self.usage_order.push_back(key);  // add to the to end
                     return Some((path.clone(), mime_type.clone()));
                 }
@@ -156,7 +160,9 @@ impl LRUResourceCache {
                     // this should not happen, someone deleted the file manually and the cache is not in sync
                     self.current_size -= size;
                     self.cache.remove(&key);
-                    self.usage_order.retain(|k| k != &key);
+                    if let Some(pos) = self.usage_order.iter().position(|k| k == &key) {
+                        self.usage_order.remove(pos);
+                    }
                 }
             }
         }

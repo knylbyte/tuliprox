@@ -52,7 +52,7 @@ pub fn xtream_mapping_option_from_target_options(target: &ConfigTarget, target_o
         reverse_item_types,
         username: user.username.clone(),
         password: user.password.clone(),
-        base_url: resource_url.map(ToString::to_string).clone(),
+        base_url: resource_url.map(ToString::to_string),
     }
 }
 
