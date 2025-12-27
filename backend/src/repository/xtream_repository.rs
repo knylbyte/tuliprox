@@ -662,6 +662,9 @@ pub async fn xtream_update_input_info_file(
             }
         }
         drop(reader);
+        if let Err(err) = tree.compact(&info_path) {
+            error!("Failed to compact {cluster} info: {err}");
+        }
         if let Err(err) = fs::remove_file(wal_path) {
             error!("Failed to delete WAL file for {cluster} {err}");
         }
