@@ -4,6 +4,7 @@ use ruzstd::decoding::StreamingDecoder;
 use ruzstd::encoding::CompressionLevel;
 use serde::{Deserialize, Serialize};
 use shared::error::{str_to_io_error, to_io_error};
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
@@ -40,7 +41,7 @@ fn u32_from_bytes(bytes: &[u8]) -> io::Result<u32> {
 }
 
 
-#[inline(always)]
+#[inline]
 fn get_entry_index_upper_bound<K>(keys: &[K], key: &K) -> usize
 where
     K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
@@ -253,6 +254,37 @@ where
         self.children.iter().for_each(|child| child.traverse(visit));
     }
 
+    /// Calculate the serialized size of this node in bytes (rounded up to block size)
+    fn calculate_serialized_size(&self) -> io::Result<u64> {
+        // Header: is_leaf flag
+        let mut size = FLAG_SIZE;
+        
+        // Keys: length + serialized data
+        let keys_encoded = binary_serialize(&self.keys)?;
+        size += LEN_SIZE + keys_encoded.len();
+        
+        if self.is_leaf {
+            // Values: compression flag + length + data
+            let values_encoded = binary_serialize(&self.values)?;
+            let use_compression = values_encoded.len() + size >= BLOCK_SIZE;
+            size += FLAG_SIZE; // compression flag
+            
+            let content_bytes = if use_compression {
+                ruzstd::encoding::compress_to_vec(std::io::Cursor::new(values_encoded.as_slice()), CompressionLevel::Fastest)
+            } else {
+                values_encoded
+            };
+            size += LEN_SIZE + content_bytes.len();
+        } else {
+            // Internal node: pointer length + pointers
+            size += LEN_SIZE + (self.children.len() * size_of::<u64>() + ENCODE_OVERHEAD);
+        }
+        
+        // Round up to block size
+        let blocks = size.div_ceil(BLOCK_SIZE);
+        Ok((blocks * BLOCK_SIZE) as u64)
+    }
+
     fn serialize_to_block<W: Write + Seek>(
         &self,
         file: &mut W,
@@ -364,6 +396,105 @@ where
         }
 
         Ok(current_offset)
+    }
+
+    /// Serialize the tree in breadth-first order for better disk locality
+    /// This improves query performance by keeping nodes at the same level contiguous
+    fn serialize_breadth_first<W: Write + Seek>(
+        &self,
+        file: &mut W,
+        buffer: &mut Vec<u8>,
+        start_offset: u64,
+    ) -> io::Result<u64> {
+        use std::collections::HashMap;
+        
+        // Phase 1: Calculate offsets for all nodes in breadth-first order
+        let mut queue: VecDeque<&BPlusTreeNode<K, V>> = VecDeque::new();
+        let mut offset_map: HashMap<*const BPlusTreeNode<K, V>, u64> = HashMap::new();
+        let mut current_offset = start_offset;
+        
+        queue.push_back(self);
+        offset_map.insert(std::ptr::from_ref(self), current_offset);
+        current_offset += self.calculate_serialized_size()?;
+        
+        while let Some(node) = queue.pop_front() {
+            if !node.is_leaf {
+                for child in &node.children {
+                    offset_map.insert(std::ptr::from_ref(child), current_offset);
+                    current_offset += child.calculate_serialized_size()?;
+                    queue.push_back(child);
+                }
+            }
+        }
+        
+        // Phase 2: Write nodes with correct child pointers
+        queue.clear();
+        queue.push_back(self);
+        
+        while let Some(node) = queue.pop_front() {
+            let node_offset = offset_map[&(std::ptr::from_ref(node))];
+            
+            if node.is_leaf {
+                // Leaf nodes: serialize normally
+                node.serialize_to_block(file, buffer, node_offset)?;
+            } else {
+                // Internal nodes: collect child offsets and serialize with them
+                let child_offsets: Vec<u64> = node.children.iter()
+                    .map(|c| offset_map[&(std::ptr::from_ref(c))])
+                    .collect();
+                
+                node.serialize_internal_with_offsets(file, buffer, node_offset, &child_offsets)?;
+                
+                // Enqueue children for next level
+                for child in &node.children {
+                    queue.push_back(child);
+                }
+            }
+        }
+        
+        Ok(current_offset)
+    }
+
+    /// Serialize an internal node with pre-calculated child offsets
+    fn serialize_internal_with_offsets<W: Write + Seek>(
+        &self,
+        file: &mut W,
+        buffer: &mut [u8],
+        offset: u64,
+        child_offsets: &[u64],
+    ) -> io::Result<u64> {
+        // Similar to serialize_to_block but for internal nodes with known child offsets
+        let buffer_slice = &mut buffer[..];
+        buffer_slice[0] = u8::from(self.is_leaf);
+        let mut write_pos = FLAG_SIZE;
+
+        // Write keys
+        let keys_encoded = binary_serialize(&self.keys)?;
+        let keys_len = keys_encoded.len();
+        buffer_slice[write_pos..write_pos + LEN_SIZE]
+            .copy_from_slice(&u32::try_from(keys_len).map_err(to_io_error)?.to_le_bytes());
+        write_pos += LEN_SIZE;
+        buffer_slice[write_pos..write_pos + keys_len].copy_from_slice(&keys_encoded);
+        write_pos += keys_len;
+        drop(keys_encoded);
+
+        let pointer_offset_within_first_block = offset + write_pos as u64;
+
+        // Zero unused portion and write first block
+        if write_pos < BLOCK_SIZE {
+            buffer_slice[write_pos..BLOCK_SIZE].fill(0u8);
+        }
+        file.seek(SeekFrom::Start(offset))?;
+        file.write_all(&buffer_slice[..BLOCK_SIZE])?;
+
+        // Write child pointers
+        let pointer_encoded = binary_serialize(child_offsets)?;
+        let pointer_len = u32::try_from(pointer_encoded.len()).map_err(to_io_error)?;
+        file.seek(SeekFrom::Start(pointer_offset_within_first_block))?;
+        file.write_all(&pointer_len.to_le_bytes())?;
+        file.write_all(&pointer_encoded)?;
+
+        Ok(offset + BLOCK_SIZE as u64)
     }
 
     fn deserialize_from_block<R: Read + Seek>(
@@ -545,9 +676,10 @@ where
     pub fn store(&mut self, filepath: &Path) -> io::Result<u64> {
         if self.dirty {
             let tempfile = NamedTempFile::new()?;
-            let mut file = utils::file_writer(&tempfile); //create_new_file_for_write(&tempfile)?);
+            let mut file = utils::file_writer(&tempfile);
             let mut buffer = vec![0u8; BLOCK_SIZE];
-            match self.root.serialize_to_block(&mut file, &mut buffer, 0u64) {
+            // Use breadth-first serialization for better disk locality
+            match self.root.serialize_breadth_first(&mut file, &mut buffer, 0u64) {
                 Ok(result) => {
                     file.flush()?;
                     drop(file);
@@ -830,17 +962,16 @@ where
             loop {
                 let node = self.stack.pop()?;
                 
-                if !node.is_leaf {
-                    // Push children in reverse order to maintain left-to-right traversal
-                    for child in node.children.iter().rev() {
-                        self.stack.push(child);
-                    }
-                } else {
+                if node.is_leaf {
                     // Found a leaf node
                     self.current_keys = Some(&node.keys);
                     self.current_values = Some(&node.values);
                     self.index = 0;
                     break; // Exit inner loop to process this leaf
+                }
+                // Push children in reverse order to maintain left-to-right traversal
+                for child in node.children.iter().rev() {
+                    self.stack.push(child);
                 }
             }
         }
