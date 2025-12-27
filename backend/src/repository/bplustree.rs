@@ -40,7 +40,7 @@ fn u32_from_bytes(bytes: &[u8]) -> io::Result<u32> {
 }
 
 
-#[inline]
+#[inline(always)]
 fn get_entry_index_upper_bound<K>(keys: &[K], key: &K) -> usize
 where
     K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
@@ -159,44 +159,27 @@ where
         self.children.get(self.get_entry_index_upper_bound(key))?.query(key)
     }
 
-    fn get_equal_entry_index(&self, key: &K) -> Option<usize>
-    where
-        K: Ord,
-    {
-        let mut left = 0;
-        let mut right = self.keys.len().checked_sub(1)?;
-        while left <= right {
-            let mid = left + ((right - left) >> 1);
-            let mid_key = &self.keys[mid];
-
-            match mid_key.cmp(key) {
-                std::cmp::Ordering::Equal => return Some(mid),
-                std::cmp::Ordering::Greater => right = mid.checked_sub(1)?,
-                std::cmp::Ordering::Less => left = mid + 1,
-            }
-        }
-        None
-    }
-
     fn get_entry_index_upper_bound(&self, key: &K) -> usize {
         get_entry_index_upper_bound::<K>(&self.keys, key)
     }
 
     fn insert(&mut self, key: K, v: V, inner_order: usize, leaf_order: usize) -> Option<Self> {
         if self.is_leaf {
-            if let Ok(pos) = self.keys.binary_search(&key) {
-                self.values[pos] = v;
-                return None;
-            }
-            if let Some(eq_entry_index) = self.get_equal_entry_index(&key) {
-                self.values.insert(eq_entry_index, v);
-                return None;
-            }
-            let pos = self.get_entry_index_upper_bound(&key);
-            self.keys.insert(pos, key);
-            self.values.insert(pos, v);
-            if self.is_overflow(leaf_order) {
-                return Some(self.split(leaf_order));
+            // Use single binary search instead of redundant searches
+            match self.keys.binary_search(&key) {
+                Ok(pos) => {
+                    // Key exists, update value
+                    self.values[pos] = v;
+                    return None;
+                }
+                Err(pos) => {
+                    // Key doesn't exist, insert at correct position
+                    self.keys.insert(pos, key);
+                    self.values.insert(pos, v);
+                    if self.is_overflow(leaf_order) {
+                        return Some(self.split(leaf_order));
+                    }
+                }
             }
         } else {
             let pos = self.get_entry_index_upper_bound(&key);
@@ -205,7 +188,7 @@ where
             if let Some(tree_node) = node {
                 if let Some(leaf_key) = Self::find_leaf_entry(&tree_node) {
                     let idx = self.get_entry_index_upper_bound(leaf_key);
-                    if self.keys.binary_search(&key).is_err() {
+                    if self.keys.binary_search(leaf_key).is_err() {
                         self.keys.insert(idx, leaf_key.clone());
                         self.children.insert(idx + 1, tree_node);
                         if self.is_overflow(inner_order) {
@@ -229,9 +212,7 @@ where
             let mut node = Self::new(false);
             node.keys = self.keys.split_off(median + 1);
             node.children = self.children.split_off(median + 1);
-            if let Some(child) = node.children.first() {
-                self.children.push(child.clone());
-            }
+            // No need to clone and push - split_off already handles the split correctly
             node
         }
     }
@@ -281,8 +262,7 @@ where
         // Keep backward-compatible on-disk layout with minimal allocations.
         let mut current_offset = offset;
 
-        // zero the working block and set node type
-        buffer.fill(0_u8);
+        // Set node type (no need to zero entire buffer upfront)
         let buffer_slice = &mut buffer[..];
         buffer_slice[0] = u8::from(self.is_leaf);
         let mut write_pos = FLAG_SIZE;
@@ -333,6 +313,10 @@ where
 
             // Write the full first block
             file.seek(SeekFrom::Start(offset))?;
+            // Zero only the unused portion of the buffer before writing
+            if write_pos + first_copy < BLOCK_SIZE {
+                buffer_slice[write_pos + first_copy..BLOCK_SIZE].fill(0u8);
+            }
             file.write_all(&buffer_slice[..BLOCK_SIZE])?;
             current_offset += BLOCK_SIZE as u64;
 
@@ -355,7 +339,10 @@ where
             // Free content buffer ASAP
             drop(content_bytes);
         } else {
-            // Internal node: write out the full first block now
+            // Internal node: zero unused portion and write out the full first block
+            if write_pos < BLOCK_SIZE {
+                buffer_slice[write_pos..BLOCK_SIZE].fill(0u8);
+            }
             file.seek(SeekFrom::Start(offset))?;
             file.write_all(&buffer_slice[..BLOCK_SIZE])?;
             current_offset += BLOCK_SIZE as u64;
@@ -826,36 +813,37 @@ where
     type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Iterate over the current node
-        if let Some(keys) = self.current_keys {
-            if let Some(values) = self.current_values {
-                if self.index < keys.len() {
-                    let key = &keys[self.index];
-                    let value = &values[self.index];
-                    self.index += 1;
-                    return Some((key, value));
-                }
-            }
-        }
-
-        // Move to the next node
-        while let Some(node) = self.stack.pop() {
-            if !node.is_leaf {
-                // Push children in reverse order to maintain traversal order
-                for child in node.children.iter().rev() {
-                    self.stack.push(child);
+        loop {
+            // Try to return next item from current leaf
+            if let Some(keys) = self.current_keys {
+                if let Some(values) = self.current_values {
+                    if self.index < keys.len() {
+                        let key = &keys[self.index];
+                        let value = &values[self.index];
+                        self.index += 1;
+                        return Some((key, value));
+                    }
                 }
             }
 
-            if node.is_leaf {
-                self.current_keys = Some(&node.keys);
-                self.current_values = Some(&node.values);
-                self.index = 0;
-                return self.next(); // Process the new leaf node
+            // Current leaf exhausted, find next leaf
+            loop {
+                let node = self.stack.pop()?;
+                
+                if !node.is_leaf {
+                    // Push children in reverse order to maintain left-to-right traversal
+                    for child in node.children.iter().rev() {
+                        self.stack.push(child);
+                    }
+                } else {
+                    // Found a leaf node
+                    self.current_keys = Some(&node.keys);
+                    self.current_values = Some(&node.values);
+                    self.index = 0;
+                    break; // Exit inner loop to process this leaf
+                }
             }
         }
-
-        None // No more elements
     }
 }
 
