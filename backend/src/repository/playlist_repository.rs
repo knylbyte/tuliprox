@@ -2,14 +2,13 @@ use crate::api::model::{AppState, PlaylistM3uStorage, PlaylistStorage, PlaylistS
 use crate::model::{AppConfig, ConfigInput, ConfigTarget, TargetOutput};
 use crate::model::Epg;
 use crate::processing::processor::playlist::apply_filter_to_playlist;
-use crate::repository::bplustree::BPlusTree;
+use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery};
 use crate::repository::epg_repository::epg_write;
-use crate::repository::indexed_document::IndexedDocumentIterator;
-use crate::repository::m3u_repository::{m3u_get_file_paths, m3u_write_playlist};
+use crate::repository::m3u_repository::{m3u_get_file_path, m3u_write_playlist};
 use crate::repository::storage::{ensure_target_storage_path, get_input_storage_path, get_target_id_mapping_file, get_target_storage_path};
 use crate::repository::strm_repository::write_strm_playlist;
 use crate::repository::target_id_mapping::{TargetIdMapping, VirtualIdRecord};
-use crate::repository::xtream_repository::{persist_input_xtream_playlist, xtream_get_file_paths, xtream_get_storage_path, xtream_write_playlist};
+use crate::repository::xtream_repository::{persist_input_xtream_playlist, xtream_get_file_path, xtream_get_storage_path, xtream_write_playlist};
 use crate::utils;
 use log::info;
 use shared::create_tuliprox_error;
@@ -242,11 +241,11 @@ async fn load_target_id_mapping_as_tree(app_config: &AppConfig, target_path: &Pa
 }
 
 async fn load_xtream_playlist_as_tree(app_config: &AppConfig, storage_path: &Path, cluster: XtreamCluster) -> BPlusTree<u32, XtreamPlaylistItem> {
-    let (main_path, index_path) = xtream_get_file_paths(storage_path, cluster);
-    let _file_lock = app_config.file_locks.read_lock(&main_path).await;
+    let xtream_path = xtream_get_file_path(storage_path, cluster);
+    let _file_lock = app_config.file_locks.read_lock(&xtream_path).await;
     let mut tree = BPlusTree::<u32, XtreamPlaylistItem>::new();
-    if let Ok(reader) = IndexedDocumentIterator::<u32, XtreamPlaylistItem>::new(&main_path, &index_path) {
-        for (doc, _has_next) in reader {
+    if let Ok(mut query) = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path) {
+        for (_, doc) in query.iter() {
             tree.insert(doc.virtual_id, doc);
         }
     }
@@ -287,11 +286,11 @@ async fn load_m3u_target_storage(app_config: &AppConfig, target: &ConfigTarget) 
                                 "Could not find path for target {}", &target.name
                             ))?;
 
-    let (main_path, index_path) = m3u_get_file_paths(&target_path);
-    let _file_lock = app_config.file_locks.read_lock(&main_path).await;
+    let m3u_path = m3u_get_file_path(&target_path);
+    let _file_lock = app_config.file_locks.read_lock(&m3u_path).await;
     let mut tree = BPlusTree::<u32, M3uPlaylistItem>::new();
-    if let Ok(reader) = IndexedDocumentIterator::<u32, M3uPlaylistItem>::new(&main_path, &index_path) {
-        for (doc, _has_next) in reader {
+    if let Ok(mut query) = BPlusTreeQuery::<u32, M3uPlaylistItem>::try_new(&m3u_path) {
+        for (_, doc) in query.iter() {
             tree.insert(doc.virtual_id, doc);
         }
     }

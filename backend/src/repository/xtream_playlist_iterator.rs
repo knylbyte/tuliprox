@@ -1,8 +1,8 @@
 use crate::model::{xtream_mapping_option_from_target_options, AppConfig, ProxyUserCredentials};
 use crate::model::ConfigTarget;
-use crate::repository::indexed_document::IndexedDocumentIterator;
+use crate::repository::bplustree::{BPlusTreeDiskIteratorOwned, BPlusTreeQuery};
 use crate::repository::user_repository::user_get_bouquet_filter;
-use crate::repository::xtream_repository::{xtream_get_file_paths, xtream_get_storage_path};
+use crate::repository::xtream_repository::{xtream_get_file_path, xtream_get_storage_path};
 use crate::utils::FileReadGuard;
 use log::error;
 use shared::error::info_err;
@@ -11,7 +11,7 @@ use shared::model::{PlaylistItemType, TargetType, XtreamCluster, XtreamMappingOp
 use std::collections::HashSet;
 
 pub struct XtreamPlaylistIterator {
-    reader: IndexedDocumentIterator<u32, XtreamPlaylistItem>,
+    reader: BPlusTreeDiskIteratorOwned<u32, XtreamPlaylistItem>,
     options: XtreamMappingOptions,
     cluster: XtreamCluster,
     // Use parsed numeric filter to avoid per-item String allocations (no to_string per check)
@@ -34,14 +34,15 @@ impl XtreamPlaylistIterator {
         let xtream_output = target.get_xtream_output().ok_or_else(|| info_err!(format!("Unexpected: xtream output required for target {}", target.name)))?;
         let config = app_config.config.load();
         if let Some(storage_path) = xtream_get_storage_path(&config, target.name.as_str()) {
-            let (xtream_path, idx_path) = xtream_get_file_paths(&storage_path, cluster);
-            if !xtream_path.exists() || !idx_path.exists() {
+            let xtream_path = xtream_get_file_path(&storage_path, cluster);
+            if !xtream_path.exists() {
                 return Err(info_err!(format!("No {cluster} entries found for target {}", &target.name)));
             }
             let file_lock = app_config.file_locks.read_lock(&xtream_path).await;
 
-            let reader = IndexedDocumentIterator::<u32, XtreamPlaylistItem>::new(&xtream_path, &idx_path)
-                .map_err(|err| info_err!(format!("Could not deserialize file {xtream_path:?} - {err}")))?;
+            let query = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path)
+                .map_err(|err| info_err!(format!("Could not open BPlusTreeQuery {xtream_path:?} - {err}")))?;
+            let reader = query.disk_iter();
 
             let server_info = app_config.get_user_server_info(user);
             let options = xtream_mapping_option_from_target_options(target, xtream_output, app_config, user, Some(server_info.get_base_url().as_str()));
@@ -88,28 +89,25 @@ impl XtreamPlaylistIterator {
     }
 
     fn get_next(&mut self) -> Option<(XtreamPlaylistItem, bool)> {
-        if self.reader.has_error() {
-            error!("Could not deserialize xtream item: {}", self.reader.get_path().display());
-            return None;
-        }
+        // reader no longer has manual error state, BPlusTreeQuery handles it via Result elsewhere
 
         let filter_ids = self.filter_ids.as_ref();
         let cluster = self.cluster;
 
-        let predicate = |(item, _): &(XtreamPlaylistItem, bool)| {
+        let predicate = |(_, item): &(u32, XtreamPlaylistItem)| {
             Self::matches_filters(cluster, filter_ids, item)
         };
 
         if self.cluster == XtreamCluster::Series || self.filter_ids.is_some() {
             if let Some((current_item, _)) = self.lookup_item.take() {
                 let next_valid = self.reader.find(predicate);
-                self.lookup_item = next_valid;
+                self.lookup_item = next_valid.map(|(_, item)| (item, true));
                 let has_next = self.lookup_item.is_some();
                 Some((current_item, has_next))
             } else {
                 let current_item = self.reader.find(predicate);
-                if let Some((item, _)) = current_item {
-                    self.lookup_item = self.reader.find(predicate);
+                if let Some((_, item)) = current_item {
+                    self.lookup_item = self.reader.find(predicate).map(|(_, item)| (item, true));
                     let has_next = self.lookup_item.is_some();
                     Some((item, has_next))
                 } else {
@@ -117,7 +115,7 @@ impl XtreamPlaylistIterator {
                 }
             }
         } else {
-            self.reader.next()
+            self.reader.next().map(|(_, item)| (item, !self.reader.is_empty()))
         }
     }
 }

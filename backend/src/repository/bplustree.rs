@@ -996,6 +996,201 @@ where
     pub fn query_le(&mut self, key: &K) -> Option<V> {
         query_tree_le(&mut self.file, &mut self.buffer, &mut self.cache, key, self.root_offset)
     }
+
+    /// Provides a disk-backed iterator that traverses the entire tree in order.
+    pub fn iter(&mut self) -> BPlusTreeDiskIterator<'_, K, V> {
+        BPlusTreeDiskIterator::new(self)
+    }
+
+    /// Traverses the tree and calls the provided closure for each leaf's keys and values.
+    pub fn traverse<F>(&mut self, mut f: F) -> io::Result<()>
+    where
+        F: FnMut(&[K], &[V]),
+    {
+        let mut it = self.iter();
+        while !it.is_empty() {
+            if let Some((keys, values)) = it.next_leaf()? {
+                f(&keys, &values);
+            }
+        }
+        Ok(())
+    }
+
+    /// Provides an owned disk-backed iterator.
+    pub fn disk_iter(self) -> BPlusTreeDiskIteratorOwned<K, V> {
+        BPlusTreeDiskIteratorOwned::new(self)
+    }
+}
+
+pub struct BPlusTreeDiskIteratorOwned<K, V> {
+    query: BPlusTreeQuery<K, V>,
+    stack: Vec<(u64, usize)>,
+    leaf_keys: Vec<K>,
+    leaf_values: Vec<V>,
+    leaf_idx: usize,
+}
+
+impl<K, V> BPlusTreeDiskIteratorOwned<K, V>
+where
+    K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
+    V: Serialize + for<'de> Deserialize<'de> + Clone,
+{
+    fn new(query: BPlusTreeQuery<K, V>) -> Self {
+        let root_offset = query.root_offset;
+        Self {
+            query,
+            stack: vec![(root_offset, 0)],
+            leaf_keys: Vec::new(),
+            leaf_values: Vec::new(),
+            leaf_idx: 0,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.stack.is_empty() && self.leaf_idx >= self.leaf_keys.len()
+    }
+
+    fn next_leaf(&mut self) -> io::Result<Option<(Vec<K>, Vec<V>)>> {
+        loop {
+            let Some((offset, child_idx)) = self.stack.pop() else { return Ok(None) };
+
+            let (node, pointers) = BPlusTreeNode::<K, V>::deserialize_from_block(
+                &mut self.query.file,
+                &mut self.query.buffer,
+                offset,
+                false,
+            )?;
+
+            if node.is_leaf {
+                let mut vals = Vec::with_capacity(node.value_info.len());
+                for &(val_off, val_len) in &node.value_info {
+                    let v = BPlusTreeNode::<K, V>::load_value_with_len(&mut self.query.file, val_off, val_len)?;
+                    vals.push(v);
+                }
+                return Ok(Some((node.keys, vals)));
+            } else if let Some(pters) = pointers {
+                if child_idx < pters.len() {
+                    let next_ptr = pters[child_idx];
+                    self.stack.push((offset, child_idx + 1));
+                    self.stack.push((next_ptr, 0));
+                }
+            }
+        }
+    }
+}
+
+impl<K, V> Iterator for BPlusTreeDiskIteratorOwned<K, V>
+where
+    K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
+    V: Serialize + for<'de> Deserialize<'de> + Clone,
+{
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.leaf_idx < self.leaf_keys.len() {
+                let key = self.leaf_keys[self.leaf_idx].clone();
+                let value = self.leaf_values[self.leaf_idx].clone();
+                self.leaf_idx += 1;
+                return Some((key, value));
+            }
+
+            match self.next_leaf() {
+                Ok(Some((keys, values))) => {
+                    self.leaf_keys = keys;
+                    self.leaf_values = values;
+                    self.leaf_idx = 0;
+                }
+                _ => return None,
+            }
+        }
+    }
+}
+
+pub struct BPlusTreeDiskIterator<'a, K, V> {
+    query: &'a mut BPlusTreeQuery<K, V>,
+    stack: Vec<(u64, usize)>, // (node_offset, next_child_index)
+    leaf_keys: Vec<K>,
+    leaf_values: Vec<V>,
+    leaf_idx: usize,
+}
+
+impl<'a, K, V> BPlusTreeDiskIterator<'a, K, V>
+where
+    K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
+    V: Serialize + for<'de> Deserialize<'de> + Clone,
+{
+    fn new(query: &'a mut BPlusTreeQuery<K, V>) -> Self {
+        let root_offset = query.root_offset;
+        Self {
+            query,
+            stack: vec![(root_offset, 0)],
+            leaf_keys: Vec::new(),
+            leaf_values: Vec::new(),
+            leaf_idx: 0,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.stack.is_empty() && self.leaf_idx >= self.leaf_keys.len()
+    }
+
+    /// Internal method to load the next leaf and return its content.
+    fn next_leaf(&mut self) -> io::Result<Option<(Vec<K>, Vec<V>)>> {
+        loop {
+            let Some((offset, child_idx)) = self.stack.pop() else { return Ok(None) };
+
+            let (node, pointers) = BPlusTreeNode::<K, V>::deserialize_from_block(
+                &mut self.query.file,
+                &mut self.query.buffer,
+                offset,
+                false,
+            )?;
+
+            if node.is_leaf {
+                let mut vals = Vec::with_capacity(node.value_info.len());
+                for &(val_off, val_len) in &node.value_info {
+                    let v = BPlusTreeNode::<K, V>::load_value_with_len(&mut self.query.file, val_off, val_len)?;
+                    vals.push(v);
+                }
+                return Ok(Some((node.keys, vals)));
+            } else if let Some(pters) = pointers {
+                if child_idx < pters.len() {
+                    let next_ptr = pters[child_idx];
+                    self.stack.push((offset, child_idx + 1));
+                    self.stack.push((next_ptr, 0));
+                }
+            }
+        }
+    }
+}
+
+impl<K, V> Iterator for BPlusTreeDiskIterator<'_, K, V>
+where
+    K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
+    V: Serialize + for<'de> Deserialize<'de> + Clone,
+{
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.leaf_idx < self.leaf_keys.len() {
+                let key = self.leaf_keys[self.leaf_idx].clone();
+                let value = self.leaf_values[self.leaf_idx].clone();
+                self.leaf_idx += 1;
+                return Some((key, value));
+            }
+
+            match self.next_leaf() {
+                Ok(Some((keys, values))) => {
+                    self.leaf_keys = keys;
+                    self.leaf_values = values;
+                    self.leaf_idx = 0;
+                }
+                _ => return None,
+            }
+        }
+    }
 }
 
 pub struct BPlusTreeUpdate<K, V> {
@@ -1263,7 +1458,6 @@ where
 mod tests {
     use std::collections::HashSet;
     use std::io;
-    use std::path::PathBuf;
 
     use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery, BPlusTreeUpdate};
     use serde::{Deserialize, Serialize};
@@ -1294,7 +1488,8 @@ mod tests {
         //     println!("Node: {:?}", node);
         // });
 
-        let filepath = PathBuf::from("/tmp/tree_insert_test.bin");
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_insert_test.bin");
         // Serialize the tree to a file
         tree.store(&filepath)?;
         // Deserialize the tree from the file
@@ -1388,7 +1583,8 @@ mod tests {
             });
             entry_set.insert(i);
         }
-        let filepath = PathBuf::from("/tmp/tree_iterator_test.bin");
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_iterator_test.bin");
         // Serialize the tree to a file
         tree.store(&filepath)?;
         let tree: BPlusTree<u32, Record> = BPlusTree::load(&filepath)?;
@@ -1404,7 +1600,8 @@ mod tests {
 
     #[test]
     fn persistence_update_and_iterate_test() -> io::Result<()> {
-        let filepath = PathBuf::from("/tmp/tree_update_iter.bin");
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_update_iter.bin");
         let content = "InitialContent";
         let mut tree = BPlusTree::<u32, Record>::new();
         
@@ -1451,7 +1648,8 @@ mod tests {
 
     #[test]
     fn update_inplace_size_test() -> io::Result<()> {
-        let filepath = PathBuf::from("/tmp/tree_size_test.bin");
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_size_test.bin");
         let mut tree = BPlusTree::<u32, Record>::new();
         
         // Use fixed size string for predictable sizing
@@ -1590,6 +1788,43 @@ mod tests {
         let val = tree_update.query_le(&15).expect("Should find LE key after COW update");
         assert_eq!(val.id, 10);
         assert_eq!(val.data, "NewVal");
+        
+        Ok(())
+    }
+
+    #[test]
+    fn disk_iterator_test() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("disk_it.idx");
+        
+        let mut tree = BPlusTree::new();
+        let test_size = 500u32;
+        for i in 0..test_size {
+            tree.insert(i, Record { id: i, data: format!("Value {i}") });
+        }
+        tree.store(&filepath)?;
+
+        let mut query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
+        
+        // 1. Test Iterator
+        let mut count = 0;
+        for (k, v) in query.iter() {
+            assert_eq!(k, count);
+            assert_eq!(v.data, format!("Value {count}"));
+            count += 1;
+        }
+        assert_eq!(count, test_size);
+
+        // 2. Test Traverse helper
+        let mut traverse_count = 0;
+        query.traverse(|keys, values| {
+            for (k, v) in keys.iter().zip(values.iter()) {
+                assert_eq!(*k, traverse_count);
+                assert_eq!(v.data, format!("Value {traverse_count}"));
+                traverse_count += 1;
+            }
+        })?;
+        assert_eq!(traverse_count, test_size);
         
         Ok(())
     }
