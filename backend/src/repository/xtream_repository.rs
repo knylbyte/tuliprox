@@ -126,7 +126,7 @@ async fn write_playlists_to_file(
 //     Ok(())
 // }
 
-pub async fn write_playlist_item_to_file(
+pub async fn write_playlist_item_update(
     app_config: &Arc<AppConfig>,
     target_name: &str,
     pli: &XtreamPlaylistItem,
@@ -144,11 +144,37 @@ pub async fn write_playlist_item_to_file(
             // This case should rarely happen as the file is usually pre-created, but for safety:
             return Err(cant_write_result!(&xtream_path, "BPlusTree file not found for append"));
         };
+
         tree.update(&pli.virtual_id, pli.clone()).map_err(|err| cant_write_result!(&xtream_path, err))?;
     }
     Ok(())
 }
 
+pub async fn write_playlist_batch_item_upsert(
+    app_config: &Arc<AppConfig>,
+    target_name: &str,
+    xtream_cluster: XtreamCluster,
+    pli_list: &[XtreamPlaylistItem],
+) -> Result<(), TuliproxError> {
+    let storage_path = {
+        let config = app_config.config.load();
+        ensure_xtream_storage_path(&config, target_name)?
+    };
+    let xtream_path = xtream_get_file_path(&storage_path, xtream_cluster);
+    {
+        let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
+        let mut tree = if xtream_path.exists() {
+            BPlusTreeUpdate::try_new(&xtream_path).map_err(|err| cant_write_result!(&xtream_path, err))?
+        } else {
+            // This case should rarely happen as the file is usually pre-created, but for safety:
+            return Err(cant_write_result!(&xtream_path, "BPlusTree file not found for append"));
+        };
+
+        let batch: Vec<(&u32, &XtreamPlaylistItem)> = pli_list.iter().map(|pli| (&pli.virtual_id, pli)).collect();
+        tree.upsert_batch(&batch).map_err(|err| cant_write_result!(&xtream_path, err))?;
+    }
+    Ok(())
+}
 
 fn get_map_item_as_str(map: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
     if let Some(value) = map.get(key) {
@@ -747,3 +773,4 @@ pub async fn persists_input_series_info(app_config: &Arc<AppConfig>, storage_pat
                                         props: &SeriesStreamProperties) -> Result<(), Error> {
     persist_input_info(app_config, storage_path, cluster, input_name, provider_id, StreamProperties::Series(Box::new(props.clone()))).await
 }
+

@@ -1,5 +1,7 @@
 use std::io::Write;
 use std::path::PathBuf;
+use env_logger::{Builder, Target};
+use log::{error, warn, LevelFilter};
 use serde::{Deserialize, Serialize};
 use shared::model::{M3uPlaylistItem, XtreamPlaylistItem};
 use crate::repository::bplustree::{BPlusTreeDiskIterator, BPlusTreeQuery};
@@ -8,17 +10,23 @@ pub fn db_viewer(filename: &str, content_type: &str) {
     let path = match PathBuf::from(filename).canonicalize() {
         Ok(p) => p,
         Err(err) => {
-            println!("File does not exist! {err}");
-            let _ = std::io::stdout().flush();
+            eprintln!("File does not exist! {err}");
+            let _ = std::io::stderr().flush();
             std::process::exit(1);
         }
     };
 
     if !path.exists() {
-        println!("File does not exist! {}", path.display());
-        let _ = std::io::stdout().flush();
+        eprintln!("File does not exist! {}", path.display());
+        let _ = std::io::stderr().flush();
         std::process::exit(1);
     }
+
+    let mut log_builder = Builder::from_default_env();
+    log_builder.target(Target::Stderr);
+    log_builder.filter_level(LevelFilter::Info);
+    log_builder.init();
+
     match content_type {
         "xtream" => {
             if let Ok(mut query) = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&path) {
@@ -32,9 +40,10 @@ pub fn db_viewer(filename: &str, content_type: &str) {
                 print_json_from_iter(iterator);
             }
         }
-        _ => println!("Allowed content types are: [m3u, xtream]"),
+        _ => warn!("Allowed content types are: [m3u, xtream]"),
     }
     let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
     std::process::exit(1);
 }
 
@@ -52,7 +61,7 @@ where P: Serialize + for<'de> Deserialize<'de> + Clone
                 println!("{text}");
                 first = false;
             },
-            Err(err) => eprintln!("Failed: {err}"),
+            Err(err) => error!("Failed: {err}"),
         }
     }
     println!("]");

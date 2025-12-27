@@ -1,7 +1,7 @@
 use crate::model::info_doc_utils::InfoDocUtils;
 use crate::model::{PlaylistEntry, PlaylistItemType, VirtualId, XtreamCluster, XtreamMappingOptions, XtreamSeriesInfo, XtreamVideoInfo};
 use crate::utils::{deserialize_as_option_string, deserialize_as_string,
-                   deserialize_as_string_array, deserialize_json_as_opt_string,
+                   deserialize_as_string_array, deserialize_json_as_opt_string, serialize_json_as_opt_string,
                    deserialize_number_from_string, deserialize_number_from_string_or_zero, string_default_on_null,
                    string_or_number_u32};
 use serde::{Deserialize, Serialize};
@@ -62,9 +62,9 @@ pub struct VideoStreamDetailProperties {
     pub backdrop_path: Option<Vec<String>>,
     pub duration_secs: Option<String>,
     pub duration: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
     #[serde(default)]
     pub bitrate: u32,
@@ -140,9 +140,9 @@ pub struct SeriesStreamDetailEpisodeProperties {
     pub bitrate: u32,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub rating: Option<f64>,
-    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
 }
 
@@ -205,9 +205,9 @@ pub struct EpisodeStreamProperties {
     pub movie_image: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub container_extension: String,
-    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
 }
 

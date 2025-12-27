@@ -1,7 +1,7 @@
 use crate::utils::{deserialize_as_option_string, deserialize_as_string_array,
-                   deserialize_json_as_opt_string, deserialize_number_from_string,
-                   deserialize_number_from_string_or_zero,
-                   string_default_on_null, string_or_number_u32};
+                   deserialize_number_from_string, deserialize_number_from_string_or_zero,
+                   deserialize_as_string, string_default_on_null, string_or_number_u32,
+                   deserialize_json_as_opt_string, serialize_json_as_opt_string};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -18,7 +18,7 @@ pub struct XtreamVideoInfoMovieData {
     pub direct_source: String,
     #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub custom_sid: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_as_string")]
     pub added: String,
     #[serde(default)]
     pub container_extension: String,
@@ -26,14 +26,16 @@ pub struct XtreamVideoInfoMovieData {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct XtreamVideoInfoInfo {
-    pub kinopoisk_url: Option<String>,
     #[serde(default)]
+    pub kinopoisk_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_string")]
     pub tmdb_id: String, // is in get_vod_streams
     #[serde(default)]
     pub name: String, // is in get_vod_streams
     pub o_name: Option<String>,
     pub cover_big: Option<String>,
     pub movie_image: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub releasedate: Option<String>,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub episode_run_time: Option<u32>,
@@ -43,7 +45,9 @@ pub struct XtreamVideoInfoInfo {
     pub cast: Option<String>,
     pub description: Option<String>,
     pub plot: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub age: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub mpaa_rating: Option<String>,
     #[serde(default)]
     pub rating_count_kinopoisk: u32,
@@ -51,15 +55,19 @@ pub struct XtreamVideoInfoInfo {
     pub genre: Option<String>,
     #[serde(default, deserialize_with = "deserialize_as_string_array")]
     pub backdrop_path: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub duration_secs: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub duration: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
     pub video: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
     #[serde(default)]
     pub bitrate: u32,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub runtime: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub status: Option<String>,
 }
 
@@ -107,7 +115,7 @@ pub struct XtreamSeriesInfoInfo {
     pub director: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub genre: String,
-    #[serde(default,  alias = "releaseDate", alias = "releasedate", deserialize_with = "string_default_on_null")]
+    #[serde(default, deserialize_with = "string_default_on_null")]
     pub release_date: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub last_modified: String,

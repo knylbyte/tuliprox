@@ -1,18 +1,20 @@
 use crate::api::model::AppState;
 use crate::messaging::send_message;
-use crate::model::{is_input_expired, xtream_mapping_option_from_target_options, Config, ConfigInput, ConfigTarget, XtreamLoginInfo};
+use crate::model::{is_input_expired, xtream_mapping_option_from_target_options, Config, ConfigInput, ConfigTarget, XtreamLoginInfo, XtreamTargetOutput};
 use crate::model::{InputSource, ProxyUserCredentials};
 use crate::processing::parser::xtream;
 use crate::processing::parser::xtream::parse_xtream_series_info;
 use crate::repository::playlist_repository::{get_target_id_mapping, rewrite_provider_series_info_episode_virtual_id, ProviderEpisodeKey};
 use crate::repository::storage::{get_input_storage_path, get_target_storage_path};
 use crate::repository::target_id_mapping::VirtualIdRecord;
-use crate::repository::xtream_repository::{persist_input_vod_info, persists_input_series_info, write_playlist_item_to_file};
+use crate::repository::xtream_repository::{persist_input_vod_info, persists_input_series_info, write_playlist_batch_item_upsert, write_playlist_item_update};
 use crate::utils::request;
 use chrono::{DateTime, Utc};
 use log::{error, info, warn};
 use shared::error::{str_to_io_error, to_io_error, TuliproxError};
-use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, SeriesStreamProperties, StreamProperties, VideoStreamProperties, XtreamCluster, XtreamPlaylistItem, XtreamSeriesInfo, XtreamVideoInfo};
+use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, SeriesStreamProperties,
+                    StreamProperties, VideoStreamProperties, XtreamCluster,
+                    XtreamPlaylistItem, XtreamSeriesInfo, XtreamVideoInfo};
 use shared::utils::{extract_extension_from_url, get_i64_from_serde_value, get_string_from_serde_value, sanitize_sensitive_info};
 use std::collections::HashMap;
 use std::io::Error;
@@ -84,26 +86,33 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
                 XtreamCluster::Video => {
                     let working_dir = &app_config.config.load().working_dir;
                     if let Ok(storage_path) = get_input_storage_path(&input.name, working_dir) {
-                        if let Ok(info) = serde_json::from_str::<XtreamVideoInfo>(&content) {
-                            // parse downloaded info into StreamProperties
-                            let video_stream_props = VideoStreamProperties::from_info(&info, pli);
+                        match serde_json::from_str::<XtreamVideoInfo>(&content) {
+                            Ok(info) => {
+                                // parse downloaded info into StreamProperties
+                                let video_stream_props = VideoStreamProperties::from_info(&info, pli);
 
-                            // persist input info
-                            if let Err(err) = persist_input_vod_info(&app_state.app_config, &storage_path, cluster, &input.name, provider_id, &video_stream_props).await {
-                                error!("Failed to persist video stream for input {}: {err}", &input.name);
+                                // persist input info
+                                if let Err(err) = persist_input_vod_info(&app_state.app_config, &storage_path, cluster, &input.name, provider_id, &video_stream_props).await {
+                                    error!("Failed to persist video stream for input {}: {err}", &input.name);
+                                }
+
+                                // update target playlist
+                                let mut vod_pli = pli.clone();
+                                vod_pli.additional_properties = Some(StreamProperties::Video(Box::new(video_stream_props)));
+
+                                if let Err(err) = write_playlist_item_update(app_config, &target.name, &vod_pli).await {
+                                    error!("Failed to persist video stream: {err}");
+                                }
+
+                                if target.use_memory_cache {
+                                    app_state.playlists.update_playlist_items(target, vec![&vod_pli]).await;
+                                }
+
+                                if let Some(value) = xtream_resolve_stream_info(app_state, user, target, xtream_output, &vod_pli) {
+                                    return value;
+                                }
                             }
-
-                            // update target playlist
-                            let mut vod_pli = pli.clone();
-                            vod_pli.additional_properties = Some(StreamProperties::Video(Box::new(video_stream_props)));
-
-                            if let Err(err) = write_playlist_item_to_file(app_config, &target.name, &vod_pli).await {
-                                error!("Failed to persist video stream: {err}");
-                            }
-
-                            if target.use_memory_cache {
-                                app_state.playlists.update_playlist_items(target, vec![&vod_pli]).await;
-                            }
+                            Err(err) => error!("Failed to persist video info: {err}")
                         }
                     }
                 }
@@ -112,13 +121,15 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
                     let group = pli.get_group();
                     let series_name = pli.get_name();
 
-                    if let Ok(storage_path) = get_input_storage_path(&input.name, working_dir) {
-                        if let Ok(info) = serde_json::from_str::<XtreamSeriesInfo>(&content) {
+                    match serde_json::from_str::<XtreamSeriesInfo>(&content) {
+                        Ok(info) => {
                             // parse series info
                             let series_stream_props = SeriesStreamProperties::from_info(&info, pli);
-                            // update input db
-                            if let Err(err) = persists_input_series_info(app_config, &storage_path, cluster, &input.name, provider_id, &series_stream_props).await {
-                                error!("Failed to persist series info for input {}: {err}", &input.name);
+                            if let Ok(storage_path) = get_input_storage_path(&input.name, working_dir) {
+                                // update input db
+                                if let Err(err) = persists_input_series_info(app_config, &storage_path, cluster, &input.name, provider_id, &series_stream_props).await {
+                                    error!("Failed to persist series info for input {}: {err}", &input.name);
+                                }
                             }
 
                             if let Some(mut episodes) = parse_xtream_series_info(&pli.get_uuid(), &series_stream_props, &group, &series_name, input) {
@@ -137,10 +148,11 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
                                                 for episode in &mut episodes {
                                                     episode.header.virtual_id = target_id_mapping.get_and_update_virtual_id(&episode.header.uuid, provider_id, episode.header.item_type, parent_id);
                                                     episode.header.category_id = category_id;
-                                                    provider_series.entry(pli.parent_code.clone())
+                                                    let episode_provider_id = episode.header.get_provider_id().unwrap_or(0);
+                                                    provider_series.entry(pli.get_uuid().to_string())
                                                         .or_default()
                                                         .push(ProviderEpisodeKey {
-                                                            provider_id: episode.header.get_provider_id().unwrap_or(0),
+                                                            provider_id: episode_provider_id,
                                                             virtual_id: episode.header.virtual_id,
                                                         });
                                                     if target.use_memory_cache {
@@ -156,36 +168,65 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
                                                     }
                                                 }
                                             }
+                                            if let Err(err) = target_id_mapping.persist() {
+                                                error!("Failed to persist target id mapping: {err}");
+                                            }
                                         }
 
-                                        if !provider_series.is_empty() {
-                                            let mut series_pli = pli.clone();
-                                            series_pli.additional_properties = Some(StreamProperties::Series(Box::new(series_stream_props)));
-                                            rewrite_provider_series_info_episode_virtual_id(&mut series_pli, &provider_series);
-                                            if let Err(err) = write_playlist_item_to_file(app_config, &target.name, &series_pli).await {
-                                                error!("Failed to persist series stream: {err}");
-                                            }
-                                            app_state.playlists.update_playlist_items(target, vec![&series_pli]).await;
+                                        let xtream_episodes: Vec<XtreamPlaylistItem> = episodes.iter().map(XtreamPlaylistItem::from).collect();
+                                        if let Err(err) = write_playlist_batch_item_upsert(
+                                            app_config,
+                                            &target.name,
+                                            XtreamCluster::Series,
+                                            &xtream_episodes).await {
+                                            error!("Failed to persist playlist batch item update: {err}");
                                         }
 
                                         if target.use_memory_cache && !in_memory_updates.is_empty() {
                                             app_state.playlists.insert_playlist_items(target, episodes).await;
                                             app_state.playlists.update_target_id_mapping(target, in_memory_updates).await;
                                         }
+
+                                        if !provider_series.is_empty() {
+                                            let mut series_pli = pli.clone();
+                                            series_pli.additional_properties = Some(StreamProperties::Series(Box::new(series_stream_props)));
+                                            rewrite_provider_series_info_episode_virtual_id(&mut series_pli, &provider_series);
+                                            if let Err(err) = write_playlist_item_update(app_config, &target.name, &series_pli).await {
+                                                error!("Failed to persist series stream: {err}");
+                                            }
+                                            app_state.playlists.update_playlist_items(target, vec![&series_pli]).await;
+
+                                            if let Some(value) = xtream_resolve_stream_info(app_state, user, target, xtream_output, &series_pli) {
+                                                return value;
+                                            }
+                                        }
                                     }
                                 }
                             }
+                        }
+                        Err(err) => {
+                            error!("Failed to persist series info: {err}");
                         }
                     }
                 }
             }
         }
-
-        return Ok(content);
     }
 
     Err(str_to_io_error(&format!("Cant find stream with id: {}/{}/{}",
                                  target.name.replace(' ', "_").as_str(), &cluster, pli.get_virtual_id())))
+}
+
+fn xtream_resolve_stream_info(app_state: &Arc<AppState>, user: &ProxyUserCredentials,
+                              target: &ConfigTarget, xtream_output: &XtreamTargetOutput,
+                              pli: &XtreamPlaylistItem) -> Option<Result<String, Error>> {
+    let app_config = &app_state.app_config;
+    let server_info = app_config.get_user_server_info(user);
+    let options = xtream_mapping_option_from_target_options(target, xtream_output, app_config, user, Some(server_info.get_base_url().as_str()));
+    if let Some(content) = pli.get_resolved_info_document(&options) {
+        return Some(serde_json::to_string(&content).map_err(to_io_error));
+    }
+    None
 }
 
 fn get_skip_cluster(input: &ConfigInput) -> Vec<XtreamCluster> {

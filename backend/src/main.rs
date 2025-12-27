@@ -111,7 +111,7 @@ async fn main() {
 
     match (args.db_content_type.as_ref(), args.db_file_name.as_ref()) {
         (Some(dbt), Some(dbf)) => db_viewer(dbf, dbt),
-        (Some(_) | None, None) | (None, Some(_))=> info!("You need to define database content type and filename!"),
+        (Some(_) | None, None) | (None, Some(_))=> eprintln!("You need to define database content type and filename!"),
     }
 
     if args.genpwd {

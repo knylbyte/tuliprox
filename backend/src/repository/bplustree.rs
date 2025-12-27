@@ -1187,6 +1187,10 @@ where
                     self.leaf_values = values;
                     self.leaf_idx = 0;
                 }
+                Err(err) => {
+                    error!("BPlusTreeDiskIterator Failed to read next entry: {err}");
+                    return None
+                }
                 _ => return None,
             }
         }
@@ -1319,7 +1323,7 @@ where
             let child_idx = get_entry_index_upper_bound::<K>(&node.keys, key);
             if let Some(mut pters) = pointers {
                 if let Some(&child_offset) = pters.get(child_idx) {
-                    // Recurse to get new child offset
+                    // Recurse to get a new child offset
                     let new_child_offset = self.update_recursive(child_offset, key, value)?;
                     
                     // Update current node's pointers
@@ -1352,6 +1356,108 @@ where
         
         self.root_offset = new_root_offset;
         Ok(new_root_offset)
+    }
+
+    /// Update multiple items in batch. This is more efficient than calling `update()` multiple times
+    /// as it performs all updates and then commits the final root offset once.
+    /// returns The final root offset after all updates, or an error if any update fails
+    pub fn update_batch(&mut self, items: &[(&K, &V)]) -> io::Result<u64> {
+        if items.is_empty() {
+            return Ok(self.root_offset);
+        }
+
+        let mut current_root = self.root_offset;
+        
+        // Perform all updates sequentially
+        for (key, value) in items {
+            current_root = self.update_recursive(current_root, key, value)?;
+        }
+        
+        // Atomic Header Swap - only once at the end
+        self.file.seek(SeekFrom::Start(ROOT_OFFSET_POS))?;
+        self.file.write_all(&current_root.to_le_bytes())?;
+        self.file.flush()?;
+        self.file.sync_all()?;
+        
+        self.root_offset = current_root;
+        Ok(current_root)
+    }
+
+    /// Insert or update multiple items in batch (upsert). If a key exists, it will be updated;
+    /// if it doesn't exist, it will be inserted. This is more efficient than calling `update()`
+    /// or `insert()` multiple times as it loads the tree once, performs all operations, and saves once.
+    /// returns The final root offset after all upserts, or an error if any operation fails
+    pub fn upsert_batch(&mut self, items: &[(&K, &V)]) -> io::Result<u64> {
+        if items.is_empty() {
+            return Ok(self.root_offset);
+        }
+
+        // Get the filepath from the file handle
+        // We need to load the tree, so we'll use a temporary approach
+        // Load the current tree state into memory
+        let mut tree = {
+            // Create a reader from our file
+            let mut reader = utils::file_reader(&mut self.file);
+            
+            // Read header to get root offset
+            let mut header = [0u8; 16];
+            reader.seek(SeekFrom::Start(0))?;
+            reader.read_exact(&mut header)?;
+            
+            if &header[0..4] != MAGIC {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid magic number"));
+            }
+            let version = u32::from_le_bytes(header[4..8].try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid version slice"))?);
+            if version != STORAGE_VERSION {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Unsupported storage version: {version}")));
+            }
+            
+            // Load the tree from current root offset
+            let mut buffer = vec![0u8; BLOCK_SIZE];
+            let (root, _) = BPlusTreeNode::<K, V>::deserialize_from_block(&mut reader, &mut buffer, self.root_offset, true)?;
+            
+            let (inner_order, leaf_order) = calc_order::<K>();
+            BPlusTree {
+                root,
+                inner_order,
+                leaf_order,
+                dirty: false,
+            }
+        };
+        
+        // Perform all inserts/updates
+        for (key, value) in items {
+            tree.insert((*key).clone(), (*value).clone());
+        }
+        
+        // Mark as dirty and save using store_internal (we already hold the lock)
+        tree.dirty = true;
+        
+        // We need to save to a temp file and then rename, but we can't easily get the filepath
+        // Instead, we'll serialize directly to our file handle
+        // Seek to beginning and write
+        self.file.seek(SeekFrom::Start(0))?;
+        self.file.set_len(0)?; // Truncate the file
+        
+        let mut buffer = vec![0u8; BLOCK_SIZE];
+        
+        // Write header block
+        let mut header = [0u8; BLOCK_SIZE];
+        header[0..4].copy_from_slice(MAGIC);
+        header[4..8].copy_from_slice(&STORAGE_VERSION.to_le_bytes());
+        header[8..16].copy_from_slice(&HEADER_SIZE.to_le_bytes());
+        self.file.write_all(&header)?;
+        
+        // Serialize tree
+        tree.root.serialize_breadth_first(&mut self.file, &mut buffer, HEADER_SIZE)?;
+        
+        self.file.flush()?;
+        self.file.sync_all()?;
+        
+        // Update our root offset
+        self.root_offset = HEADER_SIZE;
+        
+        Ok(self.root_offset)
     }
 
     /// Garbage Collection: Compacts the file by rewriting only live blocks sequentially.
@@ -1828,6 +1934,339 @@ mod tests {
         })?;
         assert_eq!(traverse_count, test_size);
         
+        Ok(())
+    }
+
+    #[test]
+    fn update_batch_basic_test() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_update_batch.bin");
+        let mut tree = BPlusTree::<u32, Record>::new();
+        
+        // Create initial tree
+        for i in 0u32..50 {
+            tree.insert(i, Record { 
+                id: i, 
+                data: format!("Initial {i}") 
+            });
+        }
+        tree.store(&filepath)?;
+        drop(tree);
+
+        // Test batch update
+        let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
+        
+        // Prepare batch updates
+        let updates: Vec<(u32, Record)> = (0u32..50)
+            .filter(|i| i % 5 == 0)
+            .map(|i| (i, Record { id: i, data: format!("BatchUpdated {i}") }))
+            .collect();
+        
+        let update_refs: Vec<(&u32, &Record)> = updates.iter()
+            .map(|(k, v)| (k, v))
+            .collect();
+        
+        tree_update.update_batch(&update_refs)?;
+        drop(tree_update);
+
+        // Verify all updates
+        let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
+        for i in 0u32..50 {
+            let val = tree_query.query(&i).expect("Should find key");
+            if i % 5 == 0 {
+                assert_eq!(val.data, format!("BatchUpdated {i}"), "Batch updated key {i} should have new value");
+            } else {
+                assert_eq!(val.data, format!("Initial {i}"), "Non-updated key {i} should have original value");
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn update_batch_empty_test() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_update_batch_empty.bin");
+        let mut tree = BPlusTree::<u32, Record>::new();
+        
+        // Create initial tree
+        for i in 0u32..10 {
+            tree.insert(i, Record { 
+                id: i, 
+                data: format!("Initial {i}") 
+            });
+        }
+        tree.store(&filepath)?;
+        drop(tree);
+
+        let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
+        let initial_root = tree_update.root_offset;
+        
+        // Test empty batch - should be no-op
+        let empty_batch: Vec<(&u32, &Record)> = vec![];
+        let result = tree_update.update_batch(&empty_batch)?;
+        
+        assert_eq!(result, initial_root, "Empty batch should not change root offset");
+        
+        // Verify data unchanged
+        for i in 0u32..10 {
+            let val = tree_update.query(&i).expect("Should find key");
+            assert_eq!(val.data, format!("Initial {i}"));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn update_batch_large_test() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_update_batch_large.bin");
+        let mut tree = BPlusTree::<u32, Record>::new();
+        
+        let test_size = 200u32;
+        
+        // Create initial tree
+        for i in 0..test_size {
+            tree.insert(i, Record { 
+                id: i, 
+                data: format!("Initial {i}") 
+            });
+        }
+        tree.store(&filepath)?;
+        drop(tree);
+
+        let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
+        
+        // Prepare large batch update (every other item)
+        let updates: Vec<(u32, Record)> = (0..test_size)
+            .filter(|i| i % 2 == 0)
+            .map(|i| (i, Record { id: i, data: format!("BatchUpdated {i}") }))
+            .collect();
+        
+        let update_refs: Vec<(&u32, &Record)> = updates.iter()
+            .map(|(k, v)| (k, v))
+            .collect();
+        
+        // Perform batch update
+        tree_update.update_batch(&update_refs)?;
+        drop(tree_update);
+
+        // Verify all updates via iterator
+        let reloaded_tree = BPlusTree::<u32, Record>::load(&filepath)?;
+        let mut count = 0;
+        for (key, value) in &reloaded_tree {
+            if *key % 2 == 0 {
+                assert_eq!(value.data, format!("BatchUpdated {key}"), "Even keys should be batch updated");
+            } else {
+                assert_eq!(value.data, format!("Initial {key}"), "Odd keys should remain unchanged");
+            }
+            count += 1;
+        }
+        assert_eq!(count, test_size, "Should have all entries");
+
+        Ok(())
+    }
+
+    #[test]
+    fn update_batch_with_compaction_test() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_update_batch_compact.bin");
+        let mut tree = BPlusTree::<u32, Record>::new();
+        
+        // Create initial tree with larger data
+        let large_data = "x".repeat(1000);
+        for i in 0u32..100 {
+            tree.insert(i, Record { 
+                id: i, 
+                data: large_data.clone()
+            });
+        }
+        tree.store(&filepath)?;
+        drop(tree);
+
+        let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
+        
+        // Batch update with smaller data
+        let small_data = "y".repeat(50);
+        let updates: Vec<(u32, Record)> = (0u32..100)
+            .map(|i| (i, Record { id: i, data: small_data.clone() }))
+            .collect();
+        
+        let update_refs: Vec<(&u32, &Record)> = updates.iter()
+            .map(|(k, v)| (k, v))
+            .collect();
+        
+        tree_update.update_batch(&update_refs)?;
+        
+        let size_before_compact = std::fs::metadata(&filepath)?.len();
+        
+        // Compact to reclaim space
+        tree_update.compact(&filepath)?;
+        
+        let size_after_compact = std::fs::metadata(&filepath)?.len();
+        assert!(size_after_compact < size_before_compact, 
+                "Compaction should reduce file size after batch update");
+        
+        // Verify all data is correct after compaction
+        drop(tree_update);
+        let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
+        for i in 0u32..100 {
+            let val = tree_query.query(&i).expect("Should find key after compaction");
+            assert_eq!(val.data, small_data, "Data should be updated after compaction");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn upsert_batch_mixed_test() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_upsert_batch_mixed.bin");
+        let mut tree = BPlusTree::<u32, Record>::new();
+        
+        // Create initial tree with keys 0-49
+        for i in 0u32..50 {
+            tree.insert(i, Record { 
+                id: i, 
+                data: format!("Initial {i}") 
+            });
+        }
+        tree.store(&filepath)?;
+        drop(tree);
+
+        let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
+        
+        // Prepare upsert batch: update existing keys 0-24, insert new keys 50-74
+        let mut updates: Vec<(u32, Record)> = Vec::new();
+        
+        // Updates to existing keys
+        for i in 0u32..25 {
+            updates.push((i, Record { id: i, data: format!("Updated {i}") }));
+        }
+        
+        // Inserts for new keys
+        for i in 50u32..75 {
+            updates.push((i, Record { id: i, data: format!("Inserted {i}") }));
+        }
+        
+        let update_refs: Vec<(&u32, &Record)> = updates.iter()
+            .map(|(k, v)| (k, v))
+            .collect();
+        
+        tree_update.upsert_batch(&update_refs)?;
+        drop(tree_update);
+
+        // Verify all 75 entries exist with correct values
+        let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
+        
+        // Check updated keys (0-24)
+        for i in 0u32..25 {
+            let val = tree_query.query(&i).expect("Should find updated key");
+            assert_eq!(val.data, format!("Updated {i}"), "Key {i} should be updated");
+        }
+        
+        // Check unchanged keys (25-49)
+        for i in 25u32..50 {
+            let val = tree_query.query(&i).expect("Should find unchanged key");
+            assert_eq!(val.data, format!("Initial {i}"), "Key {i} should remain unchanged");
+        }
+        
+        // Check inserted keys (50-74)
+        for i in 50u32..75 {
+            let val = tree_query.query(&i).expect("Should find inserted key");
+            assert_eq!(val.data, format!("Inserted {i}"), "Key {i} should be inserted");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn upsert_batch_all_new_test() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_upsert_batch_new.bin");
+        let mut tree = BPlusTree::<u32, Record>::new();
+        
+        // Create initial tree with unrelated keys
+        for i in 0u32..10 {
+            tree.insert(i, Record { 
+                id: i, 
+                data: format!("Initial {i}") 
+            });
+        }
+        tree.store(&filepath)?;
+        drop(tree);
+
+        let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
+        
+        // Upsert all new keys (100-149)
+        let updates: Vec<(u32, Record)> = (100u32..150)
+            .map(|i| (i, Record { id: i, data: format!("New {i}") }))
+            .collect();
+        
+        let update_refs: Vec<(&u32, &Record)> = updates.iter()
+            .map(|(k, v)| (k, v))
+            .collect();
+        
+        tree_update.upsert_batch(&update_refs)?;
+        drop(tree_update);
+
+        // Verify all keys exist
+        let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
+        
+        // Original keys should still exist
+        for i in 0u32..10 {
+            let val = tree_query.query(&i).expect("Should find original key");
+            assert_eq!(val.data, format!("Initial {i}"));
+        }
+        
+        // New keys should be inserted
+        for i in 100u32..150 {
+            let val = tree_query.query(&i).expect("Should find new key");
+            assert_eq!(val.data, format!("New {i}"));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn upsert_batch_all_existing_test() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_upsert_batch_existing.bin");
+        let mut tree = BPlusTree::<u32, Record>::new();
+        
+        // Create initial tree
+        for i in 0u32..100 {
+            tree.insert(i, Record { 
+                id: i, 
+                data: format!("Initial {i}") 
+            });
+        }
+        tree.store(&filepath)?;
+        drop(tree);
+
+        let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
+        
+        // Upsert all existing keys (should behave like update)
+        let updates: Vec<(u32, Record)> = (0u32..100)
+            .map(|i| (i, Record { id: i, data: format!("Updated {i}") }))
+            .collect();
+        
+        let update_refs: Vec<(&u32, &Record)> = updates.iter()
+            .map(|(k, v)| (k, v))
+            .collect();
+        
+        tree_update.upsert_batch(&update_refs)?;
+        drop(tree_update);
+
+        // Verify all values were updated
+        let reloaded_tree = BPlusTree::<u32, Record>::load(&filepath)?;
+        let mut count = 0;
+        for (key, value) in &reloaded_tree {
+            assert_eq!(value.data, format!("Updated {key}"), "All keys should be updated");
+            count += 1;
+        }
+        assert_eq!(count, 100, "Should have exactly 100 entries");
+
         Ok(())
     }
 }

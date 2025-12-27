@@ -1,6 +1,9 @@
 use crate::error::to_io_error;
+use base64::engine::general_purpose;
+use base64::Engine;
 use chrono::{NaiveDateTime, ParseError, TimeZone, Utc};
-use serde::{Deserialize, Deserializer};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serializer};
 use serde_json::Value;
 use std::io;
 
@@ -260,11 +263,76 @@ pub fn parse_timestamp(value: &str) -> Result<Option<i64>, ParseError> {
     let timestamp = Utc.from_utc_datetime(&dt).timestamp();
     Ok(Some(timestamp))
 }
+//
+// pub fn deserialize_json_as_opt_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+// where
+//     D: Deserializer<'de>,
+// {
+//     let val: Value = Deserialize::deserialize(deserializer)?;
+//     Ok(Some(val.to_string()))
+// }
+//
+// pub fn serialize_json_opt_string<'de, S>(value: &String, serializer: S) -> Result<Option<String>, S::Error>
+// where
+//     S: Serializer,
+// {
+//     let json: Value = serde_json::from_str(value).map_err(serde::ser::Error::custom)?;
+//     json.serialize(serializer)
+// }
 
-pub fn deserialize_json_as_opt_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+pub fn serialize_json_as_opt_string<S>(value: &Option<String>,
+                                       serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let s = match value {
+        Some(s) => s,
+        None => return serializer.serialize_none(),
+    };
+
+    let bytes = s.as_bytes();
+    let compressed = lz4_flex::compress_prepend_size(bytes);
+    let encoded = general_purpose::STANDARD_NO_PAD.encode(compressed);
+
+    serializer.serialize_some(&encoded)
+}
+
+pub fn deserialize_json_as_opt_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let val: Value = Deserialize::deserialize(deserializer)?;
-    Ok(Some(val.to_string()))
+    let opt: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+
+    match opt {
+        None => Ok(None),
+        Some(Value::Array(arr)) if arr.is_empty() => Ok(None),
+        Some(Value::Object(obj)) if obj.is_empty() => Ok(None),
+        Some(Value::String(s)) => {
+            if s.is_empty() {
+                Ok(None)
+            } else {
+                let compressed = match base64::engine::general_purpose::STANDARD_NO_PAD.decode(&s) {
+                    Ok(bytes) => bytes,
+                    Err(_) => return Ok(Some(s)),
+                };
+
+                let decompressed = match lz4_flex::decompress_size_prepended(&compressed) {
+                    Ok(bytes) => bytes,
+                    Err(_) => return Ok(None),
+                };
+
+                match String::from_utf8(decompressed) {
+                    Ok(text) => Ok(Some(text)),
+                    Err(_) => Ok(None),
+                }
+            }
+        }
+        Some(Value::Null)
+        | Some(Value::Number(_))
+        | Some(Value::Bool(_)) => Ok(None),
+        Some(v) => Ok(Some(serde_json::to_string(&v).map_err(D::Error::custom)?)),
+    }
 }
