@@ -7,6 +7,9 @@ const MIN_SHARED_BURST_BUFFER_MB: u64 = 1;
 const fn default_shared_burst_buffer_mb() -> u64 {
     12
 }
+const fn default_panel_api_provision_delay_millis() -> u64 {
+    30_000
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -41,7 +44,7 @@ pub struct StreamConfigDto {
     pub grace_period_millis: u64,
     #[serde(default = "default_grace_period_timeout_secs")]
     pub grace_period_timeout_secs: u64,
-    #[serde(default)]
+    #[serde(default = "default_panel_api_provision_delay_millis")]
     pub panel_api_provision_delay_millis: u64,
     #[serde(default, skip)]
     pub throttle_kbps: u64,
@@ -57,7 +60,7 @@ impl Default for StreamConfigDto {
             throttle: None,
             grace_period_millis: default_grace_period_millis(),
             grace_period_timeout_secs: default_grace_period_timeout_secs(),
-            panel_api_provision_delay_millis: 0,
+            panel_api_provision_delay_millis: default_panel_api_provision_delay_millis(),
             throttle_kbps: 0,
             shared_burst_buffer_mb: default_shared_burst_buffer_mb(),
         }
