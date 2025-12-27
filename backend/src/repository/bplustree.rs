@@ -3,11 +3,11 @@ use indexmap::IndexMap;
 use log::error;
 use serde::{Deserialize, Serialize};
 use shared::error::{str_to_io_error, to_io_error};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::mem::size_of;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 use crate::utils::{binary_deserialize, binary_serialize};
 
@@ -725,36 +725,40 @@ where
 
     pub fn store(&mut self, filepath: &Path) -> io::Result<u64> {
         if self.dirty {
-            let tempfile = NamedTempFile::new()?;
-            let mut file = utils::file_writer(&tempfile);
-            let mut buffer = vec![0u8; BLOCK_SIZE];
-
-            // Write header block 0
-            let mut header = [0u8; BLOCK_SIZE];
-            header[0..4].copy_from_slice(MAGIC);
-            header[4..8].copy_from_slice(&STORAGE_VERSION.to_le_bytes());
-            // Placeholder for root offset, will be updated after serialization
-            header[8..16].copy_from_slice(&HEADER_SIZE.to_le_bytes()); // Initial root is block 1
-            file.write_all(&header)?;
-
-            // Use breadth-first serialization for better disk locality
-            // Start after header block
-            match self.root.serialize_breadth_first(&mut file, &mut buffer, HEADER_SIZE) {
-                Ok(result) => {
-                    file.flush()?;
-                    drop(file);
-                    if let Err(err) = utils::rename_or_copy(tempfile.path(), filepath, false) {
-                        return Err(str_to_io_error(&format!("Temp file rename/copy did not work {} {err}", tempfile.path().to_string_lossy())));
-                    }
-                    self.dirty = false;
-                    Ok(result)
-                }
-                Err(err) => {
-                    Err(err)
-                }
-            }
+            // Advisory lock to prevent concurrent COW updates
+            let _lock = FileLock::try_lock(filepath)?;
+            self.store_internal(filepath)
         } else {
             Ok(0)
+        }
+    }
+
+    /// Internal store without locking, used for compaction or initial save.
+    fn store_internal(&mut self, filepath: &Path) -> io::Result<u64> {
+        let tempfile = NamedTempFile::new()?;
+        let mut file = utils::file_writer(&tempfile);
+        let mut buffer = vec![0u8; BLOCK_SIZE];
+
+        // Write header block 0
+        let mut header = [0u8; BLOCK_SIZE];
+        header[0..4].copy_from_slice(MAGIC);
+        header[4..8].copy_from_slice(&STORAGE_VERSION.to_le_bytes());
+        // Placeholder for root offset, will be updated after serialization
+        header[8..16].copy_from_slice(&HEADER_SIZE.to_le_bytes()); 
+        file.write_all(&header)?;
+
+        // Use breadth-first serialization for better disk locality
+        match self.root.serialize_breadth_first(&mut file, &mut buffer, HEADER_SIZE) {
+            Ok(result) => {
+                file.flush()?;
+                drop(file);
+                if let Err(err) = utils::rename_or_copy(tempfile.path(), filepath, false) {
+                    return Err(str_to_io_error(&format!("Temp file rename/copy did not work {} {err}", tempfile.path().to_string_lossy())));
+                }
+                self.dirty = false;
+                Ok(result)
+            }
+            Err(err) => Err(err),
         }
     }
 
@@ -767,11 +771,11 @@ where
         if &header[0..4] != MAGIC {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid magic number"));
         }
-        let version = u32::from_le_bytes(header[4..8].try_into().unwrap_or_default());
+        let version = u32::from_le_bytes(header[4..8].try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid version slice"))?);
         if version != STORAGE_VERSION {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Unsupported storage version: {version}")));
         }
-        let root_offset = u64::from_le_bytes(header[8..16].try_into().unwrap_or_default());
+        let root_offset = u64::from_le_bytes(header[8..16].try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid root offset slice"))?);
 
         let mut reader = utils::file_reader(file);
         let mut buffer = vec![0u8; BLOCK_SIZE];
@@ -963,11 +967,11 @@ where
         if &header[0..4] != MAGIC {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid magic number"));
         }
-        let version = u32::from_le_bytes(header[4..8].try_into().unwrap_or_default());
+        let version = u32::from_le_bytes(header[4..8].try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid version slice"))?);
         if version != STORAGE_VERSION {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Unsupported storage version: {version}")));
         }
-        let root_offset = u64::from_le_bytes(header[8..16].try_into().unwrap_or_default());
+        let root_offset = u64::from_le_bytes(header[8..16].try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid root offset slice"))?);
 
         Ok(Self {
             file: utils::file_reader(file),
@@ -1000,8 +1004,31 @@ pub struct BPlusTreeUpdate<K, V> {
     write_buffer: Vec<u8>,
     cache: IndexMap<u64, Vec<u8>>,
     root_offset: u64,
+    #[allow(dead_code)]
+    lock: FileLock,
     _marker_k: PhantomData<K>,
     _marker_v: PhantomData<V>,
+}
+
+struct FileLock {
+    path: PathBuf,
+}
+
+impl FileLock {
+    fn try_lock(filepath: &Path) -> io::Result<Self> {
+        let lock_path = PathBuf::from(format!("{}.lock", filepath.to_str().unwrap_or("tree")));
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)?;
+        Ok(Self { path: lock_path })
+    }
+}
+
+impl Drop for FileLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
 }
 
 impl<K, V> BPlusTreeUpdate<K, V>
@@ -1013,6 +1040,9 @@ where
         if !filepath.exists() {
             return Err(io::Error::new(io::ErrorKind::NotFound, format!("File not found {}", filepath.to_str().unwrap_or("?"))));
         }
+        // Acquire lock first
+        let lock = FileLock::try_lock(filepath)?;
+        
         let mut file = is_file_valid(utils::open_read_write_file(filepath)?)?;
         
         // Verify Header
@@ -1021,11 +1051,11 @@ where
         if &header[0..4] != MAGIC {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid magic number"));
         }
-        let version = u32::from_le_bytes(header[4..8].try_into().unwrap_or_default());
+        let version = u32::from_le_bytes(header[4..8].try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid version slice"))?);
         if version != STORAGE_VERSION {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Unsupported storage version: {version}")));
         }
-        let root_offset = u64::from_le_bytes(header[8..16].try_into().unwrap_or_default());
+        let root_offset = u64::from_le_bytes(header[8..16].try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid root offset slice"))?);
 
         Ok(Self {
             file,
@@ -1033,6 +1063,7 @@ where
             write_buffer: vec![0u8; BLOCK_SIZE],
             cache: IndexMap::with_capacity(1024),
             root_offset,
+            lock,
             _marker_k: PhantomData,
             _marker_v: PhantomData,
         })
@@ -1062,7 +1093,7 @@ where
                 Ok(idx) => {
                     // COW: Write new value block at end of file
                     let value_bytes = binary_serialize(value)?;
-                    let value_len = u32::try_from(value_bytes.len()).unwrap_or(0);
+                    let value_len = u32::try_from(value_bytes.len()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Value too large for u32"))?;
                     
                     self.file.seek(SeekFrom::End(0))?;
                     let val_offset = self.file.stream_position()?;
@@ -1107,10 +1138,10 @@ where
                     node.serialize_internal_with_offsets(&mut self.file, &mut self.write_buffer, new_node_offset, &pters)?;
                     Ok(new_node_offset)
                 } else {
-                    Err(io::Error::new(io::ErrorKind::NotFound, "Child pointer not found"))
+                    Err(io::Error::new(io::ErrorKind::NotFound, "Child pointer not found in internal node"))
                 }
             } else {
-                Err(io::Error::new(io::ErrorKind::InvalidData, "Internal node missing pointers"))
+                Err(io::Error::new(io::ErrorKind::InvalidData, "Internal node missing pointers invariant violation"))
             }
         }
     }
@@ -1132,9 +1163,10 @@ where
     pub fn compact(&mut self, filepath: &Path) -> io::Result<()> {
         // 1. Reload the current tree fully from the live root
         let mut tree = BPlusTree::<K, V>::load(filepath)?;
-        // 2. Setting dirty=true forces store() to rewrite the file sequentially
+        // 2. Setting dirty=true forces store_internal() to rewrite the file sequentially.
+        // We use store_internal because we already hold the lock in self._lock.
         tree.dirty = true;
-        let new_root_offset = tree.store(filepath)?;
+        let new_root_offset = tree.store_internal(filepath)?;
         self.root_offset = new_root_offset;
         Ok(())
     }
