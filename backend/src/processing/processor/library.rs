@@ -164,7 +164,7 @@ pub fn metadata_cache_entry_to_xtream_movie_info(
         name: movie.title.clone(),
         category_id: 0,
         stream_id: 0,
-        stream_icon: String::new(),
+        stream_icon: movie.poster.as_deref().or(movie.fanart.as_deref()).unwrap_or("").to_owned(),
         direct_source: String::new(),
         custom_sid: None,
         added: entry.file_modified.to_string(),

@@ -11,7 +11,7 @@ use shared::model::{PlaylistGroup, PlaylistItemType, XtreamCluster};
 use std::sync::Arc;
 use std::time::Instant;
 use crate::repository::storage::get_input_storage_path;
-use crate::repository::xtream_repository::persists_input_series_info;
+use crate::repository::xtream_repository::{persists_input_series_info};
 
 create_resolve_options_function_for_xtream_target!(series);
 
@@ -64,9 +64,8 @@ async fn playlist_resolve_series_info(app_config: &Arc<AppConfig>, client: &reqw
                         if let Some(episodes) = parse_xtream_series_info(&pli.get_uuid(), &series_stream_props, &group, &series_name, input) {
                             group_series.extend(episodes.into_iter());
                         }
-
                         // Update in-memory playlist items with the newly fetched vod info.
-                        // This makes the data available for subsequent processing steps like STRM export.
+                        // This makes the data available for later processing steps like STRM export.
                         pli.header.additional_properties = Some(StreamProperties::Series(Box::new(series_stream_props)));
                     }
                 }

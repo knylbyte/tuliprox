@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::api::model::AppState;
 use crate::messaging::send_message;
 use crate::model::{is_input_expired, xtream_mapping_option_from_target_options, Config, ConfigInput, ConfigTarget, XtreamLoginInfo};
@@ -8,13 +7,14 @@ use crate::processing::parser::xtream::parse_xtream_series_info;
 use crate::repository::playlist_repository::{get_target_id_mapping, rewrite_provider_series_info_episode_virtual_id, ProviderEpisodeKey};
 use crate::repository::storage::{get_input_storage_path, get_target_storage_path};
 use crate::repository::target_id_mapping::VirtualIdRecord;
-use crate::repository::xtream_repository::{persists_input_series_info, persists_input_vod_info, write_playlist_item_to_file};
+use crate::repository::xtream_repository::{persist_input_vod_info, persists_input_series_info, write_playlist_item_to_file};
 use crate::utils::request;
 use chrono::{DateTime, Utc};
 use log::{error, info, warn};
 use shared::error::{str_to_io_error, to_io_error, TuliproxError};
 use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, SeriesStreamProperties, StreamProperties, VideoStreamProperties, XtreamCluster, XtreamPlaylistItem, XtreamSeriesInfo, XtreamVideoInfo};
 use shared::utils::{extract_extension_from_url, get_i64_from_serde_value, get_string_from_serde_value, sanitize_sensitive_info};
+use std::collections::HashMap;
 use std::io::Error;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -85,13 +85,18 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
                     let working_dir = &app_config.config.load().working_dir;
                     if let Ok(storage_path) = get_input_storage_path(&input.name, working_dir) {
                         if let Ok(info) = serde_json::from_str::<XtreamVideoInfo>(&content) {
+                            // parse downloaded info into StreamProperties
                             let video_stream_props = VideoStreamProperties::from_info(&info, pli);
-                            if let Err(err) = persists_input_vod_info(&app_state.app_config, &storage_path, cluster, &input.name, provider_id, &video_stream_props).await {
+
+                            // persist input info
+                            if let Err(err) = persist_input_vod_info(&app_state.app_config, &storage_path, cluster, &input.name, provider_id, &video_stream_props).await {
                                 error!("Failed to persist video stream for input {}: {err}", &input.name);
                             }
 
+                            // update target playlist
                             let mut vod_pli = pli.clone();
                             vod_pli.additional_properties = Some(StreamProperties::Video(Box::new(video_stream_props)));
+
                             if let Err(err) = write_playlist_item_to_file(app_config, &target.name, &vod_pli).await {
                                 error!("Failed to persist video stream: {err}");
                             }
@@ -109,10 +114,13 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
 
                     if let Ok(storage_path) = get_input_storage_path(&input.name, working_dir) {
                         if let Ok(info) = serde_json::from_str::<XtreamSeriesInfo>(&content) {
+                            // parse series info
                             let series_stream_props = SeriesStreamProperties::from_info(&info, pli);
+                            // update input db
                             if let Err(err) = persists_input_series_info(app_config, &storage_path, cluster, &input.name, provider_id, &series_stream_props).await {
                                 error!("Failed to persist series info for input {}: {err}", &input.name);
                             }
+
                             if let Some(mut episodes) = parse_xtream_series_info(&pli.get_uuid(), &series_stream_props, &group, &series_name, input) {
                                 let config = &app_state.app_config.config.load();
                                 match get_target_storage_path(config, target.name.as_str()) {
@@ -208,7 +216,8 @@ async fn xtream_login(cfg: &Config, client: &reqwest::Client, input: &InputSourc
     let content = if let Ok(content) = request::get_input_json_content(client, None, input, None).await {
         content
     } else {
-        let input_source_account_info = input.with_url(format!("{}&action={}", &input.url, crate::model::XC_ACTION_GET_ACCOUNT_INFO));
+        let input_source_account_info =
+            input.with_url(format!("{}&action={}", &input.url, crate::model::XC_ACTION_GET_ACCOUNT_INFO));
         match request::get_input_json_content(client, None, &input_source_account_info, None).await {
             Ok(content) => content,
             Err(err) => {
@@ -230,7 +239,8 @@ async fn xtream_login(cfg: &Config, client: &reqwest::Client, input: &InputSourc
                     login_info.status = Some(cur_status);
                     if !matches!(cur_status, ProxyUserStatus::Active | ProxyUserStatus::Trial) {
                         warn!("User status for user {username} is {cur_status:?}");
-                        send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User status for user {username} is {cur_status:?}")).await;
+                        send_message(client, MsgKind::Info, cfg.messaging.as_ref(),
+                                     &format!("User status for user {username} is {cur_status:?}")).await;
                     }
                 }
             }
@@ -251,7 +261,8 @@ async fn xtream_login(cfg: &Config, client: &reqwest::Client, input: &InputSourc
     }
 }
 
-pub async fn notify_account_expire(exp_date: Option<i64>, cfg: &Config, client: &reqwest::Client, username: &str, input_name: &str) {
+pub async fn notify_account_expire(exp_date: Option<i64>, cfg: &Config, client: &reqwest::Client,
+                                   username: &str, input_name: &str) {
     if let Some(expiration_timestamp) = exp_date {
         let now_secs = Utc::now().timestamp(); // UTC-Time
         if expiration_timestamp > now_secs {
@@ -261,12 +272,14 @@ pub async fn notify_account_expire(exp_date: Option<i64>, cfg: &Config, client: 
                 if let Some(datetime) = DateTime::<Utc>::from_timestamp(expiration_timestamp, 0) {
                     let formatted = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
                     warn!("User account for user {username} expires {formatted}");
-                    send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} expires {formatted}")).await;
+                    send_message(client, MsgKind::Info, cfg.messaging.as_ref(),
+                                 &format!("User account for user {username} expires {formatted}")).await;
                 }
             }
         } else {
             warn!("User account for user {username} is expired");
-            send_message(client, MsgKind::Info, cfg.messaging.as_ref(), &format!("User account for user {username} for provider {input_name} is expired")).await;
+            send_message(client, MsgKind::Info, cfg.messaging.as_ref(),
+                         &format!("User account for user {username} for provider {input_name} is expired")).await;
         }
     }
 }
@@ -303,8 +316,10 @@ pub async fn download_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Clien
         if !skip_cluster.contains(xtream_cluster) {
             let input_source_category = input_source.with_url(format!("{base_url}&action={category}"));
             let input_source_stream = input_source.with_url(format!("{base_url}&action={stream}"));
-            let category_file_path = crate::utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{category}_").as_str());
-            let stream_file_path = crate::utils::prepare_file_path(input.persist.as_deref(), working_dir, format!("{stream}_").as_str());
+            let category_file_path = crate::utils::prepare_file_path(input.persist.as_deref(),
+                                                                     working_dir, format!("{category}_").as_str());
+            let stream_file_path = crate::utils::prepare_file_path(input.persist.as_deref(),
+                                                                   working_dir, format!("{stream}_").as_str());
 
             match futures::join!(
                 request::get_input_json_content_as_stream(client, None, &input_source_category, category_file_path),
@@ -319,7 +334,8 @@ pub async fn download_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Clien
                             if let Some(mut xtream_sub_playlist) = sub_playlist_parsed {
                                 playlist_groups.append(&mut xtream_sub_playlist);
                             } else {
-                                error!("Could not parse playlist {xtream_cluster} for input {}: {}", input_source.name, sanitize_sensitive_info(&input_source.url));
+                                error!("Could not parse playlist {xtream_cluster} for input {}: {}",
+                                    input_source.name, sanitize_sensitive_info(&input_source.url));
                             }
                         }
                         Err(err) => errors.push(err)
@@ -343,7 +359,8 @@ async fn check_alias_user_state(cfg: &Arc<Config>, client: &reqwest::Client, inp
     if let Some(aliases) = input.aliases.as_ref() {
         for alias in aliases {
             if is_input_expired(alias.exp_date) {
-                notify_account_expire(alias.exp_date, cfg, client, alias.username.as_ref().map_or("", |s| s.as_str()), &alias.name).await;
+                notify_account_expire(alias.exp_date, cfg, client, alias.username.as_ref()
+                    .map_or("", |s| s.as_str()), &alias.name).await;
             }
         }
     }
@@ -388,18 +405,18 @@ async fn check_alias_user_state(cfg: &Arc<Config>, client: &reqwest::Client, inp
     // });
 }
 
-pub fn create_vod_info_from_item(target: &ConfigTarget, user: &ProxyUserCredentials, pli: &XtreamPlaylistItem, last_updated: i64) -> String {
+pub fn create_vod_info_from_item(target: &ConfigTarget, user: &ProxyUserCredentials, pli: &XtreamPlaylistItem) -> String {
     let category_id = pli.category_id;
     let stream_id = if user.proxy.is_redirect(pli.item_type) || target.is_force_redirect(pli.item_type) { pli.provider_id } else { pli.virtual_id };
+    let added = pli.additional_properties.as_ref().and_then(StreamProperties::get_last_modified).unwrap_or(0);
     let name = &pli.name;
     let extension = pli
         .get_container_extension()
         .as_deref()
         .filter(|ce| !ce.is_empty())
         .or_else(|| extract_extension_from_url(&pli.url))
-        .map_or_else(String::new, std::string::ToString::to_string);
+        .map_or_else(String::new, ToString::to_string);
 
-    let added = last_updated / 1000;
     format!(r#"{{
   "info": {{}},
   "movie_data": {{

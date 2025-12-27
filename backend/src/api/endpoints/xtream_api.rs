@@ -32,8 +32,8 @@ use futures::Stream;
 use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use shared::error::{create_tuliprox_error_result};
 use shared::error::info_err;
+use shared::error::create_tuliprox_error_result;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::{create_stream_channel_with_type, PlaylistEntry, PlaylistItemType, ProxyType,
                     TargetType, UserConnectionPermission, XtreamCluster};
@@ -246,7 +246,7 @@ async fn xtream_player_api_stream(
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
     let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
-    let (pli, mapping) = try_result_not_found!(
+    let pli = try_result_not_found!(
         xtream_repository::xtream_get_item_for_stream_id(req_virtual_id, app_state, &target, None).await,
         true,
         format!("Failed to read xtream item for stream id {req_virtual_id}")
@@ -346,7 +346,7 @@ async fn xtream_player_api_stream(
 
     let redirect_params = RedirectParams {
         item: &pli,
-        provider_id: Some(mapping.provider_id),
+        provider_id: pli.get_provider_id(),
         cluster,
         target_type: TargetType::Xtream,
         target: &target,
@@ -435,7 +435,7 @@ async fn xtream_player_api_stream_with_token(
         }
         let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
         let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
-        let (pli, _mapping) = try_result_bad_request!(
+        let pli = try_result_bad_request!(
             xtream_repository::xtream_get_item_for_stream_id(
                 req_virtual_id,
                 app_state,
@@ -593,7 +593,7 @@ async fn xtream_player_api_resource(
     }
     let req_virtual_id: u32 = try_result_bad_request!(resource_req.stream_id.trim().parse());
     let resource = resource_req.action_path.trim();
-    let (pli, _) = try_result_bad_request!(
+    let pli = try_result_bad_request!(
         xtream_repository::xtream_get_item_for_stream_id(
             req_virtual_id,
             app_state,
@@ -824,7 +824,7 @@ async fn xtream_get_stream_info_response(
         Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
     };
 
-    if let Ok((pli, virtual_record)) = xtream_repository::xtream_get_item_for_stream_id(
+    if let Ok(pli) = xtream_repository::xtream_get_item_for_stream_id(
         virtual_id,
         app_state,
         target,
@@ -843,9 +843,7 @@ async fn xtream_get_stream_info_response(
         if pli.provider_id > 0 {
             let input_name = &pli.input_name;
             if let Some(input) = app_state.app_config.get_input_by_name(input_name.as_str()) {
-                if let Some(info_url) =
-                    xtream::get_xtream_player_api_info_url(&input, cluster, pli.provider_id)
-                {
+                if let Some(info_url) = xtream::get_xtream_player_api_info_url(&input, cluster, pli.provider_id) {
                     // Redirect is only possible for live streams, vod and series info needs to be modified
                     if user.proxy == ProxyType::Redirect && cluster == XtreamCluster::Live {
                         return redirect(&info_url).into_response();
@@ -858,10 +856,8 @@ async fn xtream_get_stream_info_response(
                         &pli,
                         info_url.as_str(),
                         cluster,
-                    )
-                        .await
+                    ).await
                     {
-
                         return try_unwrap_body!(axum::response::Response::builder()
                             .status(axum::http::StatusCode::OK)
                             .header(
@@ -877,7 +873,7 @@ async fn xtream_get_stream_info_response(
         return match cluster {
             XtreamCluster::Video => {
                 let content =
-                    create_vod_info_from_item(target, user, &pli, virtual_record.last_updated);
+                    create_vod_info_from_item(target, user, &pli);
                 try_unwrap_body!(axum::response::Response::builder()
                     .status(axum::http::StatusCode::OK)
                     .header(
@@ -914,7 +910,7 @@ async fn xtream_get_short_epg(
             Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
         };
 
-        if let Ok((pli, _)) = xtream_repository::xtream_get_item_for_stream_id(
+        if let Ok(pli) = xtream_repository::xtream_get_item_for_stream_id(
             virtual_id,
             app_state,
             target,
@@ -1085,7 +1081,7 @@ async fn xtream_get_catchup_response(
     end: &str,
 ) -> impl IntoResponse + Send {
     let req_virtual_id: u32 = try_result_bad_request!(FromStr::from_str(stream_id));
-    let (pli, _) = try_result_bad_request!(xtream_repository::xtream_get_item_for_stream_id(
+    let pli = try_result_bad_request!(xtream_repository::xtream_get_item_for_stream_id(
         req_virtual_id,
         app_state,
         target,

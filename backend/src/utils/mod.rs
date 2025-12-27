@@ -10,12 +10,14 @@ mod json_utils;
 mod binary_utils;
 mod telegram;
 mod geoip;
+mod db_viewer;
 
 pub use self::binary_utils::*;
 pub use self::logging::*;
 pub use self::trakt::*;
 pub use self::telegram::*;
 pub use self::geoip::*;
+pub use self::db_viewer::*;
 
 #[macro_export]
 macro_rules! debug_if_enabled {

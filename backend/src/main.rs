@@ -14,7 +14,7 @@ use crate::model::{
     AppConfig, Config, Healthcheck, HealthcheckConfig, ProcessTargets, SourcesConfig,
 };
 use crate::processing::processor::playlist;
-use crate::utils::init_logger;
+use crate::utils::{db_viewer, init_logger};
 use crate::utils::request::create_client;
 use crate::utils::{config_file_reader, resolve_env_var};
 use crate::library::LibraryProcessor;
@@ -85,6 +85,13 @@ struct Args {
     /// Force rescan of all local Library files
     #[arg(long = "force-library-rescan", default_value_t = false, default_missing_value = "true")]
     force_library_rescan: bool,
+
+    #[arg(long = "dbt", default_missing_value = "None")]
+    db_content_type: Option<String>,
+
+    #[arg(long = "dbf", default_missing_value = "None")]
+    db_file_name: Option<String>,
+
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -101,6 +108,11 @@ const BUILD_TIMESTAMP: &str = env!("VERGEN_BUILD_TIMESTAMP");
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+
+    match (args.db_content_type.as_ref(), args.db_file_name.as_ref()) {
+        (Some(dbt), Some(dbf)) => db_viewer(dbf, dbt),
+        (Some(_) | None, None) | (None, Some(_))=> info!("You need to define database content type and filename!"),
+    }
 
     if args.genpwd {
         match generate_password() {

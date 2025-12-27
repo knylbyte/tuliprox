@@ -20,7 +20,7 @@ pub async fn process_group_watch(client: &reqwest::Client, cfg: &Config, target_
         Some(path) => {
             let save_path = path.as_path();
             let mut changed = false;
-            if path.exists() {
+            if let Ok(true) = tokio::fs::try_exists(&path).await {
                 if let Some(loaded_tree) = load_watch_tree(&path).await {
                     // Find elements in set2 but not in set1
                     let added_difference: BTreeSet<String> = new_tree.difference(&loaded_tree).cloned().collect();

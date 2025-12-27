@@ -9,7 +9,7 @@ use crate::utils;
 use shared::error::{create_tuliprox_error, info_err};
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::PlaylistItemType;
-use shared::model::{M3uPlaylistItem, PlaylistGroup, PlaylistItem};
+use shared::model::{M3uPlaylistItem, PlaylistGroup};
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -92,7 +92,7 @@ pub async fn m3u_write_playlist(
             .iter()
             .flat_map(|pg| &pg.channels)
             .filter(|&pli| !matches!(pli.header.item_type, PlaylistItemType::SeriesInfo | PlaylistItemType::LocalSeriesInfo))
-            .map(PlaylistItem::to_m3u)
+            .map(M3uPlaylistItem::from)
             .collect::<Vec<M3uPlaylistItem>>(),
     );
 
@@ -155,7 +155,7 @@ pub async fn m3u_get_item_for_stream_id(stream_id: u32, app_state: &AppState, ta
 pub async fn iter_raw_m3u_playlist(config: &AppConfig, target: &ConfigTarget) -> Option<(utils::FileReadGuard, impl Iterator<Item=(M3uPlaylistItem, bool)>)> {
     let target_path = get_target_storage_path(&config.config.load(), target.name.as_str())?;
     let m3u_path = m3u_get_file_path(&target_path);
-    if !m3u_path.exists() {
+    if let Ok(false) = tokio::fs::try_exists(&m3u_path).await {
         return None;
     }
     let file_lock = config.file_locks.read_lock(&m3u_path).await;

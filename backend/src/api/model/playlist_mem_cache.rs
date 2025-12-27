@@ -75,7 +75,7 @@ impl PlaylistStorageState {
                             XtreamCluster::Live => &mut xtream.live,
                             XtreamCluster::Video => &mut xtream.vod,
                             XtreamCluster::Series =>  &mut xtream.series,
-                        }.insert(pli.header.virtual_id, pli.to_xtream());
+                        }.insert(pli.header.virtual_id, XtreamPlaylistItem::from(&pli));
                     }
                 }
             }

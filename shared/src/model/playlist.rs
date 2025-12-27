@@ -874,7 +874,6 @@ impl XtreamPlaylistItem {
             ("stream_icon".to_string(), Value::String(stream_icon)),
             ("stream_type".to_string(), Value::String(live.stream_type.as_ref().map_or_else(|| "live".to_string(), Clone::clone))),
             ("epg_channel_id".to_string(), InfoDocUtils::build_string(self.epg_channel_id.as_deref())),
-            ("added".to_string(), InfoDocUtils::empty_string()),
             ("is_adult".to_string(), Value::Number(serde_json::Number::from(live.is_adult))),
             ("category_id".to_string(), Value::String(self.category_id.to_string())),
             ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
@@ -1143,83 +1142,6 @@ pub struct PlaylistItem {
 generate_field_accessor_impl_for_xtream_playlist_item!(name, logo, logo_small, group, title, parent_code, rec, url;);
 
 impl PlaylistItem {
-    pub fn to_m3u(&self) -> M3uPlaylistItem {
-        let header = &self.header;
-        M3uPlaylistItem {
-            virtual_id: header.virtual_id,
-            provider_id: header.id.to_string(),
-            name: if header.item_type == PlaylistItemType::Series { &header.title } else { &header.name }.to_string(),
-            chno: header.chno,
-            logo: header.logo.to_string(),
-            logo_small: header.logo_small.to_string(),
-            group: header.group.to_string(),
-            title: header.title.to_string(),
-            parent_code: header.parent_code.to_string(),
-            audio_track: header.audio_track.to_string(),
-            time_shift: header.time_shift.to_string(),
-            rec: header.rec.to_string(),
-            url: header.url.to_string(),
-            epg_channel_id: header.epg_channel_id.clone(),
-            input_name: header.input_name.to_string(),
-            item_type: header.item_type,
-            t_stream_url: header.url.to_string(),
-            t_resource_url: None,
-        }
-    }
-
-    pub fn to_xtream(&self) -> XtreamPlaylistItem {
-        let header = &self.header;
-        let provider_id = header.id.parse::<u32>().unwrap_or_default();
-        let additional_properties = Self::get_additional_properties(header);
-
-        XtreamPlaylistItem {
-            virtual_id: header.virtual_id,
-            provider_id,
-            name: if header.item_type == PlaylistItemType::Series { &header.title } else { &header.name }.to_string(),
-            logo: header.logo.to_string(),
-            logo_small: header.logo_small.to_string(),
-            group: header.group.to_string(),
-            title: header.title.to_string(),
-            parent_code: header.parent_code.to_string(),
-            rec: header.rec.to_string(),
-            url: header.url.to_string(),
-            epg_channel_id: header.epg_channel_id.clone(),
-            xtream_cluster: header.xtream_cluster,
-            additional_properties,
-            item_type: header.item_type,
-            category_id: header.category_id,
-            input_name: header.input_name.to_string(),
-            channel_no: header.chno,
-        }
-    }
-
-    pub fn to_common(&self) -> CommonPlaylistItem {
-        let header = &self.header;
-
-        let additional_properties = Self::get_additional_properties(header);
-
-        CommonPlaylistItem {
-            virtual_id: header.virtual_id,
-            provider_id: header.id.clone(),
-            name: if header.item_type == PlaylistItemType::Series { &header.title } else { &header.name }.clone(),
-            logo: header.logo.clone(),
-            logo_small: header.logo_small.clone(),
-            group: header.group.clone(),
-            title: header.title.clone(),
-            parent_code: header.parent_code.clone(),
-            audio_track: header.audio_track.clone(),
-            time_shift: header.time_shift.clone(),
-            rec: header.rec.clone(),
-            url: header.url.clone(),
-            epg_channel_id: header.epg_channel_id.clone(),
-            xtream_cluster: Some(header.xtream_cluster),
-            additional_properties,
-            item_type: header.item_type,
-            category_id: Some(header.category_id),
-            input_name: header.input_name.clone(),
-            chno: header.chno,
-        }
-    }
 
     fn get_additional_properties(header: &PlaylistItemHeader) -> Option<StreamProperties> {
         match &header.additional_properties {
@@ -1300,6 +1222,123 @@ impl PlaylistItem {
         self.header.additional_properties.as_ref().and_then(|p| p.get_tmdb_id())
     }
 }
+
+impl From<&PlaylistItem> for XtreamPlaylistItem {
+    fn from(item: &PlaylistItem) -> Self {
+        let header = &item.header;
+        let provider_id = header.id.parse::<u32>().unwrap_or_default();
+        let additional_properties = PlaylistItem::get_additional_properties(header);
+
+        XtreamPlaylistItem {
+            virtual_id: header.virtual_id,
+            provider_id,
+            name: if header.item_type == PlaylistItemType::Series { &header.title } else { &header.name }.to_string(),
+            logo: header.logo.to_string(),
+            logo_small: header.logo_small.to_string(),
+            group: header.group.to_string(),
+            title: header.title.to_string(),
+            parent_code: header.parent_code.to_string(),
+            rec: header.rec.to_string(),
+            url: header.url.to_string(),
+            epg_channel_id: header.epg_channel_id.clone(),
+            xtream_cluster: header.xtream_cluster,
+            additional_properties,
+            item_type: header.item_type,
+            category_id: header.category_id,
+            input_name: header.input_name.to_string(),
+            channel_no: header.chno,
+        }
+    }
+}
+
+impl From<&PlaylistItem> for M3uPlaylistItem {
+    fn from(item: &PlaylistItem) -> Self {
+        let header = &item.header;
+        M3uPlaylistItem {
+            virtual_id: header.virtual_id,
+            provider_id: header.id.to_string(),
+            name: if header.item_type == PlaylistItemType::Series { &header.title } else { &header.name }.to_string(),
+            chno: header.chno,
+            logo: header.logo.to_string(),
+            logo_small: header.logo_small.to_string(),
+            group: header.group.to_string(),
+            title: header.title.to_string(),
+            parent_code: header.parent_code.to_string(),
+            audio_track: header.audio_track.to_string(),
+            time_shift: header.time_shift.to_string(),
+            rec: header.rec.to_string(),
+            url: header.url.to_string(),
+            epg_channel_id: header.epg_channel_id.clone(),
+            input_name: header.input_name.to_string(),
+            item_type: header.item_type,
+            t_stream_url: header.url.to_string(),
+            t_resource_url: None,
+        }
+    }
+}
+
+impl From<&PlaylistItem> for CommonPlaylistItem {
+    fn from(item: &PlaylistItem) -> Self {
+        let header = &item.header;
+
+        let additional_properties = PlaylistItem::get_additional_properties(header);
+
+        CommonPlaylistItem {
+            virtual_id: header.virtual_id,
+            provider_id: header.id.clone(),
+            name: if header.item_type == PlaylistItemType::Series { &header.title } else { &header.name }.clone(),
+            logo: header.logo.clone(),
+            logo_small: header.logo_small.clone(),
+            group: header.group.clone(),
+            title: header.title.clone(),
+            parent_code: header.parent_code.clone(),
+            audio_track: header.audio_track.clone(),
+            time_shift: header.time_shift.clone(),
+            rec: header.rec.clone(),
+            url: header.url.clone(),
+            epg_channel_id: header.epg_channel_id.clone(),
+            xtream_cluster: Some(header.xtream_cluster),
+            additional_properties,
+            item_type: header.item_type,
+            category_id: Some(header.category_id),
+            input_name: header.input_name.clone(),
+            chno: header.chno,
+        }
+    }
+}
+
+impl From<&XtreamPlaylistItem> for PlaylistItem {
+    fn from(item: &XtreamPlaylistItem) -> Self {
+        let header = PlaylistItemHeader {
+            uuid: item.get_uuid(),
+            virtual_id: item.virtual_id,
+            id: item.provider_id.to_string(), // u32 → String
+            name: item.name.clone(),
+            title: item.title.clone(),
+            logo: item.logo.clone(),
+            logo_small: item.logo_small.clone(),
+            group: item.group.clone(),
+            parent_code: item.parent_code.clone(),
+            rec: item.rec.clone(),
+            url: item.url.clone(),
+            epg_channel_id: item.epg_channel_id.clone(),
+            xtream_cluster: item.xtream_cluster,
+            item_type: item.item_type,
+            category_id: item.category_id,
+            input_name: item.input_name.clone(),
+            chno: item.channel_no,
+            audio_track: String::new(),
+            time_shift: String::new(),
+            additional_properties: item.additional_properties.clone(),
+        };
+
+        PlaylistItem {
+            header
+        }
+    }
+}
+
+
 
 impl PlaylistEntry for PlaylistItem {
     #[inline]

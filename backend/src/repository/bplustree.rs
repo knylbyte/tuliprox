@@ -1610,6 +1610,7 @@ mod tests {
             tree.insert(i, Record { id: i, data: format!("{content} {i}") });
         }
         tree.store(&filepath)?;
+        drop(tree);
 
         // Update via BPlusTreeUpdate
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
@@ -1803,6 +1804,7 @@ mod tests {
             tree.insert(i, Record { id: i, data: format!("Value {i}") });
         }
         tree.store(&filepath)?;
+        drop(tree);
 
         let mut query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
         

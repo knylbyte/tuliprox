@@ -59,13 +59,13 @@ impl<C> PlaylistScratch<C> {
         }
     }
 
-    pub fn get(&self, cluster: XtreamCluster) -> &C {
-        match cluster {
-            XtreamCluster::Live => &self.live,
-            XtreamCluster::Video => &self.vods,
-            XtreamCluster::Series => &self.series,
-        }
-    }
+    // pub fn get(&self, cluster: XtreamCluster) -> &C {
+    //     match cluster {
+    //         XtreamCluster::Live => &self.live,
+    //         XtreamCluster::Video => &self.vods,
+    //         XtreamCluster::Series => &self.series,
+    //     }
+    // }
 
     pub fn set(&mut self, cluster: XtreamCluster, content: C) {
         match cluster {
