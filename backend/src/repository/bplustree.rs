@@ -11,6 +11,7 @@ use tempfile::NamedTempFile;
 use crate::utils::{binary_deserialize, binary_serialize};
 
 const BLOCK_SIZE: usize = 4096;
+const BLOCK_SIZE_U32: u32 = 4096;
 const LEN_SIZE: usize = 4;
 const FLAG_SIZE: usize = 1;
 const MAGIC: &[u8; 4] = b"BTRE";
@@ -231,7 +232,7 @@ where
         } else {
             // Internal node: pointer length + pointers
             // We use current children count for estimate
-            let mut pointer_vec: Vec<u64> = Vec::with_capacity(self.children.len());
+            let mut pointer_vec: Vec<u64> = vec![0; self.children.len()];
             pointer_vec.resize(self.children.len(), 0);
             let pointer_encoded = binary_serialize(&pointer_vec)?;
             size += LEN_SIZE + pointer_encoded.len();
@@ -563,7 +564,7 @@ pub struct BPlusTree<K, V> {
     dirty: bool,
 }
 
-const fn calc_order<K, V>() -> (usize, usize) {
+const fn calc_order<K>() -> (usize, usize) {
     // Phase 2 Layout:
     // Internal: FLAG (1) + LEN_K (4) + KEYS + LEN_P (4) + POINTERS (8 each)
     // Leaf:    FLAG (1) + LEN_K (4) + KEYS + LEN_INFO (4) + VALUE_INFO (12 each)
@@ -598,7 +599,7 @@ where
     V: Serialize + for<'de> Deserialize<'de> + Clone,
 {
     pub const fn new() -> Self {
-        let (inner_order, leaf_order) = calc_order::<K, V>();
+        let (inner_order, leaf_order) = calc_order::<K>();
         Self {
             root: BPlusTreeNode::<K, V>::new(true),
             inner_order,
@@ -695,7 +696,7 @@ where
         // Start after header block
         let (root, _) = BPlusTreeNode::<K, V>::deserialize_from_block(&mut reader, &mut buffer, HEADER_SIZE, true)?;
 
-        let (inner_order, leaf_order) = calc_order::<K, V>();
+        let (inner_order, leaf_order) = calc_order::<K>();
         Ok(Self {
             root,
             inner_order,
@@ -930,26 +931,35 @@ where
                             Ok(idx) => {
                                 // Serialize new value
                                 let value_bytes = binary_serialize(&value)?;
-                                
-                                // Write value to the end of the file
-                                let val_offset = self.file.seek(SeekFrom::End(0))?;
+                                let new_len = u32::try_from(value_bytes.len()).unwrap_or(0);
+                                let new_blocks = new_len.div_ceil(BLOCK_SIZE_U32);
+
+                                let (old_offset, old_len) = node.value_info[idx];
+                                let old_blocks = old_len.div_ceil(BLOCK_SIZE_U32);
+
+                                let val_offset = if new_blocks <= old_blocks && old_offset > 0 {
+                                    // In-place overwrite
+                                    self.file.seek(SeekFrom::Start(old_offset))?;
+                                    old_offset
+                                } else {
+                                    // Append to end
+                                    self.file.seek(SeekFrom::End(0))?
+                                };
+
                                 let mut pos = 0;
                                 while pos < value_bytes.len() {
                                     let chunk = std::cmp::min(BLOCK_SIZE, value_bytes.len() - pos);
-                                    let mut write_buf = vec![0u8; BLOCK_SIZE];
-                                    write_buf[..chunk].copy_from_slice(&value_bytes[pos..pos + chunk]);
-                                    self.file.write_all(&write_buf)?;
+                                    self.write_buffer[..chunk].copy_from_slice(&value_bytes[pos..pos + chunk]);
+                                    if chunk < BLOCK_SIZE {
+                                        self.write_buffer[chunk..BLOCK_SIZE].fill(0u8);
+                                    }
+                                    self.file.write_all(&self.write_buffer)?;
                                     pos += chunk;
                                 }
-                                
+
                                 // Update the offset in the node metadata
-                                if idx < node.value_info.len() {
-                                    node.value_info[idx] = (val_offset, u32::try_from(value_bytes.len()).unwrap_or(0));
-                                } else {
-                                    // This should not happen if the key exists
-                                    return Err(io::Error::other("Value offset mismatch"));
-                                }
-                                
+                                node.value_info[idx] = (val_offset, new_len);
+
                                 // Rewrite the leaf node index block
                                 self.serialize_node(offset, &node)
                             }
@@ -1251,6 +1261,51 @@ mod tests {
         }
         assert_eq!(count, 100, "Iterator did not yield all entries");
 
+        Ok(())
+    }
+
+    #[test]
+    fn update_inplace_size_test() -> io::Result<()> {
+        let filepath = PathBuf::from("/tmp/tree_size_test.bin");
+        let mut tree = BPlusTree::<u32, Record>::new();
+        
+        // Use fixed size string for predictable sizing
+        let padding = "x".repeat(100);
+        for i in 0u32..10 {
+            tree.insert(i, Record { id: i, data: padding.clone() });
+        }
+        tree.store(&filepath)?;
+        
+        let initial_size = std::fs::metadata(&filepath)?.len();
+        
+        // Update with same size data
+        let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
+        let same_size_padding = "y".repeat(100);
+        for i in 0u32..10 {
+            tree_update.update(&i, Record { id: i, data: same_size_padding.clone() })?;
+        }
+        
+        let size_after_same_update = std::fs::metadata(&filepath)?.len();
+        assert_eq!(initial_size, size_after_same_update, "File grew during same-size update");
+        
+        // Update with smaller size data
+        let smaller_padding = "z".repeat(50);
+        for i in 0u32..10 {
+            tree_update.update(&i, Record { id: i, data: smaller_padding.clone() })?;
+        }
+        
+        let size_after_smaller_update = std::fs::metadata(&filepath)?.len();
+        assert_eq!(initial_size, size_after_smaller_update, "File grew during smaller-size update");
+        
+        // Update with larger size data (force append)
+        let larger_padding = "w".repeat(5000); // Definitely larger than 1 block (4096)
+        for i in 0u32..1 {
+            tree_update.update(&i, Record { id: i, data: larger_padding.clone() })?;
+        }
+        
+        let size_after_larger_update = std::fs::metadata(&filepath)?.len();
+        assert!(size_after_larger_update > initial_size, "File did not grow during larger-size update");
+        
         Ok(())
     }
 }
