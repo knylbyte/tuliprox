@@ -11,7 +11,6 @@ use tempfile::NamedTempFile;
 use crate::utils::{binary_deserialize, binary_serialize};
 
 const BLOCK_SIZE: usize = 4096;
-const ENCODE_OVERHEAD: usize = 10*8; // for bincode we used 8
 const LEN_SIZE: usize = 4;
 const FLAG_SIZE: usize = 1;
 const MAGIC: &[u8; 4] = b"BTRE";
@@ -227,11 +226,15 @@ where
         if self.is_leaf {
             // Leaf nodes now store value_info instead of values
             // value_info: length + Vec<(u64, u32)>
-            // (u64 + u32) = 12 bytes per entry
-            size += LEN_SIZE + (self.values.len() * (size_of::<u64>() + size_of::<u32>()) + ENCODE_OVERHEAD);
+            let info_encoded = binary_serialize(&self.value_info)?;
+            size += LEN_SIZE + info_encoded.len();
         } else {
             // Internal node: pointer length + pointers
-            size += LEN_SIZE + (self.children.len() * size_of::<u64>() + ENCODE_OVERHEAD);
+            // We use current children count for estimate
+            let mut pointer_vec: Vec<u64> = Vec::with_capacity(self.children.len());
+            pointer_vec.resize(self.children.len(), 0);
+            let pointer_encoded = binary_serialize(&pointer_vec)?;
+            size += LEN_SIZE + pointer_encoded.len();
         }
         
         // Round up to block size
@@ -561,11 +564,21 @@ pub struct BPlusTree<K, V> {
 }
 
 const fn calc_order<K, V>() -> (usize, usize) {
-    let overhead_size = ENCODE_OVERHEAD + LEN_SIZE + FLAG_SIZE;
-    let key_size = size_of::<K>() + overhead_size;
-    let value_size = key_size + size_of::<V>() + overhead_size;
-    let inner_order = BLOCK_SIZE / key_size;
-    let leaf_order = BLOCK_SIZE / (key_size + value_size);
+    // Phase 2 Layout:
+    // Internal: FLAG (1) + LEN_K (4) + KEYS + LEN_P (4) + POINTERS (8 each)
+    // Leaf:    FLAG (1) + LEN_K (4) + KEYS + LEN_INFO (4) + VALUE_INFO (12 each)
+    
+    let base_overhead = FLAG_SIZE + LEN_SIZE + LEN_SIZE; // flag + keys_len + (children_len or info_len)
+    let key_size = size_of::<K>();
+    let pointer_size = 8;
+    let info_size = 12; // (u64, u32)
+
+    // Rough estimate for MessagePack overhead (usually small for simple types)
+    let msgpack_overhead_per_entry = 2; 
+
+    let inner_order = (BLOCK_SIZE - base_overhead) / (key_size + pointer_size + msgpack_overhead_per_entry);
+    let leaf_order = (BLOCK_SIZE - base_overhead) / (key_size + info_size + msgpack_overhead_per_entry);
+    
     (inner_order, leaf_order)
 }
 
