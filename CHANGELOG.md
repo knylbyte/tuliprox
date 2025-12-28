@@ -55,8 +55,8 @@
 - `kick_secs` added to config.yml `web_ui` config. Default 90 seconds, if a user is kicked from the `web_ui`, they can't connect for this duration.
   This setting is also used for sleep-timed streams.
 - Added new db-viewer options to print db content. 
-  `tuliprox --dbf /opt/tuliprox/data/all_channels/xtream/video.db --dbt xtream`
-  `tuliprox --dbf /opt/tuliprox/data/all_channels/m3u.db --dbt m3u`
+  `tuliprox --dbx /opt/tuliprox/data/all_channels/xtream/video.db`
+  `tuliprox --dbm /opt/tuliprox/data/all_channels/m3u.db`
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.

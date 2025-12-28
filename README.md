@@ -66,8 +66,8 @@ Options:
   --healthcheck                    Healtcheck for docker
   --scan-library                   Scan library directories
   --force-library-rescan           Force full library rescan
-  --dbf                            File path for db file
-  --dbt                            db file content m3u or xtream
+  --dbx                            Database file type: xtream
+  --dbm                            Database file type: m3u
 ```
 
 ## 1. `config.yml`
@@ -701,8 +701,8 @@ library:
 ./tuliprox --force-library-rescan
 
 # Show db content
-./tuliprox --dbf /opt/tuliprox/data/all_channels/xtream/video.db --dbt xtream
-./tuliprox --dbf /opt/tuliprox/data/all_channels/m3u.db --dbt m3u
+./tuliprox --dbx /opt/tuliprox/data/all_channels/xtream/video.db
+./tuliprox --dbm /opt/tuliprox/data/all_channels/m3u.db
 ```
 
 **API Endpoints**:
@@ -906,7 +906,7 @@ Input alias definition for same provider with same content but different credent
 - sources:
 - inputs:
   - type: xtream
-    name: my_provider
+    name: my_provider # Mandatory: used for playlist UUID generation
     url: 'http://provider.net'
     username: xyz
     password: secret1
@@ -929,7 +929,7 @@ There are 2 batch input types  `xtream_batch` and `m3u_batch`.
 - sources:
 - inputs:
   - type: xtream_batch
-    name: my_provider
+    name: my_provider # Mandatory: used for playlist UUID generation
     url: 'file:///home/tuliprox/config/my_provider_batch.csv'
   targets:
   - name: test
