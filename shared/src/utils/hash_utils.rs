@@ -99,3 +99,32 @@ pub fn base64_to_u32(encoded: &str) -> Option<u32> {
         .try_into().ok()?;
     Some(u32::from_be_bytes(arr))
 }
+
+pub fn parse_uuid_hex(s: &str) -> Option<[u8; 16]> {
+    // Quick length check
+    if s.len() != 36 {
+        return None;
+    }
+
+    // Remove hyphens
+    let mut buf = [0u8; 32];
+    let mut j = 0;
+
+    for &b in s.as_bytes() {
+        if b == b'-' {
+            continue;
+        }
+        if j >= 32 {
+            return None;
+        }
+        buf[j] = b;
+        j += 1;
+    }
+
+    if j != 32 {
+        return None;
+    }
+
+    let decoded = hex::decode(&buf).ok()?;
+    decoded.try_into().ok()
+}
