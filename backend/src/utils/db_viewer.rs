@@ -1,11 +1,12 @@
 use crate::repository::bplustree::{BPlusTreeDiskIterator, BPlusTreeQuery};
 use env_logger::{Builder, Target};
-use log::{error, warn, LevelFilter};
+use log::{error, LevelFilter};
 use serde::{Deserialize, Serialize};
 use shared::model::{M3uPlaylistItem, XtreamPlaylistItem};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 
+#[derive(Debug, Copy, Clone)]
 enum DbType {
     Xtream,
     M3u,
@@ -46,7 +47,7 @@ fn dump_db(filename: &str, db_type: DbType) {
         Err(err) => {
             error!("Invalid file path! {err}");
         }
-    };
+    }
 
     exit_app(1);
 }

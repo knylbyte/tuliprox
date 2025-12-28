@@ -316,19 +316,28 @@ where
 
             file.seek(SeekFrom::Start(offset))?;
 
-            let mut data = Vec::with_capacity(blocks * BLOCK_SIZE);
-            data.push(1u8);
-            data.extend_from_slice(&keys_len.to_le_bytes());
-            data.extend_from_slice(&keys_encoded);
-            data.extend_from_slice(&info_len.to_le_bytes());
-            data.extend_from_slice(&info_encoded);
-
-            let pad_len = (blocks * BLOCK_SIZE) - data.len();
-            if pad_len > 0 {
-                data.extend(std::iter::repeat(0).take(pad_len));
+            let capacity = blocks * BLOCK_SIZE;
+            if buffer.len() < capacity {
+                buffer.resize(capacity, 0);
             }
+            buffer[..capacity].fill(0);
 
-            file.write_all(&data)?;
+            let mut pos = 0;
+            buffer[pos] = 1u8;
+            pos += FLAG_SIZE;
+
+            buffer[pos..pos + LEN_SIZE].copy_from_slice(&keys_len.to_le_bytes());
+            pos += LEN_SIZE;
+
+            buffer[pos..pos + keys_encoded.len()].copy_from_slice(&keys_encoded);
+            pos += keys_encoded.len();
+
+            buffer[pos..pos + LEN_SIZE].copy_from_slice(&info_len.to_le_bytes());
+            pos += LEN_SIZE;
+
+            buffer[pos..pos + info_encoded.len()].copy_from_slice(&info_encoded);
+
+            file.write_all(&buffer)?;
 
             Ok(offset + (blocks as u64 * BLOCK_SIZE as u64))
         } else {
@@ -360,7 +369,7 @@ where
 
             let pad_len = (blocks_needed * BLOCK_SIZE) - data.len();
             if pad_len > 0 {
-                data.extend(std::iter::repeat(0).take(pad_len));
+                data.extend(std::iter::repeat_n(0, pad_len));
             }
             file.write_all(&data)?;
 
@@ -644,7 +653,7 @@ where
         file.read_exact(&mut buffer[0..header_required])?;
 
         let is_leaf = buffer[0] != 0;
-        let keys_len = u32_from_bytes(&buffer[FLAG_SIZE..FLAG_SIZE + LEN_SIZE])? as usize;
+        let keys_len = u32_from_bytes(&buffer[FLAG_SIZE..=LEN_SIZE])? as usize;
 
         let min_required = header_required + keys_len + LEN_SIZE;
         if buffer.len() < min_required {
