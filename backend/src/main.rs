@@ -86,10 +86,10 @@ struct Args {
     #[arg(long = "force-library-rescan", default_value_t = false, default_missing_value = "true")]
     force_library_rescan: bool,
 
-    #[arg(long = "dbx", default_missing_value = "None")]
+    #[arg(long = "dbx")]
     db_xtream_file_name: Option<String>,
 
-    #[arg(long = "dbm", default_missing_value = "None")]
+    #[arg(long = "dbm")]
     db_m3u_file_name: Option<String>,
 
 }
