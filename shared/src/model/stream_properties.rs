@@ -1,0 +1,813 @@
+use crate::model::info_doc_utils::InfoDocUtils;
+use crate::model::{PlaylistEntry, PlaylistItemType, VirtualId, XtreamCluster, XtreamMappingOptions, XtreamSeriesInfo, XtreamVideoInfo};
+use crate::utils::{deserialize_as_option_string, deserialize_as_string,
+                   deserialize_as_string_array, deserialize_json_as_opt_string, serialize_json_as_opt_string,
+                   deserialize_number_from_string, deserialize_number_from_string_or_zero, string_default_on_null,
+                   string_or_number_u32};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::borrow::Cow;
+use std::collections::HashMap;
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct LiveStreamProperties {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub category_id: u32,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub stream_id: u32,
+    #[serde(default)]
+    pub stream_icon: String,
+    #[serde(default)]
+    pub direct_source: String,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub custom_sid: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub added: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub stream_type: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub epg_channel_id: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub tv_archive: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub tv_archive_duration: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub is_adult: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct VideoStreamDetailProperties {
+    pub kinopoisk_url: Option<String>,
+    pub o_name: Option<String>,
+    pub cover_big: Option<String>,
+    pub movie_image: Option<String>,
+    pub release_date: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub episode_run_time: Option<u32>,
+    pub youtube_trailer: Option<String>,
+    pub director: Option<String>,
+    pub actors: Option<String>,
+    pub cast: Option<String>,
+    pub description: Option<String>,
+    pub plot: Option<String>,
+    pub age: Option<String>,
+    pub mpaa_rating: Option<String>,
+    #[serde(default)]
+    pub rating_count_kinopoisk: u32,
+    pub country: Option<String>,
+    pub genre: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_string_array")]
+    pub backdrop_path: Option<Vec<String>>,
+    pub duration_secs: Option<String>,
+    pub duration: Option<String>,
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
+    pub video: Option<String>,
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
+    pub audio: Option<String>,
+    #[serde(default)]
+    pub bitrate: u32,
+    pub runtime: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct VideoStreamProperties {
+    #[serde(default, deserialize_with = "deserialize_as_string")]
+    pub name: String,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub category_id: u32,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub stream_id: u32,
+    #[serde(default)]
+    pub stream_icon: String,
+    #[serde(default)]
+    pub direct_source: String,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub custom_sid: Option<String>,
+    #[serde(default)]
+    pub added: String,
+    #[serde(default)]
+    pub container_extension: String,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub rating: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub rating_5based: Option<f64>,
+    #[serde(default)]
+    pub stream_type: Option<String>,
+    #[serde(default)]
+    pub trailer: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub tmdb: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub is_adult: i32,
+    #[serde(default)]
+    pub details: Option<VideoStreamDetailProperties>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct SeriesStreamDetailEpisodeProperties {
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub id: u32,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub episode_num: u32,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub season: u32,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub title: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub container_extension: String,
+    #[serde(default)]
+    pub custom_sid: Option<String>,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub added: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub direct_source: String,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub tmdb: Option<u32>,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub release_date: String,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub plot: Option<String>,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub duration_secs: u32,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub duration: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub movie_image: String,
+    #[serde(default, deserialize_with = "string_or_number_u32")]
+    pub bitrate: u32,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub rating: Option<f64>,
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
+    pub video: Option<String>,
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
+    pub audio: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct SeriesStreamDetailProperties {
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub year: Option<u32>,
+    pub episodes: Option<Vec<SeriesStreamDetailEpisodeProperties>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct SeriesStreamProperties {
+    #[serde(default, deserialize_with = "deserialize_as_string")]
+    pub name: String,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub category_id: u32,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub series_id: u32,
+    #[serde(default, deserialize_with = "deserialize_as_string_array")]
+    pub backdrop_path: Option<Vec<String>>,
+    #[serde(default)]
+    pub cast: String,
+    #[serde(default)]
+    pub cover: String,
+    #[serde(default)]
+    pub director: String,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub episode_run_time: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub genre: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub last_modified: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub plot: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub rating: f64,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub rating_5based: f64,
+    pub release_date: Option<String>,
+    #[serde(default)]
+    pub youtube_trailer: String,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub tmdb: Option<u32>,
+    #[serde(default)]
+    pub details: Option<SeriesStreamDetailProperties>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct EpisodeStreamProperties {
+    pub episode_id: u32,
+    pub episode: u32,
+    pub season: u32,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub added: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub release_date: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_number_from_string")]
+    pub tmdb: Option<u32>,
+    #[serde(default)]
+    pub movie_image: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub container_extension: String,
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
+    pub video: Option<String>,
+    #[serde(default, serialize_with = "serialize_json_as_opt_string", deserialize_with = "deserialize_json_as_opt_string")]
+    pub audio: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum StreamProperties {
+    Live(LiveStreamProperties),
+    Video(Box<VideoStreamProperties>),
+    Series(Box<SeriesStreamProperties>),
+    Episode(EpisodeStreamProperties),
+}
+
+impl StreamProperties {
+    pub fn has_details(&self) -> bool {
+        match self {
+            StreamProperties::Video(video) => video.details.is_some(),
+            StreamProperties::Series(series) => series.details.is_some(),
+            StreamProperties::Live(_)
+            | StreamProperties::Episode(_) => false,
+        }
+    }
+
+    pub fn prepare(&mut self) {
+        match self {
+            StreamProperties::Live(live) => {
+                live.epg_channel_id = live.epg_channel_id.as_ref()
+                    .filter(|epg_id| !epg_id.trim().is_empty())
+                    .map(|epg_id| epg_id.to_lowercase())
+                    .or(None);
+            }
+            StreamProperties::Video(_) => {}
+            StreamProperties::Series(_) => {}
+            StreamProperties::Episode(_) => {}
+        }
+    }
+
+    pub fn get_category_id(&self) -> u32 {
+        match self {
+            StreamProperties::Live(live) => live.category_id,
+            StreamProperties::Video(video) => video.category_id,
+            StreamProperties::Series(series) => series.category_id,
+            StreamProperties::Episode(_episode) => 0,
+        }
+    }
+
+    pub fn get_stream_id(&self) -> u32 {
+        match self {
+            StreamProperties::Live(live) => live.stream_id,
+            StreamProperties::Video(video) => video.stream_id,
+            StreamProperties::Series(series) => series.series_id,
+            StreamProperties::Episode(episode) => episode.episode_id,
+        }
+    }
+
+    pub fn get_stream_icon(&self) -> Cow<'_, str> {
+        match self {
+            StreamProperties::Live(live) => Cow::Borrowed(&live.stream_icon),
+            StreamProperties::Video(video) => Cow::Borrowed(&video.stream_icon),
+            StreamProperties::Series(series) => Cow::Borrowed(&series.cover),
+            StreamProperties::Episode(episode) => Cow::Borrowed(&episode.movie_image),
+        }
+    }
+
+    pub fn get_name(&self) -> Cow<'_, str> {
+        match self {
+            StreamProperties::Live(live) => Cow::Borrowed(&live.name),
+            StreamProperties::Video(video) => Cow::Borrowed(&video.name),
+            StreamProperties::Series(series) => Cow::Borrowed(&series.name),
+            StreamProperties::Episode(_episode) => Cow::Borrowed(""),
+        }
+    }
+
+    pub fn get_epg_channel_id(&self) -> Option<String> {
+        match self {
+            StreamProperties::Live(live) => live.epg_channel_id.clone(),
+            StreamProperties::Video(_) => None,
+            StreamProperties::Series(_) => None,
+            StreamProperties::Episode(_) => None,
+        }
+    }
+
+    pub fn get_tmdb_id(&self) -> Option<u32> {
+        match self {
+            StreamProperties::Live(_) => None,
+            StreamProperties::Video(video) => video.tmdb,
+            StreamProperties::Series(series) => series.tmdb,
+            StreamProperties::Episode(episode) => episode.tmdb,
+        }
+    }
+
+    pub fn get_release_date(&self) -> Option<Cow<'_, str>> {
+        match self {
+            StreamProperties::Live(_) => None,
+            StreamProperties::Video(video) => video.details.as_ref().and_then(|d| d.release_date.as_deref().map(Cow::Borrowed)),
+            StreamProperties::Series(series) => series.release_date.as_deref().map(Cow::Borrowed),
+            StreamProperties::Episode(episode) => episode.release_date.as_deref().map(Cow::Borrowed),
+        }
+    }
+
+    pub fn get_added(&self) -> Option<Cow<'_, str>> {
+        match self {
+            StreamProperties::Live(_) => None,
+            StreamProperties::Video(video) => non_empty_string(video.added.as_str()),
+            StreamProperties::Series(series) => series.details.as_ref()
+                .and_then(|d| d.episodes.as_ref())
+                .and_then(|e| e.first().and_then(|e| non_empty_string(e.added.as_str()))),
+            StreamProperties::Episode(episode) => episode.added.as_deref().map(Cow::Borrowed),
+        }
+    }
+
+    pub fn get_container_extension(&self) -> Option<Cow<'_, str>> {
+        match self {
+            StreamProperties::Live(_) => None,
+            StreamProperties::Video(video) => non_empty_string(&video.container_extension),
+            StreamProperties::Series(series) => series.details.as_ref()
+                .and_then(|d| d.episodes.as_ref())
+                .and_then(|e| e.first().and_then(|e| non_empty_string(&e.container_extension))),
+            StreamProperties::Episode(episode) => non_empty_string(&episode.container_extension),
+        }
+    }
+
+    pub fn get_direct_source(&self) -> Option<Cow<'_, str>> {
+        match self {
+            StreamProperties::Live(_) => None,
+            StreamProperties::Video(video) => non_empty_string(&video.direct_source),
+            StreamProperties::Series(series) => series.details.as_ref()
+                .and_then(|d| d.episodes.as_ref())
+                .and_then(|e| e.first().and_then(|e| non_empty_string(&e.direct_source))),
+            StreamProperties::Episode(_episode) => None,
+        }
+    }
+
+    pub fn get_season(&self) -> Option<u32> {
+        match self {
+            StreamProperties::Live(_)
+            | StreamProperties::Video(_)
+            | StreamProperties::Series(_) => None,
+            StreamProperties::Episode(episode) => Some(episode.season),
+        }
+    }
+
+    pub fn get_episode(&self) -> Option<u32> {
+        match self {
+            StreamProperties::Live(_)
+            | StreamProperties::Video(_)
+            | StreamProperties::Series(_) => None,
+            StreamProperties::Episode(episode) => Some(episode.episode),
+        }
+    }
+
+    pub fn get_last_modified(&self) -> Option<u64> {
+        match self {
+            StreamProperties::Live(_) => None,
+            StreamProperties::Video(video) => video.added.parse::<u64>().ok(),
+            StreamProperties::Series(series) => series.last_modified.as_ref().and_then(|v| v.parse::<u64>().ok()),
+            StreamProperties::Episode(episode) => episode.added.as_ref().and_then(|v| v.parse::<u64>().ok()),
+        }
+    }
+
+    pub fn resolve_resource_url<'a>(&'a self, field: &str) -> Option<Cow<'a, str>> {
+        if field.starts_with("backdrop_path") {
+            if let StreamProperties::Series(series) = self {
+                if let Some(backdrop) = series.backdrop_path.as_ref() {
+                    if let Some(url) = backdrop.first() {
+                        return Some(Cow::Borrowed(url));
+                    }
+                }
+            }
+            return None;
+        } else if field.starts_with("nfo_backdrop_path") {
+            if let StreamProperties::Video(video) = self {
+                if let Some(details) = video.details.as_ref() {
+                    if let Some(backdrop) = details.backdrop_path.as_ref() {
+                        if let Some(url) = backdrop.first() {
+                            return Some(Cow::Borrowed(url));
+                        }
+                    }
+                }
+            }
+            return None;
+        }
+
+        if field == "cover" {
+            if let StreamProperties::Series(series) = self {
+                return Some(Cow::Borrowed(series.cover.as_str()));
+            }
+            return None;
+        }
+        if field == "logo" || field == "logo_small" {
+            return match self {
+                StreamProperties::Live(live) => {
+                    Some(Cow::Borrowed(live.stream_icon.as_str()))
+                }
+                StreamProperties::Video(video) => {
+                    Some(Cow::Borrowed(video.stream_icon.as_str()))
+                }
+                StreamProperties::Series(series) => {
+                    Some(Cow::Borrowed(series.cover.as_str()))
+                }
+                StreamProperties::Episode(episode) => {
+                    Some(Cow::Borrowed(episode.movie_image.as_str()))
+                }
+            };
+        }
+        if field == "movie_image" {
+            if let StreamProperties::Episode(episode) = self {
+                return Some(Cow::Borrowed(episode.movie_image.as_str()));
+            }
+            return None;
+        }
+        if field == "nfo_cover_big" {
+            if let StreamProperties::Video(video) = self {
+                if let Some(details) = video.details.as_ref() {
+                    if let Some(cover_big) = details.cover_big.as_ref() {
+                        return Some(Cow::Borrowed(cover_big.as_str()));
+                    }
+                }
+            }
+        }
+
+        if field == "nfo_movie_image" {
+            if let StreamProperties::Video(video) = self {
+                if let Some(details) = video.details.as_ref() {
+                    if let Some(movie_image) = details.movie_image.as_ref() {
+                        return Some(Cow::Borrowed(movie_image.as_str()));
+                    }
+                }
+            }
+            return None;
+        }
+        if field.starts_with("nfo_ep_") {
+            if let Some((season, episode_num, field)) = parse_season_episode_field(field) {
+                if let StreamProperties::Series(series) = self {
+                    if let Some(details) = series.details.as_ref() {
+                        if let Some(episodes) = details.episodes.as_ref() {
+                            for episode in episodes {
+                                if episode.season == season && episode_num == episode.episode_num && field == "movie_image" {
+                                    return Some(Cow::Borrowed(episode.movie_image.as_str()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn to_info_document(&self, options: &XtreamMappingOptions, item_type: PlaylistItemType,
+                            virtual_id: VirtualId, category_id: u32) -> Value {
+        match self {
+            StreamProperties::Live(_live) => {
+                // Live streams don't expose info documents through the Xtream API.
+                Value::Object(serde_json::Map::new())
+            }
+            StreamProperties::Video(video) => {
+                self.video_to_info_document(options, video, item_type, virtual_id, category_id)
+            }
+            StreamProperties::Series(series) => {
+                self.series_to_info_document(options, series, item_type, virtual_id, category_id)
+            }
+            StreamProperties::Episode(_episode) => {
+                // Epsiode streams don't expose info documents through the Xtream API.
+                Value::Object(serde_json::Map::new())
+            }
+        }
+    }
+
+    fn series_to_info_document(&self, options: &XtreamMappingOptions, series: &SeriesStreamProperties,
+                               item_type: PlaylistItemType, virtual_id: VirtualId, category_id: u32) -> Value {
+        let resource_url = options.get_resource_url(XtreamCluster::Series, item_type, virtual_id);
+        Value::Object(serde_json::Map::from_iter([
+            ("seasons".to_string(), Value::Array(Vec::new())),
+            ("info".to_string(), Value::Object(serde_json::Map::from_iter([
+                ("name".to_string(), Value::String(series.name.clone())),
+                ("cover".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url.as_deref(), series.cover.as_ref(), "cover"))),
+                ("plot".to_string(), InfoDocUtils::build_string(series.plot.as_deref())),
+                ("cast".to_string(), Value::String(series.cast.clone())),
+                ("director".to_string(), Value::String(series.director.clone())),
+                ("genre".to_string(), InfoDocUtils::build_string(series.genre.as_deref())),
+                ("release_date".to_string(), InfoDocUtils::build_string(series.release_date.as_deref())),
+                ("releaseDate".to_string(), InfoDocUtils::build_string(series.release_date.as_deref())),
+                ("last_modified".to_string(), InfoDocUtils::build_string(series.last_modified.as_deref())),
+                ("rating".to_string(), Value::String(InfoDocUtils::limited(series.rating))),
+                ("rating_5based".to_string(), Value::String(InfoDocUtils::limited(series.rating_5based))),
+                ("backdrop_path".to_string(), Value::Array(
+                    series.backdrop_path.as_ref().map_or_else(Vec::new, |b| b.iter().enumerate().map(|(idx, p)|
+                        Value::String(
+                            InfoDocUtils::make_bdpath_resource_url(resource_url.as_deref(), p, idx, "")
+                        )
+                    ).collect())
+                )),
+                ("tmdb".to_string(), Value::String(series.tmdb.unwrap_or_default().to_string())),
+                ("youtube_trailer".to_string(), Value::String(series.youtube_trailer.clone())),
+                ("episode_run_time".to_string(), InfoDocUtils::build_string(series.episode_run_time.as_deref())),
+                ("category_id".to_string(), Value::String(category_id.to_string())),
+                ("category_ids".to_string(), Value::Array(Vec::from([InfoDocUtils::build_u32(category_id)]))),
+            ]))),
+            if let Some(episodes) = series.details.as_ref().and_then(|d| d.episodes.as_ref()) {
+                ("episodes".to_string(), self.series_episodes_to_info_document(options, resource_url.as_deref(), episodes))
+            } else {
+                ("episodes".to_string(), Value::Object(serde_json::Map::new()))
+            }
+        ]))
+    }
+
+    fn video_to_info_document(&self, options: &XtreamMappingOptions, video: &VideoStreamProperties,
+                              item_type: PlaylistItemType, virtual_id: VirtualId, category_id: u32) -> Value {
+        let resource_url = options.get_resource_url(XtreamCluster::Video, item_type, virtual_id);
+        let stream_icon = InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.get_stream_icon(), "logo");
+
+        Value::Object(serde_json::Map::from_iter([
+            if let Some(details) = video.details.as_ref() {
+                ("info".to_string(), Value::Object(serde_json::Map::from_iter([
+                    ("actors".to_string(), InfoDocUtils::build_string(details.actors.as_deref())),
+                    ("age".to_string(), InfoDocUtils::build_string(details.age.as_deref())),
+                    ("audio".to_string(), InfoDocUtils::build_value(details.audio.as_deref())),
+                    ("video".to_string(), InfoDocUtils::build_value(details.video.as_deref())),
+                    ("backdrop_path".to_string(), Value::Array(
+                        details.backdrop_path.as_deref().map_or_else(Vec::new, |b| b.iter().enumerate().map(|(idx, p)|
+                            Value::String(
+                                InfoDocUtils::make_bdpath_resource_url(resource_url.as_deref(), p, idx, "nfo_")
+                            )
+                        ).collect())
+                    )),
+                    ("bitrate".to_string(), InfoDocUtils::build_u32(details.bitrate)),
+                    ("cast".to_string(), InfoDocUtils::build_string(details.cast.as_deref())),
+                    ("country".to_string(), InfoDocUtils::build_string(details.country.as_deref())),
+                    ("cover_big".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url.as_deref(), &details.cover_big.as_ref().map_or_else(String::new, Clone::clone), "nfo_cover_big"))),
+                    ("description".to_string(), InfoDocUtils::build_string(details.description.as_deref())),
+                    ("director".to_string(), InfoDocUtils::build_string(details.director.as_deref())),
+                    ("duration".to_string(), InfoDocUtils::build_string(details.duration.as_deref())),
+                    ("duration_secs".to_string(), InfoDocUtils::build_string(details.duration_secs.as_deref())),
+                    ("episode_run_time".to_string(), InfoDocUtils::build_u32(details.episode_run_time.unwrap_or_default())),
+                    ("genre".to_string(), InfoDocUtils::build_string(details.genre.as_deref())),
+                    ("kinopoisk_url".to_string(), InfoDocUtils::build_string(details.kinopoisk_url.as_deref())),
+                    ("movie_image".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url.as_deref(), &details.cover_big.as_ref().map_or_else(String::new, Clone::clone), "nfo_movie_image"))),
+                    ("mpaa_rating".to_string(), InfoDocUtils::build_string(details.mpaa_rating.as_deref())),
+                    ("name".to_string(), Value::String(video.name.clone())),
+                    ("o_name".to_string(), InfoDocUtils::build_string(details.o_name.as_deref())),
+                    ("plot".to_string(), InfoDocUtils::build_string(details.plot.as_deref())),
+                    ("rating".to_string(), Value::String(InfoDocUtils::limited(video.rating.unwrap_or_default()))),
+                    ("rating_count_kinopoisk".to_string(), InfoDocUtils::build_u32(details.rating_count_kinopoisk)),
+                    ("release_date".to_string(), InfoDocUtils::build_string(details.release_date.as_deref())),
+                    ("runtime".to_string(), InfoDocUtils::build_string(details.runtime.as_deref())),
+                    ("status".to_string(), InfoDocUtils::build_string(details.status.as_deref())),
+                    ("tmdb_id".to_string(), Value::String(video.tmdb.unwrap_or_default().to_string())),
+                    ("youtube_trailer".to_string(), InfoDocUtils::build_string(details.youtube_trailer.as_deref())),
+                ])))
+            } else {
+                ("info".to_string(), Value::Object(serde_json::Map::from_iter([
+                    ("actors".to_string(), InfoDocUtils::empty_string()),
+                    ("age".to_string(), InfoDocUtils::empty_string()),
+                    ("audio".to_string(), InfoDocUtils::build_value(None)),
+                    ("video".to_string(), InfoDocUtils::build_value(None)),
+                    ("backdrop_path".to_string(), Value::Array(Vec::from_iter([
+                        Value::String(stream_icon.clone()),
+                    ]))),
+                    ("bitrate".to_string(), InfoDocUtils::build_u32(0)),
+                    ("cast".to_string(), InfoDocUtils::empty_string()),
+                    ("country".to_string(), InfoDocUtils::empty_string()),
+                    ("cover_big".to_string(), Value::String(stream_icon.clone())),
+                    ("description".to_string(), InfoDocUtils::empty_string()),
+                    ("director".to_string(), InfoDocUtils::empty_string()),
+                    ("duration".to_string(), Value::String("0".to_string())),
+                    ("duration_secs".to_string(), Value::String("0".to_string())),
+                    ("episode_run_time".to_string(), InfoDocUtils::build_u32(0)),
+                    ("genre".to_string(), InfoDocUtils::empty_string()),
+                    ("kinopoisk_url".to_string(), InfoDocUtils::empty_string()),
+                    ("movie_image".to_string(), Value::String(stream_icon.clone())),
+                    ("mpaa_rating".to_string(), InfoDocUtils::empty_string()),
+                    ("name".to_string(), Value::String(video.name.clone())),
+                    ("o_name".to_string(), Value::String(video.name.clone())),
+                    ("plot".to_string(), InfoDocUtils::empty_string()),
+                    ("rating".to_string(), Value::String(InfoDocUtils::limited(video.rating.unwrap_or_default()))),
+                    ("rating_count_kinopoisk".to_string(), InfoDocUtils::build_u32(0)),
+                    ("release_date".to_string(), InfoDocUtils::empty_string()),
+                    ("runtime".to_string(), Value::String("0".to_string())),
+                    ("status".to_string(), Value::String("Released".to_string())),
+                    ("tmdb_id".to_string(), Value::String(video.tmdb.unwrap_or_default().to_string())),
+                    ("youtube_trailer".to_string(), InfoDocUtils::empty_string()),
+                ])))
+            },
+            ("movie_data".to_string(), Value::Object(serde_json::Map::from_iter([
+                ("added".to_string(), Value::String(video.added.clone())),
+                ("category_id".to_string(), Value::String(category_id.to_string())),
+                ("category_ids".to_string(), Value::Array(Vec::from([InfoDocUtils::build_u32(category_id)]))),
+                ("container_extension".to_string(), Value::String(video.container_extension.clone())),
+                ("custom_sid".to_string(), video.custom_sid.as_ref().map_or(Value::Null, |s| Value::String(s.clone()))),
+                ("direct_source".to_string(), if options.skip_video_direct_source { InfoDocUtils::empty_string() } else { Value::String(video.direct_source.clone()) }),
+                ("name".to_string(), Value::String(video.name.clone())),
+                ("stream_id".to_string(), Value::Number(serde_json::Number::from(virtual_id))),
+            ])))
+        ]))
+    }
+
+    fn series_episodes_to_info_document(&self, options: &XtreamMappingOptions,
+                                        resource_url: Option<&str>,
+                                        episodes: &Vec<SeriesStreamDetailEpisodeProperties>) -> Value {
+        let mut map: HashMap<u32, Vec<Value>> = HashMap::new();
+        for ep in episodes {
+            let value = Value::Object(serde_json::Map::from_iter([
+                ("id".to_string(), InfoDocUtils::build_u32(ep.id)),
+                ("episode_num".to_string(), InfoDocUtils::build_u32(ep.episode_num)),
+                ("title".to_string(), Value::String(ep.title.clone())),
+                ("container_extension".to_string(), Value::String(ep.container_extension.clone())),
+                ("info".to_string(), Value::Object(serde_json::Map::from_iter([
+                    ("id".to_string(), InfoDocUtils::build_u32(ep.tmdb.unwrap_or_default())),
+                    ("air_date".to_string(), Value::String(ep.release_date.clone())),
+                    ("rating".to_string(), Value::Number(serde_json::Number::from_f64(ep.rating.unwrap_or_default()).unwrap_or_else(|| serde_json::Number::from(0)))),
+                    ("movie_image".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url, &ep.movie_image, &build_season_episode_field(ep.season, ep.episode_num, "movie_image")))),
+                    ("duration".to_string(), Value::String(ep.duration.clone())),
+                    ("duration_secs".to_string(), InfoDocUtils::build_u32(ep.duration_secs)),
+                    ("video".to_string(), InfoDocUtils::build_value(ep.video.as_deref())),
+                    ("audio".to_string(), InfoDocUtils::build_value(ep.audio.as_deref())),
+                    ("bitrate".to_string(), InfoDocUtils::build_u32(ep.bitrate)),
+                ]))),
+                ("custom_sid".to_string(), ep.custom_sid.as_ref().map_or(Value::Null, |s| Value::String(s.clone()))),
+                ("added".to_string(), Value::String(ep.added.clone())),
+                ("season".to_string(), InfoDocUtils::build_u32(ep.season)),
+                ("direct_source".to_string(), if options.skip_series_direct_source { InfoDocUtils::empty_string() } else { Value::String(ep.direct_source.clone()) }),
+            ]));
+            map.entry(ep.season).or_default().push(value);
+        }
+
+        Value::Object(
+            map.into_iter()
+                .map(|(season, episodes)| {
+                    (
+                        season.to_string(),
+                        Value::Array(episodes)
+                    )
+                })
+                .collect::<serde_json::Map<String, Value>>()
+        )
+    }
+}
+
+#[inline]
+fn build_season_episode_field(season: u32, episode: u32, field: &str) -> String {
+    format!("nfo_ep_{season}_{episode}_{field}")
+}
+
+fn parse_season_episode_field(s: &str) -> Option<(u32, u32, String)> {
+    let mut parts = s.split('_');
+
+    let (prefix, ep) = (parts.next()?, parts.next()?);
+    if prefix != "nfo" || ep != "ep" {
+        return None;
+    }
+
+    let season: u32 = parts.next()?.parse().ok()?;
+    let episode: u32 = parts.next()?.parse().ok()?;
+
+    let kind = parts.collect::<Vec<_>>().join("_");
+    if kind.is_empty() {
+        return None;
+    }
+
+    Some((season, episode, kind))
+}
+
+
+impl VideoStreamProperties {
+    pub fn from_info<P>(info: &XtreamVideoInfo, pli: &P) -> VideoStreamProperties
+    where
+        P: PlaylistEntry,
+    {
+        let mut props = VideoStreamProperties {
+            name: info.info.name.clone(),
+            category_id: info.movie_data.category_id,
+            stream_id: info.movie_data.stream_id,
+            stream_icon: info.info.movie_image.as_ref().map_or_else(String::new, Clone::clone),
+            direct_source: info.movie_data.direct_source.clone(),
+            custom_sid: info.movie_data.custom_sid.clone(),
+            added: info.movie_data.added.clone(),
+            container_extension: info.movie_data.container_extension.clone(),
+            rating: None, // from PlaylistItem
+            rating_5based: None, // from PlaylistItem
+            stream_type: None, // from PlaylistItem
+            trailer: info.info.youtube_trailer.clone(),
+            tmdb: info.info.tmdb_id.parse::<u32>().ok(),
+            is_adult: 0,  // from PlaylistItem
+            details: Some(VideoStreamDetailProperties {
+                kinopoisk_url: info.info.kinopoisk_url.clone(),
+                o_name: info.info.o_name.clone(),
+                cover_big: info.info.cover_big.clone(),
+                movie_image: info.info.movie_image.clone(),
+                release_date: info.info.releasedate.clone(),
+                episode_run_time: info.info.episode_run_time,
+                youtube_trailer: info.info.youtube_trailer.clone(),
+                director: info.info.director.clone(),
+                actors: info.info.actors.clone(),
+                cast: info.info.cast.clone(),
+                description: info.info.description.clone(),
+                plot: info.info.plot.clone(),
+                age: info.info.age.clone(),
+                mpaa_rating: info.info.mpaa_rating.clone(),
+                rating_count_kinopoisk: info.info.rating_count_kinopoisk,
+                country: info.info.country.clone(),
+                genre: info.info.genre.clone(),
+                backdrop_path: info.info.backdrop_path.clone(),
+                duration_secs: info.info.duration_secs.clone(),
+                duration: info.info.duration.clone(),
+                video: info.info.video.clone(),
+                audio: info.info.audio.clone(),
+                bitrate: info.info.bitrate,
+                runtime: info.info.runtime.clone(),
+                status: info.info.status.clone(),
+            }),
+        };
+
+        if let Some(StreamProperties::Video(video)) = pli.get_additional_properties() {
+            props.rating = video.rating;
+            props.rating_5based = video.rating_5based;
+            props.stream_type = video.stream_type.clone();
+            if props.tmdb.is_none() {
+                props.tmdb = video.tmdb;
+            }
+            if props.trailer.is_none() {
+                props.trailer = video.trailer.clone();
+            }
+            props.is_adult = video.is_adult;
+        } else {
+            props.stream_type = Some("movie".to_string());
+        }
+
+        props
+    }
+}
+
+impl SeriesStreamProperties {
+    pub fn from_info<P>(info: &XtreamSeriesInfo, pli: &P) -> SeriesStreamProperties
+    where
+        P: PlaylistEntry,
+    {
+        SeriesStreamProperties {
+            name: info.info.name.clone(),
+            category_id: info.info.category_id,
+            series_id: pli.get_virtual_id(),
+            backdrop_path: info.info.backdrop_path.clone(),
+            cast: info.info.cast.clone(),
+            cover: info.info.cover.clone(),
+            director: info.info.director.clone(),
+            episode_run_time: Some(info.info.episode_run_time.clone()),
+            genre: Some(info.info.genre.clone()),
+            last_modified: Some(info.info.last_modified.clone()),
+            plot: Some(info.info.plot.clone()),
+            rating: info.info.rating,
+            rating_5based: info.info.rating_5based,
+            release_date: Some(info.info.release_date.clone()),
+            youtube_trailer: info.info.youtube_trailer.clone(),
+            tmdb: info.info.tmdb,
+            details: Some(SeriesStreamDetailProperties {
+                year: InfoDocUtils::extract_year_from_release_date(&info.info.release_date),
+                episodes: info.episodes.as_ref().map(|list|
+                    list.iter().map(|e| {
+                        SeriesStreamDetailEpisodeProperties {
+                            id: e.id,
+                            episode_num: e.episode_num,
+                            season: e.season,
+                            title: e.title.clone(),
+                            container_extension: e.container_extension.clone(),
+                            custom_sid: e.custom_sid.clone(),
+                            added: e.added.clone(),
+                            direct_source: e.direct_source.clone(),
+                            tmdb: info.info.tmdb,
+                            release_date: e.info.as_ref().map(|i| i.air_date.clone()).unwrap_or_default(),
+                            plot: None,
+                            duration_secs: e.info.as_ref().map(|i| i.duration_secs).unwrap_or_default(),
+                            duration: e.info.as_ref().map(|i| i.duration.clone()).unwrap_or_default(),
+                            movie_image: e.info.as_ref().map(|i| i.movie_image.clone()).unwrap_or_default(),
+                            bitrate: e.info.as_ref().map(|i| i.bitrate).unwrap_or_default(),
+                            rating: e.info.as_ref().map(|i| i.rating),
+                            video: e.info.as_ref().map(|i| i.video.clone()).unwrap_or_default(),
+                            audio: e.info.as_ref().map(|i| i.audio.clone()).unwrap_or_default(),
+                        }
+                    }).collect()),
+            }),
+        }
+    }
+}
+
+impl EpisodeStreamProperties {
+    pub fn from_series(series: &SeriesStreamProperties, episode: &SeriesStreamDetailEpisodeProperties) -> EpisodeStreamProperties {
+        EpisodeStreamProperties {
+            episode_id: episode.id,
+            episode: episode.episode_num,
+            season: episode.season,
+            added: Some(episode.added.clone()),
+            release_date: Some(episode.release_date.clone()),
+            tmdb: episode.tmdb.or(series.tmdb),
+            movie_image: episode.movie_image.clone(),
+            container_extension: episode.container_extension.clone(),
+            video: episode.video.clone(),
+            audio: episode.audio.clone(),
+        }
+    }
+}
+
+fn non_empty_string(s: &str) -> Option<Cow<'_, str>> {
+    if s.is_empty() { None } else { Some(Cow::Borrowed(s)) }
+}

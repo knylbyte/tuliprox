@@ -1,6 +1,9 @@
 use crate::error::to_io_error;
+use base64::engine::general_purpose;
+use base64::Engine;
 use chrono::{NaiveDateTime, ParseError, TimeZone, Utc};
-use serde::{Deserialize, Deserializer};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serializer};
 use serde_json::Value;
 use std::io;
 
@@ -38,6 +41,7 @@ where
 
     match &value {
         Value::String(s) => Ok(s.to_string()),
+        Value::Number(s) => Ok(s.to_string()),
         Value::Null => Ok(String::new()),
         _ => Ok(value.to_string()),
     }
@@ -53,7 +57,6 @@ where
         _ => None,
     })
 }
-
 
 pub fn deserialize_number_from_string<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
@@ -159,6 +162,18 @@ where
     }
 }
 
+pub fn deserialize_number_from_string_or_zero<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: std::str::FromStr + Default,
+{
+    match deserialize_number_from_string(deserializer) {
+        Ok(Some(v)) => Ok(v),
+        Ok(None) => Ok(T::default()),
+        Err(e) => Err(e),
+    }
+}
+
 #[inline]
 pub fn bin_serialize<T>(value: &T) -> io::Result<Vec<u8>>
 where
@@ -247,4 +262,74 @@ pub fn parse_timestamp(value: &str) -> Result<Option<i64>, ParseError> {
     let dt = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")?;
     let timestamp = Utc.from_utc_datetime(&dt).timestamp();
     Ok(Some(timestamp))
+}
+
+/// Serializes an `Option<String>` as a Base64-encoded, LZ4-compressed string.
+///
+/// - We want to avoid using `serde_json::Value` in the struct to save memory.
+/// - To avoid JSON escaping issues, we store the JSON content as a string.
+/// - The string is compressed using LZ4 and encoded in Base64.
+/// - Works for any JSON content: strings, arrays, and objects.
+/// - Empty arrays or objects are serialized as `null`.
+pub fn serialize_json_as_opt_string<S>(value: &Option<String>,
+                                       serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let s = match value {
+        Some(s) => s,
+        None => return serializer.serialize_none(),
+    };
+
+    let bytes = s.as_bytes();
+    let compressed = lz4_flex::compress_prepend_size(bytes);
+    let encoded = general_purpose::STANDARD_NO_PAD.encode(compressed);
+
+    serializer.serialize_some(&encoded)
+}
+
+/// Deserializes an `Option<String>` from JSON.
+///
+/// - Accepts both compressed Base64-LZ4 strings and regular JSON strings.
+/// - Returns `None` for empty arrays, empty objects, null, numbers, or booleans.
+/// - Decompresses Base64-LZ4 content back into the original string.
+/// - Handles arrays and objects by converting them to JSON strings if not empty.
+pub fn deserialize_json_as_opt_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+
+    match opt {
+        None => Ok(None),
+        Some(Value::Array(arr)) if arr.is_empty() => Ok(None),
+        Some(Value::Object(obj)) if obj.is_empty() => Ok(None),
+        Some(Value::String(s)) => {
+            if s.is_empty() {
+                Ok(None)
+            } else {
+                let compressed = match base64::engine::general_purpose::STANDARD_NO_PAD.decode(&s) {
+                    Ok(bytes) => bytes,
+                    Err(_) => return Ok(Some(s)),
+                };
+
+                let decompressed = match lz4_flex::decompress_size_prepended(&compressed) {
+                    Ok(bytes) => bytes,
+                    Err(_) => return Ok(None),
+                };
+
+                match String::from_utf8(decompressed) {
+                    Ok(text) => Ok(Some(text)),
+                    Err(_) => Ok(None),
+                }
+            }
+        }
+        Some(Value::Null)
+        | Some(Value::Number(_))
+        | Some(Value::Bool(_)) => Ok(None),
+        Some(v) => Ok(Some(serde_json::to_string(&v).map_err(D::Error::custom)?)),
+    }
 }

@@ -100,6 +100,8 @@ impl TmdbClient {
 
     // Searches for a TV series by title and optional year
     pub async fn search_series(&self, tmdb_id: Option<u32>, title: &str, year: Option<u32>) -> Result<Option<MediaMetadata>, String> {
+        debug!("Searching TMDB for series: {title}");
+
         let key = format!("{title}-{tmdb_id:?}-{year:?}");
 
         if self.fetched_series_key.read().await.contains(&key) {

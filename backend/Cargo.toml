@@ -1,6 +1,6 @@
 [package]
 name = "tuliprox"
-version = "3.2.24"
+version = "3.2.25"
 edition = "2021"
 rust-version = "1.87.0"
 
@@ -35,7 +35,7 @@ deunicode = "1.6.2"
 mime = "0.3"
 log = "0.4"
 env_logger = "0.11"
-bincode = { version = "2.0",  features = ["std", "serde"] }
+rmp-serde = "1"
 rand = "0.9"
 fastrand = "2"
 rpassword = "7.4"
@@ -50,7 +50,6 @@ tokio = { version = "1.48", features = ["rt-multi-thread", "parking_lot", "fs"] 
 #tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tokio-util =  { version = "0.7", features = ["io", "io-util"] }
 tempfile = "3.23"
-ruzstd = "0.8"
 filetime = "0.2"
 strsim = "0.11"
 rphonetic = "3.0"
@@ -74,6 +73,8 @@ chrono-tz = "0.10.4"
 zeroize = "1.8.2"
 sysinfo = { version = "0.37.2", default-features = false, features = ["system"] }
 uuid = { version = "1", features = ["v4"] }
+fancy-regex = "0.17.0"
+mime_guess = "2"
 # [target.'cfg(not(target_env = "msvc"))'.dependencies]
 # tikv-jemallocator =  { version = "*", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 

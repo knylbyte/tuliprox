@@ -6,15 +6,15 @@ use crate::model::StreamInfo;
 pub struct StatusCheck {
     pub status: String,
     pub version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub build_time: Option<String>,
     pub server_time: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub cache: Option<String>,
     pub active_users: usize,
     pub active_user_connections: usize,
     pub active_user_streams: Vec<StreamInfo>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub active_provider_connections: Option<BTreeMap<String, usize>>,
 }
 

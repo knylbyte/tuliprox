@@ -1,14 +1,10 @@
 // Import the new MediaQuality struct
 use crate::model::MediaQuality;
-use crate::model::XtreamSeriesEpisode;
 use crate::model::{ApiProxyServerInfo, AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, StrmTargetOutput};
-use crate::repository::bplustree::BPlusTree;
-use crate::repository::storage::{ensure_target_storage_path, get_input_storage_path};
+use crate::repository::storage::{ensure_target_storage_path};
 use crate::repository::storage_const;
-use crate::repository::xtream_repository::{xtream_get_record_file_path, InputVodInfoRecord};
-use crate::utils;
-use crate::utils::{async_file_reader, async_file_writer, normalize_string_path, truncate_filename, FileReadGuard, IO_BUFFER_SIZE};
+use crate::utils::{async_file_reader, async_file_writer, normalize_string_path, truncate_filename, IO_BUFFER_SIZE};
 use chrono::Datelike;
 use filetime::{set_file_times, FileTime};
 use log::{error, trace};
@@ -16,22 +12,13 @@ use regex::Regex;
 use serde::Serialize;
 use shared::error::{create_tuliprox_error_result, info_err};
 use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::model::{ClusterFlags, FieldGetAccessor, PlaylistGroup, PlaylistItem, PlaylistItemType, StrmExportStyle, UUIDType};
+use shared::model::{ClusterFlags, PlaylistGroup, PlaylistItem, PlaylistItemType, StreamProperties, StrmExportStyle, UUIDType};
 use shared::utils::{extract_extension_from_url, hash_bytes, hash_string_as_hex, truncate_string, ExportStyleConfig, CONSTANTS};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs::{create_dir_all, remove_dir, remove_file, File};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-
-use serde::Deserialize;
-use serde_json::value::RawValue as JsonRawValue;
-
-#[derive(Deserialize)]
-struct AdditionalProps<'a> {
-    #[serde(borrow)]
-    info: Option<&'a JsonRawValue>,
-}
 
 /// Sanitizes a string to be safe for use as a file or directory name by
 /// following a strict "allow-list" approach and discarding invalid characters.
@@ -92,39 +79,6 @@ fn extract_match(name: &str, pattern: &Regex) -> (String, Option<String>) {
     )
 }
 
-/// Extracts a number from a pattern (e.g., "S01" -> 1), falling back to a default value.
-fn extract_season_or_episode_match_with_default(
-    name: &str,
-    pattern: &Regex,
-    default_value: Option<&String>,
-) -> (String, Option<u32>) {
-    let (new_name, value) = extract_match(name, pattern);
-    let new_value = match value {
-        // we skip the prefix S or E to parse the num
-        Some(num_value) => num_value[1..].parse::<u32>().ok(),
-        None => default_value.and_then(|val| val.parse::<u32>().ok()),
-    };
-    (new_name, new_value)
-}
-
-// Extracts and removes an episode number (e.g., "E01") based on style patterns.
-fn style_rename_season(
-    name: &str,
-    style: &ExportStyleConfig,
-    series_season: Option<&String>,
-) -> (String, Option<u32>) {
-    extract_season_or_episode_match_with_default(name, &style.season, series_season)
-}
-
-/// Renames episode numbers in media titles according to style patterns
-fn style_rename_episode(
-    name: &str,
-    style: &ExportStyleConfig,
-    series_episode: Option<&String>,
-) -> (String, Option<u32>) {
-    extract_season_or_episode_match_with_default(name, &style.episode, series_episode)
-}
-
 /// Extracts and formats year information from media titles
 fn style_rename_year<'a>(
     name: &'a str,
@@ -168,91 +122,6 @@ fn style_rename_year<'a>(
     (std::borrow::Cow::Owned(new_name), smallest_year)
 }
 
-#[derive(Clone)]
-enum InputTmdbIndexTree {
-    Video(BPlusTree<u32, InputVodInfoRecord>),
-    Series(BPlusTree<u32, XtreamSeriesEpisode>),
-}
-
-#[derive(Clone)]
-enum InputTmdbIndexValue {
-    Video(InputVodInfoRecord),
-    Series(XtreamSeriesEpisode),
-}
-
-type InputTmdbIndexMap = HashMap<String, Option<(FileReadGuard, InputTmdbIndexTree)>>;
-async fn get_tmdb_value(
-    cfg: &AppConfig,
-    provider_id: Option<u32>,
-    input_name: &str,
-    input_indexes: &mut InputTmdbIndexMap,
-    item_type: PlaylistItemType,
-) -> Option<InputTmdbIndexValue> {
-    // the tmdb_ids are stored inside record files for xtream input.
-    // we load this record files on request for each input and item_type.
-    let pid = provider_id?;
-    match input_indexes.entry(input_name.to_string()) {
-        std::collections::hash_map::Entry::Occupied(entry) => {
-            if let Some((_, tree_value)) = entry.get() {
-                match tree_value {
-                    InputTmdbIndexTree::Video(tree) => tree
-                        .query(&pid)
-                        .map(|vod_record| InputTmdbIndexValue::Video(vod_record.clone())),
-                    InputTmdbIndexTree::Series(tree) => tree
-                        .query(&pid)
-                        .map(|episode| InputTmdbIndexValue::Series(episode.clone())),
-                }
-            } else {
-                None
-            }
-        }
-        std::collections::hash_map::Entry::Vacant(entry) => {
-            if let Ok(Some(tmdb_path)) = get_input_storage_path(input_name, &cfg.config.load().working_dir)
-                .map(|storage_path| xtream_get_record_file_path(&storage_path, item_type))
-            {
-                {
-                    let file_lock = cfg.file_locks.read_lock(&tmdb_path).await;
-                    match item_type {
-                        PlaylistItemType::Series
-                        | PlaylistItemType::LocalSeries => {
-                            if let Ok(tree) =
-                                BPlusTree::<u32, XtreamSeriesEpisode>::load(&tmdb_path)
-                            {
-                                let tmdb_id = tree.query(&pid).map(|episode| {
-                                    InputTmdbIndexValue::Series(episode.clone())
-                                });
-                                entry.insert(Some((
-                                    file_lock,
-                                    InputTmdbIndexTree::Series(tree),
-                                )));
-                                return tmdb_id;
-                            }
-                        }
-                        PlaylistItemType::Video
-                        | PlaylistItemType::LocalVideo => {
-                            if let Ok(tree) =
-                                BPlusTree::<u32, InputVodInfoRecord>::load(&tmdb_path)
-                            {
-                                let tmdb_id = tree.query(&pid).map(|vod_record| {
-                                    InputTmdbIndexValue::Video(vod_record.clone())
-                                });
-                                entry.insert(Some((
-                                    file_lock,
-                                    InputTmdbIndexTree::Video(tree),
-                                )));
-                                return tmdb_id;
-                            }
-                        }
-                        _ => {}
-                    }
-                };
-            }
-            entry.insert(None);
-            None
-        }
-    }
-}
-
 pub fn strm_get_file_paths(file_prefix: &str, target_path: &Path) -> PathBuf {
     target_path.join(PathBuf::from(format!("{file_prefix}_{}.{}", storage_const::FILE_STRM, storage_const::FILE_SUFFIX_DB)))
 }
@@ -269,8 +138,8 @@ struct StrmItemInfo {
     url: String,
     series_name: Option<String>,
     release_date: Option<String>,
-    season: Option<String>,
-    episode: Option<String>,
+    season: Option<u32>,
+    episode: Option<u32>,
     added: Option<u64>,
     tmdb_id: Option<u32>,
 }
@@ -290,35 +159,34 @@ fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
     let virtual_id = header.virtual_id;
     let input_name = header.input_name.clone();
     let url = header.url.clone();
-    let (series_name, release_date, added, season, episode, tmdb_id) = match header.item_type {
+    let (series_name, release_date, added, tmdb_id, season, episode) = match header.item_type {
         PlaylistItemType::Series
         | PlaylistItemType::LocalSeries => {
-            let series_name = match header.get_field("name") {
-                Some(name) if !name.is_empty() => Some(name.to_string()),
-                _ => header.get_additional_property_as_str("series_name"),
+            let series_name = Some(header.name.clone());
+            let (release_date, added, tmdb_id, season, episode) = match header.additional_properties.as_ref() {
+                None => (None, None, None, None, None),
+                Some(props) => (
+                    props.get_release_date(),
+                    props.get_added(),
+                    props.get_tmdb_id().filter(|&id| id != 0),
+                    props.get_season(),
+                    props.get_episode(),
+                )
             };
-            let release_date = header
-                .get_additional_property_as_str("series_release_date")
-                .or_else(|| header.get_additional_property_as_str("release_date"));
-            let season = header.get_additional_property_as_str("season");
-            let episode = header.get_additional_property_as_str("episode");
-            let added = header.get_additional_property_as_u64("added");
-            let tmdb_id = header
-                .get_additional_property_as_u32("tmdb_id")
-                .filter(|&id| id != 0)
-                .or_else(|| header.get_additional_property_as_u32("tmdb"));
-            (series_name, release_date, added, season, episode, tmdb_id)
+            (series_name, release_date, added, tmdb_id, season, episode)
         }
         PlaylistItemType::Video
         | PlaylistItemType::LocalVideo => {
-            let name = header.get_field("name").map(|v| v.to_string());
-            let release_date = header.get_additional_property_as_str("release_date");
-            let added = header.get_additional_property_as_u64("added");
-            let tmdb_id = header
-                .get_additional_property_as_u32("tmdb_id")
-                .filter(|&id| id != 0)
-                .or_else(|| header.get_additional_property_as_u32("tmdb"));
-            (name, release_date, added, None, None, tmdb_id)
+            let name = Some(header.name.clone());
+            let (release_date, added, tmdb_id) = match header.additional_properties.as_ref() {
+                None => (None, None, None),
+                Some(props) => (
+                    props.get_release_date(),
+                    props.get_added(),
+                    props.get_tmdb_id().filter(|&id| id != 0),
+                )
+            };
+            (name, release_date, added, tmdb_id, None, None)
         }
         _ => (None, None, None, None, None, None),
     };
@@ -331,10 +199,10 @@ fn extract_item_info(pli: &mut PlaylistItem) -> StrmItemInfo {
         input_name,
         url,
         series_name,
-        release_date,
+        release_date: release_date.as_deref().map(ToString::to_string),
         season,
         episode,
-        added,
+        added: added.as_ref().map_or_else(|| Some(0), |a| a.parse::<u64>().ok()),
         tmdb_id,
     }
 }
@@ -478,10 +346,8 @@ fn format_for_kodi(
 
             let series_folder_name = format!("{sanitized_series_name}{year_string}{id_string}");
 
-            let (_, season) = style_rename_season(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.season.as_ref());
-            let (_, episode) = style_rename_episode(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.episode.as_ref());
-            let season_num = season.unwrap_or(1);
-            let episode_num = episode.unwrap_or(1);
+            let season_num=strm_item_info.season.unwrap_or(1u32);
+            let episode_num = strm_item_info.episode.unwrap_or(1u32);
 
             let final_filename = format!("{sanitized_series_name}{separator}S{season_num:02}E{episode_num:02}");
             let season_folder = format!("Season{separator}{season_num:02}");
@@ -542,10 +408,8 @@ fn format_for_plex(
 
             let series_folder_name = format!("{sanitized_series_name}{year_string}{id_string}");
 
-            let (_, season) = style_rename_season(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.season.as_ref());
-            let (_, episode) = style_rename_episode(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.episode.as_ref());
-            let season_num = season.unwrap_or(1);
-            let episode_num = episode.unwrap_or(1);
+            let season_num = strm_item_info.season.unwrap_or(1);
+            let episode_num = strm_item_info.episode.unwrap_or(1);
 
             // Plex standard: lowercase 's' and hyphens as separators.
             let final_filename = format!("{sanitized_series_name} - s{season_num:02}e{episode_num:02}");
@@ -609,10 +473,8 @@ fn format_for_emby(
 
             let series_folder_name = format!("{sanitized_series_name}{year_string}{id_string}");
 
-            let (_, season) = style_rename_season(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.season.as_ref());
-            let (_, episode) = style_rename_episode(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.episode.as_ref());
-            let season_num = season.unwrap_or(1);
-            let episode_num = episode.unwrap_or(1);
+            let season_num = strm_item_info.season.unwrap_or(1);
+            let episode_num = strm_item_info.episode.unwrap_or(1);
 
             // Emby/Jellyfin standard: uppercase 'S' and hyphens.
             let final_filename = format!("{sanitized_series_name} - S{season_num:02}E{episode_num:02}");
@@ -674,10 +536,8 @@ fn format_for_jellyfin(
 
             let series_folder_name = format!("{sanitized_series_name}{year_string}{id_string}");
 
-            let (_, season) = style_rename_season(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.season.as_ref());
-            let (_, episode) = style_rename_episode(&strm_item_info.title, &CONSTANTS.export_style_config, strm_item_info.episode.as_ref());
-            let season_num = season.unwrap_or(1);
-            let episode_num = episode.unwrap_or(1);
+            let season_num = strm_item_info.season.unwrap_or(1);
+            let episode_num = strm_item_info.episode.unwrap_or(1);
 
             // Emby/Jellyfin standard: uppercase 'S' and hyphens.
             let final_filename = format!("{sanitized_series_name} - S{season_num:02}E{episode_num:02}");
@@ -699,29 +559,17 @@ fn format_for_jellyfin(
 
 /// Generates style-compliant directory and file names by dispatching
 /// the call to a dedicated formatting function for the respective style.
-async fn style_based_rename(
-    cfg: &AppConfig,
+fn style_based_rename(
     strm_item_info: &StrmItemInfo,
-    input_tmdb_indexes: &mut InputTmdbIndexMap,
-    style: &StrmExportStyle,
+    tmdb: Option<u32>,
+    style: StrmExportStyle,
     underscore_whitespace: bool,
     flat: bool,
 ) -> (PathBuf, String) {
     let separator = if underscore_whitespace { "_" } else { " " };
 
-    let tmdb_id_val = get_tmdb_value(
-        cfg,
-        strm_item_info.provider_id,
-        strm_item_info.input_name.as_str(),
-        input_tmdb_indexes,
-        strm_item_info.item_type,
-    ).await;
 
-    let tmdb_id = match tmdb_id_val {
-        Some(InputTmdbIndexValue::Video(r)) if r.tmdb_id != 0 => r.tmdb_id,
-        Some(InputTmdbIndexValue::Series(e)) if e.tmdb_id != 0 => e.tmdb_id,
-        _ => strm_item_info.tmdb_id.unwrap_or(0),
-    };
+    let tmdb_id = tmdb.or(strm_item_info.tmdb_id).unwrap_or(0);
 
     // Dispatch the call to the responsible function based on the style.
     match style {
@@ -732,8 +580,8 @@ async fn style_based_rename(
     }
 }
 
-async fn prepare_strm_files(
-    cfg: &AppConfig,
+fn prepare_strm_files(
+    _app_config: &AppConfig,
     new_playlist: &mut [PlaylistGroup],
     _root_path: &Path,
     strm_target_output: &StrmTargetOutput,
@@ -746,7 +594,6 @@ async fn prepare_strm_files(
     let mut all_filenames = HashSet::with_capacity(channel_count);
     // contains only collision filenames
     let mut collisions: HashSet<Arc<String>> = HashSet::new();
-    let mut input_tmdb_indexes: InputTmdbIndexMap = HashMap::with_capacity(channel_count);
     let mut result = Vec::with_capacity(channel_count);
 
     // first we create the names to identify name collisions
@@ -755,38 +602,16 @@ async fn prepare_strm_files(
             let strm_item_info = extract_item_info(pli);
 
             let (dir_path, strm_file_name) = style_based_rename(
-                cfg,
                 &strm_item_info,
-                &mut input_tmdb_indexes,
-                &strm_target_output.style,
+                pli.get_tmdb_id(),
+                strm_target_output.style,
                 strm_target_output.underscore_whitespace,
                 strm_target_output.flat,
-            ).await;
+            );
 
             // Conditionally generate the quality string based on the new config flag
             let separator = if strm_target_output.underscore_whitespace { "_" } else { " " };
-            let quality_string = if strm_target_output.add_quality_to_filename {
-                pli.header.additional_properties
-                    .as_ref()
-                    .and_then(|raw| {
-                        let props: AdditionalProps<'_> = serde_json::from_str(raw.get()).ok()?;
-                        let info = props.info?;
-                        serde_json::from_str::<serde_json::Value>(info.get()).ok()
-                    })
-                    .as_ref()
-                    .and_then(MediaQuality::from_ffprobe_info)
-                    .map_or_else(String::new, |quality| {
-                        let formatted = quality.format_for_filename(separator);
-                        if formatted.is_empty() {
-                            String::new()
-                        } else {
-                            // Hard-coded separator for filename clarity.
-                            format!(" - [{formatted}]")
-                        }
-                    })
-            } else {
-                String::new()
-            };
+            let quality_string = get_quality(strm_target_output, pli, separator);
 
             let final_filename = format!("{strm_file_name}{quality_string}");
             let filename = Arc::new(final_filename);
@@ -839,6 +664,32 @@ async fn prepare_strm_files(
     result
 }
 
+fn get_quality(strm_target_output: &StrmTargetOutput, pli: &PlaylistItem, separator: &str) -> String {
+    if strm_target_output.add_quality_to_filename {
+        let (audio, video) = match pli.header.additional_properties.as_ref() {
+            None => (None, None),
+            Some(props) => {
+                match props {
+                    StreamProperties::Live(_)
+                    | StreamProperties::Series(_) => (None, None),
+                    StreamProperties::Video(video) =>
+                        video.details.as_ref().map_or_else(|| (None, None), |d| (d.audio.as_deref(), d.video.as_deref())),
+                    StreamProperties::Episode(episode) =>
+                        (episode.audio.as_deref(), episode.video.as_deref())
+                }
+            }
+        };
+        if let Some(media_quality) = MediaQuality::from_ffprobe_info(audio, video) {
+            let formatted = media_quality.format_for_filename(separator);
+            if !formatted.is_empty() {
+                // Hard-coded separator for filename clarity.
+                return format!(" - [{formatted}]")
+            }
+        }
+    }
+    String::new()
+}
+
 pub async fn write_strm_playlist(
     app_config: &AppConfig,
     target: &ConfigTarget,
@@ -850,7 +701,7 @@ pub async fn write_strm_playlist(
     }
 
     let config = app_config.config.load();
-    let Some(root_path) = utils::get_file_path(
+    let Some(root_path) = crate::utils::get_file_path(
         &config.working_dir,
         Some(std::path::PathBuf::from(&target_output.directory)),
     ) else {
@@ -860,7 +711,7 @@ pub async fn write_strm_playlist(
         )));
     };
 
-    let user_and_server_info = get_credentials_and_server_info(app_config, target_output.username.as_ref());
+    let user_and_server_info = get_credentials_and_server_info(app_config, target_output.username.as_deref());
     let normalized_dir = normalize_string_path(&target_output.directory);
     let strm_file_prefix = hash_string_as_hex(&normalized_dir);
     let strm_index_path =
@@ -886,7 +737,7 @@ pub async fn write_strm_playlist(
         new_playlist,
         &root_path,
         target_output,
-    ).await;
+    );
     for strm_file in strm_files {
         // file paths
         let output_path = truncate_filename(&root_path.join(&strm_file.dir_path), 255);
@@ -1044,7 +895,7 @@ async fn has_strm_file_same_hash(file_path: &PathBuf, content_hash: UUIDType) ->
 
 fn get_credentials_and_server_info(
     cfg: &AppConfig,
-    username: Option<&String>,
+    username: Option<&str>,
 ) -> Option<(ProxyUserCredentials, ApiProxyServerInfo)> {
     let username = username?;
     let credentials = cfg.get_user_credentials(username)?;

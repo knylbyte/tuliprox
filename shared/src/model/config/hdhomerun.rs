@@ -1,6 +1,6 @@
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::utils::{default_as_true, generate_hdhr_device_id, generate_hdhr_device_id_from_base, hash_string, hex_encode, validate_hdhr_device_id};
+use crate::utils::{default_as_true, generate_hdhr_device_id, generate_hdhr_device_id_from_base, hash_string, validate_hdhr_device_id};
 use log::warn;
 use std::collections::HashSet;
 
@@ -82,12 +82,7 @@ impl HdHomeRunDeviceConfigDto {
         if self.device_udn == default_device_udn() || self.device_udn.is_empty() {
             let hash = hash_string(&self.name);
             // Format the hash into a valid UUID string
-            let p1 = hex_encode(&hash[0..4]);
-            let p2 = hex_encode(&hash[4..6]);
-            let p3 = hex_encode(&hash[6..8]);
-            let p4 = hex_encode(&hash[8..10]);
-            let p5 = hex_encode(&hash[10..16]);
-            self.device_udn = format!("{p1}-{p2}-{p3}-{p4}-{p5}");
+            self.device_udn = hash.to_valid_uuid();
             if include_computed {
                 warn!("HDHomeRun device '{}' is missing a unique device_udn. A new one has been generated: {}", self.name, self.device_udn);
             }

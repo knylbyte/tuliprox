@@ -81,7 +81,7 @@ async fn create_shared_data(
                 Arc::new(ArcSwapOption::from(Some(Arc::new(db))))
             }
             Err(err) => {
-                error!("Failed to load GeoIp db: {err}");
+                info!("No GeoIp db found: {err}");
                 Arc::new(ArcSwapOption::from(None))
             }
         }

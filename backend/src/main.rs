@@ -14,7 +14,7 @@ use crate::model::{
     AppConfig, Config, Healthcheck, HealthcheckConfig, ProcessTargets, SourcesConfig,
 };
 use crate::processing::processor::playlist;
-use crate::utils::init_logger;
+use crate::utils::{db_viewer, init_logger};
 use crate::utils::request::create_client;
 use crate::utils::{config_file_reader, resolve_env_var};
 use crate::library::LibraryProcessor;
@@ -32,7 +32,7 @@ use std::sync::Arc;
 #[command(name = "tuliprox")]
 #[command(author = "euzu <euzu@proton.me>")]
 #[command(version)]
-#[command(about = "Extended M3U playlist filter", long_about = None)]
+#[command(about = "Extended playlist proxy", long_about = None)]
 struct Args {
     /// The config directory
     #[arg(short = 'p', long = "config-path")]
@@ -85,6 +85,13 @@ struct Args {
     /// Force rescan of all local Library files
     #[arg(long = "force-library-rescan", default_value_t = false, default_missing_value = "true")]
     force_library_rescan: bool,
+
+    #[arg(long = "dbx")]
+    db_xtream_file_name: Option<String>,
+
+    #[arg(long = "dbm")]
+    db_m3u_file_name: Option<String>,
+
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -102,6 +109,8 @@ const BUILD_TIMESTAMP: &str = env!("VERGEN_BUILD_TIMESTAMP");
 async fn main() {
     let args = Args::parse();
 
+    db_viewer(args.db_xtream_file_name.as_deref(), args.db_m3u_file_name.as_deref());
+
     if args.genpwd {
         match generate_password() {
             Ok(pwd) => println!("{pwd}"),
@@ -113,7 +122,7 @@ async fn main() {
     let mut config_paths = get_file_paths(&args);
 
     init_logger(
-        args.log_level.as_ref(),
+        args.log_level.as_deref(),
         config_paths.config_file_path.as_str(),
     );
 

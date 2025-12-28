@@ -34,42 +34,42 @@ pub struct VideoClipMetadata {
 pub struct MovieMetadata {
     pub title: String,
     // Original title (if different from title)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub original_title: Option<String>,
     // Release year
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub year: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub plot: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tagline: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub runtime: Option<u32>,
     // MPAA rating (e.g., "PG-13", "R")
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub mpaa: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub imdb_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tmdb_id: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tvdb_id: Option<u32>,
     // Rating (0.0 - 10.0)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub rating: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub genres: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub directors: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub writers: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub actors: Option<Vec<Actor>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub studios: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub poster: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub fanart: Option<String>,
     pub source: MetadataSource,
     pub last_updated: i64,
@@ -81,72 +81,82 @@ pub struct MovieMetadata {
 pub struct SeriesMetadata {
     pub title: String,
     // Original title (if different)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub original_title: Option<String>,
     // First aired year
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub year: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub plot: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub mpaa: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub imdb_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tmdb_id: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tvdb_id: Option<u32>,
     // Rating (0.0 - 10.0)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub rating: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub genres: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub directors: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub writers: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub actors: Option<Vec<Actor>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub studios: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub poster: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub fanart: Option<String>,
     // Status (e.g., "Continuing", "Ended")
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub status: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub seasons: Option<Vec<SeasonMetadata>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub episodes: Option<Vec<EpisodeMetadata>>,
+    #[serde(default)]
     pub source: MetadataSource,
+    #[serde(default)]
     pub number_of_episodes: u32,
+    #[serde(default)]
     pub number_of_seasons: u32,
     // Last updated timestamp (Unix epoch)
+    #[serde(default)]
     pub last_updated: i64,
+    #[serde(default)]
     pub videos: Option<Vec<VideoClipMetadata>>
 }
 
 // Episode metadata for TV series
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpisodeMetadata {
+    #[serde(default)]
     pub id: u32,
+    #[serde(default)]
     pub tmdb_id: u32,
+    #[serde(default)]
     pub title: String,
+    #[serde(default)]
     pub season: u32,
+    #[serde(default)]
     pub episode: u32,
     // Aired date (ISO 8601 format)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub aired: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub plot: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub runtime: Option<u32>,
     // Rating (0.0 - 10.0)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub rating: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub thumb: Option<String>,
     pub file_path: String,
     pub file_size: u64,
@@ -177,9 +187,9 @@ pub struct SeasonMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Actor {
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub role: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub thumb: Option<String>,
 }
 
@@ -224,8 +234,8 @@ impl MediaMetadata {
 
     pub fn poster(&self) -> Option<&str> {
         match self {
-            MediaMetadata::Movie(m) => m.poster.as_deref(),
-            MediaMetadata::Series(s) => s.poster.as_deref(),
+            MediaMetadata::Movie(m) => m.poster.as_deref().or(m.fanart.as_deref()),
+            MediaMetadata::Series(s) => s.poster.as_deref().or(s.fanart.as_deref()),
         }
     }
 

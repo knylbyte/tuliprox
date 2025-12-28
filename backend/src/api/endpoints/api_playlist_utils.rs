@@ -85,7 +85,7 @@ fn group_playlist_groups_by_cluster(playlist: Vec<PlaylistGroup>) -> (Vec<Playli
     let mut series = Vec::new();
     for group in playlist {
         let channels = group.channels.iter()
-            .map(shared::model::PlaylistItem::to_common)
+            .map(CommonPlaylistItem::from)
             .collect();
         let grp = PlaylistResponseGroup {
             id: group.id,
@@ -115,7 +115,7 @@ async fn grouped_channels(
         ))
 }
 
-pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Option<&ConfigTarget>, cfg: &AppConfig, accept: Option<&String>) -> impl axum::response::IntoResponse + Send {
+pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Option<&ConfigTarget>, cfg: &AppConfig, accept: Option<&str>) -> impl axum::response::IntoResponse + Send {
     if let Some(target) = cfg_target {
         if target.has_output(TargetType::Xtream) {
             let live_channels = grouped_channels(cfg, target, XtreamCluster::Live).await;
@@ -144,13 +144,13 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
     (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid Arguments"}))).into_response()
 }
 
-pub(in crate::api::endpoints) async fn get_playlist(client: &reqwest::Client, cfg_input: Option<&Arc<ConfigInput>>, cfg: &Arc<Config>, accept: Option<&String>) -> impl IntoResponse + Send {
+pub(in crate::api::endpoints) async fn get_playlist(client: &reqwest::Client, cfg_input: Option<&Arc<ConfigInput>>, cfg: &Arc<Config>, accept: Option<&str>) -> impl IntoResponse + Send {
     match cfg_input {
         Some(input) => {
             let (result, errors) =
                 match input.input_type {
-                    InputType::M3u | InputType::M3uBatch => m3u::get_m3u_playlist(client, cfg, input).await,
-                    InputType::Xtream | InputType::XtreamBatch => xtream::get_xtream_playlist(cfg, client, input).await,
+                    InputType::M3u | InputType::M3uBatch => m3u::download_m3u_playlist(client, cfg, input).await,
+                    InputType::Xtream | InputType::XtreamBatch => xtream::download_xtream_playlist(cfg, client, input).await,
                     InputType::Library => {
                         return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({ "error": "Library inputs are not supported on this endpoint"}))).into_response();
                     }

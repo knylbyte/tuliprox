@@ -18,7 +18,7 @@ impl<T: AsRef<str>> Capitalize for T {
     }
 }
 
-pub fn get_trimmed_string(value: &Option<String>) -> Option<String> {
+pub fn get_trimmed_string(value: Option<&str>) -> Option<String> {
     if let Some(v) = value {
         let trimmed = v.trim();
         if !trimmed.is_empty() {
@@ -58,8 +58,8 @@ pub fn get_non_empty_str<'a>(first: &'a str, second: &'a str, third: &'a str) ->
     }
 }
 
-pub fn is_blank_optional_string(s: &Option<String>) -> bool {
-    s.is_none() || s.as_ref().is_some_and(|s| s.trim().is_empty())
+pub fn is_blank_optional_string(s: Option<&str>) -> bool {
+    s.is_none() || s.is_some_and(|s| s.trim().is_empty())
 }
 
 pub fn trim_slash(s: &str) -> Cow<'_, str> {

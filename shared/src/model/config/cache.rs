@@ -10,15 +10,15 @@ use path_clean::PathClean;
 pub struct CacheConfigDto {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub size: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub dir: Option<String>,
 }
 
 impl CacheConfigDto {
     pub fn is_empty(&self) -> bool {
-        !self.enabled && is_blank_optional_string(&self.size) && is_blank_optional_string(&self.dir)
+        !self.enabled && is_blank_optional_string(self.size.as_deref()) && is_blank_optional_string(self.dir.as_deref())
     }
 
     pub(crate) fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {

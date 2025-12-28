@@ -5,7 +5,7 @@ use shared::model::{MsgKind, PlaylistGroup};
 use crate::messaging::{send_message};
 use crate::model::Config;
 use crate::utils;
-use crate::utils::{bincode_deserialize, bincode_serialize};
+use crate::utils::{binary_deserialize, binary_serialize};
 
 pub async fn process_group_watch(client: &reqwest::Client, cfg: &Config, target_name: &str, pl: &PlaylistGroup) {
     let mut new_tree = BTreeSet::new();
@@ -20,7 +20,7 @@ pub async fn process_group_watch(client: &reqwest::Client, cfg: &Config, target_
         Some(path) => {
             let save_path = path.as_path();
             let mut changed = false;
-            if path.exists() {
+            if let Ok(true) = tokio::fs::try_exists(&path).await {
                 if let Some(loaded_tree) = load_watch_tree(&path).await {
                     // Find elements in set2 but not in set1
                     let added_difference: BTreeSet<String> = new_tree.difference(&loaded_tree).cloned().collect();
@@ -79,11 +79,11 @@ async fn handle_watch_notification(client: &reqwest::Client, cfg: &Config, added
 
 async fn load_watch_tree(path: &Path) -> Option<BTreeSet<String>> {
      let encoded = tokio::fs::read(path).await.ok()?;
-     bincode_deserialize(&encoded[..]).ok()
+     binary_deserialize(&encoded[..]).ok()
 }
 
 async fn save_watch_tree(path: &Path, tree: &BTreeSet<String>) -> std::io::Result<()> {
-    let encoded: Vec<u8> = bincode_serialize(&tree)?;
+    let encoded: Vec<u8> = binary_serialize(&tree)?;
     tokio::fs::write(path, encoded).await
 }
 

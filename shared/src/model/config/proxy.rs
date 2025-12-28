@@ -11,16 +11,16 @@ pub struct ProxyConfigDto {
 
 impl ProxyConfigDto {
     pub fn is_empty(&self) -> bool {
-        is_blank_optional_string(&self.username)
-        && is_blank_optional_string(&self.password)
+        is_blank_optional_string(self.username.as_deref())
+        && is_blank_optional_string(self.password.as_deref())
         && self.url.trim().is_empty()
     }
 
     pub fn clean(&mut self) {
-        if is_blank_optional_string(&self.username) {
+        if is_blank_optional_string(self.username.as_deref()) {
             self.username = None;
         }
-        if is_blank_optional_string(&self.password) {
+        if is_blank_optional_string(self.password.as_deref()) {
             self.password = None;
         }
     }

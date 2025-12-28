@@ -283,6 +283,9 @@ impl ConfigTarget {
     }
 
     pub fn is_force_redirect(&self, item_type: PlaylistItemType) -> bool {
+        if item_type.is_local() {
+            return false;
+        }
         self.options
             .as_ref()
             .and_then(|options| options.force_redirect.as_ref())

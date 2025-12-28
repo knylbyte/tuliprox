@@ -351,9 +351,25 @@ pub fn cleanup_unlisted_files_with_suffix(
         for entry in (fs::read_dir(dir)?).flatten() {
             let path = entry.path();
 
-            if path.is_file() && !keep_set.contains(&path) && path.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|name| name.ends_with(suffix)) && fs::remove_file(&path).is_ok() {
+            if !path.is_file() || keep_set.contains(&path) {
+                continue;
+            }
+
+            let delete = {
+                let zero_size = entry
+                    .metadata()
+                    .map(|m| m.len() == 0)
+                    .unwrap_or(false);
+
+                let suffix_match = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|name| name.ends_with(suffix));
+
+                zero_size || suffix_match
+            };
+
+            if delete && fs::remove_file(&path).is_ok() {
                 debug!("Deleted {:?}", path.display());
             }
         }
