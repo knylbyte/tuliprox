@@ -125,6 +125,6 @@ pub fn parse_uuid_hex(s: &str) -> Option<[u8; 16]> {
         return None;
     }
 
-    let decoded = hex::decode(&buf).ok()?;
+    let decoded = hex::decode(buf).ok()?;
     decoded.try_into().ok()
 }

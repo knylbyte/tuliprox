@@ -20,7 +20,7 @@ pub fn db_viewer(xtream_filename: Option<&str>, m3u_filename: Option<&str>) {
     if let Some(filename) = m3u_filename {
         any_processed |= dump_db(filename, DbType::M3u);
     }
-    exit_app(if any_processed { 0 } else { 1 });
+    exit_app(i32::from(!any_processed));
 }
 
 fn dump_db(filename: &str, db_type: DbType) -> bool {
@@ -51,7 +51,7 @@ fn dump_db(filename: &str, db_type: DbType) -> bool {
         }
     }
 
-    return false;
+    false
 }
 
 fn print_json_from_iter<P>(iterator: BPlusTreeDiskIterator<u32, P>) -> bool
@@ -79,7 +79,7 @@ where
     }
     println!("]");
 
-    if error_count > 0 { false } else { true }
+    error_count <= 0
 }
 
 fn exit_app(code: i32) {
