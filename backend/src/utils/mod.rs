@@ -7,15 +7,17 @@ mod step_measure;
 mod logging;
 mod trakt;
 mod json_utils;
-mod bincode_utils;
+mod binary_utils;
 mod telegram;
 mod geoip;
+mod db_viewer;
 
-pub use self::bincode_utils::*;
+pub use self::binary_utils::*;
 pub use self::logging::*;
 pub use self::trakt::*;
 pub use self::telegram::*;
 pub use self::geoip::*;
+pub use self::db_viewer::*;
 
 #[macro_export]
 macro_rules! debug_if_enabled {

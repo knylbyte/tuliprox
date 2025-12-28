@@ -1,8 +1,10 @@
 # Changelog
 # 3.3.0 (2025-11-xx)
+- !BREAKING CHANGE! Due to some heavy refactoring, the old data format is invalid. You need to clean your data folder and update the playlists
 - !BREAKING CHANGE! config.yml threads attribute is now renamed to process_parallel and is a boolean (true or false).
 - !BREAKING CHANGE! config.yml adds a reverse proxy config field rewrite_secret to keep resource URLs valid after restart.
 - !BREAKING CHANGE! removed `forced_retry_interval_secs`.
+- !BREAKING CHANGE! `name` attribute is mandatory for input type batch. The name attribute is used for playlist `uuid` and needs to be stable. The first alias is renamed with the input `name` attribute.
 - Avoid blocking the runtime when warming the cache.
 - Normalize FileLockManager paths so aliases share the same lock.
 - Use async file operations for playlist persistence to avoid blocking the async runtime.
@@ -52,6 +54,9 @@
 - Made cache storage more robust. Incomplete downloads will be deleted from cache.
 - `kick_secs` added to config.yml `web_ui` config. Default 90 seconds, if a user is kicked from the `web_ui`, they can't connect for this duration.
   This setting is also used for sleep-timed streams.
+- Added new db-viewer options to print db content. 
+  `tuliprox --dbx /opt/tuliprox/data/all_channels/xtream/video.db`
+  `tuliprox --dbm /opt/tuliprox/data/all_channels/m3u.db`
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.

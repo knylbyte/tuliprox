@@ -6,33 +6,33 @@ use regex::Regex;
 #[serde(deny_unknown_fields)]
 pub struct IpCheckConfigDto {
     /// URL that may return both IPv4 and IPv6 in one response
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub url: Option<String>,
 
     /// Dedicated URL to fetch only IPv4
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub url_ipv4: Option<String>,
 
     /// Dedicated URL to fetch only IPv6
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub url_ipv6: Option<String>,
 
     /// Optional regex pattern to extract IPv4
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub pattern_ipv4: Option<String>,
 
     /// Optional regex pattern to extract IPv6
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub pattern_ipv6: Option<String>,
 }
 
 impl IpCheckConfigDto {
     pub fn is_empty(&self) -> bool {
-        is_blank_optional_string(&self.url)
-            && is_blank_optional_string(&self.url_ipv4)
-            && is_blank_optional_string(&self.url_ipv6)
-            && is_blank_optional_string(&self.pattern_ipv4)
-            && is_blank_optional_string(&self.pattern_ipv6)
+        is_blank_optional_string(self.url.as_deref())
+            && is_blank_optional_string(self.url_ipv4.as_deref())
+            && is_blank_optional_string(self.url_ipv6.as_deref())
+            && is_blank_optional_string(self.pattern_ipv4.as_deref())
+            && is_blank_optional_string(self.pattern_ipv6.as_deref())
     }
 
     pub fn clean(&mut self) {

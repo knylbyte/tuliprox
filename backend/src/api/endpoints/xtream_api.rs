@@ -1,5 +1,4 @@
 // https://github.com/tellytv/go.xtream-codes/blob/master/structs.go
-
 use crate::api::api_utils;
 use crate::api::api_utils::{create_session_fingerprint, local_stream_response, try_unwrap_body};
 use crate::api::api_utils::{
@@ -15,7 +14,7 @@ use crate::api::model::UserApiRequest;
 use crate::api::model::XtreamAuthorizationResponse;
 use crate::api::model::{create_custom_video_stream_response, CustomVideoStreamType};
 use crate::auth::Fingerprint;
-use crate::model::{AppConfig, ConfigTarget};
+use crate::model::{xtream_mapping_option_from_target_options, ConfigTarget};
 use crate::model::{Config, ConfigInput};
 use crate::model::{InputSource, ProxyUserCredentials};
 use crate::repository::playlist_repository::get_target_id_mapping;
@@ -33,15 +32,15 @@ use futures::Stream;
 use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use shared::error::create_tuliprox_error_result;
 use shared::error::info_err;
+use shared::error::create_tuliprox_error_result;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
-use shared::model::{create_stream_channel_with_type, get_backdrop_path_value, FieldGetAccessor, PlaylistEntry, PlaylistItemType, ProxyType, TargetType, UserConnectionPermission, XtreamCluster, XtreamPlaylistItem};
+use shared::model::{create_stream_channel_with_type, PlaylistEntry, PlaylistItemType, ProxyType,
+                    TargetType, UserConnectionPermission, XtreamCluster};
 use shared::utils::{
-    extract_extension_from_url, generate_playlist_uuid, get_u32_from_serde_value, hex_encode,
-    sanitize_sensitive_info, trim_slash, HLS_EXT,
+    extract_extension_from_url, generate_playlist_uuid, sanitize_sensitive_info,
+    trim_slash, HLS_EXT,
 };
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::path::Path;
@@ -67,12 +66,12 @@ impl ApiStreamContext {
 impl Display for ApiStreamContext {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}",
-            match self {
-                Self::Live | Self::LiveAlt => Self::LIVE,
-                Self::Movie => Self::MOVIE,
-                Self::Series => Self::SERIES,
-                Self::Timeshift => Self::TIMESHIFT,
-            }
+               match self {
+                   Self::Live | Self::LiveAlt => Self::LIVE,
+                   Self::Movie => Self::MOVIE,
+                   Self::Series => Self::SERIES,
+                   Self::Timeshift => Self::TIMESHIFT,
+               }
         )
     }
 }
@@ -247,7 +246,7 @@ async fn xtream_player_api_stream(
 
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
     let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
-    let (pli, mapping) = try_result_not_found!(
+    let pli = try_result_not_found!(
         xtream_repository::xtream_get_item_for_stream_id(req_virtual_id, app_state, &target, None).await,
         true,
         format!("Failed to read xtream item for stream id {req_virtual_id}")
@@ -347,7 +346,7 @@ async fn xtream_player_api_stream(
 
     let redirect_params = RedirectParams {
         item: &pli,
-        provider_id: Some(mapping.provider_id),
+        provider_id: pli.get_provider_id(),
         cluster,
         target_type: TargetType::Xtream,
         target: &target,
@@ -436,7 +435,7 @@ async fn xtream_player_api_stream_with_token(
         }
         let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
         let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
-        let (pli, _mapping) = try_result_bad_request!(
+        let pli = try_result_bad_request!(
             xtream_repository::xtream_get_item_for_stream_id(
                 req_virtual_id,
                 app_state,
@@ -565,163 +564,6 @@ async fn xtream_player_api_stream_with_token(
     }
 }
 
-fn get_doc_id_and_field_name(input: &str) -> Option<(u32, &str)> {
-    if let Some(pos) = input.find('_') {
-        let (number_part, rest) = input.split_at(pos);
-        let field = &rest[1..]; // cut _
-        if let Ok(number) = number_part.parse::<u32>() {
-            return Some((number, field));
-        }
-    }
-    None
-}
-
-fn get_doc_resource_field_value<'a>(
-    field: &'a str,
-    doc: Option<&'a Value>,
-) -> Option<Cow<'a, str>> {
-    if let Some(Value::Object(info_data)) = doc {
-        if field.starts_with(crate::model::XC_PROP_BACKDROP_PATH) {
-            return get_backdrop_path_value(
-                field,
-                info_data.get(crate::model::XC_PROP_BACKDROP_PATH),
-            );
-        } else if let Some(Value::String(url)) = info_data.get(field) {
-            return Some(Cow::Borrowed(url));
-        }
-    }
-    None
-}
-
-async fn xtream_get_info_resource_url<'a>(
-    config: &'a AppConfig,
-    pli: &'a XtreamPlaylistItem,
-    target: &'a ConfigTarget,
-    resource: &'a str,
-) -> Result<Option<Cow<'a, str>>, serde_json::Error> {
-    let info_content = match pli.xtream_cluster {
-        XtreamCluster::Video => xtream_repository::xtream_load_vod_info(
-            config,
-            target.name.as_str(),
-            pli.get_virtual_id(),
-        ).await,
-        XtreamCluster::Series => xtream_repository::xtream_load_series_info(
-            config,
-            target.name.as_str(),
-            pli.get_virtual_id(),
-        ).await,
-        XtreamCluster::Live => None,
-    };
-    if let Some(content) = info_content {
-        let doc: Map<String, Value> = serde_json::from_str(&content)?;
-        let (field, possible_episode_id) = if let Some(field_name_with_episode_id) =
-            resource.strip_prefix(crate::model::XC_INFO_RESOURCE_PREFIX_EPISODE)
-        {
-            if let Some((episode_id, field_name)) =
-                get_doc_id_and_field_name(field_name_with_episode_id)
-            {
-                (field_name, Some(episode_id))
-            } else {
-                return Ok(None);
-            }
-        } else {
-            (
-                &resource[crate::model::XC_INFO_RESOURCE_PREFIX.len()..],
-                None,
-            )
-        };
-        let info_doc = match pli.xtream_cluster {
-            XtreamCluster::Video | XtreamCluster::Series => {
-                if let Some(episode_id) = possible_episode_id {
-                    get_episode_info_doc(&doc, episode_id)
-                } else {
-                    doc.get(crate::model::XC_TAG_INFO_DATA)
-                }
-            }
-            XtreamCluster::Live => None,
-        };
-
-        if let Some(value) = get_doc_resource_field_value(field, info_doc) {
-            return Ok(Some(Cow::Owned(value.into_owned())));
-        }
-    }
-    Ok(None)
-}
-
-fn get_episode_info_doc(doc: &Map<String, Value>, episode_id: u32) -> Option<&Value> {
-    let episodes = doc.get(crate::model::XC_TAG_EPISODES)?.as_object()?;
-    for season_episodes in episodes.values() {
-        if let Value::Array(episode_list) = season_episodes {
-            for episode in episode_list {
-                if let Value::Object(episode_doc) = episode {
-                    if let Some(episode_id_value) = episode_doc.get(crate::model::XC_TAG_ID) {
-                        if let Some(doc_episode_id) = get_u32_from_serde_value(episode_id_value) {
-                            if doc_episode_id == episode_id {
-                                return episode_doc.get(crate::model::XC_TAG_INFO_DATA);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn get_season_info_doc(doc: &Vec<Value>, season_id: u32) -> Option<&Value> {
-    for season in doc {
-        if let Value::Object(season_doc) = season {
-            if let Some(season_id_value) = season_doc.get(crate::model::XC_TAG_ID) {
-                if let Some(doc_season_id) = get_u32_from_serde_value(season_id_value) {
-                    if doc_season_id == season_id {
-                        return Some(season);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-async fn xtream_get_season_resource_url<'a>(
-    config: &'a AppConfig,
-    pli: &'a XtreamPlaylistItem,
-    target: &'a ConfigTarget,
-    resource: &'a str,
-) -> Result<Option<Cow<'a, str>>, serde_json::Error> {
-    let info_content = match pli.xtream_cluster {
-        XtreamCluster::Series => xtream_repository::xtream_load_series_info(
-            config,
-            target.name.as_str(),
-            pli.get_virtual_id(),
-        ).await,
-        XtreamCluster::Video | XtreamCluster::Live => None,
-    };
-    if let Some(content) = info_content {
-        let doc: Map<String, Value> = serde_json::from_str(&content)?;
-
-        if let Some(field_name_with_season_id) =
-            resource.strip_prefix(crate::model::XC_SEASON_RESOURCE_PREFIX)
-        {
-            if let Some((season_id, field)) = get_doc_id_and_field_name(field_name_with_season_id) {
-                let seasons_doc = match pli.xtream_cluster {
-                    XtreamCluster::Series => doc.get(crate::model::XC_TAG_SEASONS_DATA),
-                    XtreamCluster::Video | XtreamCluster::Live => None,
-                };
-
-                if let Some(Value::Array(seasons)) = seasons_doc {
-                    if let Some(value) =
-                        get_doc_resource_field_value(field, get_season_info_doc(seasons, season_id))
-                    {
-                        return Ok(Some(Cow::Owned(value.into_owned())));
-                    }
-                }
-            }
-        }
-    }
-    Ok(None)
-}
-
 async fn xtream_player_api_resource(
     req_headers: &HeaderMap,
     api_req: &UserApiRequest,
@@ -751,7 +593,7 @@ async fn xtream_player_api_resource(
     }
     let req_virtual_id: u32 = try_result_bad_request!(resource_req.stream_id.trim().parse());
     let resource = resource_req.action_path.trim();
-    let (pli, _) = try_result_bad_request!(
+    let pli = try_result_bad_request!(
         xtream_repository::xtream_get_item_for_stream_id(
             req_virtual_id,
             app_state,
@@ -761,23 +603,8 @@ async fn xtream_player_api_resource(
         true,
         format!("Failed to read xtream item for stream id {req_virtual_id}")
     );
-    let stream_url = if resource.starts_with(crate::model::XC_INFO_RESOURCE_PREFIX) {
-        try_result_bad_request!(xtream_get_info_resource_url(
-            &app_state.app_config,
-            &pli,
-            &target,
-            resource
-        ).await)
-    } else if resource.starts_with(crate::model::XC_SEASON_RESOURCE_PREFIX) {
-        try_result_bad_request!(xtream_get_season_resource_url(
-            &app_state.app_config,
-            &pli,
-            &target,
-            resource
-        ).await)
-    } else {
-        pli.get_field(resource)
-    };
+
+    let stream_url = pli.resolve_resource_url(resource);
 
     match stream_url {
         None => axum::http::StatusCode::NOT_FOUND.into_response(),
@@ -790,9 +617,7 @@ async fn xtream_player_api_resource(
                 redirect(&url).into_response()
             } else {
                 trace_if_enabled!("Resource request to {}", sanitize_sensitive_info(&url));
-                resource_response(app_state, &url, req_headers, None)
-                    .await
-                    .into_response()
+                resource_response(app_state, &url, req_headers, None).await.into_response()
             }
         }
     }
@@ -977,6 +802,16 @@ async fn xtream_player_api_timeshift_query_stream(
         .into_response()
 }
 
+fn empty_json_response() -> axum::http::Result<axum::response::Response> {
+    axum::response::Response::builder()
+        .status(axum::http::StatusCode::OK)
+        .header(
+            axum::http::header::CONTENT_TYPE,
+            mime::APPLICATION_JSON.to_string(),
+        )
+        .body(axum::body::Body::from("{}".as_bytes()))
+}
+
 async fn xtream_get_stream_info_response(
     app_state: &Arc<AppState>,
     user: &ProxyUserCredentials,
@@ -989,31 +824,26 @@ async fn xtream_get_stream_info_response(
         Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
     };
 
-    if let Ok((pli, virtual_record)) = xtream_repository::xtream_get_item_for_stream_id(
+    if let Ok(pli) = xtream_repository::xtream_get_item_for_stream_id(
         virtual_id,
         app_state,
         target,
         Some(cluster),
     ).await {
         if pli.item_type.is_local() {
-            if let Some(additional_properties) = pli.additional_properties.as_ref() {
-                let bytes = additional_properties.as_bytes().to_vec();
-                return try_unwrap_body!(axum::response::Response::builder()
-                .status(axum::http::StatusCode::OK)
-                .header(
-                    axum::http::header::CONTENT_TYPE,
-                    mime::APPLICATION_JSON.as_ref()
-                )
-                .body(axum::body::Body::from(bytes)));
-            }
+            let Ok(xtream_output) = target.get_xtream_output().ok_or_else(|| info_err!(format!("Unexpected: xtream output required for target {}", target.name))) else {
+                return try_unwrap_body!(empty_json_response());
+            };
+
+            let server_info = app_state.app_config.get_user_server_info(user);
+            let options = xtream_mapping_option_from_target_options(target, xtream_output, &app_state.app_config, user, Some(server_info.get_base_url().as_str()));
+            return axum::Json(pli.to_info_document(&options)).into_response();
         }
 
         if pli.provider_id > 0 {
             let input_name = &pli.input_name;
             if let Some(input) = app_state.app_config.get_input_by_name(input_name.as_str()) {
-                if let Some(info_url) =
-                    xtream::get_xtream_player_api_info_url(&input, cluster, pli.provider_id)
-                {
+                if let Some(info_url) = xtream::get_xtream_player_api_info_url(&input, cluster, pli.provider_id) {
                     // Redirect is only possible for live streams, vod and series info needs to be modified
                     if user.proxy == ProxyType::Redirect && cluster == XtreamCluster::Live {
                         return redirect(&info_url).into_response();
@@ -1026,8 +856,7 @@ async fn xtream_get_stream_info_response(
                         &pli,
                         info_url.as_str(),
                         cluster,
-                    )
-                        .await
+                    ).await
                     {
                         return try_unwrap_body!(axum::response::Response::builder()
                             .status(axum::http::StatusCode::OK)
@@ -1044,7 +873,7 @@ async fn xtream_get_stream_info_response(
         return match cluster {
             XtreamCluster::Video => {
                 let content =
-                    create_vod_info_from_item(target, user, &pli, virtual_record.last_updated);
+                    create_vod_info_from_item(target, user, &pli);
                 try_unwrap_body!(axum::response::Response::builder()
                     .status(axum::http::StatusCode::OK)
                     .header(
@@ -1064,13 +893,7 @@ async fn xtream_get_stream_info_response(
             }
         };
     }
-    try_unwrap_body!(axum::response::Response::builder()
-        .status(axum::http::StatusCode::OK)
-        .header(
-            axum::http::header::CONTENT_TYPE,
-            mime::APPLICATION_JSON.to_string()
-        )
-        .body(axum::body::Body::from("{}".as_bytes())))
+    try_unwrap_body!(empty_json_response())
 }
 
 async fn xtream_get_short_epg(
@@ -1087,7 +910,7 @@ async fn xtream_get_short_epg(
             Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
         };
 
-        if let Ok((pli, _)) = xtream_repository::xtream_get_item_for_stream_id(
+        if let Ok(pli) = xtream_repository::xtream_get_item_for_stream_id(
             virtual_id,
             app_state,
             target,
@@ -1236,7 +1059,7 @@ async fn xtream_player_api_handle_content_action(
                 );
             }
             return Some(
-                serve_file(&file_path, mime::APPLICATION_JSON)
+                serve_file(&file_path, mime::APPLICATION_JSON.to_string())
                     .await
                     .into_response(),
             );
@@ -1258,7 +1081,7 @@ async fn xtream_get_catchup_response(
     end: &str,
 ) -> impl IntoResponse + Send {
     let req_virtual_id: u32 = try_result_bad_request!(FromStr::from_str(stream_id));
-    let (pli, _) = try_result_bad_request!(xtream_repository::xtream_get_item_for_stream_id(
+    let pli = try_result_bad_request!(xtream_repository::xtream_get_item_for_stream_id(
         req_virtual_id,
         app_state,
         target,
@@ -1302,10 +1125,10 @@ async fn xtream_get_catchup_response(
             .and_then(|id| id.parse::<u32>().ok())
         {
             let uuid = generate_playlist_uuid(
-                &hex_encode(&pli.get_uuid()),
+                &pli.get_uuid().to_string(),
                 &catchup_provider_id.to_string(),
                 pli.item_type,
-                &pli.url,
+                &pli.input_name,
             );
             let virtual_id = target_id_mapping.get_and_update_virtual_id(
                 &uuid,

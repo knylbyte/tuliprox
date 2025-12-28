@@ -1,5 +1,4 @@
 use crate::repository::bplustree::BPlusTree;
-use serde::{Deserialize, Serialize};
 use std::io;
 use std::io::BufRead;
 use std::net::Ipv4Addr;
@@ -9,7 +8,6 @@ fn ipv4_to_u32(ip: &str) -> Option<u32> {
     ip.parse::<Ipv4Addr>().ok().map(u32::from)
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct GeoIp {
     tree: BPlusTree<u32, (u32, String)>,
 }

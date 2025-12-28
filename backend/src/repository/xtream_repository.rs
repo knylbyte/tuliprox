@@ -1,33 +1,31 @@
 use crate::api::model::AppState;
-use crate::model::normalize_release_date;
-use crate::model::{rewrite_doc_urls, PlaylistXtreamCategory, XtreamMappingOptions, XtreamSeriesEpisode};
+use crate::model::PlaylistXtreamCategory;
 use crate::model::{AppConfig, ProxyUserCredentials};
-use crate::model::{Config, ConfigInput, ConfigTarget, XtreamTargetOutput};
+use crate::model::{Config, ConfigTarget};
 use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery, BPlusTreeUpdate};
-use crate::repository::indexed_document::{IndexedDocumentDirectAccess, IndexedDocumentGarbageCollector, IndexedDocumentIterator, IndexedDocumentWriter};
-use crate::repository::playlist_repository::get_target_id_mapping;
-use crate::repository::storage::{get_input_storage_path, get_target_id_mapping_file, get_target_storage_path};
+use crate::repository::playlist_scratch::PlaylistScratch;
+use crate::repository::storage::{get_target_id_mapping_file, get_target_storage_path};
 use crate::repository::storage_const;
 use crate::repository::target_id_mapping::VirtualIdRecord;
 use crate::repository::xtream_playlist_iterator::XtreamPlaylistJsonIterator;
-use crate::utils::{async_file_reader, async_open_readonly_file, file_reader};
+use crate::utils::file_reader;
 use crate::utils::json_write_documents_to_file;
-use crate::utils::{bincode_deserialize, FileReadGuard};
+use crate::utils::FileReadGuard;
 use bytes::Bytes;
 use futures::{stream, Stream, StreamExt};
+use indexmap::IndexMap;
 use log::error;
 use serde::Serialize;
-use serde_json::{json, Map, Value};
-use shared::error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, to_io_error, TuliproxError, TuliproxErrorKind};
-use shared::model::{PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
-use shared::utils::{generate_playlist_uuid, get_u32_from_serde_value, hex_encode};
+use serde_json::{json, Value};
+use shared::error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::model::xtream_const::XTREAM_CLUSTER;
+use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemType, SeriesStreamProperties, StreamProperties, VideoStreamProperties, XtreamCluster, XtreamPlaylistItem};
+use shared::utils::get_u32_from_serde_value;
 use std::collections::HashMap;
-use std::fs;
 use std::fs::File;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::task;
 
 macro_rules! cant_write_result {
@@ -41,26 +39,26 @@ macro_rules! cant_write_result {
     };
 }
 
-macro_rules! try_option_ok {
-    ($option:expr) => {
-        match $option {
-            Some(value) => value,
-            None => return Ok(()),
-        }
-    };
-}
-
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-pub struct InputVodInfoRecord {
-    pub(crate) tmdb_id: u32,
-    pub(crate) ts: u64,
-    pub(crate) release_date: Option<String>,
-}
-
+#[inline]
 fn get_collection_path(path: &Path, collection: &str) -> PathBuf {
     path.join(format!("{collection}.json"))
 }
+
+#[inline]
+fn get_live_cat_collection_path(path: &Path) -> PathBuf {
+    get_collection_path(path, storage_const::COL_CAT_LIVE)
+}
+
+#[inline]
+fn get_vod_cat_collection_path(path: &Path) -> PathBuf {
+    get_collection_path(path, storage_const::COL_CAT_VOD)
+}
+
+#[inline]
+fn get_series_cat_collection_path(path: &Path) -> PathBuf {
+    get_collection_path(path, storage_const::COL_CAT_SERIES)
+}
+
 
 fn ensure_xtream_storage_path(cfg: &Config, target_name: &str) -> Result<PathBuf, TuliproxError> {
     if let Some(path) = xtream_get_storage_path(cfg, target_name) {
@@ -78,59 +76,102 @@ fn ensure_xtream_storage_path(cfg: &Config, target_name: &str) -> Result<PathBuf
     }
 }
 
-pub fn xtream_get_info_file_paths(
-    storage_path: &Path,
-    cluster: XtreamCluster,
-) -> Option<(PathBuf, PathBuf)> {
-    if cluster == XtreamCluster::Series {
-        let xtream_path = storage_path.join(format!("{}.{}", storage_const::FILE_SERIES_INFO, storage_const::FILE_SUFFIX_DB));
-        let index_path = storage_path.join(format!("{}.{}", storage_const::FILE_SERIES_INFO, storage_const::FILE_SUFFIX_INDEX));
-        return Some((xtream_path, index_path));
-    } else if cluster == XtreamCluster::Video {
-        let xtream_path = storage_path.join(format!("{}.{}", storage_const::FILE_VOD_INFO, storage_const::FILE_SUFFIX_DB));
-        let index_path = storage_path.join(format!("{}.{}", storage_const::FILE_VOD_INFO, storage_const::FILE_SUFFIX_INDEX));
-        return Some((xtream_path, index_path));
-    }
-    None
+#[derive(Debug, Copy, Clone)]
+enum StorageKey {
+    VirtualId,
+    ProviderId,
 }
 
-pub fn xtream_get_record_file_path(storage_path: &Path, item_type: PlaylistItemType) -> Option<PathBuf> {
-    match item_type {
-        PlaylistItemType::Video
-        | PlaylistItemType::LocalVideo => Some(storage_path.join(format!("{}.{}", storage_const::FILE_VOD_INFO_RECORD, storage_const::FILE_SUFFIX_DB))),
-        PlaylistItemType::SeriesInfo
-        | PlaylistItemType::LocalSeriesInfo => Some(storage_path.join(format!("{}.{}", storage_const::FILE_SERIES_INFO_RECORD, storage_const::FILE_SUFFIX_DB))),
-        PlaylistItemType::Series
-        | PlaylistItemType::LocalSeries => Some(storage_path.join(format!("{}.{}", storage_const::FILE_SERIES_EPISODE_RECORD, storage_const::FILE_SUFFIX_DB))),
-        _ => None,
-    }
-}
 async fn write_playlists_to_file(
-    cfg: &AppConfig,
+    app_config: &Arc<AppConfig>,
     storage_path: &Path,
-    collections: Vec<(XtreamCluster, &[&mut PlaylistItem])>,
+    storage_key: StorageKey,
+    collections: Vec<(XtreamCluster, Vec<XtreamPlaylistItem>)>,
 ) -> Result<(), TuliproxError> {
     for (cluster, playlist) in collections {
         if playlist.is_empty() {
             continue;
         }
-        let (xtream_path, idx_path) = xtream_get_file_paths(storage_path, cluster);
+        let xtream_path = xtream_get_file_path(storage_path, cluster);
         {
-            let _file_lock = cfg.file_locks.write_lock(&xtream_path).await;
-            match IndexedDocumentWriter::new(xtream_path.clone(), idx_path) {
-                Ok(mut writer) => {
-                    for item in playlist {
-                        let xtream = item.to_xtream();
-                        match writer.write_doc(item.header.virtual_id, &xtream) {
-                            Ok(()) => {}
-                            Err(err) => return Err(cant_write_result!(&xtream_path, err)),
-                        }
-                    }
-                    writer.store().map_err(|err| cant_write_result!(&xtream_path, err))?;
-                }
-                Err(err) => return Err(cant_write_result!(&xtream_path, err)),
+            let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
+            let mut tree = BPlusTree::new();
+            for item in playlist {
+                tree.insert(match storage_key {
+                    StorageKey::VirtualId => item.virtual_id,
+                    StorageKey::ProviderId => item.provider_id,
+                }, item);
             }
+            tree.store(&xtream_path).map_err(|err| cant_write_result!(&xtream_path, err))?;
         }
+    }
+    Ok(())
+}
+//
+// async fn write_playlists_to_file_2(
+//     app_config: &Arc<AppConfig>,
+//     storage_path: &Path,
+//     cluster: XtreamCluster,
+//     playlist: Vec<XtreamPlaylistItem>,
+// ) -> Result<(), TuliproxError> {
+//     if !playlist.is_empty() {
+//         let xtream_path = xtream_get_file_path(storage_path, cluster);
+//         let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
+//         let mut tree = BPlusTree::new();
+//         for item in playlist {
+//             tree.insert(item.virtual_id, item);
+//         }
+//         tree.store(&xtream_path).map_err(|err| cant_write_result!(&xtream_path, err))?;
+//     }
+//     Ok(())
+// }
+
+pub async fn write_playlist_item_update(
+    app_config: &Arc<AppConfig>,
+    target_name: &str,
+    pli: &XtreamPlaylistItem,
+) -> Result<(), TuliproxError> {
+    let storage_path = {
+        let config = app_config.config.load();
+        ensure_xtream_storage_path(&config, target_name)?
+    };
+    let xtream_path = xtream_get_file_path(&storage_path, pli.xtream_cluster);
+    {
+        let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
+        let mut tree = if xtream_path.exists() {
+            BPlusTreeUpdate::try_new(&xtream_path).map_err(|err| cant_write_result!(&xtream_path, err))?
+        } else {
+            // This case should rarely happen as the file is usually pre-created, but for safety:
+            return Err(cant_write_result!(&xtream_path, "BPlusTree file not found for append"));
+        };
+
+        tree.update(&pli.virtual_id, pli.clone()).map_err(|err| cant_write_result!(&xtream_path, err))?;
+    }
+    Ok(())
+}
+
+pub async fn write_playlist_batch_item_upsert(
+    app_config: &Arc<AppConfig>,
+    target_name: &str,
+    xtream_cluster: XtreamCluster,
+    pli_list: &[XtreamPlaylistItem],
+) -> Result<(), TuliproxError> {
+    let storage_path = {
+        let config = app_config.config.load();
+        ensure_xtream_storage_path(&config, target_name)?
+    };
+    let xtream_path = xtream_get_file_path(&storage_path, xtream_cluster);
+    {
+        let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
+        let mut tree = if xtream_path.exists() {
+            BPlusTreeUpdate::try_new(&xtream_path).map_err(|err| cant_write_result!(&xtream_path, err))?
+        } else {
+            // This case should rarely happen as the file is usually pre-created, but for safety:
+            return Err(cant_write_result!(&xtream_path, "BPlusTree file not found for append"));
+        };
+
+        let batch: Vec<(&u32, &XtreamPlaylistItem)> = pli_list.iter().map(|pli| (&pli.virtual_id, pli)).collect();
+        tree.upsert_batch(&batch).map_err(|err| cant_write_result!(&xtream_path, err))?;
     }
     Ok(())
 }
@@ -186,35 +227,12 @@ pub fn xtream_get_epg_file_path(path: &Path) -> PathBuf {
     path.join(storage_const::FILE_EPG)
 }
 
-fn xtream_get_file_paths_for_name(storage_path: &Path, name: &str) -> (PathBuf, PathBuf) {
-    let xtream_path = storage_path.join(format!("{name}.{}", storage_const::FILE_SUFFIX_DB));
-    let index_path = storage_path.join(format!("{name}.{}", storage_const::FILE_SUFFIX_INDEX));
-    (xtream_path, index_path)
+fn xtream_get_file_path_for_name(storage_path: &Path, name: &str) -> PathBuf {
+    storage_path.join(format!("{name}.{}", storage_const::FILE_SUFFIX_DB))
 }
 
-pub fn xtream_get_file_paths(storage_path: &Path, cluster: XtreamCluster) -> (PathBuf, PathBuf) {
-    xtream_get_file_paths_for_name(storage_path, &cluster.as_str().to_lowercase())
-}
-
-// pub fn xtream_get_file_paths_for_series(storage_path: &Path) -> (PathBuf, PathBuf) {
-//     xtream_get_file_paths_for_name(storage_path, storage_const::FILE_SERIES)
-// }
-
-async fn xtream_garbage_collect(config: &AppConfig, target_name: &str) -> std::io::Result<()> {
-    // Garbage collect series
-    let storage_path = {
-        let cfg = config.config.load();
-        try_option_ok!(xtream_get_storage_path(&cfg, target_name))
-    };
-    let (info_path, idx_path) = try_option_ok!(xtream_get_info_file_paths(
-        &storage_path,
-        XtreamCluster::Series
-    ));
-    {
-        let _file_lock = config.file_locks.write_lock(&info_path).await;
-        IndexedDocumentGarbageCollector::<u32>::new(info_path.clone(), idx_path)?.garbage_collect()?;
-    }
-    Ok(())
+pub fn xtream_get_file_path(storage_path: &Path, cluster: XtreamCluster) -> PathBuf {
+    xtream_get_file_path_for_name(storage_path, &cluster.as_str().to_lowercase())
 }
 
 #[derive(Serialize)]
@@ -225,12 +243,12 @@ struct CategoryEntry {
 }
 
 pub async fn xtream_write_playlist(
-    cfg: &AppConfig,
+    app_cfg: &Arc<AppConfig>,
     target: &ConfigTarget,
     playlist: &mut [PlaylistGroup],
 ) -> Result<(), TuliproxError> {
     let path = {
-        let config = cfg.config.load();
+        let config = app_cfg.config.load();
         ensure_xtream_storage_path(&config, target.name.as_str())?
     };
     let mut errors = Vec::new();
@@ -238,8 +256,8 @@ pub async fn xtream_write_playlist(
     let mut cat_series_col = Vec::with_capacity(1_000);
     let mut cat_vod_col = Vec::with_capacity(1_000);
     let mut live_col = Vec::with_capacity(50_000);
-    let mut series_col = Vec::with_capacity(10_000);
-    let mut vod_col = Vec::with_capacity(10_000);
+    let mut series_col = Vec::with_capacity(50_000);
+    let mut vod_col = Vec::with_capacity(50_000);
 
     // preserve category_ids
     let (max_cat_id, existing_cat_ids) = load_old_category_ids(&path).await;
@@ -277,43 +295,38 @@ pub async fn xtream_write_playlist(
     }
 
     let root_path = path.clone();
+    let app_config = app_cfg.clone();
     let write_errors = task::spawn_blocking(move || {
         let mut write_errors = vec![];
         for (col_path, data) in [
-            (get_collection_path(&root_path, storage_const::COL_CAT_LIVE), &cat_live_col),
-            (get_collection_path(&root_path, storage_const::COL_CAT_VOD), &cat_vod_col),
-            (get_collection_path(&root_path, storage_const::COL_CAT_SERIES), &cat_series_col),
+            (get_live_cat_collection_path(&root_path), &cat_live_col),
+            (get_vod_cat_collection_path(&root_path), &cat_vod_col),
+            (get_series_cat_collection_path(&root_path), &cat_series_col),
         ] {
+            let lock = app_config.file_locks.write_lock(&col_path);
             match json_write_documents_to_file(&col_path, data) {
                 Ok(()) => {}
                 Err(err) => {
                     write_errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
                 }
             }
+            drop(lock);
         }
         write_errors
     }).await.map_err(|e| notify_err!(format!("Task panicked: {}", e)))?;
     errors.extend(write_errors);
 
-    match write_playlists_to_file(
-        cfg,
+    if let Err(err) = write_playlists_to_file(
+        app_cfg,
         &path,
+        StorageKey::VirtualId,
         vec![
-            (XtreamCluster::Live, &live_col),
-            (XtreamCluster::Video, &vod_col),
-            (XtreamCluster::Series, &series_col),
+            (XtreamCluster::Live, live_col.iter().map(|item| XtreamPlaylistItem::from(&**item)).collect::<Vec<XtreamPlaylistItem>>()),
+            (XtreamCluster::Video, vod_col.iter().map(|item| XtreamPlaylistItem::from(&**item)).collect::<Vec<XtreamPlaylistItem>>()),
+            (XtreamCluster::Series, series_col.iter().map(|item| XtreamPlaylistItem::from(&**item)).collect::<Vec<XtreamPlaylistItem>>()),
         ],
     ).await {
-        Ok(()) => {
-            if let Err(err) = xtream_garbage_collect(cfg, &target.name).await {
-                if err.kind() != ErrorKind::NotFound {
-                    errors.push(format!("Garbage collection failed:{err}"));
-                }
-            }
-        }
-        Err(err) => {
-            errors.push(format!("Persisting collection failed:{err}"));
-        }
+        errors.push(format!("Persisting collection failed:{err}"));
     }
 
     if !errors.is_empty() {
@@ -347,10 +360,11 @@ async fn xtream_read_item_for_stream_id(
     storage_path: &Path,
     cluster: XtreamCluster,
 ) -> Result<XtreamPlaylistItem, Error> {
-    let (xtream_path, idx_path) = xtream_get_file_paths(storage_path, cluster);
+    let xtream_path = xtream_get_file_path(storage_path, cluster);
     {
         let _file_lock = cfg.file_locks.read_lock(&xtream_path).await;
-        IndexedDocumentDirectAccess::read_indexed_item::<u32, XtreamPlaylistItem>(&xtream_path, &idx_path, &stream_id)
+        let mut query = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path)?;
+        query.query(&stream_id).ok_or_else(|| Error::new(ErrorKind::NotFound, format!("Item {stream_id} not found in {cluster}")))
     }
 }
 
@@ -359,10 +373,11 @@ async fn xtream_read_series_item_for_stream_id(
     stream_id: u32,
     storage_path: &Path,
 ) -> Result<XtreamPlaylistItem, Error> {
-    let (xtream_path, idx_path) = xtream_get_file_paths(storage_path, XtreamCluster::Series);
+    let xtream_path = xtream_get_file_path(storage_path, XtreamCluster::Series);
     {
         let _file_lock = cfg.file_locks.read_lock(&xtream_path).await;
-        IndexedDocumentDirectAccess::read_indexed_item::<u32, XtreamPlaylistItem>(&xtream_path, &idx_path, &stream_id)
+        let mut query = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path)?;
+        query.query(&stream_id).ok_or_else(|| Error::new(ErrorKind::NotFound, format!("Item {stream_id} not found in series")))
     }
 }
 
@@ -450,11 +465,11 @@ pub async fn xtream_get_item_for_stream_id(
     app_state: &Arc<AppState>,
     target: &ConfigTarget,
     xtream_cluster: Option<XtreamCluster>,
-) -> Result<(XtreamPlaylistItem, VirtualIdRecord), Error> {
+) -> Result<XtreamPlaylistItem, Error> {
     if target.use_memory_cache {
-        if let Ok(Some((playlist_item, virtual_record))) =
+        if let Ok(Some((playlist_item, _virtual_record))) =
             xtream_get_item_for_stream_id_from_memory(virtual_id, app_state, target, xtream_cluster).await {
-            return Ok((playlist_item, virtual_record));
+            return Ok(playlist_item);
         }
         // fall through to disk lookup on cache miss
     }
@@ -464,42 +479,46 @@ pub async fn xtream_get_item_for_stream_id(
     let target_path = get_target_storage_path(&config, target.name.as_str()).ok_or_else(|| str_to_io_error(&format!("Could not find path for target {}", &target.name)))?;
     let storage_path = xtream_get_storage_path(&config, target.name.as_str()).ok_or_else(|| str_to_io_error(&format!("Could not find path for target {} xtream output", &target.name)))?;
     {
-        let target_id_mapping_file = get_target_id_mapping_file(&target_path);
-        let _file_lock = app_config.file_locks.read_lock(&target_id_mapping_file).await;
+        let result = if let Some(cluster) = xtream_cluster {
+            xtream_read_item_for_stream_id(app_config, virtual_id, &storage_path, cluster).await
+        } else {
+            let target_id_mapping_file = get_target_id_mapping_file(&target_path);
+            let _file_lock = app_config.file_locks.read_lock(&target_id_mapping_file).await;
 
-        let mut target_id_mapping = BPlusTreeQuery::<u32, VirtualIdRecord>::try_new(&target_id_mapping_file).map_err(|err| str_to_io_error(&format!("Could not load id mapping for target {} err:{err}", target.name)))?;
-        let mapping = target_id_mapping.query(&virtual_id).ok_or_else(|| str_to_io_error(&format!("Could not find mapping for target {} and id {}", target.name, virtual_id)))?;
-        let result = match mapping.item_type {
-            PlaylistItemType::SeriesInfo
-            | PlaylistItemType::LocalSeriesInfo => {
-                xtream_read_series_item_for_stream_id(app_config, virtual_id, &storage_path).await
-            }
-            PlaylistItemType::Series
-            | PlaylistItemType::LocalSeries => {
-                if let Ok(mut item) = xtream_read_series_item_for_stream_id(app_config, mapping.parent_virtual_id, &storage_path).await {
+            let mut target_id_mapping = BPlusTreeQuery::<u32, VirtualIdRecord>::try_new(&target_id_mapping_file).map_err(|err| str_to_io_error(&format!("Could not load id mapping for target {} err:{err}", target.name)))?;
+            let mapping = target_id_mapping.query(&virtual_id).ok_or_else(|| str_to_io_error(&format!("Could not find mapping for target {} and id {}", target.name, virtual_id)))?;
+            match mapping.item_type {
+                PlaylistItemType::SeriesInfo
+                | PlaylistItemType::LocalSeriesInfo => {
+                    xtream_read_series_item_for_stream_id(app_config, virtual_id, &storage_path).await
+                }
+                PlaylistItemType::Series
+                | PlaylistItemType::LocalSeries => {
+                    if let Ok(mut item) = xtream_read_series_item_for_stream_id(app_config, mapping.parent_virtual_id, &storage_path).await {
+                        item.provider_id = mapping.provider_id;
+                        item.item_type = PlaylistItemType::Series;
+                        item.virtual_id = mapping.virtual_id;
+                        Ok(item)
+                    } else {
+                        xtream_read_item_for_stream_id(app_config, virtual_id, &storage_path, XtreamCluster::Series).await
+                    }
+                }
+                PlaylistItemType::Catchup => {
+                    let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
+                    let mut item = xtream_read_item_for_stream_id(app_config, mapping.parent_virtual_id, &storage_path, cluster).await?;
                     item.provider_id = mapping.provider_id;
-                    item.item_type = PlaylistItemType::Series;
+                    item.item_type = PlaylistItemType::Catchup;
                     item.virtual_id = mapping.virtual_id;
                     Ok(item)
-                } else {
-                    xtream_read_item_for_stream_id(app_config, virtual_id, &storage_path, XtreamCluster::Series).await
                 }
-            }
-            PlaylistItemType::Catchup => {
-                let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
-                let mut item = xtream_read_item_for_stream_id(app_config, mapping.parent_virtual_id, &storage_path, cluster).await?;
-                item.provider_id = mapping.provider_id;
-                item.item_type = PlaylistItemType::Catchup;
-                item.virtual_id = mapping.virtual_id;
-                Ok(item)
-            }
-            _ => {
-                let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
-                xtream_read_item_for_stream_id(app_config, virtual_id, &storage_path, cluster).await
+                _ => {
+                    let cluster = try_cluster!(xtream_cluster, mapping.item_type, virtual_id)?;
+                    xtream_read_item_for_stream_id(app_config, virtual_id, &storage_path, cluster).await
+                }
             }
         };
 
-        result.map(|xpli| (xpli, mapping))
+        result
     }
 }
 
@@ -513,572 +532,21 @@ pub async fn xtream_load_rewrite_playlist(
     XtreamPlaylistJsonIterator::new(cluster, config, target, category_id, user).await
 }
 
-pub async fn xtream_write_series_info(
-    app_config: &AppConfig,
-    target_name: &str,
-    series_info_id: u32,
-    content: &str,
-) -> Result<(), Error> {
-    let config = app_config.config.load();
-    let target_path = try_option_ok!(get_target_storage_path(&config, target_name));
-    let storage_path = try_option_ok!(xtream_get_storage_path(&config, target_name));
-    let (info_path, idx_path) = try_option_ok!(xtream_get_info_file_paths(
-        &storage_path,
-        XtreamCluster::Series
-    ));
-
-    {
-        let _file_lock = app_config.file_locks.write_lock(&info_path).await;
-        let mut writer = IndexedDocumentWriter::new_append(info_path.clone(), idx_path)?;
-        writer.write_doc(series_info_id, content).map_err(|_| str_to_io_error(&format!("failed to write xtream series info for target {target_name}")))?;
-        writer.store()?;
-    }
-    {
-        let target_id_mapping_file = get_target_id_mapping_file(&target_path);
-        let _file_lock = app_config.file_locks.write_lock(&target_id_mapping_file).await;
-        if let Ok(mut target_id_mapping) = BPlusTreeUpdate::<u32, VirtualIdRecord>::try_new(&target_id_mapping_file) {
-            if let Some(record) = target_id_mapping.query(&series_info_id) {
-                let new_record = record.copy_update_timestamp();
-                let _ = target_id_mapping.update(&series_info_id, new_record);
-            }
-        }
-    }
-
-    Ok(())
-}
-
-pub async fn xtream_write_vod_info(
-    app_config: &AppConfig,
-    target_name: &str,
-    virtual_id: u32,
-    content: &str,
-) -> Result<(), Error> {
-    let config = app_config.config.load();
-    let storage_path = try_option_ok!(xtream_get_storage_path(&config, target_name));
-    let (info_path, idx_path) = try_option_ok!(xtream_get_info_file_paths(&storage_path, XtreamCluster::Video));
-    {
-        let _file_lock = app_config.file_locks.write_lock(&info_path).await;
-        let mut writer = IndexedDocumentWriter::new_append(info_path.clone(), idx_path)?;
-        writer.write_doc(virtual_id, content).map_err(|_| str_to_io_error(&format!("failed to write xtream vod info for target {target_name}")))?;
-        writer.store()?;
-    }
-    Ok(())
-}
-
-async fn xtream_get_series_info_mapping(
-    config: &AppConfig,
-    target_name: &str,
-    series_id: u32,
-) -> Option<VirtualIdRecord> {
-    xtream_get_info_mapping(config, target_name, series_id).await.filter(|id_record| !id_record.is_expired())
-}
-
-async fn xtream_get_info_mapping(app_config: &AppConfig, target_name: &str, info_id: u32) -> Option<VirtualIdRecord> {
-    let config = app_config.config.load();
-    let target_path = get_target_storage_path(&config, target_name)?;
-
-    let target_id_mapping_file = get_target_id_mapping_file(&target_path);
-    let _file_lock = app_config.file_locks.read_lock(&target_id_mapping_file).await;
-    BPlusTreeQuery::<u32, VirtualIdRecord>::try_new(&target_id_mapping_file).map_err(|err| {
-        error!("Could not load id mapping for target {target_name}: {err}");
-        str_to_io_error(&format!("ID mapping load error for target {target_name}"))
-    }).ok().map(|mut tree| tree.query(&info_id))?
-}
-
-// Reads the series info entry if exists
-pub async fn xtream_load_series_info(
-    app_config: &AppConfig,
-    target_name: &str,
-    series_id: u32,
-) -> Option<String> {
-    xtream_get_series_info_mapping(app_config, target_name, series_id).await?;
-    let config = app_config.config.load();
-    let storage_path = xtream_get_storage_path(&config, target_name)?;
-
-    let (info_path, idx_path) = xtream_get_info_file_paths(&storage_path, XtreamCluster::Series)?;
-
-    if info_path.exists() && idx_path.exists() {
-        {
-            let _file_lock = app_config.file_locks.read_lock(&info_path).await;
-            return match IndexedDocumentDirectAccess::read_indexed_item::<u32, String>(&info_path, &idx_path, &series_id) {
-                Ok(content) => Some(content),
-                Err(err) => {
-                    error!("Failed to read series info for id {series_id} for {target_name}: {err}");
-                    None
-                }
-            };
-        }
-    }
-    None
-}
-async fn xtream_get_vod_info_mapping(
-    config: &AppConfig,
-    target_name: &str,
-    vod_id: u32,
-) -> Option<VirtualIdRecord> {
-    xtream_get_info_mapping(config, target_name, vod_id).await
-    //.filter(|id_record| !id_record.is_expired())
-}
-
-// Reads the vod info entry if exists
-pub async fn xtream_load_vod_info(
-    config: &AppConfig,
-    target_name: &str,
-    vod_id: u32,
-) -> Option<String> {
-
-    // Check if the entry exists; if not, we don't need to look further.
-    xtream_get_vod_info_mapping(config, target_name, vod_id).await.as_ref()?;
-    // Entry exists, read db entry
-    let target_storage_path = xtream_get_storage_path(&config.config.load(), target_name)?;
-
-    let (info_path, idx_path) = xtream_get_info_file_paths(&target_storage_path, XtreamCluster::Video)?;
-
-    if info_path.exists() && idx_path.exists() {
-        {
-            let _file_lock = config.file_locks.read_lock(&info_path).await;
-            return IndexedDocumentDirectAccess::read_indexed_item::<u32, String>(&info_path, &idx_path, &vod_id).ok();
-        }
-    }
-    None
-}
-
-fn rewrite_xtream_vod_info<P>(
-    config: &AppConfig,
-    target: &ConfigTarget,
-    xtream_output: &XtreamTargetOutput,
-    pli: &P,
-    user: &ProxyUserCredentials,
-    doc: &mut Map<String, Value>,
-) -> Result<String, Error> where
-    P: PlaylistEntry,
-{
-    // we need to update the info data.
-    if config.is_reverse_proxy_resource_rewrite_enabled() {
-        if let Some(Value::Object(info_data)) = doc.get_mut(crate::model::XC_TAG_INFO_DATA) {
-            normalize_release_date(info_data); // info data is muteable, so we do not need to clone it.
-            let item_type = pli.get_item_type();
-            if user.proxy.is_reverse(item_type) && !target.is_force_redirect(item_type) {
-                let server_info = config.get_user_server_info(user);
-                let url = server_info.get_base_url();
-                let resource_url = Some(format!("{url}/resource/movie/{}/{}/{}", user.username, user.password, pli.get_virtual_id()));
-                rewrite_doc_urls(resource_url.as_ref(), info_data, storage_const::INFO_REWRITE_FIELDS, crate::model::XC_INFO_RESOURCE_PREFIX);
-                // doc.insert(TAG_INFO_DATA, Value::Object(info_data));
-            }
-        }
-    }
-
-    // we need to update the movie data with virtual ids.
-    if let Some(Value::Object(movie_data)) = doc.get_mut(crate::model::XC_TAG_MOVIE_DATA) {
-        let stream_id = pli.get_virtual_id();
-        let category_id = pli.get_category_id().unwrap_or(0);
-        movie_data.insert(crate::model::XC_TAG_STREAM_ID.to_string(), Value::Number(serde_json::value::Number::from(stream_id)));
-        movie_data.insert(crate::model::XC_TAG_CATEGORY_ID.to_string(), Value::Number(serde_json::value::Number::from(category_id)));
-        movie_data.insert(crate::model::XC_TAG_CATEGORY_IDS.to_string(), Value::Array(vec![Value::Number(serde_json::value::Number::from(category_id))]));
-        let options = XtreamMappingOptions::from_target_options(target, xtream_output, config);
-        if options.skip_video_direct_source {
-            movie_data.insert(crate::model::XC_TAG_DIRECT_SOURCE.to_string(), Value::String(String::new()));
-        } else {
-            movie_data.insert(
-                crate::model::XC_TAG_DIRECT_SOURCE.to_string(),
-                Value::String(pli.get_provider_url().clone()),
-            );
-        }
-    }
-    let result = serde_json::to_string(&doc).map_err(|_| str_to_io_error("Failed to serialize vod info"))?;
-
-    Ok(result)
-}
-
-pub fn rewrite_xtream_vod_info_content<P>(
-    config: &AppConfig,
-    target: &ConfigTarget,
-    xtream_output: &XtreamTargetOutput,
-    pli: &P,
-    user: &ProxyUserCredentials,
-    content: &str,
-) -> Result<String, Error> where
-    P: PlaylistEntry,
-{
-    let mut doc = serde_json::from_str::<Map<String, Value>>(content).map_err(|_| str_to_io_error("Failed to parse JSON content"))?;
-    rewrite_xtream_vod_info(config, target, xtream_output, pli, user, &mut doc)
-}
-
-pub async fn write_and_get_xtream_vod_info<P>(
-    app_config: &AppConfig,
-    target: &ConfigTarget,
-    xtream_output: &XtreamTargetOutput,
-    pli: &P,
-    user: &ProxyUserCredentials,
-    content: &str,
-) -> Result<String, Error> where
-    P: PlaylistEntry,
-{
-    let mut doc = serde_json::from_str::<Map<String, Value>>(content).map_err(|_| str_to_io_error("Failed to parse JSON content"))?;
-    xtream_write_vod_info(app_config, target.name.as_str(), pli.get_virtual_id(), content).await.ok();
-    rewrite_xtream_vod_info(app_config, target, xtream_output, pli, user, &mut doc)
-}
-
-async fn rewrite_xtream_series_info<P>(
-    app_state: &Arc<AppState>,
-    target: &ConfigTarget,
-    xtream_output: &XtreamTargetOutput,
-    pli: &P,
-    user: &ProxyUserCredentials,
-    doc: &mut Map<String, Value>,
-) -> Result<String, Error> where
-    P: PlaylistEntry,
-{
-    let app_config = &app_state.app_config;
-    let config = app_config.config.load();
-    let target_path = get_target_storage_path(&config, target.name.as_str()).ok_or_else(|| str_to_io_error(&format!("Could not find path for target {}", target.name)))?;
-
-    let resource_url = if app_config.is_reverse_proxy_resource_rewrite_enabled() {
-        let item_type = pli.get_item_type();
-        if user.proxy.is_reverse(item_type) && !target.is_force_redirect(item_type) {
-            let server_info = app_config.get_user_server_info(user);
-            let url = server_info.get_base_url();
-            Some(format!("{url}/resource/series/{}/{}/{}", user.username, user.password, pli.get_virtual_id()))
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    if resource_url.is_some() {
-        // we need to update the info data.
-        if let Some(Value::Object(info_data)) = doc.get_mut(crate::model::XC_TAG_INFO_DATA) {
-            rewrite_doc_urls(resource_url.as_ref(), info_data, storage_const::INFO_REWRITE_FIELDS, crate::model::XC_INFO_RESOURCE_PREFIX);
-        }
-        if let Some(Value::Array(seasons_data)) = doc.get_mut(crate::model::XC_TAG_SEASONS_DATA) {
-            for season_value in seasons_data {
-                if let Value::Object(season_doc) = season_value {
-                    if let Some(season_provider_id) = season_doc.get(crate::model::XC_TAG_ID).and_then(get_u32_from_serde_value) {
-                        let field_prefix = format!("{}{season_provider_id}_", crate::model::XC_SEASON_RESOURCE_PREFIX);
-                        rewrite_doc_urls(resource_url.as_ref(), season_doc, storage_const::INFO_REWRITE_FIELDS, &field_prefix);
-                    }
-                }
-            }
-        }
-    }
-
-    let episodes = doc.get_mut(crate::model::XC_TAG_EPISODES).and_then(Value::as_object_mut).ok_or_else(|| str_to_io_error("No episodes found in content"))?;
-
-    let virtual_id = pli.get_virtual_id();
-    {
-        let (mut target_id_mapping, file_lock) = get_target_id_mapping(app_config, &target_path).await;
-        let options = XtreamMappingOptions::from_target_options(target, xtream_output, app_config);
-
-        let use_memory_cache = target.use_memory_cache;
-        let mut id_mapping_records = vec![];
-
-        let provider_url = pli.get_provider_url();
-        for episode_list in episodes.values_mut().filter_map(Value::as_array_mut) {
-            for episode in episode_list.iter_mut().filter_map(Value::as_object_mut) {
-                if let Some(episode_provider_id) = episode.get(crate::model::XC_TAG_ID).and_then(get_u32_from_serde_value)
-                {
-                    let uuid = generate_playlist_uuid(&hex_encode(&pli.get_uuid()), &episode_provider_id.to_string(), PlaylistItemType::Series, &provider_url);
-                    let episode_virtual_id = target_id_mapping.get_and_update_virtual_id(
-                        &uuid,
-                        episode_provider_id,
-                        PlaylistItemType::Series,
-                        virtual_id,
-                    );
-
-                    if use_memory_cache {
-                        let record = VirtualIdRecord::new(episode_provider_id, episode_virtual_id, PlaylistItemType::Series, virtual_id, uuid);
-                        id_mapping_records.push(record);
-                    }
-
-                    episode.insert(crate::model::XC_TAG_ID.to_string(), Value::String(episode_virtual_id.to_string()));
-                    if resource_url.is_some() {
-                        // we need to update the info data.
-                        if let Some(Value::Object(info_data)) = episode.get_mut(crate::model::XC_TAG_INFO_DATA) {
-                            let field_prefix = format!("{}{episode_provider_id}_", crate::model::XC_INFO_RESOURCE_PREFIX_EPISODE);
-                            rewrite_doc_urls(resource_url.as_ref(), info_data, storage_const::INFO_REWRITE_FIELDS, &field_prefix);
-                        }
-                    }
-                }
-                if options.skip_series_direct_source {
-                    episode.insert(crate::model::XC_TAG_DIRECT_SOURCE.to_string(), Value::String(String::new()));
-                }
-            }
-        }
-
-        let result = target_id_mapping.persist();
-        drop(file_lock);
-        drop(target_id_mapping);
-
-        if let Err(err) = result {
-            error!("{err}");
-        } else if use_memory_cache && !id_mapping_records.is_empty() {
-            app_state.playlists.update_target_id_mapping(target, id_mapping_records).await;
-        }
-    }
-    let result = serde_json::to_string(&doc).map_err(|_| str_to_io_error("Failed to serialize updated series info"))?;
-
-    Ok(result)
-}
-
-pub async fn rewrite_xtream_series_info_content<P>(
-    app_state: &Arc<AppState>,
-    target: &ConfigTarget,
-    xtream_output: &XtreamTargetOutput,
-    pli_series_info: &P,
-    user: &ProxyUserCredentials,
-    content: &str,
-) -> Result<String, Error> where
-    P: PlaylistEntry,
-{
-    let mut doc = serde_json::from_str::<Map<String, Value>>(content).map_err(|_| str_to_io_error("Failed to parse JSON content"))?;
-    rewrite_xtream_series_info(app_state, target, xtream_output, pli_series_info, user, &mut doc).await
-}
-
-pub async fn write_and_get_xtream_series_info<P>(
-    app_state: &Arc<AppState>,
-    target: &ConfigTarget,
-    xtream_output: &XtreamTargetOutput,
-    pli_series_info: &P,
-    user: &ProxyUserCredentials,
-    content: &str,
-) -> Result<String, Error> where
-    P: PlaylistEntry,
-{
-    let mut doc = serde_json::from_str::<Map<String, Value>>(content).map_err(|_| str_to_io_error("Failed to parse JSON content"))?;
-    let virtual_id = pli_series_info.get_virtual_id();
-    let app_config = &app_state.app_config;
-    xtream_write_series_info(app_config, target.name.as_str(), virtual_id, content).await.ok();
-    rewrite_xtream_series_info(app_state, target, xtream_output, pli_series_info, user, &mut doc).await
-}
-
-pub async fn xtream_get_input_info(
-    cfg: &AppConfig,
-    input: &ConfigInput,
-    provider_id: u32,
-    cluster: XtreamCluster,
-) -> Option<String> {
-    if let Ok(Some((info_path, idx_path))) = get_input_storage_path(&input.name, &cfg.config.load().working_dir).map(|storage_path| xtream_get_info_file_paths(&storage_path, cluster))
-    {
-        let _file_lock = cfg.file_locks.read_lock(&info_path).await;
-        if let Ok(content) = IndexedDocumentDirectAccess::read_indexed_item::<u32, String>(&info_path, &idx_path, &provider_id) {
-            return Some(content);
-        }
-    }
-    None
-}
-
-pub async fn xtream_update_input_info_file(
-    cfg: &AppConfig,
-    input: &ConfigInput,
-    wal_path: &Path,
-    cluster: XtreamCluster,
-) -> Result<(), TuliproxError> {
-    let config = cfg.config.load();
-    match get_input_storage_path(&input.name, &config.working_dir).map(|storage_path| xtream_get_info_file_paths(&storage_path, cluster)) {
-        Ok(Some((info_path, idx_path))) => {
-            {
-                let _file_lock = cfg.file_locks.write_lock(&info_path).await;
-                let mut reader = async_file_reader(async_open_readonly_file(wal_path).await.map_err(|err| notify_err!(format!("Could not read {cluster} info {err}")))?);
-                match IndexedDocumentWriter::<u32>::new_append(info_path.clone(), idx_path) {
-                    Ok(mut writer) => {
-                        let mut provider_id_bytes = [0u8; 4];
-                        let mut length_bytes = [0u8; 4];
-                        loop {
-                            if reader.read_exact(&mut provider_id_bytes).await.is_err() {
-                                break; // End of file
-                            }
-                            let provider_id = u32::from_le_bytes(provider_id_bytes);
-                            reader.read_exact(&mut length_bytes).await.map_err(|err| notify_err!(format!("Could not read temporary {cluster} info {err}")))?;
-                            let length = u32::from_le_bytes(length_bytes) as usize;
-                            let mut buffer = vec![0u8; length];
-                            reader.read_exact(&mut buffer).await.map_err(|err| notify_err!(format!("Could not read temporary {cluster} info {err}")))?;
-                            if let Ok(content) = String::from_utf8(buffer) {
-                                let _ = writer.write_doc(provider_id, &content);
-                            }
-                        }
-                        writer.store().map_err(|err| notify_err!(format!("Could not store {cluster} info {err}")))?;
-                        drop(reader);
-                        if let Err(err) = fs::remove_file(wal_path) {
-                            error!("Failed to delete WAL file for {cluster} {err}");
-                        }
-                        Ok(())
-                    }
-                    Err(err) => Err(notify_err!(format!("Could not create create indexed document writer for {cluster} info {err}"))),
-                }
-            }
-        }
-        Ok(None) => Err(notify_err!(format!("Could not create storage path for input {}", &input.name))),
-        Err(err) => Err(notify_err!(format!("Could not create storage path for input {err}"))),
-    }
-}
-
-pub async fn xtream_update_input_vod_record_from_wal_file(
-    cfg: &AppConfig,
-    input: &ConfigInput,
-    wal_path: &Path,
-) -> Result<(), TuliproxError> {
-    let config = cfg.config.load();
-    let record_path = get_input_storage_path(&input.name, &config.working_dir).map(|storage_path| xtream_get_record_file_path(&storage_path, PlaylistItemType::Video))
-        .map_err(|err| notify_err!(format!("Error accessing storage path: {err}")))
-        .and_then(|opt| opt.ok_or_else(|| notify_err!(format!("Error accessing storage path for input: {}", &input.name))))?;
-
-    {
-        let _file_lock = cfg.file_locks.write_lock(&record_path).await;
-        let mut reader = async_file_reader(async_open_readonly_file(wal_path).await.map_err(|err| notify_err!(format!("Could not read vod wal info {err}")))?);
-        let mut provider_id_bytes = [0u8; 4];
-        let mut tmdb_id_bytes = [0u8; 4];
-        let mut ts_bytes = [0u8; 8];
-        let mut tree_record_index: BPlusTree<u32, InputVodInfoRecord> = BPlusTree::load(&record_path).unwrap_or_else(|_| BPlusTree::new());
-
-        loop {
-            if reader.read_exact(&mut provider_id_bytes).await.is_err() {
-                break; // End of file
-            }
-            let provider_id = u32::from_le_bytes(provider_id_bytes);
-
-            if reader.read_exact(&mut tmdb_id_bytes).await.is_err() {
-                error!("Unexpected EOF after reading provider_id {provider_id} for VOD record.");
-                break;
-            }
-            let tmdb_id = u32::from_le_bytes(tmdb_id_bytes);
-
-            if reader.read_exact(&mut ts_bytes).await.is_err() {
-                error!("Unexpected EOF after reading tmdb_id for VOD record with provider_id {provider_id}.");
-                break;
-            }
-            let ts = u64::from_le_bytes(ts_bytes);
-
-            // Read the date string length as a 4-byte u32.
-            let mut len_bytes = [0u8; 4];
-            if reader.read_exact(&mut len_bytes).await.is_err() {
-                error!("Unexpected EOF when reading release_date length for VOD record with provider_id {provider_id}.");
-                break;
-            }
-            let len = u32::from_le_bytes(len_bytes) as usize;
-
-            let release_date = if len > 0 {
-                let mut date_buffer = vec![0u8; len];
-                if reader.read_exact(&mut date_buffer).await.is_err() {
-                    error!("Unexpected EOF when reading release_date string for VOD record with provider_id {provider_id}.");
-                    break;
-                }
-                String::from_utf8(date_buffer).ok()
-            } else {
-                // If length is 0, set release_date to None
-                None
-            };
-
-            tree_record_index.insert(provider_id, InputVodInfoRecord { tmdb_id, ts, release_date });
-        }
-
-        tree_record_index.store(&record_path).map_err(|err| notify_err!(format!("Could not store vod record info {err}")))?;
-
-        drop(reader);
-        if let Err(err) = tokio::fs::remove_file(wal_path).await {
-            error!("Failed to delete record WAL file for vod {err}");
-        }
-        Ok(())
-    }
-}
-
-pub async fn xtream_update_input_series_record_from_wal_file(
-    cfg: &AppConfig,
-    input: &ConfigInput,
-    wal_path: &Path,
-) -> Result<(), TuliproxError> {
-    let config = cfg.config.load();
-    let record_path = get_input_storage_path(&input.name, &config.working_dir).map(|storage_path| xtream_get_record_file_path(&storage_path, PlaylistItemType::SeriesInfo))
-        .map_err(|err| notify_err!(format!("Error accessing storage path: {err}")))
-        .and_then(|opt| opt.ok_or_else(|| notify_err!(format!("Error accessing storage path for input: {}", &input.name))))?;
-    {
-        let _file_lock = cfg.file_locks.write_lock(&record_path).await;
-        let mut reader = async_file_reader(async_open_readonly_file(wal_path).await.map_err(|err| notify_err!(format!("Could not read series wal info {err}")))?);
-        let mut provider_id_bytes = [0u8; 4];
-        let mut ts_bytes = [0u8; 8];
-        let mut tree_record_index: BPlusTree<u32, u64> = BPlusTree::load(&record_path).unwrap_or_else(|_| BPlusTree::new());
-        loop {
-            if reader.read_exact(&mut provider_id_bytes).await.is_err() {
-                break; // End of file
-            }
-            let provider_id = u32::from_le_bytes(provider_id_bytes);
-            if reader.read_exact(&mut ts_bytes).await.is_err() {
-                break; // End of file
-            }
-            let ts = u64::from_le_bytes(ts_bytes);
-            tree_record_index.insert(provider_id, ts);
-        }
-        tree_record_index.store(&record_path).map_err(|err| notify_err!(format!("Could not store series record info {err}")))?;
-        drop(reader);
-        if let Err(err) = tokio::fs::remove_file(wal_path).await {
-            error!("Failed to delete record WAL file for series {err}");
-        }
-        Ok(())
-    }
-}
-
-pub async fn xtream_update_input_series_episodes_record_from_wal_file(
-    cfg: &AppConfig,
-    input: &ConfigInput,
-    wal_path: &Path,
-) -> Result<(), TuliproxError> {
-    let config = cfg.config.load();
-    let record_path = get_input_storage_path(&input.name, &config.working_dir).map(|storage_path| xtream_get_record_file_path(&storage_path, PlaylistItemType::Series))
-        .map_err(|err| notify_err!(format!("Error accessing storage path: {err}")))
-        .and_then(|opt| opt.ok_or_else(|| notify_err!(format!("Error accessing storage path for input: {}", &input.name))))?;
-    {
-        let _file_lock = cfg.file_locks.write_lock(&record_path).await;
-        let mut reader = async_file_reader(async_open_readonly_file(wal_path).await.map_err(|err| notify_err!(format!("Could not read series episode wal info {err}")))?);
-        let mut provider_id_bytes = [0u8; 4];
-        let mut len_bytes = [0u8; 4];
-        let mut tree_record_index: BPlusTree<u32, XtreamSeriesEpisode> = BPlusTree::load(&record_path).unwrap_or_else(|_| BPlusTree::new());
-        let mut buffer = vec![0u8; 4096];
-        loop {
-            if reader.read_exact(&mut provider_id_bytes).await.is_err() {
-                break; // End of file
-            }
-            let provider_id = u32::from_le_bytes(provider_id_bytes);
-            if reader.read_exact(&mut len_bytes).await.is_err() {
-                break; // End of file
-            }
-            let len = usize::try_from(u32::from_le_bytes(len_bytes)).unwrap_or(0);
-            if len == 0 {
-                break;
-            }
-            if len > buffer.len() {
-                buffer = vec![0u8; len];
-            }
-            if reader.read_exact(&mut buffer[0..len]).await.is_err() {
-                break;
-            }
-            match bincode_deserialize(&buffer[0..len]) {
-                Ok(episode) => {
-                    tree_record_index.insert(provider_id, episode);
-                }
-                Err(err) => {
-                    error!("Failed to delete deserialize record WAL file for series episode {err}");
-                }
-            }
-        }
-        tree_record_index.store(&record_path).map_err(|err| notify_err!(format!("Could not store series episode record info {err}")))?;
-        drop(reader);
-        if let Err(err) = tokio::fs::remove_file(wal_path).await {
-            error!("Failed to delete record WAL file for series episode {err}");
-        }
-        Ok(())
-    }
-}
-
 pub async fn iter_raw_xtream_playlist(app_config: &AppConfig, target: &ConfigTarget, cluster: XtreamCluster) -> Option<(FileReadGuard, impl Iterator<Item=(XtreamPlaylistItem, bool)>)> {
     let config = app_config.config.load();
     if let Some(storage_path) = xtream_get_storage_path(&config, target.name.as_str()) {
-        let (xtream_path, idx_path) = xtream_get_file_paths(&storage_path, cluster);
-        if !xtream_path.exists() || !idx_path.exists() {
+        let xtream_path = xtream_get_file_path(&storage_path, cluster);
+        if !xtream_path.exists() {
             return None;
         }
         let file_lock = app_config.file_locks.read_lock(&xtream_path).await;
-        match IndexedDocumentIterator::<u32, XtreamPlaylistItem>::new(&xtream_path, &idx_path)
-            .map_err(|err| info_err!(format!("Could not deserialize file {xtream_path:?} - {err}"))) {
-            Ok(reader) => Some((file_lock, reader)),
+        match BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path)
+            .map_err(|err| info_err!(format!("Could not open BPlusTreeQuery {xtream_path:?} - {err}"))) {
+            Ok(mut query) => {
+                let items: Vec<XtreamPlaylistItem> = query.iter().map(|(_, v)| v).collect();
+                let len = items.len();
+                Some((file_lock, items.into_iter().enumerate().map(move |(i, v)| (v, i < len - 1))))
+            }
             Err(_) => None
         }
     } else {
@@ -1125,67 +593,184 @@ pub(crate) async fn xtream_get_playlist_categories(config: &Config, target_name:
     None
 }
 
-pub async fn write_series_info_to_wal_file(provider_id: u32, ts: u64, content: &str,
-                                           content_write: &mut tokio::io::BufWriter<&mut tokio::fs::File>,
-                                           record_writer: &mut tokio::io::BufWriter<&mut tokio::fs::File>) -> std::io::Result<()> {
-    let encoded_content = encode_info_content_for_wal_file(provider_id, content)?;
-    let encoded_record = encode_series_info_record_for_wal_file(provider_id, ts);
-    content_write.write_all(&encoded_content).await?;
-    record_writer.write_all(&encoded_record).await?;
-    Ok(())
-}
+#[allow(clippy::too_many_lines)]
+pub async fn persist_input_xtream_playlist(app_config: &Arc<AppConfig>, storage_path: &Path,
+                                           playlist: Vec<PlaylistGroup>) -> (Vec<PlaylistGroup>, Option<TuliproxError>) {
+    let mut errors = Vec::new();
 
-pub async fn write_vod_info_to_wal_file(provider_id: u32, content: &str, info_record: &InputVodInfoRecord,
-                                        content_write: &mut tokio::io::BufWriter<&mut tokio::fs::File>,
-                                        record_writer: &mut tokio::io::BufWriter<&mut tokio::fs::File>) -> std::io::Result<()> {
-    let encoded_content = encode_info_content_for_wal_file(provider_id, content)?;
-    let encoded_record = encode_vod_info_record_for_wal_file(provider_id, info_record)?;
-    content_write.write_all(&encoded_content).await?;
-    record_writer.write_all(&encoded_record).await?;
-    Ok(())
-}
+    let mut fetched_categories = PlaylistScratch::<Vec<Value>>::new(1_000);
+    let mut fetched_scratch = PlaylistScratch::<Vec<PlaylistItem>>::new(50_000);
+    let mut stored_scratch = PlaylistScratch::<IndexMap::<u32, XtreamPlaylistItem>>::new(50_000);
 
-
-fn encode_info_content_for_wal_file(provider_id: u32, content: &str) -> std::io::Result<Vec<u8>> {
-    let length = u32::try_from(content.len()).map_err(to_io_error)?;
-    let mut buffer = Vec::with_capacity(8 + content.len());
-
-    buffer.extend_from_slice(&provider_id.to_le_bytes());
-    buffer.extend_from_slice(&length.to_le_bytes());
-    buffer.extend_from_slice(content.as_bytes());
-
-    Ok(buffer)
-}
-
-
-fn encode_vod_info_record_for_wal_file(provider_id: u32, record: &InputVodInfoRecord) -> std::io::Result<Vec<u8>> {
-    let estimated_capacity = 30;
-    let mut buffer = Vec::with_capacity(estimated_capacity);
-
-    buffer.extend_from_slice(&provider_id.to_le_bytes());
-    buffer.extend_from_slice(&record.tmdb_id.to_le_bytes());
-    buffer.extend_from_slice(&record.ts.to_le_bytes());
-
-    match &record.release_date {
-        Some(date_str) => {
-            // Write the length as a 4-byte u32 to prevent overflow.
-            let len = u32::try_from(date_str.len()).map_err(to_io_error)?;
-            buffer.extend_from_slice(&len.to_le_bytes());
-            buffer.extend_from_slice(date_str.as_bytes());
-        }
-        None => {
-            // Write a length of 0 as 4 bytes.
-            buffer.extend_from_slice(&0u32.to_le_bytes());
+    // load
+    for cluster in XTREAM_CLUSTER {
+        let xtream_path = xtream_get_file_path(storage_path, cluster);
+        if let Ok(true) = tokio::fs::try_exists(&xtream_path).await {
+            let file_lock = app_config.file_locks.read_lock(&xtream_path).await;
+            let stored_entries = stored_scratch.get_mut(cluster);
+            if let Ok(mut query) = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path) {
+                for (_, doc) in query.iter() {
+                    stored_entries.insert(doc.provider_id, doc);
+                }
+            }
+            drop(file_lock);
         }
     }
 
-    Ok(buffer)
+    let mut groups = IndexMap::new();
+
+    for mut plg in playlist {
+        if !&plg.channels.is_empty() {
+            fetched_categories.get_mut(plg.xtream_cluster).push(json!(CategoryEntry {
+                category_id: plg.id,
+                category_name: plg.title.clone(),
+                parent_id: 0
+            }));
+
+            let channels = std::mem::take(&mut plg.channels);
+            for mut pli in channels {
+                let stored_col = stored_scratch.get_mut(plg.xtream_cluster);
+                let fetched_col = fetched_scratch.get_mut(plg.xtream_cluster);
+
+                if let Ok(provider_id) = pli.header.id.parse::<u32>() {
+                    if let Some(stored_pli) = stored_col.get_mut(&provider_id) {
+                        if let (Some(new_stream_props), Some(old_stream_props)) = (&mut pli.header.additional_properties, stored_pli.additional_properties.take()) {
+                            if !needs_update_info_details(new_stream_props, &old_stream_props) {
+                                match (new_stream_props, old_stream_props) {
+                                    (StreamProperties::Video(value_1), StreamProperties::Video(value_2)) => {
+                                        value_1.details = value_2.details;
+                                    }
+                                    (StreamProperties::Series(value_1), StreamProperties::Series(value_2)) => {
+                                        value_1.details = value_2.details;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                fetched_col.push(pli);
+            }
+            groups.insert(plg.id, plg);
+        }
+    }
+
+    let mut processed_scratch = PlaylistScratch::<Vec<PlaylistItem>>::new(0);
+    for xc in XTREAM_CLUSTER {
+        processed_scratch.set(xc, if !stored_scratch.is_empty(xc) && fetched_scratch.is_empty(xc) {
+            stored_scratch.take(xc).iter().map(|(_, item)| PlaylistItem::from(item)).collect::<Vec<PlaylistItem>>()
+        } else {
+            fetched_scratch.take(xc)
+        });
+    }
+    drop(stored_scratch);
+    drop(fetched_scratch);
+
+    let root_path = storage_path.to_path_buf();
+    let app_cfg = app_config.clone();
+    let write_errors = task::spawn_blocking(move || {
+        let mut write_errors = vec![];
+        for cluster in XTREAM_CLUSTER {
+            let col_path = match cluster {
+                XtreamCluster::Live => get_collection_path(&root_path, storage_const::COL_CAT_LIVE),
+                XtreamCluster::Video => get_collection_path(&root_path, storage_const::COL_CAT_VOD),
+                XtreamCluster::Series => get_collection_path(&root_path, storage_const::COL_CAT_SERIES),
+            };
+            let data = fetched_categories.get_mut(cluster);
+            let lock = app_cfg.file_locks.write_lock(&col_path);
+            if let Err(err) = json_write_documents_to_file(&col_path, data) {
+                write_errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
+            }
+            drop(lock);
+        }
+        write_errors
+    }).await.map_err(|e| notify_err!(format!("Task panicked: {}", e)));
+
+    for cluster in XTREAM_CLUSTER {
+        let col = processed_scratch.take(cluster);
+
+        // persist playlist
+        if let Err(err) = write_playlists_to_file(
+            app_config,
+            storage_path,
+            StorageKey::ProviderId,
+            vec![(cluster, col.iter().map(Into::into).collect::<Vec<XtreamPlaylistItem>>())],
+        ).await {
+            errors.push(format!("Persisting collection failed:{err}"));
+        }
+
+        for item in col {
+            groups
+                .entry(item.header.category_id)
+                .or_insert_with(|| PlaylistGroup {
+                    id: item.header.category_id,
+                    title: item.header.group.clone(),
+                    channels: Vec::new(),
+                    xtream_cluster: item.header.xtream_cluster,
+                })
+                .channels
+                .push(item);
+        }
+    }
+
+    match write_errors {
+        Ok(write_err) => errors.extend(write_err),
+        Err(err) => errors.push(err.to_string()),
+    }
+
+    let result = groups.into_iter().map(|(_, group)| group).collect();
+
+    let err = if errors.is_empty() {
+        None
+    } else {
+        Some(create_tuliprox_error!(TuliproxErrorKind::Notify, "{}", errors.join("\n")))
+    };
+
+    (result, err)
 }
 
+// Checks if the info has changed after the last update
+fn needs_update_info_details(
+    new_stream_props: &StreamProperties,
+    old_stream_props: &StreamProperties,
+) -> bool {
+    let new_modified = new_stream_props.get_last_modified();
+    let old_modified = old_stream_props.get_last_modified();
 
-fn encode_series_info_record_for_wal_file(provider_id: u32, ts: u64) -> Vec<u8> {
-    let mut buffer = Vec::with_capacity(12);
-    buffer.extend_from_slice(&provider_id.to_le_bytes());
-    buffer.extend_from_slice(&ts.to_le_bytes());
-    buffer
+    match (new_modified, old_modified) {
+        (Some(new_ts), Some(old_ts)) => new_ts > old_ts,
+        (None, Some(_)) => true,
+        _ => false,
+    }
 }
+
+async fn persist_input_info(app_config: &Arc<AppConfig>, storage_path: &Path, cluster: XtreamCluster,
+                            input_name: &str, provider_id: u32, props: StreamProperties) -> Result<(), Error> {
+    let xtream_path = xtream_get_file_path(storage_path, cluster);
+    if xtream_path.exists() {
+        {
+            let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
+            let mut tree: BPlusTreeUpdate<u32, XtreamPlaylistItem> = BPlusTreeUpdate::try_new(&xtream_path).map_err(|err| Error::other(format!("failed to open BPlusTree for input {input_name}: {err}")))?;
+            if let Some(mut pli) = tree.query(&provider_id) {
+                pli.additional_properties = Some(props);
+                tree.update(&provider_id, pli).map_err(|err| Error::other(format!("failed to write {cluster} info for input {input_name}: {err}")))?;
+            } else {
+                error!("Could not find input entry for provider_id: {provider_id} and input: {input_name}");
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn persist_input_vod_info(app_config: &Arc<AppConfig>, storage_path: &Path,
+                                    cluster: XtreamCluster, input_name: &str, provider_id: u32,
+                                    props: &VideoStreamProperties) -> Result<(), Error> {
+    persist_input_info(app_config, storage_path, cluster, input_name, provider_id, StreamProperties::Video(Box::new(props.clone()))).await
+}
+
+pub async fn persists_input_series_info(app_config: &Arc<AppConfig>, storage_path: &Path,
+                                        cluster: XtreamCluster, input_name: &str, provider_id: u32,
+                                        props: &SeriesStreamProperties) -> Result<(), Error> {
+    persist_input_info(app_config, storage_path, cluster, input_name, provider_id, StreamProperties::Series(Box::new(props.clone()))).await
+}
+

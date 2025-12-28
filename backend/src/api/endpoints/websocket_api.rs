@@ -305,7 +305,7 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth_req
             maybe_msg = socket.recv() => {
                 if let Some(msg) = maybe_msg {
                     if let Err(e) = handle_incoming_message(msg, &mut socket, &mut handler, &app_state, auth_required, secret_key.as_ref()).await {
-                        error!("WebSocket message handling error: {e}");
+                        trace!("WebSocket message handling error: {e}");
                         break;
                     }
                 } else {
@@ -315,7 +315,7 @@ async fn handle_socket(mut socket: WebSocket, app_state: Arc<AppState>, auth_req
 
             Ok(event) = event_rx.recv() => {
                 if let Err(e) = handle_event_message(&mut socket, event, &handler).await {
-                    error!("Failed to send ws event: {e}");
+                    trace!("Failed to send ws event: {e}");
                     break;
                 }
             }

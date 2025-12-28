@@ -200,9 +200,9 @@ impl ConfigInputOptionsDto {
 pub struct StagedInputDto {
     pub name: String,
     pub url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub username: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub password: Option<String>,
     #[serde(default)]
     pub method: InputFetchMethod,
@@ -240,15 +240,15 @@ pub struct ConfigInputAliasDto {
     pub id: u16,
     pub name: String,
     pub url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub username: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub password: Option<String>,
     #[serde(default)]
     pub priority: i16,
     #[serde(default)]
     pub max_connections: u16,
-    #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "deserialize_timestamp")]
     pub exp_date: Option<i64>,
 
 }
@@ -284,19 +284,19 @@ pub struct ConfigInputDto {
     pub headers: HashMap<String, String>,
     #[serde(default)]
     pub url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub epg: Option<EpgConfigDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub username: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub password: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub persist: Option<String>,
     #[serde(default = "default_as_true")]
     pub enabled: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub options: Option<ConfigInputOptionsDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub aliases: Option<Vec<ConfigInputAliasDto>>,
     #[serde(default)]
     pub priority: i16,
@@ -304,11 +304,11 @@ pub struct ConfigInputDto {
     pub max_connections: u16,
     #[serde(default)]
     pub method: InputFetchMethod,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub staged: Option<StagedInputDto>,
-    #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "deserialize_timestamp")]
     pub exp_date: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub panel_api: Option<PanelApiConfigDto>,
 }
 
@@ -341,9 +341,8 @@ impl ConfigInputDto {
     #[allow(clippy::cast_possible_truncation)]
     pub fn prepare(&mut self, index: u16, _include_computed: bool) -> Result<u16, TuliproxError> {
 
-        let is_batch = matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch);
         self.name = self.name.trim().to_owned();
-        if self.name.is_empty()  && !is_batch {
+        if self.name.is_empty() {
             return Err(info_err!("name for input is mandatory".to_owned()));
         }
 
@@ -356,7 +355,7 @@ impl ConfigInputDto {
             }
         }
 
-        self.persist = get_trimmed_string(&self.persist);
+        self.persist = get_trimmed_string(self.persist.as_deref());
 
         let mut current_index = index + 1;
         self.id = current_index;

@@ -1,9 +1,9 @@
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub struct PlaylistCategories {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub live: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub vod: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub series: Option<Vec<String>>,
 }

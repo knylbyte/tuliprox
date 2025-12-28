@@ -113,16 +113,6 @@ library:
     formats:
       # - "nfo"  # Optionally write Kodi-compatible NFO files
 
-  # Classification rules for movies vs series
-  classification:
-    # Regex patterns to identify series/TV shows
-    # If a file/folder name matches any pattern, it's classified as a series
-    series_patterns:
-      - "(?i)s\\d+e\\d+"          # S01E02 format
-      - "(?i)\\d+x\\d+"            # 1x02 format
-      - "(?i)season[\\s._-]*\\d+"  # "Season 1" format
-      - "(?i)episode[\\s._-]*\\d+" # "Episode 1" format
-
   # Playlist integration
   playlist:
     # Group name for movies in M3U/Xtream playlist

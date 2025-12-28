@@ -14,11 +14,11 @@ pub struct ApiProxyServerInfoDto {
     pub name: String,
     pub protocol: String,
     pub host: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub port: Option<String>,
     pub timezone: String,
     pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub path: Option<String>,
 }
 

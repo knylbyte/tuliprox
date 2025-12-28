@@ -61,7 +61,7 @@ pub fn content_type_from_ext(ext: &str) -> &'static str {
         "avi" => "video/x-msvideo",
         "mov" => "video/quicktime",
         "webm" => "video/webm",
-        "ts"  => "video/mp2t",
+        "ts" => "video/mp2t",
         _ => "application/octet-stream",
     }
 }
@@ -107,7 +107,6 @@ pub async fn get_input_epg_content_as_file(client: &reqwest::Client, input: &Con
         }, Ok)
     }
 }
-
 
 pub async fn get_input_text_content(client: &reqwest::Client, input: &InputSource, working_dir: &str, persist_filepath: Option<PathBuf>) -> Result<String, TuliproxError> {
     debug_if_enabled!("getting input text content working_dir: {}, url: {}", working_dir, sanitize_sensitive_info(&input.url));
@@ -415,12 +414,9 @@ pub async fn get_remote_content_as_stream(
 }
 
 async fn get_remote_content(client: &reqwest::Client, input: &InputSource, headers: Option<&HeaderMap>, url: &Url, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> Result<(String, String), Error> {
-    let start_time = Instant::now();
-
     let (mut stream, response_url) = get_remote_content_as_stream(client, input, headers, url, disabled_headers).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
     let mut content = String::new();
     stream.read_to_string(&mut content).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
-    debug_if_enabled!("Request took: {} {}", format_elapsed_time(start_time.elapsed().as_secs()), sanitize_sensitive_info(url.as_str()));
     Ok((content, response_url))
 }
 
@@ -456,7 +452,8 @@ pub async fn download_text_content(
     headers: Option<&HeaderMap>,
     persist_filepath: Option<PathBuf>,
 ) -> Result<(String, String), Error> {
-    if let Ok(url) = input.url.parse::<url::Url>() {
+    let start_time = Instant::now();
+    let result = if let Ok(url) = input.url.parse::<url::Url>() {
         let result = if url.scheme() == "file" {
             match url.to_file_path() {
                 Ok(file_path) => get_local_file_content(&file_path).await.map(|c| (c, url.to_string())),
@@ -479,7 +476,15 @@ pub async fn download_text_content(
         }
     } else {
         Err(str_to_io_error(&format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
+    };
+
+    if log_enabled!(log::Level::Debug) {
+        if let Ok((_content, response_url)) = result.as_ref() {
+            debug!("Request took: {} {}", format_elapsed_time(start_time.elapsed().as_secs()), sanitize_sensitive_info(response_url.as_str()));
+        }
     }
+
+    result
 }
 
 pub async fn download_text_content_as_stream(
@@ -520,7 +525,7 @@ pub async fn download_text_content_as_stream(
 }
 
 async fn download_json_content(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<serde_json::Value, Error> {
-    debug_if_enabled!("downloading json content from {}", sanitize_sensitive_info(&input.url));
+    debug_if_enabled!("Downloading json content from {}", sanitize_sensitive_info(&input.url));
     match download_text_content(client, disabled_headers, input, None, persist_filepath).await {
         Ok((content, _response_url)) => {
             match serde_json::from_str::<serde_json::Value>(&content) {
@@ -540,7 +545,7 @@ pub async fn get_input_json_content(client: &reqwest::Client, disabled_headers: 
 }
 
 async fn download_json_content_as_stream(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<DynReader, Error> {
-    debug_if_enabled!("downloading json content from {}", sanitize_sensitive_info(&input.url));
+    debug_if_enabled!("Downloading json content from {}", sanitize_sensitive_info(&input.url));
     match download_text_content_as_stream(client, disabled_headers, input, None, persist_filepath).await {
         Ok((reader, _response_url)) => Ok(reader),
         Err(err) => Err(err)

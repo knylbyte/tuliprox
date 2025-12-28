@@ -12,11 +12,11 @@ pub const DEFAULT_VIDEO_EXTENSIONS: [&str; 6] = ["mkv", "avi", "mp4", "mpeg", "d
 pub struct VideoDownloadConfigDto {
     #[serde(default)]
     pub headers: HashMap<String, String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub directory: Option<String>,
     #[serde(default)]
     pub organize_into_directories: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub episode_pattern: Option<String>,
 }
 
@@ -24,8 +24,8 @@ impl VideoDownloadConfigDto {
     pub fn is_empty(&self) -> bool {
         !self.organize_into_directories
             && self.headers.is_empty()
-            && is_blank_optional_string(&self.directory)
-            && is_blank_optional_string(&self.episode_pattern)
+            && is_blank_optional_string(self.directory.as_deref())
+            && is_blank_optional_string(self.episode_pattern.as_deref())
     }
 }
 
@@ -34,16 +34,16 @@ impl VideoDownloadConfigDto {
 pub struct VideoConfigDto {
     #[serde(default)]
     pub extensions: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub download: Option<VideoDownloadConfigDto>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub web_search: Option<String>,
 }
 
 
 impl VideoConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.extensions.is_empty() && is_blank_optional_string(&self.web_search)
+        self.extensions.is_empty() && is_blank_optional_string(self.web_search.as_deref())
         && (self.download.is_none() || self.download.as_ref().is_some_and(|d| d.is_empty()))
     }
 

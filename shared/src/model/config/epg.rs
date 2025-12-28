@@ -27,9 +27,9 @@ impl EpgSourceDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct EpgConfigDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub sources: Option<Vec<EpgSourceDto>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub smart_match: Option<EpgSmartMatchConfigDto>,
     #[serde(skip)]
     pub t_sources: Vec<EpgSourceDto>,

@@ -96,7 +96,7 @@ impl LibraryProcessor {
         let scanned_paths: std::collections::HashSet<_> = media_groups
             .iter()
             .flat_map(|group| match group {
-                MediaGroup::Movie { file } => vec![file.file_path.as_str()],
+                MediaGroup::Movie { file, .. } => vec![file.file_path.as_str()],
                 MediaGroup::Series { episodes, .. } => episodes.iter().map(|ep| ep.file.file_path.as_str()).collect(),
             })
             .collect();
@@ -118,7 +118,7 @@ impl LibraryProcessor {
 
     async fn process_group(&self, group: &MediaGroup, existing_map: &HashMap<String, MetadataCacheEntry>, force_rescan: bool) -> Result<ProcessAction, String> {
         match group {
-            MediaGroup::Movie { file: _ } => {
+            MediaGroup::Movie { file: _, .. } => {
                 self.process_movie(group, existing_map, force_rescan).await
             }
             MediaGroup::Series { show_key: _, episodes: _ } => {
@@ -130,7 +130,7 @@ impl LibraryProcessor {
     // Processes a single video file
     async fn process_movie(&self, group: &MediaGroup, existing_map: &HashMap<String, MetadataCacheEntry>, force_rescan: bool,
     ) -> Result<ProcessAction, String> {
-        let MediaGroup::Movie { file } = group else { return Err(format!("Expected movie to resolve but got {group}")) };
+        let MediaGroup::Movie { file, .. } = group else { return Err(format!("Expected movie to resolve but got {group}")) };
         // Check if file already exists in cache
         let (cache_entry, status) = if let Some(existing_entry) = existing_map.get(&file.file_path) {
             // Check if file has been modified

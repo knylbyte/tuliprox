@@ -1,13 +1,12 @@
-use std::borrow::Cow;
 use crate::model::{ConfigTarget, TraktListItem, TraktMatchItem};
-use shared::model::{FieldGetAccessor, FieldSetAccessor, PlaylistGroup, PlaylistItem, TraktContentType, XtreamCluster};
 use crate::model::{TraktConfig, TraktListConfig, TraktMatchResult};
-use shared::error::TuliproxError;
-use crate::utils::{TraktClient, extract_year_from_title, normalize_title_for_matching};
-use shared::utils::{get_u32_from_serde_value};
-use shared::utils::{CONSTANTS};
+use crate::utils::{extract_year_from_title, normalize_title_for_matching, TraktClient};
 use crate::utils::{trace_if_enabled, with};
 use log::{debug, info, trace, warn};
+use shared::error::TuliproxError;
+use shared::model::{FieldGetAccessor, FieldSetAccessor, PlaylistGroup, PlaylistItem, TraktContentType, XtreamCluster};
+use shared::utils::CONSTANTS;
+use std::borrow::Cow;
 use strsim::normalized_levenshtein;
 
 fn extract_quality(value: &str) -> Option<&str> {
@@ -35,26 +34,6 @@ fn is_compatible_content_type(cluster: XtreamCluster, content_type: TraktContent
         TraktContentType::Series => cluster == XtreamCluster::Series,
         TraktContentType::Both => matches!(cluster, XtreamCluster::Video | XtreamCluster::Series),
     }
-}
-
-/// Extract TMDB ID from playlist item
-fn extract_tmdb_id_from_playlist_item(item: &PlaylistItem) -> Option<u32> {
-    if let Some(additional_props) = &item.header.additional_properties {
-        let props_str = additional_props.get();
-        if let Ok(props) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(props_str) {
-            return props
-                .get("tmdb_id")
-                .and_then(get_u32_from_serde_value)
-                .filter(|&id| id != 0)
-                .or_else(|| {
-                    props.get("info")
-                        .and_then(|info| info.get("tmdb_id"))
-                        .and_then(get_u32_from_serde_value)
-                        .filter(|&id| id != 0)
-                });
-        }
-    }
-    None
 }
 
 fn calculate_year_bonus(playlist_year: Option<u32>, trakt_year: Option<u32>) -> f64 {
@@ -230,7 +209,7 @@ fn match_trakt_items_with_playlist<'a>(
             if is_compatible_content_type(channel.header.xtream_cluster, list_config.content_type) {
                 let normalized_title = normalize_title_for_matching(&channel.header.title);
                 let channel_year = extract_year_from_title(&channel.header.title);
-                let channel_tmdb_id = extract_tmdb_id_from_playlist_item(channel);
+                let channel_tmdb_id = channel.get_tmdb_id();
                 if let Some(matched) = find_best_match_for_item((channel, normalized_title, channel_year, channel_tmdb_id), &trakt_match_items, list_config) {
                     matches.push(matched);
                 }
