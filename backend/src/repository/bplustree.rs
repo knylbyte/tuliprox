@@ -301,83 +301,71 @@ where
     fn serialize_to_block<W: Write + Seek>(
         &self,
         file: &mut W,
-        buffer: &mut Vec<u8>, // must be length BLOCK_SIZE
+        buffer: &mut Vec<u8>,
         offset: u64,
     ) -> io::Result<u64> {
-        // on-disk layout with minimal allocations.
-        let mut current_offset = offset;
-
-        // Set node type (no need to zero entire buffer upfront)
-        let buffer_slice = &mut buffer[..];
-        buffer_slice[0] = u8::from(self.is_leaf);
-        let mut write_pos = FLAG_SIZE;
-
-        // ---- Write keys (length + bytes) into the first block ----
         let keys_encoded = binary_serialize(&self.keys)?;
-        let keys_len = keys_encoded.len();
-        buffer_slice[write_pos..write_pos + LEN_SIZE]
-            .copy_from_slice(&u32::try_from(keys_len).map_err(to_io_error)?.to_le_bytes());
-        write_pos += LEN_SIZE;
-        // NOTE: By design of the legacy layout, keys are expected to fit into the first block.
-        buffer_slice[write_pos..write_pos + keys_len].copy_from_slice(&keys_encoded);
-        write_pos += keys_len;
-        drop(keys_encoded);
-
+        let keys_len = u32::try_from(keys_encoded.len()).map_err(to_io_error)?;
+        
         if self.is_leaf {
-            // ---- Leaf nodes: write value info (offset + length) ----
-            let info_encoded = binary_serialize(&self.value_info)?;
-            let info_len = info_encoded.len();
-
-            // CRITICAL CHECK: Ensure metadata fits in block
-            if write_pos + LEN_SIZE + info_len > BLOCK_SIZE {
-                return Err(io::Error::other(format!("Leaf node overflow: keys ({keys_len}) + value_info ({info_len}) exceeds block size")));
-            }
-
-            buffer_slice[write_pos..write_pos + LEN_SIZE]
-                .copy_from_slice(&u32::try_from(info_len).map_err(to_io_error)?.to_le_bytes());
-            write_pos += LEN_SIZE;
-            buffer_slice[write_pos..write_pos + info_len].copy_from_slice(&info_encoded);
-            write_pos += info_len;
-
-            // Zero unused portion and write first block
-            if write_pos < BLOCK_SIZE {
-                buffer_slice[write_pos..BLOCK_SIZE].fill(0u8);
-            }
-            file.seek(SeekFrom::Start(offset))?;
-            file.write_all(&buffer_slice[..BLOCK_SIZE])?;
-            current_offset += BLOCK_SIZE as u64;
+             let info_encoded = binary_serialize(&self.value_info)?;
+             let info_len = u32::try_from(info_encoded.len()).map_err(to_io_error)?;
+             
+             let content_size = FLAG_SIZE + LEN_SIZE + keys_encoded.len() + LEN_SIZE + info_encoded.len();
+             let blocks = content_size.div_ceil(BLOCK_SIZE);
+             
+             file.seek(SeekFrom::Start(offset))?;
+             
+             let mut data = Vec::with_capacity(blocks * BLOCK_SIZE);
+             data.push(1u8);
+             data.extend_from_slice(&keys_len.to_le_bytes());
+             data.extend_from_slice(&keys_encoded);
+             data.extend_from_slice(&info_len.to_le_bytes());
+             data.extend_from_slice(&info_encoded);
+             
+             let pad_len = (blocks * BLOCK_SIZE) - data.len();
+             if pad_len > 0 {
+                 data.extend(std::iter::repeat(0).take(pad_len));
+             }
+             
+             file.write_all(&data)?;
+             
+             Ok(offset + (blocks as u64 * BLOCK_SIZE as u64))
         } else {
-            // Internal node: write breadth-first style pointers
-            let pointer_offset_within_first_block = offset + write_pos as u64;
-
-            // Zero unused portion and write first block
-            if write_pos < BLOCK_SIZE {
-                buffer_slice[write_pos..BLOCK_SIZE].fill(0u8);
-            }
-            file.seek(SeekFrom::Start(offset))?;
-            file.write_all(&buffer_slice[..BLOCK_SIZE])?;
-            current_offset += BLOCK_SIZE as u64;
-
-            let mut pointer_vec: Vec<u64> = Vec::with_capacity(self.children.len());
-            for child in &self.children {
-                pointer_vec.push(current_offset);
-                current_offset = child.serialize_to_block(file, buffer, current_offset)?;
-            }
-
-            let pointer_encoded = binary_serialize(&pointer_vec)?;
-            let pointer_len = u32::try_from(pointer_encoded.len()).map_err(to_io_error)?;
-
-            // CRITICAL CHECK: Ensure pointers fit in block
-            if write_pos + LEN_SIZE + pointer_encoded.len() > BLOCK_SIZE {
-                return Err(io::Error::other(format!("Internal node overflow during recursion: keys ({}) + pointers ({}) exceeds block size", keys_len, pointer_encoded.len())));
-            }
-
-            file.seek(SeekFrom::Start(pointer_offset_within_first_block))?;
-            file.write_all(&pointer_len.to_le_bytes())?;
-            file.write_all(&pointer_encoded)?;
+             let ptr_count = self.children.len();
+             let ptr_encoded_size = 8 + 8 * ptr_count;
+             
+             let content_size = FLAG_SIZE + LEN_SIZE + keys_encoded.len() + LEN_SIZE + ptr_encoded_size;
+             let blocks_needed = content_size.div_ceil(BLOCK_SIZE);
+             
+             let parent_start = offset;
+             let mut current_offset = parent_start + (blocks_needed as u64 * BLOCK_SIZE as u64);
+             
+             let mut pointers = Vec::with_capacity(ptr_count);
+             for child in &self.children {
+                 pointers.push(current_offset);
+                 current_offset = child.serialize_to_block(file, buffer, current_offset)?;
+             }
+             
+             let pointers_encoded = binary_serialize(&pointers)?;
+             let pointers_len = u32::try_from(pointers_encoded.len()).map_err(to_io_error)?;
+             
+             file.seek(SeekFrom::Start(parent_start))?;
+             let mut data = Vec::with_capacity(blocks_needed * BLOCK_SIZE);
+             data.push(0u8);
+             data.extend_from_slice(&keys_len.to_le_bytes());
+             data.extend_from_slice(&keys_encoded);
+             data.extend_from_slice(&pointers_len.to_le_bytes());
+             data.extend_from_slice(&pointers_encoded);
+             
+             let pad_len = (blocks_needed * BLOCK_SIZE) - data.len();
+             if pad_len > 0 {
+                 data.extend(std::iter::repeat(0).take(pad_len));
+             }
+             file.write_all(&data)?;
+             
+             Ok(current_offset)
         }
-
-        Ok(current_offset)
     }
 
     /// Serialize the tree in breadth-first order for better disk locality
@@ -642,68 +630,71 @@ where
 
     fn deserialize_from_block<R: Read + Seek>(
         file: &mut R,
-        buffer: &mut [u8],
+        buffer: &mut Vec<u8>,
         offset: u64,
         nested: bool,
     ) -> io::Result<(Self, Option<Vec<u64>>)> {
-        // Read the full first block into buffer (always aligned on-disk)
         file.seek(SeekFrom::Start(offset))?;
-        file.read_exact(buffer)?;
-
-        let slice = &buffer[..];
-
-        // Node type
-        let is_leaf = slice[0] == 1u8;
-        let mut read_pos = FLAG_SIZE;
-
-        // ---- Keys ----
-        let keys_length = u32_from_bytes(&slice[read_pos..read_pos + LEN_SIZE])? as usize;
+        
+        let header_required = FLAG_SIZE + LEN_SIZE;
+        if buffer.len() < header_required {
+            buffer.resize(header_required, 0);
+        }
+        
+        file.read_exact(&mut buffer[0..header_required])?;
+        
+        let is_leaf = buffer[0] != 0;
+        let keys_len = u32_from_bytes(&buffer[FLAG_SIZE..FLAG_SIZE + LEN_SIZE])? as usize;
+        
+        let min_required = header_required + keys_len + LEN_SIZE;
+        if buffer.len() < min_required {
+            buffer.resize(min_required, 0);
+        }
+        
+        file.read_exact(&mut buffer[header_required..min_required])?;
+        
+        let mut read_pos = FLAG_SIZE + LEN_SIZE;
+        let keys: Vec<K> = binary_deserialize(&buffer[read_pos..read_pos + keys_len])?;
+        read_pos += keys_len;
+        
+        let payload_len = u32_from_bytes(&buffer[read_pos..read_pos + LEN_SIZE])? as usize;
         read_pos += LEN_SIZE;
-        let keys: Vec<K> = binary_deserialize(&slice[read_pos..read_pos + keys_length])?;
-        read_pos += keys_length;
-
-        // ---- Value info (offset, length) for leaf nodes ----
-        let (value_info, values): (Vec<ValueInfo>, Vec<V>) = if is_leaf {
-            // Read value_info
-            let info_length = u32_from_bytes(&slice[read_pos..read_pos + LEN_SIZE])? as usize;
-            read_pos += LEN_SIZE;
-            let info: Vec<ValueInfo> = binary_deserialize(&slice[read_pos..read_pos + info_length])?;
-
-            // Values are loaded on-demand when nested=true
-            if nested {
-                let mut vals = Vec::with_capacity(info.len());
-                for value_info in &info {
-                    let value = Self::load_value_from_info(file, value_info)?;
-                    vals.push(value);
-                }
-                (info, vals)
-            } else {
-                (info, Vec::new())
-            }
+        
+        let total_required = min_required + payload_len;
+        if buffer.len() < total_required {
+            buffer.resize(total_required, 0);
+        }
+        
+        file.read_exact(&mut buffer[min_required..total_required])?;
+        
+        let (value_info, values, children, children_pointer) = if is_leaf {
+             let info: Vec<ValueInfo> = binary_deserialize(&buffer[read_pos..read_pos + payload_len])?;
+             let vals = if nested {
+                 let mut v = Vec::with_capacity(info.len());
+                 for i in &info {
+                     v.push(Self::load_value_from_info(file, i)?);
+                 }
+                 v
+             } else {
+                 Vec::new()
+             };
+             (info, vals, Vec::new(), None)
         } else {
-            (Vec::new(), Vec::new())
+             let pointers: Vec<u64> = binary_deserialize(&buffer[read_pos..read_pos + payload_len])?;
+             let nodes = if nested {
+                 let mut n = Vec::with_capacity(pointers.len());
+                 let mut child_buf = Vec::with_capacity(BLOCK_SIZE);
+                 for &ptr in &pointers {
+                     let (child, _) = Self::deserialize_from_block(file, &mut child_buf, ptr, nested)?;
+                     n.push(child);
+                 }
+                 n
+             } else {
+                 Vec::new()
+             };
+             (Vec::new(), Vec::new(), nodes, Some(pointers))
         };
-
-        // ---- Pointers for internal nodes ----
-        let (children, children_pointer): (Vec<Self>, Option<Vec<u64>>) = if is_leaf {
-            (Vec::new(), None)
-        } else {
-            let pointers_length = u32_from_bytes(&slice[read_pos..read_pos + LEN_SIZE])? as usize;
-            read_pos += LEN_SIZE;
-            let pointers: Vec<u64> = binary_deserialize(&slice[read_pos..read_pos + pointers_length])?;
-            if nested {
-                let mut nodes = Vec::with_capacity(pointers.len());
-                let mut child_buffer = vec![0u8; BLOCK_SIZE];
-                for &ptr in &pointers {
-                    let (child, _) = Self::deserialize_from_block(file, &mut child_buffer, ptr, nested)?;
-                    nodes.push(child);
-                }
-                (nodes, None)
-            } else {
-                (Vec::new(), Some(pointers))
-            }
-        };
-
+        
         Ok((Self { keys, children, is_leaf, value_info, values }, children_pointer))
     }
 
@@ -886,7 +877,7 @@ where
             root: BPlusTreeNode::<K, V>::new(true),
             inner_order,
             leaf_order,
-            dirty: true,
+            dirty: true, // an empty tree is stored!
         }
     }
 
@@ -1013,7 +1004,7 @@ where
 
 fn query_tree<K, V, R: Read + Seek>(
     file: &mut R,
-    buffer: &mut [u8],
+    buffer: &mut Vec<u8>,
     cache: &mut IndexMap<u64, Vec<u8>>,
     key: &K,
     start_offset: u64,
@@ -1082,7 +1073,7 @@ where
 
 fn query_tree_le<K, V, R: Read + Seek>(
     file: &mut R,
-    buffer: &mut [u8],
+    buffer: &mut Vec<u8>,
     cache: &mut IndexMap<u64, Vec<u8>>,
     key: &K,
     start_offset: u64,
@@ -2768,6 +2759,62 @@ mod tests {
             assert_eq!(query.query(&i).unwrap(), val);
         }
         
+        Ok(())
+    }
+
+    #[test]
+    fn test_large_keys_multiblock_node() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_multiblock.bin");
+        
+        let mut tree = BPlusTree::<String, u32>::new();
+        
+        // 5 keys of 2000 bytes each. Total ~10KB keys.
+        // Should span ~3 blocks (4KB each).
+        for i in 0..5 {
+            let key = format!("{:04}{}", i, "a".repeat(2000));
+            tree.insert(key, i);
+        }
+        
+        tree.store(&filepath)?;
+        drop(tree);
+        
+        let loaded = BPlusTree::<String, u32>::load(&filepath)?;
+        for i in 0..5 {
+            let key = format!("{:04}{}", i, "a".repeat(2000));
+            assert_eq!(loaded.query(&key), Some(i).as_ref());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_upsert_multiblock_node() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_multiblock_upsert.bin");
+        
+        let mut tree = BPlusTree::<String, u32>::new();
+        tree.store(&filepath)?;
+        drop(tree);
+        
+        let mut updater = BPlusTreeUpdate::<String, u32>::try_new(&filepath)?;
+        
+        // Upsert large keys
+        let mut batch = Vec::new();
+        let keys: Vec<String> = (0..5).map(|i| format!("{:04}{}", i, "b".repeat(2000))).collect();
+        let vals: Vec<u32> = (0..5).collect();
+        
+        for i in 0..5 {
+            batch.push((&keys[i], &vals[i]));
+        }
+        
+        updater.upsert_batch(&batch)?;
+        drop(updater);
+        
+        let mut query = BPlusTreeQuery::<String, u32>::try_new(&filepath)?;
+        for i in 0..5 {
+            let val = query.query(&keys[i]).unwrap();
+            assert_eq!(val, vals[i]);
+        }
         Ok(())
     }
 }
