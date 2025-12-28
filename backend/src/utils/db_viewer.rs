@@ -7,25 +7,19 @@ use shared::model::{M3uPlaylistItem, XtreamPlaylistItem};
 use crate::repository::bplustree::{BPlusTreeDiskIterator, BPlusTreeQuery};
 
 pub fn db_viewer(filename: &str, content_type: &str) {
+    let mut log_builder = Builder::from_default_env();
+    log_builder.target(Target::Stderr);
+    log_builder.filter_level(LevelFilter::Info);
+    let _ = log_builder.try_init();
+
     let path = match PathBuf::from(filename).canonicalize() {
         Ok(p) => p,
         Err(err) => {
-            eprintln!("File does not exist! {err}");
+            error!("Invalid file path! {err}");
             let _ = std::io::stderr().flush();
             std::process::exit(1);
         }
     };
-
-    if !path.exists() {
-        eprintln!("File does not exist! {}", path.display());
-        let _ = std::io::stderr().flush();
-        std::process::exit(1);
-    }
-
-    let mut log_builder = Builder::from_default_env();
-    log_builder.target(Target::Stderr);
-    log_builder.filter_level(LevelFilter::Info);
-    log_builder.init();
 
     match content_type {
         "xtream" => {

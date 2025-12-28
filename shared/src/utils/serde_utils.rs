@@ -263,23 +263,14 @@ pub fn parse_timestamp(value: &str) -> Result<Option<i64>, ParseError> {
     let timestamp = Utc.from_utc_datetime(&dt).timestamp();
     Ok(Some(timestamp))
 }
-//
-// pub fn deserialize_json_as_opt_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-// where
-//     D: Deserializer<'de>,
-// {
-//     let val: Value = Deserialize::deserialize(deserializer)?;
-//     Ok(Some(val.to_string()))
-// }
-//
-// pub fn serialize_json_opt_string<'de, S>(value: &String, serializer: S) -> Result<Option<String>, S::Error>
-// where
-//     S: Serializer,
-// {
-//     let json: Value = serde_json::from_str(value).map_err(serde::ser::Error::custom)?;
-//     json.serialize(serializer)
-// }
 
+/// Serializes an `Option<String>` as a Base64-encoded, LZ4-compressed string.
+///
+/// - We want to avoid using `serde_json::Value` in the struct to save memory.
+/// - To avoid JSON escaping issues, we store the JSON content as a string.
+/// - The string is compressed using LZ4 and encoded in Base64.
+/// - Works for any JSON content: strings, arrays, and objects.
+/// - Empty arrays or objects are serialized as `null`.
 pub fn serialize_json_as_opt_string<S>(value: &Option<String>,
                                        serializer: S,
 ) -> Result<S::Ok, S::Error>
@@ -298,6 +289,12 @@ where
     serializer.serialize_some(&encoded)
 }
 
+/// Deserializes an `Option<String>` from JSON.
+///
+/// - Accepts both compressed Base64-LZ4 strings and regular JSON strings.
+/// - Returns `None` for empty arrays, empty objects, null, numbers, or booleans.
+/// - Decompresses Base64-LZ4 content back into the original string.
+/// - Handles arrays and objects by converting them to JSON strings if not empty.
 pub fn deserialize_json_as_opt_string<'de, D>(
     deserializer: D,
 ) -> Result<Option<String>, D::Error>

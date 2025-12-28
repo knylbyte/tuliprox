@@ -74,6 +74,6 @@ pub fn init_logger(user_log_level: Option<&str>, config_file: &str) {
     for module in LOG_ERROR_LEVEL_MOD {
         log_builder.filter_module(module, LevelFilter::Error);
     }
-    log_builder.init();
+    let _ = log_builder.try_init();
     info!("Log Level {}", &log_levels.join(", "));
 }

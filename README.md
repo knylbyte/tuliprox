@@ -66,6 +66,8 @@ Options:
   --healthcheck                    Healtcheck for docker
   --scan-library                   Scan library directories
   --force-library-rescan           Force full library rescan
+  --dbf                            File path for db file
+  --dbt                            db file content m3u or xtream
 ```
 
 ## 1. `config.yml`
@@ -697,6 +699,10 @@ library:
 
 # Force full rescan (ignores modification timestamps)
 ./tuliprox --force-library-rescan
+
+# Show db content
+./tuliprox --dbf /opt/tuliprox/data/all_channels/xtream/video.db --dbt xtream
+./tuliprox --dbf /opt/tuliprox/data/all_channels/m3u.db --dbt m3u
 ```
 
 **API Endpoints**:

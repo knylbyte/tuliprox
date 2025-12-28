@@ -1,4 +1,5 @@
 use crate::utils;
+use crate::utils::{binary_deserialize, binary_serialize};
 use indexmap::IndexMap;
 use log::error;
 use serde::{Deserialize, Serialize};
@@ -9,15 +10,26 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
-use crate::utils::{binary_deserialize, binary_serialize};
 
 const BLOCK_SIZE: usize = 4096;
 const LEN_SIZE: usize = 4;
 const FLAG_SIZE: usize = 1;
 const MAGIC: &[u8; 4] = b"BTRE";
-const STORAGE_VERSION: u32 = 3;
+const STORAGE_VERSION: u32 = 1;
 const HEADER_SIZE: u64 = BLOCK_SIZE as u64;
 const ROOT_OFFSET_POS: u64 = 8;
+
+const POINTER_SIZE: usize = 8;
+const INFO_SIZE: usize = 12; // (u64, u32)
+
+// MessagePack overhead estimation
+const MSGPACK_OVERHEAD_PER_ENTRY: usize = 16;
+
+
+// Value packing configuration
+const SMALL_VALUE_THRESHOLD: usize = 256;  // Pack values <= 256 bytes
+const PACK_BLOCK_HEADER_SIZE: usize = 4;   // u32 for value count
+const PACK_VALUE_HEADER_SIZE: usize = 4;   // u32 for each value length
 
 fn is_multiple_of_block_size(file: &File) -> io::Result<bool> {
     let file_size = file.metadata()?.len(); // Get the file size in bytes
@@ -60,14 +72,33 @@ where
 }
 
 
+/// Represents how a value is stored on disk
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum ValueStorageMode {
+    /// Multiple small values packed in one block
+    /// (`block_offset`, `value_index_in_block`)
+    Packed(u64, u16),
+
+    /// Single value in dedicated block(s)
+    /// (`block_offset`)
+    Single(u64),
+}
+
+/// Extended value info that includes storage mode and length
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ValueInfo {
+    mode: ValueStorageMode,
+    length: u32,
+}
+
 
 #[derive(Debug, Clone)]
 struct BPlusTreeNode<K, V> {
     keys: Vec<K>,
     children: Vec<BPlusTreeNode<K, V>>,
     is_leaf: bool,
-    value_info: Vec<(u64, u32)>, // Store (offset, length) for values in leaf nodes
-    values: Vec<V>,              // only used in leaf nodes
+    value_info: Vec<ValueInfo>,
+    values: Vec<V>, // only used in leaf nodes
 }
 
 impl<K, V> BPlusTreeNode<K, V>
@@ -85,14 +116,6 @@ where
             values: vec![],
         }
     }
-
-    // pub fn count(&self) -> usize {
-    //     if self.is_leaf {
-    //         self.values.len()
-    //     } else {
-    //         self.children.iter().map(|child| child.count()).sum()
-    //     }
-    // }
 
     #[inline]
     fn is_overflow(&self, order: usize) -> bool {
@@ -215,15 +238,47 @@ where
         self.children.iter().for_each(|child| child.traverse(visit));
     }
 
+    /// Write a packed value block to disk
+    fn write_packed_block<W: Write + Seek>(
+        file: &mut W,
+        buffer: &mut [u8],
+        offset: u64,
+        values: &[(u16, &[u8])],
+    ) -> io::Result<()> {
+        file.seek(SeekFrom::Start(offset))?;
+
+        // Write count
+        let count = u32::try_from(values.len()).map_err(to_io_error)?;
+        buffer[0..4].copy_from_slice(&count.to_le_bytes());
+        let mut pos = 4;
+
+        // Write each value: length + data
+        for (_, value_bytes) in values {
+            let len = u32::try_from(value_bytes.len()).map_err(to_io_error)?;
+            buffer[pos..pos + 4].copy_from_slice(&len.to_le_bytes());
+            pos += 4;
+            buffer[pos..pos + value_bytes.len()].copy_from_slice(value_bytes);
+            pos += value_bytes.len();
+        }
+
+        // Zero remaining space
+        if pos < BLOCK_SIZE {
+            buffer[pos..BLOCK_SIZE].fill(0u8);
+        }
+
+        file.write_all(&buffer[..BLOCK_SIZE])?;
+        Ok(())
+    }
+
     /// Calculate the serialized size of this node in bytes (rounded up to block size)
     fn calculate_serialized_size(&self) -> io::Result<u64> {
         // Header: is_leaf flag
         let mut size = FLAG_SIZE;
-        
+
         // Keys: length + serialized data
         let keys_encoded = binary_serialize(&self.keys)?;
         size += LEN_SIZE + keys_encoded.len();
-        
+
         if self.is_leaf {
             // Leaf nodes now store value_info instead of values
             // value_info: length + Vec<(u64, u32)>
@@ -237,7 +292,7 @@ where
             let pointer_encoded = binary_serialize(&pointer_vec)?;
             size += LEN_SIZE + pointer_encoded.len();
         }
-        
+
         // Round up to block size
         let blocks = size.div_ceil(BLOCK_SIZE);
         Ok((blocks * BLOCK_SIZE) as u64)
@@ -249,7 +304,7 @@ where
         buffer: &mut Vec<u8>, // must be length BLOCK_SIZE
         offset: u64,
     ) -> io::Result<u64> {
-        // Keep backward-compatible on-disk layout with minimal allocations.
+        // on-disk layout with minimal allocations.
         let mut current_offset = offset;
 
         // Set node type (no need to zero entire buffer upfront)
@@ -272,7 +327,7 @@ where
             // ---- Leaf nodes: write value info (offset + length) ----
             let info_encoded = binary_serialize(&self.value_info)?;
             let info_len = info_encoded.len();
-            
+
             // CRITICAL CHECK: Ensure metadata fits in block
             if write_pos + LEN_SIZE + info_len > BLOCK_SIZE {
                 return Err(io::Error::other(format!("Leaf node overflow: keys ({keys_len}) + value_info ({info_len}) exceeds block size")));
@@ -314,7 +369,7 @@ where
 
             // CRITICAL CHECK: Ensure pointers fit in block
             if write_pos + LEN_SIZE + pointer_encoded.len() > BLOCK_SIZE {
-                 return Err(io::Error::other(format!("Internal node overflow during recursion: keys ({}) + pointers ({}) exceeds block size", keys_len, pointer_encoded.len())));
+                return Err(io::Error::other(format!("Internal node overflow during recursion: keys ({}) + pointers ({}) exceeds block size", keys_len, pointer_encoded.len())));
             }
 
             file.seek(SeekFrom::Start(pointer_offset_within_first_block))?;
@@ -327,6 +382,7 @@ where
 
     /// Serialize the tree in breadth-first order for better disk locality
     /// This improves query performance by keeping nodes at the same level contiguous
+    #[allow(clippy::too_many_lines)]
     fn serialize_breadth_first<W: Write + Seek>(
         &mut self,
         file: &mut W,
@@ -334,11 +390,11 @@ where
         start_offset: u64,
     ) -> io::Result<u64> {
         use std::collections::HashMap;
-        
+
         // Pass 1: Calculate offsets for all nodes in breadth-first order (Immutable)
         let mut node_offset_map: HashMap<*const BPlusTreeNode<K, V>, u64> = HashMap::new();
         let mut current_offset = start_offset;
-        
+
         {
             let mut current_level = vec![&*self];
             node_offset_map.insert(std::ptr::from_ref(self), current_offset);
@@ -359,8 +415,8 @@ where
                 current_level = next_level;
             }
         }
-        
-        // Pass 2: Calculate offsets for value blocks and update value_info (Mutable)
+
+        // Pass 2: Pack values and calculate offsets (Mutable)
         {
             let mut current_level_mut = vec![&mut *self];
             while !current_level_mut.is_empty() {
@@ -368,13 +424,76 @@ where
                 for node in current_level_mut {
                     if node.is_leaf {
                         node.value_info.clear();
+
+                        // Serialize all values first to determine sizes
+                        let mut serialized_values: Vec<Vec<u8>> = Vec::new();
                         for value in &node.values {
                             let value_bytes = binary_serialize(value)?;
-                            let value_len = u32::try_from(value_bytes.len()).unwrap_or(0);
-                            node.value_info.push((current_offset, value_len));
-                            
-                            let blocks_needed = (value_len as usize).div_ceil(BLOCK_SIZE);
-                            current_offset += (blocks_needed * BLOCK_SIZE) as u64;
+                            serialized_values.push(value_bytes);
+                        }
+
+                        // Pack small values together, keep large values separate
+                        let mut current_pack_offset: Option<u64> = None;
+                        let mut current_pack_values: Vec<Vec<u8>> = Vec::new();
+                        let mut current_pack_size = PACK_BLOCK_HEADER_SIZE;
+
+                        for value_bytes in serialized_values {
+                            let size = value_bytes.len();
+
+                            if size <= SMALL_VALUE_THRESHOLD {
+                                let entry_size = PACK_VALUE_HEADER_SIZE + size;
+
+                                if current_pack_size + entry_size <= BLOCK_SIZE {
+                                    // Add to current pack
+                                    if current_pack_offset.is_none() {
+                                        current_pack_offset = Some(current_offset);
+                                    }
+                                    let pack_index = u16::try_from(current_pack_values.len()).map_err(to_io_error)?;
+                                    current_pack_values.push(value_bytes);
+                                    current_pack_size += entry_size;
+
+                                    node.value_info.push(ValueInfo {
+                                        mode: ValueStorageMode::Packed(current_pack_offset.unwrap(), pack_index),
+                                        length: u32::try_from(size).map_err(to_io_error)?,
+                                    });
+                                } else {
+                                    // Flush current pack and start new one
+                                    if !current_pack_values.is_empty() {
+                                        current_offset += BLOCK_SIZE as u64;
+                                    }
+                                    current_pack_offset = Some(current_offset);
+                                    current_pack_values.clear();
+                                    current_pack_values.push(value_bytes);
+                                    current_pack_size = PACK_BLOCK_HEADER_SIZE + entry_size;
+
+                                    node.value_info.push(ValueInfo {
+                                        mode: ValueStorageMode::Packed(current_pack_offset.unwrap(), 0),
+                                        length: u32::try_from(size).map_err(to_io_error)?,
+                                    });
+                                }
+                            } else {
+                                // Flush any pending pack
+                                if !current_pack_values.is_empty() {
+                                    current_offset += BLOCK_SIZE as u64;
+                                    current_pack_values.clear();
+                                    current_pack_offset = None;
+                                    current_pack_size = PACK_BLOCK_HEADER_SIZE;
+                                }
+
+                                // Write as single value
+                                node.value_info.push(ValueInfo {
+                                    mode: ValueStorageMode::Single(current_offset),
+                                    length: u32::try_from(size).map_err(to_io_error)?,
+                                });
+
+                                let blocks_needed = size.div_ceil(BLOCK_SIZE);
+                                current_offset += (blocks_needed * BLOCK_SIZE) as u64;
+                            }
+                        }
+
+                        // Flush final pack if any
+                        if !current_pack_values.is_empty() {
+                            current_offset += BLOCK_SIZE as u64;
                         }
                     } else {
                         for child in &mut node.children {
@@ -385,7 +504,7 @@ where
                 current_level_mut = next_level_mut;
             }
         }
-        
+
         // Pass 3: Write nodes with their keys and value pointers (Immutable)
         {
             let mut current_level_indices = vec![&*self];
@@ -394,14 +513,14 @@ where
                 for node in current_level_indices {
                     let node_ptr = std::ptr::from_ref(node);
                     let node_offset = node_offset_map[&node_ptr];
-                    
+
                     if node.is_leaf {
                         node.serialize_to_block(file, buffer, node_offset)?;
                     } else {
                         let child_offsets: Vec<u64> = node.children.iter()
                             .map(|c| node_offset_map[&std::ptr::from_ref(c)])
                             .collect();
-                        
+
                         node.serialize_internal_with_offsets(file, buffer, node_offset, &child_offsets)?;
                         for child in &node.children {
                             next_level.push(child);
@@ -411,28 +530,54 @@ where
                 current_level_indices = next_level;
             }
         }
-        
-        // Pass 4: Write all value blocks in a contiguous data pool (Immutable)
+
+        // Pass 4: Write all value blocks (packed and single) (Immutable)
         {
             let mut current_level_values = vec![&*self];
             while !current_level_values.is_empty() {
                 let mut next_level = Vec::new();
                 for node in current_level_values {
                     if node.is_leaf {
-                        for (value, &(val_offset, _val_len)) in node.values.iter().zip(node.value_info.iter()) {
+                        // Group values by their storage location
+                        let mut pack_blocks: HashMap<u64, Vec<(u16, Vec<u8>)>> = HashMap::new();
+
+                        for (value, info) in node.values.iter().zip(node.value_info.iter()) {
                             let value_bytes = binary_serialize(value)?;
-                            file.seek(SeekFrom::Start(val_offset))?;
-                            
-                            let mut pos = 0;
-                            while pos < value_bytes.len() {
-                                let chunk = std::cmp::min(BLOCK_SIZE, value_bytes.len() - pos);
-                                buffer[..chunk].copy_from_slice(&value_bytes[pos..pos + chunk]);
-                                if chunk < BLOCK_SIZE {
-                                    buffer[chunk..BLOCK_SIZE].fill(0u8);
+
+                            match info.mode {
+                                ValueStorageMode::Packed(block_offset, index) => {
+                                    pack_blocks.entry(block_offset)
+                                        .or_default()
+                                        .push((index, value_bytes));
                                 }
-                                file.write_all(buffer)?;
-                                pos += chunk;
+                                ValueStorageMode::Single(block_offset) => {
+                                    // Write single value (existing logic)
+                                    file.seek(SeekFrom::Start(block_offset))?;
+                                    let mut pos = 0;
+                                    while pos < value_bytes.len() {
+                                        let chunk = std::cmp::min(BLOCK_SIZE, value_bytes.len() - pos);
+                                        buffer[..chunk].copy_from_slice(&value_bytes[pos..pos + chunk]);
+                                        if chunk < BLOCK_SIZE {
+                                            buffer[chunk..BLOCK_SIZE].fill(0u8);
+                                        }
+                                        file.write_all(buffer)?;
+                                        pos += chunk;
+                                    }
+                                }
                             }
+                        }
+
+                        // Write packed blocks
+                        for (block_offset, mut values) in pack_blocks {
+                            // Sort by index to ensure correct order
+                            values.sort_by_key(|(idx, _)| *idx);
+
+                            // Convert to slice references
+                            let value_refs: Vec<(u16, &[u8])> = values.iter()
+                                .map(|(idx, bytes)| (*idx, bytes.as_slice()))
+                                .collect();
+
+                            Self::write_packed_block(file, buffer, block_offset, &value_refs)?;
                         }
                     } else {
                         for child in &node.children {
@@ -443,7 +588,7 @@ where
                 current_level_values = next_level;
             }
         }
-        
+
         Ok(current_offset)
     }
 
@@ -482,10 +627,10 @@ where
         // Write child pointers
         let pointer_encoded = binary_serialize(child_offsets)?;
         let pointer_len = u32::try_from(pointer_encoded.len()).map_err(to_io_error)?;
-        
+
         // CRITICAL CHECK: Ensure pointers fit in the remaining space of the first block or we've allocated enough
         if write_pos + LEN_SIZE + pointer_encoded.len() > BLOCK_SIZE {
-             return Err(io::Error::other(format!("Internal node overflow: keys ({}) + pointers ({}) exceeds block size. Consider reducing ORDER.", keys_len, pointer_encoded.len())));
+            return Err(io::Error::other(format!("Internal node overflow: keys ({}) + pointers ({}) exceeds block size. Consider reducing ORDER.", keys_len, pointer_encoded.len())));
         }
 
         file.seek(SeekFrom::Start(pointer_offset_within_first_block))?;
@@ -506,7 +651,7 @@ where
         file.read_exact(buffer)?;
 
         let slice = &buffer[..];
-        
+
         // Node type
         let is_leaf = slice[0] == 1u8;
         let mut read_pos = FLAG_SIZE;
@@ -518,17 +663,17 @@ where
         read_pos += keys_length;
 
         // ---- Value info (offset, length) for leaf nodes ----
-        let (value_info, values): (Vec<(u64, u32)>, Vec<V>) = if is_leaf {
+        let (value_info, values): (Vec<ValueInfo>, Vec<V>) = if is_leaf {
             // Read value_info
             let info_length = u32_from_bytes(&slice[read_pos..read_pos + LEN_SIZE])? as usize;
             read_pos += LEN_SIZE;
-            let info: Vec<(u64, u32)> = binary_deserialize(&slice[read_pos..read_pos + info_length])?;
-            
+            let info: Vec<ValueInfo> = binary_deserialize(&slice[read_pos..read_pos + info_length])?;
+
             // Values are loaded on-demand when nested=true
             if nested {
                 let mut vals = Vec::with_capacity(info.len());
-                for &(value_offset, value_len) in &info {
-                    let value = Self::load_value_with_len(file, value_offset, value_len)?;
+                for value_info in &info {
+                    let value = Self::load_value_from_info(file, value_info)?;
                     vals.push(value);
                 }
                 (info, vals)
@@ -578,17 +723,17 @@ where
         read_pos += keys_length;
 
         // ---- Value info (offset, length) for leaf nodes ----
-        let (value_info, values): (Vec<(u64, u32)>, Vec<V>) = if is_leaf {
+        let (value_info, values): (Vec<ValueInfo>, Vec<V>) = if is_leaf {
             // Read value_info
             let info_length = u32_from_bytes(&slice[read_pos..read_pos + LEN_SIZE])? as usize;
             read_pos += LEN_SIZE;
-            let info: Vec<(u64, u32)> = binary_deserialize(&slice[read_pos..read_pos + info_length])?;
-            
+            let info: Vec<ValueInfo> = binary_deserialize(&slice[read_pos..read_pos + info_length])?;
+
             // Values are loaded on-demand when nested=true
             if nested {
                 let mut vals = Vec::with_capacity(info.len());
-                for &(value_offset, value_len) in &info {
-                    let value = Self::load_value_with_len(file, value_offset, value_len)?;
+                for value_info in &info {
+                    let value = Self::load_value_from_info(file, value_info)?;
                     vals.push(value);
                 }
                 (info, vals)
@@ -622,12 +767,75 @@ where
         Ok((Self { keys, children, is_leaf, value_info, values }, children_pointer))
     }
 
+    /// Load a value based on its storage info
+    fn load_value_from_info<R: Read + Seek>(file: &mut R, info: &ValueInfo) -> io::Result<V> {
+        match info.mode {
+            ValueStorageMode::Single(offset) => {
+                // Load single value (existing logic)
+                Self::load_value_with_len(file, offset, info.length)
+            }
+            ValueStorageMode::Packed(block_offset, index) => {
+                // Load from packed block
+                Self::load_value_from_packed_block(file, block_offset, index, info.length)
+            }
+        }
+    }
+
+    /// Load a value from a packed block
+    fn load_value_from_packed_block<R: Read + Seek>(
+        file: &mut R,
+        block_offset: u64,
+        value_index: u16,
+        _expected_length: u32,
+    ) -> io::Result<V> {
+        file.seek(SeekFrom::Start(block_offset))?;
+
+        let mut block_buffer = vec![0u8; BLOCK_SIZE];
+        file.read_exact(&mut block_buffer)?;
+
+        // Read count
+        let count = u32::from_le_bytes(block_buffer[0..4].try_into().map_err(to_io_error)?);
+        let mut pos = 4;
+
+        // Skip to target value
+        for i in 0..=value_index {
+            if pos + 4 > BLOCK_SIZE {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Packed block corrupted: position {pos} exceeds block size"),
+                ));
+            }
+
+            let len = u32::from_le_bytes(block_buffer[pos..pos + 4].try_into().map_err(to_io_error)?) as usize;
+            pos += 4;
+
+            if i == value_index {
+                // Found target value
+                if pos + len > BLOCK_SIZE {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Packed value corrupted: length {len} at position {pos} exceeds block size"),
+                    ));
+                }
+                let value_data = &block_buffer[pos..pos + len];
+                return binary_deserialize(value_data);
+            }
+
+            pos += len;
+        }
+
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Value index {value_index} not found in packed block (count: {count})"),
+        ))
+    }
+
     fn load_value_with_len<R: Read + Seek>(file: &mut R, offset: u64, length: u32) -> io::Result<V> {
         file.seek(SeekFrom::Start(offset))?;
-        
+
         let mut value_data = vec![0u8; length as usize];
         file.read_exact(&mut value_data)?;
-        
+
         binary_deserialize(&value_data)
     }
 }
@@ -644,18 +852,13 @@ const fn calc_order<K>() -> (usize, usize) {
     // Phase 2 Layout:
     // Internal: FLAG (1) + LEN_K (4) + KEYS + LEN_P (4) + POINTERS (8 each)
     // Leaf:    FLAG (1) + LEN_K (4) + KEYS + LEN_INFO (4) + VALUE_INFO (12 each)
-    
+
     let base_overhead = FLAG_SIZE + LEN_SIZE + LEN_SIZE + 64; // flag + keys_len + info_len + safety buffer
     let key_size = size_of::<K>();
-    let pointer_size = 8;
-    let info_size = 12; // (u64, u32)
-    
-    // MessagePack overhead can be more than 2 bytes for larger types
-    let msgpack_overhead_per_entry = 4; 
 
-    let inner_order = (BLOCK_SIZE - base_overhead) / (key_size + pointer_size + msgpack_overhead_per_entry);
-    let leaf_order = (BLOCK_SIZE - base_overhead) / (key_size + info_size + msgpack_overhead_per_entry);
-    
+    let inner_order = (BLOCK_SIZE - base_overhead) / (key_size + POINTER_SIZE + MSGPACK_OVERHEAD_PER_ENTRY);
+    let leaf_order = (BLOCK_SIZE - base_overhead) / (key_size + INFO_SIZE + MSGPACK_OVERHEAD_PER_ENTRY);
+
     // Ensure we have at least a minimal order (manual max for const fn)
     let final_inner = if inner_order < 2 { 2 } else { inner_order };
     let final_leaf = if leaf_order < 2 { 2 } else { leaf_order };
@@ -683,7 +886,7 @@ where
             root: BPlusTreeNode::<K, V>::new(true),
             inner_order,
             leaf_order,
-            dirty: false,
+            dirty: true,
         }
     }
 
@@ -744,7 +947,7 @@ where
         header[0..4].copy_from_slice(MAGIC);
         header[4..8].copy_from_slice(&STORAGE_VERSION.to_le_bytes());
         // Placeholder for root offset, will be updated after serialization
-        header[8..16].copy_from_slice(&HEADER_SIZE.to_le_bytes()); 
+        header[8..16].copy_from_slice(&HEADER_SIZE.to_le_bytes());
         file.write_all(&header)?;
 
         // Use breadth-first serialization for better disk locality
@@ -809,11 +1012,11 @@ where
 }
 
 fn query_tree<K, V, R: Read + Seek>(
-    file: &mut R, 
+    file: &mut R,
     buffer: &mut [u8],
     cache: &mut IndexMap<u64, Vec<u8>>,
-    key: &K, 
-    start_offset: u64
+    key: &K,
+    start_offset: u64,
 ) -> Option<V>
 where
     K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
@@ -828,7 +1031,7 @@ where
             // We use a fresh buffer for the deserializer to avoid borrowing conflicts
             let temp_buffer = data;
             let res = BPlusTreeNode::<K, V>::deserialize_from_block_slice(&temp_buffer, file, false).ok()?;
-            
+
             // Re-insert to mark as MRU
             if let Some(removed) = cache.shift_remove(&offset) {
                 cache.insert(offset, removed);
@@ -856,14 +1059,14 @@ where
             return match node.keys.binary_search(key) {
                 Ok(idx) => {
                     match node.value_info.get(idx) {
-                        Some(&(val_offset, val_len)) => BPlusTreeNode::<K, V>::load_value_with_len(file, val_offset, val_len).ok(),
+                        Some(info) => BPlusTreeNode::<K, V>::load_value_from_info(file, info).ok(),
                         None => None,
                     }
                 }
                 Err(_) => None,
             };
         }
-        
+
         let child_idx = get_entry_index_upper_bound::<K>(&node.keys, key);
         if let Some(child_offsets) = pointers {
             if let Some(child_offset) = child_offsets.get(child_idx) {
@@ -878,11 +1081,11 @@ where
 }
 
 fn query_tree_le<K, V, R: Read + Seek>(
-    file: &mut R, 
+    file: &mut R,
     buffer: &mut [u8],
     cache: &mut IndexMap<u64, Vec<u8>>,
-    key: &K, 
-    start_offset: u64
+    key: &K,
+    start_offset: u64,
 ) -> Option<V>
 where
     K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
@@ -919,19 +1122,19 @@ where
                 return None;
             }
             return match node.value_info.get(idx - 1) {
-                Some(&(val_offset, val_len)) => BPlusTreeNode::<K, V>::load_value_with_len(file, val_offset, val_len).ok(),
+                Some(info) => BPlusTreeNode::<K, V>::load_value_from_info(file, info).ok(),
                 None => None,
             };
         }
-        
+
         let child_idx = get_entry_index_upper_bound::<K>(&node.keys, key);
         if let Some(child_offsets) = pointers {
             if let Some(child_offset) = child_offsets.get(child_idx) {
                 offset = *child_offset;
             } else if let Some(last) = child_offsets.last() {
-                    offset = *last;
+                offset = *last;
             } else {
-               return None;
+                return None;
             }
         } else {
             return None;
@@ -959,7 +1162,7 @@ where
 {
     pub fn try_from_file(file: File) -> io::Result<Self> {
         let mut file = is_file_valid(file)?;
-        
+
         // Verify Header
         let mut header = [0u8; 16];
         file.seek(SeekFrom::Start(0))?;
@@ -1063,8 +1266,8 @@ where
 
             if node.is_leaf {
                 let mut vals = Vec::with_capacity(node.value_info.len());
-                for &(val_off, val_len) in &node.value_info {
-                    let v = BPlusTreeNode::<K, V>::load_value_with_len(&mut self.query.file, val_off, val_len)?;
+                for value_info in &node.value_info {
+                    let v = BPlusTreeNode::<K, V>::load_value_from_info(&mut self.query.file, value_info)?;
                     vals.push(v);
                 }
                 return Ok(Some((node.keys, vals)));
@@ -1149,8 +1352,8 @@ where
 
             if node.is_leaf {
                 let mut vals = Vec::with_capacity(node.value_info.len());
-                for &(val_off, val_len) in &node.value_info {
-                    let v = BPlusTreeNode::<K, V>::load_value_with_len(&mut self.query.file, val_off, val_len)?;
+                for value_info in &node.value_info {
+                    let v = BPlusTreeNode::<K, V>::load_value_from_info(&mut self.query.file, value_info)?;
                     vals.push(v);
                 }
                 return Ok(Some((node.keys, vals)));
@@ -1189,7 +1392,7 @@ where
                 }
                 Err(err) => {
                     error!("BPlusTreeDiskIterator Failed to read next entry: {err}");
-                    return None
+                    return None;
                 }
                 _ => return None,
             }
@@ -1203,6 +1406,8 @@ pub struct BPlusTreeUpdate<K, V> {
     write_buffer: Vec<u8>,
     cache: IndexMap<u64, Vec<u8>>,
     root_offset: u64,
+    inner_order: usize,
+    leaf_order: usize,
     #[allow(dead_code)]
     lock: FileLock,
     _marker_k: PhantomData<K>,
@@ -1241,9 +1446,9 @@ where
         }
         // Acquire lock first
         let lock = FileLock::try_lock(filepath)?;
-        
+
         let mut file = is_file_valid(utils::open_read_write_file(filepath)?)?;
-        
+
         // Verify Header
         let mut header = [0u8; 16];
         file.read_exact(&mut header)?;
@@ -1255,6 +1460,7 @@ where
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Unsupported storage version: {version}")));
         }
         let root_offset = u64::from_le_bytes(header[8..16].try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid root offset slice"))?);
+        let (inner_order, leaf_order) = calc_order::<K>();
 
         Ok(Self {
             file,
@@ -1263,6 +1469,8 @@ where
             cache: IndexMap::with_capacity(1024),
             root_offset,
             lock,
+            inner_order,
+            leaf_order,
             _marker_k: PhantomData,
             _marker_v: PhantomData,
         })
@@ -1293,10 +1501,10 @@ where
                     // COW: Write new value block at end of file
                     let value_bytes = binary_serialize(value)?;
                     let value_len = u32::try_from(value_bytes.len()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Value too large for u32"))?;
-                    
+
                     self.file.seek(SeekFrom::End(0))?;
                     let val_offset = self.file.stream_position()?;
-                    
+
                     let mut pos = 0;
                     while pos < value_bytes.len() {
                         let chunk = std::cmp::min(BLOCK_SIZE, value_bytes.len() - pos);
@@ -1309,7 +1517,10 @@ where
                     }
 
                     // Update leaf metadata
-                    node.value_info[idx] = (val_offset, value_len);
+                    node.value_info[idx] = ValueInfo {
+                        mode: ValueStorageMode::Single(val_offset),
+                        length: value_len,
+                    };
 
                     // Write new leaf node at end of file
                     self.file.seek(SeekFrom::End(0))?;
@@ -1325,14 +1536,14 @@ where
                 if let Some(&child_offset) = pters.get(child_idx) {
                     // Recurse to get a new child offset
                     let new_child_offset = self.update_recursive(child_offset, key, value)?;
-                    
+
                     // Update current node's pointers
                     pters[child_idx] = new_child_offset;
-                    
+
                     // COW: Write new internal node at end of file
                     self.file.seek(SeekFrom::End(0))?;
                     let new_node_offset = self.file.stream_position()?;
-                    
+
                     // Use the robust helper to serialize the internal node with updated child pointers
                     node.serialize_internal_with_offsets(&mut self.file, &mut self.write_buffer, new_node_offset, &pters)?;
                     Ok(new_node_offset)
@@ -1347,13 +1558,13 @@ where
 
     pub fn update(&mut self, key: &K, value: V) -> io::Result<u64> {
         let new_root_offset = self.update_recursive(self.root_offset, key, &value)?;
-        
+
         // Atomic Header Swap
         self.file.seek(SeekFrom::Start(ROOT_OFFSET_POS))?;
         self.file.write_all(&new_root_offset.to_le_bytes())?;
         self.file.flush()?;
         self.file.sync_all()?;
-        
+
         self.root_offset = new_root_offset;
         Ok(new_root_offset)
     }
@@ -1367,18 +1578,18 @@ where
         }
 
         let mut current_root = self.root_offset;
-        
+
         // Perform all updates sequentially
         for (key, value) in items {
             current_root = self.update_recursive(current_root, key, value)?;
         }
-        
+
         // Atomic Header Swap - only once at the end
         self.file.seek(SeekFrom::Start(ROOT_OFFSET_POS))?;
         self.file.write_all(&current_root.to_le_bytes())?;
         self.file.flush()?;
         self.file.sync_all()?;
-        
+
         self.root_offset = current_root;
         Ok(current_root)
     }
@@ -1387,77 +1598,146 @@ where
     /// if it doesn't exist, it will be inserted. This is more efficient than calling `update()`
     /// or `insert()` multiple times as it loads the tree once, performs all operations, and saves once.
     /// returns The final root offset after all upserts, or an error if any operation fails
+    fn insert_value_to_disk(&mut self, value: &V) -> io::Result<(u64, u32)> {
+        let value_bytes = binary_serialize(value)?;
+        let value_len = u32::try_from(value_bytes.len()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Value too large"))?;
+        
+        self.file.seek(SeekFrom::End(0))?;
+        let offset = self.file.stream_position()?;
+        
+        let mut pos = 0;
+        while pos < value_bytes.len() {
+             let chunk = std::cmp::min(BLOCK_SIZE, value_bytes.len() - pos);
+             self.write_buffer[..chunk].copy_from_slice(&value_bytes[pos..pos + chunk]);
+             if chunk < BLOCK_SIZE {
+                 self.write_buffer[chunk..BLOCK_SIZE].fill(0u8);
+             }
+             self.file.write_all(&self.write_buffer)?;
+             pos += chunk;
+        }
+        Ok((offset, value_len))
+    }
+
+    fn write_node(&mut self, node: &BPlusTreeNode<K, V>) -> io::Result<u64> {
+        self.file.seek(SeekFrom::End(0))?;
+        let offset = self.file.stream_position()?;
+        node.serialize_to_block(&mut self.file, &mut self.write_buffer, offset)?;
+        Ok(offset)
+    }
+
+    fn write_internal_node(&mut self, node: &BPlusTreeNode<K, V>, pointers: &[u64]) -> io::Result<u64> {
+        self.file.seek(SeekFrom::End(0))?;
+        let offset = self.file.stream_position()?;
+        node.serialize_internal_with_offsets(&mut self.file, &mut self.write_buffer, offset, pointers)?;
+        Ok(offset)
+    }
+
+    fn upsert_recursive(&mut self, offset: u64, key: K, value: V) -> io::Result<(u64, Option<(K, u64)>)> {
+        let (mut node, pointers_opt) = BPlusTreeNode::<K, V>::deserialize_from_block(
+            &mut self.file,
+            &mut self.read_buffer,
+            offset,
+            false // shallow
+        )?;
+
+        if node.is_leaf {
+             match node.keys.binary_search(&key) {
+                 Ok(idx) => {
+                     let (val_off, val_len) = self.insert_value_to_disk(&value)?;
+                     let new_info = ValueInfo { mode: ValueStorageMode::Single(val_off), length: val_len };
+                     node.value_info[idx] = new_info;
+                     
+                     let new_offset = self.write_node(&node)?;
+                     Ok((new_offset, None))
+                 },
+                 Err(idx) => {
+                     let (val_off, val_len) = self.insert_value_to_disk(&value)?;
+                     let new_info = ValueInfo { mode: ValueStorageMode::Single(val_off), length: val_len };
+                     node.keys.insert(idx, key);
+                     node.value_info.insert(idx, new_info);
+                     
+                     if node.keys.len() > self.leaf_order {
+                         let median = self.leaf_order >> 1;
+                         let mut right_node = BPlusTreeNode::new(true);
+                         right_node.keys = node.keys.split_off(median);
+                         right_node.value_info = node.value_info.split_off(median);
+                         
+                         let promoted_key = right_node.keys.first().ok_or_else(|| io::Error::other("Split resulted in empty right node keys"))?.clone();
+                         
+                         let left_offset = self.write_node(&node)?;
+                         let right_offset = self.write_node(&right_node)?;
+                         
+                         Ok((left_offset, Some((promoted_key, right_offset))))
+                     } else {
+                         let new_offset = self.write_node(&node)?;
+                         Ok((new_offset, None))
+                     }
+                 }
+             }
+        } else {
+            let mut pointers = pointers_opt.unwrap();
+            let idx = get_entry_index_upper_bound(&node.keys, &key);
+            let child_offset = *pointers.get(idx).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Pointer index out of bounds"))?;
+            
+            let (new_child_offset, split_res) = self.upsert_recursive(child_offset, key, value)?;
+            pointers[idx] = new_child_offset;
+            
+            if let Some((median_key, right_child_offset)) = split_res {
+                node.keys.insert(idx, median_key);
+                pointers.insert(idx + 1, right_child_offset);
+                
+                if node.keys.len() > self.inner_order {
+                    let median = self.inner_order >> 1;
+                    let mut right_node = BPlusTreeNode::new(false);
+                    let right_pointers = pointers.split_off(median + 1);
+                    right_node.keys = node.keys.split_off(median + 1);
+                    
+                    let promoted_key = node.keys.pop().unwrap();
+                    
+                    let left_offset = self.write_internal_node(&node, &pointers)?;
+                    let right_offset = self.write_internal_node(&right_node, &right_pointers)?;
+                    
+                    Ok((left_offset, Some((promoted_key, right_offset))))
+                } else {
+                    let new_offset = self.write_internal_node(&node, &pointers)?;
+                    Ok((new_offset, None))
+                }
+            } else {
+                let new_offset = self.write_internal_node(&node, &pointers)?;
+                Ok((new_offset, None))
+            }
+        }
+    }
+
+    /// Insert or update multiple items in batch (upsert).
+    /// Uses disk-based recursive insertion (COW) to avoid loading full tree.
     pub fn upsert_batch(&mut self, items: &[(&K, &V)]) -> io::Result<u64> {
         if items.is_empty() {
-            return Ok(self.root_offset);
+             return Ok(self.root_offset);
         }
 
-        // Get the filepath from the file handle
-        // We need to load the tree, so we'll use a temporary approach
-        // Load the current tree state into memory
-        let mut tree = {
-            // Create a reader from our file
-            let mut reader = utils::file_reader(&mut self.file);
-            
-            // Read header to get root offset
-            let mut header = [0u8; 16];
-            reader.seek(SeekFrom::Start(0))?;
-            reader.read_exact(&mut header)?;
-            
-            if &header[0..4] != MAGIC {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid magic number"));
-            }
-            let version = u32::from_le_bytes(header[4..8].try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid version slice"))?);
-            if version != STORAGE_VERSION {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Unsupported storage version: {version}")));
-            }
-            
-            // Load the tree from current root offset
-            let mut buffer = vec![0u8; BLOCK_SIZE];
-            let (root, _) = BPlusTreeNode::<K, V>::deserialize_from_block(&mut reader, &mut buffer, self.root_offset, true)?;
-            
-            let (inner_order, leaf_order) = calc_order::<K>();
-            BPlusTree {
-                root,
-                inner_order,
-                leaf_order,
-                dirty: false,
-            }
-        };
-        
-        // Perform all inserts/updates
+        let mut current_root = self.root_offset;
+
         for (key, value) in items {
-            tree.insert((*key).clone(), (*value).clone());
+             let (new_root, split) = self.upsert_recursive(current_root, (*key).clone(), (*value).clone())?;
+             current_root = new_root;
+             
+             if let Some((median_key, right_child)) = split {
+                 let mut new_root_node = BPlusTreeNode::<K, V>::new(false);
+                 new_root_node.keys.push(median_key);
+                 let pointers = vec![current_root, right_child];
+                 
+                 current_root = self.write_internal_node(&new_root_node, &pointers)?;
+             }
         }
         
-        // Mark as dirty and save using store_internal (we already hold the lock)
-        tree.dirty = true;
-        
-        // We need to save to a temp file and then rename, but we can't easily get the filepath
-        // Instead, we'll serialize directly to our file handle
-        // Seek to beginning and write
-        self.file.seek(SeekFrom::Start(0))?;
-        self.file.set_len(0)?; // Truncate the file
-        
-        let mut buffer = vec![0u8; BLOCK_SIZE];
-        
-        // Write header block
-        let mut header = [0u8; BLOCK_SIZE];
-        header[0..4].copy_from_slice(MAGIC);
-        header[4..8].copy_from_slice(&STORAGE_VERSION.to_le_bytes());
-        header[8..16].copy_from_slice(&HEADER_SIZE.to_le_bytes());
-        self.file.write_all(&header)?;
-        
-        // Serialize tree
-        tree.root.serialize_breadth_first(&mut self.file, &mut buffer, HEADER_SIZE)?;
-        
+        self.file.seek(SeekFrom::Start(ROOT_OFFSET_POS))?;
+        self.file.write_all(&current_root.to_le_bytes())?;
         self.file.flush()?;
         self.file.sync_all()?;
         
-        // Update our root offset
-        self.root_offset = HEADER_SIZE;
-        
-        Ok(self.root_offset)
+        self.root_offset = current_root;
+        Ok(current_root)
     }
 
     /// Garbage Collection: Compacts the file by rewriting only live blocks sequentially.
@@ -1520,7 +1800,7 @@ where
             // Current leaf exhausted, find next leaf
             loop {
                 let node = self.stack.pop()?;
-                
+
                 if node.is_leaf {
                     // Found a leaf node
                     self.current_keys = Some(&node.keys);
@@ -1710,7 +1990,7 @@ mod tests {
         let filepath = tempdir.path().join("tree_update_iter.bin");
         let content = "InitialContent";
         let mut tree = BPlusTree::<u32, Record>::new();
-        
+
         // Initial store
         for i in 0u32..100 {
             tree.insert(i, Record { id: i, data: format!("{content} {i}") });
@@ -1758,26 +2038,26 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("tree_size_test.bin");
         let mut tree = BPlusTree::<u32, Record>::new();
-        
+
         // Use fixed size string for predictable sizing
         let padding = "x".repeat(100);
         for i in 0u32..10 {
             tree.insert(i, Record { id: i, data: padding.clone() });
         }
         tree.store(&filepath)?;
-        
+
         let initial_size = std::fs::metadata(&filepath)?.len();
-        
+
         // Update with same size data
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
         let same_size_padding = "y".repeat(100);
         for i in 0u32..10 {
             tree_update.update(&i, Record { id: i, data: same_size_padding.clone() })?;
         }
-        
+
         let size_after_same_update = std::fs::metadata(&filepath)?.len();
         assert!(size_after_same_update > initial_size, "File should grow during COW same-size update");
-        
+
         // Reload and verify
         let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
         for i in 0u32..10 {
@@ -1790,27 +2070,27 @@ mod tests {
         for i in 0u32..10 {
             tree_update.update(&i, Record { id: i, data: smaller_padding.clone() })?;
         }
-        
+
         // Update with larger size data (force append)
-        let larger_padding = "w".repeat(5000); 
+        let larger_padding = "w".repeat(5000);
         for i in 0u32..1 {
             tree_update.update(&i, Record { id: i, data: larger_padding.clone() })?;
         }
-        
+
         let size_before_compact = std::fs::metadata(&filepath)?.len();
-        
+
         // Final verification: Compact should shrink the file
         tree_update.compact(&filepath)?;
         let size_after_compact = std::fs::metadata(&filepath)?.len();
         assert!(size_after_compact < size_before_compact, "Compaction should reduce file size");
-        
+
         // Final data check after compact
         let mut final_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
         assert_eq!(final_query.query(&0).unwrap().data, larger_padding);
         for i in 1u32..10 {
             assert_eq!(final_query.query(&i).unwrap().data, smaller_padding);
         }
-        
+
         Ok(())
     }
 
@@ -1818,7 +2098,7 @@ mod tests {
     fn cow_deep_tree_compaction_test() -> io::Result<()> {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("deep_tree.idx");
-        
+
         let test_size = 500u32; // Enough to force multiple levels
         let mut tree = BPlusTree::new();
         for i in 0..test_size {
@@ -1827,7 +2107,7 @@ mod tests {
         tree.store(&filepath)?;
 
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
-        
+
         // 1. Initial Queries
         for i in (0..test_size).step_by(50) {
             let val = tree_update.query(&i).expect("Should find initial key");
@@ -1856,7 +2136,7 @@ mod tests {
 
         // 5. GC / Compaction
         tree_update.compact(&filepath)?;
-        
+
         let size_after_compact = std::fs::metadata(&filepath)?.len();
         assert!(size_after_compact < size_before_compact, "Compaction should reclaimed space from COW path copies");
 
@@ -1866,7 +2146,7 @@ mod tests {
             let val = final_query.query(&i).expect("Should find updated key after GC");
             assert_eq!(val.data, format!("UpdatedContent {i}"));
         }
-        
+
         Ok(())
     }
 
@@ -1874,7 +2154,7 @@ mod tests {
     fn query_le_cow_test() -> io::Result<()> {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("le_cow.idx");
-        
+
         // 1. Build initial tree with gaps
         let mut tree = BPlusTree::new();
         for i in (0..100u32).step_by(10) {
@@ -1883,19 +2163,19 @@ mod tests {
         tree.store(&filepath)?;
 
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
-        
+
         // Initial LE check
         assert_eq!(tree_update.query_le(&15).unwrap().id, 10);
         assert_eq!(tree_update.query_le(&5).unwrap().id, 0);
 
         // 2. COW Update
         tree_update.update(&10, Record { id: 10, data: "NewVal".to_string() })?;
-        
+
         // 3. Verify LE returns the LATEST value
         let val = tree_update.query_le(&15).expect("Should find LE key after COW update");
         assert_eq!(val.id, 10);
         assert_eq!(val.data, "NewVal");
-        
+
         Ok(())
     }
 
@@ -1903,7 +2183,7 @@ mod tests {
     fn disk_iterator_test() -> io::Result<()> {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("disk_it.idx");
-        
+
         let mut tree = BPlusTree::new();
         let test_size = 500u32;
         for i in 0..test_size {
@@ -1913,7 +2193,7 @@ mod tests {
         drop(tree);
 
         let mut query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
-        
+
         // 1. Test Iterator
         let mut count = 0;
         for (k, v) in query.iter() {
@@ -1933,7 +2213,7 @@ mod tests {
             }
         })?;
         assert_eq!(traverse_count, test_size);
-        
+
         Ok(())
     }
 
@@ -1942,12 +2222,12 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("tree_update_batch.bin");
         let mut tree = BPlusTree::<u32, Record>::new();
-        
+
         // Create initial tree
         for i in 0u32..50 {
-            tree.insert(i, Record { 
-                id: i, 
-                data: format!("Initial {i}") 
+            tree.insert(i, Record {
+                id: i,
+                data: format!("Initial {i}"),
             });
         }
         tree.store(&filepath)?;
@@ -1955,17 +2235,17 @@ mod tests {
 
         // Test batch update
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
-        
+
         // Prepare batch updates
         let updates: Vec<(u32, Record)> = (0u32..50)
             .filter(|i| i % 5 == 0)
             .map(|i| (i, Record { id: i, data: format!("BatchUpdated {i}") }))
             .collect();
-        
+
         let update_refs: Vec<(&u32, &Record)> = updates.iter()
             .map(|(k, v)| (k, v))
             .collect();
-        
+
         tree_update.update_batch(&update_refs)?;
         drop(tree_update);
 
@@ -1988,12 +2268,12 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("tree_update_batch_empty.bin");
         let mut tree = BPlusTree::<u32, Record>::new();
-        
+
         // Create initial tree
         for i in 0u32..10 {
-            tree.insert(i, Record { 
-                id: i, 
-                data: format!("Initial {i}") 
+            tree.insert(i, Record {
+                id: i,
+                data: format!("Initial {i}"),
             });
         }
         tree.store(&filepath)?;
@@ -2001,13 +2281,13 @@ mod tests {
 
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
         let initial_root = tree_update.root_offset;
-        
+
         // Test empty batch - should be no-op
         let empty_batch: Vec<(&u32, &Record)> = vec![];
         let result = tree_update.update_batch(&empty_batch)?;
-        
+
         assert_eq!(result, initial_root, "Empty batch should not change root offset");
-        
+
         // Verify data unchanged
         for i in 0u32..10 {
             let val = tree_update.query(&i).expect("Should find key");
@@ -2022,31 +2302,31 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("tree_update_batch_large.bin");
         let mut tree = BPlusTree::<u32, Record>::new();
-        
+
         let test_size = 200u32;
-        
+
         // Create initial tree
         for i in 0..test_size {
-            tree.insert(i, Record { 
-                id: i, 
-                data: format!("Initial {i}") 
+            tree.insert(i, Record {
+                id: i,
+                data: format!("Initial {i}"),
             });
         }
         tree.store(&filepath)?;
         drop(tree);
 
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
-        
+
         // Prepare large batch update (every other item)
         let updates: Vec<(u32, Record)> = (0..test_size)
             .filter(|i| i % 2 == 0)
             .map(|i| (i, Record { id: i, data: format!("BatchUpdated {i}") }))
             .collect();
-        
+
         let update_refs: Vec<(&u32, &Record)> = updates.iter()
             .map(|(k, v)| (k, v))
             .collect();
-        
+
         // Perform batch update
         tree_update.update_batch(&update_refs)?;
         drop(tree_update);
@@ -2072,41 +2352,41 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("tree_update_batch_compact.bin");
         let mut tree = BPlusTree::<u32, Record>::new();
-        
+
         // Create initial tree with larger data
         let large_data = "x".repeat(1000);
         for i in 0u32..100 {
-            tree.insert(i, Record { 
-                id: i, 
-                data: large_data.clone()
+            tree.insert(i, Record {
+                id: i,
+                data: large_data.clone(),
             });
         }
         tree.store(&filepath)?;
         drop(tree);
 
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
-        
+
         // Batch update with smaller data
         let small_data = "y".repeat(50);
         let updates: Vec<(u32, Record)> = (0u32..100)
             .map(|i| (i, Record { id: i, data: small_data.clone() }))
             .collect();
-        
+
         let update_refs: Vec<(&u32, &Record)> = updates.iter()
             .map(|(k, v)| (k, v))
             .collect();
-        
+
         tree_update.update_batch(&update_refs)?;
-        
+
         let size_before_compact = std::fs::metadata(&filepath)?.len();
-        
+
         // Compact to reclaim space
         tree_update.compact(&filepath)?;
-        
+
         let size_after_compact = std::fs::metadata(&filepath)?.len();
-        assert!(size_after_compact < size_before_compact, 
+        assert!(size_after_compact < size_before_compact,
                 "Compaction should reduce file size after batch update");
-        
+
         // Verify all data is correct after compaction
         drop(tree_update);
         let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
@@ -2123,54 +2403,54 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("tree_upsert_batch_mixed.bin");
         let mut tree = BPlusTree::<u32, Record>::new();
-        
+
         // Create initial tree with keys 0-49
         for i in 0u32..50 {
-            tree.insert(i, Record { 
-                id: i, 
-                data: format!("Initial {i}") 
+            tree.insert(i, Record {
+                id: i,
+                data: format!("Initial {i}"),
             });
         }
         tree.store(&filepath)?;
         drop(tree);
 
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
-        
+
         // Prepare upsert batch: update existing keys 0-24, insert new keys 50-74
         let mut updates: Vec<(u32, Record)> = Vec::new();
-        
+
         // Updates to existing keys
         for i in 0u32..25 {
             updates.push((i, Record { id: i, data: format!("Updated {i}") }));
         }
-        
+
         // Inserts for new keys
         for i in 50u32..75 {
             updates.push((i, Record { id: i, data: format!("Inserted {i}") }));
         }
-        
+
         let update_refs: Vec<(&u32, &Record)> = updates.iter()
             .map(|(k, v)| (k, v))
             .collect();
-        
+
         tree_update.upsert_batch(&update_refs)?;
         drop(tree_update);
 
         // Verify all 75 entries exist with correct values
         let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
-        
+
         // Check updated keys (0-24)
         for i in 0u32..25 {
             let val = tree_query.query(&i).expect("Should find updated key");
             assert_eq!(val.data, format!("Updated {i}"), "Key {i} should be updated");
         }
-        
+
         // Check unchanged keys (25-49)
         for i in 25u32..50 {
             let val = tree_query.query(&i).expect("Should find unchanged key");
             assert_eq!(val.data, format!("Initial {i}"), "Key {i} should remain unchanged");
         }
-        
+
         // Check inserted keys (50-74)
         for i in 50u32..75 {
             let val = tree_query.query(&i).expect("Should find inserted key");
@@ -2185,40 +2465,40 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("tree_upsert_batch_new.bin");
         let mut tree = BPlusTree::<u32, Record>::new();
-        
+
         // Create initial tree with unrelated keys
         for i in 0u32..10 {
-            tree.insert(i, Record { 
-                id: i, 
-                data: format!("Initial {i}") 
+            tree.insert(i, Record {
+                id: i,
+                data: format!("Initial {i}"),
             });
         }
         tree.store(&filepath)?;
         drop(tree);
 
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
-        
+
         // Upsert all new keys (100-149)
         let updates: Vec<(u32, Record)> = (100u32..150)
             .map(|i| (i, Record { id: i, data: format!("New {i}") }))
             .collect();
-        
+
         let update_refs: Vec<(&u32, &Record)> = updates.iter()
             .map(|(k, v)| (k, v))
             .collect();
-        
+
         tree_update.upsert_batch(&update_refs)?;
         drop(tree_update);
 
         // Verify all keys exist
         let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
-        
+
         // Original keys should still exist
         for i in 0u32..10 {
             let val = tree_query.query(&i).expect("Should find original key");
             assert_eq!(val.data, format!("Initial {i}"));
         }
-        
+
         // New keys should be inserted
         for i in 100u32..150 {
             let val = tree_query.query(&i).expect("Should find new key");
@@ -2233,28 +2513,28 @@ mod tests {
         let tempdir = tempfile::tempdir()?;
         let filepath = tempdir.path().join("tree_upsert_batch_existing.bin");
         let mut tree = BPlusTree::<u32, Record>::new();
-        
+
         // Create initial tree
         for i in 0u32..100 {
-            tree.insert(i, Record { 
-                id: i, 
-                data: format!("Initial {i}") 
+            tree.insert(i, Record {
+                id: i,
+                data: format!("Initial {i}"),
             });
         }
         tree.store(&filepath)?;
         drop(tree);
 
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
-        
+
         // Upsert all existing keys (should behave like update)
         let updates: Vec<(u32, Record)> = (0u32..100)
             .map(|i| (i, Record { id: i, data: format!("Updated {i}") }))
             .collect();
-        
+
         let update_refs: Vec<(&u32, &Record)> = updates.iter()
             .map(|(k, v)| (k, v))
             .collect();
-        
+
         tree_update.upsert_batch(&update_refs)?;
         drop(tree_update);
 
@@ -2269,4 +2549,226 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_value_packing_efficiency() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("packing_test.bin");
+        let mut tree = BPlusTree::<u32, String>::new();
+        
+        // Insert 1000 small values (approx 50 bytes each)
+        let small_value = "x".repeat(50);
+        let count = 1000;
+        for i in 0..count {
+            tree.insert(i, small_value.clone());
+        }
+        
+        tree.store(&filepath)?;
+        
+        let file_size = std::fs::metadata(&filepath)?.len();
+        
+        // Expected size without packing: 
+        // 1000 items * 4096 bytes/block = 4,096,000 bytes (~4MB)
+        // Plus internal nodes
+        let unpacked_size_estimate = count as u64 * super::BLOCK_SIZE as u64;
+        
+        println!("File size with packing: {} bytes", file_size);
+        println!("Estimated unpacked size: {} bytes", unpacked_size_estimate);
+        
+        // We expect significant savings. 
+        // 1000 items * ~60 bytes / 4096 bytes/block ~= 15 blocks
+        // Plus tree structure overhead. 
+        // Let's be conservative and say it should be less than 10% of unpacked size.
+        assert!(file_size < unpacked_size_estimate / 10, "Packing should reduce size by at least 90%");
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_mixed_value_packing() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("mixed_packing.bin");
+        let mut tree = BPlusTree::<u32, String>::new();
+        
+        // Insert mixed values:
+        // 0-99: Small (50 bytes) -> Packed
+        // 100-109: Large (5000 bytes) -> Single (2 blocks)
+        // 110-209: Small (50 bytes) -> Packed
+        
+        // Insert in order
+        for i in 0..100 {
+            tree.insert(i, "s".repeat(50));
+        }
+        for i in 100..110 {
+            tree.insert(i, "L".repeat(5000));
+        }
+        for i in 110..210 {
+            tree.insert(i, "s".repeat(50));
+        }
+        
+        tree.store(&filepath)?;
+        
+        // Verify we can read them back correctly
+        let mut query = BPlusTreeQuery::<u32, String>::try_new(&filepath)?;
+        
+        for i in 0..100 {
+            let val = query.query(&i).expect("Should find small value");
+            assert_eq!(val.len(), 50);
+        }
+        for i in 100..110 {
+            let val = query.query(&i).expect("Should find large value");
+            assert_eq!(val.len(), 5000);
+        }
+        for i in 110..210 {
+            let val = query.query(&i).expect("Should find small value 2");
+            assert_eq!(val.len(), 50);
+        }
+        
+        Ok(())
+    }
+    #[test]
+    fn test_upsert_huge_values_chunking() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_upsert_huge.bin");
+        
+        // Initialize tree
+        let mut tree = BPlusTree::<u32, String>::new();
+        tree.store(&filepath)?;
+        drop(tree);
+        
+        let mut tree_update = BPlusTreeUpdate::<u32, String>::try_new(&filepath)?;
+        
+        // Insert values > BLOCK_SIZE (4096).
+        // 10K value -> 3 chunks.
+        let val1 = "A".repeat(10000);
+        let val2 = "B".repeat(10000);
+        
+        let updates = vec![
+            (1, val1.clone()),
+            (2, val2.clone()),
+        ];
+        
+        let update_refs: Vec<(&u32, &String)> = updates.iter().map(|(k,v)| (k,v)).collect();
+        tree_update.upsert_batch(&update_refs)?;
+        drop(tree_update);
+        
+        let mut query = BPlusTreeQuery::<u32, String>::try_new(&filepath)?;
+        assert_eq!(query.query(&1).unwrap(), val1);
+        assert_eq!(query.query(&2).unwrap(), val2);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_upsert_deep_split() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_upsert_split.bin");
+        let mut tree = BPlusTree::<u32, u32>::new();
+        tree.store(&filepath)?;
+        drop(tree);
+        
+        let mut tree_update = BPlusTreeUpdate::<u32, u32>::try_new(&filepath)?;
+        
+        // Insert 5000 items. 
+        // 5000 items ensures at least Root -> Internal -> Leaf split (Height 2 or 3).
+        
+        let count = 5000;
+        let mut updates = Vec::with_capacity(count);
+        for i in 0..count {
+            let val = u32::try_from(i).unwrap();
+            updates.push((val, val)); // value matches key
+        }
+        
+        // Split into batches to test multiple batch ops
+        for chunk in updates.chunks(1000) {
+            let chunk_refs: Vec<(&u32, &u32)> = chunk.iter().map(|(k,v)| (k,v)).collect();
+            tree_update.upsert_batch(&chunk_refs)?;
+        }
+        drop(tree_update);
+        
+        // Validation
+        let mut query = BPlusTreeQuery::<u32, u32>::try_new(&filepath)?;
+        for i in 0..count {
+            let k = u32::try_from(i).unwrap();
+            let val = query.query(&k).unwrap();
+            assert_eq!(val, k);
+        }
+        Ok(())
+    }
+    
+    #[test]
+    fn test_upsert_batch_overwrites() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_upsert_overwrite.bin");
+        let mut tree = BPlusTree::<u32, String>::new();
+        tree.store(&filepath)?;
+        drop(tree);
+        
+        let mut tree_update = BPlusTreeUpdate::<u32, String>::try_new(&filepath)?;
+        
+        // Batch contains same key multiple times
+        let updates = vec![
+            (1, "First".to_string()),
+            (1, "Second".to_string()),
+            (2, "Two".to_string()),
+            (1, "Third".to_string()), 
+        ];
+        
+        let update_refs: Vec<(&u32, &String)> = updates.iter().map(|(k,v)| (k,v)).collect();
+        tree_update.upsert_batch(&update_refs)?;
+        drop(tree_update);
+        
+        let mut query = BPlusTreeQuery::<u32, String>::try_new(&filepath)?;
+        assert_eq!(query.query(&1).unwrap(), "Third");
+        assert_eq!(query.query(&2).unwrap(), "Two");
+        Ok(())
+    }
+    
+    #[test]
+    fn test_compaction_packing_limits() -> io::Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let filepath = tempdir.path().join("tree_compact_pack.bin");
+        let mut tree = BPlusTree::<u32, String>::new();
+        tree.store(&filepath)?;
+        drop(tree);
+        
+        let mut tree_update = BPlusTreeUpdate::<u32, String>::try_new(&filepath)?;
+        
+        // Insert 200 items of 100 bytes.
+        // Upsert creates Single blocks blocks block-aligned.
+        // File size > 200 * 4096 = 800KB.
+        
+        let val = "x".repeat(100);
+        let count = 200;
+        let mut updates = Vec::new();
+        for i in 0..count {
+            updates.push((i, val.clone()));
+        }
+        let refs: Vec<(&u32, &String)> = updates.iter().map(|(k,v)| (k,v)).collect();
+        tree_update.upsert_batch(&refs)?;
+        
+        let size_before = std::fs::metadata(&filepath)?.len();
+        assert!(size_before > count as u64 * 4000); 
+        
+        // Now Compact
+        tree_update.compact(&filepath)?;
+        drop(tree_update);
+        
+        let size_after = std::fs::metadata(&filepath)?.len();
+        // 200 items * 100 bytes = 20KB payload.
+        // Should pack into ~5-6 blocks (4KB each).
+        
+        println!("Size before: {}, Size after: {}", size_before, size_after);
+        assert!(size_after < size_before / 10, "Compaction should pack values");
+        assert!(size_after < 100 * 1024, "File should be small"); // < 100KB
+        
+        // Verify data
+        let mut query = BPlusTreeQuery::<u32, String>::try_new(&filepath)?;
+        for i in 0..count {
+            assert_eq!(query.query(&i).unwrap(), val);
+        }
+        
+        Ok(())
+    }
 }
+
