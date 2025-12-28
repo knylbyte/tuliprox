@@ -337,7 +337,7 @@ where
 
             buffer[pos..pos + info_encoded.len()].copy_from_slice(&info_encoded);
 
-            file.write_all(&buffer)?;
+            file.write_all(buffer)?;
 
             Ok(offset + (blocks as u64 * BLOCK_SIZE as u64))
         } else {

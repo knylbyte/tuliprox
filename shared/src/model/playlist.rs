@@ -1,6 +1,6 @@
 use crate::model::info_doc_utils::InfoDocUtils;
 use crate::model::{xtream_const, ClusterFlags, CommonPlaylistItem, ConfigTargetOptions, EpisodeStreamProperties, LiveStreamProperties, SeriesStreamProperties, StreamProperties, VideoStreamProperties};
-use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id};
+use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id, parse_uuid_hex};
 use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -9,7 +9,6 @@ use std::fmt::Write;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use hex::FromHex;
-use uuid::Uuid;
 // https://de.wikipedia.org/wiki/M3U
 // https://siptv.eu/howto/playlist.html
 
@@ -63,12 +62,12 @@ impl UUIDType {
     /// - This ensures the resulting `UUIDType` is 32 bytes, but this operation is **not reversible**
     ///   to the original 32-byte `UUIDType` if the input was previously generated with `to_valid_uuid`.
     pub fn from_valid_uuid(uuid: &str) -> Self {
-       let bytes = if let Ok(parsed_uuid) = Uuid::from_str(uuid) {
+       let bytes = if let Some(parsed_uuid) = parse_uuid_hex(uuid) {
            let mut bytes = [0u8; 32];
            // die 16 UUID Bytes
-           bytes[..16].copy_from_slice(parsed_uuid.as_bytes());
+           bytes[..16].copy_from_slice(&parsed_uuid);
            // die restlichen 16 Bytes = Hash der UUID (optional)
-           let hash = blake3::hash(parsed_uuid.as_bytes());
+           let hash = blake3::hash(&parsed_uuid);
            bytes[16..].copy_from_slice(&hash.as_bytes()[..16]);
            bytes
        } else {
