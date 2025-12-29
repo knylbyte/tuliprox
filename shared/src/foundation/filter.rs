@@ -47,21 +47,32 @@ pub fn set_field_value(pli: &mut PlaylistItem, field: ItemField, value: String) 
 
 pub struct ValueProvider<'a> {
     pub pli: &'a PlaylistItem,
+    pub match_as_ascii: bool,
 }
 
 impl ValueProvider<'_> {
     pub fn get(&self, field: &str) -> Option<Cow<'_, str>> {
-        self.pli.header.get_field(field)
+        let val = self.pli.header.get_field(field)?;
+        if self.match_as_ascii {
+            return Some(Cow::Owned(deunicode::deunicode(&val)));
+        }
+        Some(val)
     }
 }
 
 pub struct ValueAccessor<'a> {
     pub pli: &'a mut PlaylistItem,
+    pub virtual_items: Vec<(String, PlaylistItem)>,
+    pub match_as_ascii: bool,
 }
 
 impl ValueAccessor<'_> {
     pub fn get(&self, field: &str) -> Option<Cow<'_, str>> {
-        self.pli.header.get_field(field)
+        let val = self.pli.header.get_field(field)?;
+        if self.match_as_ascii {
+            return Some(Cow::Owned(deunicode::deunicode(&val)));
+        }
+        Some(val)
     }
 
     pub fn set(&mut self, field: &str, value: &str) {
@@ -183,7 +194,11 @@ impl Filter {
             Self::TypeComparison(field, item_type) => {
                 if let Some(value) = provider.get(field.as_str()) {
                     get_filter_item_type(&value).is_some_and(|pli_type| {
-                        let is_match = pli_type.eq(item_type);
+                        let is_match = match item_type {
+                            PlaylistItemType::Video => matches!(pli_type, PlaylistItemType::Video | PlaylistItemType::LocalVideo),
+                            PlaylistItemType::Series => matches!(pli_type, PlaylistItemType::Series | PlaylistItemType::LocalSeries),
+                            _ => pli_type.eq(item_type),
+                        };
                         if log_enabled!(Level::Trace) {
                             if is_match {
                                 trace!("Match found: {field:?} {value}");
@@ -765,7 +780,7 @@ mod tests {
 
     #[test]
     fn test_filter_3() {
-        let flt = r#"Group ~ "d" AND ((Name ~ "e" AND NOT ((Name ~ "c" OR Name ~ "f"))) OR (Name ~ "a" OR Name ~ "b")) AND (Type = vod)"#;
+        let flt = r#"Group ~ "d" AND ((Name ~ "e" AND NOT ((Name ~ "c" OR Name ~ "f"))) OR (Name ~ "a" OR Name ~ "b")) AND (Type = movie)"#;
         match get_filter(flt, None) {
             Ok(filter) => {
                 assert_eq!(format!("{filter}"), flt);
@@ -792,6 +807,7 @@ mod tests {
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
+                            match_as_ascii: false,
                         };
                         filter.filter(&provider)
                     })
@@ -844,6 +860,7 @@ mod tests {
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
+                            match_as_ascii: false,
                         };
                         filter.filter(&provider)
                     })
@@ -905,6 +922,7 @@ mod tests {
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
+                            match_as_ascii: false,
                         };
                         filter.filter(&provider)
                     })
@@ -921,6 +939,31 @@ mod tests {
             Err(e) => {
                 panic!("{}", e)
             }
+        }
+    }
+
+    #[test]
+    fn test_filter_match_as_ascii() {
+        let flt = r#"Name ~ "Cinema""#;
+        match get_filter(flt, None) {
+            Ok(filter) => {
+                let chan = create_mock_pli("Cinéma", "Some Group");
+
+                // Without match_as_ascii (should fail)
+                let provider_fail = ValueProvider {
+                    pli: &chan,
+                    match_as_ascii: false,
+                };
+                assert!(!filter.filter(&provider_fail));
+
+                // With match_as_ascii (should succeed)
+                let provider_success = ValueProvider {
+                    pli: &chan,
+                    match_as_ascii: true,
+                };
+                assert!(filter.filter(&provider_success));
+            }
+            Err(e) => panic!("{}", e),
         }
     }
 }

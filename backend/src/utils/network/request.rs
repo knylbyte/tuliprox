@@ -21,8 +21,8 @@ use crate::repository::storage_const;
 use crate::utils::compression::compression_utils::{is_deflate, is_gzip};
 use crate::utils::{async_file_reader, async_file_writer, debug_if_enabled, IO_BUFFER_SIZE};
 use crate::utils::{get_file_path, persist_file};
-use shared::error::create_tuliprox_error_result;
-use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error_result, string_to_io_error};
+use shared::error::{TuliproxError, TuliproxErrorKind};
 use shared::model::{InputFetchMethod, DEFAULT_USER_AGENT};
 use shared::utils::{filter_request_header, human_readable_byte_size, sanitize_sensitive_info, short_hash, ENCODING_DEFLATE, ENCODING_GZIP};
 
@@ -343,7 +343,7 @@ async fn get_remote_content_as_file(client: &reqwest::Client, input: &ConfigInpu
                         Err(err) => {
                             let _ = writer.flush().await;
                             let _ = writer.shutdown().await;
-                            return Err(str_to_io_error(&format!("Failed to read chunk: {err}")));
+                            return Err(string_to_io_error(format!("Failed to read chunk: {err}")));
                         }
                     }
                 }
@@ -354,10 +354,10 @@ async fn get_remote_content_as_file(client: &reqwest::Client, input: &ConfigInpu
                 debug!("File downloaded successfully to {}, took:{}", file_path.display(), format_elapsed_time(elapsed));
                 Ok(file_path.to_path_buf())
             } else {
-                Err(str_to_io_error(&format!("Request failed with status {} {}", response.status(), sanitize_sensitive_info(url.as_str()))))
+                Err(string_to_io_error(format!("Request failed with status {} {}", response.status(), sanitize_sensitive_info(url.as_str()))))
             }
         }
-        Err(err) => Err(str_to_io_error(&format!("Request failed: {} {err}", sanitize_sensitive_info(url.as_str())))),
+        Err(err) => Err(string_to_io_error(format!("Request failed: {} {err}", sanitize_sensitive_info(url.as_str())))),
     }
 }
 
@@ -381,7 +381,7 @@ pub async fn get_remote_content_as_stream(
     let response = request.send().await.map_err(std::io::Error::other)?;
 
     if !response.status().is_success() {
-        return Err(str_to_io_error(&format!("Request failed with status {} {}", response.status(), sanitize_sensitive_info(url.as_str()))));
+        return Err(string_to_io_error(format!("Request failed with status {} {}", response.status(), sanitize_sensitive_info(url.as_str()))));
     }
 
     let response_url = response.url().to_string();
@@ -414,9 +414,9 @@ pub async fn get_remote_content_as_stream(
 }
 
 async fn get_remote_content(client: &reqwest::Client, input: &InputSource, headers: Option<&HeaderMap>, url: &Url, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> Result<(String, String), Error> {
-    let (mut stream, response_url) = get_remote_content_as_stream(client, input, headers, url, disabled_headers).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
+    let (mut stream, response_url) = get_remote_content_as_stream(client, input, headers, url, disabled_headers).await.map_err(|e| string_to_io_error(format!("Failed to read content: {e}")))?;
     let mut content = String::new();
-    stream.read_to_string(&mut content).await.map_err(|e| str_to_io_error(&format!("Failed to read content: {e}")))?;
+    stream.read_to_string(&mut content).await.map_err(|e| string_to_io_error(format!("Failed to read content: {e}")))?;
     Ok((content, response_url))
 }
 
@@ -457,7 +457,7 @@ pub async fn download_text_content(
         let result = if url.scheme() == "file" {
             match url.to_file_path() {
                 Ok(file_path) => get_local_file_content(&file_path).await.map(|c| (c, url.to_string())),
-                Err(()) => Err(str_to_io_error(&format!(
+                Err(()) => Err(string_to_io_error(format!(
                     "Unknown file {}",
                     sanitize_sensitive_info(&input.url)
                 ))),
@@ -475,7 +475,7 @@ pub async fn download_text_content(
             Err(err) => Err(err),
         }
     } else {
-        Err(str_to_io_error(&format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
+        Err(string_to_io_error(format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
     };
 
     if log_enabled!(log::Level::Debug) {
@@ -498,7 +498,7 @@ pub async fn download_text_content_as_stream(
         let result = if url.scheme() == "file" {
             match url.to_file_path() {
                 Ok(file_path) => get_local_file_content_as_stream(&file_path).await.map(|c| (c, url.to_string())),
-                Err(()) => Err(str_to_io_error(&format!(
+                Err(()) => Err(string_to_io_error(format!(
                     "Unknown file {}",
                     sanitize_sensitive_info(&input.url)
                 ))),
@@ -520,7 +520,7 @@ pub async fn download_text_content_as_stream(
             Err(err) => Err(err),
         }
     } else {
-        Err(str_to_io_error(&format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
+        Err(string_to_io_error(format!("Malformed URL {}", sanitize_sensitive_info(&input.url))))
     }
 }
 
@@ -530,7 +530,7 @@ async fn download_json_content(client: &reqwest::Client, disabled_headers: Optio
         Ok((content, _response_url)) => {
             match serde_json::from_str::<serde_json::Value>(&content) {
                 Ok(value) => Ok(value),
-                Err(err) => Err(str_to_io_error(&format!("Failed to parse json {err}")))
+                Err(err) => Err(string_to_io_error(format!("Failed to parse json {err}")))
             }
         }
         Err(err) => Err(err)

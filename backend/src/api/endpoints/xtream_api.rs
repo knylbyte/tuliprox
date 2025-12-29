@@ -32,8 +32,8 @@ use futures::Stream;
 use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use shared::error::info_err;
 use shared::error::create_tuliprox_error_result;
+use shared::error::info_err;
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::{create_stream_channel_with_type, PlaylistEntry, PlaylistItemType, ProxyType,
                     TargetType, UserConnectionPermission, XtreamCluster};

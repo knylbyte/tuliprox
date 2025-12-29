@@ -125,3 +125,7 @@ where
 pub fn str_to_io_error(err: &str) -> std::io::Error {
     std::io::Error::other(err.to_string())
 }
+
+pub fn string_to_io_error(err: String) -> std::io::Error {
+    std::io::Error::other(err)
+}

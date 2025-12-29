@@ -11,7 +11,7 @@ use crate::repository::xtream_repository::{persist_input_vod_info, persists_inpu
 use crate::utils::request;
 use chrono::{DateTime, Utc};
 use log::{error, info, warn};
-use shared::error::{str_to_io_error, to_io_error, TuliproxError};
+use shared::error::{string_to_io_error, to_io_error, TuliproxError};
 use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, SeriesStreamProperties,
                     StreamProperties, VideoStreamProperties, XtreamCluster,
                     XtreamPlaylistItem, XtreamSeriesInfo, XtreamVideoInfo};
@@ -80,6 +80,10 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
 
     let input_source = InputSource::from(input).with_url(info_url.to_owned());
     if let Ok(content) = get_xtream_stream_info_content(client, &input_source).await {
+        if content.is_empty() {
+            return Err(string_to_io_error(format!("Provider returned no response for stream with id: {}/{}/{}",
+                                                target.name.replace(' ', "_").as_str(), &cluster, pli.get_virtual_id())));
+        }
         if let Some(provider_id) = pli.get_provider_id() {
             match cluster {
                 XtreamCluster::Live => {}
@@ -213,7 +217,7 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
         }
     }
 
-    Err(str_to_io_error(&format!("Cant find stream with id: {}/{}/{}",
+    Err(string_to_io_error(format!("Cant find stream with id: {}/{}/{}",
                                  target.name.replace(' ', "_").as_str(), &cluster, pli.get_virtual_id())))
 }
 

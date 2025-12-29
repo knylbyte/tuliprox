@@ -26,17 +26,17 @@ use crate::processing::processor::xtream_vod::playlist_resolve_vod;
 use crate::repository::playlist_repository::{persist_input_playlist, persist_playlist};
 use crate::utils::StepMeasure;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
-use deunicode::deunicode;
 use futures::StreamExt;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
 use shared::foundation::filter::{get_field_value, set_field_value, Filter, ValueAccessor, ValueProvider};
-use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
-use shared::utils::{default_as_default, hash_bytes};
+use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
+use shared::utils::{create_alias_uuid, default_as_default};
 use std::time::Instant;
+use indexmap::IndexMap;
 
-fn is_valid(pli: &PlaylistItem, filter: &Filter) -> bool {
-    let provider = ValueProvider { pli };
+fn is_valid(pli: &PlaylistItem, filter: &Filter, match_as_ascii: bool) -> bool {
+    let provider = ValueProvider { pli, match_as_ascii };
     filter.filter(&provider)
 }
 
@@ -46,7 +46,7 @@ pub fn apply_filter_to_playlist(playlist: &mut [PlaylistGroup], filter: &Filter)
     let mut new_playlist = Vec::with_capacity(128);
     for pg in playlist.iter_mut() {
         let channels = pg.channels.iter()
-            .filter(|&pli| is_valid(pli, filter)).cloned().collect::<Vec<PlaylistItem>>();
+            .filter(|&pli| is_valid(pli, filter, false)).cloned().collect::<Vec<PlaylistItem>>();
         trace!("Filtered group {} has now {}/{} items", pg.title, channels.len(), pg.channels.len());
         if !channels.is_empty() {
             new_playlist.push(PlaylistGroup {
@@ -60,52 +60,8 @@ pub fn apply_filter_to_playlist(playlist: &mut [PlaylistGroup], filter: &Filter)
     Some(new_playlist)
 }
 
-pub fn apply_favourites_to_playlist(
-    _playlist: &mut [PlaylistGroup],
-    _favourites_cfg: Option<&[ConfigFavourites]>,
-) {
-    // TODO implement favourites
-    // if let Some(favourites) = favourites_cfg {
-    //     let mut fav_groups: HashMap<String, Vec<PlaylistItem>> = HashMap::new();
-    //
-    //     for pg in playlist.iter_mut() {
-    //         for pli in &pg.channels {
-    //             for fav in favourites {
-    //                 if is_valid(pli, &fav.filter) {
-    //                     let mut channel = pli.clone();
-    //                     channel.header.copy = true;
-    //                     channel.header.group.clone_from(&fav.group);
-    //                     channel.header.gen_uuid();
-    //                     fav_groups
-    //                         .entry(fav.group.clone())
-    //                         .or_default()
-    //                         .push(channel);
-    //                 }
-    //             }
-    //         }
-    //     }
-    //
-    //     for (group_name, channels) in fav_groups {
-    //         if !channels.is_empty() {
-    //             let xtream_cluster = channels[0].header.xtream_cluster;
-    //             playlist.push(PlaylistGroup {
-    //                 id: 0,
-    //                 title: group_name,
-    //                 channels,
-    //                 xtream_cluster,
-    //             });
-    //         }
-    //     }
-    // }
-}
-
 fn filter_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {
-    if let Some(mut filtered_playlist) = apply_filter_to_playlist(playlist, &target.filter) {
-        apply_favourites_to_playlist(&mut filtered_playlist, target.favourites.as_deref());
-        Some(filtered_playlist)
-    } else {
-        None
-    }
+    apply_filter_to_playlist(playlist, &target.filter)
 }
 
 fn assign_channel_no_playlist(new_playlist: &mut [PlaylistGroup]) {
@@ -170,53 +126,39 @@ fn rename_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Opt
     }
 }
 
-fn create_alias_uuid(base_uuid: &UUIDType, mapping_id: &str) -> UUIDType {
-    let mut data = Vec::with_capacity(base_uuid.len() + mapping_id.len());
-    data.extend_from_slice(base_uuid.as_ref());
-    data.extend_from_slice(mapping_id.as_bytes());
-    hash_bytes(&data)
-}
 
-fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> (PlaylistItem, bool) {
+fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> (PlaylistItem, Vec<PlaylistItem>, bool) {
     let mut matched = false;
+    let mut virtual_items = vec![];
     if let Some(mapper) = &mapping.mapper {
         if !mapper.is_empty() {
-            let header = &channel.header;
-            let channel_name = if mapping.match_as_ascii { deunicode(&header.name) } else { header.name.clone() };
-            if mapping.match_as_ascii && log_enabled!(Level::Trace) { trace!("Decoded {} for matching to {}", &header.name, &channel_name); }
             let ref_chan = &mut channel;
             let templates = mapping.templates.as_ref();
             for m in mapper {
                 if let Some(script) = m.t_script.as_ref() {
                     if let Some(filter) = &m.t_filter {
-                        let provider = ValueProvider { pli: ref_chan };
+                        let provider = ValueProvider { pli: ref_chan, match_as_ascii: mapping.match_as_ascii };
                         if filter.filter(&provider) {
                             matched = true;
-                            let mut accessor = ValueAccessor { pli: ref_chan };
+                            let mut accessor = ValueAccessor { pli: ref_chan, virtual_items: vec![], match_as_ascii: mapping.match_as_ascii };
                             script.eval(&mut accessor, templates);
+                            virtual_items.extend(accessor.virtual_items.into_iter().map(|(_, pli)| pli));
                         }
                     }
                 }
             }
         }
     }
-    (channel, matched)
+    (channel, virtual_items, matched)
 }
 
-fn map_channel_with_aliases(channel: PlaylistItem, mapping: &Mapping) -> Vec<PlaylistItem> {
-    if mapping.create_alias {
-        let original = channel.clone();
-        let (mut mapped_channel, matched) = map_channel(channel, mapping);
-        if matched {
-            mapped_channel.header.uuid = create_alias_uuid(original.header.get_uuid(), &mapping.id);
-            vec![original, mapped_channel]
-        } else {
-            vec![mapped_channel]
-        }
-    } else {
-        let (mapped_channel, _) = map_channel(channel, mapping);
-        vec![mapped_channel]
-    }
+fn map_channel_and_flatten(channel: PlaylistItem, mapping: &Mapping) -> Vec<PlaylistItem> {
+    let (mapped_channel, mut virtual_items, _matched) = map_channel(channel, mapping);
+    let mut result = Vec::with_capacity(1 + virtual_items.len());
+
+    result.push(mapped_channel);
+    result.append(&mut virtual_items);
+    result
 }
 
 fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option<Vec<PlaylistGroup>> {
@@ -225,7 +167,7 @@ fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option
             let mut grp = playlist_group.clone();
             mappings.iter().filter(|&mapping| mapping.mapper.as_ref().is_some_and(|v| !v.is_empty()))
                 .for_each(|mapping|
-                    grp.channels = grp.channels.drain(..).flat_map(|chan| map_channel_with_aliases(chan, mapping)).collect());
+                    grp.channels = grp.channels.drain(..).flat_map(|chan| map_channel_and_flatten(chan, mapping)).collect());
             grp
         }).collect();
 
@@ -264,7 +206,7 @@ fn map_playlist_counter(target: &ConfigTarget, playlist: &mut [PlaylistGroup]) {
                 for counter in counter_list {
                     for plg in &mut *playlist {
                         for channel in &mut plg.channels {
-                            let provider = ValueProvider { pli: channel };
+                            let provider = ValueProvider { pli: channel, match_as_ascii: mapping.match_as_ascii };
                             if counter.filter.filter(&provider) {
                                 let cntval = counter.value.fetch_add(1, core::sync::atomic::Ordering::AcqRel);
                                 let padded_cntval = if counter.padding > 0 {
@@ -587,6 +529,9 @@ async fn process_playlist_for_target(app_config: &Arc<AppConfig>,
     let (new_epg, mut new_playlist) = process_epg(&mut processed_fetched_playlists).await;
     step.tick("epg");
 
+    process_favourites(&mut new_playlist, target.favourites.as_deref());
+
+
     if new_playlist.is_empty() {
         step.stop("");
         info!("Playlist is empty: {}", &target.name);
@@ -615,6 +560,44 @@ async fn process_playlist_for_target(app_config: &Arc<AppConfig>,
         let result = persist_playlist(app_config, &mut flat_new_playlist, flatten_tvguide(&new_epg).as_ref(), target, playlist_state).await;
         step.stop("Persisting playlists");
         result
+    }
+}
+
+pub fn process_favourites(playlist: &mut Vec<PlaylistGroup>, favourites_cfg: Option<&[ConfigFavourites]>) {
+    if let Some(favourites) = favourites_cfg {
+        let mut fav_groups: IndexMap<String, Vec<PlaylistItem>> = IndexMap::new();
+        for pg in playlist.iter() {
+            for pli in &pg.channels {
+                // series episodes cant be included in favourites
+                if pli.header.item_type == PlaylistItemType::Series || pli.header.item_type == PlaylistItemType::LocalSeries {
+                    continue;
+                }
+                for fav in favourites {
+                    if is_valid(pli, &fav.filter, fav.match_as_ascii) {
+                        let mut channel = pli.clone();
+                        channel.header.group.clone_from(&fav.group);
+                        // Update UUID to be an alias of the original
+                        channel.header.uuid = create_alias_uuid(&pli.header.uuid, &fav.group);
+                        fav_groups
+                            .entry(fav.group.clone())
+                            .or_default()
+                            .push(channel);
+                    }
+                }
+            }
+        }
+
+        for (group_name, channels) in fav_groups {
+            if !channels.is_empty() {
+                let xtream_cluster = channels[0].header.xtream_cluster;
+                playlist.push(PlaylistGroup {
+                    id: 0,
+                    title: group_name,
+                    channels,
+                    xtream_cluster,
+                });
+            }
+        }
     }
 }
 
