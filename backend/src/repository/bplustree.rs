@@ -39,11 +39,6 @@ const COMPRESSION_THRESHOLD_PERCENT: usize = 85;
 const COMPRESSION_FLAG_NONE: u8 = 0x00;
 const COMPRESSION_FLAG_LZ4: u8 = 0x01;
 
-fn is_file_valid(file: File) -> File {
-    // Permissive check (restored from optimization)
-    file
-}
-
 // Page Configuration
 const PAGE_HEADER_SIZE: u16 = 16;
 const PAGE_HEADER_SIZE_USIZE: usize = PAGE_HEADER_SIZE as usize;
@@ -128,12 +123,13 @@ impl PageHeader {
             return Err(PageError::Corrupted);
         }
         let page_type = match buf[0] {
+            1 => PageType::Leaf,
             2 => PageType::Internal,
             3 => PageType::Overflow,
-            _ => PageType::Leaf, 
+            _ => return Err(PageError::Corrupted),
         };
 
-        // Use try_into to safely read bytes, although length check above makes it safe.
+        // Use try_into to safely read bytes, although the length check above makes it safe.
         // we can map err.
         let cell_count = u16::from_le_bytes(buf[2..4].try_into().map_err(|_| PageError::Corrupted)?);
         let free_start = u16::from_le_bytes(buf[4..6].try_into().map_err(|_| PageError::Corrupted)?);
@@ -301,11 +297,11 @@ impl<'a> SlottedPage<'a> {
             for i in 0..self.header.cell_count as usize {
                 if let Some(cell) = self.get_cell(i) {
                     if let Err(e) = new_page.insert_at_index(i, cell) {
-                        eprintln!("DEBUG: Compact insert failed at index {i}: {e:?}");
+                        error!("Compact insert failed at index {i}: {e:?}");
                         return Err(e);
                     }
                 } else {
-                    eprintln!("DEBUG: Compact get_cell failed at index {i}");
+                    error!("Compact get_cell failed at index {i}");
                     return Err(PageError::Corrupted);
                 }
             }
@@ -365,7 +361,6 @@ impl<'a> SlottedPage<'a> {
     }
 }
 
-
 #[inline]
 fn u32_from_bytes(bytes: &[u8]) -> io::Result<u32> {
     Ok(u32::from_le_bytes(bytes.try_into().map_err(to_io_error)?))
@@ -388,7 +383,6 @@ where
     }
     left
 }
-
 
 /// Represents how a value is stored on disk
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -1357,7 +1351,7 @@ where
     }
 
     pub fn load(filepath: &Path) -> io::Result<Self> {
-        let mut file = is_file_valid(File::open(filepath)?);
+        let mut file = File::open(filepath)?;
 
         // Verify Header
         let mut header = [0u8; 16];
@@ -1553,7 +1547,7 @@ where
     V: Serialize + for<'de> Deserialize<'de> + Clone,
 {
     pub fn try_from_file(file: File) -> io::Result<Self> {
-        let mut file = is_file_valid(file);
+        let mut file = file;
 
         // Verify Header
         let mut header = [0u8; 16];
@@ -1845,7 +1839,7 @@ where
         // Acquire lock first
         let lock = FileLock::try_lock(filepath)?;
 
-        let mut file = is_file_valid(utils::open_read_write_file(filepath)?);
+        let mut file = utils::open_read_write_file(filepath)?;
 
         // Verify Header
         let mut header = [0u8; 16];

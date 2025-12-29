@@ -118,26 +118,6 @@ impl XtreamPlaylistIterator {
         let has_next = self.lookup_item.is_some();
 
         Some((current_item, has_next))
-
-        // if self.cluster == XtreamCluster::Series || self.filter_ids.is_some() {
-        //     if let Some((current_item, _)) = self.lookup_item.take() {
-        //         let next_valid = self.reader.find(predicate);
-        //         self.lookup_item = next_valid.map(|(_, item)| (item, true));
-        //         let has_next = self.lookup_item.is_some();
-        //         Some((current_item, has_next))
-        //     } else {
-        //         let current_item = self.reader.find(predicate);
-        //         if let Some((_, item)) = current_item {
-        //             self.lookup_item = self.reader.find(predicate).map(|(_, item)| (item, true));
-        //             let has_next = self.lookup_item.is_some();
-        //             Some((item, has_next))
-        //         } else {
-        //             None
-        //         }
-        //     }
-        // } else {
-        //     self.reader.next().map(|(_, item)| (item, !self.reader.is_empty()))
-        // }
     }
 }
 
