@@ -50,6 +50,7 @@ pub async fn playlist_resolve_vod(app_config: &Arc<AppConfig>, client: &reqwest:
             processed_vod_info_count += 1;
             if provider_id != 0 {
                 if let Some(content) = playlist_resolve_download_playlist_item(client, pli, fpl.input, errors, resolve_delay, XtreamCluster::Video).await {
+                    if content.is_empty() { continue; }
                     match serde_json::from_str::<XtreamVideoInfo>(&content) {
                         Ok(info) => {
                             let video_stream_props = VideoStreamProperties::from_info(&info, pli);

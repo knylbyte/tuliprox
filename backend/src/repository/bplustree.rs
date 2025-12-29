@@ -23,7 +23,9 @@ const POINTER_SIZE: usize = 8;
 const INFO_SIZE: usize = 12; // (u64, u32)
 
 // MessagePack overhead estimation
-const MSGPACK_OVERHEAD_PER_ENTRY: usize = 16;
+// Measured: 100 entries (u32 keys + ValueInfo) = 1781 bytes total
+// Per entry: ~18 bytes average. Using 22 for safety margin.
+const MSGPACK_OVERHEAD_PER_ENTRY: usize = 22;
 
 
 // Value packing configuration
@@ -31,20 +33,20 @@ const SMALL_VALUE_THRESHOLD: usize = 256;  // Pack values <= 256 bytes
 const PACK_BLOCK_HEADER_SIZE: usize = 4;   // u32 for value count
 const PACK_VALUE_HEADER_SIZE: usize = 4;   // u32 for each value length
 
+// LZ4 compression configuration
+const COMPRESSION_MIN_SIZE: usize = 64;        // Don't compress values smaller than this
+const COMPRESSION_RATIO_THRESHOLD: f32 = 0.85; // Only compress if result is <= 85% of original
+const COMPRESSION_FLAG_NONE: u8 = 0x00;
+const COMPRESSION_FLAG_LZ4: u8 = 0x01;
+
 fn is_multiple_of_block_size(file: &File) -> io::Result<bool> {
-    let file_size = file.metadata()?.len(); // Get the file size in bytes
-    Ok(file_size.is_multiple_of(BLOCK_SIZE as u64)) // Check if file size is a multiple of BLOCK_SIZE
+    let file_size = file.metadata()?.len();
+    Ok(file_size.is_multiple_of(BLOCK_SIZE as u64))
 }
 
 fn is_file_valid(file: File) -> io::Result<File> {
-    match is_multiple_of_block_size(&file) {
-        Ok(valid) => {
-            if !valid {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Tree file has to be multiple of block size {BLOCK_SIZE}")));
-            }
-        }
-        Err(err) => return Err(err)
-    }
+    // Note: Files with byte-aligned value writes may not be block-aligned
+    // Block alignment is only enforced for node blocks, not value data
     Ok(file)
 }
 
@@ -388,7 +390,94 @@ where
     ) -> io::Result<u64> {
         use std::collections::HashMap;
 
-        // Pass 1: Calculate offsets for all nodes in breadth-first order (Immutable)
+        // Pass 1: Populate value_info for all leaf nodes (Mutable)
+        // This calculates value sizes and determines packing WITHOUT assigning final offsets yet.
+        // We use placeholder offsets (0) which will be corrected after node layout is determined.
+        {
+            let mut current_level_mut = vec![&mut *self];
+            while !current_level_mut.is_empty() {
+                let mut next_level_mut = Vec::new();
+                for node in current_level_mut {
+                    if node.is_leaf {
+                        node.value_info.clear();
+
+                        // Serialize all values first to determine sizes
+                        let mut serialized_values: Vec<Vec<u8>> = Vec::new();
+                        for value in &node.values {
+                            let value_bytes = binary_serialize(value)?;
+                            serialized_values.push(value_bytes);
+                        }
+
+                        // Determine packing structure with placeholder offsets (0)
+                        // Final offsets will be assigned in Pass 3
+                        let mut current_pack_index: u16 = 0;
+                        let mut current_pack_size = PACK_BLOCK_HEADER_SIZE;
+                        let mut pack_count = 0u32; // Track which pack block we're on
+
+                        for value_bytes in serialized_values {
+                            let size = value_bytes.len();
+
+                            if size <= SMALL_VALUE_THRESHOLD {
+                                let entry_size = PACK_VALUE_HEADER_SIZE + size;
+
+                                if current_pack_size + entry_size <= BLOCK_SIZE {
+                                    // Add to current pack
+                                    node.value_info.push(ValueInfo {
+                                        mode: ValueStorageMode::Packed(u64::from(pack_count), current_pack_index),
+                                        length: u32::try_from(size).map_err(to_io_error)?,
+                                    });
+                                    current_pack_index += 1;
+                                    current_pack_size += entry_size;
+                                } else {
+                                    // Start new pack
+                                    pack_count += 1;
+                                    current_pack_index = 1;
+                                    current_pack_size = PACK_BLOCK_HEADER_SIZE + entry_size;
+
+                                    node.value_info.push(ValueInfo {
+                                        mode: ValueStorageMode::Packed(u64::from(pack_count), 0),
+                                        length: u32::try_from(size).map_err(to_io_error)?,
+                                    });
+                                }
+                            } else {
+                                // Large value - use Single storage with optional compression
+                                let raw_size = size;
+                                
+                                // Pre-calculate compressed size if applicable
+                                let stored_size = if raw_size >= COMPRESSION_MIN_SIZE {
+                                    let compressed = lz4_flex::compress_prepend_size(&value_bytes);
+                                    let threshold = (raw_size as f32 * COMPRESSION_RATIO_THRESHOLD) as usize;
+                                    
+                                    if compressed.len() < threshold {
+                                        // Will be compressed: [flag:1][payload with prepended size]
+                                        1 + compressed.len()
+                                    } else {
+                                        // Won't compress: [flag:1][raw payload]
+                                        1 + raw_size
+                                    }
+                                } else {
+                                    // Too small: [flag:1][raw payload]
+                                    1 + raw_size
+                                };
+                                
+                                node.value_info.push(ValueInfo {
+                                    mode: ValueStorageMode::Single(u64::MAX), // Placeholder
+                                    length: u32::try_from(stored_size).map_err(to_io_error)?,
+                                });
+                            }
+                        }
+                    } else {
+                        for child in &mut node.children {
+                            next_level_mut.push(child);
+                        }
+                    }
+                }
+                current_level_mut = next_level_mut;
+            }
+        }
+
+        // Pass 2: Calculate offsets for all nodes in breadth-first order (Immutable)
+        // Now value_info is populated, so calculate_serialized_size() returns correct sizes
         let mut node_offset_map: HashMap<*const BPlusTreeNode<K, V>, u64> = HashMap::new();
         let mut current_offset = start_offset;
 
@@ -413,84 +502,44 @@ where
             }
         }
 
-        // Pass 2: Pack values and calculate offsets (Mutable)
+        // Pass 3: Assign final value block offsets and update value_info (Mutable)
+        // current_offset now points past all nodes, we can allocate value blocks here
         {
             let mut current_level_mut = vec![&mut *self];
             while !current_level_mut.is_empty() {
                 let mut next_level_mut = Vec::new();
                 for node in current_level_mut {
                     if node.is_leaf {
-                        node.value_info.clear();
+                        // Track pack block offsets: pack_count -> actual_offset
+                        let mut pack_block_offsets: HashMap<u64, u64> = HashMap::new();
 
-                        // Serialize all values first to determine sizes
-                        let mut serialized_values: Vec<Vec<u8>> = Vec::new();
-                        for value in &node.values {
-                            let value_bytes = binary_serialize(value)?;
-                            serialized_values.push(value_bytes);
-                        }
-
-                        // Pack small values together, keep large values separate
-                        let mut current_pack_offset: Option<u64> = None;
-                        let mut current_pack_values: Vec<Vec<u8>> = Vec::new();
-                        let mut current_pack_size = PACK_BLOCK_HEADER_SIZE;
-
-                        for value_bytes in serialized_values {
-                            let size = value_bytes.len();
-
-                            if size <= SMALL_VALUE_THRESHOLD {
-                                let entry_size = PACK_VALUE_HEADER_SIZE + size;
-
-                                if current_pack_size + entry_size <= BLOCK_SIZE {
-                                    // Add to current pack
-                                    if current_pack_offset.is_none() {
-                                        current_pack_offset = Some(current_offset);
-                                    }
-                                    let pack_index = u16::try_from(current_pack_values.len()).map_err(to_io_error)?;
-                                    current_pack_values.push(value_bytes);
-                                    current_pack_size += entry_size;
-
-                                    node.value_info.push(ValueInfo {
-                                        mode: ValueStorageMode::Packed(current_pack_offset.unwrap(), pack_index),
-                                        length: u32::try_from(size).map_err(to_io_error)?,
-                                    });
-                                } else {
-                                    // Flush current pack and start new one
-                                    if !current_pack_values.is_empty() {
+                        // First pass: assign offsets to pack blocks and single values
+                        for info in &mut node.value_info {
+                            match &mut info.mode {
+                                ValueStorageMode::Packed(pack_idx, _index) => {
+                                    if !pack_block_offsets.contains_key(pack_idx) {
+                                        pack_block_offsets.insert(*pack_idx, current_offset);
                                         current_offset += BLOCK_SIZE as u64;
                                     }
-                                    current_pack_offset = Some(current_offset);
-                                    current_pack_values.clear();
-                                    current_pack_values.push(value_bytes);
-                                    current_pack_size = PACK_BLOCK_HEADER_SIZE + entry_size;
-
-                                    node.value_info.push(ValueInfo {
-                                        mode: ValueStorageMode::Packed(current_pack_offset.unwrap(), 0),
-                                        length: u32::try_from(size).map_err(to_io_error)?,
-                                    });
                                 }
-                            } else {
-                                // Flush any pending pack
-                                if !current_pack_values.is_empty() {
-                                    current_offset += BLOCK_SIZE as u64;
-                                    current_pack_values.clear();
-                                    current_pack_offset = None;
-                                    current_pack_size = PACK_BLOCK_HEADER_SIZE;
+                                ValueStorageMode::Single(offset) if *offset == u64::MAX => {
+                                    // Assign actual offset for single value (byte-aligned)
+                                    *offset = current_offset;
+                                    // info.length already contains the correct stored size
+                                    current_offset += u64::from(info.length);
                                 }
-
-                                // Write as single value
-                                node.value_info.push(ValueInfo {
-                                    mode: ValueStorageMode::Single(current_offset),
-                                    length: u32::try_from(size).map_err(to_io_error)?,
-                                });
-
-                                let blocks_needed = size.div_ceil(BLOCK_SIZE);
-                                current_offset += (blocks_needed * BLOCK_SIZE) as u64;
+                                ValueStorageMode::Single(_) => {}
                             }
                         }
 
-                        // Flush final pack if any
-                        if !current_pack_values.is_empty() {
-                            current_offset += BLOCK_SIZE as u64;
+                        // Second pass: update pack indices to actual offsets
+                        for info in &mut node.value_info {
+                            if let ValueStorageMode::Packed(pack_idx, index) = &mut info.mode {
+                                let actual_offset = pack_block_offsets[pack_idx];
+                                *pack_idx = actual_offset;
+                                // index stays the same
+                                let _ = index; // Silence unused warning
+                            }
                         }
                     } else {
                         for child in &mut node.children {
@@ -502,7 +551,7 @@ where
             }
         }
 
-        // Pass 3: Write nodes with their keys and value pointers (Immutable)
+        // Pass 4: Write nodes with their keys and value pointers (Immutable)
         {
             let mut current_level_indices = vec![&*self];
             while !current_level_indices.is_empty() {
@@ -528,7 +577,7 @@ where
             }
         }
 
-        // Pass 4: Write all value blocks (packed and single) (Immutable)
+        // Pass 5: Write all value blocks (packed and single) (Immutable)
         {
             let mut current_level_values = vec![&*self];
             while !current_level_values.is_empty() {
@@ -548,18 +597,30 @@ where
                                         .push((index, value_bytes));
                                 }
                                 ValueStorageMode::Single(block_offset) => {
-                                    // Write single value (existing logic)
+                                    // Write single value with compression format
                                     file.seek(SeekFrom::Start(block_offset))?;
-                                    let mut pos = 0;
-                                    while pos < value_bytes.len() {
-                                        let chunk = std::cmp::min(BLOCK_SIZE, value_bytes.len() - pos);
-                                        buffer[..chunk].copy_from_slice(&value_bytes[pos..pos + chunk]);
-                                        if chunk < BLOCK_SIZE {
-                                            buffer[chunk..BLOCK_SIZE].fill(0u8);
+                                    
+                                    // Apply adaptive compression
+                                    let (flag, payload) = if value_bytes.len() >= COMPRESSION_MIN_SIZE {
+                                        let compressed = lz4_flex::compress_prepend_size(&value_bytes);
+                                        let threshold = (value_bytes.len() as f32 * COMPRESSION_RATIO_THRESHOLD) as usize;
+                                        
+                                        if compressed.len() < threshold {
+                                            (COMPRESSION_FLAG_LZ4, compressed)
+                                        } else {
+                                            (COMPRESSION_FLAG_NONE, value_bytes)
                                         }
-                                        file.write_all(buffer)?;
-                                        pos += chunk;
+                                    } else {
+                                        (COMPRESSION_FLAG_NONE, value_bytes)
+                                    };
+                                    
+                                    // Write: [flag:1][orig_len:4 if compressed][payload]
+                                    file.write_all(&[flag])?;
+                                    if flag == COMPRESSION_FLAG_LZ4 {
+                                        // Original length needed for compressed values
+                                        // (already embedded in lz4_flex::compress_prepend_size output)
                                     }
+                                    file.write_all(&payload)?;
                                 }
                             }
                         }
@@ -830,13 +891,32 @@ where
         ))
     }
 
-    fn load_value_with_len<R: Read + Seek>(file: &mut R, offset: u64, length: u32) -> io::Result<V> {
+    fn load_value_with_len<R: Read + Seek>(file: &mut R, offset: u64, stored_len: u32) -> io::Result<V> {
         file.seek(SeekFrom::Start(offset))?;
-
-        let mut value_data = vec![0u8; length as usize];
-        file.read_exact(&mut value_data)?;
-
-        binary_deserialize(&value_data)
+        
+        // Read compression flag
+        let mut flag = [0u8; 1];
+        file.read_exact(&mut flag)?;
+        
+        let data = if flag[0] == COMPRESSION_FLAG_LZ4 {
+            // Compressed: [flag:1][lz4_payload_with_prepended_size]
+            // We do NOT store explicit original length anymore, it's inside LZ4 blob
+            
+            let compressed_len = stored_len as usize - 1; // 1 (flag)
+            let mut compressed = vec![0u8; compressed_len];
+            file.read_exact(&mut compressed)?;
+            
+            lz4_flex::decompress_size_prepended(&compressed)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("LZ4 decompression failed: {e}")))?
+        } else {
+            // Uncompressed: [flag:1][payload]
+            let payload_len = stored_len as usize - 1;
+            let mut data = vec![0u8; payload_len];
+            file.read_exact(&mut data)?;
+            data
+        };
+        
+        binary_deserialize(&data)
     }
 }
 
@@ -1493,28 +1573,37 @@ where
         if node.is_leaf {
             match node.keys.binary_search(key) {
                 Ok(idx) => {
-                    // COW: Write new value block at end of file
-                    let value_bytes = binary_serialize(value)?;
-                    let value_len = u32::try_from(value_bytes.len()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Value too large for u32"))?;
+                    // COW: Write new value with adaptive LZ4 compression
+                    let raw_bytes = binary_serialize(value)?;
+                    
+                    let (flag, payload) = if raw_bytes.len() >= COMPRESSION_MIN_SIZE {
+                        let compressed = lz4_flex::compress_prepend_size(&raw_bytes);
+                        let threshold = (raw_bytes.len() as f32 * COMPRESSION_RATIO_THRESHOLD) as usize;
+                        
+                        if compressed.len() < threshold {
+                            (COMPRESSION_FLAG_LZ4, compressed)
+                        } else {
+                            (COMPRESSION_FLAG_NONE, raw_bytes)
+                        }
+                    } else {
+                        (COMPRESSION_FLAG_NONE, raw_bytes)
+                    };
 
                     self.file.seek(SeekFrom::End(0))?;
                     let val_offset = self.file.stream_position()?;
 
-                    let mut pos = 0;
-                    while pos < value_bytes.len() {
-                        let chunk = std::cmp::min(BLOCK_SIZE, value_bytes.len() - pos);
-                        self.write_buffer[..chunk].copy_from_slice(&value_bytes[pos..pos + chunk]);
-                        if chunk < BLOCK_SIZE {
-                            self.write_buffer[chunk..BLOCK_SIZE].fill(0u8);
-                        }
-                        self.file.write_all(&self.write_buffer)?;
-                        pos += chunk;
-                    }
+                    // Write: [flag:1][payload]
+                    self.file.write_all(&[flag])?;
+                    // NOTE: For LZ4, payload already includes original length (prepended)
+                    self.file.write_all(&payload)?;
+                    
+                    // stored_len includes flag + payload
+                    let stored_len = 1 + payload.len();
 
                     // Update leaf metadata
                     node.value_info[idx] = ValueInfo {
                         mode: ValueStorageMode::Single(val_offset),
-                        length: value_len,
+                        length: stored_len as u32,
                     };
 
                     // Write new leaf node at end of file
@@ -1594,23 +1683,36 @@ where
     /// or `insert()` multiple times as it loads the tree once, performs all operations, and saves once.
     /// returns The final root offset after all upserts, or an error if any operation fails
     fn insert_value_to_disk(&mut self, value: &V) -> io::Result<(u64, u32)> {
-        let value_bytes = binary_serialize(value)?;
-        let value_len = u32::try_from(value_bytes.len()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Value too large"))?;
+        let raw_bytes = binary_serialize(value)?;
+        
+        // Decide whether to compress based on size and effectiveness
+        let (flag, payload) = if raw_bytes.len() >= COMPRESSION_MIN_SIZE {
+            let compressed = lz4_flex::compress_prepend_size(&raw_bytes);
+            let threshold = (raw_bytes.len() as f32 * COMPRESSION_RATIO_THRESHOLD) as usize;
+            
+            if compressed.len() < threshold {
+                // Compression is effective
+                (COMPRESSION_FLAG_LZ4, compressed)
+            } else {
+                // Compression not worth it
+                (COMPRESSION_FLAG_NONE, raw_bytes)
+            }
+        } else {
+            // Too small to compress
+            (COMPRESSION_FLAG_NONE, raw_bytes)
+        };
 
         self.file.seek(SeekFrom::End(0))?;
         let offset = self.file.stream_position()?;
-
-        let mut pos = 0;
-        while pos < value_bytes.len() {
-            let chunk = std::cmp::min(BLOCK_SIZE, value_bytes.len() - pos);
-            self.write_buffer[..chunk].copy_from_slice(&value_bytes[pos..pos + chunk]);
-            if chunk < BLOCK_SIZE {
-                self.write_buffer[chunk..BLOCK_SIZE].fill(0u8);
-            }
-            self.file.write_all(&self.write_buffer)?;
-            pos += chunk;
-        }
-        Ok((offset, value_len))
+        
+        // Write: [flag:1][payload]
+        self.file.write_all(&[flag])?;
+        // NOTE: For LZ4, payload already includes original length (prepended)
+        self.file.write_all(&payload)?;
+        
+        // stored_len includes flag + payload
+        let stored_len = 1 + payload.len();
+        Ok((offset, stored_len as u32))
     }
 
     fn write_node(&mut self, node: &BPlusTreeNode<K, V>) -> io::Result<u64> {
@@ -2818,6 +2920,38 @@ mod tests {
         for i in 0..5 {
             let val = query.query(&keys[i]).unwrap();
             assert_eq!(val, vals[i]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_node_serialization_overhead() -> io::Result<()> {
+        use crate::utils::binary_serialize;
+        use crate::repository::bplustree::{ValueInfo, ValueStorageMode, BLOCK_SIZE};
+
+        // Simulate a leaf node with u32 keys and ValueInfo
+        let key_counts = [10, 30, 50, 80, 100];
+        
+        for count in key_counts {
+            let keys: Vec<u32> = (0..count).collect();
+            let value_info: Vec<ValueInfo> = (0..count)
+                .map(|i| ValueInfo {
+                    mode: ValueStorageMode::Packed(i as u64 * 4096, (i % 16) as u16),
+                    length: 100,
+                })
+                .collect();
+            
+            let keys_serialized = binary_serialize(&keys)?;
+            let info_serialized = binary_serialize(&value_info)?;
+            
+            // Total content: flag(1) + keys_len(4) + keys + info_len(4) + info
+            let total = 1 + 4 + keys_serialized.len() + 4 + info_serialized.len();
+            let fits_in_block = total <= BLOCK_SIZE;
+            
+            println!(
+                "Keys={}: keys_bytes={}, info_bytes={}, total={}, fits_in_block={}",
+                count, keys_serialized.len(), info_serialized.len(), total, fits_in_block
+            );
         }
         Ok(())
     }
