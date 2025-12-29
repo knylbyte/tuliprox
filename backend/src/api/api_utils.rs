@@ -757,7 +757,7 @@ async fn create_panel_api_provisioning_stream_details(
                 if let Some(tx) = stream_tx.take() {
                     let _ = tx.send(stream);
                 }
-            } else if let Some((stream, _)) = create_channel_unavailable_stream(
+            } else if let (Some(stream), _) = create_channel_unavailable_stream(
                 &app_state_clone.app_config,
                 &[],
                 axum::http::StatusCode::SERVICE_UNAVAILABLE,
@@ -884,7 +884,7 @@ async fn create_panel_api_provisioning_stream_details(
             if let Some(tx) = stream_tx.take() {
                 let _ = tx.send(stream);
             }
-        } else if let Some((stream, _)) = create_channel_unavailable_stream(
+        } else if let (Some(stream), _) = create_channel_unavailable_stream(
             &app_state_clone.app_config,
             &[],
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
