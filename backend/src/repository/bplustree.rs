@@ -8,7 +8,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::mem::size_of;
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use tempfile::NamedTempFile;
 use fs2::FileExt;
 
@@ -161,6 +161,26 @@ pub enum PageError {
     InvalidIndex,
     Corrupted,
     Io(io::Error),
+}
+
+impl std::fmt::Display for PageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PageError::NoSpace => write!(f, "Page has no space for insertion"),
+            PageError::InvalidIndex => write!(f, "Invalid cell index"),
+            PageError::Corrupted => write!(f, "Page data is corrupted"),
+            PageError::Io(err) => write!(f, "I/O error: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for PageError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            PageError::Io(err) => Some(err),
+            _ => None,
+        }
+    }
 }
 
 impl From<io::Error> for PageError {
@@ -339,9 +359,18 @@ impl<'a> SlottedPage<'a> {
             }
         }
         
+        // Fix for split logic:
+        if count == 0 {
+            return Err(PageError::InvalidIndex); // Cannot split empty page
+        }
+        if count == 1 {
+            // Cannot split single item fundamentally. 
+            // Return empty page (no-op split) effectively.
+            return Ok(Vec::new());
+        }
+
         if split_idx >= count { split_idx = count.saturating_sub(1); }
-        if split_idx == 0 && count > 1 { split_idx = 1; }
-        if count <= 1 { split_idx = 1; } 
+        if split_idx == 0 && count > 1 { split_idx = 1; } 
 
         let mut new_buffer = vec![0u8; PAGE_SIZE_USIZE];
         {
@@ -404,6 +433,23 @@ fn compress_if_beneficial(raw_bytes: Vec<u8>) -> (u8, Vec<u8>) {
     } else {
         // Too small to compress
         (COMPRESSION_FLAG_NONE, raw_bytes)
+    }
+}
+
+// Calculate the stored size for a value (with compression if beneficial).
+// Returns the size that would be written: flag (1 byte) + payload.
+fn calculate_stored_size(raw_bytes: &[u8]) -> usize {
+    if raw_bytes.len() >= COMPRESSION_MIN_SIZE {
+        let compressed = lz4_flex::compress_prepend_size(raw_bytes);
+        let threshold = (raw_bytes.len() * COMPRESSION_THRESHOLD_PERCENT) / 100;
+
+        if compressed.len() < threshold {
+            1 + compressed.len() // Will be compressed: flag + compressed payload
+        } else {
+            1 + raw_bytes.len() // Won't compress: flag + raw payload
+        }
+    } else {
+        1 + raw_bytes.len() // Too small: flag + raw payload
     }
 }
 
@@ -774,24 +820,8 @@ where
                                 }
                             } else {
                                 // Large value - use Single storage with optional compression
-                                let raw_size = size;
-                                
                                 // Pre-calculate compressed size if applicable
-                                let stored_size = if raw_size >= COMPRESSION_MIN_SIZE {
-                                    let compressed = lz4_flex::compress_prepend_size(&value_bytes);
-                                    let threshold = (raw_size * COMPRESSION_THRESHOLD_PERCENT) / 100;
-                                    
-                                    if compressed.len() < threshold {
-                                        // Will be compressed: [flag:1][payload with prepended size]
-                                        1 + compressed.len()
-                                    } else {
-                                        // Won't compress: [flag:1][raw payload]
-                                        1 + raw_size
-                                    }
-                                } else {
-                                    // Too small: [flag:1][raw payload]
-                                    1 + raw_size
-                                };
+                                let stored_size = calculate_stored_size(&value_bytes);
                                 
                                 node.value_info.push(ValueInfo {
                                     mode: ValueStorageMode::Single(u64::MAX), // Placeholder
@@ -1539,11 +1569,9 @@ where
     }
 }
 
-///
-/// `BPlusTreeQuery` can be used to query the `BPlusTree` on-disk.
-/// If you intend to do frequent queries, then use `BPlusTree` instead, which loads the tree into memory.
-/// Be aware that it can hold up a lot of memory if you load a big tree.
-///
+/// `BPlusTreeQuery` performs on-disk queries without loading the entire tree into memory.
+/// For frequent queries, consider using `BPlusTree::load()` instead, which loads the full tree into memory
+/// at the cost of higher memory usage.
 pub struct BPlusTreeQuery<K, V> {
     file: BufReader<File>,
     buffer: Vec<u8>,
@@ -1558,8 +1586,7 @@ where
     K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
     V: Serialize + for<'de> Deserialize<'de> + Clone,
 {
-    pub fn try_from_file(file: File) -> io::Result<Self> {
-        let mut file = file;
+    pub fn try_from_file(mut file: File) -> io::Result<Self> {
 
         // Verify Header
         let mut header = [0u8; 16];
@@ -1821,7 +1848,7 @@ impl FileLock {
     fn try_lock(filepath: &Path) -> io::Result<Self> {
         // Sidecar Lock Pattern: Lock a separate .lock file, not the data file itself.
         // This ensures implementation works on Windows where locked files cannot be renamed/deleted.
-        let lock_path = PathBuf::from(format!("{}.lock", filepath.to_str().unwrap_or("tree")));
+        let lock_path = filepath.with_extension("lock");
         
         let file = OpenOptions::new()
             .read(true)
@@ -3331,6 +3358,32 @@ mod page_tests {
         // Check new page
         let header = PageHeader::deserialize(&new_page_bytes[..PAGE_HEADER_SIZE_USIZE]).expect("Deserialize failed");
         assert_eq!(header.cell_count, 3);
+    }
+
+    #[test]
+    fn test_split_off_edge_cases() {
+        let mut data = [0u8; PAGE_SIZE_USIZE];
+        let mut page = SlottedPage::new(&mut data, PageType::Leaf).expect("Init failed");
+
+        // Case 0: Split empty page -> Should Error
+        let res = page.split_off();
+        assert!(matches!(res, Err(PageError::InvalidIndex)));
+
+        // Case 1: Split single item page -> Should return empty vec (no-op)
+        let val = b"item";
+        let mut cell = Vec::new();
+        cell.extend_from_slice(&(val.len() as u32).to_le_bytes());
+        cell.extend_from_slice(val);
+        page.insert_at_index(0, &cell).unwrap();
+
+        let res = page.split_off();
+        match res {
+            Ok(bytes) => {
+                assert!(bytes.is_empty()); // Should return empty vector
+                assert_eq!(page.header.cell_count, 1); // Original page untouched
+            },
+            Err(e) => panic!("Split of single item should result in no-op, not error: {:?}", e),
+        }
     }
 }
 
