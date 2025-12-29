@@ -9,7 +9,8 @@ use std::sync::Arc;
 use tokio::task::JoinSet;
 use tokio::sync::Mutex;
 
-use crate::api::model::{EventManager, EventMessage, PlaylistStorageState};
+use crate::api::model::{AppState, EventManager, EventMessage, PlaylistStorageState};
+use crate::api::panel_api::sync_panel_api_exp_dates_on_boot;
 use crate::messaging::send_message_json;
 use crate::model::Epg;
 use crate::model::FetchedPlaylist;
@@ -654,7 +655,7 @@ async fn process_watch(cfg: &Config, client: &reqwest::Client, target: &ConfigTa
     }
 }
 
-pub async fn exec_processing(client: &reqwest::Client, app_config: Arc<AppConfig>, targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>, playlist_state: Option<Arc<PlaylistStorageState>>) {
+pub async fn exec_processing(client: &reqwest::Client, app_config: Arc<AppConfig>, targets: Arc<ProcessTargets>, event_manager: Option<Arc<EventManager>>, playlist_state: Option<Arc<PlaylistStorageState>>, app_state: Option<Arc<AppState>>) {
     let start_time = Instant::now();
     let event_manager_clone = event_manager.clone();
     let (stats, errors) = process_sources(client, &app_config, targets.clone(), event_manager_clone, playlist_state.as_ref()).await;
@@ -694,6 +695,11 @@ pub async fn exec_processing(client: &reqwest::Client, app_config: Arc<AppConfig
     } else if let Some(events) = event_manager {
         events.send_event(EventMessage::PlaylistUpdate(PlaylistUpdateState::Success));
     }
+
+    if let Some(app_state) = app_state {
+        sync_panel_api_exp_dates_on_boot(&app_state).await;
+    }
+
     let elapsed = start_time.elapsed().as_secs();
     info!("🌷 Update process finished! Took {elapsed} secs.");
 }

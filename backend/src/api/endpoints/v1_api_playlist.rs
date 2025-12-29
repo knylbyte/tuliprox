@@ -64,10 +64,11 @@ async fn playlist_update(
             let app_config = Arc::clone(&app_state.app_config);
             let event_manager = Arc::clone(&app_state.event_manager);
             let playlist_state = Arc::clone(&app_state.playlists);
+            let app_state_clone = Arc::clone(&app_state);
             let valid_targets = Arc::new(valid_targets);
             tokio::spawn({
                async move {
-                   playlist::exec_processing(&http_client, app_config, valid_targets, Some(event_manager), Some(playlist_state)).await;
+                   playlist::exec_processing(&http_client, app_config, valid_targets, Some(event_manager), Some(playlist_state), Some(app_state_clone)).await;
                }
             });
             axum::http::StatusCode::ACCEPTED.into_response()

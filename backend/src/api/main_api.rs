@@ -126,12 +126,13 @@ fn exec_update_on_boot(
         config.update_on_boot
     };
     if update_on_boot {
-        let app_state_clone = Arc::clone(&app_state.app_config);
+        let app_config_clone = Arc::clone(&app_state.app_config);
+        let app_state_clone = Arc::clone(app_state);
         let targets_clone = Arc::clone(targets);
         let playlist_state = Arc::clone(&app_state.playlists);
         let client = client.clone();
         tokio::spawn(async move {
-            playlist::exec_processing(&client, app_state_clone, targets_clone, None, Some(playlist_state)).await;
+            playlist::exec_processing(&client, app_config_clone, targets_clone, None, Some(playlist_state), Some(app_state_clone)).await;
         });
     }
 }
