@@ -128,3 +128,10 @@ pub fn parse_uuid_hex(s: &str) -> Option<[u8; 16]> {
     let decoded = hex::decode(buf).ok()?;
     decoded.try_into().ok()
 }
+
+pub fn create_alias_uuid(base_uuid: &UUIDType, mapping_id: &str) -> UUIDType {
+    let mut data = Vec::with_capacity(base_uuid.len() + mapping_id.len());
+    data.extend_from_slice(base_uuid.as_ref());
+    data.extend_from_slice(mapping_id.as_bytes());
+    hash_bytes(&data)
+}

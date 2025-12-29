@@ -40,7 +40,7 @@ block_expr = { "{" ~ statements ~ "}" }
 condition = { function_call | var_access | field_access }
 assignment = { (field_access | identifier) ~ "=" ~ expression }
 expression = { assignment | map_block | match_block | function_call | regex_expr | string_literal | number | var_access | field_access | null | block_expr }
-function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" | "template" | "replace" | "pad" | "format" }
+function_name = { "concat" | "uppercase" | "lowercase" | "capitalize" | "trim" | "print" | "number" | "first" | "template" | "replace" | "pad" | "format" | "add_favourite" }
 function_call = { function_name ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 any_match = { "_" }
 match_case_key = { any_match | identifier }
@@ -121,6 +121,7 @@ pub enum BuiltInFunction {
     Replace,
     Pad,
     Format,
+    AddFavourite,
 }
 
 impl FromStr for BuiltInFunction {
@@ -140,6 +141,7 @@ impl FromStr for BuiltInFunction {
             "replace" => Ok(Self::Replace),
             "pad" => Ok(Self::Pad),
             "format" => Ok(Self::Format),
+            "add_favourite" => Ok(Self::AddFavourite),
             _ => create_tuliprox_error_result!(TuliproxErrorKind::Info, "Unknown function {s}"),
         }
     }
@@ -160,6 +162,7 @@ impl Display for BuiltInFunction {
             Self::Replace => "replace",
             Self::Pad => "pad",
             Self::Format => "format",
+            Self::AddFavourite => "add_favourite",
         }.to_owned();
         write!(f, "{str}")
     }
@@ -699,7 +702,8 @@ impl<'a> MapperContext<'a> {
                 match name {
                     BuiltInFunction::ToNumber
                     | BuiltInFunction::Template
-                    | BuiltInFunction::First => {
+                    | BuiltInFunction::First
+                    | BuiltInFunction::AddFavourite => {
                         if args.len() > 1 {
                             return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Function accepts only one argument {:?}, {} given", name, args.len());
                         }
@@ -1240,6 +1244,18 @@ impl Expression {
                                 Undefined
                             }
                         }
+                        BuiltInFunction::AddFavourite => {
+                            let group_name = extract_evaluated_arg_value!(evaluated_args, 0);
+                            if let Some(group) = group_name {
+                                if accessor.pli.header.item_type != crate::model::PlaylistItemType::Series {
+                                    let mut pli = accessor.pli.clone();
+                                    pli.header.group.clone_from(group);
+                                    pli.header.uuid = crate::utils::create_alias_uuid(&accessor.pli.header.uuid, group);
+                                    accessor.virtual_items.push((group.clone(), pli));
+                                }
+                            }
+                            Undefined
+                        }
                     }
                 }
             }
@@ -1422,6 +1438,7 @@ mod tests {
         for pli in &mut channels {
             let mut accessor = ValueAccessor {
                 pli,
+                virtual_items: vec![],
             };
             mapper.eval(&mut accessor, None);
             println!("Result: {pli:?}");
@@ -1517,9 +1534,57 @@ mod tests {
         for pli in &mut channels {
             let mut accessor = ValueAccessor {
                 pli,
+                virtual_items: vec![],
             };
             mapper.eval(&mut accessor, None);
             println!("Result: {pli:?}");
         }
+    }
+
+    #[test]
+    fn test_mapper_add_favourite() {
+        use crate::model::PlaylistItemType;
+        let dsl = r#"
+            add_favourite("My Favs");
+        "#;
+
+        let mapper = MapperScript::parse(dsl, None).expect("Parsing failed");
+
+        // Test with Video (should work)
+        let mut video = PlaylistItem {
+            header: PlaylistItemHeader {
+                name: "Movie 1".to_string(),
+                item_type: PlaylistItemType::Video,
+                ..Default::default()
+            }
+        };
+        let mut accessor = ValueAccessor { pli: &mut video, virtual_items: vec![] };
+        mapper.eval(&mut accessor, None);
+        assert_eq!(accessor.virtual_items.len(), 1);
+        assert_eq!(accessor.virtual_items[0].1.header.group, "My Favs");
+
+        // Test with SeriesInfo (should work)
+        let mut series_info = PlaylistItem {
+            header: PlaylistItemHeader {
+                name: "Series 1".to_string(),
+                item_type: PlaylistItemType::SeriesInfo,
+                ..Default::default()
+            }
+        };
+        let mut accessor = ValueAccessor { pli: &mut series_info, virtual_items: vec![] };
+        mapper.eval(&mut accessor, None);
+        assert_eq!(accessor.virtual_items.len(), 1);
+
+        // Test with Series episode (should NOT work)
+        let mut episode = PlaylistItem {
+            header: PlaylistItemHeader {
+                name: "Episode 1".to_string(),
+                item_type: PlaylistItemType::Series,
+                ..Default::default()
+            }
+        };
+        let mut accessor = ValueAccessor { pli: &mut episode, virtual_items: vec![] };
+        mapper.eval(&mut accessor, None);
+        assert_eq!(accessor.virtual_items.len(), 0);
     }
 }

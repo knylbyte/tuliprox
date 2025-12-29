@@ -47,21 +47,32 @@ pub fn set_field_value(pli: &mut PlaylistItem, field: ItemField, value: String) 
 
 pub struct ValueProvider<'a> {
     pub pli: &'a PlaylistItem,
+    pub match_as_ascii: bool,
 }
 
 impl ValueProvider<'_> {
     pub fn get(&self, field: &str) -> Option<Cow<'_, str>> {
-        self.pli.header.get_field(field)
+        let val = self.pli.header.get_field(field)?;
+        if self.match_as_ascii {
+            return Some(Cow::Owned(deunicode::deunicode(&val)));
+        }
+        Some(val)
     }
 }
 
 pub struct ValueAccessor<'a> {
     pub pli: &'a mut PlaylistItem,
+    pub virtual_items: Vec<(String, PlaylistItem)>,
+    pub match_as_ascii: bool,
 }
 
 impl ValueAccessor<'_> {
     pub fn get(&self, field: &str) -> Option<Cow<'_, str>> {
-        self.pli.header.get_field(field)
+        let val = self.pli.header.get_field(field)?;
+        if self.match_as_ascii {
+            return Some(Cow::Owned(deunicode::deunicode(&val)));
+        }
+        Some(val)
     }
 
     pub fn set(&mut self, field: &str, value: &str) {
@@ -792,6 +803,7 @@ mod tests {
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
+                            match_as_ascii: false,
                         };
                         filter.filter(&provider)
                     })
@@ -844,6 +856,7 @@ mod tests {
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
+                            match_as_ascii: false,
                         };
                         filter.filter(&provider)
                     })
@@ -905,6 +918,7 @@ mod tests {
                     .filter(|&chan| {
                         let provider = ValueProvider {
                             pli: chan,
+                            match_as_ascii: false,
                         };
                         filter.filter(&provider)
                     })
@@ -921,6 +935,31 @@ mod tests {
             Err(e) => {
                 panic!("{}", e)
             }
+        }
+    }
+
+    #[test]
+    fn test_filter_match_as_ascii() {
+        let flt = r#"Name ~ "Cinema""#;
+        match get_filter(flt, None) {
+            Ok(filter) => {
+                let chan = create_mock_pli("Cinéma", "Some Group");
+
+                // Without match_as_ascii (should fail)
+                let provider_fail = ValueProvider {
+                    pli: &chan,
+                    match_as_ascii: false,
+                };
+                assert!(!filter.filter(&provider_fail));
+
+                // With match_as_ascii (should succeed)
+                let provider_success = ValueProvider {
+                    pli: &chan,
+                    match_as_ascii: true,
+                };
+                assert!(filter.filter(&provider_success));
+            }
+            Err(e) => panic!("{}", e),
         }
     }
 }

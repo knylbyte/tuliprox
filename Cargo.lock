@@ -3849,6 +3849,7 @@ dependencies = [
  "bytes",
  "chrono",
  "ciborium",
+ "deunicode",
  "enum-iterator",
  "fastrand",
  "hex",

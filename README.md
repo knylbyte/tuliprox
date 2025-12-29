@@ -1443,23 +1443,19 @@ Has the following top level entries:
 Is referenced in the `config.yml`, should be a unique identifier
 
 ### 2.3.2 `match_as_ascii`
-If you have non ascii characters in you playlist and want to
-write regexp without considering chars like `é` and use `e` instead, set this option to `true`.
-[unidecode](https://crates.io/crates/unidecode) is used to convert the text.
+If you have non-ASCII characters in your playlist (e.g., `é`, `ö`, `ß`) and want to write filters without considering these accents (e.g., using `e` to match `é`), set this option to `true`.
+The system will automatically deunicode the field values on-the-fly during filtering and mapping operations.
 
-### 2.3.3 `create_alias`
-Set this to `true` to keep the original channel and add a mapped copy whenever a mapper rule matches. The copy gets a derived UUID and follows the mapped fields (e.g. a new group), so a channel can live in multiple groups such as favourites.
 
 Example:
 ```yaml
 mapping:
   - id: favourites_news
     match_as_ascii: true
-    create_alias: true
     mapper:
       - filter: 'Group ~ "(?i)news"'
         script: |
-          @Group = "Favourites"
+          add_favourite("Favourites")
 ```
 
 ### 2.3.4 `mapper`
@@ -1498,6 +1494,7 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
   - replace(text, match, replacement)
   - pad(text | number, number, char, optional position: "<" | ">" | "^")
   - format(fmt_text, ...args)
+  - add_favourite(group_name)
 Field names are:  `name`, `title"`, `caption"`, `group"`, `id"`, `chno"`, `logo"`, `logo_small"`, `parent_code"`, `audio_track"`, `time_shift" |  "url"`, `epg_channel_id"`, `epg_id`.
 Format is very simple and only supports in text replacement like  `format("Hello {}! Hello {}!", "Bob", "World")`  
 When you use Regular expressions it could be that your match contains multiple results.
