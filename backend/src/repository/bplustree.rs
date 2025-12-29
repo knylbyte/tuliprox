@@ -1866,6 +1866,7 @@ impl FileLock {
     }
 }
 // Drop implementation is implicit: closing the _file releases the lock.
+// The .lock file remains on filesystem.
 
 impl<K, V> BPlusTreeUpdate<K, V>
 where
