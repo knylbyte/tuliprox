@@ -33,6 +33,7 @@ use shared::foundation::filter::{get_field_value, set_field_value, Filter, Value
 use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
 use shared::utils::{create_alias_uuid, default_as_default};
 use std::time::Instant;
+use indexmap::IndexMap;
 
 fn is_valid(pli: &PlaylistItem, filter: &Filter, match_as_ascii: bool) -> bool {
     let provider = ValueProvider { pli, match_as_ascii };
@@ -564,7 +565,7 @@ async fn process_playlist_for_target(app_config: &Arc<AppConfig>,
 
 pub fn process_favourites(playlist: &mut Vec<PlaylistGroup>, favourites_cfg: Option<&[ConfigFavourites]>) {
     if let Some(favourites) = favourites_cfg {
-        let mut fav_groups: HashMap<String, Vec<PlaylistItem>> = HashMap::new();
+        let mut fav_groups: IndexMap<String, Vec<PlaylistItem>> = IndexMap::new();
         for pg in playlist.iter() {
             for pli in &pg.channels {
                 // skip episodes, only containers or videos/live
