@@ -637,6 +637,7 @@ async fn create_panel_api_provisioning_blocking_stream_details(
                             stream_info,
                             provider_name: new_handle.allocation.get_provider_name(),
                             grace_period_millis,
+                            disable_provider_grace: false,
                             reconnect_flag: Some(reconnect_flag),
                             provider_handle: Some(new_handle),
                         });
@@ -914,6 +915,7 @@ async fn create_panel_api_provisioning_stream_details(
         stream_info,
         provider_name,
         grace_period_millis,
+        disable_provider_grace: true,
         reconnect_flag: None,
         provider_handle,
     })
@@ -1005,6 +1007,7 @@ async fn create_stream_response_details(
                 stream_info,
                 provider_name: guard_provider_name.clone(),
                 grace_period_millis,
+                disable_provider_grace: false,
                 reconnect_flag: None,
                 provider_handle: streaming_strategy.provider_handle.clone(),
             }
@@ -1068,6 +1071,7 @@ async fn create_stream_response_details(
                 stream_info,
                 provider_name: guard_provider_name.clone(),
                 grace_period_millis,
+                disable_provider_grace: false,
                 reconnect_flag,
                 provider_handle,
             }

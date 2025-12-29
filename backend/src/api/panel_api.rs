@@ -351,35 +351,30 @@ fn extract_account_creds_from_input(input: &ConfigInput) -> Option<(String, Stri
     })
 }
 
-fn collect_expired_accounts(input: &ConfigInput) -> Vec<AccountCredentials> {
+fn collect_accounts(input: &ConfigInput) -> Vec<AccountCredentials> {
     let mut out = Vec::new();
-    if is_input_expired(input.exp_date) {
-        if let Some((u, p)) = extract_account_creds_from_input(input) {
-            out.push(AccountCredentials {
-                name: input.name.clone(),
-                username: u,
-                password: p,
-                exp_date: input.exp_date,
-            });
-        }
+    if let Some((u, p)) = extract_account_creds_from_input(input) {
+        out.push(AccountCredentials {
+            name: input.name.clone(),
+            username: u,
+            password: p,
+            exp_date: input.exp_date,
+        });
     }
     if let Some(aliases) = input.aliases.as_ref() {
         for a in aliases {
-            if is_input_expired(a.exp_date) {
-                if let (Some(u), Some(p)) = (a.username.as_deref(), a.password.as_deref()) {
-                    if !u.trim().is_empty() && !p.trim().is_empty() {
-                        out.push(AccountCredentials {
-                            name: a.name.clone(),
-                            username: u.to_string(),
-                            password: p.to_string(),
-                            exp_date: a.exp_date,
-                        });
-                    }
+            if let (Some(u), Some(p)) = (a.username.as_deref(), a.password.as_deref()) {
+                if !u.trim().is_empty() && !p.trim().is_empty() {
+                    out.push(AccountCredentials {
+                        name: a.name.clone(),
+                        username: u.to_string(),
+                        password: p.to_string(),
+                        exp_date: a.exp_date,
+                    });
                 }
             }
         }
     }
-    out.sort_by_key(|a| a.exp_date.unwrap_or(i64::MAX));
     out
 }
 
@@ -676,8 +671,22 @@ async fn try_renew_expired_account(
     is_batch: bool,
     sources_path: &Path,
 ) -> bool {
-    let expired = collect_expired_accounts(input);
-    for acct in &expired {
+    let mut candidates = collect_accounts(input);
+    for acct in &mut candidates {
+        if acct.exp_date.is_none() {
+            acct.exp_date = panel_client_info(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str())
+                .await
+                .ok()
+                .flatten();
+        }
+    }
+    candidates.sort_by_key(|a| a.exp_date.unwrap_or(i64::MIN));
+
+    for acct in &candidates {
+        let expired = acct.exp_date.map_or(true, |ts| is_input_expired(Some(ts)));
+        if !expired {
+            continue;
+        }
         match panel_client_renew(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str()).await {
             Ok(()) => {
                 let refreshed_exp = panel_client_info(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str())
