@@ -10,45 +10,361 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
+use fs2::FileExt;
 
-const BLOCK_SIZE: usize = 4096;
+// Constants (Restored)
+const PAGE_SIZE: u16 = 4096;
+const PAGE_SIZE_USIZE: usize = PAGE_SIZE as usize;
 const LEN_SIZE: usize = 4;
 const FLAG_SIZE: usize = 1;
 const MAGIC: &[u8; 4] = b"BTRE";
 const STORAGE_VERSION: u32 = 1;
-const HEADER_SIZE: u64 = BLOCK_SIZE as u64;
+const HEADER_SIZE: u64 = PAGE_SIZE as u64;
 const ROOT_OFFSET_POS: u64 = 8;
 
 const POINTER_SIZE: usize = 8;
 const INFO_SIZE: usize = 12; // (u64, u32)
 
 // MessagePack overhead estimation
-// Measured: 100 entries (u32 keys + ValueInfo) = 1781 bytes total
-// Per entry: ~18 bytes average. Using 22 for safety margin.
 const MSGPACK_OVERHEAD_PER_ENTRY: usize = 22;
 
-
 // Value packing configuration
-const SMALL_VALUE_THRESHOLD: usize = 256;  // Pack values <= 256 bytes
-const PACK_BLOCK_HEADER_SIZE: usize = 4;   // u32 for value count
-const PACK_VALUE_HEADER_SIZE: usize = 4;   // u32 for each value length
+const SMALL_VALUE_THRESHOLD: usize = 256;
+const PACK_BLOCK_HEADER_SIZE: usize = 4;
+const PACK_VALUE_HEADER_SIZE: usize = 4;
 
 // LZ4 compression configuration
-const COMPRESSION_MIN_SIZE: usize = 64;        // Don't compress values smaller than this
-const COMPRESSION_RATIO_THRESHOLD: f32 = 0.85; // Only compress if result is <= 85% of original
+const COMPRESSION_MIN_SIZE: usize = 64;
+const COMPRESSION_THRESHOLD_PERCENT: usize = 85;
 const COMPRESSION_FLAG_NONE: u8 = 0x00;
 const COMPRESSION_FLAG_LZ4: u8 = 0x01;
 
-fn is_multiple_of_block_size(file: &File) -> io::Result<bool> {
-    let file_size = file.metadata()?.len();
-    Ok(file_size.is_multiple_of(BLOCK_SIZE as u64))
+fn is_file_valid(file: File) -> File {
+    // Permissive check (restored from optimization)
+    file
 }
 
-fn is_file_valid(file: File) -> io::Result<File> {
-    // Note: Files with byte-aligned value writes may not be block-aligned
-    // Block alignment is only enforced for node blocks, not value data
-    Ok(file)
+// Page Configuration
+const PAGE_HEADER_SIZE: u16 = 16;
+const PAGE_HEADER_SIZE_USIZE: usize = PAGE_HEADER_SIZE as usize;
+const SLOT_SIZE: usize = 2; // u16
+
+/*
+    Page Header Layout
+
+    ┌─────────────────────────────────────────────────────────────┐
+    │ Page Header (16 bytes)                                      │
+    ├─────────────────────────────────────────────────────────────┤
+    │ Slot Directory (grows ↓)                                    │
+    │ [Slot 0: u16] [Slot 1: u16] [Slot 2: u16] ...               │
+    ├─────────────────────────────────────────────────────────────┤
+    │                                                             │
+    │                   < Free Space >                            │
+    │                                                             │
+    │ (Splits when Free Space < Cell Size)                        │
+    ├─────────────────────────────────────────────────────────────┤
+    │ Cell Data (grows ↑)                                         │
+    │ ... [Cell 2] [Cell 1] [Cell 0]                              │
+    └─────────────────────────────────────────────────────────────┘
+
+    Leaf Cell (key + Value)
+    ┌────────────┬─────────────┬───────────────┬─────────────────┐
+    │ Header     │ Key         │ Value Header  │ Value Payload   │
+    │ [len: var] │ [bytes...]  │ [flag: 1B]    │ [bytes...]      │
+    └────────────┴─────────────┴───────────────┴─────────────────┘
+
+    Note: Values > 1/4 Page Size (1KB) are moved to Overflow Pages, leaving a 12-byte pointer [OverflowPgId][Length].
+
+    Internal Cell (Key + Pointer)
+    ┌──────────────┬─────────────┬────────────┐
+    │ Child Ptr    │ Key Len     │ Key Bytes  │
+    │ [u64: 8B]    │ [varint]    │ [bytes...] │
+    └──────────────┴─────────────┴────────────┘
+*/
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PageType {
+    Leaf = 1,
+    Internal = 2,
+    Overflow = 3,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct PageHeader {
+    pub page_type: PageType, // 0x01=Leaf, 0x02=Internal, 0x03=Overflow
+    pub cell_count: u16,     // Number of active cells
+    pub free_start: u16,     // Offset to start of free space (after slots)
+    pub free_end: u16,       // Offset to end of free space (before cells)
+    pub right_sibling: u64,  // 0 if none, pointer to next leaf (for range scans)
+    pub checksum: u32,       // Data integrity
+}
+
+impl PageHeader {
+    pub fn new(page_type: PageType) -> Self {
+        Self {
+            page_type,
+            cell_count: 0,
+            free_start: PAGE_HEADER_SIZE,
+            free_end: PAGE_SIZE,
+            right_sibling: 0,
+            checksum: 0,
+        }
+    }
+
+    pub fn serialize(&self) -> [u8; PAGE_HEADER_SIZE_USIZE] {
+        let mut buf = [0u8; PAGE_HEADER_SIZE_USIZE];
+        buf[0] = self.page_type as u8;
+        buf[1] = 0; // padding
+        buf[2..4].copy_from_slice(&self.cell_count.to_le_bytes());
+        buf[4..6].copy_from_slice(&self.free_start.to_le_bytes());
+        buf[6..8].copy_from_slice(&self.free_end.to_le_bytes());
+        buf[8..16].copy_from_slice(&self.right_sibling.to_le_bytes());
+        buf
+    }
+
+    pub fn deserialize(buf: &[u8]) -> Result<Self, PageError> {
+        if buf.len() < PAGE_HEADER_SIZE_USIZE {
+            return Err(PageError::Corrupted);
+        }
+        let page_type = match buf[0] {
+            2 => PageType::Internal,
+            3 => PageType::Overflow,
+            _ => PageType::Leaf, 
+        };
+
+        // Use try_into to safely read bytes, although length check above makes it safe.
+        // we can map err.
+        let cell_count = u16::from_le_bytes(buf[2..4].try_into().map_err(|_| PageError::Corrupted)?);
+        let free_start = u16::from_le_bytes(buf[4..6].try_into().map_err(|_| PageError::Corrupted)?);
+        let free_end = u16::from_le_bytes(buf[6..8].try_into().map_err(|_| PageError::Corrupted)?);
+        let right_sibling = u64::from_le_bytes(buf[8..16].try_into().map_err(|_| PageError::Corrupted)?);
+        
+        Ok(Self {
+            page_type,
+            cell_count,
+            free_start,
+            free_end,
+            right_sibling,
+            checksum: 0,
+        })
+    }
+}
+
+pub struct SlottedPage<'a> {
+    pub header: PageHeader,
+    data: &'a mut [u8],
+}
+
+#[derive(Debug)]
+pub enum PageError {
+    NoSpace,
+    InvalidIndex,
+    Corrupted,
+    Io(io::Error),
+}
+
+impl From<io::Error> for PageError {
+    fn from(err: io::Error) -> Self {
+        PageError::Io(err)
+    }
+}
+
+impl<'a> SlottedPage<'a> {
+    pub fn new(data: &'a mut [u8], page_type: PageType) -> Result<Self, PageError> {
+        if data.len() < PAGE_HEADER_SIZE_USIZE {
+            return Err(PageError::NoSpace);
+        }
+        let header = PageHeader::new(page_type);
+        // Initialize header in buffer
+        let h_bytes = header.serialize();
+        data[..PAGE_HEADER_SIZE_USIZE].copy_from_slice(&h_bytes);
+        Ok(Self { header, data })
+    }
+
+    pub fn open(data: &'a mut [u8]) -> Result<Self, PageError> {
+        if data.len() < PAGE_HEADER_SIZE_USIZE {
+             return Err(PageError::Corrupted);
+        }
+        let header = PageHeader::deserialize(&data[..PAGE_HEADER_SIZE_USIZE])?;
+        Ok(Self { header, data })
+    }
+
+    pub fn commit(&mut self) {
+        let h_bytes = self.header.serialize();
+        if self.data.len() >= PAGE_HEADER_SIZE_USIZE {
+             self.data[..PAGE_HEADER_SIZE_USIZE].copy_from_slice(&h_bytes);
+        }
+    }
+
+    pub fn free_space(&self) -> usize {
+        if self.header.free_end >= self.header.free_start {
+            (self.header.free_end - self.header.free_start) as usize
+        } else {
+            0
+        }
+    }
+
+    /// Insert a cell directly. Caller must ensure specific order (e.g. invalidating current sort).
+    /// Typically used by `insert_at_index`.
+    fn append_cell(&mut self, cell_data: &[u8]) -> Result<u16, PageError> {
+        let required = cell_data.len();
+        if self.free_space() < required + SLOT_SIZE {
+            return Err(PageError::NoSpace);
+        }
+        
+        let req_u16 = u16::try_from(required).map_err(|_| PageError::NoSpace)?;
+        // Data grows downwards. Safe cast due to page size check.
+        let offset = self.header.free_end.checked_sub(req_u16).ok_or(PageError::NoSpace)?;
+        
+        // Bounds check
+        if (offset as usize) + required > self.data.len() {
+             return Err(PageError::NoSpace);
+        }
+        
+        self.data[offset as usize..(offset as usize + required)].copy_from_slice(cell_data);
+        
+        self.header.free_end = offset;
+        Ok(offset)
+    }
+
+    pub fn insert_at_index(&mut self, index: usize, val: &[u8]) -> Result<(), PageError> {
+        // 1. Append cell data
+        let offset = self.append_cell(val)?;
+        
+        // 2. Insert slot
+        let slot_area_start = PAGE_HEADER_SIZE_USIZE;
+        let count = self.header.cell_count as usize;
+        
+        if index > count {
+            return Err(PageError::InvalidIndex);
+        }
+
+        // Shift slots if necessary
+        let insert_pos = slot_area_start + (index * SLOT_SIZE);
+        if self.data.len() < insert_pos + SLOT_SIZE {
+             return Err(PageError::NoSpace); // Should cover src_start..src_end too if valid
+        }
+
+        if index < count {
+            let src_start = insert_pos;
+            let src_end = slot_area_start + (count * SLOT_SIZE);
+            let dest_start = insert_pos + SLOT_SIZE;
+            
+            if self.data.len() < dest_start + (src_end - src_start) {
+                 return Err(PageError::NoSpace);
+            }
+            self.data.copy_within(src_start..src_end, dest_start);
+        }
+
+        // Write new slot
+        if insert_pos + 2 > self.data.len() {
+             return Err(PageError::NoSpace);
+        }
+        self.data[insert_pos..insert_pos + 2].copy_from_slice(&offset.to_le_bytes());
+        
+        // Update header
+        self.header.cell_count += 1;
+        self.header.free_start += u16::try_from(SLOT_SIZE).map_err(|_| PageError::NoSpace)?;
+        self.commit();
+        
+        Ok(())
+    }
+
+    pub fn get_cell(&self, index: usize) -> Option<&[u8]> {
+         if index >= self.header.cell_count as usize {
+             return None;
+         }
+         let slot_pos = PAGE_HEADER_SIZE_USIZE + (index * SLOT_SIZE);
+         // Safe slice access
+         if slot_pos + 2 > self.data.len() { return None; }
+         let offset = u16::from_le_bytes(self.data[slot_pos..slot_pos+2].try_into().ok()?);
+         
+         // Bounds check for length header
+         if (offset as usize) + 4 > self.data.len() { return None; }
+         let len = u32::from_le_bytes(self.data[offset as usize..offset as usize + 4].try_into().ok()?) as usize;
+         
+         if (offset as usize) + 4 + len > self.data.len() { return None; }
+         Some(&self.data[offset as usize..offset as usize + 4 + len])
+    }
+    
+    pub fn get_cell_offset(&self, index: usize) -> Option<u16> {
+         let slot_pos = PAGE_HEADER_SIZE_USIZE + (index * SLOT_SIZE);
+         if slot_pos + 2 > self.data.len() { return None; }
+         Some(u16::from_le_bytes(self.data[slot_pos..slot_pos+2].try_into().ok()?))
+    }
+
+    pub fn compact(&mut self) -> Result<(), PageError> {
+        let mut temp = vec![0u8; PAGE_SIZE_USIZE];
+        {
+            let mut new_page = SlottedPage::new(&mut temp, self.header.page_type)?;
+            for i in 0..self.header.cell_count as usize {
+                if let Some(cell) = self.get_cell(i) {
+                    if let Err(e) = new_page.insert_at_index(i, cell) {
+                        eprintln!("DEBUG: Compact insert failed at index {i}: {e:?}");
+                        return Err(e);
+                    }
+                } else {
+                    eprintln!("DEBUG: Compact get_cell failed at index {i}");
+                    return Err(PageError::Corrupted);
+                }
+            }
+        }
+        self.data.copy_from_slice(&temp);
+        self.header = PageHeader::deserialize(&self.data[..PAGE_HEADER_SIZE_USIZE])?;
+        Ok(())
+    }
+
+    pub fn split_off(&mut self) -> Result<Vec<u8>, PageError> {
+        let count = self.header.cell_count as usize;
+        let mut total_bytes = 0;
+        let mut split_idx = count / 2;
+        
+        let mut sizes = Vec::with_capacity(count);
+        for i in 0..count {
+            if let Some(cell) = self.get_cell(i) {
+                 sizes.push(cell.len());
+                 total_bytes += cell.len();
+            } else {
+                 sizes.push(0); 
+            }
+        }
+        
+        let target = total_bytes / 2;
+        let mut current = 0;
+        for (i, &s) in sizes.iter().enumerate() {
+            current += s;
+            if current >= target {
+                split_idx = i + 1; 
+                break;
+            }
+        }
+        
+        if split_idx >= count { split_idx = count.saturating_sub(1); }
+        if split_idx == 0 && count > 1 { split_idx = 1; }
+        if count <= 1 { split_idx = 1; } 
+
+        let mut new_buffer = vec![0u8; PAGE_SIZE_USIZE];
+        {
+            let mut new_page = SlottedPage::new(&mut new_buffer, self.header.page_type)?;
+            for i in split_idx..count {
+                if let Some(cell) = self.get_cell(i) {
+                     new_page.insert_at_index(i - split_idx, cell)?;
+                }
+            }
+        }
+        
+        self.header.cell_count = u16::try_from(split_idx).map_err(|_| PageError::InvalidIndex)?;
+        let new_free_start = PAGE_HEADER_SIZE_USIZE + split_idx * SLOT_SIZE;
+        self.header.free_start = u16::try_from(new_free_start).map_err(|_| PageError::NoSpace)?;
+        self.commit(); 
+        
+        self.compact()?;
+        
+        Ok(new_buffer)
+    }
+}
+
 
 #[inline]
 fn u32_from_bytes(bytes: &[u8]) -> io::Result<u32> {
@@ -160,7 +476,7 @@ where
                     return None;
                 }
                 Err(pos) => {
-                    // Key doesn't exist, insert at correct position
+                    // Key doesn't exist, insert at the correct position
                     self.keys.insert(pos, key);
                     self.values.insert(pos, v);
                     if self.is_overflow(leaf_order) {
@@ -264,11 +580,11 @@ where
         }
 
         // Zero remaining space
-        if pos < BLOCK_SIZE {
-            buffer[pos..BLOCK_SIZE].fill(0u8);
+        if pos < PAGE_SIZE_USIZE {
+            buffer[pos..PAGE_SIZE_USIZE].fill(0u8);
         }
 
-        file.write_all(&buffer[..BLOCK_SIZE])?;
+        file.write_all(&buffer[..PAGE_SIZE_USIZE])?;
         Ok(())
     }
 
@@ -296,8 +612,8 @@ where
         }
 
         // Round up to block size
-        let blocks = size.div_ceil(BLOCK_SIZE);
-        Ok((blocks * BLOCK_SIZE) as u64)
+        let blocks = size.div_ceil(PAGE_SIZE_USIZE);
+        Ok((blocks * PAGE_SIZE_USIZE) as u64)
     }
 
     fn serialize_to_block<W: Write + Seek>(
@@ -314,11 +630,11 @@ where
             let info_len = u32::try_from(info_encoded.len()).map_err(to_io_error)?;
 
             let content_size = FLAG_SIZE + LEN_SIZE + keys_encoded.len() + LEN_SIZE + info_encoded.len();
-            let blocks = content_size.div_ceil(BLOCK_SIZE);
+            let blocks = content_size.div_ceil(PAGE_SIZE_USIZE);
 
             file.seek(SeekFrom::Start(offset))?;
 
-            let capacity = blocks * BLOCK_SIZE;
+            let capacity = blocks * PAGE_SIZE_USIZE;
             if buffer.len() < capacity {
                 buffer.resize(capacity, 0);
             }
@@ -341,16 +657,16 @@ where
 
             file.write_all(buffer)?;
 
-            Ok(offset + (blocks as u64 * BLOCK_SIZE as u64))
+            Ok(offset + (blocks as u64 * PAGE_SIZE_USIZE as u64))
         } else {
             let ptr_count = self.children.len();
             let ptr_encoded_size = 8 + 8 * ptr_count;
 
             let content_size = FLAG_SIZE + LEN_SIZE + keys_encoded.len() + LEN_SIZE + ptr_encoded_size;
-            let blocks_needed = content_size.div_ceil(BLOCK_SIZE);
+            let blocks_needed = content_size.div_ceil(PAGE_SIZE_USIZE);
 
             let parent_start = offset;
-            let mut current_offset = parent_start + (blocks_needed as u64 * BLOCK_SIZE as u64);
+            let mut current_offset = parent_start + (blocks_needed as u64 * PAGE_SIZE_USIZE as u64);
 
             let mut pointers = Vec::with_capacity(ptr_count);
             for child in &self.children {
@@ -362,14 +678,14 @@ where
             let pointers_len = u32::try_from(pointers_encoded.len()).map_err(to_io_error)?;
 
             file.seek(SeekFrom::Start(parent_start))?;
-            let mut data = Vec::with_capacity(blocks_needed * BLOCK_SIZE);
+            let mut data = Vec::with_capacity(blocks_needed * PAGE_SIZE_USIZE);
             data.push(0u8);
             data.extend_from_slice(&keys_len.to_le_bytes());
             data.extend_from_slice(&keys_encoded);
             data.extend_from_slice(&pointers_len.to_le_bytes());
             data.extend_from_slice(&pointers_encoded);
 
-            let pad_len = (blocks_needed * BLOCK_SIZE) - data.len();
+            let pad_len = (blocks_needed * PAGE_SIZE_USIZE) - data.len();
             if pad_len > 0 {
                 data.extend(std::iter::repeat_n(0, pad_len));
             }
@@ -420,7 +736,7 @@ where
                             if size <= SMALL_VALUE_THRESHOLD {
                                 let entry_size = PACK_VALUE_HEADER_SIZE + size;
 
-                                if current_pack_size + entry_size <= BLOCK_SIZE {
+                                if current_pack_size + entry_size <= PAGE_SIZE_USIZE {
                                     // Add to current pack
                                     node.value_info.push(ValueInfo {
                                         mode: ValueStorageMode::Packed(u64::from(pack_count), current_pack_index),
@@ -446,7 +762,7 @@ where
                                 // Pre-calculate compressed size if applicable
                                 let stored_size = if raw_size >= COMPRESSION_MIN_SIZE {
                                     let compressed = lz4_flex::compress_prepend_size(&value_bytes);
-                                    let threshold = (raw_size as f32 * COMPRESSION_RATIO_THRESHOLD) as usize;
+                                    let threshold = (raw_size * COMPRESSION_THRESHOLD_PERCENT) / 100;
                                     
                                     if compressed.len() < threshold {
                                         // Will be compressed: [flag:1][payload with prepended size]
@@ -519,7 +835,7 @@ where
                                 ValueStorageMode::Packed(pack_idx, _index) => {
                                     if !pack_block_offsets.contains_key(pack_idx) {
                                         pack_block_offsets.insert(*pack_idx, current_offset);
-                                        current_offset += BLOCK_SIZE as u64;
+                                        current_offset += PAGE_SIZE_USIZE as u64;
                                     }
                                 }
                                 ValueStorageMode::Single(offset) if *offset == u64::MAX => {
@@ -603,7 +919,7 @@ where
                                     // Apply adaptive compression
                                     let (flag, payload) = if value_bytes.len() >= COMPRESSION_MIN_SIZE {
                                         let compressed = lz4_flex::compress_prepend_size(&value_bytes);
-                                        let threshold = (value_bytes.len() as f32 * COMPRESSION_RATIO_THRESHOLD) as usize;
+                                        let threshold = (value_bytes.len() * COMPRESSION_THRESHOLD_PERCENT) / 100;
                                         
                                         if compressed.len() < threshold {
                                             (COMPRESSION_FLAG_LZ4, compressed)
@@ -676,18 +992,18 @@ where
         let pointer_offset_within_first_block = offset + write_pos as u64;
 
         // Zero unused portion and write first block
-        if write_pos < BLOCK_SIZE {
-            buffer_slice[write_pos..BLOCK_SIZE].fill(0u8);
+        if write_pos < PAGE_SIZE_USIZE {
+            buffer_slice[write_pos..PAGE_SIZE_USIZE].fill(0u8);
         }
         file.seek(SeekFrom::Start(offset))?;
-        file.write_all(&buffer_slice[..BLOCK_SIZE])?;
+        file.write_all(&buffer_slice[..PAGE_SIZE_USIZE])?;
 
         // Write child pointers
         let pointer_encoded = binary_serialize(child_offsets)?;
         let pointer_len = u32::try_from(pointer_encoded.len()).map_err(to_io_error)?;
 
         // CRITICAL CHECK: Ensure pointers fit in the remaining space of the first block or we've allocated enough
-        if write_pos + LEN_SIZE + pointer_encoded.len() > BLOCK_SIZE {
+        if write_pos + LEN_SIZE + pointer_encoded.len() > PAGE_SIZE_USIZE {
             return Err(io::Error::other(format!("Internal node overflow: keys ({}) + pointers ({}) exceeds block size. Consider reducing ORDER.", keys_len, pointer_encoded.len())));
         }
 
@@ -695,7 +1011,7 @@ where
         file.write_all(&pointer_len.to_le_bytes())?;
         file.write_all(&pointer_encoded)?;
 
-        Ok(offset + BLOCK_SIZE as u64)
+        Ok(offset + PAGE_SIZE_USIZE as u64)
     }
 
     fn deserialize_from_block<R: Read + Seek>(
@@ -753,7 +1069,7 @@ where
             let pointers: Vec<u64> = binary_deserialize(&buffer[read_pos..read_pos + payload_len])?;
             let nodes = if nested {
                 let mut n = Vec::with_capacity(pointers.len());
-                let mut child_buf = Vec::with_capacity(BLOCK_SIZE);
+                let mut child_buf = Vec::with_capacity(PAGE_SIZE_USIZE);
                 for &ptr in &pointers {
                     let (child, _) = Self::deserialize_from_block(file, &mut child_buf, ptr, nested)?;
                     n.push(child);
@@ -814,7 +1130,7 @@ where
             let pointers: Vec<u64> = binary_deserialize(&slice[read_pos..read_pos + pointers_length])?;
             if nested {
                 let mut nodes = Vec::with_capacity(pointers.len());
-                let mut child_buffer = vec![0u8; BLOCK_SIZE];
+                let mut child_buffer = vec![0u8; PAGE_SIZE_USIZE];
                 for &ptr in &pointers {
                     let (child, _) = Self::deserialize_from_block(file, &mut child_buffer, ptr, nested)?;
                     nodes.push(child);
@@ -851,7 +1167,7 @@ where
     ) -> io::Result<V> {
         file.seek(SeekFrom::Start(block_offset))?;
 
-        let mut block_buffer = vec![0u8; BLOCK_SIZE];
+        let mut block_buffer = vec![0u8; PAGE_SIZE_USIZE];
         file.read_exact(&mut block_buffer)?;
 
         // Read count
@@ -860,7 +1176,7 @@ where
 
         // Skip to target value
         for i in 0..=value_index {
-            if pos + 4 > BLOCK_SIZE {
+            if pos + 4 > PAGE_SIZE_USIZE {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("Packed block corrupted: position {pos} exceeds block size"),
@@ -872,7 +1188,7 @@ where
 
             if i == value_index {
                 // Found target value
-                if pos + len > BLOCK_SIZE {
+                if pos + len > PAGE_SIZE_USIZE {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
                         format!("Packed value corrupted: length {len} at position {pos} exceeds block size"),
@@ -929,15 +1245,14 @@ pub struct BPlusTree<K, V> {
 }
 
 const fn calc_order<K>() -> (usize, usize) {
-    // Phase 2 Layout:
     // Internal: FLAG (1) + LEN_K (4) + KEYS + LEN_P (4) + POINTERS (8 each)
     // Leaf:    FLAG (1) + LEN_K (4) + KEYS + LEN_INFO (4) + VALUE_INFO (12 each)
 
     let base_overhead = FLAG_SIZE + LEN_SIZE + LEN_SIZE + 64; // flag + keys_len + info_len + safety buffer
     let key_size = size_of::<K>();
 
-    let inner_order = (BLOCK_SIZE - base_overhead) / (key_size + POINTER_SIZE + MSGPACK_OVERHEAD_PER_ENTRY);
-    let leaf_order = (BLOCK_SIZE - base_overhead) / (key_size + INFO_SIZE + MSGPACK_OVERHEAD_PER_ENTRY);
+    let inner_order = (PAGE_SIZE_USIZE - base_overhead) / (key_size + POINTER_SIZE + MSGPACK_OVERHEAD_PER_ENTRY);
+    let leaf_order = (PAGE_SIZE_USIZE - base_overhead) / (key_size + INFO_SIZE + MSGPACK_OVERHEAD_PER_ENTRY);
 
     // Ensure we have at least a minimal order (manual max for const fn)
     let final_inner = if inner_order < 2 { 2 } else { inner_order };
@@ -1016,10 +1331,10 @@ where
     fn store_internal(&mut self, filepath: &Path) -> io::Result<u64> {
         let tempfile = NamedTempFile::new()?;
         let mut file = utils::file_writer(&tempfile);
-        let mut buffer = vec![0u8; BLOCK_SIZE];
+        let mut buffer = vec![0u8; PAGE_SIZE_USIZE];
 
         // Write header block 0
-        let mut header = [0u8; BLOCK_SIZE];
+        let mut header = [0u8; PAGE_SIZE_USIZE];
         header[0..4].copy_from_slice(MAGIC);
         header[4..8].copy_from_slice(&STORAGE_VERSION.to_le_bytes());
         // Placeholder for root offset, will be updated after serialization
@@ -1042,7 +1357,7 @@ where
     }
 
     pub fn load(filepath: &Path) -> io::Result<Self> {
-        let mut file = is_file_valid(File::open(filepath)?)?;
+        let mut file = is_file_valid(File::open(filepath)?);
 
         // Verify Header
         let mut header = [0u8; 16];
@@ -1057,7 +1372,7 @@ where
         let root_offset = u64::from_le_bytes(header[8..16].try_into().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid root offset slice"))?);
 
         let mut reader = utils::file_reader(file);
-        let mut buffer = vec![0u8; BLOCK_SIZE];
+        let mut buffer = vec![0u8; PAGE_SIZE_USIZE];
         // Start after header block
         let (root, _) = BPlusTreeNode::<K, V>::deserialize_from_block(&mut reader, &mut buffer, root_offset, true)?;
 
@@ -1220,7 +1535,8 @@ where
 
 ///
 /// `BPlusTreeQuery` can be used to query the `BPlusTree` on-disk.
-/// If you intend to do frequent queries then use `BPlusTree` instead which loads the tree into memory.
+/// If you intend to do frequent queries, then use `BPlusTree` instead, which loads the tree into memory.
+/// Be aware that it can hold up a lot of memory if you load a big tree.
 ///
 pub struct BPlusTreeQuery<K, V> {
     file: BufReader<File>,
@@ -1237,7 +1553,7 @@ where
     V: Serialize + for<'de> Deserialize<'de> + Clone,
 {
     pub fn try_from_file(file: File) -> io::Result<Self> {
-        let mut file = is_file_valid(file)?;
+        let mut file = is_file_valid(file);
 
         // Verify Header
         let mut header = [0u8; 16];
@@ -1254,7 +1570,7 @@ where
 
         Ok(Self {
             file: utils::file_reader(file),
-            buffer: vec![0u8; BLOCK_SIZE],
+            buffer: vec![0u8; PAGE_SIZE_USIZE],
             cache: IndexMap::with_capacity(1024),
             root_offset,
             _marker_k: PhantomData,
@@ -1490,25 +1806,32 @@ pub struct BPlusTreeUpdate<K, V> {
 }
 
 struct FileLock {
-    path: PathBuf,
+    // We hold the file handle to keep the advisory lock active.
+    // When this struct is dropped, the file handle closes and OS releases the lock.
+    _file: File,
 }
 
 impl FileLock {
     fn try_lock(filepath: &Path) -> io::Result<Self> {
+        // Sidecar Lock Pattern: Lock a separate .lock file, not the data file itself.
+        // This ensures implementation works on Windows where locked files cannot be renamed/deleted.
         let lock_path = PathBuf::from(format!("{}.lock", filepath.to_str().unwrap_or("tree")));
-        OpenOptions::new()
+        
+        let file = OpenOptions::new()
+            .read(true)
             .write(true)
-            .create_new(true)
+            .create(true) // Create if missing
+            .truncate(false) // Do not truncate, just open
             .open(&lock_path)?;
-        Ok(Self { path: lock_path })
-    }
-}
 
-impl Drop for FileLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        // Try to acquire exclusive advisory lock.
+        // If another process holds it, this returns immediately with Error (WouldBlock).
+        file.try_lock_exclusive()?;
+
+        Ok(Self { _file: file })
     }
 }
+// Drop implementation is implicit: closing the _file releases the lock.
 
 impl<K, V> BPlusTreeUpdate<K, V>
 where
@@ -1522,7 +1845,7 @@ where
         // Acquire lock first
         let lock = FileLock::try_lock(filepath)?;
 
-        let mut file = is_file_valid(utils::open_read_write_file(filepath)?)?;
+        let mut file = is_file_valid(utils::open_read_write_file(filepath)?);
 
         // Verify Header
         let mut header = [0u8; 16];
@@ -1539,8 +1862,8 @@ where
 
         Ok(Self {
             file,
-            read_buffer: vec![0u8; BLOCK_SIZE],
-            write_buffer: vec![0u8; BLOCK_SIZE],
+            read_buffer: vec![0u8; PAGE_SIZE_USIZE],
+            write_buffer: vec![0u8; PAGE_SIZE_USIZE],
             cache: IndexMap::with_capacity(1024),
             root_offset,
             lock,
@@ -1578,7 +1901,7 @@ where
                     
                     let (flag, payload) = if raw_bytes.len() >= COMPRESSION_MIN_SIZE {
                         let compressed = lz4_flex::compress_prepend_size(&raw_bytes);
-                        let threshold = (raw_bytes.len() as f32 * COMPRESSION_RATIO_THRESHOLD) as usize;
+                        let threshold = (raw_bytes.len() * COMPRESSION_THRESHOLD_PERCENT) / 100;
                         
                         if compressed.len() < threshold {
                             (COMPRESSION_FLAG_LZ4, compressed)
@@ -1603,7 +1926,7 @@ where
                     // Update leaf metadata
                     node.value_info[idx] = ValueInfo {
                         mode: ValueStorageMode::Single(val_offset),
-                        length: stored_len as u32,
+                        length: u32::try_from(stored_len).map_err(to_io_error)?,
                     };
 
                     // Write new leaf node at end of file
@@ -1688,7 +2011,7 @@ where
         // Decide whether to compress based on size and effectiveness
         let (flag, payload) = if raw_bytes.len() >= COMPRESSION_MIN_SIZE {
             let compressed = lz4_flex::compress_prepend_size(&raw_bytes);
-            let threshold = (raw_bytes.len() as f32 * COMPRESSION_RATIO_THRESHOLD) as usize;
+            let threshold = (raw_bytes.len() * COMPRESSION_THRESHOLD_PERCENT) / 100;
             
             if compressed.len() < threshold {
                 // Compression is effective
@@ -1712,7 +2035,7 @@ where
         
         // stored_len includes flag + payload
         let stored_len = 1 + payload.len();
-        Ok((offset, stored_len as u32))
+        Ok((offset, u32::try_from(stored_len).map_err(to_io_error)?))
     }
 
     fn write_node(&mut self, node: &BPlusTreeNode<K, V>) -> io::Result<u64> {
@@ -2667,7 +2990,7 @@ mod tests {
         // Expected size without packing: 
         // 1000 items * 4096 bytes/block = 4,096,000 bytes (~4MB)
         // Plus internal nodes
-        let unpacked_size_estimate = count as u64 * super::BLOCK_SIZE as u64;
+        let unpacked_size_estimate = count as u64 * super::PAGE_SIZE_USIZE as u64;
 
         println!("File size with packing: {} bytes", file_size);
         println!("Estimated unpacked size: {} bytes", unpacked_size_estimate);
@@ -2735,7 +3058,7 @@ mod tests {
 
         let mut tree_update = BPlusTreeUpdate::<u32, String>::try_new(&filepath)?;
 
-        // Insert values > BLOCK_SIZE (4096).
+        // Insert values > PAGE_SIZE_USIZE (4096).
         // 10K value -> 3 chunks.
         let val1 = "A".repeat(10000);
         let val2 = "B".repeat(10000);
@@ -2927,7 +3250,7 @@ mod tests {
     #[test]
     fn test_node_serialization_overhead() -> io::Result<()> {
         use crate::utils::binary_serialize;
-        use crate::repository::bplustree::{ValueInfo, ValueStorageMode, BLOCK_SIZE};
+        use crate::repository::bplustree::{ValueInfo, ValueStorageMode, PAGE_SIZE_USIZE};
 
         // Simulate a leaf node with u32 keys and ValueInfo
         let key_counts = [10, 30, 50, 80, 100];
@@ -2946,7 +3269,7 @@ mod tests {
             
             // Total content: flag(1) + keys_len(4) + keys + info_len(4) + info
             let total = 1 + 4 + keys_serialized.len() + 4 + info_serialized.len();
-            let fits_in_block = total <= BLOCK_SIZE;
+            let fits_in_block = total <= PAGE_SIZE_USIZE;
             
             println!(
                 "Keys={}: keys_bytes={}, info_bytes={}, total={}, fits_in_block={}",
@@ -2954,6 +3277,77 @@ mod tests {
             );
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod page_tests {
+    use super::*;
+
+    #[test]
+    fn test_page_initialization() {
+        let mut data = [0u8; PAGE_SIZE_USIZE];
+        let page = SlottedPage::new(&mut data, PageType::Leaf).expect("Init failed");
+        assert_eq!(page.header.page_type, PageType::Leaf);
+        assert_eq!(page.header.cell_count, 0);
+        assert_eq!(page.header.free_start, PAGE_HEADER_SIZE as u16);
+        assert_eq!(page.header.free_end, PAGE_SIZE as u16);
+        assert_eq!(page.free_space(), PAGE_SIZE_USIZE - PAGE_HEADER_SIZE_USIZE);
+    }
+
+    #[test]
+    fn test_insert_get() {
+        let mut data = [0u8; PAGE_SIZE_USIZE];
+        let mut page = SlottedPage::new(&mut data, PageType::Leaf).expect("Init failed");
+
+        let val1 = b"hello";
+        let val2 = b"world";
+
+        // Insert length-prefixed for test realism
+        let mut cell1 = Vec::new();
+        cell1.extend_from_slice(&(val1.len() as u32).to_le_bytes());
+        cell1.extend_from_slice(val1);
+
+        let mut cell2 = Vec::new();
+        cell2.extend_from_slice(&(val2.len() as u32).to_le_bytes());
+        cell2.extend_from_slice(val2);
+
+        page.insert_at_index(0, &cell1).unwrap();
+        page.insert_at_index(1, &cell2).unwrap();
+
+        assert_eq!(page.header.cell_count, 2);
+        
+        let read1 = page.get_cell(0).expect("Get cell 0");
+        assert_eq!(&read1[4..], val1); 
+
+        let read2 = page.get_cell(1).expect("Get cell 1");
+        assert_eq!(&read2[4..], val2);
+    }
+
+    #[test]
+    fn test_split_off() {
+        let mut data = [0u8; PAGE_SIZE_USIZE];
+        let mut page = SlottedPage::new(&mut data, PageType::Leaf).expect("Init failed");
+
+        let payload = vec![0xAAu8; 500];
+        let mut cell = Vec::new();
+        cell.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        cell.extend_from_slice(&payload);
+
+        for i in 0..6 {
+            page.insert_at_index(i, &cell).unwrap();
+        }
+
+        assert_eq!(page.header.cell_count, 6);
+        
+        let new_page_bytes = page.split_off().expect("Split failed");
+        
+        // Check original page
+        assert_eq!(page.header.cell_count, 3);
+        
+        // Check new page
+        let header = PageHeader::deserialize(&new_page_bytes[..PAGE_HEADER_SIZE_USIZE]).expect("Deserialize failed");
+        assert_eq!(header.cell_count, 3);
     }
 }
 

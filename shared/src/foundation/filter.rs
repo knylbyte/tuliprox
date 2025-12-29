@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn test_filter_3() {
-        let flt = r#"Group ~ "d" AND ((Name ~ "e" AND NOT ((Name ~ "c" OR Name ~ "f"))) OR (Name ~ "a" OR Name ~ "b")) AND (Type = vod)"#;
+        let flt = r#"Group ~ "d" AND ((Name ~ "e" AND NOT ((Name ~ "c" OR Name ~ "f"))) OR (Name ~ "a" OR Name ~ "b")) AND (Type = movie)"#;
         match get_filter(flt, None) {
             Ok(filter) => {
                 assert_eq!(format!("{filter}"), flt);

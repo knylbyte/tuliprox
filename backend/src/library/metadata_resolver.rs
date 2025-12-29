@@ -212,7 +212,7 @@ mod tests {
         let mut config = create_test_config(false);
         config.metadata.fallback_to_filename = false;
         let resolver = MetadataResolver::from_config(&config, client, MetadataStorage::new(PathBuf::from("/tmp")));
-        let file = create_test_file("Unknown.Movie.mkv");
+        let file = create_test_file("343jfkjh4789dkjfh934z3.Movie.mkv");
         let metadata = match MediaClassifier::classify(&file) {
             MediaClassification::Movie { metadata, .. } => metadata,
             MediaClassification::Series { metadata, .. } => metadata,
