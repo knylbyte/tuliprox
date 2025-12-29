@@ -55,6 +55,7 @@ async fn playlist_resolve_series_info(app_config: &Arc<AppConfig>, client: &reqw
             };
             if provider_id != 0 {
                 if let Some(content) = playlist_resolve_download_playlist_item(client, pli, fpl.input, errors, resolve_delay, XtreamCluster::Series).await {
+                    if content.is_empty() { continue; }
                     match serde_json::from_str::<XtreamSeriesInfo>(&content) {
                         Ok(info) => {
                             let series_stream_props = SeriesStreamProperties::from_info(&info, pli);

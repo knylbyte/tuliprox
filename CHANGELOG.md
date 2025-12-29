@@ -1,23 +1,38 @@
 # Changelog
-# 3.3.0 (2025-11-xx)
-- !BREAKING CHANGE! Due to some heavy refactoring, the old data format is invalid. You need to clean your data folder and update the playlists
+# 3.3.0 (2025-12-xx)
+- !BREAKING CHANGE! Due to some heavy refactoring, the old data format is invalid. You need to clean your data folder and update the playlists.
+- !BREAKING CHANGE! B+Tree storage format has changed to a more efficient Slotted Page architecture.
+- **B+Tree Storage Engine Optimizations**:
+  - Transitioned to a **Slotted Page Architecture**, significantly improving space utilization and allowing for variable-length keys.
+  - Implemented **Adaptive LZ4 Compression** for stored values, optimizing disk footprint.
+  - Refactored I/O layer for **Atomic Writes** and file locking, ensuring data integrity during parallel access or power loss.
+  - Introduced **B+Tree Compaction** to reclaim space after deletions or mass updates.
+  - Added **Batch Upsert** functionality for much higher throughput during mass inserts/updates.
 - !BREAKING CHANGE! config.yml threads attribute is now renamed to process_parallel and is a boolean (true or false).
 - !BREAKING CHANGE! config.yml adds a reverse proxy config field rewrite_secret to keep resource URLs valid after restart.
 - !BREAKING CHANGE! removed `forced_retry_interval_secs`.
 - !BREAKING CHANGE! `name` attribute is mandatory for input type batch. The name attribute is used for playlist `uuid` and needs to be stable. The first alias is renamed with the input `name` attribute.
-- Avoid blocking the runtime when warming the cache.
-- Normalize FileLockManager paths so aliases share the same lock.
-- Use async file operations for playlist persistence to avoid blocking the async runtime.
-- Async cache persistence write pipeline so response caching no longer blocks the runtime.
+- !BREAKING CHANGE! Redesigned Favorites handling: replaced the implicit `create_alias` flag with an explicit `add_favourite(group_name)` script function.
+- Mapping & Filtering Enhancements:
+  - Integrated `match_as_ascii` flag for robust, accent-independent text matching (e.g., matching "Cinema" against "Cinéma").
+  - `match_as_ascii` is supported in mapping filters, mapper scripts, and favorites.
+  - `ValueProvider` and `ValueAccessor` now support on-the-fly deunicoding.
+- Resource-Cache: 
+  - Avoid blocking the runtime when warming the cache.
+  - Async cache persistence write pipeline so response caching no longer blocks the runtime.
+  - Made cache storage more robust. Incomplete downloads will be deleted from cache.
+- File Operations
+  - Normalize FileLockManager paths so aliases share the same lock.
+  - Use async file operations for playlist persistence to avoid blocking the async runtime.
+  - JSON playlist/category writers (Xtream collections, user bouquets) now stream through Tokio I/O, so persisting these files no longer blocks the runtime.
+  - Playlist EPG exports now write via async file handles to avoid blocking during XML serialization.
+  - Config and API proxy save endpoints now serialize via Tokio I/O, so editing configs through the API no longer blocks runtime threads.
+  - Video download queue now uses async file I/O to keep the runtime responsive during large transfers
 - M3U playlist exports now stream asynchronously to keep the runtime responsive.
 - Shared stream burst buffer uses zero-copy data buffers to reduce memory usage.
 - Added detailed shared-stream/buffer/provider logging to trace lag, cache persistence, and session/provider lifecycle events.
 - Connection registration failures now trigger an explicit disconnect to prevent zombie sockets.
-- Video download queue now uses async file I/O to keep the runtime responsive during large transfers.
 - API user DB persistence (merge/backup/store) now executes through async Tokio I/O so user-management APIs remain responsive without blocking.
-- JSON playlist/category writers (Xtream collections, user bouquets) now stream through Tokio I/O, so persisting these files no longer blocks the runtime.
-- Playlist EPG exports now write via async file handles to avoid blocking during XML serialization.
-- Config and API proxy save endpoints now serialize via Tokio I/O, so editing configs through the API no longer blocks runtime threads.
 - Playlist updates now use Tokio tasks instead of spawning per-source threads/runtimes, reducing CPU and memory overhead during large syncs.
 - XMLTV timeshift responses stream asynchronously end-to-end to keep the Axum runtime responsive.
 - main now uses #[tokio::main], removing manual runtime boilerplate and keeping every branch async end-to-end.
@@ -51,10 +66,9 @@
   - New CLI flags: `--scan-library`, `--force-library-rescan`
   - New API endpoints: `POST /api/v1/library/scan`, `GET /api/v1/library/status`
   - New input type: `library` for source.yml integration
-- Made cache storage more robust. Incomplete downloads will be deleted from cache.
 - `kick_secs` added to config.yml `web_ui` config. Default 90 seconds, if a user is kicked from the `web_ui`, they can't connect for this duration.
   This setting is also used for sleep-timed streams.
-- Added new db-viewer options to print db content. 
+- **NEW FEATURE: Added new db-viewer options to print db content** 
   `tuliprox --dbx /opt/tuliprox/data/all_channels/xtream/video.db`
   `tuliprox --dbm /opt/tuliprox/data/all_channels/m3u.db`
 

@@ -966,6 +966,7 @@ pub async fn stream_response(
                         | PlaylistItemType::LiveDash
                         | PlaylistItemType::Video
                         | PlaylistItemType::Series
+                        | PlaylistItemType::LocalSeries
                         | PlaylistItemType::Catchup
                 ) {
                     let _ = app_state

@@ -1,5 +1,5 @@
 use crate::utils::debug_if_enabled;
-use log::{debug, error};
+use log::{debug, error, trace};
 use path_clean::PathClean;
 use shared::error::str_to_io_error;
 use shared::utils::{API_PROXY_FILE, CONFIG_FILE, CONFIG_PATH, MAPPING_FILE, SOURCE_FILE, USER_FILE};
@@ -370,7 +370,7 @@ pub fn cleanup_unlisted_files_with_suffix(
             };
 
             if delete && fs::remove_file(&path).is_ok() {
-                debug!("Deleted {:?}", path.display());
+                trace!("Deleted {:?}", path.display());
             }
         }
     }

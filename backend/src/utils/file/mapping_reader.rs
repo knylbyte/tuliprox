@@ -48,10 +48,6 @@ fn merge_mappings(mappings: Vec<MappingDto>) -> Vec<MappingDto> {
             ..Default::default()
         });
 
-        // Logic for match_as_ascii: true, if one of them is true
-        entry.match_as_ascii |= m.match_as_ascii;
-        entry.create_alias |= m.create_alias;
-
         if let Some(mut mapper) = m.mapper.take() {
             entry.mapper.get_or_insert(vec![]).append(&mut mapper);
         }

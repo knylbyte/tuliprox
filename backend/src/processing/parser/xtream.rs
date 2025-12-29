@@ -205,32 +205,36 @@ mod tests {
 
     #[test]
     fn test_read_json_file_into_struct() {
-        let file_content = fs::read_to_string("/tmp/series-info.json").expect("Unable to read file");
-        match serde_json::from_str::<XtreamSeriesInfo>(&file_content) {
-            Ok(series_info) => {
-                println!("{:#?}", series_info);
-                assert!(true);
-            }
-            Err(err) => {
-                assert!(false, "Failed to parse json file: {err}");
+        if fs::exists("/tmp/series-info.json").unwrap_or(false) {
+            let file_content = fs::read_to_string("/tmp/series-info.json").expect("Unable to read file");
+            match serde_json::from_str::<XtreamSeriesInfo>(&file_content) {
+                Ok(series_info) => {
+                    println!("{:#?}", series_info);
+                    assert!(true);
+                }
+                Err(err) => {
+                    assert!(false, "Failed to parse json file: {err}");
+                }
             }
         }
     }
 
     #[tokio::test]
     async fn test_read_json_stream_into_struct() -> std::io::Result<()> {
-        let reader = Box::pin(async_file_reader(tokio::fs::File::open("/tmp/vod_streams.json").await?));
-        match map_to_xtream_streams(XtreamCluster::Video, reader).await {
-            Ok(_streams) => {
-                println!("{:?}", _streams.get(1));
-                println!("{:?}", _streams.get(100));
-                println!("{:?}", _streams.get(200));
-                assert!(true);
-            }
-            Err(err) => {
-                assert!(false, "Failed to parse json file: {err}");
-            }
-        };
+        if fs::exists("/tmp/vod_streams.json").unwrap_or(false) {
+            let reader = Box::pin(async_file_reader(tokio::fs::File::open("/tmp/vod_streams.json").await?));
+            match map_to_xtream_streams(XtreamCluster::Video, reader).await {
+                Ok(_streams) => {
+                    println!("{:?}", _streams.get(1));
+                    println!("{:?}", _streams.get(100));
+                    println!("{:?}", _streams.get(200));
+                    assert!(true);
+                }
+                Err(err) => {
+                    assert!(false, "Failed to parse json file: {err}");
+                }
+            };
+        }
         Ok(())
     }
 }
