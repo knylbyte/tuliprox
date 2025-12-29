@@ -34,7 +34,7 @@ pub struct StreamConfig {
     pub buffer: Option<StreamBufferConfig>,
     pub grace_period_millis: u64,
     pub grace_period_timeout_secs: u64,
-    pub panel_api_provision_delay_millis: u64,
+    pub panel_api_provision_timeout: u64,
     pub throttle_str: Option<String>,
     pub throttle_kbps: u64,
     pub shared_burst_buffer_mb: u64,
@@ -48,7 +48,7 @@ impl From<&StreamConfigDto> for StreamConfig {
             buffer: dto.buffer.as_ref().map(Into::into),
             grace_period_millis: dto.grace_period_millis,
             grace_period_timeout_secs: dto.grace_period_timeout_secs,
-            panel_api_provision_delay_millis: dto.panel_api_provision_delay_millis,
+            panel_api_provision_timeout: dto.panel_api_provision_timeout,
             throttle_str: dto.throttle.clone(),
             throttle_kbps: dto.throttle.as_ref().map_or(0u64, |throttle| parse_to_kbps(throttle).unwrap_or(0u64)),
             shared_burst_buffer_mb: dto.shared_burst_buffer_mb,
@@ -63,7 +63,7 @@ impl From<&StreamConfig> for StreamConfigDto {
             buffer: instance.buffer.as_ref().map(Into::into),
             grace_period_millis: instance.grace_period_millis,
             grace_period_timeout_secs: instance.grace_period_timeout_secs,
-            panel_api_provision_delay_millis: instance.panel_api_provision_delay_millis,
+            panel_api_provision_timeout: instance.panel_api_provision_timeout,
             throttle: instance.throttle_str.clone(),
             throttle_kbps: instance.throttle_kbps,
             shared_burst_buffer_mb: instance.shared_burst_buffer_mb,
@@ -77,4 +77,5 @@ pub struct CustomStreamResponse {
     pub user_connections_exhausted: Option<TransportStreamBuffer>, // user has no more connections
     pub provider_connections_exhausted: Option<TransportStreamBuffer>, // provider limit reached, has no more connections
     pub user_account_expired: Option<TransportStreamBuffer>,
+    pub panel_api_provisioning: Option<TransportStreamBuffer>,
 }

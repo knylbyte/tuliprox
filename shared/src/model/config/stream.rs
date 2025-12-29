@@ -1,14 +1,14 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::info_err;
-use crate::utils::{default_grace_period_millis, default_grace_period_timeout_secs, parse_to_kbps};
+use crate::utils::{
+    default_grace_period_millis, default_grace_period_timeout_secs,
+    default_panel_api_provision_timeout_secs, parse_to_kbps,
+};
 
 const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with 8192byte chunks and 2Mbit/s approx 8MB
 const MIN_SHARED_BURST_BUFFER_MB: u64 = 1;
 const fn default_shared_burst_buffer_mb() -> u64 {
     12
-}
-const fn default_panel_api_provision_delay_millis() -> u64 {
-    30_000
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -44,8 +44,8 @@ pub struct StreamConfigDto {
     pub grace_period_millis: u64,
     #[serde(default = "default_grace_period_timeout_secs")]
     pub grace_period_timeout_secs: u64,
-    #[serde(default = "default_panel_api_provision_delay_millis")]
-    pub panel_api_provision_delay_millis: u64,
+    #[serde(default = "default_panel_api_provision_timeout_secs")]
+    pub panel_api_provision_timeout: u64,
     #[serde(default, skip)]
     pub throttle_kbps: u64,
     #[serde(default = "default_shared_burst_buffer_mb")]
@@ -60,7 +60,7 @@ impl Default for StreamConfigDto {
             throttle: None,
             grace_period_millis: default_grace_period_millis(),
             grace_period_timeout_secs: default_grace_period_timeout_secs(),
-            panel_api_provision_delay_millis: default_panel_api_provision_delay_millis(),
+            panel_api_provision_timeout: default_panel_api_provision_timeout_secs(),
             throttle_kbps: 0,
             shared_burst_buffer_mb: default_shared_burst_buffer_mb(),
         }
@@ -75,7 +75,7 @@ impl StreamConfigDto {
             && (self.throttle.is_none() || self.throttle.as_ref().is_some_and(|t| t.is_empty()))
             && self.grace_period_millis == empty.grace_period_millis
             && self.grace_period_timeout_secs == empty.grace_period_timeout_secs
-            && self.panel_api_provision_delay_millis == empty.panel_api_provision_delay_millis
+            && self.panel_api_provision_timeout == empty.panel_api_provision_timeout
             && self.throttle_kbps == empty.throttle_kbps
             && self.shared_burst_buffer_mb == default_shared_burst_buffer_mb()
     }

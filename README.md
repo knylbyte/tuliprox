@@ -218,7 +218,7 @@ Attributes:
 - `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
 - `grace_period_millis`  default set to 300 milliseconds.
 - `grace_period_timeout_secs` default set to 2 seconds.
-- `panel_api_provision_delay_millis` delay before using a newly created panel API account for a new connection (default `30000`).
+- `panel_api_provision_timeout` maximum wait time (seconds) to probe a newly created/renewed panel API account before switching the stream (default `60`).
 - `shared_burst_buffer_mb` optional (default `12`). Minimum burst buffer size (in MB) used for shared streams.
 
 ##### 1.6.1.1 `retry`
@@ -253,9 +253,9 @@ Bandwidth throttle (speed limit).
 Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`.
 Default unit is `kbps`.
 
-##### 1.6.1.4 `panel_api_provision_delay_millis`
-Delay (in milliseconds) after a new panel API account is created/renewed before re-acquiring a provider connection.
-Use this if the upstream panel needs time to activate new accounts. Default `30000`.
+##### 1.6.1.4 `panel_api_provision_timeout`
+Maximum wait time (in seconds) after a new panel API account is created/renewed to probe for a successful (2xx) stream response before switching.
+Use this if the upstream panel needs time to activate new accounts. Default `60`.
 
 | Resolution      |Framerate| Bitrate (kbps) | Quality     |
 |-----------------|---------|----------------|-------------|
@@ -508,6 +508,7 @@ Following attributes are available:
 - `channel_unavailable`: _optional_
 - `user_connections_exhausted`: _optional_
 - ` provider_connections_exhausted`: _optional_
+- `panel_api_provisioning`: _optional_
 
 Video files with name `channel_unavailable.ts`, `user_connections_exhausted`, `provider_connections_exhausted`
 are already available in the docker image.
@@ -523,6 +524,8 @@ and add it to the `config.yml`.
 - `provider_connections_exhausted.ts`
 - `user_connections_exhausted.ts`
 - `channel_unavailable.ts`
+- `panel_api_provisioning.ts`
+The `panel_api_provisioning.ts` file is used as a loading stream during panel API provisioning.
 
 ```yaml
 custom_stream_response_path: /home/tuliprox/resources 

@@ -9,6 +9,7 @@ mod provider_stream_factory;
 mod shared_stream_manager;
 mod active_client_stream;
 mod throttled_stream;
+mod provisioning_stream;
 pub mod persist_pipe_stream;
 
 pub(in crate) use self::transport_stream_buffer::*;
@@ -19,4 +20,5 @@ pub(in crate::api) use self::active_client_stream::*;
 pub(in crate::api) use self::throttled_stream::*;
 pub(in crate::api) use self::timed_client_stream::*;
 pub(in crate::api) use self::custom_video_stream::*;
+pub(in crate::api) use self::provisioning_stream::*;
 pub use self::persist_pipe_stream::*;
