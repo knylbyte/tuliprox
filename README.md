@@ -1378,7 +1378,22 @@ sources:
             new_name: 1. DE$1
 ```
 
-### 2.5.2.8 `watch`
+### 2.2.2.8 `favourites`
+Allows you to explicitly add items to a favorite group based on a filter. This is processed after mapping and resolution.
+
+- `group`: The name of the group to add the favorite items to.
+- `filter`: A filter statement to select the original items.
+- `match_as_ascii`: _optional_ (default `false`). If `true`, the filter matching will be case-insensitive and normalized (e.g., "Cinema" matches "Cinéma").
+
+Example:
+```yaml
+favourites:
+  - group: "My Favourites"
+    filter: 'Name ~ "Cinema"'
+    match_as_ascii: true
+```
+
+### 2.2.2.9 `watch`
 For each target with a *unique name*, you can define watched groups.
 It is a list of regular expression matching final group names from this target playlist.
 Final means in this case: the name in the resulting playlist after applying all steps

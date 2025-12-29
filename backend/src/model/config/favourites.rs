@@ -7,6 +7,7 @@ use shared::model::{ConfigFavouritesDto, ItemField};
 pub struct ConfigFavourites {
     pub group: String,
     pub filter: Filter,
+    pub match_as_ascii: bool,
 }
 
 impl ConfigFavourites {
@@ -28,6 +29,7 @@ impl From<&ConfigFavouritesDto> for ConfigFavourites {
         Self {
             group: dto.group.clone(),
             filter: dto.t_filter.as_ref().map_or_else(Self::default_filter, Clone::clone),
+            match_as_ascii: dto.match_as_ascii,
         }
     }
 }
@@ -37,6 +39,7 @@ impl From<&ConfigFavourites> for ConfigFavouritesDto {
         Self {
             group: instance.group.clone(),
             filter: instance.filter.to_string(),
+            match_as_ascii: instance.match_as_ascii,
             t_filter: Some(instance.filter.clone()),
         }
     }

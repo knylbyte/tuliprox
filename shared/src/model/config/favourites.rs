@@ -8,6 +8,8 @@ pub struct ConfigFavouritesDto {
     pub group: String,
     #[serde(default)]
     pub filter: String,
+    #[serde(default)]
+    pub match_as_ascii: bool,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
 }

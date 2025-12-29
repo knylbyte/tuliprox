@@ -572,7 +572,7 @@ pub fn process_favourites(playlist: &mut Vec<PlaylistGroup>, favourites_cfg: Opt
                     continue;
                 }
                 for fav in favourites {
-                    if is_valid(pli, &fav.filter, false) {
+                    if is_valid(pli, &fav.filter, fav.match_as_ascii) {
                         let mut channel = pli.clone();
                         channel.header.group.clone_from(&fav.group);
                         // Update UUID to be an alias of the original
