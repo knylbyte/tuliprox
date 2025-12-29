@@ -95,7 +95,7 @@ pub struct PageHeader {
     pub free_start: u16,     // Offset to start of free space (after slots)
     pub free_end: u16,       // Offset to end of free space (before cells)
     pub right_sibling: u64,  // 0 if none, pointer to next leaf (for range scans)
-    pub checksum: u32,       // Data integrity
+    pub checksum: u32,       // TODO Data integrity check, currently not neccessary, maybe in future
 }
 
 impl PageHeader {
@@ -290,6 +290,9 @@ impl<'a> SlottedPage<'a> {
         Ok(())
     }
 
+    // assumes all cells start with a 4-byte length header
+    // This creates tight coupling between SlottedPage (a generic page structure)
+    // and the specific cell format used by BPlusTreeNode.
     pub fn get_cell(&self, index: usize) -> Option<&[u8]> {
          if index >= self.header.cell_count as usize {
              return None;
@@ -334,7 +337,7 @@ impl<'a> SlottedPage<'a> {
         Ok(())
     }
 
-    pub fn split_off(&mut self) -> Result<Vec<u8>, PageError> {
+    pub fn split_off(&mut self) -> Result<Option<Vec<u8>>, PageError> {
         let count = self.header.cell_count as usize;
         let mut total_bytes = 0;
         let mut split_idx = count / 2;
@@ -365,8 +368,8 @@ impl<'a> SlottedPage<'a> {
         }
         if count == 1 {
             // Cannot split single item fundamentally. 
-            // Return empty page (no-op split) effectively.
-            return Ok(Vec::new());
+            // Return Ok(None) explicitly to indicate no-op.
+            return Ok(None);
         }
 
         if split_idx >= count { split_idx = count.saturating_sub(1); }
@@ -389,7 +392,7 @@ impl<'a> SlottedPage<'a> {
         
         self.compact()?;
         
-        Ok(new_buffer)
+        Ok(Some(new_buffer))
     }
 }
 
@@ -418,40 +421,24 @@ where
 
 // Adaptively compress value bytes if beneficial.
 // Returns (compression_flag, payload_bytes).
-fn compress_if_beneficial(raw_bytes: Vec<u8>) -> (u8, Vec<u8>) {
+fn compress_if_beneficial(raw_bytes: &[u8]) -> (u8, Vec<u8>) {
     if raw_bytes.len() >= COMPRESSION_MIN_SIZE {
-        let compressed = lz4_flex::compress_prepend_size(&raw_bytes);
+        let compressed = lz4_flex::compress_prepend_size(raw_bytes);
         let threshold = (raw_bytes.len() * COMPRESSION_THRESHOLD_PERCENT) / 100;
 
         if compressed.len() < threshold {
             // Compression is effective
             (COMPRESSION_FLAG_LZ4, compressed)
         } else {
-            // Compression not worth it
-            (COMPRESSION_FLAG_NONE, raw_bytes)
+            // Compression not worth it - Return copy of raw
+            (COMPRESSION_FLAG_NONE, raw_bytes.to_vec())
         }
     } else {
-        // Too small to compress
-        (COMPRESSION_FLAG_NONE, raw_bytes)
+        // Too small to compress - Return copy of raw
+        (COMPRESSION_FLAG_NONE, raw_bytes.to_vec())
     }
 }
 
-// Calculate the stored size for a value (with compression if beneficial).
-// Returns the size that would be written: flag (1 byte) + payload.
-fn calculate_stored_size(raw_bytes: &[u8]) -> usize {
-    if raw_bytes.len() >= COMPRESSION_MIN_SIZE {
-        let compressed = lz4_flex::compress_prepend_size(raw_bytes);
-        let threshold = (raw_bytes.len() * COMPRESSION_THRESHOLD_PERCENT) / 100;
-
-        if compressed.len() < threshold {
-            1 + compressed.len() // Will be compressed: flag + compressed payload
-        } else {
-            1 + raw_bytes.len() // Won't compress: flag + raw payload
-        }
-    } else {
-        1 + raw_bytes.len() // Too small: flag + raw payload
-    }
-}
 
 /// Represents how a value is stored on disk
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -470,6 +457,8 @@ enum ValueStorageMode {
 struct ValueInfo {
     mode: ValueStorageMode,
     length: u32,
+    #[serde(skip)]
+    compressed_cache: Option<(u8, Vec<u8>)> // (flag, payload)
 }
 
 
@@ -804,6 +793,7 @@ where
                                     node.value_info.push(ValueInfo {
                                         mode: ValueStorageMode::Packed(u64::from(pack_count), current_pack_index),
                                         length: u32::try_from(size).map_err(to_io_error)?,
+                                        compressed_cache: None,
                                     });
                                     current_pack_index += 1;
                                     current_pack_size += entry_size;
@@ -816,16 +806,25 @@ where
                                     node.value_info.push(ValueInfo {
                                         mode: ValueStorageMode::Packed(u64::from(pack_count), 0),
                                         length: u32::try_from(size).map_err(to_io_error)?,
+                                        compressed_cache: None,
                                     });
                                 }
                             } else {
                                 // Large value - use Single storage with optional compression
                                 // Pre-calculate compressed size if applicable
-                                let stored_size = calculate_stored_size(&value_bytes);
+                                let (flag, payload) = compress_if_beneficial(&value_bytes);
+                                let stored_size = 1 + payload.len(); // flag + payload
+
+                                let cache = if flag == COMPRESSION_FLAG_LZ4 {
+                                    Some((flag, payload))
+                                } else {
+                                    None // Don't cache uncompressed data to save memory
+                                };
                                 
                                 node.value_info.push(ValueInfo {
                                     mode: ValueStorageMode::Single(u64::MAX), // Placeholder
                                     length: u32::try_from(stored_size).map_err(to_io_error)?,
+                                    compressed_cache: cache,
                                 });
                             }
                         }
@@ -963,16 +962,18 @@ where
                                     // Write single value with compression format
                                     file.seek(SeekFrom::Start(block_offset))?;
                                     
-                                    // Apply adaptive compression
-                                    let (flag, payload) = compress_if_beneficial(value_bytes);
+                                    // Apply adaptive compression or use cache
+                                    let (flag, payload_ref) = if let Some((c_flag, c_payload)) = &info.compressed_cache {
+                                        (*c_flag, c_payload.as_slice())
+                                    } else {
+                                        // If not cached, it means it wasn't beneficial (or we chose not to cache it)
+                                        // So we write raw bytes with NONE flag
+                                        (COMPRESSION_FLAG_NONE, value_bytes.as_slice())
+                                    };
                                     
-                                    // Write: [flag:1][orig_len:4 if compressed][payload]
+                                    // Write: [flag:1][payload]
                                     file.write_all(&[flag])?;
-                                    if flag == COMPRESSION_FLAG_LZ4 {
-                                        // Original length needed for compressed values
-                                        // (already embedded in lz4_flex::compress_prepend_size output)
-                                    }
-                                    file.write_all(&payload)?;
+                                    file.write_all(payload_ref)?;
                                 }
                             }
                         }
@@ -1040,7 +1041,7 @@ where
 
         // CRITICAL CHECK: Ensure pointers fit in the remaining space of the first block or we've allocated enough
         if write_pos + LEN_SIZE + pointer_encoded.len() > PAGE_SIZE_USIZE {
-            return Err(io::Error::other(format!("Internal node overflow: keys ({}) + pointers ({}) exceeds block size. Consider reducing ORDER.", keys_len, pointer_encoded.len())));
+            return Err(io::Error::other(format!("Internal node overflow: keys ({}) + pointers ({}) exceeds block size. keys sizes might be too large for the current PAGE_SIZE ({}). Consider reducing key sizes or increasing PAGE_SIZE.", keys_len, pointer_encoded.len(), PAGE_SIZE_USIZE)));
         }
 
         file.seek(SeekFrom::Start(pointer_offset_within_first_block))?;
@@ -1934,7 +1935,7 @@ where
 
 
 
-                    let (flag, payload) = compress_if_beneficial(raw_bytes);
+                    let (flag, payload) = compress_if_beneficial(&raw_bytes);
 
                     self.file.seek(SeekFrom::End(0))?;
                     let val_offset = self.file.stream_position()?;
@@ -1951,6 +1952,7 @@ where
                     node.value_info[idx] = ValueInfo {
                         mode: ValueStorageMode::Single(val_offset),
                         length: u32::try_from(stored_len).map_err(to_io_error)?,
+                        compressed_cache: None,
                     };
 
                     // Write new leaf node at end of file
@@ -2033,7 +2035,7 @@ where
         let raw_bytes = binary_serialize(value)?;
         
         // Decide whether to compress based on size and effectiveness
-        let (flag, payload) = compress_if_beneficial(raw_bytes);
+        let (flag, payload) = compress_if_beneficial(&raw_bytes);
 
         self.file.seek(SeekFrom::End(0))?;
         let offset = self.file.stream_position()?;
@@ -2074,7 +2076,7 @@ where
             match node.keys.binary_search(&key) {
                 Ok(idx) => {
                     let (val_off, val_len) = self.insert_value_to_disk(&value)?;
-                    let new_info = ValueInfo { mode: ValueStorageMode::Single(val_off), length: val_len };
+                    let new_info = ValueInfo { mode: ValueStorageMode::Single(val_off), length: val_len, compressed_cache: None };
                     node.value_info[idx] = new_info;
 
                     let new_offset = self.write_node(&node)?;
@@ -2082,7 +2084,7 @@ where
                 }
                 Err(idx) => {
                     let (val_off, val_len) = self.insert_value_to_disk(&value)?;
-                    let new_info = ValueInfo { mode: ValueStorageMode::Single(val_off), length: val_len };
+                    let new_info = ValueInfo { mode: ValueStorageMode::Single(val_off), length: val_len, compressed_cache: None };
                     node.keys.insert(idx, key);
                     node.value_info.insert(idx, new_info);
 
@@ -3271,6 +3273,7 @@ mod tests {
                 .map(|i| ValueInfo {
                     mode: ValueStorageMode::Packed(i as u64 * 4096, (i % 16) as u16),
                     length: 100,
+                    compressed_cache: None,
                 })
                 .collect();
             
@@ -3350,7 +3353,7 @@ mod page_tests {
 
         assert_eq!(page.header.cell_count, 6);
         
-        let new_page_bytes = page.split_off().expect("Split failed");
+        let new_page_bytes = page.split_off().expect("Split failed").expect("Should have split");
         
         // Check original page
         assert_eq!(page.header.cell_count, 3);
@@ -3369,7 +3372,7 @@ mod page_tests {
         let res = page.split_off();
         assert!(matches!(res, Err(PageError::InvalidIndex)));
 
-        // Case 1: Split single item page -> Should return empty vec (no-op)
+        // Case 1: Split single item page -> Should return None (no-op)
         let val = b"item";
         let mut cell = Vec::new();
         cell.extend_from_slice(&(val.len() as u32).to_le_bytes());
@@ -3378,10 +3381,10 @@ mod page_tests {
 
         let res = page.split_off();
         match res {
-            Ok(bytes) => {
-                assert!(bytes.is_empty()); // Should return empty vector
+            Ok(None) => {
                 assert_eq!(page.header.cell_count, 1); // Original page untouched
             },
+            Ok(Some(_)) => panic!("Split of single item should result in None"),
             Err(e) => panic!("Split of single item should result in no-op, not error: {:?}", e),
         }
     }
