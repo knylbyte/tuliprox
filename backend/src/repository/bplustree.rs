@@ -3,7 +3,7 @@ use crate::utils::{binary_deserialize, binary_serialize};
 use indexmap::IndexMap;
 use log::error;
 use serde::{Deserialize, Serialize};
-use shared::error::{str_to_io_error, to_io_error};
+use shared::error::{string_to_io_error, to_io_error};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
@@ -24,6 +24,9 @@ const ROOT_OFFSET_POS: u64 = 8;
 
 const POINTER_SIZE: usize = 8;
 const INFO_SIZE: usize = 12; // (u64, u32)
+
+// Maximum number of blocks to cache in memory (~4MB at 4KB per block)
+const CACHE_CAPACITY: usize = 1024;
 
 // MessagePack overhead estimation
 const MSGPACK_OVERHEAD_PER_ENTRY: usize = 22;
@@ -382,6 +385,26 @@ where
         }
     }
     left
+}
+
+// Adaptively compress value bytes if beneficial.
+// Returns (compression_flag, payload_bytes).
+fn compress_if_beneficial(raw_bytes: Vec<u8>) -> (u8, Vec<u8>) {
+    if raw_bytes.len() >= COMPRESSION_MIN_SIZE {
+        let compressed = lz4_flex::compress_prepend_size(&raw_bytes);
+        let threshold = (raw_bytes.len() * COMPRESSION_THRESHOLD_PERCENT) / 100;
+
+        if compressed.len() < threshold {
+            // Compression is effective
+            (COMPRESSION_FLAG_LZ4, compressed)
+        } else {
+            // Compression not worth it
+            (COMPRESSION_FLAG_NONE, raw_bytes)
+        }
+    } else {
+        // Too small to compress
+        (COMPRESSION_FLAG_NONE, raw_bytes)
+    }
 }
 
 /// Represents how a value is stored on disk
@@ -911,18 +934,7 @@ where
                                     file.seek(SeekFrom::Start(block_offset))?;
                                     
                                     // Apply adaptive compression
-                                    let (flag, payload) = if value_bytes.len() >= COMPRESSION_MIN_SIZE {
-                                        let compressed = lz4_flex::compress_prepend_size(&value_bytes);
-                                        let threshold = (value_bytes.len() * COMPRESSION_THRESHOLD_PERCENT) / 100;
-                                        
-                                        if compressed.len() < threshold {
-                                            (COMPRESSION_FLAG_LZ4, compressed)
-                                        } else {
-                                            (COMPRESSION_FLAG_NONE, value_bytes)
-                                        }
-                                    } else {
-                                        (COMPRESSION_FLAG_NONE, value_bytes)
-                                    };
+                                    let (flag, payload) = compress_if_beneficial(value_bytes);
                                     
                                     // Write: [flag:1][orig_len:4 if compressed][payload]
                                     file.write_all(&[flag])?;
@@ -1341,7 +1353,7 @@ where
                 file.flush()?;
                 drop(file);
                 if let Err(err) = utils::rename_or_copy(tempfile.path(), filepath, false) {
-                    return Err(str_to_io_error(&format!("Temp file rename/copy did not work {} {err}", tempfile.path().to_string_lossy())));
+                    return Err(string_to_io_error(format!("Temp file rename/copy did not work {} {err}", tempfile.path().to_string_lossy())));
                 }
                 self.dirty = false;
                 Ok(result)
@@ -1427,7 +1439,7 @@ where
             match BPlusTreeNode::<K, V>::deserialize_from_block(file, buffer, offset, false) {
                 Ok((node, pointers)) => {
                     // Update Cache
-                    if cache.len() >= 1024 { // Cap at ~4MB of blocks
+                    if cache.len() >= CACHE_CAPACITY { // Cap at ~4MB of blocks
                         cache.shift_remove_index(0);
                     }
                     cache.insert(offset, buffer.to_owned());
@@ -1488,7 +1500,7 @@ where
         } else {
             match BPlusTreeNode::<K, V>::deserialize_from_block(file, buffer, offset, false) {
                 Ok((node, pointers)) => {
-                    if cache.len() >= 1024 {
+                    if cache.len() >= CACHE_CAPACITY {
                         cache.shift_remove_index(0);
                     }
                     cache.insert(offset, buffer.to_owned());
@@ -1565,7 +1577,7 @@ where
         Ok(Self {
             file: utils::file_reader(file),
             buffer: vec![0u8; PAGE_SIZE_USIZE],
-            cache: IndexMap::with_capacity(1024),
+            cache: IndexMap::with_capacity(CACHE_CAPACITY),
             root_offset,
             _marker_k: PhantomData,
             _marker_v: PhantomData,
@@ -1858,7 +1870,7 @@ where
             file,
             read_buffer: vec![0u8; PAGE_SIZE_USIZE],
             write_buffer: vec![0u8; PAGE_SIZE_USIZE],
-            cache: IndexMap::with_capacity(1024),
+            cache: IndexMap::with_capacity(CACHE_CAPACITY),
             root_offset,
             lock,
             inner_order,
@@ -1892,19 +1904,10 @@ where
                 Ok(idx) => {
                     // COW: Write new value with adaptive LZ4 compression
                     let raw_bytes = binary_serialize(value)?;
-                    
-                    let (flag, payload) = if raw_bytes.len() >= COMPRESSION_MIN_SIZE {
-                        let compressed = lz4_flex::compress_prepend_size(&raw_bytes);
-                        let threshold = (raw_bytes.len() * COMPRESSION_THRESHOLD_PERCENT) / 100;
-                        
-                        if compressed.len() < threshold {
-                            (COMPRESSION_FLAG_LZ4, compressed)
-                        } else {
-                            (COMPRESSION_FLAG_NONE, raw_bytes)
-                        }
-                    } else {
-                        (COMPRESSION_FLAG_NONE, raw_bytes)
-                    };
+
+
+
+                    let (flag, payload) = compress_if_beneficial(raw_bytes);
 
                     self.file.seek(SeekFrom::End(0))?;
                     let val_offset = self.file.stream_position()?;
@@ -2003,21 +2006,7 @@ where
         let raw_bytes = binary_serialize(value)?;
         
         // Decide whether to compress based on size and effectiveness
-        let (flag, payload) = if raw_bytes.len() >= COMPRESSION_MIN_SIZE {
-            let compressed = lz4_flex::compress_prepend_size(&raw_bytes);
-            let threshold = (raw_bytes.len() * COMPRESSION_THRESHOLD_PERCENT) / 100;
-            
-            if compressed.len() < threshold {
-                // Compression is effective
-                (COMPRESSION_FLAG_LZ4, compressed)
-            } else {
-                // Compression not worth it
-                (COMPRESSION_FLAG_NONE, raw_bytes)
-            }
-        } else {
-            // Too small to compress
-            (COMPRESSION_FLAG_NONE, raw_bytes)
-        };
+        let (flag, payload) = compress_if_beneficial(raw_bytes);
 
         self.file.seek(SeekFrom::End(0))?;
         let offset = self.file.stream_position()?;

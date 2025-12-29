@@ -1,4 +1,4 @@
-use shared::error::{str_to_io_error, to_io_error};
+use shared::error::{string_to_io_error, to_io_error};
 use crate::utils::EnvResolvingReader;
 use crate::utils::{file_reader, resolve_relative_path};
 use log::error;
@@ -177,10 +177,10 @@ pub fn get_csv_file_path(file_uri: &str) -> Result<PathBuf, Error> {
         if url.scheme() == "file" {
             match url.to_file_path() {
                 Ok(path) => Ok(path),
-                Err(()) => Err(str_to_io_error(&format!("Could not open {file_uri}"))),
+                Err(()) => Err(string_to_io_error(format!("Could not open {file_uri}"))),
             }
         } else {
-            Err(str_to_io_error(&format!("Only file:// is supported {file_uri}")))
+            Err(string_to_io_error(format!("Only file:// is supported {file_uri}")))
         }
     } else {
         resolve_relative_path(file_uri)

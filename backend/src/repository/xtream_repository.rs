@@ -17,7 +17,7 @@ use indexmap::IndexMap;
 use log::error;
 use serde::Serialize;
 use serde_json::{json, Value};
-use shared::error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, str_to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, string_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::xtream_const::XTREAM_CLUSTER;
 use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemType, SeriesStreamProperties, StreamProperties, VideoStreamProperties, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::get_u32_from_serde_value;
@@ -351,7 +351,7 @@ pub fn xtream_get_collection_path(
             return Ok((Some(col_path), None));
         }
     }
-    Err(str_to_io_error(&format!("Cant find collection: {target_name}/{collection_name}")))
+    Err(string_to_io_error(format!("Cant find collection: {target_name}/{collection_name}")))
 }
 
 async fn xtream_read_item_for_stream_id(
@@ -385,7 +385,7 @@ macro_rules! try_cluster {
     ($xtream_cluster:expr, $item_type:expr, $virtual_id:expr) => {
         $xtream_cluster
             .or_else(|| XtreamCluster::try_from($item_type).ok())
-            .ok_or_else(|| str_to_io_error(&format!("Could not determine cluster for xtream item with stream-id {}",$virtual_id)))
+            .ok_or_else(|| string_to_io_error(format!("Could not determine cluster for xtream item with stream-id {}",$virtual_id)))
     };
 }
 
@@ -401,12 +401,12 @@ async fn xtream_get_item_for_stream_id_from_memory(
                 Ok(None)
             }
             Some(xtream_storage) => {
-                let mapping = xtream_storage.id_mapping.query(&virtual_id).ok_or_else(|| str_to_io_error(&format!("Could not find mapping for target {} and id {}", target.name, virtual_id)))?.clone();
+                let mapping = xtream_storage.id_mapping.query(&virtual_id).ok_or_else(|| string_to_io_error(format!("Could not find mapping for target {} and id {}", target.name, virtual_id)))?.clone();
                 let result = match mapping.item_type {
                     PlaylistItemType::SeriesInfo
                     | PlaylistItemType::LocalSeriesInfo => {
                         Ok(xtream_storage.series.query(&mapping.virtual_id)
-                            .ok_or_else(|| str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))?
+                            .ok_or_else(|| string_to_io_error(format!("Failed to read xtream item for id {virtual_id}")))?
                             .clone())
                     }
                     PlaylistItemType::Series
@@ -419,7 +419,7 @@ async fn xtream_get_item_for_stream_id_from_memory(
                             Ok(xc_item)
                         } else {
                             Ok(xtream_storage.series.query(&virtual_id)
-                                .ok_or_else(|| str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))?
+                                .ok_or_else(|| string_to_io_error(format!("Failed to read xtream item for id {virtual_id}")))?
                                 .clone())
                         }
                     }
@@ -438,7 +438,7 @@ async fn xtream_get_item_for_stream_id_from_memory(
                             xc_item.virtual_id = mapping.virtual_id;
                             Ok(xc_item)
                         } else {
-                            Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))
+                            Err(string_to_io_error(format!("Failed to read xtream item for id {virtual_id}")))
                         }
                     }
                     _ => {
@@ -447,7 +447,7 @@ async fn xtream_get_item_for_stream_id_from_memory(
                             XtreamCluster::Live => xtream_storage.live.query(&virtual_id),
                             XtreamCluster::Video => xtream_storage.vod.query(&virtual_id),
                             XtreamCluster::Series => xtream_storage.series.query(&virtual_id),
-                        }).ok_or_else(|| str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}")))?
+                        }).ok_or_else(|| string_to_io_error(format!("Failed to read xtream item for id {virtual_id}")))?
                             .clone())
                     }
                 };
@@ -456,7 +456,7 @@ async fn xtream_get_item_for_stream_id_from_memory(
             }
         };
     }
-    //Err(str_to_io_error(&format!("Failed to read xtream item for id {virtual_id}. No entry found.")))
+    //Err(string_to_io_error(format!("Failed to read xtream item for id {virtual_id}. No entry found.")))
     Ok(None)
 }
 
@@ -476,8 +476,8 @@ pub async fn xtream_get_item_for_stream_id(
 
     let app_config: &AppConfig = &app_state.app_config;
     let config = app_config.config.load();
-    let target_path = get_target_storage_path(&config, target.name.as_str()).ok_or_else(|| str_to_io_error(&format!("Could not find path for target {}", &target.name)))?;
-    let storage_path = xtream_get_storage_path(&config, target.name.as_str()).ok_or_else(|| str_to_io_error(&format!("Could not find path for target {} xtream output", &target.name)))?;
+    let target_path = get_target_storage_path(&config, target.name.as_str()).ok_or_else(|| string_to_io_error(format!("Could not find path for target {}", &target.name)))?;
+    let storage_path = xtream_get_storage_path(&config, target.name.as_str()).ok_or_else(|| string_to_io_error(format!("Could not find path for target {} xtream output", &target.name)))?;
     {
         let result = if let Some(cluster) = xtream_cluster {
             xtream_read_item_for_stream_id(app_config, virtual_id, &storage_path, cluster).await
@@ -485,8 +485,8 @@ pub async fn xtream_get_item_for_stream_id(
             let target_id_mapping_file = get_target_id_mapping_file(&target_path);
             let _file_lock = app_config.file_locks.read_lock(&target_id_mapping_file).await;
 
-            let mut target_id_mapping = BPlusTreeQuery::<u32, VirtualIdRecord>::try_new(&target_id_mapping_file).map_err(|err| str_to_io_error(&format!("Could not load id mapping for target {} err:{err}", target.name)))?;
-            let mapping = target_id_mapping.query(&virtual_id).ok_or_else(|| str_to_io_error(&format!("Could not find mapping for target {} and id {}", target.name, virtual_id)))?;
+            let mut target_id_mapping = BPlusTreeQuery::<u32, VirtualIdRecord>::try_new(&target_id_mapping_file).map_err(|err| string_to_io_error(format!("Could not load id mapping for target {} err:{err}", target.name)))?;
+            let mapping = target_id_mapping.query(&virtual_id).ok_or_else(|| string_to_io_error(format!("Could not find mapping for target {} and id {}", target.name, virtual_id)))?;
             match mapping.item_type {
                 PlaylistItemType::SeriesInfo
                 | PlaylistItemType::LocalSeriesInfo => {

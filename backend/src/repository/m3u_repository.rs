@@ -6,7 +6,7 @@ use crate::repository::m3u_playlist_iterator::M3uPlaylistM3uTextIterator;
 use crate::repository::storage::get_target_storage_path;
 use crate::repository::storage_const;
 use crate::utils;
-use shared::error::{create_tuliprox_error, info_err};
+use shared::error::{create_tuliprox_error, info_err, string_to_io_error};
 use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::PlaylistItemType;
 use shared::model::{M3uPlaylistItem, PlaylistGroup};
@@ -143,12 +143,12 @@ pub async fn m3u_get_item_for_stream_id(stream_id: u32, app_state: &AppState, ta
         }
 
         let cfg: &AppConfig = &app_state.app_config;
-        let target_path = get_target_storage_path(&cfg.config.load(), target.name.as_str()).ok_or_else(|| str_to_io_error(&format!("Could not find path for target {}", &target.name)))?;
+        let target_path = get_target_storage_path(&cfg.config.load(), target.name.as_str()).ok_or_else(|| string_to_io_error(format!("Could not find path for target {}", &target.name)))?;
         let m3u_path = m3u_get_file_path(&target_path);
         let _file_lock = cfg.file_locks.read_lock(&m3u_path).await;
         
         let mut query = BPlusTreeQuery::<u32, M3uPlaylistItem>::try_new(&m3u_path)?;
-        query.query(&stream_id).ok_or_else(|| str_to_io_error(&format!("Item not found: {stream_id}")))
+        query.query(&stream_id).ok_or_else(|| string_to_io_error(format!("Item not found: {stream_id}")))
     }
 }
 
