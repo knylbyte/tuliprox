@@ -3,7 +3,7 @@
 use crate::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
 use crate::foundation::filter::ValueAccessor;
 use crate::foundation::mapper::EvalResult::{AnyValue, Failure, Named, Number, Undefined, Value};
-use crate::model::{PatternTemplate, TemplateValue};
+use crate::model::{PatternTemplate, PlaylistItemType, TemplateValue};
 use crate::utils::Capitalize;
 use log::{debug, trace};
 use pest::iterators::{Pair, Pairs};
@@ -1247,7 +1247,8 @@ impl Expression {
                         BuiltInFunction::AddFavourite => {
                             let group_name = extract_evaluated_arg_value!(evaluated_args, 0);
                             if let Some(group) = group_name {
-                                if accessor.pli.header.item_type != crate::model::PlaylistItemType::Series {
+                                let item_type = accessor.pli.header.item_type;
+                                if item_type != PlaylistItemType::Series &&  item_type != PlaylistItemType::LocalSeries {
                                     let mut pli = accessor.pli.clone();
                                     pli.header.group.clone_from(group);
                                     pli.header.uuid = crate::utils::create_alias_uuid(&accessor.pli.header.uuid, group);
@@ -1571,7 +1572,7 @@ mod tests {
                 ..Default::default()
             }
         };
-        let mut accessor = ValueAccessor { pli: &mut series_info, virtual_items: vec![] };
+        let mut accessor = ValueAccessor { pli: &mut series_info, virtual_items: vec![], match_as_ascii: false };
         mapper.eval(&mut accessor, None);
         assert_eq!(accessor.virtual_items.len(), 1);
 
@@ -1583,7 +1584,7 @@ mod tests {
                 ..Default::default()
             }
         };
-        let mut accessor = ValueAccessor { pli: &mut episode, virtual_items: vec![] };
+        let mut accessor = ValueAccessor { pli: &mut episode, virtual_items: vec![], match_as_ascii: false };
         mapper.eval(&mut accessor, None);
         assert_eq!(accessor.virtual_items.len(), 0);
     }

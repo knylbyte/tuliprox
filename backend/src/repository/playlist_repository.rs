@@ -69,8 +69,7 @@ pub async fn persist_playlist(app_config: &Arc<AppConfig>, playlist: &mut [Playl
 
             if item_type == PlaylistItemType::LocalSeries {
                 assign_local_series_info_episode_key(&mut local_library_series, header, item_type);
-            }
-            if item_type == PlaylistItemType::Series {
+            } else if item_type == PlaylistItemType::Series {
                 assign_provider_series_info_episode_key(&mut provider_series, header, item_type);
             }
         }

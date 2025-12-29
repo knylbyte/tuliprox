@@ -194,7 +194,11 @@ impl Filter {
             Self::TypeComparison(field, item_type) => {
                 if let Some(value) = provider.get(field.as_str()) {
                     get_filter_item_type(&value).is_some_and(|pli_type| {
-                        let is_match = pli_type.eq(item_type);
+                        let is_match = match item_type {
+                            PlaylistItemType::Video => matches!(pli_type, PlaylistItemType::Video | PlaylistItemType::LocalVideo),
+                            PlaylistItemType::Series => matches!(pli_type, PlaylistItemType::Series | PlaylistItemType::LocalSeries),
+                            _ => pli_type.eq(item_type),
+                        };
                         if log_enabled!(Level::Trace) {
                             if is_match {
                                 trace!("Match found: {field:?} {value}");

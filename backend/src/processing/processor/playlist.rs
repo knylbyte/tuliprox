@@ -152,7 +152,7 @@ fn map_channel(mut channel: PlaylistItem, mapping: &Mapping) -> (PlaylistItem, V
     (channel, virtual_items, matched)
 }
 
-fn map_channel_with_aliases(channel: PlaylistItem, mapping: &Mapping) -> Vec<PlaylistItem> {
+fn map_channel_and_flatten(channel: PlaylistItem, mapping: &Mapping) -> Vec<PlaylistItem> {
     let (mapped_channel, mut virtual_items, _matched) = map_channel(channel, mapping);
     let mut result = Vec::with_capacity(1 + virtual_items.len());
 
@@ -167,7 +167,7 @@ fn map_playlist(playlist: &mut [PlaylistGroup], target: &ConfigTarget) -> Option
             let mut grp = playlist_group.clone();
             mappings.iter().filter(|&mapping| mapping.mapper.as_ref().is_some_and(|v| !v.is_empty()))
                 .for_each(|mapping|
-                    grp.channels = grp.channels.drain(..).flat_map(|chan| map_channel_with_aliases(chan, mapping)).collect());
+                    grp.channels = grp.channels.drain(..).flat_map(|chan| map_channel_and_flatten(chan, mapping)).collect());
             grp
         }).collect();
 
@@ -568,8 +568,8 @@ pub fn process_favourites(playlist: &mut Vec<PlaylistGroup>, favourites_cfg: Opt
         let mut fav_groups: IndexMap<String, Vec<PlaylistItem>> = IndexMap::new();
         for pg in playlist.iter() {
             for pli in &pg.channels {
-                // skip episodes, only containers or videos/live
-                if pli.header.item_type == PlaylistItemType::Series {
+                // series episodes cant be included in favourites
+                if pli.header.item_type == PlaylistItemType::Series || pli.header.item_type == PlaylistItemType::LocalSeries {
                     continue;
                 }
                 for fav in favourites {
