@@ -10,7 +10,7 @@ use yew_i18n::use_translation;
 use shared::create_tuliprox_error_result;
 use shared::error::{TuliproxError, TuliproxErrorKind};
 use shared::model::{CommonPlaylistItem, PlaylistRequest, SearchRequest, UiPlaylistGroup, XtreamCluster};
-use crate::app::components::{AppIcon, IconButton, NoContent, Search};
+use crate::app::components::{AppIcon, IconButton, NoContent, Panel, Search};
 use crate::app::components::menu_item::MenuItem;
 use crate::app::components::popup_menu::PopupMenu;
 use crate::hooks::use_service_context;
@@ -73,6 +73,17 @@ pub fn PlaylistExplorer() -> Html {
     let popup_anchor_ref = use_state(|| None::<web_sys::Element>);
     let popup_is_open = use_state(|| false);
     let clipboard = use_clipboard();
+    let cluster_visible = use_state(|| XtreamCluster::Live);
+
+    let handle_cluster_change = {
+        let cluster_vis = cluster_visible.clone();
+        Callback::from(move |(name, _event) : (String, MouseEvent)| {
+            if let Ok(xc) = XtreamCluster::from_str(name.as_str()) {
+                cluster_vis.set(xc);
+            }
+        })
+    };
+
 
     let handle_popup_close = {
         let set_is_open = popup_is_open.clone();
@@ -239,15 +250,9 @@ pub fn PlaylistExplorer() -> Html {
                     })
                 };
                 html! {
-                <span class="tp__playlist-explorer__item" onclick={on_click}>
-                {
-                 match cluster {
-                    XtreamCluster::Live => html! {<span class="tp__playlist-explorer__item-live"></span>},
-                    XtreamCluster::Video => html! {<span class="tp__playlist-explorer__item-video"></span>},
-                    XtreamCluster::Series => html! {<span class="tp__playlist-explorer__item-series"></span>},
-                    }
-                }
-                { group.title.clone() }</span>
+                <span class={format!("tp__playlist-explorer__item tp__playlist-explorer__item-{}", cluster.to_string().to_lowercase())} onclick={on_click}>
+                    { group.title.clone() }
+                </span>
             }
             })
             .collect::<Html>()
@@ -261,22 +266,39 @@ pub fn PlaylistExplorer() -> Html {
         } else {
             html! {
             <div class="tp__playlist-explorer__categories">
-                <div class="tp__playlist-explorer__categories-list">
-                    { playlist.as_ref()
-                        .and_then(|response| response.live.as_ref())
-                        .map(|list| render_cluster(XtreamCluster::Live, list))
-                        .unwrap_or_default()
-                    }
-                    { playlist.as_ref()
-                        .and_then(|response| response.vod.as_ref())
-                        .map(|list| render_cluster(XtreamCluster::Video, list))
-                        .unwrap_or_default()
-                    }
-                    { playlist.as_ref()
-                        .and_then(|response| response.series.as_ref())
-                        .map(|list| render_cluster(XtreamCluster::Series, list))
-                        .unwrap_or_default()
-                    }
+                <div class="tp__playlist-explorer__categories-sidebar tp__app-sidebar__content">
+                    <IconButton class={format!("tp__app-sidebar-menu--{}{}", XtreamCluster::Live, if *cluster_visible == XtreamCluster::Live { " active" } else {""})}  icon="Live" name={XtreamCluster::Live.to_string()} onclick={&handle_cluster_change}></IconButton>
+                    <IconButton class={format!("tp__app-sidebar-menu--{}{}", XtreamCluster::Video, if *cluster_visible == XtreamCluster::Video { " active" } else {""})} icon="Video" name={XtreamCluster::Video.to_string()} onclick={&handle_cluster_change}></IconButton>
+                    <IconButton class={format!("tp__app-sidebar-menu--{}{}", XtreamCluster::Series, if *cluster_visible == XtreamCluster::Series { " active" } else {""})} icon="Series" name={XtreamCluster::Series.to_string()} onclick={&handle_cluster_change}></IconButton>
+                </div>
+                <div class="tp__playlist-explorer__categories-content">
+                    <Panel class="tp__full-width" value={XtreamCluster::Live.to_string()} active={cluster_visible.to_string()}>
+                        <div class="tp__playlist-explorer__categories-list">
+                            { playlist.as_ref()
+                                .and_then(|response| response.live.as_ref())
+                                .map(|list| render_cluster(XtreamCluster::Live, list))
+                                .unwrap_or_default()
+                            }
+                            </div>
+                    </Panel>
+                    <Panel class="tp__full-width" value={XtreamCluster::Video.to_string()} active={cluster_visible.to_string()}>
+                        <div class="tp__playlist-explorer__categories-list">
+                            { playlist.as_ref()
+                                .and_then(|response| response.vod.as_ref())
+                                .map(|list| render_cluster(XtreamCluster::Video, list))
+                                .unwrap_or_default()
+                            }
+                            </div>
+                    </Panel>
+                    <Panel class="tp__full-width" value={XtreamCluster::Series.to_string()} active={cluster_visible.to_string()}>
+                        <div class="tp__playlist-explorer__categories-list">
+                            { playlist.as_ref()
+                                .and_then(|response| response.series.as_ref())
+                                .map(|list| render_cluster(XtreamCluster::Series, list))
+                                .unwrap_or_default()
+                            }
+                        </div>
+                    </Panel>
                 </div>
             </div>
             }
@@ -288,7 +310,7 @@ pub fn PlaylistExplorer() -> Html {
         if logo.is_empty() {
             html! {}
         } else {
-            html! { <img class="tp__playlist-explorer__channel-logo" alt={"n/a"} src={logo.to_owned()}
+            html! { <img class="tp__playlist-explorer__channel-logo" alt={"n/a"} src={logo.to_owned()} loading="lazy"
                     onerror={Callback::from(move |e: web_sys::Event| {
                     if let Some(target)  = e.target() {
                         if let Ok(img) = target.dyn_into::<web_sys::HtmlMediaElement>() {
@@ -303,19 +325,19 @@ pub fn PlaylistExplorer() -> Html {
     let render_group = |group: &Rc<UiPlaylistGroup>| {
         html! {
                 <div class="tp__playlist-explorer__group">
-                  <div class="tp__playlist-explorer__group-list">
+                  <div class={format!("tp__playlist-explorer__group-list tp__playlist-explorer__group-list-{}", group.xtream_cluster.to_string().to_lowercase())}>
                   {
                       group.channels.iter().map(|chan| {
                         let chan_clone = chan.clone();
                         let popup_onclick = handle_popup_onclick.clone();
                         html! {
-                            <span class="tp__playlist-explorer__item tp__playlist-explorer__channel">
+                            <span class={format!("tp__playlist-explorer__channel tp__playlist-explorer__channel-{}", group.xtream_cluster.to_string().to_lowercase())}>
                                 <button class="tp__icon-button"
                                     onclick={Callback::from(move |event: MouseEvent| popup_onclick.emit((chan_clone.clone(), event)))}>
                                     <AppIcon name="Popup"></AppIcon>
                                 </button>
                                 {render_channel_logo(chan)}
-                                {chan.title.clone()}
+                                <span class="tp__playlist-explorer__channel-title">{chan.title.clone()}</span>
                             </span>
                           }
                        }).collect::<Html>()
@@ -329,7 +351,15 @@ pub fn PlaylistExplorer() -> Html {
       <div class="tp__playlist-explorer">
         <div class="tp__playlist-explorer__header">
             <div class="tp__playlist-explorer__header-toolbar">
-                <IconButton class={if matches!(*current_item, ExplorerLevel::Categories) { "disabled" } else {""}} name="back" icon="Back" onclick={handle_back_click} />
+                <div class="tp__playlist-explorer__header-toolbar-actions">
+                   <IconButton class={if matches!(*current_item, ExplorerLevel::Categories) { "disabled" } else {""}} name="back" icon="Back" onclick={handle_back_click} />
+                  {
+                    match *current_item {
+                        ExplorerLevel::Categories => html!{} ,
+                        ExplorerLevel::Group(ref group) => html!{ <span>{&group.title}</span> },
+                    }
+                  }
+                </div>
                 <div class="tp__playlist-explorer__header-toolbar-search">
                   <Search onsearch={handle_search}/>
                 </div>

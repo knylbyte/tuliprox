@@ -41,7 +41,7 @@ impl StepMeasure {
         }
     }
 
-    pub fn broadcast(self, step: &str, msg: &str) {
+    pub fn broadcast(&self, step: &str, msg: &str) {
         (self.callback)(step, msg);
     }
 

@@ -190,7 +190,11 @@ async fn load_old_category_ids(path: &Path) -> (u32, HashMap<String, u32>) {
     tokio::task::spawn_blocking(move || {
         let mut result: HashMap<String, u32> = HashMap::new();
         let mut max_id: u32 = 0;
-        for (cluster, cat) in [(XtreamCluster::Live, storage_const::COL_CAT_LIVE), (XtreamCluster::Video, storage_const::COL_CAT_VOD), (XtreamCluster::Series, storage_const::COL_CAT_SERIES)] {
+        for (cluster, cat) in [
+            (XtreamCluster::Live, storage_const::COL_CAT_LIVE),
+            (XtreamCluster::Video, storage_const::COL_CAT_VOD),
+            (XtreamCluster::Series, storage_const::COL_CAT_SERIES)]
+        {
             let col_path = get_collection_path(&old_path, cat);
             if col_path.exists() {
                 if let Ok(file) = File::open(col_path) {
@@ -263,7 +267,7 @@ pub async fn xtream_write_playlist(
     let (max_cat_id, existing_cat_ids) = load_old_category_ids(&path).await;
     let mut cat_id_counter = max_cat_id;
     for plg in playlist.iter_mut() {
-        if !&plg.channels.is_empty() {
+        if !plg.channels.is_empty() {
             let cat_key = format!("{}{}", plg.xtream_cluster, &plg.title);
             let cat_id = existing_cat_ids.get(&cat_key).unwrap_or_else(|| {
                 cat_id_counter += 1;

@@ -10,14 +10,12 @@ use shared::model::{InputType, PlaylistEntry, StreamProperties, VideoStreamPrope
 use shared::model::{PlaylistItemType, XtreamCluster};
 use std::sync::Arc;
 use std::time::Instant;
-use crate::utils::StepMeasure;
 
 create_resolve_options_function_for_xtream_target!(vod);
 
 pub async fn playlist_resolve_vod(app_config: &Arc<AppConfig>, client: &reqwest::Client,
                                   target: &ConfigTarget, errors: &mut Vec<TuliproxError>,
-                                  fpl: &mut FetchedPlaylist<'_>,
-                                  step: &StepMeasure,) {
+                                  fpl: &mut FetchedPlaylist<'_>) {
     let (resolve_movies, resolve_delay) = get_resolve_vod_options(target, fpl);
     if !resolve_movies { return; }
 
@@ -32,7 +30,7 @@ pub async fn playlist_resolve_vod(app_config: &Arc<AppConfig>, client: &reqwest:
     };
 
     // LocalVideo entries are not resolved!
-    let vod_info_count = fpl.playlistgroups.iter()
+    let vod_info_count = fpl.playlist_groups.iter()
         .flat_map(|plg| &plg.channels)
         .filter(|pli| pli.header.xtream_cluster == XtreamCluster::Video
             && pli.header.item_type == PlaylistItemType::Video
@@ -43,7 +41,7 @@ pub async fn playlist_resolve_vod(app_config: &Arc<AppConfig>, client: &reqwest:
     let mut last_log_time = Instant::now();
     let mut processed_vod_info_count = 0;
 
-    for plg in &mut fpl.playlistgroups {
+    for plg in &mut fpl.playlist_groups {
         for pli in &mut plg.channels {
             if pli.header.xtream_cluster != XtreamCluster::Video
                 || pli.header.item_type != PlaylistItemType::Video

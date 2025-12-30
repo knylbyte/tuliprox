@@ -6,7 +6,7 @@ use crate::utils::xtream::get_xtream_stream_url_base;
 use shared::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
 use shared::model::{EpisodeStreamProperties, LiveStreamProperties, PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, SeriesStreamDetailEpisodeProperties, SeriesStreamProperties, StreamProperties, UUIDType, VideoStreamProperties, XtreamCluster};
 use shared::utils::{generate_playlist_uuid, trim_last_slash};
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use tokio::task::spawn_blocking;
 
 async fn map_to_xtream_category(categories: DynReader) -> Result<Vec<XtreamCategory>, TuliproxError> {
@@ -136,7 +136,7 @@ pub async fn parse_xtream(input: &ConfigInput,
 
             match map_to_xtream_streams(xtream_cluster, streams).await {
                 Ok(xtream_streams) => {
-                    let mut group_map: HashMap<u32, XtreamCategory> =
+                    let mut group_map: IndexMap<u32, XtreamCategory> =
                         xtream_categories.into_iter().map(|category| (category.category_id, category)).collect();
                     let mut unknown_grp = XtreamCategory {
                         category_id: 0u32,

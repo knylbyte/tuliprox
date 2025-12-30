@@ -1,3 +1,7 @@
+$movie-card-height: 24rem;
+$movie-card-width: 16rem;
+$live-card-width: 280px;
+
 .tp__playlist-explorer {
   display: flex;
   flex-flow: column;
@@ -25,13 +29,20 @@
       width: 100%;
       justify-content: space-between;
 
-      .tp__icon-button {
-        width: 2.5rem;
-        height: 2.5rem;
+      &-actions  {
+        display: flex;
+        flex-flow: row;
+        gap: var(--gap-default);
+        align-items: center;
 
-        .svg-icon {
-          height: 100%;
-          width: 100%;
+        .tp__icon-button {
+          width: 2.5rem;
+          height: 2.5rem;
+
+          .svg-icon {
+            height: 100%;
+            width: 100%;
+          }
         }
       }
 
@@ -60,13 +71,43 @@
     box-sizing: border-box;
     overflow: hidden;
 
-    &-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    &-sidebar{
+      .tp__icon-button.active {
+        color: var(--tag-active-color);
+        fill: currentColor;
+      }
+    }
+
+    &-content {
+      display: flex;
+      flex-flow: row;
+      width: 100%;
       gap: var(--gap-default);
       box-sizing: border-box;
       overflow-y: auto;
+    }
+
+    &-list {
+      display: grid;
+      gap: var(--gap-default);
+      box-sizing: border-box;
       width: 100%;
+
+      &-live {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax($live-card-width, 1fr));
+        gap: var(--gap-default);
+        box-sizing: border-box;
+        width: 100%;
+      }
+      &-video,
+      &-series {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax($movie-card-width, 1fr));
+        gap: var(--gap-default);
+        box-sizing: border-box;
+        width: 100%;
+      }
     }
   }
 
@@ -81,8 +122,6 @@
     border-radius: var(--border-radius);
     cursor: pointer;
     box-sizing: border-box;
-    max-height: 3rem;
-    min-height: 2.5rem;
     gap: var(--gap-default);
     padding: 0 var(--padding-default);
     overflow: hidden;
@@ -100,8 +139,6 @@
       align-items: center;
       cursor: pointer;
       box-sizing: border-box;
-      max-height: 3rem;
-      min-height: 2.5rem;
       gap: var(--gap-default);
       padding: 0 var(--padding-default);
       overflow: hidden;
@@ -113,22 +150,19 @@
       color: var(--text-button-hover-color);
     }
 
-    &-live:before {
-      content: "L";
-      background-color: var(--tag-live-background-color);
-      border: 1px solid var(--tag-live-border-color);
+    &-live {
+      max-height: 3rem;
+      min-height: 3rem;
     }
 
-    &-video:before {
-      content: "V";
-      background-color: var(--tag-video-background-color);
-      border: 1px solid var(--tag-video-border-color);
+    &-video {
+      max-height: 3rem;
+      min-height: 3rem;
     }
 
-    &-series:before {
-      content: "S";
-      background-color: var(--tag-series-background-color);
-      border: 1px solid var(--tag-series-border-color);
+    &-series {
+      max-height: 3rem;
+      min-height: 3rem;
     }
 
     &-live:before,
@@ -144,14 +178,76 @@
   }
 
   &__channel {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    fill: var(--menu-icon-color);
+    background-color: var(--text-button-background-color);
+    color: var(--text-button-color);
+    border: 1px solid var(--text-button-border-color);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    box-sizing: border-box;
+    gap: var(--gap-default);
     padding-left: var(--padding-micro);
+    overflow: hidden;
+    text-overflow: ellipsis;
 
-    &-logo {
-      box-sizing: border-box;
-      max-height: 3rem;
-      min-height: 2.5rem;
-      aspect-ratio: 1 / 1;
+    &-live {
+      position: relative;
+      max-height: 4rem;
+      min-height: 4rem;
+
+      .tp__playlist-explorer__channel {
+
+        &-logo {
+          box-sizing: border-box;
+          max-height: 3rem;
+          min-height: 3rem;
+          aspect-ratio: 1 / 1;
+        }
+
+        &-title {
+        }
+      }
     }
+
+    &-video,
+    &-series {
+      position: relative;
+      max-height: $movie-card-height;
+      min-height: $movie-card-height;
+      max-width: $movie-card-width;
+      min-width: $movie-card-width;
+      padding:0;
+      .tp__playlist-explorer__channel {
+        &-logo {
+          box-sizing: border-box;
+          width: 100%;
+          height: 100%;
+          aspect-ratio: 1 / 1;
+        }
+        &-title {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          height: 3rem;
+          background-color: var(--card-background-color);
+          padding-left: 2rem;
+          display: flex;
+          align-items: center;
+        }
+      }
+      .tp__icon-button {
+        position: absolute;
+        z-index: 1;
+        bottom: 0.75rem;
+        left: 0;
+        background-color: transparent;
+      }
+    }
+
   }
 
 }

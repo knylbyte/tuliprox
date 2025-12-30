@@ -12,7 +12,6 @@ use shared::model::{InputType, PlaylistEntry, SeriesStreamProperties, StreamProp
 use shared::model::{PlaylistGroup, PlaylistItemType, XtreamCluster};
 use std::sync::Arc;
 use std::time::Instant;
-use crate::utils::StepMeasure;
 
 create_resolve_options_function_for_xtream_target!(series);
 
@@ -28,7 +27,7 @@ async fn playlist_resolve_series_info(app_config: &Arc<AppConfig>, client: &reqw
         }
     };
 
-    let series_info_count = fpl.playlistgroups.iter()
+    let series_info_count = fpl.playlist_groups.iter()
         .flat_map(|plg| &plg.channels)
         .filter(|&pli| pli.header.xtream_cluster == XtreamCluster::Series
             && pli.header.item_type == PlaylistItemType::SeriesInfo
@@ -40,7 +39,7 @@ async fn playlist_resolve_series_info(app_config: &Arc<AppConfig>, client: &reqw
     let input = fpl.input;
     let mut result: Vec<PlaylistGroup> = vec![];
 
-    for plg in &mut fpl.playlistgroups {
+    for plg in &mut fpl.playlist_groups {
         let mut group_series = vec![];
         for pli in &mut plg.channels {
             if pli.header.xtream_cluster != XtreamCluster::Series
@@ -102,15 +101,12 @@ pub async fn playlist_resolve_series(cfg: &Arc<AppConfig>,
                                      pipe: &ProcessingPipe,
                                      provider_fpl: &mut FetchedPlaylist<'_>,
                                      processed_fpl: &mut FetchedPlaylist<'_>,
-                                     step: &StepMeasure,
 ) {
     let (resolve_series, resolve_delay) = get_resolve_series_options(target, processed_fpl);
     if !resolve_series { return; }
-    step.broadcast("Playlist resolve series info", "Resolving series info");
     let series_playlist = playlist_resolve_series_info(cfg, client, errors, processed_fpl, resolve_delay).await;
     if series_playlist.is_empty() { return; }
 
-    step.broadcast("Playlist resolve series info", "Series info resolved, updating playlist");
     // original content saved into original list
     for plg in &series_playlist {
         provider_fpl.update_playlist(plg);

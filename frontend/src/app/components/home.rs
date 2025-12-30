@@ -138,8 +138,6 @@ pub fn Home() -> Html {
         sources: sources.clone(),
     };
 
-
-
     let handle_view_change = {
         let view_vis = view_visible.clone();
         Callback::from(move |view| view_vis.set(view))

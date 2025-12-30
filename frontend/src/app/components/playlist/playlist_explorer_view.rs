@@ -31,7 +31,6 @@ pub fn PlaylistExplorerView() -> Html {
         use_effect_with(view_visible_dep, move |_| {
             match *view_visible {
                 PlaylistExplorerPage::SourceSelector => breadcrumbs.set(Rc::new(vec![translate.t("LABEL.PLAYLIST_EXPLORER"), translate.t("LABEL.SOURCES")])),
-                PlaylistExplorerPage::Create => breadcrumbs.set(Rc::new(vec![translate.t("LABEL.PLAYLIST_EXPLORER"), translate.t("LABEL.CREATE")])),
             }
         });
     };
@@ -50,9 +49,6 @@ pub fn PlaylistExplorerView() -> Html {
                 <Panel value={PlaylistExplorerPage::SourceSelector.to_string()} active={active_page.to_string()}>
                     <PlaylistSourceSelector />
                     <PlaylistExplorer />
-                </Panel>
-                <Panel value={PlaylistExplorerPage::Create.to_string()} active={active_page.to_string()}>
-                    {"Create"}
                 </Panel>
             </div>
         </div>
