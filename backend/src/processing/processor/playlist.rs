@@ -267,6 +267,16 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
     let mut target_stats = Vec::<TargetStats>::new();
     if let Some(source) = sources.get_source_at(source_idx) {
         let mut source_playlists = Vec::with_capacity(128);
+
+        let broadcast_step = {
+            let event_manager = event_manager.clone();
+            move |context: &str, msg: &str| {
+                if let Some(events) = &event_manager {
+                    events.send_event(EventMessage::PlaylistUpdateProgress(context.to_owned(), msg.to_owned()));
+                }
+            }
+        };
+
         // Download the sources
         let mut source_downloaded = false;
         for input in &source.inputs {
@@ -275,9 +285,12 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
                 let start_time = Instant::now();
                 // Download playlist for input
                 let (playlistgroups, mut error_list) = {
+                    broadcast_step("Playlist download", &format!("Downloading input '{}'", input.name));
                     let (downloaded_playlist, mut download_err) = playlist_download_from_input(client, &app_config, input).await;
+                    broadcast_step("Playlist download", &format!("Persisting input '{}' playlist", input.name));
                     let (playlist, error) = persist_input_playlist(&app_config, input, downloaded_playlist).await;
                     if let Some(err) = error {
+                        broadcast_step("Playlist download", &format!("Failed to persist input '{}' playlist", input.name));
                         error!("Failed to persist input playlist {}", input.name);
                         download_err.push(err);
                     }
@@ -286,6 +299,7 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
 
                 // Download epg for input
                 let (tvguide, mut tvguide_errors) = if error_list.is_empty() {
+                    broadcast_step("Playlist download", &format!("Downloading epg for input '{}'", input.name));
                     let working_dir = &app_config.config.load().working_dir;
                     epg::get_xmltv(client, input, working_dir).await
                 } else {
@@ -298,6 +312,7 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
                 let channel_count = playlistgroups.iter().map(|group| group.channels.len()).sum();
                 let input_name = &input.name;
                 if playlistgroups.is_empty() {
+                    broadcast_step("Playlist download", &format!("Input '{}' playlist is empty", input.name));
                     info!("Source is empty {input_name}");
                     errors.push(notify_err!(format!("Source is empty {input_name}")));
                 } else {
@@ -513,7 +528,7 @@ async fn process_playlist_for_target(app_config: &Arc<AppConfig>,
     let mut step = StepMeasure::new(&target.name, broadcast_step);
     for provider_fpl in playlists.iter_mut() {
         let mut processed_fpl = execute_pipe(target, &pipe, provider_fpl, &mut duplicates);
-        playlist_resolve_series(app_config, client, target, errors, &pipe, provider_fpl, &mut processed_fpl).await;
+        playlist_resolve_series(app_config, client, target, errors, &pipe, provider_fpl, &mut processed_fpl, &step).await;
         playlist_resolve_vod(app_config, client, target, errors, &mut processed_fpl).await;
         // stats
         let input_stats = stats.get_mut(&processed_fpl.input.name);
@@ -530,7 +545,6 @@ async fn process_playlist_for_target(app_config: &Arc<AppConfig>,
     step.tick("epg");
 
     process_favourites(&mut new_playlist, target.favourites.as_deref());
-
 
     if new_playlist.is_empty() {
         step.stop("");

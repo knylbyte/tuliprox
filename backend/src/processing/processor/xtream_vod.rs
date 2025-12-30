@@ -10,10 +10,14 @@ use shared::model::{InputType, PlaylistEntry, StreamProperties, VideoStreamPrope
 use shared::model::{PlaylistItemType, XtreamCluster};
 use std::sync::Arc;
 use std::time::Instant;
+use crate::utils::StepMeasure;
 
 create_resolve_options_function_for_xtream_target!(vod);
 
-pub async fn playlist_resolve_vod(app_config: &Arc<AppConfig>, client: &reqwest::Client, target: &ConfigTarget, errors: &mut Vec<TuliproxError>, fpl: &mut FetchedPlaylist<'_>) {
+pub async fn playlist_resolve_vod(app_config: &Arc<AppConfig>, client: &reqwest::Client,
+                                  target: &ConfigTarget, errors: &mut Vec<TuliproxError>,
+                                  fpl: &mut FetchedPlaylist<'_>,
+                                  step: &StepMeasure,) {
     let (resolve_movies, resolve_delay) = get_resolve_vod_options(target, fpl);
     if !resolve_movies { return; }
 

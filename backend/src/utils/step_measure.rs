@@ -17,7 +17,7 @@ fn format_duration(duration: Duration) -> String {
     }
 }
 
-type StepMeasureCallback = Box<dyn Fn(&str, &str) + 'static + Send>;
+pub type StepMeasureCallback = Box<dyn Fn(&str, &str) + 'static + Send>;
 
 pub struct StepMeasure {
     enabled: bool,
@@ -41,11 +41,15 @@ impl StepMeasure {
         }
     }
 
+    pub fn broadcast(self, step: &str, msg: &str) {
+        (self.callback)(step, msg);
+    }
+
     pub fn tick(&mut self, step: &str) {
         if self.enabled {
             let msg = format!("{}: processed {step} in {}", self.name, format_duration(self.step_start.elapsed()));
             debug!("{msg}");
-            (self.callback)(&self.name, &msg);
+            self.broadcast(&self.name, &msg);
             self.step_start = Instant::now();
         }
     }
@@ -59,8 +63,8 @@ impl StepMeasure {
                 let fmsg = format!("{}: finished in {}", self.name, format_duration( self.start.elapsed()));
                 debug!("{msg}");
                 debug!("{fmsg}");
-                (self.callback)(&self.name, &msg);
-                (self.callback)(&self.name, &fmsg);
+                self.broadcast(&self.name, &msg);
+                self.broadcast(&self.name, &fmsg);
             }
             self.enabled = false;
         }

@@ -1815,8 +1815,8 @@ where
                     self.leaf_values = values;
                     self.leaf_idx = 0;
                 }
-                Err(err) => {
-                    error!("BPlusTreeDiskIterator Failed to read next entry: {err}");
+                Err(_err) => {
+                    // error!("BPlusTreeDiskIterator Failed to read next entry: {err}");
                     return None;
                 }
                 _ => return None,

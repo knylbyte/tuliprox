@@ -17,6 +17,7 @@
   &__header {
     display: flex;
     flex-flow: column;
+
     &-toolbar {
       display: flex;
       flex-flow: row;
@@ -27,6 +28,7 @@
       .tp__icon-button {
         width: 2.5rem;
         height: 2.5rem;
+
         .svg-icon {
           height: 100%;
           width: 100%;
@@ -49,6 +51,7 @@
     box-sizing: border-box;
     overflow: hidden;
   }
+
   &__group,
   &__categories {
     display: flex;
@@ -66,6 +69,7 @@
       width: 100%;
     }
   }
+
   &__item {
     display: flex;
     justify-content: flex-start;
@@ -84,11 +88,24 @@
     overflow: hidden;
     text-overflow: ellipsis;
 
-    img,
     .svg-icon {
       box-sizing: border-box;
       height: 100%;
       aspect-ratio: 1 / 1;
+    }
+
+    &-label {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      cursor: pointer;
+      box-sizing: border-box;
+      max-height: 3rem;
+      min-height: 2.5rem;
+      gap: var(--gap-default);
+      padding: 0 var(--padding-default);
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     &:hover {
@@ -101,16 +118,19 @@
       background-color: var(--tag-live-background-color);
       border: 1px solid var(--tag-live-border-color);
     }
+
     &-video:before {
       content: "V";
       background-color: var(--tag-video-background-color);
       border: 1px solid var(--tag-video-border-color);
     }
+
     &-series:before {
       content: "S";
       background-color: var(--tag-series-background-color);
       border: 1px solid var(--tag-series-border-color);
     }
+
     &-live:before,
     &-video:before,
     &-series:before {
@@ -125,6 +145,13 @@
 
   &__channel {
     padding-left: var(--padding-micro);
+
+    &-logo {
+      box-sizing: border-box;
+      max-height: 3rem;
+      min-height: 2.5rem;
+      aspect-ratio: 1 / 1;
+    }
   }
 
 }
