@@ -955,6 +955,7 @@ pub async fn try_provision_account_on_exhausted(app_state: &AppState, input: &Co
     created
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) {
     let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
     let sources_path = PathBuf::from(&sources_file_path);

@@ -557,7 +557,7 @@ async fn open_provider_stream_once(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn create_panel_api_provisioning_blocking_stream_details(
     app_state: &Arc<AppState>,
     stream_options: &StreamOptions,
