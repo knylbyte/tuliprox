@@ -46,7 +46,7 @@ use url::Url;
 
 const CONTENT_TYPE_BIN: &str = "application/cbor";
 const PANEL_API_PROVISIONING_THROTTLE_KBPS: usize = 8000;
-const PANEL_API_PROVISIONING_RETRY_INTERVAL_MILLIS: u64 = 500;
+const PANEL_API_PROVISIONING_RETRY_INTERVAL_MILLIS: u64 = 1000;
 
 #[macro_export]
 macro_rules! try_option_bad_request {
@@ -500,6 +500,41 @@ fn is_ready_provider_stream(stream_info: &ProviderStreamInfo) -> bool {
 }
 
 #[allow(clippy::too_many_arguments)]
+async fn probe_provider_stream_status(
+    client: &reqwest::Client,
+    stream_options: &StreamOptions,
+    addr: SocketAddr,
+    item_type: PlaylistItemType,
+    share_stream: bool,
+    req_headers: &HeaderMap,
+    input_headers: Option<&HashMap<String, String>>,
+    disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
+    request_url: &str,
+) -> bool {
+    let Ok(url) = Url::parse(request_url) else {
+        return false;
+    };
+
+    let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
+        addr,
+        item_type,
+        share_stream,
+        stream_options,
+        &url,
+        req_headers,
+        input_headers,
+        disabled_headers,
+    );
+
+    client
+        .get(url)
+        .headers(provider_stream_factory_options.get_headers().clone())
+        .send()
+        .await
+        .is_ok_and(|resp| resp.status().is_success())
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn open_provider_stream(
     app_state: &Arc<AppState>,
     stream_options: &StreamOptions,
@@ -564,41 +599,57 @@ async fn create_panel_api_provisioning_blocking_stream_details(
                 })
                 .unwrap_or_else(|| stream_url.to_string());
 
-            if let Ok(url) = Url::parse(&request_url) {
-                let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
-                    fingerprint.addr,
-                    item_type,
-                    share_stream,
-                    stream_options,
-                    &url,
-                    req_headers,
-                    input_headers.as_ref(),
-                    disabled_headers.as_ref(),
-                );
-                let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
-                if let Some((stream, stream_info)) = create_provider_stream(
-                    app_state,
-                    &app_state.http_client.load(),
-                    provider_stream_factory_options,
-                )
-                .await
-                {
-                    if is_ready_provider_stream(&stream_info) {
-                        if let Some(old_handle) = provider_handle.clone() {
-                            app_state
-                                .connection_manager
-                                .release_provider_handle(Some(old_handle))
-                                .await;
+            let client = app_state.http_client.load();
+            let is_ready = probe_provider_stream_status(
+                &client,
+                stream_options,
+                fingerprint.addr,
+                item_type,
+                share_stream,
+                req_headers,
+                input_headers.as_ref(),
+                disabled_headers.as_ref(),
+                &request_url,
+            )
+            .await;
+
+            if is_ready {
+                if let Ok(url) = Url::parse(&request_url) {
+                    let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
+                        fingerprint.addr,
+                        item_type,
+                        share_stream,
+                        stream_options,
+                        &url,
+                        req_headers,
+                        input_headers.as_ref(),
+                        disabled_headers.as_ref(),
+                    );
+                    let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
+                    if let Some((stream, stream_info)) = create_provider_stream(
+                        app_state,
+                        &app_state.http_client.load(),
+                        provider_stream_factory_options,
+                    )
+                    .await
+                    {
+                        if is_ready_provider_stream(&stream_info) {
+                            if let Some(old_handle) = provider_handle.clone() {
+                                app_state
+                                    .connection_manager
+                                    .release_provider_handle(Some(old_handle))
+                                    .await;
+                            }
+                            return Some(StreamDetails {
+                                stream: Some(stream),
+                                stream_info,
+                                provider_name: new_handle.allocation.get_provider_name(),
+                                grace_period_millis,
+                                disable_provider_grace: false,
+                                reconnect_flag: Some(reconnect_flag),
+                                provider_handle: Some(new_handle),
+                            });
                         }
-                        return Some(StreamDetails {
-                            stream: Some(stream),
-                            stream_info,
-                            provider_name: new_handle.allocation.get_provider_name(),
-                            grace_period_millis,
-                            disable_provider_grace: false,
-                            reconnect_flag: Some(reconnect_flag),
-                            provider_handle: Some(new_handle),
-                        });
                     }
                 }
             }
@@ -756,8 +807,9 @@ async fn create_panel_api_provisioning_stream_details(
                     })
                     .unwrap_or_else(|| stream_url.clone());
 
-                if let Some((stream, stream_info)) = open_provider_stream(
-                    &app_state_clone,
+                let client = app_state_clone.http_client.load();
+                let is_ready = probe_provider_stream_status(
+                    &client,
                     &stream_options,
                     addr,
                     item_type,
@@ -767,36 +819,51 @@ async fn create_panel_api_provisioning_stream_details(
                     disabled_headers.as_ref(),
                     &request_url,
                 )
-                .await
-                {
-                    if is_ready_provider_stream(&stream_info) {
-                        if let Ok(mut state) = provider_handle_state_clone.lock() {
-                            *state = Some(new_handle.clone());
-                        }
-                        if let Some(grace) = grace_handle.take() {
-                            app_state_clone
-                                .connection_manager
-                                .release_provider_handle(Some(grace))
-                                .await;
-                        }
-                        debug_if_enabled!(
-                            "panel_api provisioning ready for input {}",
-                            sanitize_sensitive_info(&input_clone.name)
-                        );
-                        if let Some(tx) = stream_tx.take() {
-                            if tx.send(stream).is_err() {
+                .await;
+
+                if is_ready {
+                    if let Some((stream, stream_info)) = open_provider_stream(
+                        &app_state_clone,
+                        &stream_options,
+                        addr,
+                        item_type,
+                        share_stream,
+                        &req_headers_clone,
+                        input_headers_clone.as_ref(),
+                        disabled_headers.as_ref(),
+                        &request_url,
+                    )
+                    .await
+                    {
+                        if is_ready_provider_stream(&stream_info) {
+                            if let Ok(mut state) = provider_handle_state_clone.lock() {
+                                *state = Some(new_handle.clone());
+                            }
+                            if let Some(grace) = grace_handle.take() {
+                                app_state_clone
+                                    .connection_manager
+                                    .release_provider_handle(Some(grace))
+                                    .await;
+                            }
+                            debug_if_enabled!(
+                                "panel_api provisioning ready for input {}",
+                                sanitize_sensitive_info(&input_clone.name)
+                            );
+                            if let Some(tx) = stream_tx.take() {
+                                if tx.send(stream).is_err() {
+                                    app_state_clone
+                                        .connection_manager
+                                        .release_provider_handle(Some(new_handle))
+                                        .await;
+                                }
+                            } else {
                                 app_state_clone
                                     .connection_manager
                                     .release_provider_handle(Some(new_handle))
                                     .await;
                             }
-                        } else {
-                            app_state_clone
-                                .connection_manager
-                                .release_provider_handle(Some(new_handle))
-                                .await;
+                            return;
                         }
-                        return;
                     }
                 }
 
@@ -812,28 +879,13 @@ async fn create_panel_api_provisioning_stream_details(
             .await;
         }
 
-        if let Some(handle) = grace_handle.clone() {
-            if let Ok(mut state) = provider_handle_state_clone.lock() {
-                *state = Some(handle);
-            }
+        if let Some(handle) = grace_handle.take() {
+            app_state_clone
+                .connection_manager
+                .release_provider_handle(Some(handle))
+                .await;
         }
-        if let Some((stream, _)) = open_provider_stream(
-            &app_state_clone,
-            &stream_options,
-            addr,
-            item_type,
-            share_stream,
-            &req_headers_clone,
-            input_headers_clone.as_ref(),
-            disabled_headers.as_ref(),
-            &grace_request_url,
-        )
-        .await
-        {
-            if let Some(tx) = stream_tx.take() {
-                let _ = tx.send(stream);
-            }
-        } else if let (Some(stream), _) = create_channel_unavailable_stream(
+        if let (Some(stream), _) = create_channel_unavailable_stream(
             &app_state_clone.app_config,
             &[],
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
