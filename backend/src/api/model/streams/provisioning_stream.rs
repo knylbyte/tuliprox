@@ -1,4 +1,5 @@
 use crate::api::model::{BoxedProviderStream, ConnectionManager, ProviderHandle, StreamError};
+use crate::utils::debug_if_enabled;
 use bytes::Bytes;
 use futures::{FutureExt, Stream};
 use std::pin::Pin;
@@ -43,10 +44,12 @@ impl Stream for ProvisioningStream {
             if let Some(rx) = self.provider_rx.as_mut() {
                 match rx.poll_unpin(cx) {
                     Poll::Ready(Ok(stream)) => {
+                        debug_if_enabled!("Provisioning stream switching to provider stream");
                         self.provider_stream = Some(stream);
                         self.provider_rx = None;
                     }
                     Poll::Ready(Err(_)) => {
+                        debug_if_enabled!("Provisioning stream stopped before provider stream was ready");
                         self.provider_rx = None;
                         return Poll::Ready(None);
                     }
@@ -56,7 +59,11 @@ impl Stream for ProvisioningStream {
         }
 
         if let Some(stream) = self.provider_stream.as_mut() {
-            Pin::new(stream).poll_next(cx)
+            let poll = Pin::new(stream).poll_next(cx);
+            if let Poll::Ready(None) = poll {
+                debug_if_enabled!("Provisioning provider stream ended");
+            }
+            poll
         } else {
             Pin::new(&mut self.loading_stream).poll_next(cx)
         }

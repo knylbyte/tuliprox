@@ -339,16 +339,15 @@ async fn provider_stream_request_once(
     match client.send().await {
         Ok(mut response) => {
             let status = response.status();
+            if log_enabled!(log::Level::Debug) {
+                let message = format!(
+                    "Provider response  status: '{}' headers: {:?}",
+                    response.status(),
+                    response.headers_mut()
+                );
+                debug!("{}", sanitize_sensitive_info(&message));
+            }
             if status.is_success() {
-                if log_enabled!(log::Level::Debug) {
-                    let message = format!(
-                        "Provider response  status: '{}' headers: {:?}",
-                        response.status(),
-                        response.headers_mut()
-                    );
-                    debug!("{}", sanitize_sensitive_info(&message));
-                }
-
                 let response_headers: Vec<(String, String)> =
                     get_response_headers(response.headers());
                 let response_info = Some((
