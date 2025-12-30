@@ -850,7 +850,7 @@ Use the literal value `auto` to fill sensitive values at runtime:
 - in `client_adult_content`, `api_key: auto` is replaced by the specified global api key and `username: auto` / `password: auto` are replaced by the account being queried
 - in `account_info`, `api_key: auto` is replaced by the specified global api key
 
-`account_info` is executed on boot/update to fetch account credits via the `credits` field.
+`account_info` is executed on boot/update to fetch account credits via the `credits` field. If credentials are required, (username/password=auto), Tuliprox uses the first available ones: the root input if present, otherwise the first alias in config order. If no credentials are required, none are used or if not auto the configured one is used.”
 
 `client_info` is used to fetch the exact `exp_date` (via the `expire` field) and is also executed on boot/update to sync `exp_date` for existing inputs/aliases.
 
