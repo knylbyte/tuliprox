@@ -683,7 +683,7 @@ async fn try_renew_expired_account(
     candidates.sort_by_key(|a| a.exp_date.unwrap_or(i64::MIN));
 
     for acct in &candidates {
-        let expired = acct.exp_date.map_or(true, |ts| is_input_expired(Some(ts)));
+        let expired = acct.exp_date.is_none() || is_input_expired(acct.exp_date);
         if !expired {
             continue;
         }

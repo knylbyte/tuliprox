@@ -590,14 +590,16 @@ async fn create_panel_api_provisioning_blocking_stream_details(
             let request_url = new_handle
                 .allocation
                 .get_provider_config()
-                .map(|provider_cfg| {
-                    if provider_cfg.id == input.id {
-                        stream_url.to_string()
-                    } else {
-                        get_stream_alternative_url(stream_url, input, &provider_cfg)
-                    }
-                })
-                .unwrap_or_else(|| stream_url.to_string());
+                .map_or_else(
+                    || stream_url.to_string(),
+                    |provider_cfg| {
+                        if provider_cfg.id == input.id {
+                            stream_url.to_string()
+                        } else {
+                            get_stream_alternative_url(stream_url, input, &provider_cfg)
+                        }
+                    },
+                );
 
             let client = app_state.http_client.load();
             let is_ready = probe_provider_stream_status(
@@ -669,7 +671,7 @@ async fn create_panel_api_provisioning_blocking_stream_details(
     None
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn create_panel_api_provisioning_stream_details(
     app_state: &Arc<AppState>,
     stream_options: &StreamOptions,
@@ -686,15 +688,12 @@ async fn create_panel_api_provisioning_stream_details(
     input_headers: Option<HashMap<String, String>>,
     max_wait_secs: u64,
 ) -> Option<StreamDetails> {
-    let panel_api_provisioning = match app_state
+    let Some(panel_api_provisioning) = app_state
         .app_config
         .custom_stream_response
         .load()
         .as_ref()
-        .and_then(|c| c.panel_api_provisioning.clone())
-    {
-        Some(buffer) => buffer,
-        None => {
+        .and_then(|c| c.panel_api_provisioning.clone()) else {
             return create_panel_api_provisioning_blocking_stream_details(
                 app_state,
                 stream_options,
@@ -710,8 +709,7 @@ async fn create_panel_api_provisioning_stream_details(
                 max_wait_secs,
             )
             .await;
-        }
-    };
+        };
 
     let loading_stream = ThrottledStream::new(
         CustomVideoStream::new(panel_api_provisioning),
@@ -798,14 +796,16 @@ async fn create_panel_api_provisioning_stream_details(
                 let request_url = new_handle
                     .allocation
                     .get_provider_config()
-                    .map(|provider_cfg| {
-                        if provider_cfg.id == input_clone.id {
-                            stream_url.clone()
-                        } else {
-                            get_stream_alternative_url(&stream_url, &input_clone, &provider_cfg)
-                        }
-                    })
-                    .unwrap_or_else(|| stream_url.clone());
+                    .map_or_else(
+                        || stream_url.clone(),
+                        |provider_cfg| {
+                            if provider_cfg.id == input_clone.id {
+                                stream_url.clone()
+                            } else {
+                                get_stream_alternative_url(&stream_url, &input_clone, &provider_cfg)
+                            }
+                        },
+                    );
 
                 let client = app_state_clone.http_client.load();
                 let is_ready = probe_provider_stream_status(
