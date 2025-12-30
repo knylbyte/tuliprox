@@ -253,10 +253,6 @@ Bandwidth throttle (speed limit).
 Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`.
 Default unit is `kbps`.
 
-##### 1.6.1.4 `panel_api_provision_timeout`
-Maximum wait time (in seconds) after a new panel API account is created/renewed to probe for a successful (2xx) stream response before switching.
-Use this if the upstream panel needs time to activate new accounts. Default `60`.
-
 | Resolution      |Framerate| Bitrate (kbps) | Quality     |
 |-----------------|---------|----------------|-------------|
 |480p (854x480)   |  30 fps | 819–2.457      | Low-Quality |
@@ -273,6 +269,10 @@ If the connection is not throttled, the player will play its buffered content lo
 
 ##### 1.6.1.4 `grace_period_timeout_secs`
 How long the grace grant will last, until another grace grant can made.
+
+##### 1.6.1.5 `panel_api_provision_timeout`
+Maximum wait time (in seconds) after a new panel API account is created/renewed to probe for a successful (2xx) stream response before switching.
+Use this if the upstream panel needs time to activate new accounts. Default `60`.
 
 #### 1.6.2 `cache`
 LRU-Cache is for resources. If it is `enabled`, the resources/images are persisted in the given `dir`. If the cache size exceeds `size`,
@@ -525,7 +525,6 @@ and add it to the `config.yml`.
 - `user_connections_exhausted.ts`
 - `channel_unavailable.ts`
 - `panel_api_provisioning.ts`
-The `panel_api_provisioning.ts` file is used as a loading stream during panel API provisioning.
 
 ```yaml
 custom_stream_response_path: /home/tuliprox/resources 
@@ -841,14 +840,24 @@ If provider connections are exhausted, tuliprox can optionally call a provider p
 - renew expired accounts first (based on `exp_date`)
 - otherwise create a new alias account and persist it
 
-The API is configured generically via predefined query parameters; only `type: m3u` is supported.
+The API is configured generically via predefined query parameters; only `type: m3u` is supported for `client_new`, `client_renew` and `client_adult_content`.
+Recommended section order in config/UI: `account_info`, `client_info`, `client_new`, `client_renew`, `client_adult_content`.
 
 Use the literal value `auto` to fill sensitive values at runtime:
 - `api_key: auto` is replaced by `panel_api.api_key`
-- in `client_renew`, `username: auto` / `password: auto` are replaced by the account being renewed
-- in `client_info`, `username: auto` / `password: auto` are replaced by the account being queried
+- in `client_renew`, `api_key: auto` is replaced by the specified global api key and `username: auto` / `password: auto` are replaced by the account being renewed
+- in `client_info`, `api_key: auto` is replaced by the specified global api key and `username: auto` / `password: auto` are replaced by the account being queried
+- in `client_adult_content`, `api_key: auto` is replaced by the specified global api key and `username: auto` / `password: auto` are replaced by the account being queried
+- in `account_info`, `api_key: auto` is replaced by the specified global api key
 
-`client_info` is used to fetch the exact `exp_date` (via the `expire` field) and is also executed on boot to sync `exp_date` for existing inputs/aliases.
+`account_info` is executed on boot/update to fetch account credits via the `credits` field.
+
+`client_info` is used to fetch the exact `exp_date` (via the `expire` field) and is also executed on boot/update to sync `exp_date` for existing inputs/aliases.
+
+`client_adult_content` is executed when configured:
+- on boot/update for every root input account and alias
+- after `client_new` / `client_renew` for the affected account
+The request is skipped when `query_parameter.client_adult_content` is empty.
 
 For `client_new`, the Panel API call would look like this in the example shown:
 
@@ -862,6 +871,17 @@ Tuliprox evaluates Panel API responses as JSON with the following logic, dependi
 `Common rule (all operations)`
   - The response must contain `status: true`. If status is missing or not true, the operation is treated as failed.
 
+`account_info (credits)`
+
+  - Require `status: true`.
+  - Extract `credits` and persist it to `panel_api.credits`.
+
+`client_info (sync expiration)`
+
+  -	Require `status: true`.
+  -	Extract the expiration timestamp/date from the JSON field:
+    -	`expire` → used to populate/update exp_date for the corresponding input/alias.
+
 `client_new (create alias)`
 	
   -	Require `status: true`.
@@ -874,13 +894,12 @@ Tuliprox evaluates Panel API responses as JSON with the following logic, dependi
 
 `client_renew (renew existing account)`
  
-  -	Only `status: true` is evaluated. No credentials are extracted or updated as part of renew.
-
-`client_info (sync expiration)`
-
   -	Require `status: true`.
-  -	Extract the expiration timestamp/date from the JSON field:
-    -	`expire` → used to populate/update exp_date for the corresponding input/alias.
+  -	No credentials are extracted or updated as part of renew.
+
+`client_adult_content (toggle adult content)`
+
+  - Require `status: true`.
 ```yaml
 - sources:
 - inputs:
@@ -893,6 +912,9 @@ Tuliprox evaluates Panel API responses as JSON with the following logic, dependi
       url: 'https://panel.example.tld/api.php'
       api_key: '1234567890'
       query_parameter:
+        account_info:
+          - { key: action, value: account_info }
+          - { key: api_key, value: auto }
         client_info:
           - { key: action, value: client_info }
           - { key: username, value: auto }
@@ -909,6 +931,11 @@ Tuliprox evaluates Panel API responses as JSON with the following logic, dependi
           - { key: username, value: auto }
           - { key: password, value: auto }
           - { key: sub, value: '1' }
+          - { key: api_key, value: auto }
+        client_adult_content:
+          - { key: action, value: adult_content }
+          - { key: username, value: auto }
+          - { key: password, value: auto }
           - { key: api_key, value: auto }
 ```
 
