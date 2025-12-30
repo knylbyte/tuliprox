@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use crate::utils;
 use crate::utils::{binary_deserialize, binary_serialize};
 use indexmap::IndexMap;
@@ -8,7 +9,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::mem::size_of;
-use std::path::{Path};
+use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 use fs2::FileExt;
 
@@ -1815,8 +1816,8 @@ where
                     self.leaf_values = values;
                     self.leaf_idx = 0;
                 }
-                Err(err) => {
-                    error!("BPlusTreeDiskIterator Failed to read next entry: {err}");
+                Err(_err) => {
+                    // error!("BPlusTreeDiskIterator Failed to read next entry: {err}");
                     return None;
                 }
                 _ => return None,
@@ -1839,6 +1840,19 @@ pub struct BPlusTreeUpdate<K, V> {
     _marker_v: PhantomData<V>,
 }
 
+fn lock_path(filepath: &Path) -> PathBuf {
+    if let Some(stem) = filepath.file_stem() {
+        // filename with dot to hide
+        let mut name = OsString::from(".");
+        name.push(stem);
+        name.push(".lock");
+        filepath.with_file_name(name)
+    } else {
+        // Fallback: without dot
+        filepath.with_extension("lock")
+    }
+}
+
 struct FileLock {
     // We hold the file handle to keep the advisory lock active.
     // When this struct is dropped, the file handle closes and OS releases the lock.
@@ -1849,14 +1863,14 @@ impl FileLock {
     fn try_lock(filepath: &Path) -> io::Result<Self> {
         // Sidecar Lock Pattern: Lock a separate .lock file, not the data file itself.
         // This ensures implementation works on Windows where locked files cannot be renamed/deleted.
-        let lock_path = filepath.with_extension("lock");
+        let lock_path_filename = lock_path(filepath);
         
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true) // Create if missing
             .truncate(false) // Do not truncate, just open
-            .open(&lock_path)?;
+            .open(&lock_path_filename)?;
 
         // Try to acquire exclusive advisory lock.
         // If another process holds it, this returns immediately with Error (WouldBlock).

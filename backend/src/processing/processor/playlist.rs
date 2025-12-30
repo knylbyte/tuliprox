@@ -1,7 +1,7 @@
 use crate::model::{AppConfig, Config, ConfigFavourites, ConfigInput, ConfigRename};
-use crate::utils::epg;
 use crate::utils::m3u;
 use crate::utils::xtream;
+use crate::utils::{epg, StepMeasureCallback};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,13 +27,13 @@ use crate::repository::playlist_repository::{persist_input_playlist, persist_pla
 use crate::utils::StepMeasure;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use futures::StreamExt;
+use indexmap::IndexMap;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
 use shared::foundation::filter::{get_field_value, set_field_value, Filter, ValueAccessor, ValueProvider};
 use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
 use shared::utils::{create_alias_uuid, default_as_default};
 use std::time::Instant;
-use indexmap::IndexMap;
 
 fn is_valid(pli: &PlaylistItem, filter: &Filter, match_as_ascii: bool) -> bool {
     let provider = ValueProvider { pli, match_as_ascii };
@@ -267,6 +267,9 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
     let mut target_stats = Vec::<TargetStats>::new();
     if let Some(source) = sources.get_source_at(source_idx) {
         let mut source_playlists = Vec::with_capacity(128);
+
+        let broadcast_step = create_broadcast_callback(event_manager.as_ref());
+
         // Download the sources
         let mut source_downloaded = false;
         for input in &source.inputs {
@@ -274,10 +277,13 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
                 source_downloaded = true;
                 let start_time = Instant::now();
                 // Download playlist for input
-                let (playlistgroups, mut error_list) = {
+                let (playlist_groups, mut error_list) = {
+                    broadcast_step("Playlist download", &format!("Downloading input '{}'", input.name));
                     let (downloaded_playlist, mut download_err) = playlist_download_from_input(client, &app_config, input).await;
+                    broadcast_step("Playlist download", &format!("Persisting input '{}' playlist", input.name));
                     let (playlist, error) = persist_input_playlist(&app_config, input, downloaded_playlist).await;
                     if let Some(err) = error {
+                        broadcast_step("Playlist download", &format!("Failed to persist input '{}' playlist", input.name));
                         error!("Failed to persist input playlist {}", input.name);
                         download_err.push(err);
                     }
@@ -286,6 +292,7 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
 
                 // Download epg for input
                 let (tvguide, mut tvguide_errors) = if error_list.is_empty() {
+                    broadcast_step("Playlist download", &format!("Downloading epg for input '{}'", input.name));
                     let working_dir = &app_config.config.load().working_dir;
                     epg::get_xmltv(client, input, working_dir).await
                 } else {
@@ -294,17 +301,18 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
 
                 errors.append(&mut error_list);
                 errors.append(&mut tvguide_errors);
-                let group_count = playlistgroups.len();
-                let channel_count = playlistgroups.iter().map(|group| group.channels.len()).sum();
+                let group_count = playlist_groups.len();
+                let channel_count = playlist_groups.iter().map(|group| group.channels.len()).sum();
                 let input_name = &input.name;
-                if playlistgroups.is_empty() {
+                if playlist_groups.is_empty() {
+                    broadcast_step("Playlist download", &format!("Input '{}' playlist is empty", input.name));
                     info!("Source is empty {input_name}");
                     errors.push(notify_err!(format!("Source is empty {input_name}")));
                 } else {
                     source_playlists.push(
                         FetchedPlaylist {
                             input,
-                            playlistgroups,
+                            playlist_groups,
                             epg: tvguide,
                         }
                     );
@@ -319,7 +327,7 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
                 debug!("Source at index {source_idx} is empty");
                 errors.push(notify_err!(format!("Source at index {source_idx} is empty: {}", source.inputs.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join(", "))));
             } else {
-                debug_if_enabled!("Source has {} groups", source_playlists.iter().map(|fpl| fpl.playlistgroups.len()).sum::<usize>());
+                debug_if_enabled!("Source has {} groups", source_playlists.iter().map(|fpl| fpl.playlist_groups.len()).sum::<usize>());
                 let event_manager_clone = event_manager.clone();
                 for target in &source.targets {
                     let event_manager_clone = event_manager_clone.clone();
@@ -339,6 +347,17 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
         }
     }
     (input_stats.into_values().collect(), target_stats, errors)
+}
+
+fn create_broadcast_callback(event_manager: Option<&Arc<EventManager>>) -> StepMeasureCallback {
+    if let Some(event_mgr) = event_manager {
+        let events = event_mgr.clone();
+        Box::new(move |context: &str, msg: &str| {
+            events.send_event(EventMessage::PlaylistUpdateProgress(context.to_owned(), msg.to_owned()));
+        })
+    } else {
+        Box::new(move |_context: &str, _msg: &str| { /* noop */ })
+    }
 }
 
 fn create_input_stat(group_count: usize, channel_count: usize, error_count: usize, input_type: InputType, input_name: &str, secs_took: u64) -> InputStats {
@@ -439,22 +458,23 @@ fn duplicate_hash(item: &PlaylistItem) -> UUIDType {
     item.get_uuid()
 }
 
-fn execute_pipe<'a>(target: &ConfigTarget, pipe: &ProcessingPipe, fpl: &FetchedPlaylist<'a>, duplicates: &mut HashSet<UUIDType>) -> FetchedPlaylist<'a> {
+fn execute_pipe<'a>(target: &ConfigTarget, pipe: &ProcessingPipe, fpl: &FetchedPlaylist<'a>,
+                    duplicates: &mut HashSet<UUIDType>) -> FetchedPlaylist<'a> {
     let mut new_fpl = FetchedPlaylist {
         input: fpl.input,
-        playlistgroups: fpl.playlistgroups.clone(), // we need to clone, because of multiple target definitions, we cant change the initial playlist.
+        playlist_groups: fpl.playlist_groups.clone(), // we need to clone, because of multiple target definitions, we cant change the initial playlist.
         epg: fpl.epg.clone(),
     };
     if target.options.as_ref().is_some_and(|opt| opt.remove_duplicates) {
-        for group in &mut new_fpl.playlistgroups {
+        for group in &mut new_fpl.playlist_groups {
             // `HashSet::insert`  returns true for first insert, otherweise false
             group.channels.retain(|item| duplicates.insert(duplicate_hash(item)));
         }
     }
 
     for f in pipe {
-        if let Some(groups) = f(&mut new_fpl.playlistgroups, target) {
-            new_fpl.playlistgroups = groups;
+        if let Some(groups) = f(&mut new_fpl.playlist_groups, target) {
+            new_fpl.playlist_groups = groups;
         }
     }
     new_fpl
@@ -501,25 +521,19 @@ async fn process_playlist_for_target(app_config: &Arc<AppConfig>,
     let mut processed_fetched_playlists: Vec<FetchedPlaylist> = vec![];
 
     debug!("Executing processing pipes");
-    let broadcast_step = {
-        let event_manager = event_manager.clone();
-        move |context: &str, msg: &str| {
-            if let Some(events) = &event_manager {
-                events.send_event(EventMessage::PlaylistUpdateProgress(context.to_owned(), msg.to_owned()));
-            }
-        }
-    };
+    let broadcast_step = create_broadcast_callback(event_manager.as_ref());
 
     let mut step = StepMeasure::new(&target.name, broadcast_step);
     for provider_fpl in playlists.iter_mut() {
+        step.broadcast("Executing transformations on '{}' playlist", &target.name);
         let mut processed_fpl = execute_pipe(target, &pipe, provider_fpl, &mut duplicates);
         playlist_resolve_series(app_config, client, target, errors, &pipe, provider_fpl, &mut processed_fpl).await;
         playlist_resolve_vod(app_config, client, target, errors, &mut processed_fpl).await;
         // stats
         let input_stats = stats.get_mut(&processed_fpl.input.name);
         if let Some(stat) = input_stats {
-            stat.processed_stats.group_count = processed_fpl.playlistgroups.len();
-            stat.processed_stats.channel_count = processed_fpl.playlistgroups.iter()
+            stat.processed_stats.group_count = processed_fpl.playlist_groups.len();
+            stat.processed_stats.channel_count = processed_fpl.playlist_groups.iter()
                 .map(|group| group.channels.len())
                 .sum();
         }
@@ -529,8 +543,10 @@ async fn process_playlist_for_target(app_config: &Arc<AppConfig>,
     let (new_epg, mut new_playlist) = process_epg(&mut processed_fetched_playlists).await;
     step.tick("epg");
 
-    process_favourites(&mut new_playlist, target.favourites.as_deref());
-
+    if target.favourites.is_some() {
+        step.broadcast("Processing favourites for '{}' playlist", &target.name);
+        process_favourites(&mut new_playlist, target.favourites.as_deref());
+    }
 
     if new_playlist.is_empty() {
         step.stop("");
@@ -628,7 +644,7 @@ async fn process_epg(processed_fetched_playlists: &mut Vec<FetchedPlaylist<'_>>)
     // we need to process each input epg.
     for fp in processed_fetched_playlists {
         process_playlist_epg(fp, &mut new_epg).await;
-        new_playlist.append(&mut fp.playlistgroups);
+        new_playlist.append(&mut fp.playlist_groups);
     }
     (new_epg, new_playlist)
 }

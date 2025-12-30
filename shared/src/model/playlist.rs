@@ -1418,6 +1418,7 @@ impl PlaylistGroup {
     pub fn on_load(&mut self) {
         for pl in &mut self.channels {
             pl.header.gen_uuid();
+            pl.header.category_id = self.id;
         }
     }
 

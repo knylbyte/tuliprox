@@ -108,7 +108,7 @@ impl EpgIdCache<'_> {
         let smart_match_enabled = self.smart_match_enabled;
         let fuzzy_matching = self.fuzzy_match_enabled;
 
-        for channel in fp.playlistgroups.iter().flat_map(|g| &g.channels) {
+        for channel in fp.playlist_groups.iter().flat_map(|g| &g.channels) {
             let mut missing_epg_id = true;
             // insert epg_id to known channel epg_ids
             if let Some(id) = channel.header.epg_channel_id.as_deref() {
@@ -211,7 +211,7 @@ async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>
                 };
 
                 let filter_live = |c: &&mut PlaylistItem| c.header.xtream_cluster == XtreamCluster::Live;
-                fp.playlistgroups.iter_mut()
+                fp.playlist_groups.iter_mut()
                     .flat_map(|g| &mut g.channels)
                     .filter(filter_live)
                     .for_each(assign_values);
