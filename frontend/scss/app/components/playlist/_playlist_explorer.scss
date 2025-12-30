@@ -92,6 +92,7 @@ $live-card-width: 17.5rem;
       gap: var(--gap-default);
       box-sizing: border-box;
       width: 100%;
+      overflow: auto;
 
       &-live {
         display: grid;

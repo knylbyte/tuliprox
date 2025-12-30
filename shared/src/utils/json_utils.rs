@@ -1,29 +1,5 @@
-use serde::{Deserialize};
 use serde_json::{self, Value};
 use crate::utils::{humanize_snake_case};
-
-pub fn string_or_number_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value: Value = serde::Deserialize::deserialize(deserializer)?;
-
-    match value {
-        Value::Null => Ok(0u32),
-        Value::Number(num) => {
-            if let Some(v) = num.as_u64() {
-                u32::try_from(v)
-                    .map_err(|_| serde::de::Error::custom("Number out of range for u32"))
-            } else {
-                Err(serde::de::Error::custom("Invalid number"))
-            }
-        }
-        Value::String(s) => s
-            .parse::<u32>()
-            .map_err(|_| serde::de::Error::custom("Invalid string number")),
-        _ => Err(serde::de::Error::custom("Expected number or string")),
-    }
-}
 
 pub fn get_u64_from_serde_value(value: &Value) -> Option<u64> {
     match value {
@@ -57,14 +33,6 @@ pub fn get_string_from_serde_value(value: &Value) -> Option<String> {
         }
         _ => None,
     }
-}
-
-pub fn string_default_on_null<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value: Option<String> = Option::deserialize(deserializer)?;
-    Ok(value.unwrap_or_default())
 }
 
 const MARKDOWN_SPECIAL_CHARS: &str = r#"_*[]()~`>#+-=|{}.!\"#;
