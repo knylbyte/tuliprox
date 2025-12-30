@@ -15,6 +15,7 @@ const LABEL_API_KEY: &str = "LABEL.API_KEY";
 const LABEL_STATUS_READY: &str = "LABEL.PANEL_STATUS_READY";
 const LABEL_STATUS_INVALID: &str = "LABEL.PANEL_STATUS_INVALID";
 const LABEL_STATUS_DISABLED: &str = "LABEL.PANEL_STATUS_DISABLED";
+const LABEL_PANEL_CREDITS: &str = "LABEL.PANEL_CREDITS";
 const LABEL_VALIDATION: &str = "LABEL.VALIDATION";
 const HINT_PANEL_INFO: &str = "HINT.CONFIG.PANEL.INFO";
 const HINT_PANEL_ENABLE: &str = "HINT.CONFIG.PANEL.ENABLE";
@@ -24,6 +25,7 @@ enum PanelSection {
     Info,
     New,
     Renew,
+    AccountInfo,
 }
 
 impl PanelSection {
@@ -32,6 +34,7 @@ impl PanelSection {
             Self::Info => "LABEL.PANEL_CLIENT_INFO",
             Self::New => "LABEL.PANEL_CLIENT_NEW",
             Self::Renew => "LABEL.PANEL_CLIENT_RENEW",
+            Self::AccountInfo => "LABEL.PANEL_ACCOUNT_INFO",
         }
     }
 }
@@ -101,6 +104,7 @@ fn params_mut(
         PanelSection::Info => &mut panel.query_parameter.client_info,
         PanelSection::New => &mut panel.query_parameter.client_new,
         PanelSection::Renew => &mut panel.query_parameter.client_renew,
+        PanelSection::AccountInfo => &mut panel.query_parameter.account_info,
     }
 }
 
@@ -131,17 +135,21 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
     }
 
     let sections = [
-        (PanelSection::Info, &panel.query_parameter.client_info),
-        (PanelSection::New, &panel.query_parameter.client_new),
-        (PanelSection::Renew, &panel.query_parameter.client_renew),
+        (PanelSection::Info, &panel.query_parameter.client_info, true),
+        (PanelSection::New, &panel.query_parameter.client_new, true),
+        (PanelSection::Renew, &panel.query_parameter.client_renew, true),
+        (PanelSection::AccountInfo, &panel.query_parameter.account_info, false),
     ];
-    for (section, params) in sections {
+    for (section, params, required) in sections {
         if params.is_empty() {
-            errors.push(match section {
-                PanelSection::Info => "client_info: empty".to_string(),
-                PanelSection::New => "client_new: empty".to_string(),
-                PanelSection::Renew => "client_renew: empty".to_string(),
-            });
+            if required {
+                errors.push(match section {
+                    PanelSection::Info => "client_info: empty".to_string(),
+                    PanelSection::New => "client_new: empty".to_string(),
+                    PanelSection::Renew => "client_renew: empty".to_string(),
+                    PanelSection::AccountInfo => "account_info: empty".to_string(),
+                });
+            }
             continue;
         }
         if !has_param(params, "api_key") {
@@ -149,6 +157,7 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
                 PanelSection::Info => "client_info: missing api_key param".to_string(),
                 PanelSection::New => "client_new: missing api_key param".to_string(),
                 PanelSection::Renew => "client_renew: missing api_key param".to_string(),
+                PanelSection::AccountInfo => "account_info: missing api_key param".to_string(),
             });
         }
         match section {
@@ -177,6 +186,16 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
                 }
                 if get_param_value(params, "password").as_deref() != Some("auto") {
                     errors.push("client_info: password must be auto".to_string());
+                }
+            }
+            PanelSection::AccountInfo => {
+                if has_param(params, "username") || has_param(params, "password") {
+                    if get_param_value(params, "username").as_deref() != Some("auto") {
+                        errors.push("account_info: username must be auto".to_string());
+                    }
+                    if get_param_value(params, "password").as_deref() != Some("auto") {
+                        errors.push("account_info: password must be auto".to_string());
+                    }
                 }
             }
         }
@@ -208,6 +227,7 @@ fn ensure_required_params(params: &mut Vec<PanelApiQueryParamDto>, section: Pane
             ensure(params, "username", "auto");
             ensure(params, "password", "auto");
         }
+        PanelSection::AccountInfo => {}
     }
 }
 
@@ -602,13 +622,26 @@ pub fn PanelConfigView() -> Html {
         let client_renew = panel
             .map(|p| p.query_parameter.client_renew.as_slice())
             .unwrap_or(&[]);
+        let account_info = panel
+            .map(|p| p.query_parameter.account_info.as_slice())
+            .unwrap_or(&[]);
+        let credits_value = panel
+            .and_then(|p| p.credits.as_ref())
+            .map(|credits| credits.trim().to_string())
+            .filter(|credits| !credits.is_empty())
+            .unwrap_or_else(|| "—".to_string());
+        let credits_label = format!("{}: {}", translate.t(LABEL_PANEL_CREDITS), credits_value);
+        let type_label = input.input_type.to_string().to_uppercase();
 
         html! {
             <Card class="tp__config-view__card tp__panel-config-view__input-card">
                 <div class="tp__panel-config-view__input-header">
                     <div class="tp__panel-config-view__input-title">
                         <h1>{ &input.name }</h1>
-                        <div class="tp__panel-config-view__input-subtitle">{ format!("type={}", input.input_type) }</div>
+                        <div class="tp__panel-config-view__input-badges">
+                            <Chip label={type_label} class={Option::<String>::None}/>
+                            <Chip label={credits_label} class={Some("tp__panel-config-view__credits-chip".to_string())}/>
+                        </div>
                     </div>
                     <div class="tp__panel-config-view__input-status">
                         { status_chip }
@@ -630,6 +663,7 @@ pub fn PanelConfigView() -> Html {
                                 <Input name="panel_url" label={Some(translate.t(LABEL_URL))} value={url_val} on_change={Some(on_url)} placeholder={Some("https://panel.example.tld/api.php".to_string())}/>
                                 <Input name="panel_api_key" label={Some(translate.t(LABEL_API_KEY))} value={api_key_val} hidden={true} on_change={Some(on_api_key)} placeholder={Some("...".to_string())}/>
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::Info, translate.t(PanelSection::Info.label_key()), client_info) }
+                                { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::AccountInfo, translate.t(PanelSection::AccountInfo.label_key()), account_info) }
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::New, translate.t(PanelSection::New.label_key()), client_new) }
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::Renew, translate.t(PanelSection::Renew.label_key()), client_renew) }
                                 { html_if!(has_errors, {
@@ -657,6 +691,10 @@ pub fn PanelConfigView() -> Html {
                                     <div class="tp__form-field tp__form-field__text">
                                         <label>{ translate.t(PanelSection::Info.label_key()) }</label>
                                         <span class="tp__form-field__value">{ format!("{} params", client_info.len()) }</span>
+                                    </div>
+                                    <div class="tp__form-field tp__form-field__text">
+                                        <label>{ translate.t(PanelSection::AccountInfo.label_key()) }</label>
+                                        <span class="tp__form-field__value">{ format!("{} params", account_info.len()) }</span>
                                     </div>
                                     <div class="tp__form-field tp__form-field__text">
                                         <label>{ translate.t(PanelSection::New.label_key()) }</label>

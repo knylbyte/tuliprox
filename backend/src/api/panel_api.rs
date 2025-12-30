@@ -28,6 +28,22 @@ fn parse_boolish(value: &Value) -> bool {
     }
 }
 
+fn extract_stringish(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
 fn is_date_only_yyyy_mm_dd(value: &str) -> bool {
     let value = value.trim();
     if value.len() != 10 {
@@ -140,6 +156,16 @@ fn validate_client_renew_params(params: &[PanelApiQueryParamDto]) -> Result<(), 
 fn validate_client_info_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
     require_api_key_param(params, "query_parameter.client_info")?;
     require_username_password_params_auto(params, "query_parameter.client_info")?;
+    Ok(())
+}
+
+fn validate_account_info_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    require_api_key_param(params, "query_parameter.account_info")?;
+    let has_user = params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("username"));
+    let has_pass = params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("password"));
+    if has_user || has_pass {
+        require_username_password_params_auto(params, "query_parameter.account_info")?;
+    }
     Ok(())
 }
 
@@ -336,6 +362,35 @@ async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfigDto, userna
     Ok(None)
 }
 
+async fn panel_account_info(
+    app_state: &AppState,
+    cfg: &PanelApiConfigDto,
+    creds: Option<(&str, &str)>,
+) -> Result<Option<String>, TuliproxError> {
+    if cfg.query_parameter.account_info.is_empty() {
+        return Ok(None);
+    }
+    validate_account_info_params(&cfg.query_parameter.account_info)?;
+    let params = resolve_query_params(
+        &cfg.query_parameter.account_info,
+        cfg.api_key.as_deref(),
+        creds,
+    )?;
+    let url = build_panel_url(cfg.url.as_str(), &params)?;
+    let json = panel_get_json(app_state, url).await?;
+    let Some(obj) = first_json_object(&json) else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: account_info response is not a JSON object/array");
+    };
+    let status_ok = obj.get("status").is_some_and(parse_boolish);
+    if !status_ok {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: account_info status=false");
+    }
+    let Some(credits) = obj.get("credits").and_then(extract_stringish) else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: account_info response missing credits");
+    };
+    Ok(Some(credits))
+}
+
 fn extract_account_creds_from_input(input: &ConfigInput) -> Option<(String, String)> {
     if let (Some(u), Some(p)) = (input.username.as_deref(), input.password.as_deref()) {
         if !u.trim().is_empty() && !p.trim().is_empty() {
@@ -529,6 +584,62 @@ async fn patch_source_yml_update_exp_date(
         }
     }
     create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml")
+}
+
+async fn patch_source_yml_update_panel_api_credits(
+    source_file_path: &Path,
+    input_name: &str,
+    credits: &str,
+) -> Result<(), TuliproxError> {
+    let raw = tokio::fs::read_to_string(source_file_path)
+        .await
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}")))?;
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to parse source file yaml: {e}")))?;
+    let Some(root) = doc.as_mapping_mut() else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: source.yml root is not a mapping");
+    };
+    let sources = root.get_mut(serde_yaml::Value::String("sources".to_string())).and_then(|v| v.as_sequence_mut());
+    let Some(sources) = sources else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: source.yml missing 'sources' list");
+    };
+    for src in sources.iter_mut() {
+        let Some(src_map) = src.as_mapping_mut() else { continue; };
+        let Some(inputs) = src_map.get_mut(serde_yaml::Value::String("inputs".to_string())).and_then(|v| v.as_sequence_mut()) else { continue; };
+        for inp in inputs.iter_mut() {
+            let Some(inp_map) = inp.as_mapping_mut() else { continue; };
+            let name = inp_map.get(serde_yaml::Value::String("name".to_string())).and_then(|v| v.as_str());
+            if name != Some(input_name) {
+                continue;
+            }
+
+            let panel_key = serde_yaml::Value::String("panel_api".to_string());
+            let credits_key = serde_yaml::Value::String("credits".to_string());
+            let panel_value = inp_map.entry(panel_key).or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+            match panel_value {
+                serde_yaml::Value::Mapping(map) => {
+                    map.insert(credits_key, serde_yaml::Value::String(credits.to_string()));
+                }
+                serde_yaml::Value::Null => {
+                    let mut map = serde_yaml::Mapping::new();
+                    map.insert(credits_key, serde_yaml::Value::String(credits.to_string()));
+                    *panel_value = serde_yaml::Value::Mapping(map);
+                }
+                _ => {
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: input.panel_api is not a mapping in source.yml");
+                }
+            }
+
+            let serialized = serde_yaml::to_string(&doc)
+                .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
+            let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
+            tokio::fs::write(source_file_path, serialized)
+                .await
+                .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
+            return Ok(());
+        }
+    }
+    create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml")
 }
 
 async fn patch_batch_csv_append(
@@ -887,6 +998,33 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
                             password: p.to_string(),
                             exp_date: a.exp_date,
                         });
+                    }
+                }
+            }
+
+            if !panel_cfg.query_parameter.account_info.is_empty() {
+                let creds = accounts.first().map(|acct| (acct.username.as_str(), acct.password.as_str()));
+                match panel_account_info(app_state.as_ref(), panel_cfg, creds).await {
+                    Ok(Some(credits)) => {
+                        let normalized = credits.trim().to_string();
+                        if !normalized.is_empty()
+                            && panel_cfg.credits.as_deref().map(str::trim) != Some(normalized.as_str())
+                        {
+                            let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
+                            if let Err(err) = patch_source_yml_update_panel_api_credits(&sources_path, &input.name, normalized.as_str()).await {
+                                debug_if_enabled!("panel_api boot sync failed to persist credits to source.yml: {}", err);
+                            } else {
+                                any_change = true;
+                            }
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(err) => {
+                        debug_if_enabled!(
+                            "panel_api account_info failed for {}: {}",
+                            sanitize_sensitive_info(&input.name),
+                            sanitize_sensitive_info(err.to_string().as_str())
+                        );
                     }
                 }
             }
