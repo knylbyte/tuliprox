@@ -1,6 +1,6 @@
 $movie-card-height: 24rem;
 $movie-card-width: 16rem;
-$live-card-width: 280px;
+$live-card-width: 17.5rem;
 
 .tp__playlist-explorer {
   display: flex;
@@ -205,9 +205,6 @@ $live-card-width: 280px;
           max-height: 3rem;
           min-height: 3rem;
           aspect-ratio: 1 / 1;
-        }
-
-        &-title {
         }
       }
     }

@@ -1863,14 +1863,14 @@ impl FileLock {
     fn try_lock(filepath: &Path) -> io::Result<Self> {
         // Sidecar Lock Pattern: Lock a separate .lock file, not the data file itself.
         // This ensures implementation works on Windows where locked files cannot be renamed/deleted.
-        let lock_path = lock_path(filepath);
+        let lock_path_filename = lock_path(filepath);
         
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true) // Create if missing
             .truncate(false) // Do not truncate, just open
-            .open(&lock_path)?;
+            .open(&lock_path_filename)?;
 
         // Try to acquire exclusive advisory lock.
         // If another process holds it, this returns immediately with Error (WouldBlock).
