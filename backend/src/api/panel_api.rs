@@ -169,6 +169,16 @@ fn validate_account_info_params(params: &[PanelApiQueryParamDto]) -> Result<(), 
     Ok(())
 }
 
+fn validate_client_adult_content_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    require_api_key_param(params, "query_parameter.client_adult_content")?;
+    let has_user = params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("username"));
+    let has_pass = params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("password"));
+    if has_user || has_pass {
+        require_username_password_params_auto(params, "query_parameter.client_adult_content")?;
+    }
+    Ok(())
+}
+
 fn validate_panel_api_config(cfg: &PanelApiConfigDto) -> Result<(), TuliproxError> {
     if cfg.url.trim().is_empty() {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: url is missing");
@@ -389,6 +399,32 @@ async fn panel_account_info(
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: account_info response missing credits");
     };
     Ok(Some(credits))
+}
+
+async fn panel_client_adult_content(
+    app_state: &AppState,
+    cfg: &PanelApiConfigDto,
+    creds: Option<(&str, &str)>,
+) -> Result<(), TuliproxError> {
+    if cfg.query_parameter.client_adult_content.is_empty() {
+        return Ok(());
+    }
+    validate_client_adult_content_params(&cfg.query_parameter.client_adult_content)?;
+    let params = resolve_query_params(
+        &cfg.query_parameter.client_adult_content,
+        cfg.api_key.as_deref(),
+        creds,
+    )?;
+    let url = build_panel_url(cfg.url.as_str(), &params)?;
+    let json = panel_get_json(app_state, url).await?;
+    let Some(obj) = first_json_object(&json) else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_adult_content response is not a JSON object/array");
+    };
+    let status_ok = obj.get("status").is_some_and(parse_boolish);
+    if !status_ok {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_adult_content status=false");
+    }
+    Ok(())
 }
 
 fn extract_account_creds_from_input(input: &ConfigInput) -> Option<(String, String)> {
@@ -800,6 +836,13 @@ async fn try_renew_expired_account(
         }
         match panel_client_renew(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str()).await {
             Ok(()) => {
+                if let Err(err) = panel_client_adult_content(app_state, panel_cfg, Some((acct.username.as_str(), acct.password.as_str()))).await {
+                    debug_if_enabled!(
+                        "panel_api client_adult_content failed for {}: {}",
+                        sanitize_sensitive_info(&acct.name),
+                        sanitize_sensitive_info(err.to_string().as_str())
+                    );
+                }
                 let refreshed_exp = panel_client_info(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str())
                     .await
                     .ok()
@@ -856,6 +899,14 @@ async fn try_create_new_account(
                 existing_names.extend(aliases.iter().map(|a| a.name.clone()));
             }
             let alias_name = derive_unique_alias_name(&existing_names, &input.name, &username);
+
+            if let Err(err) = panel_client_adult_content(app_state, panel_cfg, Some((&username, &password))).await {
+                debug_if_enabled!(
+                    "panel_api client_adult_content failed for {}: {}",
+                    sanitize_sensitive_info(&alias_name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+            }
 
             let exp_date = panel_client_info(app_state, panel_cfg, &username, &password)
                 .await
@@ -1061,6 +1112,18 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
                     }
                 }
                 any_change = true;
+            }
+
+            if !panel_cfg.query_parameter.client_adult_content.is_empty() {
+                for acct in &accounts {
+                    if let Err(err) = panel_client_adult_content(app_state.as_ref(), panel_cfg, Some((acct.username.as_str(), acct.password.as_str()))).await {
+                        debug_if_enabled!(
+                            "panel_api client_adult_content failed for {}: {}",
+                            sanitize_sensitive_info(&acct.name),
+                            sanitize_sensitive_info(err.to_string().as_str())
+                        );
+                    }
+                }
             }
         }
     }

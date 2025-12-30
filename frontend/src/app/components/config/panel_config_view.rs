@@ -15,6 +15,7 @@ const LABEL_API_KEY: &str = "LABEL.API_KEY";
 const LABEL_STATUS_READY: &str = "LABEL.PANEL_STATUS_READY";
 const LABEL_STATUS_INVALID: &str = "LABEL.PANEL_STATUS_INVALID";
 const LABEL_STATUS_DISABLED: &str = "LABEL.PANEL_STATUS_DISABLED";
+const LABEL_PANEL_ADULT_CONTENT: &str = "LABEL.PANEL_ADULT_CONTENT";
 const LABEL_PANEL_CREDITS: &str = "LABEL.PANEL_CREDITS";
 const LABEL_VALIDATION: &str = "LABEL.VALIDATION";
 const HINT_PANEL_INFO: &str = "HINT.CONFIG.PANEL.INFO";
@@ -22,19 +23,21 @@ const HINT_PANEL_ENABLE: &str = "HINT.CONFIG.PANEL.ENABLE";
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum PanelSection {
+    AccountInfo,
     Info,
     New,
     Renew,
-    AccountInfo,
+    AdultContent,
 }
 
 impl PanelSection {
     fn label_key(&self) -> &'static str {
         match self {
+            Self::AccountInfo => "LABEL.PANEL_ACCOUNT_INFO",
             Self::Info => "LABEL.PANEL_CLIENT_INFO",
             Self::New => "LABEL.PANEL_CLIENT_NEW",
             Self::Renew => "LABEL.PANEL_CLIENT_RENEW",
-            Self::AccountInfo => "LABEL.PANEL_ACCOUNT_INFO",
+            Self::AdultContent => LABEL_PANEL_ADULT_CONTENT,
         }
     }
 }
@@ -101,10 +104,11 @@ fn params_mut(
     section: PanelSection,
 ) -> &mut Vec<PanelApiQueryParamDto> {
     match section {
+        PanelSection::AccountInfo => &mut panel.query_parameter.account_info,
         PanelSection::Info => &mut panel.query_parameter.client_info,
         PanelSection::New => &mut panel.query_parameter.client_new,
         PanelSection::Renew => &mut panel.query_parameter.client_renew,
-        PanelSection::AccountInfo => &mut panel.query_parameter.account_info,
+        PanelSection::AdultContent => &mut panel.query_parameter.client_adult_content,
     }
 }
 
@@ -135,32 +139,45 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
     }
 
     let sections = [
+        (PanelSection::AccountInfo, &panel.query_parameter.account_info, false),
         (PanelSection::Info, &panel.query_parameter.client_info, true),
         (PanelSection::New, &panel.query_parameter.client_new, true),
         (PanelSection::Renew, &panel.query_parameter.client_renew, true),
-        (PanelSection::AccountInfo, &panel.query_parameter.account_info, false),
+        (PanelSection::AdultContent, &panel.query_parameter.client_adult_content, false),
     ];
     for (section, params, required) in sections {
         if params.is_empty() {
             if required {
                 errors.push(match section {
+                    PanelSection::AccountInfo => "account_info: empty".to_string(),
                     PanelSection::Info => "client_info: empty".to_string(),
                     PanelSection::New => "client_new: empty".to_string(),
                     PanelSection::Renew => "client_renew: empty".to_string(),
-                    PanelSection::AccountInfo => "account_info: empty".to_string(),
+                    PanelSection::AdultContent => "client_adult_content: empty".to_string(),
                 });
             }
             continue;
         }
         if !has_param(params, "api_key") {
             errors.push(match section {
+                PanelSection::AccountInfo => "account_info: missing api_key param".to_string(),
                 PanelSection::Info => "client_info: missing api_key param".to_string(),
                 PanelSection::New => "client_new: missing api_key param".to_string(),
                 PanelSection::Renew => "client_renew: missing api_key param".to_string(),
-                PanelSection::AccountInfo => "account_info: missing api_key param".to_string(),
+                PanelSection::AdultContent => "client_adult_content: missing api_key param".to_string(),
             });
         }
         match section {
+            PanelSection::AccountInfo => {
+                if has_param(params, "username") || has_param(params, "password") {
+                    if get_param_value(params, "username").as_deref() != Some("auto") {
+                        errors.push("account_info: username must be auto".to_string());
+                    }
+                    if get_param_value(params, "password").as_deref() != Some("auto") {
+                        errors.push("account_info: password must be auto".to_string());
+                    }
+                }
+            }
             PanelSection::New => {
                 if has_param(params, "user") {
                     errors.push("client_new: must not include user".to_string());
@@ -188,13 +205,13 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
                     errors.push("client_info: password must be auto".to_string());
                 }
             }
-            PanelSection::AccountInfo => {
+            PanelSection::AdultContent => {
                 if has_param(params, "username") || has_param(params, "password") {
                     if get_param_value(params, "username").as_deref() != Some("auto") {
-                        errors.push("account_info: username must be auto".to_string());
+                        errors.push("client_adult_content: username must be auto".to_string());
                     }
                     if get_param_value(params, "password").as_deref() != Some("auto") {
-                        errors.push("account_info: password must be auto".to_string());
+                        errors.push("client_adult_content: password must be auto".to_string());
                     }
                 }
             }
@@ -214,6 +231,7 @@ fn ensure_required_params(params: &mut Vec<PanelApiQueryParamDto>, section: Pane
     };
     ensure(params, "api_key", "auto");
     match section {
+        PanelSection::AccountInfo => {}
         PanelSection::New => {
             params.retain(|p| !p.key.trim().eq_ignore_ascii_case("user"));
             ensure(params, "type", "m3u");
@@ -227,7 +245,7 @@ fn ensure_required_params(params: &mut Vec<PanelApiQueryParamDto>, section: Pane
             ensure(params, "username", "auto");
             ensure(params, "password", "auto");
         }
-        PanelSection::AccountInfo => {}
+        PanelSection::AdultContent => {}
     }
 }
 
@@ -625,6 +643,9 @@ pub fn PanelConfigView() -> Html {
         let account_info = panel
             .map(|p| p.query_parameter.account_info.as_slice())
             .unwrap_or(&[]);
+        let adult_content = panel
+            .map(|p| p.query_parameter.client_adult_content.as_slice())
+            .unwrap_or(&[]);
         let credits_value = panel
             .and_then(|p| p.credits.as_ref())
             .map(|credits| credits.trim().to_string())
@@ -662,10 +683,11 @@ pub fn PanelConfigView() -> Html {
                             <>
                                 <Input name="panel_url" label={Some(translate.t(LABEL_URL))} value={url_val} on_change={Some(on_url)} placeholder={Some("https://panel.example.tld/api.php".to_string())}/>
                                 <Input name="panel_api_key" label={Some(translate.t(LABEL_API_KEY))} value={api_key_val} hidden={true} on_change={Some(on_api_key)} placeholder={Some("...".to_string())}/>
-                                { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::Info, translate.t(PanelSection::Info.label_key()), client_info) }
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::AccountInfo, translate.t(PanelSection::AccountInfo.label_key()), account_info) }
+                                { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::Info, translate.t(PanelSection::Info.label_key()), client_info) }
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::New, translate.t(PanelSection::New.label_key()), client_new) }
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::Renew, translate.t(PanelSection::Renew.label_key()), client_renew) }
+                                { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::AdultContent, translate.t(PanelSection::AdultContent.label_key()), adult_content) }
                                 { html_if!(has_errors, {
                                     <div class="tp__panel-config-view__errors">
                                         <h2>{ translate.t(LABEL_VALIDATION) }</h2>
@@ -689,12 +711,12 @@ pub fn PanelConfigView() -> Html {
                                         <span class="tp__form-field__value">{ if api_key_val.is_empty() { "—".to_string() } else { "••••••••".to_string() } }</span>
                                     </div>
                                     <div class="tp__form-field tp__form-field__text">
-                                        <label>{ translate.t(PanelSection::Info.label_key()) }</label>
-                                        <span class="tp__form-field__value">{ format!("{} params", client_info.len()) }</span>
-                                    </div>
-                                    <div class="tp__form-field tp__form-field__text">
                                         <label>{ translate.t(PanelSection::AccountInfo.label_key()) }</label>
                                         <span class="tp__form-field__value">{ format!("{} params", account_info.len()) }</span>
+                                    </div>
+                                    <div class="tp__form-field tp__form-field__text">
+                                        <label>{ translate.t(PanelSection::Info.label_key()) }</label>
+                                        <span class="tp__form-field__value">{ format!("{} params", client_info.len()) }</span>
                                     </div>
                                     <div class="tp__form-field tp__form-field__text">
                                         <label>{ translate.t(PanelSection::New.label_key()) }</label>
@@ -703,6 +725,10 @@ pub fn PanelConfigView() -> Html {
                                     <div class="tp__form-field tp__form-field__text">
                                         <label>{ translate.t(PanelSection::Renew.label_key()) }</label>
                                         <span class="tp__form-field__value">{ format!("{} params", client_renew.len()) }</span>
+                                    </div>
+                                    <div class="tp__form-field tp__form-field__text">
+                                        <label>{ translate.t(PanelSection::AdultContent.label_key()) }</label>
+                                        <span class="tp__form-field__value">{ format!("{} params", adult_content.len()) }</span>
                                     </div>
                                 </div>
                                 { html_if!(has_errors, {

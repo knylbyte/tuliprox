@@ -11,13 +11,15 @@ pub struct PanelApiQueryParamDto {
 #[serde(deny_unknown_fields)]
 pub struct PanelApiQueryParametersDto {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub account_info: Vec<PanelApiQueryParamDto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub client_info: Vec<PanelApiQueryParamDto>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub client_new: Vec<PanelApiQueryParamDto>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub client_renew: Vec<PanelApiQueryParamDto>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub account_info: Vec<PanelApiQueryParamDto>,
+    pub client_adult_content: Vec<PanelApiQueryParamDto>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]

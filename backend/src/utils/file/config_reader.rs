@@ -365,7 +365,7 @@ fn format_sources_yaml_panel_api_query_params_flow_style_impl(yaml: &str) -> Str
             } else if panel_api_indent.is_some() && query_indent.is_none() && trimmed == "query_parameter:" {
                 query_indent = Some(indent);
             } else if query_indent.is_some()
-                && matches!(trimmed, "client_info:" | "client_new:" | "client_renew:" | "account_info:")
+                && matches!(trimmed, "account_info:" | "client_info:" | "client_new:" | "client_renew:" | "client_adult_content:")
             {
                 section_indent = Some(indent);
             }
