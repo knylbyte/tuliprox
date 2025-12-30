@@ -331,6 +331,44 @@ async fn provider_stream_request(
     }
 }
 
+async fn provider_stream_request_once(
+    request_client: &reqwest::Client,
+    stream_options: &ProviderStreamFactoryOptions,
+) -> Result<ProviderStreamFactoryResponse, StatusCode> {
+    let (client, _partial_content) = prepare_client(request_client, stream_options);
+    match client.send().await {
+        Ok(mut response) => {
+            let status = response.status();
+            if status.is_success() {
+                if log_enabled!(log::Level::Debug) {
+                    let message = format!(
+                        "Provider response  status: '{}' headers: {:?}",
+                        response.status(),
+                        response.headers_mut()
+                    );
+                    debug!("{}", sanitize_sensitive_info(&message));
+                }
+
+                let response_headers: Vec<(String, String)> =
+                    get_response_headers(response.headers());
+                let response_info = Some((
+                    response_headers,
+                    response.status(),
+                    Some(response.url().clone()),
+                    None,
+                ));
+                let provider_stream = response
+                    .bytes_stream()
+                    .map_err(|err| StreamError::reqwest(&err))
+                    .boxed();
+                return Ok((provider_stream, response_info));
+            }
+            Err(status)
+        }
+        Err(_) => Err(StatusCode::SERVICE_UNAVAILABLE),
+    }
+}
+
 async fn handle_channel_unavailable_stream(app_state: &Arc<AppState>,
                                                stream_options: &ProviderStreamFactoryOptions
 ) -> Result<Option<ProviderStreamFactoryResponse>, StatusCode> {
@@ -398,6 +436,130 @@ async fn get_provider_stream(
     stream_options.cancel_reconnect();
     app_state.connection_manager.release_provider_connection(&stream_options.addr).await;
     Err(StatusCode::SERVICE_UNAVAILABLE)
+}
+
+#[allow(clippy::too_many_lines)]
+pub async fn create_provider_stream_once(
+    app_state: &Arc<AppState>,
+    client: &reqwest::Client,
+    stream_options: ProviderStreamFactoryOptions,
+) -> Option<ProviderStreamFactoryResponse> {
+    let client_stream_factory = |stream, reconnect_flag, range_cnt| {
+        let stream = if !stream_options.is_piped()
+            && stream_options.is_buffer_enabled()
+            && !stream_options.is_shared_stream()
+        {
+            BufferedStream::new(
+                stream,
+                stream_options.get_buffer_size(),
+                stream_options.get_reconnect_flag_clone(),
+                stream_options.get_url_as_str(),
+            )
+            .boxed()
+        } else {
+            stream
+        };
+        ClientStream::new(
+            stream,
+            reconnect_flag,
+            range_cnt,
+            stream_options.get_url_as_str(),
+        )
+        .boxed()
+    };
+
+    let Ok((init_stream, info)) = provider_stream_request_once(client, &stream_options).await else {
+        return None;
+    };
+
+    let is_media_stream_or_not_piped = if let Some((headers, _, _, _custom_video_type)) = &info {
+        !stream_options.pipe_stream && classify_content_type(headers) == MimeCategory::Video
+    } else {
+        !stream_options.pipe_stream
+    };
+
+    let continue_signal = stream_options.get_reconnect_flag_clone();
+    if is_media_stream_or_not_piped && stream_options.should_reconnect() {
+        let continue_client_signal = Arc::clone(&continue_signal);
+        let continue_streaming_signal = continue_client_signal.clone();
+        let stream_options_provider = stream_options.clone();
+        let app_state_clone = Arc::clone(app_state);
+        let client = client.clone();
+        let unfold: BoxedProviderStream = stream::unfold((), move |()| {
+            let client = client.clone();
+            let stream_opts = stream_options_provider.clone();
+            let continue_streaming = continue_streaming_signal.clone();
+            let app_state_clone = Arc::clone(&app_state_clone);
+            async move {
+                if continue_streaming.is_active() {
+                    match get_provider_stream(&app_state_clone, &client, &stream_opts).await {
+                        Ok(Some((stream, _info))) => Some((stream, ())),
+                        Ok(None) => {
+                            app_state_clone
+                                .connection_manager
+                                .release_provider_connection(&stream_opts.addr)
+                                .await;
+                            continue_streaming.notify();
+                            if let (Some(boxed_provider_stream), _response_info) =
+                                create_channel_unavailable_stream(
+                                    &app_state_clone.app_config,
+                                    &get_response_headers(stream_opts.get_headers()),
+                                    StatusCode::SERVICE_UNAVAILABLE,
+                                )
+                            {
+                                return Some((boxed_provider_stream, ()));
+                            }
+                            None
+                        }
+                        Err(status) => {
+                            app_state_clone
+                                .connection_manager
+                                .release_provider_connection(&stream_opts.addr)
+                                .await;
+                            continue_streaming.notify();
+                            if let (Some(boxed_provider_stream), _response_info) =
+                                create_channel_unavailable_stream(
+                                    &app_state_clone.app_config,
+                                    &get_response_headers(stream_opts.get_headers()),
+                                    status,
+                                )
+                            {
+                                return Some((boxed_provider_stream, ()));
+                            }
+                            None
+                        }
+                    }
+                } else {
+                    app_state_clone
+                        .connection_manager
+                        .release_provider_connection(&stream_opts.addr)
+                        .await;
+                    None
+                }
+            }
+        })
+        .flatten()
+        .boxed();
+        Some((
+            client_stream_factory(
+                init_stream.chain(unfold).boxed(),
+                Arc::clone(&continue_client_signal),
+                stream_options.get_range_bytes_clone(),
+            )
+            .boxed(),
+            info,
+        ))
+    } else {
+        Some((
+            client_stream_factory(
+                init_stream.boxed(),
+                Arc::clone(&continue_signal),
+                stream_options.get_range_bytes_clone(),
+            )
+            .boxed(),
+            info,
+        ))
+    }
 }
 
 #[allow(clippy::too_many_lines)]
