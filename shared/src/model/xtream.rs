@@ -1,6 +1,6 @@
 use crate::utils::{deserialize_as_option_string, deserialize_as_string_array,
                    deserialize_number_from_string, deserialize_number_from_string_or_zero,
-                   deserialize_as_string, string_default_on_null, string_or_number_u32,
+                   deserialize_as_string, string_default_on_null,
                    deserialize_json_as_opt_string, serialize_json_as_opt_string};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -9,18 +9,19 @@ use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct XtreamVideoInfoMovieData {
+    #[serde(default, deserialize_with = "string_default_on_null")]
     pub name: String,
     #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub category_id: u32,
     #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub stream_id: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "string_default_on_null")]
     pub direct_source: String,
     #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub custom_sid: Option<String>,
     #[serde(default, deserialize_with = "deserialize_as_string")]
     pub added: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "string_default_on_null")]
     pub container_extension: String,
 }
 
@@ -30,7 +31,7 @@ pub struct XtreamVideoInfoInfo {
     pub kinopoisk_url: Option<String>,
     #[serde(default, deserialize_with = "deserialize_as_string")]
     pub tmdb_id: String, // is in get_vod_streams
-    #[serde(default)]
+    #[serde(default, deserialize_with = "string_default_on_null")]
     pub name: String, // is in get_vod_streams
     pub o_name: Option<String>,
     pub cover_big: Option<String>,
@@ -82,15 +83,15 @@ pub struct XtreamVideoInfo {
 pub struct XtreamSeriesInfoSeason {
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub air_date: String,
-    #[serde(default, deserialize_with = "string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub episode_count: u32,
-    #[serde(default, deserialize_with = "string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub id: u32,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub name: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub overview: String,
-    #[serde(default, deserialize_with = "string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub season_number: u32,
     #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub vote_average: f64,
@@ -131,7 +132,7 @@ pub struct XtreamSeriesInfoInfo {
     pub youtube_trailer: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub episode_run_time: String,
-    #[serde(default, deserialize_with = "string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub category_id: u32,
 }
 
@@ -146,7 +147,7 @@ pub struct XtreamSeriesInfoEpisodeInfo {
     pub rating: f64,
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub id: Option<u32>,
-    #[serde(default, deserialize_with = "string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub duration_secs: u32,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub duration: String,
@@ -156,16 +157,16 @@ pub struct XtreamSeriesInfoEpisodeInfo {
     pub video: Option<String>,
     #[serde(default, deserialize_with = "deserialize_json_as_opt_string")]
     pub audio: Option<String>,
-    #[serde(default, deserialize_with = "string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub bitrate: u32,
 }
 
 // Used for serde_json deserialization, cannot be used with bincode
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XtreamSeriesInfoEpisode {
-    #[serde(default, deserialize_with = "string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub id: u32,
-    #[serde(default, deserialize_with = "string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub episode_num: u32,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub title: String,
@@ -177,7 +178,7 @@ pub struct XtreamSeriesInfoEpisode {
     pub custom_sid: Option<String>,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub added: String,
-    #[serde(default, deserialize_with = "string_or_number_u32")]
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub season: u32,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub direct_source: String,
@@ -188,6 +189,21 @@ impl XtreamSeriesInfoEpisode {
         self.id
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct XtreamSeriesInfo {
+    #[serde(default)]
+    pub seasons: Option<Vec<XtreamSeriesInfoSeason>>,
+    #[serde(default)]
+    pub info: XtreamSeriesInfoInfo,
+    #[serde(
+        default,
+        serialize_with = "serialize_episodes",
+        deserialize_with = "deserialize_episodes"
+    )]
+    pub episodes: Option<Vec<XtreamSeriesInfoEpisode>>,
+}
+
 
 // sometimes episodes are a map with season as key, sometimes an array
 fn deserialize_episodes<'de, D>(deserializer: D) -> Result<Option<Vec<XtreamSeriesInfoEpisode>>, D::Error>
@@ -268,18 +284,4 @@ where
             seasons.serialize(serializer)
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct XtreamSeriesInfo {
-    #[serde(default)]
-    pub seasons: Option<Vec<XtreamSeriesInfoSeason>>,
-    #[serde(default)]
-    pub info: XtreamSeriesInfoInfo,
-    #[serde(
-        default,
-        serialize_with = "serialize_episodes",
-        deserialize_with = "deserialize_episodes"
-    )]
-    pub episodes: Option<Vec<XtreamSeriesInfoEpisode>>,
 }
