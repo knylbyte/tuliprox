@@ -5,11 +5,20 @@ pub struct InfoDocUtils {}
 
 impl InfoDocUtils {
     pub fn extract_year_from_release_date(release_date: &str) -> Option<u32> {
-        if release_date.len() >= 4 {
-            release_date[..4].parse::<u32>().ok()
-        } else {
-            None
+        // collect only digits
+        let digits_only: String = release_date
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .take(4)
+            .collect();
+
+        // do we have 4 digits?
+        if digits_only.len() < 4 {
+            return None;
         }
+
+        // and parse year
+        digits_only.parse::<u32>().ok()
     }
 
     pub fn make_bdpath_resource_url(resource_url: Option<&str>, bd_path: &str, index: usize, field_prefix: &str) -> String {
