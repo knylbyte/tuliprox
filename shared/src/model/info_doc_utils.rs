@@ -9,18 +9,16 @@ impl InfoDocUtils {
         let digits_only: String = release_date
             .chars()
             .filter(|c| c.is_ascii_digit())
+            .take(4)
             .collect();
 
-        // do we have 4 digits ?
+        // do we have 4 digits?
         if digits_only.len() < 4 {
             return None;
         }
 
-        // extract last 4 digits
-        let year_str = &digits_only[digits_only.len() - 4..];
-
         // and parse year
-        year_str.parse::<u32>().ok()
+        digits_only.parse::<u32>().ok()
     }
 
     pub fn make_bdpath_resource_url(resource_url: Option<&str>, bd_path: &str, index: usize, field_prefix: &str) -> String {
