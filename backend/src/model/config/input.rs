@@ -4,7 +4,7 @@ use chrono::Utc;
 use log::warn;
 use shared::error::TuliproxError;
 use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, StagedInputDto};
-use shared::utils::{get_base_url_from_str, get_credentials_from_url};
+use shared::utils::{get_credentials_from_url};
 use shared::{check_input_connections, info_err, write_if_some};
 use shared::check_input_credentials;
 use std::collections::HashMap;
@@ -113,7 +113,7 @@ impl From<&ConfigInputAliasDto> for ConfigInputAlias {
         Self {
             id: dto.id,
             name: dto.name.clone(),
-            url: get_base_url_from_str(&dto.url).unwrap_or_else(|| dto.url.clone()),
+            url: dto.url.clone(),
             username: dto.username.clone(),
             password: dto.password.clone(),
             priority: dto.priority,
@@ -261,7 +261,7 @@ impl From<&ConfigInputDto> for ConfigInput {
             name: dto.name.clone(),
             input_type: dto.input_type,
             headers: dto.headers.clone(),
-            url: dto.url.clone(), //get_base_url_from_str(&dto.url).map_or_else(|| dto.url.to_string(), |base_url| base_url),
+            url: dto.url.clone(),
             epg: dto.epg.as_ref().map(EpgConfig::from),
             username: dto.username.clone(),
             password: dto.password.clone(),

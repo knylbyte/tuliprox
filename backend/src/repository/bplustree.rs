@@ -139,7 +139,7 @@ impl PageHeader {
         let free_start = u16::from_le_bytes(buf[4..6].try_into().map_err(|_| PageError::Corrupted)?);
         let free_end = u16::from_le_bytes(buf[6..8].try_into().map_err(|_| PageError::Corrupted)?);
         let right_sibling = u64::from_le_bytes(buf[8..16].try_into().map_err(|_| PageError::Corrupted)?);
-        
+
         Ok(Self {
             page_type,
             cell_count,
@@ -204,7 +204,7 @@ impl<'a> SlottedPage<'a> {
 
     pub fn open(data: &'a mut [u8]) -> Result<Self, PageError> {
         if data.len() < PAGE_HEADER_SIZE_USIZE {
-             return Err(PageError::Corrupted);
+            return Err(PageError::Corrupted);
         }
         let header = PageHeader::deserialize(&data[..PAGE_HEADER_SIZE_USIZE])?;
         Ok(Self { header, data })
@@ -213,7 +213,7 @@ impl<'a> SlottedPage<'a> {
     pub fn commit(&mut self) {
         let h_bytes = self.header.serialize();
         if self.data.len() >= PAGE_HEADER_SIZE_USIZE {
-             self.data[..PAGE_HEADER_SIZE_USIZE].copy_from_slice(&h_bytes);
+            self.data[..PAGE_HEADER_SIZE_USIZE].copy_from_slice(&h_bytes);
         }
     }
 
@@ -232,18 +232,18 @@ impl<'a> SlottedPage<'a> {
         if self.free_space() < required + SLOT_SIZE {
             return Err(PageError::NoSpace);
         }
-        
+
         let req_u16 = u16::try_from(required).map_err(|_| PageError::NoSpace)?;
         // Data grows downwards. Safe cast due to page size check.
         let offset = self.header.free_end.checked_sub(req_u16).ok_or(PageError::NoSpace)?;
-        
+
         // Bounds check
         if (offset as usize) + required > self.data.len() {
-             return Err(PageError::NoSpace);
+            return Err(PageError::NoSpace);
         }
-        
+
         self.data[offset as usize..(offset as usize + required)].copy_from_slice(cell_data);
-        
+
         self.header.free_end = offset;
         Ok(offset)
     }
@@ -251,11 +251,11 @@ impl<'a> SlottedPage<'a> {
     pub fn insert_at_index(&mut self, index: usize, val: &[u8]) -> Result<(), PageError> {
         // 1. Append cell data
         let offset = self.append_cell(val)?;
-        
+
         // 2. Insert slot
         let slot_area_start = PAGE_HEADER_SIZE_USIZE;
         let count = self.header.cell_count as usize;
-        
+
         if index > count {
             return Err(PageError::InvalidIndex);
         }
@@ -263,31 +263,31 @@ impl<'a> SlottedPage<'a> {
         // Shift slots if necessary
         let insert_pos = slot_area_start + (index * SLOT_SIZE);
         if self.data.len() < insert_pos + SLOT_SIZE {
-             return Err(PageError::NoSpace); // Should cover src_start..src_end too if valid
+            return Err(PageError::NoSpace); // Should cover src_start..src_end too if valid
         }
 
         if index < count {
             let src_start = insert_pos;
             let src_end = slot_area_start + (count * SLOT_SIZE);
             let dest_start = insert_pos + SLOT_SIZE;
-            
+
             if self.data.len() < dest_start + (src_end - src_start) {
-                 return Err(PageError::NoSpace);
+                return Err(PageError::NoSpace);
             }
             self.data.copy_within(src_start..src_end, dest_start);
         }
 
         // Write new slot
         if insert_pos + 2 > self.data.len() {
-             return Err(PageError::NoSpace);
+            return Err(PageError::NoSpace);
         }
         self.data[insert_pos..insert_pos + 2].copy_from_slice(&offset.to_le_bytes());
-        
+
         // Update header
         self.header.cell_count += 1;
         self.header.free_start += u16::try_from(SLOT_SIZE).map_err(|_| PageError::NoSpace)?;
         self.commit();
-        
+
         Ok(())
     }
 
@@ -295,26 +295,26 @@ impl<'a> SlottedPage<'a> {
     // This creates tight coupling between SlottedPage (a generic page structure)
     // and the specific cell format used by BPlusTreeNode.
     pub fn get_cell(&self, index: usize) -> Option<&[u8]> {
-         if index >= self.header.cell_count as usize {
-             return None;
-         }
-         let slot_pos = PAGE_HEADER_SIZE_USIZE + (index * SLOT_SIZE);
-         // Safe slice access
-         if slot_pos + 2 > self.data.len() { return None; }
-         let offset = u16::from_le_bytes(self.data[slot_pos..slot_pos+2].try_into().ok()?);
-         
-         // Bounds check for length header
-         if (offset as usize) + 4 > self.data.len() { return None; }
-         let len = u32::from_le_bytes(self.data[offset as usize..offset as usize + 4].try_into().ok()?) as usize;
-         
-         if (offset as usize) + 4 + len > self.data.len() { return None; }
-         Some(&self.data[offset as usize..offset as usize + 4 + len])
+        if index >= self.header.cell_count as usize {
+            return None;
+        }
+        let slot_pos = PAGE_HEADER_SIZE_USIZE + (index * SLOT_SIZE);
+        // Safe slice access
+        if slot_pos + 2 > self.data.len() { return None; }
+        let offset = u16::from_le_bytes(self.data[slot_pos..slot_pos+2].try_into().ok()?);
+
+        // Bounds check for length header
+        if (offset as usize) + 4 > self.data.len() { return None; }
+        let len = u32::from_le_bytes(self.data[offset as usize..offset as usize + 4].try_into().ok()?) as usize;
+
+        if (offset as usize) + 4 + len > self.data.len() { return None; }
+        Some(&self.data[offset as usize..offset as usize + 4 + len])
     }
-    
+
     pub fn get_cell_offset(&self, index: usize) -> Option<u16> {
-         let slot_pos = PAGE_HEADER_SIZE_USIZE + (index * SLOT_SIZE);
-         if slot_pos + 2 > self.data.len() { return None; }
-         Some(u16::from_le_bytes(self.data[slot_pos..slot_pos+2].try_into().ok()?))
+        let slot_pos = PAGE_HEADER_SIZE_USIZE + (index * SLOT_SIZE);
+        if slot_pos + 2 > self.data.len() { return None; }
+        Some(u16::from_le_bytes(self.data[slot_pos..slot_pos+2].try_into().ok()?))
     }
 
     pub fn compact(&mut self) -> Result<(), PageError> {
@@ -342,27 +342,27 @@ impl<'a> SlottedPage<'a> {
         let count = self.header.cell_count as usize;
         let mut total_bytes = 0;
         let mut split_idx = count / 2;
-        
+
         let mut sizes = Vec::with_capacity(count);
         for i in 0..count {
             if let Some(cell) = self.get_cell(i) {
-                 sizes.push(cell.len());
-                 total_bytes += cell.len();
+                sizes.push(cell.len());
+                total_bytes += cell.len();
             } else {
-                 sizes.push(0); 
+                sizes.push(0);
             }
         }
-        
+
         let target = total_bytes / 2;
         let mut current = 0;
         for (i, &s) in sizes.iter().enumerate() {
             current += s;
             if current >= target {
-                split_idx = i + 1; 
+                split_idx = i + 1;
                 break;
             }
         }
-        
+
         // Fix for split logic:
         if count == 0 {
             return Err(PageError::InvalidIndex); // Cannot split empty page
@@ -374,25 +374,25 @@ impl<'a> SlottedPage<'a> {
         }
 
         if split_idx >= count { split_idx = count.saturating_sub(1); }
-        if split_idx == 0 && count > 1 { split_idx = 1; } 
+        if split_idx == 0 && count > 1 { split_idx = 1; }
 
         let mut new_buffer = vec![0u8; PAGE_SIZE_USIZE];
         {
             let mut new_page = SlottedPage::new(&mut new_buffer, self.header.page_type)?;
             for i in split_idx..count {
                 if let Some(cell) = self.get_cell(i) {
-                     new_page.insert_at_index(i - split_idx, cell)?;
+                    new_page.insert_at_index(i - split_idx, cell)?;
                 }
             }
         }
-        
+
         self.header.cell_count = u16::try_from(split_idx).map_err(|_| PageError::InvalidIndex)?;
         let new_free_start = PAGE_HEADER_SIZE_USIZE + split_idx * SLOT_SIZE;
         self.header.free_start = u16::try_from(new_free_start).map_err(|_| PageError::NoSpace)?;
-        self.commit(); 
-        
+        self.commit();
+
         self.compact()?;
-        
+
         Ok(Some(new_buffer))
     }
 }
@@ -821,7 +821,7 @@ where
                                 } else {
                                     None // Don't cache uncompressed data to save memory
                                 };
-                                
+
                                 node.value_info.push(ValueInfo {
                                     mode: ValueStorageMode::Single(u64::MAX), // Placeholder
                                     length: u32::try_from(stored_size).map_err(to_io_error)?,
@@ -962,7 +962,7 @@ where
                                 ValueStorageMode::Single(block_offset) => {
                                     // Write single value with compression format
                                     file.seek(SeekFrom::Start(block_offset))?;
-                                    
+
                                     // Apply adaptive compression or use cache
                                     let (flag, payload_ref) = if let Some((c_flag, c_payload)) = &info.compressed_cache {
                                         (*c_flag, c_payload.as_slice())
@@ -971,7 +971,7 @@ where
                                         // So we write raw bytes with NONE flag
                                         (COMPRESSION_FLAG_NONE, value_bytes.as_slice())
                                     };
-                                    
+
                                     // Write: [flag:1][payload]
                                     file.write_all(&[flag])?;
                                     file.write_all(payload_ref)?;
@@ -1247,19 +1247,19 @@ where
 
     fn load_value_with_len<R: Read + Seek>(file: &mut R, offset: u64, stored_len: u32) -> io::Result<V> {
         file.seek(SeekFrom::Start(offset))?;
-        
+
         // Read compression flag
         let mut flag = [0u8; 1];
         file.read_exact(&mut flag)?;
-        
+
         let data = if flag[0] == COMPRESSION_FLAG_LZ4 {
             // Compressed: [flag:1][lz4_payload_with_prepended_size]
             // We do NOT store explicit original length anymore, it's inside LZ4 blob
-            
+
             let compressed_len = stored_len as usize - 1; // 1 (flag)
             let mut compressed = vec![0u8; compressed_len];
             file.read_exact(&mut compressed)?;
-            
+
             lz4_flex::decompress_size_prepended(&compressed)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("LZ4 decompression failed: {e}")))?
         } else {
@@ -1269,7 +1269,7 @@ where
             file.read_exact(&mut data)?;
             data
         };
-        
+
         binary_deserialize(&data)
     }
 }
@@ -1477,8 +1477,8 @@ where
                     cache.insert(offset, buffer.to_owned());
                     (node, pointers)
                 }
-                Err(err) => {
-                    error!("Failed to read id tree from file {err}");
+                Err(_err) => {
+                    // It is possible the tree is empty or the file is being written to, so we just return None
                     return None;
                 }
             }
@@ -1538,8 +1538,8 @@ where
                     cache.insert(offset, buffer.to_owned());
                     (node, pointers)
                 }
-                Err(err) => {
-                    error!("Failed to read id tree from file {err}");
+                Err(_err) => {
+                    // It is possible the tree is empty or the file is being written to, so we just return None
                     return None;
                 }
             }
@@ -1817,7 +1817,7 @@ where
                     self.leaf_idx = 0;
                 }
                 Err(_err) => {
-                    // error!("BPlusTreeDiskIterator Failed to read next entry: {err}");
+                    // It is possible the tree is empty or the file is being written to, so we just return None
                     return None;
                 }
                 _ => return None,
@@ -1864,7 +1864,7 @@ impl FileLock {
         // Sidecar Lock Pattern: Lock a separate .lock file, not the data file itself.
         // This ensures implementation works on Windows where locked files cannot be renamed/deleted.
         let lock_path_filename = lock_path(filepath);
-        
+
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -1959,7 +1959,7 @@ where
                     self.file.write_all(&[flag])?;
                     // NOTE: For LZ4, payload already includes original length (prepended)
                     self.file.write_all(&payload)?;
-                    
+
                     // stored_len includes flag + payload
                     let stored_len = 1 + payload.len();
 
@@ -2048,18 +2048,18 @@ where
     /// returns The final root offset after all upserts, or an error if any operation fails
     fn insert_value_to_disk(&mut self, value: &V) -> io::Result<(u64, u32)> {
         let raw_bytes = binary_serialize(value)?;
-        
+
         // Decide whether to compress based on size and effectiveness
         let (flag, payload) = compress_if_beneficial(&raw_bytes);
 
         self.file.seek(SeekFrom::End(0))?;
         let offset = self.file.stream_position()?;
-        
+
         // Write: [flag:1][payload]
         self.file.write_all(&[flag])?;
         // NOTE: For LZ4, payload already includes original length (prepended)
         self.file.write_all(&payload)?;
-        
+
         // stored_len includes flag + payload
         let stored_len = 1 + payload.len();
         Ok((offset, u32::try_from(stored_len).map_err(to_io_error)?))
@@ -3281,7 +3281,7 @@ mod tests {
 
         // Simulate a leaf node with u32 keys and ValueInfo
         let key_counts = [10, 30, 50, 80, 100];
-        
+
         for count in key_counts {
             let keys: Vec<u32> = (0..count).collect();
             let value_info: Vec<ValueInfo> = (0..count)
@@ -3291,14 +3291,14 @@ mod tests {
                     compressed_cache: None,
                 })
                 .collect();
-            
+
             let keys_serialized = binary_serialize(&keys)?;
             let info_serialized = binary_serialize(&value_info)?;
-            
+
             // Total content: flag(1) + keys_len(4) + keys + info_len(4) + info
             let total = 1 + 4 + keys_serialized.len() + 4 + info_serialized.len();
             let fits_in_block = total <= PAGE_SIZE_USIZE;
-            
+
             println!(
                 "Keys={}: keys_bytes={}, info_bytes={}, total={}, fits_in_block={}",
                 count, keys_serialized.len(), info_serialized.len(), total, fits_in_block
@@ -3344,9 +3344,9 @@ mod page_tests {
         page.insert_at_index(1, &cell2).unwrap();
 
         assert_eq!(page.header.cell_count, 2);
-        
+
         let read1 = page.get_cell(0).expect("Get cell 0");
-        assert_eq!(&read1[4..], val1); 
+        assert_eq!(&read1[4..], val1);
 
         let read2 = page.get_cell(1).expect("Get cell 1");
         assert_eq!(&read2[4..], val2);
@@ -3367,12 +3367,12 @@ mod page_tests {
         }
 
         assert_eq!(page.header.cell_count, 6);
-        
+
         let new_page_bytes = page.split_off().expect("Split failed").expect("Should have split");
-        
+
         // Check original page
         assert_eq!(page.header.cell_count, 3);
-        
+
         // Check new page
         let header = PageHeader::deserialize(&new_page_bytes[..PAGE_HEADER_SIZE_USIZE]).expect("Deserialize failed");
         assert_eq!(header.cell_count, 3);
@@ -3404,4 +3404,3 @@ mod page_tests {
         }
     }
 }
-
