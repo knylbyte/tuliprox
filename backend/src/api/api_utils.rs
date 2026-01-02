@@ -7,8 +7,7 @@ use crate::api::model::{
     get_stream_response_with_headers, ActiveClientStream, AppState,
     BoxedProviderStream, CustomVideoStream, CustomVideoStreamType, ProviderHandle,
     ProviderStreamFactoryOptions, ProviderStreamFactoryResponse, ProviderStreamInfo, SharedStreamManager,
-    StreamError, ThrottledStream, UserApiRequest, ProvisioningStream, ProvisioningStreamKind,
-    ProvisioningStreamPayload,
+    StreamError, ThrottledStream, UserApiRequest, ProvisioningStream,
 };
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
 use crate::api::panel_api::try_provision_account_on_exhausted;
@@ -23,7 +22,7 @@ use arc_swap::ArcSwapOption;
 use axum::http::{HeaderMap};
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error,  log_enabled, trace, warn};
 use reqwest::header::RETRY_AFTER;
@@ -49,7 +48,6 @@ use url::Url;
 const CONTENT_TYPE_BIN: &str = "application/cbor";
 const PANEL_API_PROVISIONING_THROTTLE_KBPS: usize = 8000;
 const PANEL_API_PROVISIONING_RETRY_INTERVAL_MILLIS: u64 = 1000;
-const PANEL_API_PROVISIONING_PREFETCH_TIMEOUT_MILLIS: u64 = 2000;
 
 #[macro_export]
 macro_rules! try_option_bad_request {
@@ -502,47 +500,6 @@ fn is_ready_provider_stream(stream_info: &ProviderStreamInfo) -> bool {
     )
 }
 
-async fn prefetch_provider_stream(
-    mut stream: BoxedProviderStream,
-    timeout_millis: u64,
-    request_url: &str,
-) -> Option<BoxedProviderStream> {
-    let first = match tokio::time::timeout(Duration::from_millis(timeout_millis), stream.next()).await {
-        Ok(Some(Ok(bytes))) => bytes,
-        Ok(Some(Err(err))) => {
-            trace_if_enabled!(
-                "panel_api provisioning probe stream error before first chunk for {}: {err}",
-                sanitize_sensitive_info(request_url)
-            );
-            return None;
-        }
-        Ok(None) => {
-            trace_if_enabled!(
-                "panel_api provisioning probe stream ended before first chunk for {}",
-                sanitize_sensitive_info(request_url)
-            );
-            return None;
-        }
-        Err(_) => {
-            trace_if_enabled!(
-                "panel_api provisioning probe stream timed out before first chunk for {}",
-                sanitize_sensitive_info(request_url)
-            );
-            return None;
-        }
-    };
-
-    if first.is_empty() {
-        trace_if_enabled!(
-            "panel_api provisioning probe stream returned empty first chunk for {}",
-            sanitize_sensitive_info(request_url)
-        );
-        return None;
-    }
-
-    Some(stream::once(async move { Ok(first) }).chain(stream).boxed())
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn open_provider_stream(
     app_state: &Arc<AppState>,
@@ -678,33 +635,21 @@ async fn create_panel_api_provisioning_blocking_stream_details(
                         }
                     }
                     if is_ready_provider_stream(&stream_info) {
-                        if let Some(stream) = prefetch_provider_stream(
-                            stream,
-                            PANEL_API_PROVISIONING_PREFETCH_TIMEOUT_MILLIS,
-                            &request_url,
-                        )
-                        .await
-                        {
-                            if let Some(old_handle) = provider_handle.clone() {
-                                app_state
-                                    .connection_manager
-                                    .release_provider_handle(Some(old_handle))
-                                    .await;
-                            }
-                            return Some(StreamDetails {
-                                stream: Some(stream),
-                                stream_info,
-                                provider_name: new_handle.allocation.get_provider_name(),
-                                grace_period_millis,
-                                disable_provider_grace: false,
-                                reconnect_flag: Some(reconnect_flag),
-                                provider_handle: Some(new_handle),
-                            });
+                        if let Some(old_handle) = provider_handle.clone() {
+                            app_state
+                                .connection_manager
+                                .release_provider_handle(Some(old_handle))
+                                .await;
                         }
-                        trace_if_enabled!(
-                            "panel_api provisioning probe stream not ready for {}",
-                            sanitize_sensitive_info(&request_url)
-                        );
+                        return Some(StreamDetails {
+                            stream: Some(stream),
+                            stream_info,
+                            provider_name: new_handle.allocation.get_provider_name(),
+                            grace_period_millis,
+                            disable_provider_grace: false,
+                            reconnect_flag: Some(reconnect_flag),
+                            provider_handle: Some(new_handle),
+                        });
                     }
                     trace_if_enabled!(
                         "panel_api provisioning probe returned non-ready stream for {}",
@@ -779,7 +724,7 @@ async fn create_panel_api_provisioning_stream_details(
     )
     .boxed();
 
-    let (stream_tx, stream_rx) = oneshot::channel::<ProvisioningStreamPayload>();
+    let (stream_tx, stream_rx) = oneshot::channel::<BoxedProviderStream>();
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let provider_handle_state = Arc::new(StdMutex::new(None));
 
@@ -825,25 +770,15 @@ async fn create_panel_api_provisioning_stream_details(
             .await
             {
                 if let Some(tx) = stream_tx.take() {
-                    let _ = tx.send(ProvisioningStreamPayload {
-                        stream,
-                        kind: ProvisioningStreamKind::Provider,
-                    });
+                    let _ = tx.send(stream);
                 }
             } else if let (Some(stream), _) = create_channel_unavailable_stream(
                 &app_state_clone.app_config,
                 &[],
                 axum::http::StatusCode::SERVICE_UNAVAILABLE,
             ) {
-                app_state_clone
-                    .connection_manager
-                    .update_stream_detail(&addr, CustomVideoStreamType::ChannelUnavailable)
-                    .await;
                 if let Some(tx) = stream_tx.take() {
-                    let _ = tx.send(ProvisioningStreamPayload {
-                        stream,
-                        kind: ProvisioningStreamKind::Custom(CustomVideoStreamType::ChannelUnavailable),
-                    });
+                    let _ = tx.send(stream);
                 }
             }
             return;
@@ -910,80 +845,63 @@ async fn create_panel_api_provisioning_stream_details(
                         }
                     }
                     if is_ready_provider_stream(&stream_info) {
-                        if let Some(stream) = prefetch_provider_stream(
-                            stream,
-                            PANEL_API_PROVISIONING_PREFETCH_TIMEOUT_MILLIS,
-                            &request_url,
-                        )
-                        .await
-                        {
-                            if let Ok(mut state) = provider_handle_state_clone.lock() {
-                                *state = Some(new_handle.clone());
-                            }
-                            if let Some(grace) = grace_handle.take() {
-                                app_state_clone
-                                .connection_manager
-                                .release_provider_handle(Some(grace))
-                                .await;
-                            }
-                            debug_if_enabled!(
-                                "panel_api provisioning ready for input {}",
-                                sanitize_sensitive_info(&input_clone.name)
-                            );
-                            if let Some(tx) = stream_tx.take() {
-                                if log_enabled!(log::Level::Debug) {
-                                    if let Some((_, status, response_url, custom_video_type)) =
-                                        stream_info.as_ref()
-                                    {
-                                        debug!(
-                                            "panel_api provisioning switch for input {} status: '{}' url: {} custom_video: {:?}",
-                                            sanitize_sensitive_info(&input_clone.name),
-                                            status,
-                                            sanitize_sensitive_info(
-                                                response_url
-                                                    .as_ref()
-                                                    .map_or(request_url.as_str(), |u| u.as_str())
-                                            ),
-                                            custom_video_type
-                                        );
-                                    }
-                                }
-                                if tx.send(ProvisioningStreamPayload {
-                                    stream,
-                                    kind: ProvisioningStreamKind::Provider,
-                                })
-                                .is_err()
+                        if let Ok(mut state) = provider_handle_state_clone.lock() {
+                            *state = Some(new_handle.clone());
+                        }
+                        if let Some(grace) = grace_handle.take() {
+                            app_state_clone
+                            .connection_manager
+                            .release_provider_handle(Some(grace))
+                            .await;
+                        }
+                        debug_if_enabled!(
+                            "panel_api provisioning ready for input {}",
+                            sanitize_sensitive_info(&input_clone.name)
+                        );
+                        if let Some(tx) = stream_tx.take() {
+                            if log_enabled!(log::Level::Debug) {
+                                if let Some((_, status, response_url, custom_video_type)) =
+                                    stream_info.as_ref()
                                 {
-                                    debug_if_enabled!(
-                                        "panel_api provisioning switch failed: client disconnected before swap for input {}",
-                                        sanitize_sensitive_info(&input_clone.name)
-                                    );
-                                    app_state_clone
-                                        .connection_manager
-                                        .release_provider_handle(Some(new_handle))
-                                        .await;
-                                } else {
-                                    debug_if_enabled!(
-                                        "panel_api provisioning stream swap delivered for input {}",
-                                        sanitize_sensitive_info(&input_clone.name)
+                                    debug!(
+                                        "panel_api provisioning switch for input {} status: '{}' url: {} custom_video: {:?}",
+                                        sanitize_sensitive_info(&input_clone.name),
+                                        status,
+                                        sanitize_sensitive_info(
+                                            response_url
+                                                .as_ref()
+                                                .map_or(request_url.as_str(), |u| u.as_str())
+                                        ),
+                                        custom_video_type
                                     );
                                 }
-                            } else {
+                            }
+                            if tx.send(stream).is_err() {
                                 debug_if_enabled!(
-                                    "panel_api provisioning switch skipped: stream already delivered for input {}",
+                                    "panel_api provisioning switch failed: client disconnected before swap for input {}",
                                     sanitize_sensitive_info(&input_clone.name)
                                 );
                                 app_state_clone
                                     .connection_manager
                                     .release_provider_handle(Some(new_handle))
                                     .await;
+                            } else {
+                                debug_if_enabled!(
+                                    "panel_api provisioning stream swap delivered for input {}",
+                                    sanitize_sensitive_info(&input_clone.name)
+                                );
                             }
-                            return;
+                        } else {
+                            debug_if_enabled!(
+                                "panel_api provisioning switch skipped: stream already delivered for input {}",
+                                sanitize_sensitive_info(&input_clone.name)
+                            );
+                            app_state_clone
+                                .connection_manager
+                                .release_provider_handle(Some(new_handle))
+                                .await;
                         }
-                        trace_if_enabled!(
-                            "panel_api provisioning probe stream not ready for {}",
-                            sanitize_sensitive_info(&request_url)
-                        );
+                        return;
                     }
                     trace_if_enabled!(
                         "panel_api provisioning probe returned non-ready stream for {}",
@@ -1019,19 +937,8 @@ async fn create_panel_api_provisioning_stream_details(
             &[],
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
         ) {
-            debug_if_enabled!(
-                "panel_api provisioning timeout for input {} -> channel_unavailable",
-                sanitize_sensitive_info(&input_clone.name)
-            );
-            app_state_clone
-                .connection_manager
-                .update_stream_detail(&addr, CustomVideoStreamType::ChannelUnavailable)
-                .await;
             if let Some(tx) = stream_tx.take() {
-                let _ = tx.send(ProvisioningStreamPayload {
-                    stream,
-                    kind: ProvisioningStreamKind::Custom(CustomVideoStreamType::ChannelUnavailable),
-                });
+                let _ = tx.send(stream);
             }
         }
     });
