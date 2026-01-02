@@ -234,13 +234,10 @@ fn map_playlist_counter(target: &ConfigTarget, playlist: &mut [PlaylistGroup]) {
     }
 }
 
-// If no input is enabled but the user set the target as command line argument,
-// we force the input to be enabled.
-// If there are enabled input, then only these are used.
+// Inputs disabled in the config are always disabled.
+// Command-line targets can only restrict enabled inputs, never enable them.
 fn is_input_enabled(input: &ConfigInput, user_targets: &ProcessTargets) -> bool {
-    let input_enabled = input.enabled;
-    let input_id = input.id;
-    (!user_targets.enabled && input_enabled) || user_targets.has_input(input_id)
+    input.enabled && (!user_targets.enabled || user_targets.has_input(input.id))
 }
 
 fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bool {

@@ -26,11 +26,11 @@ use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-use log::{debug, error, log_enabled, trace, warn};
+use log::{debug, error, info, log_enabled, trace, warn};
 use reqwest::header::RETRY_AFTER;
 use serde::Serialize;
 use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{bin_serialize, default_grace_period_millis, trim_slash};
+use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_kbps, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
@@ -740,6 +740,7 @@ where
 {
     let throttle_kbps = usize::try_from(get_stream_throttle(app_state)).unwrap_or_default();
     let body_stream = if is_throttled_stream(item_type, throttle_kbps) {
+        info!("Stream throttling active: {}", human_readable_kbps(u64::try_from(throttle_kbps).unwrap_or_default()));
         axum::body::Body::from_stream(ThrottledStream::new(stream.boxed(), throttle_kbps))
     } else {
         axum::body::Body::from_stream(stream)

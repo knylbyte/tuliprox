@@ -40,10 +40,10 @@ fn get_send_message_parse_mode_str(mode: &SendMessageParseMode) -> &'static str 
 #[derive(Debug, serde::Serialize)]
 struct RequestObj {
     pub chat_id: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_thread_id: Option<String>,
     pub text: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parse_mode: Option<String>,
 }
 
