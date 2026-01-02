@@ -167,7 +167,8 @@ fn assign_provider_series_info_episode_key(provider_series: &mut HashMap<String,
 #[allow(clippy::implicit_hasher)]
 fn rewrite_local_series_info_episode_virtual_id(pli: &mut PlaylistItem, local_library_series: &HashMap<String, Vec<LocalEpisodeKey>>) {
     let header = &mut pli.header;
-    header.parent_code = String::new();
+    // the local_library_series key is the id of the SeriesInfo. The episodes have their parent SeriesInfo id as parent_code.
+    // When we populate  local_library_series, we use the episodes.parent_code. Here we need to use the SeriesInfo.id to get the assigned episodes.
     if let Some(episode_keys) = local_library_series.get(&header.id) {
         if let Some(StreamProperties::Series(series)) = header.additional_properties.as_mut() {
             if let Some(episodes) =
@@ -221,6 +222,8 @@ fn rewrite_series_info_episode_virtual_id(playlist: &mut [PlaylistGroup],
                 rewrite_provider_series_info_episode_virtual_id(channel, provider_series);
             } else if item_type == PlaylistItemType::LocalSeriesInfo {
                 rewrite_local_series_info_episode_virtual_id(channel, local_library_series);
+            } else if item_type == PlaylistItemType::LocalSeries {
+                channel.header.parent_code = String::new();
             }
         }
     }
