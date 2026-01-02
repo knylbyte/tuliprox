@@ -33,6 +33,7 @@ const LABEL_XTREAM_SKIP_VOD: &str = "LABEL.VOD";
 const LABEL_XTREAM_SKIP_SERIES: &str = "LABEL.SERIES";
 const LABEL_XTREAM_LIVE_STREAM_USE_PREFIX: &str = "LABEL.LIVE_STREAM_USE_PREFIX";
 const LABEL_XTREAM_LIVE_STREAM_WITHOUT_EXTENSION: &str = "LABEL.LIVE_STREAM_WITHOUT_EXTENSION";
+const LABEL_CACHE_DURATION: &str = "LABEL.CACHE_DURATION";
 
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -93,19 +94,25 @@ generate_form_reducer!(
         MaxConnections => max_connections: u16,
         Method => method: InputFetchMethod,
         ExpDate => exp_date: Option<i64>,
+        CacheDuration => cache_duration: Option<String>,
     }
 );
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct ConfigInputViewProps {
-    pub(crate) block_id: BlockId,
+    #[prop_or_default]
+    pub(crate) block_id: Option<BlockId>,
     pub(crate) input: Option<Rc<ConfigInputDto>>,
+    #[prop_or_default]
+    pub(crate) on_apply: Option<Callback<ConfigInputDto>>,
+    #[prop_or_default]
+    pub(crate) on_cancel: Option<Callback<()>>,
 }
 
 #[function_component]
 pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
     let translate = use_translation();
-    let source_editor_ctx = use_context::<SourceEditorContext>().expect("SourceEditorContext not found");
+    let source_editor_ctx = use_context::<SourceEditorContext>();
     let fetch_methods = use_memo((), |_| {
         [InputFetchMethod::GET, InputFetchMethod::POST]
             .iter()
@@ -376,6 +383,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                  { edit_field_number_u16!(input_form_state, translate.t(LABEL_MAX_CONNECTIONS), max_connections, ConfigInputFormAction::MaxConnections) }
                  { edit_field_number_i16!(input_form_state, translate.t(LABEL_PRIORITY), priority, ConfigInputFormAction::Priority) }
                { edit_field_date!(input_form_state, translate.t(LABEL_EXP_DATE), exp_date, ConfigInputFormAction::ExpDate) }
+               { edit_field_text_option!(input_form_state, translate.t(LABEL_CACHE_DURATION), cache_duration, ConfigInputFormAction::CacheDuration) }
                { config_field_child!(translate.t(LABEL_FETCH_METHOD), {
                    html! {
                        <RadioButtonGroup
@@ -495,7 +503,9 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
         }
     };
 
-    let handle_apply_input = {    // source_editor_ctx.on_form_change.emit();
+    let handle_apply_input = {
+        let on_apply = props.on_apply.clone();
+        let block_id = props.block_id;
         let source_editor_ctx = source_editor_ctx.clone();
         let input_form_state = input_form_state.clone();
         let input_options_state = input_options_state.clone();
@@ -503,7 +513,7 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
         let headers_state = headers_state.clone();
         let epg_sources_state = epg_sources_state.clone();
         let aliases_state = aliases_state.clone();
-        let block_id = props.block_id;
+        
         Callback::from(move |_| {
             let mut input = input_form_state.data().clone();
 
@@ -548,14 +558,23 @@ pub fn ConfigInputView(props: &ConfigInputViewProps) -> Html {
                 Some(aliases)
             };
 
-            source_editor_ctx.on_form_change.emit((block_id, BlockInstance::Input(Rc::new(input))));
-            source_editor_ctx.edit_mode.set(EditMode::Inactive);
+            if let Some(on_apply) = &on_apply {
+                on_apply.emit(input);
+            } else if let (Some(ctx), Some(block_id)) = (&source_editor_ctx, block_id) {
+                ctx.on_form_change.emit((block_id, BlockInstance::Input(Rc::new(input))));
+                ctx.edit_mode.set(EditMode::Inactive);
+            }
         })
     };
     let handle_cancel = {
         let source_editor_ctx = source_editor_ctx.clone();
+        let on_cancel = props.on_cancel.clone();
         Callback::from(move |_| {
-            source_editor_ctx.edit_mode.set(EditMode::Inactive);
+            if let Some(on_cancel) = &on_cancel {
+                on_cancel.emit(());
+            } else if let Some(ctx) = &source_editor_ctx {
+                ctx.edit_mode.set(EditMode::Inactive);
+            }
         })
     };
 

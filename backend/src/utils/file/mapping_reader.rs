@@ -9,7 +9,7 @@ use shared::model::{MappingDefinitionDto, MappingDto, MappingsDto, PatternTempla
 
 fn read_mapping(mapping_file: &Path, resolve_var: bool, prepare_mappings: bool) -> Result<Option<MappingsDto>, TuliproxError> {
     if let Ok(file) = open_file(mapping_file) {
-        let maybe_mapping: Result<MappingsDto, _> = serde_yaml::from_reader(config_file_reader(file, resolve_var));
+        let maybe_mapping: Result<MappingsDto, _> = serde_saphyr::from_reader(config_file_reader(file, resolve_var));
         return match maybe_mapping {
             Ok(mut mapping) => {
                 if prepare_mappings {

@@ -15,6 +15,8 @@ use crate::model::FetchedPlaylist;
 use crate::model::Mapping;
 use crate::model::{ConfigTarget, ProcessTargets};
 use crate::model::{InputStats, PlaylistStats, SourceStats, TargetStats};
+use crate::processing::input_cache;
+use crate::processing::input_cache::ClusterState;
 use crate::processing::parser::xmltv::flatten_tvguide;
 use crate::processing::playlist_watch::process_group_watch;
 use crate::processing::processor::epg::process_playlist_epg;
@@ -23,7 +25,7 @@ use crate::processing::processor::sort::sort_playlist;
 use crate::processing::processor::trakt::process_trakt_categories_for_target;
 use crate::processing::processor::xtream_series::playlist_resolve_series;
 use crate::processing::processor::xtream_vod::playlist_resolve_vod;
-use crate::repository::playlist_repository::{persist_input_playlist, persist_playlist};
+use crate::repository::playlist_repository::{load_input_playlist, persist_input_playlist, persist_playlist};
 use crate::utils::StepMeasure;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use futures::StreamExt;
@@ -31,6 +33,7 @@ use indexmap::IndexMap;
 use log::{debug, error, info, log_enabled, trace, warn, Level};
 use shared::error::{get_errors_notify_message, notify_err, TuliproxError};
 use shared::foundation::filter::{get_field_value, set_field_value, Filter, ValueAccessor, ValueProvider};
+use shared::model::xtream_const::XTREAM_CLUSTER;
 use shared::model::{CounterModifier, FieldGetAccessor, FieldSetAccessor, InputType, ItemField, MsgKind, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemType, PlaylistUpdateState, ProcessingOrder, UUIDType, XtreamCluster};
 use shared::utils::{create_alias_uuid, default_as_default};
 use std::time::Instant;
@@ -244,14 +247,90 @@ fn is_target_enabled(target: &ConfigTarget, user_targets: &ProcessTargets) -> bo
     (!user_targets.enabled && target.enabled) || (user_targets.enabled && user_targets.has_target(target.id))
 }
 
-async fn playlist_download_from_input(client: &reqwest::Client, app_config: &Arc<AppConfig>, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
+async fn playlist_download_from_input(client: &reqwest::Client, app_config: &Arc<AppConfig>, input: &ConfigInput) -> (Vec<PlaylistGroup>, Vec<TuliproxError>, bool) {
     let config = &*app_config.config.load();
-    match input.input_type {
+    let working_dir = &config.working_dir;
+
+    // Check Status
+    let storage_path = input_cache::resolve_input_storage_path(working_dir, &input.name);
+    let mut status = input_cache::load_input_status(&storage_path);
+    let cache_duration = input.cache_duration_seconds;
+
+    // Ensure data directory exists
+    if !storage_path.exists() {
+        let _ = std::fs::create_dir_all(&storage_path);
+    }
+
+    let (clusters_to_download, fully_cached) = match input.input_type {
+        InputType::Xtream => {
+            let mut to_download = vec![];
+            for c in XTREAM_CLUSTER {
+                if !input_cache::is_cache_valid(&status, &c.to_string(), cache_duration) {
+                    to_download.push(c);
+                }
+            }
+            if to_download.is_empty() {
+                (None, true) // Everything cached
+            } else {
+                (Some(to_download), false)
+            }
+        }
+        _ => {
+            // M3U / Library
+            if input_cache::is_cache_valid(&status, "default", cache_duration) {
+                (None, true)
+            } else {
+                (None, false) // Download all
+            }
+        }
+    };
+
+    if fully_cached {
+        return (vec![], vec![], true);
+    }
+
+    let (playlist, errors) = match input.input_type {
         InputType::M3u => m3u::download_m3u_playlist(client, config, input).await,
-        InputType::Xtream => xtream::download_xtream_playlist(config, client, input).await,
+        InputType::Xtream => xtream::download_xtream_playlist(config, client, input, clusters_to_download.as_deref()).await,
         InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![]),
         InputType::Library => library::download_library_playlist(client, app_config, input).await,
+    };
+
+    // Update Status
+    if errors.is_empty() {
+        if let InputType::Xtream = input.input_type {
+            if let Some(clusters) = clusters_to_download {
+                for c in clusters {
+                    input_cache::update_cluster_status(&mut status, &c.to_string(), ClusterState::Ok);
+                }
+            } else {
+                // All clusters logic if None passed (implies all were invalid or first run)
+                for c in XTREAM_CLUSTER {
+                    input_cache::update_cluster_status(&mut status, &c.to_string(), ClusterState::Ok);
+                }
+            }
+        } else {
+            input_cache::update_cluster_status(&mut status, "default", ClusterState::Ok);
+        }
+        input_cache::save_input_status(&storage_path, &status);
+    } else {
+        // Mark failed?
+        // We could mark specific clusters as failed if we knew which one failed.
+        // For simplicity, if error, we don't update the timestamp (so it stays expired/invalid).
+        // Or we mark as Failed.
+        if let InputType::Xtream = input.input_type {
+            if let Some(clusters) = clusters_to_download {
+                for c in clusters {
+                    // Optimistic: Only mark failed if we are sure?
+                    // Currently just don't update the status to OK.
+                    input_cache::update_cluster_status(&mut status, &c.to_string(), ClusterState::Failed);
+                }
+            }
+            input_cache::save_input_status(&storage_path, &status);
+        }
     }
+
+    (playlist, errors, false)
 }
 
 async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, source_idx: usize,
@@ -264,23 +343,36 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
     let mut target_stats = Vec::<TargetStats>::new();
     if let Some(source) = sources.get_source_at(source_idx) {
         let mut source_playlists = Vec::with_capacity(128);
-
         let broadcast_step = create_broadcast_callback(event_manager.as_ref());
-
         // Download the sources
         let mut source_downloaded = false;
-        for input in &source.inputs {
+        for input_name in &source.inputs {
+            let Some(input) = sources.get_input_by_name(input_name) else {
+                error!("Input {input_name} referenced by source {source_idx} does not exist");
+                continue;
+            };
             if is_input_enabled(input, &user_targets) {
                 source_downloaded = true;
+
                 let start_time = Instant::now();
-                // Download playlist for input
+                // Download the playlist for input
                 let (playlist_groups, mut error_list) = {
                     broadcast_step("Playlist download", &format!("Downloading input '{}'", input.name));
-                    let (downloaded_playlist, mut download_err) = playlist_download_from_input(client, &app_config, input).await;
-                    broadcast_step("Playlist download", &format!("Persisting input '{}' playlist", input.name));
-                    let (playlist, error) = persist_input_playlist(&app_config, input, downloaded_playlist).await;
+                    // Caching Logic Integrated
+                    let (downloaded_playlist, mut download_err, was_cached) = playlist_download_from_input(client, &app_config, input).await;
+
+                    let (playlist, error) = if was_cached {
+                        match load_input_playlist(&app_config, input, None).await {
+                            Ok(pl) => (pl, None),
+                            Err(e) => (vec![], Some(e)),
+                        }
+                    } else {
+                        broadcast_step("Playlist download", &format!("Persisting input '{}' playlist", input.name));
+                        persist_input_playlist(&app_config, input, downloaded_playlist).await
+                    };
+
                     if let Some(err) = error {
-                        broadcast_step("Playlist download", &format!("Failed to persist input '{}' playlist", input.name));
+                        broadcast_step("Playlist download", &format!("Failed to persist/load input '{}' playlist", input.name));
                         error!("Failed to persist input playlist {}", input.name);
                         download_err.push(err);
                     }
@@ -309,6 +401,17 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
                     source_playlists.push(
                         FetchedPlaylist {
                             input,
+                            // If I create Arc here, it drops at end of loop iteration!
+                            // SAFETY ISSUE.
+                            // `source_playlists` stores `FetchedPlaylist`.
+                            // `FetchedPlaylist` struct definition:
+                            // pub struct FetchedPlaylist<'a> { pub input: &'a ConfigInput, ... }
+                            // It holds a REFERENCE.
+                            // If `input` comes from `sources` (guard), it lives as long as `sources` guard lives.
+                            // `sources` guard is alive in this function scope.
+                            // So `&input` is valid.
+                            // `playlist_download_from_input` takes `&Arc<ConfigInput>`. I pass formatted Arc.
+                            // `FetchedPlaylist` needs reference.
                             playlist_groups,
                             epg: tvguide,
                         }
@@ -322,7 +425,7 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
         if source_downloaded {
             if source_playlists.is_empty() {
                 debug!("Source at index {source_idx} is empty");
-                errors.push(notify_err!(format!("Source at index {source_idx} is empty: {}", source.inputs.iter().map(|i| i.name.as_str()).collect::<Vec<_>>().join(", "))));
+                errors.push(notify_err!(format!("Source at index {source_idx} is empty: {}", source.inputs.iter().map(std::string::String::as_str).collect::<Vec<&str>>().join(", "))));
             } else {
                 debug_if_enabled!("Source has {} groups", source_playlists.iter().map(|fpl| fpl.playlist_groups.len()).sum::<usize>());
                 let event_manager_clone = event_manager.clone();

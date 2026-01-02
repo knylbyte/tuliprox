@@ -1,9 +1,9 @@
 use log::{debug, error, info, warn};
-
+use shared::utils::TMDB_API_KEY;
 use crate::library::metadata::{MediaMetadata, MetadataSource, MovieMetadata, SeriesMetadata};
 use crate::library::scanner::ScannedMediaFile;
 use crate::library::tmdb_client::TmdbClient;
-use crate::library::{MediaGroup, MetadataStorage, TMDB_API_KEY};
+use crate::library::{MediaGroup, MetadataStorage};
 use crate::model::LibraryConfig;
 use crate::ptt::{ptt_parse_title, PttMetadata};
 

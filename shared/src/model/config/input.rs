@@ -1,8 +1,11 @@
+use crate::utils::is_blank_optional_string;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{EpgConfigDto};
-use crate::utils::{default_as_true, get_credentials_from_url_str, get_trimmed_string, sanitize_sensitive_info, trim_last_slash, deserialize_timestamp};
+use crate::utils::{is_false, is_true, default_as_true, get_credentials_from_url_str, get_trimmed_string,
+                   sanitize_sensitive_info, trim_last_slash, deserialize_timestamp, is_zero_u16};
 use super::PanelApiConfigDto;
-use crate::{check_input_credentials, check_input_connections, create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
+use crate::{check_input_credentials, check_input_connections, create_tuliprox_error_result, info_err};
+
 use enum_iterator::Sequence;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
@@ -27,14 +30,14 @@ macro_rules! apply_batch_aliases {
             } else {
                 $source.aliases = Some($batch_aliases);
             }
-            if let Some(index) = $index {
-                let mut idx = index;
+                if let Some(index) = $index {
+                let mut idx = index + 1;
                 // set to the same id as the first alias, because the first alias is copied into this input
                 $source.id = idx;
                 if let Some(aliases) = $source.aliases.as_mut() {
                     for alias in aliases {
-                        alias.id = idx;
                         idx += 1;
+                        alias.id = idx;
                     }
                 }
                 Some(idx)
@@ -152,15 +155,15 @@ impl FromStr for InputFetchMethod {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputOptionsDto {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub xtream_skip_live: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub xtream_skip_vod: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub xtream_skip_series: bool,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub xtream_live_stream_use_prefix: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub xtream_live_stream_without_extension: bool,
 }
 
@@ -200,15 +203,15 @@ impl ConfigInputOptionsDto {
 pub struct StagedInputDto {
     pub name: String,
     pub url: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub username: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub password: Option<String>,
     #[serde(default)]
     pub method: InputFetchMethod,
     #[serde(default, rename = "type")]
     pub input_type: InputType,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub headers: HashMap<String, String>,
 }
 
@@ -236,19 +239,19 @@ impl StagedInputDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputAliasDto {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero_u16")]
     pub id: u16,
     pub name: String,
     pub url: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub username: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub password: Option<String>,
     #[serde(default)]
     pub priority: i16,
     #[serde(default)]
     pub max_connections: u16,
-    #[serde(default, deserialize_with = "deserialize_timestamp")]
+    #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
     pub exp_date: Option<i64>,
 
 }
@@ -264,8 +267,8 @@ impl ConfigInputAliasDto {
         if self.url.is_empty() {
             return Err(info_err!("url for input is mandatory".to_string()));
         }
-        check_input_credentials!(self, input_type, true);
-        check_input_connections!(self, input_type);
+        check_input_credentials!(self, input_type, true, true);
+        check_input_connections!(self, input_type, true);
 
         Ok(self.id)
     }
@@ -274,29 +277,33 @@ impl ConfigInputAliasDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigInputDto {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero_u16")]
     pub id: u16,
     #[serde(default)]
     pub name: String,
     #[serde(default, rename = "type")]
     pub input_type: InputType,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub headers: HashMap<String, String>,
     #[serde(default)]
     pub url: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epg: Option<EpgConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub username: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub password: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub persist: Option<String>,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<ConfigInputOptionsDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
+    pub cache_duration: Option<String>,
+    #[serde(skip, skip_serializing_if = "is_zero_u16")]
+    pub cache_duration_seconds: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "crate::utils::serialize_option_slice_flow")]
     pub aliases: Option<Vec<ConfigInputAliasDto>>,
     #[serde(default)]
     pub priority: i16,
@@ -304,11 +311,11 @@ pub struct ConfigInputDto {
     pub max_connections: u16,
     #[serde(default)]
     pub method: InputFetchMethod,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub staged: Option<StagedInputDto>,
-    #[serde(default, deserialize_with = "deserialize_timestamp")]
+    #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
     pub exp_date: Option<i64>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel_api: Option<PanelApiConfigDto>,
 }
 
@@ -326,6 +333,8 @@ impl Default for ConfigInputDto {
             persist: None,
             enabled: default_as_true(),
             options: None,
+            cache_duration: None,
+            cache_duration_seconds: 0,
             aliases: None,
             priority: 0,
             max_connections: 0,
@@ -346,10 +355,36 @@ impl ConfigInputDto {
             return Err(info_err!("name for input is mandatory".to_owned()));
         }
 
-        check_input_credentials!(self, self.input_type, true);
-        check_input_connections!(self, self.input_type);
+        if let Some(duration_str) = &self.cache_duration {
+            self.cache_duration_seconds = match duration_str.parse::<u64>() {
+                Ok(secs) => secs,
+                Err(_) => {
+                    let len = duration_str.len();
+                    if len > 1 {
+                        let (num_str, unit) = duration_str.split_at(len - 1);
+                        match num_str.parse::<u64>() {
+                            Ok(val) => match unit {
+                                "s" => val,
+                                "m" => val * 60,
+                                "h" => val * 3600,
+                                "d" => val * 86400,
+                                _ => return Err(info_err!(format!("Invalid cache_duration unit in '{}': {}", self.name, unit))),
+                            },
+                            Err(_) => return Err(info_err!(format!("Invalid cache_duration format in '{}': {}", self.name, duration_str))),
+                        }
+                    } else {
+                        return Err(info_err!(format!("Invalid cache_duration format in '{}'", self.name)));
+                    }
+                }
+            };
+        } else {
+             self.cache_duration_seconds = 0;
+        }
+
+        check_input_credentials!(self, self.input_type, true, false);
+        check_input_connections!(self, self.input_type, false);
         if let Some(staged_input) = self.staged.as_mut() {
-            check_input_credentials!(staged_input, staged_input.input_type, true);
+            check_input_credentials!(staged_input, staged_input.input_type, true, true);
             if !matches!(staged_input.input_type, InputType::M3u | InputType::Xtream) {
                return Err(info_err!("Staged input can only be of type m3u or xtream".to_owned()));
             }
@@ -361,15 +396,9 @@ impl ConfigInputDto {
         self.id = current_index;
         if let Some(aliases) = self.aliases.as_mut() {
             let input_type = &self.input_type;
-            handle_tuliprox_error_result_list!(TuliproxErrorKind::Info, aliases.iter_mut()
-                .map(|i| match i.prepare(current_index, input_type) {
-                    Ok(new_idx) => {
-                        current_index = new_idx;
-                        Ok(())
-                    },
-                    Err(err) => Err(err)
-                }));
-        //} else if !matches!(self.input_type, InputType::M3uBatch | InputType::XtreamBatch) {
+            for alias in aliases {
+                current_index = alias.prepare(current_index, input_type)?;
+            }
         }
         Ok(current_index)
     }
@@ -437,5 +466,40 @@ impl ConfigInputDto {
     pub fn prepare_batch(&mut self, batch_aliases: Vec<ConfigInputAliasDto>, index: u16) -> Result<Option<u16>, TuliproxError> {
         let idx = apply_batch_aliases!(self, batch_aliases, Some(index));
         Ok(idx)
+    }
+
+    pub fn upsert_alias(&mut self, mut alias: ConfigInputAliasDto) -> Result<(), TuliproxError> {
+        check_input_credentials!(alias, self.input_type, true, true);
+        check_input_connections!(alias, self.input_type, true);
+        let aliases = self.aliases.get_or_insert_with(Vec::new);
+        if let Some(existing) = aliases.iter_mut().find(|a| a.id == alias.id) {
+            *existing = alias;
+        } else {
+            aliases.push(alias);
+        }
+        Ok(())
+    }
+
+    pub fn update_account_expiration_date(&mut self, input_name: &str, username: &str, exp_date: i64) -> Result<(), TuliproxError> {
+        if self.name == input_name {
+            if let Some(input_username) = &self.username {
+                if input_username == username {
+                    self.exp_date = Some(exp_date);
+                    return Ok(());
+                }
+            }
+        }
+
+        if let Some(aliases) = &mut self.aliases {
+            if let Some(alias) = aliases
+                .iter_mut()
+                .find(|a| a.username.as_deref() == Some(username))
+            {
+                alias.exp_date = Some(exp_date);
+                return Ok(());
+            }
+        }
+
+        Err(TuliproxError::new(TuliproxErrorKind::Info, format!("No matching input or alias found for input '{input_name}' with username '{username}'")))
     }
 }

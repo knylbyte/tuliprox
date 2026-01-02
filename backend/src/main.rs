@@ -259,7 +259,7 @@ async fn healthcheck(config_file: &str) -> bool {
     let path = std::path::PathBuf::from(config_file);
     match File::open(path) {
         Ok(file) => {
-            match serde_yaml::from_reader::<_, HealthcheckConfig>(config_file_reader(file, true)) {
+            match serde_saphyr::from_reader::<_, HealthcheckConfig>(config_file_reader(file, true)) {
                 Ok(config) => {
                     match reqwest::Client::new()
                         .get(format!("http://localhost:{}/healthcheck", config.api.port))

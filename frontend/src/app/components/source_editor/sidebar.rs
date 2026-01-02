@@ -1,4 +1,5 @@
-use crate::app::components::{BlockType, CollapsePanel, IconButton};
+use crate::app::components::{CollapsePanel, IconButton};
+use crate::app::components::source_editor::editor_model::BlockType;
 use yew::prelude::*;
 use yew_i18n::use_translation;
 

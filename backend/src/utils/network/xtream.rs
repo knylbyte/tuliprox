@@ -329,11 +329,11 @@ pub async fn notify_account_expire(exp_date: Option<i64>, cfg: &Config, client: 
     }
 }
 
-pub async fn download_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Client, input: &Arc<ConfigInput>)
+pub async fn download_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Client, input: &ConfigInput, clusters: Option<&[XtreamCluster]>)
                                       -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
     let input_source: InputSource = {
         match input.staged.as_ref() {
-            None => input.as_ref().into(),
+            None => input.into(),
             Some(staged) => staged.into(),
         }
     };
@@ -358,7 +358,8 @@ pub async fn download_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Clien
 
     let mut errors = vec![];
     for (xtream_cluster, category, stream) in &ACTIONS {
-        if !skip_cluster.contains(xtream_cluster) {
+        let is_requested = clusters.is_none_or(|c| c.contains(xtream_cluster));
+        if is_requested && !skip_cluster.contains(xtream_cluster) {
             let input_source_category = input_source.with_url(format!("{base_url}&action={category}"));
             let input_source_stream = input_source.with_url(format!("{base_url}&action={stream}"));
             let category_file_path = crate::utils::prepare_file_path(input.persist.as_deref(),
@@ -400,7 +401,7 @@ pub async fn download_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Clien
     (playlist_groups, errors)
 }
 
-async fn check_alias_user_state(cfg: &Arc<Config>, client: &reqwest::Client, input: &Arc<ConfigInput>) {
+async fn check_alias_user_state(cfg: &Arc<Config>, client: &reqwest::Client, input: &ConfigInput) {
     if let Some(aliases) = input.aliases.as_ref() {
         for alias in aliases {
             if is_input_expired(alias.exp_date) {

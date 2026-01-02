@@ -1,19 +1,28 @@
 use crate::app::components::source_editor::layout::layout;
-use crate::app::components::{can_connect, Block, BlockId, BlockInstance, BlockType, BlockView, Connection, EditMode, InputRow, PortStatus, SourceEditorContext, SourceEditorForm, SourceEditorSidebar, BLOCK_HEADER_HEIGHT, BLOCK_HEIGHT, BLOCK_PORT_HEIGHT, BLOCK_WIDTH};
-use crate::app::PlaylistContext;
-use shared::model::{ConfigInputDto, ConfigTargetDto, HdHomeRunTargetOutputDto, M3uTargetOutputDto, StrmTargetOutputDto, TargetOutputDto, XtreamTargetOutputDto};
+use crate::app::components::{can_connect, Block, BlockId, BlockInstance, BlockType, BlockView, Connection, EditMode, InputRow, PortStatus, SourceEditorContext, SourceEditorForm, SourceEditorSidebar, TextButton, BLOCK_HEADER_HEIGHT, BLOCK_HEIGHT, BLOCK_PORT_HEIGHT, BLOCK_WIDTH};
+use crate::app::{ConfigContext, PlaylistContext};
+use crate::hooks::use_service_context;
+use shared::model::{ConfigInputDto, ConfigSourceDto, ConfigTargetDto, HdHomeRunTargetOutputDto,
+                    M3uTargetOutputDto, StrmTargetOutputDto, TargetOutputDto, XtreamTargetOutputDto};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{Element, HtmlElement, MouseEvent};
+use yew::platform::spawn_local;
 use yew::prelude::*;
+use yew_i18n::use_translation;
+use crate::model::DialogResult;
+use crate::services::DialogService;
 
 const PENDING_LINE: &str = "pending-line";
 const SELECTION_RECT: &str = "selection-rect";
 
 const BLOCK_MIDDLE_Y: f32 = (BLOCK_HEIGHT + BLOCK_HEADER_HEIGHT + BLOCK_PORT_HEIGHT) / 2.0;
 const PORT_SNAP_THRESHOLD: f32 = 100.0;
+
+const LABEL_SOURCE_EDITOR: &str = "LABEL.SOURCE_EDITOR";
+const LABEL_SAVE: &str = "LABEL.SAVE";
 
 type Position = (f32, f32);
 type MoveBlockParams = (f32, f32, Position, Vec<(BlockId, Position)>);
@@ -219,6 +228,11 @@ fn create_output_instance(output: &TargetOutputDto) -> (BlockInstance, BlockType
 pub fn SourceEditor() -> Html {
     let canvas_ref = use_node_ref();
     let playlist_ctx = use_context::<PlaylistContext>().expect("Playlist context not found");
+    let config_ctx = use_context::<ConfigContext>().expect("ConfigContext not found");
+    let dialog = use_context::<DialogService>().expect("Dialog service not found");
+    let services = use_service_context();
+    let translate = use_translation();
+
     let force_update = use_state(|| 0);
     // ----------------- virtual canvas offset -----------------
     let editor_state_ref = use_mut_ref(EditorState::default);
@@ -235,17 +249,24 @@ pub fn SourceEditor() -> Html {
                 let mut current_id = 1;
                 let mut gen_blocks = Vec::new();
                 let mut gen_connections = Vec::new();
+                let mut added_inputs = HashMap::<u16, BlockId>::new();
                 for (inputs, targets) in entries.as_ref() {
                     let mut input_ids = vec![];
                     for input_row in inputs {
                         match input_row.as_ref() {
                             InputRow::Input(input_config) => {
-                                let input_id = current_id;
-                                current_id += 1;
-                                input_ids.push(input_id);
-                                gen_blocks.push(create_block(input_id,
-                                                             BlockType::from(input_config.input_type),
-                                                             BlockInstance::Input(input_config.clone())));
+                                let block_id = if let Some(&existing_id) = added_inputs.get(&input_config.id) {
+                                    existing_id
+                                } else {
+                                    let id = current_id;
+                                    current_id += 1;
+                                    added_inputs.insert(input_config.id, id);
+                                    gen_blocks.push(create_block(id,
+                                                                 BlockType::from(input_config.input_type),
+                                                                 BlockInstance::Input(input_config.clone())));
+                                    id
+                                };
+                                input_ids.push(block_id);
                             }
                             InputRow::Alias(_, _) => {}
                         }
@@ -327,6 +348,109 @@ pub fn SourceEditor() -> Html {
             layout(&mut editor_state.blocks, &connections);
 
             force_update.set(*force_update + 1);
+        })
+    };
+
+    let handle_save = {
+        let config_ctx = config_ctx.clone();
+        let editor_state_ref = editor_state_ref.clone();
+        let services = services.clone();
+        let translate = translate.clone();
+        Callback::from(move |_| {
+            let mut sources_config = config_ctx.config.as_ref().map(|c| c.sources.clone()).unwrap_or_default();
+            let editor_state = editor_state_ref.borrow();
+
+            // Convert diagram blocks to sources
+            let mut gen_sources: Vec<ConfigSourceDto> = Vec::new();
+            let mut gen_inputs: Vec<ConfigInputDto> = Vec::new();
+
+            //find all inputs
+            let input_blocks: Vec<&Block> = editor_state.blocks.iter().filter(|b| b.block_type.is_input()).collect();
+            for block in &input_blocks {
+                if let BlockInstance::Input(input) = &block.instance {
+                    gen_inputs.push(input.as_ref().clone());
+                }
+            };
+
+            // Find all targets
+            let target_blocks: Vec<&Block> = editor_state.blocks.iter().filter(|b| b.block_type.is_target()).collect();
+
+            for target_block in target_blocks {
+                if let BlockInstance::Target(target_dto) = &target_block.instance {
+                    let mut source_dto = ConfigSourceDto {
+                        targets: vec![(**target_dto).clone()],
+                        inputs: Vec::new(),
+                    };
+
+                    // Find incoming inputs
+                    for conn in &editor_state.connections {
+                        if conn.to == target_block.id {
+                            if let Some(input_block) = editor_state.get_block(conn.from) {
+                                if input_block.block_type.is_input() {
+                                    if let BlockInstance::Input(input_dto) = &input_block.instance {
+                                        source_dto.inputs.push(input_dto.name.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Find connected outputs for this target
+                    // Actually, the current ConfigTargetDto in the diagram might already have outputs in its `output` field if we edited it there.
+                    // But in the diagram, we have separate Output blocks connected to Target.
+                    // We need to collect them.
+
+                    let mut outputs = Vec::new();
+                    for conn in &editor_state.connections {
+                        if conn.from == target_block.id {
+                            if let Some(output_block) = editor_state.get_block(conn.to) {
+                                if output_block.block_type.is_output() {
+                                    if let BlockInstance::Output(output_dto) = &output_block.instance {
+                                        outputs.push((**output_dto).clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(target) = source_dto.targets.get_mut(0) {
+                        target.output = outputs;
+                    }
+
+                    gen_sources.push(source_dto);
+                }
+            }
+
+            sources_config.inputs = gen_inputs;
+            sources_config.sources = gen_sources;
+
+            web_sys::console::log_1(&format!("save {:?}", sources_config).into());
+
+            let services = services.clone();
+            let translate = translate.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                match services.config.save_sources(sources_config).await {
+                    Ok(()) => services.toastr.success(translate.t("MESSAGES.SAVE.SOURCES_CONFIG.SUCCESS")),
+                    Err(err) => services.toastr.error(err.to_string()),
+                }
+            });
+        })
+    };
+
+    let handle_confirm_save = {
+        let confirm = dialog.clone();
+        let on_save = handle_save.clone();
+        let translator = translate.clone();
+        Callback::from(move |_| {
+            let confirm = confirm.clone();
+            let on_save = on_save.clone();
+            let translator = translator.clone();
+            spawn_local(async move {
+                let result = confirm.confirm(&translator.t("MESSAGES.CONFIRM_SOURCES_SAVE")).await;
+                if result == DialogResult::Ok {
+                   on_save.emit("dave");
+                }
+            });
         })
     };
 
@@ -913,8 +1037,18 @@ pub fn SourceEditor() -> Html {
     // ----------------- Render -----------------
     html! {
         <ContextProvider<SourceEditorContext> context={editor_context}>
-        <span>{"WORK IN PROGRESS - NOT FINALIZED !!!"}</span>
         <div class="tp__source-editor">
+            <div class="tp__source-editor__header tp__config-view__header">
+                <h1>{ translate.t(LABEL_SOURCE_EDITOR) } </h1>
+                <div class="tp__config-view__header-tools">
+                </div>
+               <TextButton name="sources_save"
+                    class={ "secondary" }
+                    icon={ "Save" }
+                    title={ translate.t(LABEL_SAVE) }
+                    onclick={handle_confirm_save.clone()}></TextButton>
+            </div>
+        <div class="tp__source-editor__content">
             <SourceEditorSidebar
                 delete_mode={*delete_mode}
                 on_drag_start={handle_drag_start.clone()}
@@ -1009,6 +1143,7 @@ pub fn SourceEditor() -> Html {
             </div>
             </div>
             <SourceEditorForm />
+          </div>
         </div>
         </ContextProvider<SourceEditorContext>>
     }

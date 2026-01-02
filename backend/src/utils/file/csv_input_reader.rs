@@ -12,6 +12,10 @@ use crate::utils::request::get_local_file_content;
 
 const CSV_SEPARATOR: char = ';';
 const HEADER_PREFIX: char = '#';
+
+pub fn is_csv_file(url: &str) -> bool {
+    url.to_lowercase().ends_with(".csv")
+}
 const FIELD_MAX_CON: &str = "max_connections";
 const FIELD_PRIO: &str = "priority";
 const FIELD_URL: &str = "url";
@@ -185,6 +189,43 @@ pub fn get_csv_file_path(file_uri: &str) -> Result<PathBuf, Error> {
     } else {
         resolve_relative_path(file_uri)
     }
+}
+
+pub async fn csv_write_inputs(file_uri: &str, aliases: &[ConfigInputAliasDto]) -> Result<(), Error> {
+    let file_path = get_csv_file_path(file_uri)?;
+    let mut content = String::new();
+    content.push(HEADER_PREFIX);
+    content.push_str(FIELD_NAME);
+    content.push(CSV_SEPARATOR);
+    content.push_str(FIELD_USERNAME);
+    content.push(CSV_SEPARATOR);
+    content.push_str(FIELD_PASSWORD);
+    content.push(CSV_SEPARATOR);
+    content.push_str(FIELD_URL);
+    content.push(CSV_SEPARATOR);
+    content.push_str(FIELD_MAX_CON);
+    content.push(CSV_SEPARATOR);
+    content.push_str(FIELD_EXP_DATE);
+    content.push('\n');
+
+    for alias in aliases {
+        content.push_str(&alias.name);
+        content.push(CSV_SEPARATOR);
+        content.push_str(alias.username.as_deref().unwrap_or(""));
+        content.push(CSV_SEPARATOR);
+        content.push_str(alias.password.as_deref().unwrap_or(""));
+        content.push(CSV_SEPARATOR);
+        content.push_str(&alias.url);
+        content.push(CSV_SEPARATOR);
+        content.push_str(&alias.max_connections.to_string());
+        content.push(CSV_SEPARATOR);
+        if let Some(exp) = alias.exp_date {
+            content.push_str(&shared::utils::unix_ts_to_str_with_format(exp, "%Y-%m-%d %H:%M:%S").unwrap_or_default());
+        }
+        content.push('\n');
+    }
+
+    tokio::fs::write(file_path, content).await.map_err(to_io_error)
 }
 
 #[cfg(test)]

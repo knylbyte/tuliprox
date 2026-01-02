@@ -8,7 +8,7 @@ use crate::repository::m3u_repository::{m3u_get_file_path, m3u_write_playlist};
 use crate::repository::storage::{ensure_target_storage_path, get_input_storage_path, get_target_id_mapping_file, get_target_storage_path};
 use crate::repository::strm_repository::write_strm_playlist;
 use crate::repository::target_id_mapping::{TargetIdMapping, VirtualIdRecord};
-use crate::repository::xtream_repository::{persist_input_xtream_playlist, xtream_get_file_path, xtream_get_storage_path, xtream_write_playlist};
+use crate::repository::xtream_repository::{load_input_xtream_playlist, persist_input_xtream_playlist, xtream_get_file_path, xtream_get_storage_path, xtream_write_playlist};
 use crate::utils;
 use log::info;
 use shared::create_tuliprox_error;
@@ -17,8 +17,10 @@ use shared::error::{info_err, TuliproxErrorKind};
 use shared::model::{InputType, M3uPlaylistItem, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, StreamProperties, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::{is_dash_url, is_hls_url};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path};
 use std::sync::Arc;
+use shared::model::xtream_const::XTREAM_CLUSTER;
+use crate::utils::json_write_documents_to_file;
 
 struct LocalEpisodeKey {
     path: String,
@@ -331,7 +333,7 @@ pub async fn load_target_into_memory_cache(app_state: &AppState, target: &Arc<Co
     }
 }
 
-pub async fn persist_input_playlist(app_config: &Arc<AppConfig>, input: &Arc<ConfigInput>, mut playlist: Vec<PlaylistGroup>) -> (Vec<PlaylistGroup>, Option<TuliproxError>) {
+pub async fn persist_input_playlist(app_config: &Arc<AppConfig>, input: &ConfigInput, mut playlist: Vec<PlaylistGroup>) -> (Vec<PlaylistGroup>, Option<TuliproxError>) {
     playlist.iter_mut().for_each(PlaylistGroup::on_load);
 
     let (result, err) = match input.input_type {
@@ -345,8 +347,54 @@ pub async fn persist_input_playlist(app_config: &Arc<AppConfig>, input: &Arc<Con
             };
             persist_input_xtream_playlist(app_config, &storage_path, playlist).await
         }
-        _ => (playlist, None),
+
+        _ => {
+            // Persist M3U/Other types
+            let working_dir = &app_config.config.load().working_dir;
+             let storage_path = match get_input_storage_path(&input.name, working_dir) {
+                Ok(storage_path) => storage_path,
+                Err(err) => {
+                    return (playlist, Some(create_tuliprox_error!( TuliproxErrorKind::Info, "Error creating input storage directory for input '{}' failed: {err}", input.name)));
+                }
+            };
+            let file_path = storage_path.join("playlist.json");
+            match json_write_documents_to_file(&file_path, &playlist) {
+                Ok(()) => (playlist, None),
+                Err(e) => (playlist, Some(info_err!(format!("Failed to persist input playlist: {e}")))),
+            }
+        },
     };
 
     (result, err)
+}
+
+pub async fn load_input_playlist(app_config: &Arc<AppConfig>, input: &ConfigInput, clusters: Option<&[XtreamCluster]>) -> Result<Vec<PlaylistGroup>, TuliproxError> {
+    let working_dir = &app_config.config.load().working_dir;
+    let storage_path = get_input_storage_path(&input.name, working_dir)
+        .map_err(|e| create_tuliprox_error!(TuliproxErrorKind::Info, "Error getting input path: {e}"))?;
+
+    match input.input_type {
+        InputType::Xtream | InputType::XtreamBatch => {
+             let clusters_to_load = if let Some(c) = clusters {
+                 c
+             } else {
+                 &XTREAM_CLUSTER
+             };
+             
+             load_input_xtream_playlist(app_config, &storage_path, clusters_to_load).await
+        }
+        _ => {
+             // Load JSON for M3U
+             let file_path = storage_path.join("playlist.json");
+             if file_path.exists() {
+                 let content = tokio::fs::read_to_string(&file_path).await
+                     .map_err(|e| info_err!(format!("Failed to read input playlist cache: {e}")))?;
+                 let playlist: Vec<PlaylistGroup> = serde_json::from_str(&content)
+                     .map_err(|e| info_err!(format!("Failed to parse input playlist cache: {e}")))?;
+                 Ok(playlist)
+             } else {
+                 Ok(vec![])
+             }
+        }
+    }
 }

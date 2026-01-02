@@ -3,6 +3,6 @@
 pub struct ScheduleConfigDto {
     #[serde(default)]
     pub schedule: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub targets: Option<Vec<String>>,
 }

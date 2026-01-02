@@ -1,26 +1,28 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::utils::is_blank_optional_string;
+use crate::utils::{is_blank_optional_str, is_blank_optional_string};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyConfigDto {
     pub url: String,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub username: Option<String>,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub password: Option<String>,
 }
 
 impl ProxyConfigDto {
     pub fn is_empty(&self) -> bool {
-        is_blank_optional_string(self.username.as_deref())
-        && is_blank_optional_string(self.password.as_deref())
+        is_blank_optional_str(self.username.as_deref())
+        && is_blank_optional_str(self.password.as_deref())
         && self.url.trim().is_empty()
     }
 
     pub fn clean(&mut self) {
-        if is_blank_optional_string(self.username.as_deref()) {
+        if is_blank_optional_str(self.username.as_deref()) {
             self.username = None;
         }
-        if is_blank_optional_string(self.password.as_deref()) {
+        if is_blank_optional_str(self.password.as_deref()) {
             self.password = None;
         }
     }

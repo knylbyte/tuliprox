@@ -44,6 +44,10 @@ pub enum InputRow {
 #[derive(Properties, PartialEq, Clone)]
 pub struct InputTableProps {
     pub inputs: Option<Vec<Rc<InputRow>>>,
+    #[prop_or_default]
+    pub on_edit: Option<Callback<Rc<ConfigInputDto>>>,
+    #[prop_or_default]
+    pub on_delete: Option<Callback<String>>,
 }
 
 #[function_component]
@@ -181,19 +185,34 @@ pub fn InputTable(props: &InputTableProps) -> Html {
         let popup_is_open_state = popup_is_open.clone();
         let confirm = dialog.clone();
         let translate = translate.clone();
-        // let selected_dto = selected_dto.clone();
+        let on_edit = props.on_edit.clone();
+        let on_delete = props.on_delete.clone();
+        let selected_dto = selected_dto.clone();
+
         Callback::from(move |(name, _): (String, _)| {
             if let Ok(action) = TableAction::from_str(&name) {
                 match action {
-                    TableAction::Edit => {}
+                    TableAction::Edit => {
+                        if let (Some(on_edit), Some(selected)) = (&on_edit, &*selected_dto) {
+                            if let InputRow::Input(dto) = &**selected {
+                                on_edit.emit(dto.clone());
+                            }
+                        }
+                    }
                     TableAction::Refresh => {}
                     TableAction::Delete => {
                         let confirm = confirm.clone();
                         let translator = translate.clone();
+                        let on_delete = on_delete.clone();
+                        let selected_dto = selected_dto.clone();
                         spawn_local(async move {
                             let result = confirm.confirm(&translator.t("MESSAGES.CONFIRM_DELETE")).await;
                             if result == DialogResult::Ok {
-                                // TODO edit
+                                if let (Some(on_delete), Some(selected)) = (on_delete, &*selected_dto) {
+                                    if let InputRow::Input(dto) = &**selected {
+                                        on_delete.emit(dto.name.clone());
+                                    }
+                                }
                             }
                         });
                     }

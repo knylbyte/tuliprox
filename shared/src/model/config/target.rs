@@ -1,19 +1,22 @@
+use crate::utils::is_blank_optional_string;
 use log::warn;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::{create_tuliprox_error_result, handle_tuliprox_error_result_list, info_err};
 use crate::foundation::filter::{get_filter, Filter};
-use crate::model::{ClusterFlags, ConfigFavouritesDto, ConfigRenameDto, ConfigSortDto, HdHomeRunDeviceOverview, PatternTemplate, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
-use crate::utils::{default_as_true, default_resolve_delay_secs, default_as_default};
+use crate::model::{ClusterFlags, ConfigFavouritesDto, ConfigRenameDto, ConfigSortDto, HdHomeRunDeviceOverview,
+                   PatternTemplate, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
+use crate::utils::{is_true, is_false, default_as_true, default_resolve_delay_secs, default_as_default,
+                   is_default_resolve_delay_secs, is_zero_u16, is_config_target_options_empty};
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigTargetOptions {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub ignore_logo: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub share_live_streams: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub remove_duplicates: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub force_redirect: Option<ClusterFlags>,
 }
 
@@ -30,23 +33,23 @@ impl ConfigTargetOptions {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct XtreamTargetOutputDto {
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub skip_live_direct_source: bool,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub skip_video_direct_source: bool,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub skip_series_direct_source: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub resolve_series: bool,
-    #[serde(default = "default_resolve_delay_secs")]
+    #[serde(default = "default_resolve_delay_secs", skip_serializing_if = "is_default_resolve_delay_secs")]
     pub resolve_series_delay: u16,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub resolve_vod: bool,
-    #[serde(default = "default_resolve_delay_secs")]
+    #[serde(default = "default_resolve_delay_secs", skip_serializing_if = "is_default_resolve_delay_secs")]
     pub resolve_vod_delay: u16,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trakt: Option<TraktConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub filter: Option<String>,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
@@ -94,13 +97,13 @@ impl XtreamTargetOutputDto {
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct M3uTargetOutputDto {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub filename: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub include_type_in_url: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub mask_redirect_url: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub filter: Option<String>,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
@@ -127,24 +130,24 @@ impl M3uTargetOutputDto {
 #[serde(deny_unknown_fields)]
 pub struct StrmTargetOutputDto {
     pub directory: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub username: Option<String>,
     #[serde(default)]
     pub style: StrmExportStyle,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub flat: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub underscore_whitespace: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub cleanup: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strm_props: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub filter: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub add_quality_to_filename: bool,
     #[serde(skip)]
     pub t_filter: Option<Filter>,
-    #[serde(default)]
-    pub add_quality_to_filename: bool,
 }
 
 impl StrmTargetOutputDto {
@@ -161,7 +164,7 @@ impl StrmTargetOutputDto {
 pub struct HdHomeRunTargetOutputDto {
     pub device: String,
     pub username: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub use_output: Option<TargetType>,
 }
 
@@ -198,30 +201,30 @@ impl TargetOutputDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigTargetDto {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero_u16")]
     pub id: u16,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub enabled: bool,
     #[serde(default = "default_as_default")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_config_target_options_empty")]
     pub options: Option<ConfigTargetOptions>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sort: Option<ConfigSortDto>,
     pub filter: String,
     #[serde(default)]
     pub output: Vec<TargetOutputDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rename: Option<Vec<ConfigRenameDto>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mapping: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub favourites: Option<Vec<ConfigFavouritesDto>>,
     #[serde(default)]
     pub processing_order: ProcessingOrder,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub use_memory_cache: bool,
     #[serde(skip)]
     pub t_filter: Option<Filter>,

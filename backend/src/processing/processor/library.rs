@@ -6,7 +6,7 @@ use shared::utils::{generate_playlist_uuid};
 use std::path::Path;
 use std::sync::Arc;
 
-pub async fn download_library_playlist(_client: &reqwest::Client, app_config: &Arc<AppConfig>, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
+pub async fn download_library_playlist(_client: &reqwest::Client, app_config: &Arc<AppConfig>, input: &ConfigInput) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
     let config = &*app_config.config.load();
     let Some(library_config) = config.library.as_ref() else { return (vec![], vec![]) };
     if !library_config.enabled { return (vec![], vec![]); }

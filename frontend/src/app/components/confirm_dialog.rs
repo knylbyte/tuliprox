@@ -42,6 +42,15 @@ pub fn ConfirmDialog(props: &ConfirmDialogProps) -> Html {
         let on_result = on_result.clone();
         Callback::from(move |()| on_result(DialogResult::Cancel))
     };
+
+    let title_html: Html = props.title
+        .split('\n')
+        .map(|line| html! { <>
+            { line }
+            <br/>
+        </> })
+        .collect::<Html>();
+
     html! {
         <CustomDialog
             open={*is_open}
@@ -50,7 +59,7 @@ pub fn ConfirmDialog(props: &ConfirmDialogProps) -> Html {
             close_on_backdrop_click={props.close_on_backdrop_click}
             on_close={Some(on_close)}
         >
-            <h2>{ &props.title }</h2>
+            <h2>{ title_html }</h2>
             <div class="tp__dialog__toolbar">
                 <TextButton autofocus=true class="secondary" name="cancel" icon="Cancel" onclick={on_cancel} title={translate.t(&props.cancel_caption)} />
                 <TextButton class="primary" name="ok" icon="Ok" onclick={on_ok} title={translate.t(&props.ok_caption)} />

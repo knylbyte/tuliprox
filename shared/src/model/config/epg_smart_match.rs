@@ -1,6 +1,9 @@
+use crate::utils::is_blank_optional_string;
 use std::fmt::Display;
 use log::warn;
 use crate::error::{create_tuliprox_error_result, TuliproxError, TuliproxErrorKind};
+use crate::utils::{is_false, default_match_threshold, default_best_match_threshold,
+                   is_default_match_threshold, is_default_best_match_threshold};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -32,18 +35,19 @@ impl Display for EpgNamePrefix {
 pub struct EpgSmartMatchConfigDto {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub normalize_regex: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strip: Option<Vec<String>>,
     #[serde(default)]
     pub name_prefix: EpgNamePrefix,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name_prefix_separator: Option<Vec<char>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub fuzzy_matching: bool,
-    #[serde(default)]
+    #[serde(default = "default_match_threshold", skip_serializing_if = "is_default_match_threshold")]
     pub match_threshold: u16,
-    #[serde(default)]
+    #[serde(default = "default_best_match_threshold", skip_serializing_if = "is_default_best_match_threshold")]
     pub best_match_threshold: u16,
 }
 impl Default for EpgSmartMatchConfigDto {
@@ -55,8 +59,8 @@ impl Default for EpgSmartMatchConfigDto {
             name_prefix: EpgNamePrefix::default(),
             name_prefix_separator: None,
             fuzzy_matching: false,
-            match_threshold: 80,
-            best_match_threshold: 95,
+            match_threshold: default_match_threshold(),
+            best_match_threshold: default_best_match_threshold(),
         }
     }
 }

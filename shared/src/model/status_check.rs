@@ -1,3 +1,4 @@
+use crate::utils::is_blank_optional_string;
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use crate::model::StreamInfo;
@@ -6,10 +7,10 @@ use crate::model::StreamInfo;
 pub struct StatusCheck {
     pub status: String,
     pub version: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub build_time: Option<String>,
     pub server_time: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub cache: Option<String>,
     pub active_users: usize,
     pub active_user_connections: usize,

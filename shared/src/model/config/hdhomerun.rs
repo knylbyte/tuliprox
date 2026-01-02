@@ -1,37 +1,35 @@
 use crate::create_tuliprox_error_result;
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::utils::{default_as_true, generate_hdhr_device_id, generate_hdhr_device_id_from_base, hash_string, validate_hdhr_device_id};
+use crate::utils::{is_false, is_true, default_as_true, default_device_type, default_device_udn,
+                   default_firmware_name, default_firmware_version, default_friendly_name,
+                   default_manufacturer, default_model_name, generate_hdhr_device_id,
+                   generate_hdhr_device_id_from_base, hash_string, is_default_device_type,
+                   is_default_device_udn, is_default_firmware_name, is_default_firmware_version,
+                   is_default_friendly_name, is_default_manufacturer, is_default_model_name,
+                   validate_hdhr_device_id};
 use log::warn;
 use std::collections::HashSet;
-
-fn default_friendly_name() -> String { String::from("TuliproxTV") }
-fn default_manufacturer() -> String { String::from("Silicondust") }
-fn default_model_name() -> String { String::from("HDTC-2US") }
-fn default_firmware_name() -> String { String::from("hdhomeruntc_atsc") }
-fn default_firmware_version() -> String { String::from("20170930") }
-fn default_device_type() -> String { String::from("urn:schemas-upnp-org:device:MediaServer:1") }
-fn default_device_udn() -> String { String::from("uuid:12345678-90ab-cdef-1234-567890abcdef::urn:dial-multicast:com.silicondust.hdhomerun") }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HdHomeRunDeviceConfigDto {
-    #[serde(default = "default_friendly_name")]
+    #[serde(default = "default_friendly_name", skip_serializing_if = "is_default_friendly_name")]
     pub friendly_name: String,
-    #[serde(default = "default_manufacturer")]
+    #[serde(default = "default_manufacturer", skip_serializing_if = "is_default_manufacturer")]
     pub manufacturer: String,
-    #[serde(default = "default_model_name")]
+    #[serde(default = "default_model_name", skip_serializing_if = "is_default_model_name")]
     pub model_name: String,
-    #[serde(default = "default_model_name")]
+    #[serde(default = "default_model_name", skip_serializing_if = "is_default_model_name")]
     pub model_number: String,
-    #[serde(default = "default_firmware_name")]
+    #[serde(default = "default_firmware_name", skip_serializing_if = "is_default_firmware_name")]
     pub firmware_name: String,
-    #[serde(default = "default_firmware_version")]
+    #[serde(default = "default_firmware_version", skip_serializing_if = "is_default_firmware_version")]
     pub firmware_version: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub device_id: String,
-    #[serde(default = "default_device_type")]
+    #[serde(default = "default_device_type", skip_serializing_if = "is_default_device_type")]
     pub device_type: String,
-    #[serde(default = "default_device_udn")]
+    #[serde(default = "default_device_udn", skip_serializing_if = "is_default_device_udn")]
     pub device_udn: String,
     pub name: String,
     #[serde(default)]
@@ -116,11 +114,11 @@ impl HdHomeRunDeviceConfigDto {
 pub struct HdHomeRunConfigDto {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub auth: bool,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub ssdp_discovery: bool,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub proprietary_discovery: bool,
     pub devices: Vec<HdHomeRunDeviceConfigDto>,
 }
