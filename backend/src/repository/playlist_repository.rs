@@ -167,6 +167,7 @@ fn assign_provider_series_info_episode_key(provider_series: &mut HashMap<String,
 #[allow(clippy::implicit_hasher)]
 fn rewrite_local_series_info_episode_virtual_id(pli: &mut PlaylistItem, local_library_series: &HashMap<String, Vec<LocalEpisodeKey>>) {
     let header = &mut pli.header;
+    header.parent_code = String::new();
     if let Some(episode_keys) = local_library_series.get(&header.id) {
         if let Some(StreamProperties::Series(series)) = header.additional_properties.as_mut() {
             if let Some(episodes) =
