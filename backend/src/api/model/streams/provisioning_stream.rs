@@ -15,6 +15,7 @@ pub struct ProvisioningStream {
     cancel_flag: Arc<AtomicBool>,
     provider_handle: Arc<Mutex<Option<ProviderHandle>>>,
     connection_manager: Arc<ConnectionManager>,
+    provider_stream_started: bool,
 }
 
 impl ProvisioningStream {
@@ -32,6 +33,7 @@ impl ProvisioningStream {
             cancel_flag,
             provider_handle,
             connection_manager,
+            provider_stream_started: false,
         }
     }
 }
@@ -60,10 +62,27 @@ impl Stream for ProvisioningStream {
 
         if let Some(stream) = self.provider_stream.as_mut() {
             let poll = Pin::new(stream).poll_next(cx);
-            if let Poll::Ready(None) = poll {
-                debug_if_enabled!("Provisioning provider stream ended");
+            match poll {
+                Poll::Ready(Some(Ok(bytes))) => {
+                    if !self.provider_stream_started {
+                        debug_if_enabled!(
+                            "Provisioning provider stream first chunk ({} bytes)",
+                            bytes.len()
+                        );
+                        self.provider_stream_started = true;
+                    }
+                    Poll::Ready(Some(Ok(bytes)))
+                }
+                Poll::Ready(Some(Err(err))) => {
+                    debug_if_enabled!("Provisioning provider stream error: {err}");
+                    Poll::Ready(Some(Err(err)))
+                }
+                Poll::Ready(None) => {
+                    debug_if_enabled!("Provisioning provider stream ended");
+                    Poll::Ready(None)
+                }
+                Poll::Pending => Poll::Pending,
             }
-            poll
         } else {
             Pin::new(&mut self.loading_stream).poll_next(cx)
         }

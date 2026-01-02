@@ -885,6 +885,11 @@ async fn create_panel_api_provisioning_stream_details(
                                     .connection_manager
                                     .release_provider_handle(Some(new_handle))
                                     .await;
+                            } else {
+                                debug_if_enabled!(
+                                    "panel_api provisioning stream swap delivered for input {}",
+                                    sanitize_sensitive_info(&input_clone.name)
+                                );
                             }
                         } else {
                             debug_if_enabled!(
