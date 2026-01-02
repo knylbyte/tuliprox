@@ -368,7 +368,11 @@ async fn xtream_read_item_for_stream_id(
     {
         let _file_lock = cfg.file_locks.read_lock(&xtream_path).await;
         let mut query = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path)?;
-        query.query(&stream_id).ok_or_else(|| Error::new(ErrorKind::NotFound, format!("Item {stream_id} not found in {cluster}")))
+        match query.query(&stream_id) {
+            Ok(Some(item)) => Ok(item),
+            Ok(None) => Err(Error::new(ErrorKind::NotFound, format!("Item {stream_id} not found in {cluster}"))),
+            Err(err) => Err(Error::other(format!("Query failed for {stream_id} in {cluster}: {err}"))),
+        }
     }
 }
 
@@ -381,9 +385,14 @@ async fn xtream_read_series_item_for_stream_id(
     {
         let _file_lock = cfg.file_locks.read_lock(&xtream_path).await;
         let mut query = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path)?;
-        query.query(&stream_id).ok_or_else(|| Error::new(ErrorKind::NotFound, format!("Item {stream_id} not found in series")))
+        match query.query(&stream_id) {
+            Ok(Some(item)) => Ok(item),
+            Ok(None) => Err(Error::new(ErrorKind::NotFound, format!("Item {stream_id} not found in series"))),
+            Err(err) => Err(Error::other(format!("Query failed for {stream_id} in series: {err}"))),
+        }
     }
 }
+
 
 macro_rules! try_cluster {
     ($xtream_cluster:expr, $item_type:expr, $virtual_id:expr) => {
@@ -490,7 +499,11 @@ pub async fn xtream_get_item_for_stream_id(
             let _file_lock = app_config.file_locks.read_lock(&target_id_mapping_file).await;
 
             let mut target_id_mapping = BPlusTreeQuery::<u32, VirtualIdRecord>::try_new(&target_id_mapping_file).map_err(|err| string_to_io_error(format!("Could not load id mapping for target {} err:{err}", target.name)))?;
-            let mapping = target_id_mapping.query(&virtual_id).ok_or_else(|| string_to_io_error(format!("Could not find mapping for target {} and id {}", target.name, virtual_id)))?;
+            let mapping = match target_id_mapping.query(&virtual_id) {
+                Ok(Some(record)) => Ok(record),
+                Ok(None) => Err(string_to_io_error(format!("Could not find mapping for target {} and id {}", target.name, virtual_id))),
+                Err(err) => Err(string_to_io_error(format!("Query failed for id {virtual_id}: {err}"))),
+            }?;
             match mapping.item_type {
                 PlaylistItemType::SeriesInfo
                 | PlaylistItemType::LocalSeriesInfo => {
@@ -755,16 +768,23 @@ async fn persist_input_info(app_config: &Arc<AppConfig>, storage_path: &Path, cl
         {
             let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
             let mut tree: BPlusTreeUpdate<u32, XtreamPlaylistItem> = BPlusTreeUpdate::try_new(&xtream_path).map_err(|err| Error::other(format!("failed to open BPlusTree for input {input_name}: {err}")))?;
-            if let Some(mut pli) = tree.query(&provider_id) {
-                pli.additional_properties = Some(props);
-                tree.update(&provider_id, pli).map_err(|err| Error::other(format!("failed to write {cluster} info for input {input_name}: {err}")))?;
-            } else {
-                error!("Could not find input entry for provider_id: {provider_id} and input: {input_name}");
+            match tree.query(&provider_id) {
+                Ok(Some(mut pli)) => {
+                    pli.additional_properties = Some(props);
+                    tree.update(&provider_id, pli).map_err(|err| Error::other(format!("failed to write {cluster} info for input {input_name}: {err}")))?;
+                }
+                Ok(None) => {
+                    error!("Could not find input entry for provider_id: {provider_id} and input: {input_name}");
+                }
+                Err(err) => {
+                    error!("Failed to query BPlusTree for provider_id: {provider_id} and input: {input_name}: {err}");
+                }
             }
         }
     }
     Ok(())
 }
+
 
 pub async fn persist_input_vod_info(app_config: &Arc<AppConfig>, storage_path: &Path,
                                     cluster: XtreamCluster, input_name: &str, provider_id: u32,

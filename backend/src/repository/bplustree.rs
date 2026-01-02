@@ -190,7 +190,72 @@ impl From<io::Error> for PageError {
     }
 }
 
+/// Error types for B+Tree operations that distinguish between different failure modes.
+/// This allows callers to handle "key not found" differently from actual errors like corruption.
+#[derive(Debug)]
+pub enum BPlusTreeError {
+    /// An I/O error occurred during file operations
+    Io(io::Error),
+    /// Data corruption detected during deserialization
+    Corrupted(String),
+    /// The tree structure is invalid (e.g., missing child pointers)
+    InvalidStructure(String),
+    /// The requested key was not found in the tree (used for update operations)
+    KeyNotFound,
+}
+
+impl std::fmt::Display for BPlusTreeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BPlusTreeError::Io(err) => write!(f, "I/O error: {err}"),
+            BPlusTreeError::Corrupted(msg) => write!(f, "Data corrupted: {msg}"),
+            BPlusTreeError::InvalidStructure(msg) => write!(f, "Invalid structure: {msg}"),
+            BPlusTreeError::KeyNotFound => write!(f, "Key not found"),
+        }
+    }
+}
+
+impl std::error::Error for BPlusTreeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            BPlusTreeError::Io(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
+impl From<io::Error> for BPlusTreeError {
+    fn from(err: io::Error) -> Self {
+        BPlusTreeError::Io(err)
+    }
+}
+
+
+
+impl BPlusTreeError {
+    pub fn to_io(self) -> io::Error {
+        match self {
+            BPlusTreeError::Io(e) => e,
+            BPlusTreeError::KeyNotFound => io::Error::new(io::ErrorKind::NotFound, "Key not found"),
+            err => io::Error::new(io::ErrorKind::InvalidData, err),
+        }
+    }
+}
+
+
+impl From<PageError> for BPlusTreeError {
+    fn from(err: PageError) -> Self {
+        match err {
+            PageError::Io(e) => BPlusTreeError::Io(e),
+            PageError::Corrupted => BPlusTreeError::Corrupted("Page data corrupted".into()),
+            other => BPlusTreeError::InvalidStructure(format!("{other:?}")),
+        }
+    }
+}
+
+
 impl<'a> SlottedPage<'a> {
+
     pub fn new(data: &'a mut [u8], page_type: PageType) -> Result<Self, PageError> {
         if data.len() < PAGE_HEADER_SIZE_USIZE {
             return Err(PageError::NoSpace);
@@ -1446,7 +1511,7 @@ fn query_tree<K, V, R: Read + Seek>(
     cache: &mut IndexMap<u64, Vec<u8>>,
     key: &K,
     start_offset: u64,
-) -> Option<V>
+) -> Result<Option<V>, BPlusTreeError>
 where
     K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
     V: Serialize + for<'de> Deserialize<'de> + Clone,
@@ -1459,7 +1524,8 @@ where
             let data = cached_block.clone();
             // We use a fresh buffer for the deserializer to avoid borrowing conflicts
             let temp_buffer = data;
-            let res = BPlusTreeNode::<K, V>::deserialize_from_block_slice(&temp_buffer, file, false).ok()?;
+            let res = BPlusTreeNode::<K, V>::deserialize_from_block_slice(&temp_buffer, file, false)
+                .map_err(BPlusTreeError::from)?;
 
             // Re-insert to mark as MRU
             if let Some(removed) = cache.shift_remove(&offset) {
@@ -1477,9 +1543,8 @@ where
                     cache.insert(offset, buffer.to_owned());
                     (node, pointers)
                 }
-                Err(_err) => {
-                    // It is possible the tree is empty or the file is being written to, so we just return None
-                    return None;
+                Err(err) => {
+                    return Err(BPlusTreeError::from(err));
                 }
             }
         };
@@ -1488,11 +1553,14 @@ where
             return match node.keys.binary_search(key) {
                 Ok(idx) => {
                     match node.value_info.get(idx) {
-                        Some(info) => BPlusTreeNode::<K, V>::load_value_from_info(file, info).ok(),
-                        None => None,
+                        Some(info) => {
+                            let value = BPlusTreeNode::<K, V>::load_value_from_info(file, info)?;
+                            Ok(Some(value))
+                        }
+                        None => Ok(None),
                     }
                 }
-                Err(_) => None,
+                Err(_) => Ok(None),
             };
         }
 
@@ -1501,13 +1569,14 @@ where
             if let Some(child_offset) = child_offsets.get(child_idx) {
                 offset = *child_offset;
             } else {
-                return None;
+                return Ok(None);
             }
         } else {
-            return None;
+            return Ok(None);
         }
     }
 }
+
 
 fn query_tree_le<K, V, R: Read + Seek>(
     file: &mut R,
@@ -1515,7 +1584,7 @@ fn query_tree_le<K, V, R: Read + Seek>(
     cache: &mut IndexMap<u64, Vec<u8>>,
     key: &K,
     start_offset: u64,
-) -> Option<V>
+) -> Result<Option<V>, BPlusTreeError>
 where
     K: Ord + Serialize + for<'de> Deserialize<'de> + Clone,
     V: Serialize + for<'de> Deserialize<'de> + Clone,
@@ -1524,7 +1593,8 @@ where
     loop {
         let (node, pointers) = if let Some(cached_block) = cache.get_mut(&offset) {
             let temp_buffer = cached_block.clone();
-            let res = BPlusTreeNode::<K, V>::deserialize_from_block_slice(&temp_buffer, file, false).ok()?;
+            let res = BPlusTreeNode::<K, V>::deserialize_from_block_slice(&temp_buffer, file, false)
+                .map_err(BPlusTreeError::from)?;
             if let Some(removed) = cache.shift_remove(&offset) {
                 cache.insert(offset, removed);
             }
@@ -1538,9 +1608,8 @@ where
                     cache.insert(offset, buffer.to_owned());
                     (node, pointers)
                 }
-                Err(_err) => {
-                    // It is possible the tree is empty or the file is being written to, so we just return None
-                    return None;
+                Err(err) => {
+                    return Err(BPlusTreeError::from(err));
                 }
             }
         };
@@ -1548,11 +1617,14 @@ where
         if node.is_leaf {
             let idx = get_entry_index_upper_bound::<K>(&node.keys, key);
             if idx == 0 {
-                return None;
+                return Ok(None);
             }
             return match node.value_info.get(idx - 1) {
-                Some(info) => BPlusTreeNode::<K, V>::load_value_from_info(file, info).ok(),
-                None => None,
+                Some(info) => {
+                    let value = BPlusTreeNode::<K, V>::load_value_from_info(file, info)?;
+                    Ok(Some(value))
+                }
+                None => Ok(None),
             };
         }
 
@@ -1563,13 +1635,14 @@ where
             } else if let Some(last) = child_offsets.last() {
                 offset = *last;
             } else {
-                return None;
+                return Ok(None);
             }
         } else {
-            return None;
+            return Ok(None);
         }
     }
 }
+
 
 /// `BPlusTreeQuery` performs on-disk queries without loading the entire tree into memory.
 /// For frequent queries, consider using `BPlusTree::load()` instead, which loads the full tree into memory
@@ -1618,13 +1691,14 @@ where
         Self::try_from_file(file)
     }
 
-    pub fn query(&mut self, key: &K) -> Option<V> {
+    pub fn query(&mut self, key: &K) -> Result<Option<V>, BPlusTreeError> {
         query_tree(&mut self.file, &mut self.buffer, &mut self.cache, key, self.root_offset)
     }
 
-    pub fn query_le(&mut self, key: &K) -> Option<V> {
+    pub fn query_le(&mut self, key: &K) -> Result<Option<V>, BPlusTreeError> {
         query_tree_le(&mut self.file, &mut self.buffer, &mut self.cache, key, self.root_offset)
     }
+
 
     /// Provides a disk-backed iterator that traverses the entire tree in order.
     pub fn iter(&mut self) -> BPlusTreeDiskIterator<'_, K, V> {
@@ -1923,22 +1997,23 @@ where
         })
     }
 
-    pub fn query(&mut self, key: &K) -> Option<V> {
+    pub fn query(&mut self, key: &K) -> Result<Option<V>, BPlusTreeError> {
         let mut reader = utils::file_reader(&mut self.file);
         query_tree(&mut reader, &mut self.read_buffer, &mut self.cache, key, self.root_offset)
     }
 
-    pub fn query_le(&mut self, key: &K) -> Option<V> {
+    pub fn query_le(&mut self, key: &K) -> Result<Option<V>, BPlusTreeError> {
         let mut reader = utils::file_reader(&mut self.file);
         query_tree_le(&mut reader, &mut self.read_buffer, &mut self.cache, key, self.root_offset)
     }
+
 
     fn update_recursive(
         &mut self,
         offset: u64,
         key: &K,
         value: &V,
-    ) -> io::Result<u64> {
+    ) -> Result<u64, BPlusTreeError> {
         let mut reader = utils::file_reader(&mut self.file);
         let (mut node, pointers) = BPlusTreeNode::<K, V>::deserialize_from_block(&mut reader, &mut self.read_buffer, offset, false)?;
 
@@ -1976,7 +2051,7 @@ where
                     node.serialize_to_block(&mut self.file, &mut self.write_buffer, new_leaf_offset)?;
                     Ok(new_leaf_offset)
                 }
-                Err(_) => Err(io::Error::new(io::ErrorKind::NotFound, "Entry not found")),
+                Err(_) => Err(BPlusTreeError::KeyNotFound),
             }
         } else {
             let child_idx = get_entry_index_upper_bound::<K>(&node.keys, key);
@@ -1996,15 +2071,16 @@ where
                     node.serialize_internal_with_offsets(&mut self.file, &mut self.write_buffer, new_node_offset, &pters)?;
                     Ok(new_node_offset)
                 } else {
-                    Err(io::Error::new(io::ErrorKind::NotFound, "Child pointer not found in internal node"))
+                    Err(BPlusTreeError::InvalidStructure("Child pointer not found in internal node".into()))
                 }
             } else {
-                Err(io::Error::new(io::ErrorKind::InvalidData, "Internal node missing pointers invariant violation"))
+                Err(BPlusTreeError::InvalidStructure("Internal node missing pointers invariant violation".into()))
             }
         }
     }
 
-    pub fn update(&mut self, key: &K, value: V) -> io::Result<u64> {
+
+    pub fn update(&mut self, key: &K, value: V) -> Result<u64, BPlusTreeError> {
         let new_root_offset = self.update_recursive(self.root_offset, key, &value)?;
 
         // Atomic Header Swap
@@ -2020,7 +2096,7 @@ where
     /// Update multiple items in batch. This is more efficient than calling `update()` multiple times
     /// as it performs all updates and then commits the final root offset once.
     /// returns The final root offset after all updates, or an error if any update fails
-    pub fn update_batch(&mut self, items: &[(&K, &V)]) -> io::Result<u64> {
+    pub fn update_batch(&mut self, items: &[(&K, &V)]) -> Result<u64, BPlusTreeError> {
         if items.is_empty() {
             return Ok(self.root_offset);
         }
@@ -2041,6 +2117,7 @@ where
         self.root_offset = current_root;
         Ok(current_root)
     }
+
 
     /// Insert or update multiple items in batch (upsert). If a key exists, it will be updated;
     /// if it doesn't exist, it will be inserted. This is more efficient than calling `update()`
@@ -2340,7 +2417,7 @@ mod tests {
 
         let mut tree_query: BPlusTreeQuery<u32, Record> = BPlusTreeQuery::try_new(&filepath)?;
         for i in 0u32..=test_size {
-            let found = tree_query.query(&i);
+            let found = tree_query.query(&i).expect("Query failed");
             assert!(found.is_some(), "{content} {i} not found");
             let entry = found.unwrap();
             assert!(entry.eq(&Record {
@@ -2352,12 +2429,12 @@ mod tests {
         let mut tree_update: BPlusTreeUpdate<u32, Record> = BPlusTreeUpdate::try_new(&filepath)?;
 
         for i in 0u32..=test_size {
-            if let Some(record) = tree_update.query(&i) {
+            if let Ok(Some(record)) = tree_update.query(&i) {
                 let new_record = Record {
                     id: record.id,
                     data: format!("{content} {}", record.id + 9000),
                 };
-                tree_update.update(&i, new_record)?;
+                tree_update.update(&i, new_record).map_err(|e| e.to_io())?;
             } else {
                 panic!("{content} {i} not found");
             }
@@ -2367,7 +2444,7 @@ mod tests {
         let mut tree_query: BPlusTreeQuery<u32, Record> = BPlusTreeQuery::try_new(&filepath)?;
 
         for i in 0u32..=test_size {
-            let found = tree_query.query(&i);
+            let found = tree_query.query(&i).expect("Query failed");
             assert!(found.is_some(), "{content} {i} not found");
             let entry = found.unwrap();
             let expected = Record {
@@ -2449,14 +2526,14 @@ mod tests {
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
         for i in 0u32..100 {
             if i % 2 == 0 {
-                tree_update.update(&i, Record { id: i, data: format!("UpdatedContent {i}") })?;
+                tree_update.update(&i, Record { id: i, data: format!("UpdatedContent {i}") }).map_err(|e| e.to_io())?;
             }
         }
 
         // Reload and Verify via Query
         let mut tree_query: BPlusTreeQuery<u32, Record> = BPlusTreeQuery::try_new(&filepath)?;
         for i in 0u32..100 {
-            let val = tree_query.query(&i).expect("Should find key");
+            let val = tree_query.query(&i).expect("Query failed").expect("Should find key");
             if i % 2 == 0 {
                 assert_eq!(val.data, format!("UpdatedContent {i}"));
             } else {
@@ -2499,7 +2576,7 @@ mod tests {
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
         let same_size_padding = "y".repeat(100);
         for i in 0u32..10 {
-            tree_update.update(&i, Record { id: i, data: same_size_padding.clone() })?;
+            tree_update.update(&i, Record { id: i, data: same_size_padding.clone() }).map_err(|e| e.to_io())?;
         }
 
         let size_after_same_update = std::fs::metadata(&filepath)?.len();
@@ -2508,20 +2585,20 @@ mod tests {
         // Reload and verify
         let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
         for i in 0u32..10 {
-            let val = tree_query.query(&i).expect("Should find key");
+            let val = tree_query.query(&i).expect("Query failed").expect("Should find key");
             assert_eq!(val.data, same_size_padding);
         }
 
         // Update with smaller size data
         let smaller_padding = "z".repeat(50);
         for i in 0u32..10 {
-            tree_update.update(&i, Record { id: i, data: smaller_padding.clone() })?;
+            tree_update.update(&i, Record { id: i, data: smaller_padding.clone() }).map_err(|e| e.to_io())?;
         }
 
         // Update with larger size data (force append)
         let larger_padding = "w".repeat(5000);
         for i in 0u32..1 {
-            tree_update.update(&i, Record { id: i, data: larger_padding.clone() })?;
+            tree_update.update(&i, Record { id: i, data: larger_padding.clone() }).map_err(|e| e.to_io())?;
         }
 
         let size_before_compact = std::fs::metadata(&filepath)?.len();
@@ -2533,9 +2610,9 @@ mod tests {
 
         // Final data check after compact
         let mut final_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
-        assert_eq!(final_query.query(&0).unwrap().data, larger_padding);
+        assert_eq!(final_query.query(&0).unwrap().unwrap().data, larger_padding);
         for i in 1u32..10 {
-            assert_eq!(final_query.query(&i).unwrap().data, smaller_padding);
+            assert_eq!(final_query.query(&i).unwrap().unwrap().data, smaller_padding);
         }
 
         Ok(())
@@ -2557,25 +2634,25 @@ mod tests {
 
         // 1. Initial Queries
         for i in (0..test_size).step_by(50) {
-            let val = tree_update.query(&i).expect("Should find initial key");
+            let val = tree_update.query(&i).expect("Query failed").expect("Should find initial key");
             assert_eq!(val.data, format!("Content {i}"));
         }
 
         // 2. Multiple Updates (COW)
         for i in (0..test_size).step_by(10) {
-            tree_update.update(&i, Record { id: i, data: format!("UpdatedContent {i}") })?;
+            tree_update.update(&i, Record { id: i, data: format!("UpdatedContent {i}") }).map_err(|e| e.to_io())?;
         }
 
         // 3. Verify Query Integrity (Must return NEW values)
         for i in (0..test_size).step_by(10) {
-            let val = tree_update.query(&i).expect("Should find updated key");
+            let val = tree_update.query(&i).expect("Query failed").expect("Should find updated key");
             assert_eq!(val.data, format!("UpdatedContent {i}"));
         }
 
         // 4. Verify Query Integrity for non-updated keys (Must return OLD values)
         for i in (1..test_size).step_by(11) {
             if i % 10 == 0 { continue; } // skip updated ones
-            let val = tree_update.query(&i).expect("Should find original key");
+            let val = tree_update.query(&i).expect("Query failed").expect("Should find original key");
             assert_eq!(val.data, format!("Content {i}"));
         }
 
@@ -2590,7 +2667,7 @@ mod tests {
         // 6. Final verification after GC
         let mut final_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
         for i in (0..test_size).step_by(10) {
-            let val = final_query.query(&i).expect("Should find updated key after GC");
+            let val = final_query.query(&i).expect("Query failed").expect("Should find updated key after GC");
             assert_eq!(val.data, format!("UpdatedContent {i}"));
         }
 
@@ -2612,14 +2689,14 @@ mod tests {
         let mut tree_update = BPlusTreeUpdate::<u32, Record>::try_new(&filepath)?;
 
         // Initial LE check
-        assert_eq!(tree_update.query_le(&15).unwrap().id, 10);
-        assert_eq!(tree_update.query_le(&5).unwrap().id, 0);
+        assert_eq!(tree_update.query_le(&15).unwrap().unwrap().id, 10);
+        assert_eq!(tree_update.query_le(&5).unwrap().unwrap().id, 0);
 
         // 2. COW Update
-        tree_update.update(&10, Record { id: 10, data: "NewVal".to_string() })?;
+        tree_update.update(&10, Record { id: 10, data: "NewVal".to_string() }).map_err(|e| e.to_io())?;
 
         // 3. Verify LE returns the LATEST value
-        let val = tree_update.query_le(&15).expect("Should find LE key after COW update");
+        let val = tree_update.query_le(&15).expect("Query failed").expect("Should find LE key after COW update");
         assert_eq!(val.id, 10);
         assert_eq!(val.data, "NewVal");
 
@@ -2693,13 +2770,13 @@ mod tests {
             .map(|(k, v)| (k, v))
             .collect();
 
-        tree_update.update_batch(&update_refs)?;
+        tree_update.update_batch(&update_refs).map_err(|e| e.to_io())?;
         drop(tree_update);
 
         // Verify all updates
         let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
         for i in 0u32..50 {
-            let val = tree_query.query(&i).expect("Should find key");
+            let val = tree_query.query(&i).expect("Query failed").expect("Should find key");
             if i % 5 == 0 {
                 assert_eq!(val.data, format!("BatchUpdated {i}"), "Batch updated key {i} should have new value");
             } else {
@@ -2731,13 +2808,13 @@ mod tests {
 
         // Test empty batch - should be no-op
         let empty_batch: Vec<(&u32, &Record)> = vec![];
-        let result = tree_update.update_batch(&empty_batch)?;
+        let result = tree_update.update_batch(&empty_batch).map_err(|e| e.to_io())?;
 
         assert_eq!(result, initial_root, "Empty batch should not change root offset");
 
         // Verify data unchanged
         for i in 0u32..10 {
-            let val = tree_update.query(&i).expect("Should find key");
+            let val = tree_update.query(&i).expect("Query failed").expect("Should find key");
             assert_eq!(val.data, format!("Initial {i}"));
         }
 
@@ -2775,7 +2852,7 @@ mod tests {
             .collect();
 
         // Perform batch update
-        tree_update.update_batch(&update_refs)?;
+        tree_update.update_batch(&update_refs).map_err(|e| e.to_io())?;
         drop(tree_update);
 
         // Verify all updates via iterator
@@ -2823,7 +2900,7 @@ mod tests {
             .map(|(k, v)| (k, v))
             .collect();
 
-        tree_update.update_batch(&update_refs)?;
+        tree_update.update_batch(&update_refs).map_err(|e| e.to_io())?;
 
         let size_before_compact = std::fs::metadata(&filepath)?.len();
 
@@ -2838,7 +2915,7 @@ mod tests {
         drop(tree_update);
         let mut tree_query = BPlusTreeQuery::<u32, Record>::try_new(&filepath)?;
         for i in 0u32..100 {
-            let val = tree_query.query(&i).expect("Should find key after compaction");
+            let val = tree_query.query(&i).expect("Query failed").expect("Should find key after compaction");
             assert_eq!(val.data, small_data, "Data should be updated after compaction");
         }
 
@@ -2888,19 +2965,19 @@ mod tests {
 
         // Check updated keys (0-24)
         for i in 0u32..25 {
-            let val = tree_query.query(&i).expect("Should find updated key");
+            let val = tree_query.query(&i).expect("Query failed").expect("Should find updated key");
             assert_eq!(val.data, format!("Updated {i}"), "Key {i} should be updated");
         }
 
         // Check unchanged keys (25-49)
         for i in 25u32..50 {
-            let val = tree_query.query(&i).expect("Should find unchanged key");
+            let val = tree_query.query(&i).expect("Query failed").expect("Should find unchanged key");
             assert_eq!(val.data, format!("Initial {i}"), "Key {i} should remain unchanged");
         }
 
         // Check inserted keys (50-74)
         for i in 50u32..75 {
-            let val = tree_query.query(&i).expect("Should find inserted key");
+            let val = tree_query.query(&i).expect("Query failed").expect("Should find inserted key");
             assert_eq!(val.data, format!("Inserted {i}"), "Key {i} should be inserted");
         }
 
@@ -2942,13 +3019,13 @@ mod tests {
 
         // Original keys should still exist
         for i in 0u32..10 {
-            let val = tree_query.query(&i).expect("Should find original key");
+            let val = tree_query.query(&i).expect("Query failed").expect("Should find original key");
             assert_eq!(val.data, format!("Initial {i}"));
         }
 
         // New keys should be inserted
         for i in 100u32..150 {
-            let val = tree_query.query(&i).expect("Should find new key");
+            let val = tree_query.query(&i).expect("Query failed").expect("Should find new key");
             assert_eq!(val.data, format!("New {i}"));
         }
 
@@ -3059,15 +3136,15 @@ mod tests {
         let mut query = BPlusTreeQuery::<u32, String>::try_new(&filepath)?;
 
         for i in 0..100 {
-            let val = query.query(&i).expect("Should find small value");
+            let val = query.query(&i).expect("Query failed").expect("Should find small value");
             assert_eq!(val.len(), 50);
         }
         for i in 100..110 {
-            let val = query.query(&i).expect("Should find large value");
+            let val = query.query(&i).expect("Query failed").expect("Should find large value");
             assert_eq!(val.len(), 5000);
         }
         for i in 110..210 {
-            let val = query.query(&i).expect("Should find small value 2");
+            let val = query.query(&i).expect("Query failed").expect("Should find small value 2");
             assert_eq!(val.len(), 50);
         }
 
@@ -3100,8 +3177,8 @@ mod tests {
         drop(tree_update);
 
         let mut query = BPlusTreeQuery::<u32, String>::try_new(&filepath)?;
-        assert_eq!(query.query(&1).unwrap(), val1);
-        assert_eq!(query.query(&2).unwrap(), val2);
+        assert_eq!(query.query(&1).unwrap(), Some(val1));
+        assert_eq!(query.query(&2).unwrap(), Some(val2));
 
         Ok(())
     }
@@ -3138,7 +3215,7 @@ mod tests {
         for i in 0..count {
             let k = u32::try_from(i).unwrap();
             let val = query.query(&k).unwrap();
-            assert_eq!(val, k);
+            assert_eq!(val, Some(k));
         }
         Ok(())
     }
@@ -3166,8 +3243,8 @@ mod tests {
         drop(tree_update);
 
         let mut query = BPlusTreeQuery::<u32, String>::try_new(&filepath)?;
-        assert_eq!(query.query(&1).unwrap(), "Third");
-        assert_eq!(query.query(&2).unwrap(), "Two");
+        assert_eq!(query.query(&1).unwrap(), Some("Third".to_string()));
+        assert_eq!(query.query(&2).unwrap(), Some("Two".to_string()));
         Ok(())
     }
 
@@ -3212,7 +3289,7 @@ mod tests {
         // Verify data
         let mut query = BPlusTreeQuery::<u32, String>::try_new(&filepath)?;
         for i in 0..count {
-            assert_eq!(query.query(&i).unwrap(), val);
+            assert_eq!(query.query(&i).unwrap(), Some(val.clone()));
         }
 
         Ok(())
@@ -3269,7 +3346,7 @@ mod tests {
         let mut query = BPlusTreeQuery::<String, u32>::try_new(&filepath)?;
         for i in 0..5 {
             let val = query.query(&keys[i]).unwrap();
-            assert_eq!(val, vals[i]);
+            assert_eq!(val, Some(vals[i]));
         }
         Ok(())
     }
