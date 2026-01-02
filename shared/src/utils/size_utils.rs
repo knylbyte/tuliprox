@@ -5,30 +5,6 @@ pub const fn bytes_to_megabytes(bytes: u64) -> u64 {
     bytes / 1_048_576
 }
 
-// pub fn parse_size_base_10(size_str: &str) -> Result<u64, String> {
-//     let units = [
-//         ("KB", 1_000u64),         // Kilobytes (Base 10)
-//         ("MB", 1_000_000u64),     // Megabytes
-//         ("GB", 1_000_000_000u64), // Gigabytes
-//         ("TB", 1_000_000_000_000u64), // Terabytes
-//         ("B", 1u64),              // Bytes
-//     ];
-//
-//     let size_str = size_str.trim().to_uppercase();
-//
-//     for (unit, multiplier) in &units {
-//         if size_str.ends_with(unit) {
-//             let number_part = size_str[..size_str.len() - unit.len()].trim();
-//             let value = u64::from_str(number_part).map_err(|_| format!("Invalid size: {number_part}"))?;
-//             return value
-//                 .checked_mul(*multiplier)
-//                 .ok_or_else(|| format!("Size too large: {size_str}"));
-//         }
-//     }
-//
-//     u64::from_str(&size_str).map_err(|_| format!("Invalid size: {size_str}"))
-// }
-
 pub fn parse_size_base_2(size_str: &str) -> Result<u64, String> {
     let units = [
         ("KB", 1_024u64),         // Kilobytes
@@ -98,6 +74,23 @@ pub fn parse_to_kbps(input: &str) ->  Result<u64, String> {
 
     u64::from_str(speed_str).map_err(|_| format!("Invalid speed: {speed_str}, supported units are {}", units.iter().map(|p| p.0).collect::<Vec<_>>().join(",")))
 }
+
+pub fn human_readable_kbps(kbps: u64) -> String {
+    let units = ["kbps", "Mbps", "Gbps", "Tbps"];
+    let mut speed = kbps as f64;
+    let mut unit = units[0];
+
+    for next_unit in units.iter().skip(1) {
+        if speed < 1000.0 {
+            break;
+        }
+        speed /= 1000.0;
+        unit = next_unit;
+    }
+
+    format!("{speed:.2} {unit}")
+}
+
 
 #[cfg(test)]
 mod tests {
