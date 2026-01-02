@@ -5,9 +5,10 @@ use crate::api::model::{
     create_provider_connections_exhausted_stream, create_provider_stream,
     create_provider_stream_once,
     get_stream_response_with_headers, ActiveClientStream, AppState,
-    BoxedProviderStream, CustomVideoStream, CustomVideoStreamType, ProviderHandle,
+    CustomVideoStream, CustomVideoStreamType, ProviderHandle,
     ProviderStreamFactoryOptions, ProviderStreamFactoryResponse, ProviderStreamInfo, SharedStreamManager,
-    StreamError, ThrottledStream, UserApiRequest, ProvisioningStream,
+    StreamError, ThrottledStream, UserApiRequest, ProvisioningStream, ProvisioningStreamKind,
+    ProvisioningStreamPayload,
 };
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
 use crate::api::panel_api::try_provision_account_on_exhausted;
@@ -724,7 +725,7 @@ async fn create_panel_api_provisioning_stream_details(
     )
     .boxed();
 
-    let (stream_tx, stream_rx) = oneshot::channel::<BoxedProviderStream>();
+    let (stream_tx, stream_rx) = oneshot::channel::<ProvisioningStreamPayload>();
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let provider_handle_state = Arc::new(StdMutex::new(None));
 
@@ -770,15 +771,25 @@ async fn create_panel_api_provisioning_stream_details(
             .await
             {
                 if let Some(tx) = stream_tx.take() {
-                    let _ = tx.send(stream);
+                    let _ = tx.send(ProvisioningStreamPayload {
+                        stream,
+                        kind: ProvisioningStreamKind::Provider,
+                    });
                 }
             } else if let (Some(stream), _) = create_channel_unavailable_stream(
                 &app_state_clone.app_config,
                 &[],
                 axum::http::StatusCode::SERVICE_UNAVAILABLE,
             ) {
+                app_state_clone
+                    .connection_manager
+                    .update_stream_detail(&addr, CustomVideoStreamType::ChannelUnavailable)
+                    .await;
                 if let Some(tx) = stream_tx.take() {
-                    let _ = tx.send(stream);
+                    let _ = tx.send(ProvisioningStreamPayload {
+                        stream,
+                        kind: ProvisioningStreamKind::Custom(CustomVideoStreamType::ChannelUnavailable),
+                    });
                 }
             }
             return;
@@ -876,7 +887,12 @@ async fn create_panel_api_provisioning_stream_details(
                                     );
                                 }
                             }
-                            if tx.send(stream).is_err() {
+                            if tx.send(ProvisioningStreamPayload {
+                                stream,
+                                kind: ProvisioningStreamKind::Provider,
+                            })
+                            .is_err()
+                            {
                                 debug_if_enabled!(
                                     "panel_api provisioning switch failed: client disconnected before swap for input {}",
                                     sanitize_sensitive_info(&input_clone.name)
@@ -937,8 +953,19 @@ async fn create_panel_api_provisioning_stream_details(
             &[],
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
         ) {
+            debug_if_enabled!(
+                "panel_api provisioning timeout for input {} -> channel_unavailable",
+                sanitize_sensitive_info(&input_clone.name)
+            );
+            app_state_clone
+                .connection_manager
+                .update_stream_detail(&addr, CustomVideoStreamType::ChannelUnavailable)
+                .await;
             if let Some(tx) = stream_tx.take() {
-                let _ = tx.send(stream);
+                let _ = tx.send(ProvisioningStreamPayload {
+                    stream,
+                    kind: ProvisioningStreamKind::Custom(CustomVideoStreamType::ChannelUnavailable),
+                });
             }
         }
     });
