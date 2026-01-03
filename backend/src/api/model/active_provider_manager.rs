@@ -77,10 +77,36 @@ impl ActiveProviderManager {
         (grace_period_millis, grace_period_timeout_secs)
     }
 
-    pub fn update_config(&self, cfg: &AppConfig) {
+    pub async fn update_config(&self, cfg: &AppConfig) {
         let (grace_period_millis, grace_period_timeout_secs) = Self::get_grace_options(cfg);
         let inputs = Self::get_config_inputs(cfg);
         self.providers.update_config(inputs, grace_period_millis, grace_period_timeout_secs);
+        self.reconcile_connections().await;
+    }
+
+    pub async fn reconcile_connections(&self) {
+        let mut counts = HashMap::<String, usize>::new();
+        {
+            let connections = self.connections.read().await;
+
+            // Single connections
+            for per_addr in connections.single.values() {
+                for allocation in per_addr.values() {
+                    if let Some(name) = allocation.get_provider_name() {
+                        *counts.entry(name).or_insert(0) += 1;
+                    }
+                }
+            }
+
+            // Shared connections
+            for shared in connections.shared.by_key.values() {
+                if let Some(name) = shared.allocation.get_provider_name() {
+                    *counts.entry(name).or_insert(0) += 1;
+                }
+            }
+        }
+
+        self.providers.reconcile_connections(counts).await;
     }
 
     async fn acquire_connection_inner(

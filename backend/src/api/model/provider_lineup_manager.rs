@@ -628,6 +628,82 @@ impl ProviderLineupManager {
         self.providers.store(Arc::new(new_lineups));
     }
 
+    pub async fn reconcile_connections(&self, mut counts: HashMap<String, usize>) {
+        // 1. Synchronize known providers from actual counts.
+        // This avoids a transient "zero state" by updating each provider in one step.
+        for entry in &self.provider_connections {
+            let name = entry.key();
+            let count = counts.remove(name).unwrap_or(0);
+            let mut conn = entry.value().write().await;
+            conn.current_connections = count;
+            if count == 0 {
+                conn.granted_grace = false;
+                conn.grace_ts = 0;
+            }
+        }
+
+        // 2. Handle new providers that weren't in the registry yet (e.g. newly added/renamed).
+        for (name, count) in counts {
+            let conn_lock = self.provider_connections
+                .entry(name)
+                .or_insert_with(|| Arc::new(RwLock::new(ProviderConfigConnection::default())))
+                .clone();
+            let mut conn = conn_lock.write().await;
+            conn.current_connections = count;
+        }
+
+        // 3. Broadcast status updates to the UI/Event system.
+        // We drop the snapshot before GC to ensure Arc counts are accurate.
+        {
+            let snapshot: Vec<_> = self.provider_connections.iter()
+                .map(|e| (e.key().clone(), Arc::clone(e.value())))
+                .collect();
+
+            for (name, conn_lock) in snapshot {
+                let count = conn_lock.read().await.current_connections;
+                self.event_manager.send_provider_event(&name, count);
+            }
+        }
+
+        // 4. Garbage Collection: Remove providers that are neither in the current config
+        // nor referenced by any active stream allocations.
+        //
+        // deterministic check: Is the name still in any current lineup?
+        let current_names: std::collections::HashSet<String> = {
+            let mut names = std::collections::HashSet::new();
+            let lineups = self.providers.load();
+            for lineup in lineups.iter() {
+                match lineup {
+                    ProviderLineup::Single(s) => { names.insert(s.provider.name.clone()); }
+                    ProviderLineup::Multi(m) => {
+                        names.insert(m.name.clone());
+                        for g in &m.providers {
+                            match g {
+                                ProviderPriorityGroup::SingleProviderGroup(p) => { names.insert(p.name.clone()); }
+                                ProviderPriorityGroup::MultiProviderGroup(_, group) => {
+                                    for p in group { names.insert(p.name.clone()); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            names
+        };
+
+        // Arc::strong_count == 1 means it's only held by this DashMap registry.
+        self.provider_connections.retain(|name, conn_lock| {
+            if current_names.contains(name) {
+                return true; // Keep if in active config
+            }
+            if Arc::strong_count(conn_lock) > 1 {
+                return true; // Keep if held by an active stream
+            }
+            debug!("Purging stale provider connection record: {name}");
+            false
+        });
+    }
+
     gen_provider_search!(get_provider_config_by_name, name, &str);
 
 
