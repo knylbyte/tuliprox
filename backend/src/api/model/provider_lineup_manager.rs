@@ -628,17 +628,21 @@ impl ProviderLineupManager {
         self.providers.store(Arc::new(new_lineups));
     }
 
-    pub async fn reconcile_connections(&self, counts: HashMap<String, usize>) {
-        // 1. Reset all known providers to 0 connections initially.
+    pub async fn reconcile_connections(&self, mut counts: HashMap<String, usize>) {
+        // 1. Synchronize known providers from actual counts.
+        // This avoids a transient "zero state" by updating each provider in one step.
         for entry in &self.provider_connections {
+            let name = entry.key();
+            let count = counts.remove(name).unwrap_or(0);
             let mut conn = entry.value().write().await;
-            conn.current_connections = 0;
-            conn.granted_grace = false;
-            conn.grace_ts = 0;
+            conn.current_connections = count;
+            if count == 0 {
+                conn.granted_grace = false;
+                conn.grace_ts = 0;
+            }
         }
 
-        // 2. Synchronize with actual active allocations.
-        // This handles renamed or newly added providers as well.
+        // 2. Handle new providers that weren't in the registry yet (e.g. newly added/renamed).
         for (name, count) in counts {
             let conn_lock = self.provider_connections
                 .entry(name)
