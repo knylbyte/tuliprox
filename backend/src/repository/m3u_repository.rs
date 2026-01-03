@@ -204,7 +204,7 @@ pub async fn persist_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &
 pub async fn load_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &Path) -> Result<Vec<PlaylistGroup>, TuliproxError> {
     let mut groups: IndexMap<String, PlaylistGroup> = IndexMap::new();
 
-    if m3u_path.exists() {
+    if tokio::fs::try_exists(m3u_path).await.unwrap_or(false) {
         // Load Items
         let _file_lock = app_config.file_locks.read_lock(m3u_path).await;
         if let Ok(mut query) = BPlusTreeQuery::<String, M3uPlaylistItem>::try_new(m3u_path) {
