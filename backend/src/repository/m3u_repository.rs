@@ -176,7 +176,7 @@ pub async fn iter_raw_m3u_playlist(config: &AppConfig, target: &ConfigTarget) ->
 }
 
 pub async fn persist_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &Path, playlist: &[PlaylistGroup]) -> Result<(), TuliproxError> {
-    let _file_lock = app_config.file_locks.read_lock(m3u_path).await;
+    let _file_lock = app_config.file_locks.write_lock(m3u_path).await;
     let mut tree = BPlusTree::new();
     for pg in playlist {
         for item in &pg.channels {

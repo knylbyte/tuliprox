@@ -1357,8 +1357,8 @@ impl From<&M3uPlaylistItem> for PlaylistItem {
             category_id: 0,
             input_name: item.input_name.clone(),
             chno: item.chno,
-            audio_track: String::new(),
-            time_shift: String::new(),
+            audio_track: item.audio_track.clone(),
+            time_shift: item.time_shift.clone(),
             additional_properties: None,
         };
 

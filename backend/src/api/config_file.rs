@@ -97,25 +97,26 @@ impl ConfigFile {
         debug!("File change detected {}", file_path.display());
         match self {
             ConfigFile::ApiProxy => {
+                ConfigFile::load_api_proxy(app_state).await?;
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::ApiProxy));
-                ConfigFile::load_api_proxy(app_state).await
             }
             ConfigFile::Mapping => {
+                ConfigFile::load_mapping(app_state)?;
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Mapping));
-                ConfigFile::load_mapping(app_state)
             }
             ConfigFile::Config => {
+                ConfigFile::load_config(app_state).await?;
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Config));
-                ConfigFile::load_config(app_state).await
             }
             ConfigFile::Sources => {
+                ConfigFile::load_sources(app_state).await?;
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Sources));
-                ConfigFile::load_sources(app_state).await
             }
             ConfigFile::SourceFile => {
+                ConfigFile::reload_source_file(app_state).await?;
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Sources));
-                ConfigFile::reload_source_file(app_state).await
             }
         }
+        Ok(())
     }
 }

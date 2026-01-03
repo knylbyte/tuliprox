@@ -4,7 +4,7 @@ use crate::model::{AppConfig, ConfigInput, ConfigTarget, TargetOutput};
 use crate::processing::processor::playlist::apply_filter_to_playlist;
 use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery};
 use crate::repository::epg_repository::epg_write;
-use crate::repository::m3u_repository::{m3u_get_file_path, m3u_write_playlist, persist_input_m3u_playlist};
+use crate::repository::m3u_repository::{load_input_m3u_playlist, m3u_get_file_path, m3u_write_playlist, persist_input_m3u_playlist};
 use crate::repository::storage::{ensure_target_storage_path, get_input_storage_path, get_target_id_mapping_file, get_target_storage_path};
 use crate::repository::storage_const::FILE_SUFFIX_DB;
 use crate::repository::strm_repository::write_strm_playlist;
@@ -385,15 +385,7 @@ pub async fn load_input_playlist(app_config: &Arc<AppConfig>, input: &ConfigInpu
         _ => {
             // Load M3U
             let file_path = get_input_playlist_file_path(&storage_path, input.name.as_str());
-            if file_path.exists() {
-                let content = tokio::fs::read_to_string(&file_path).await
-                    .map_err(|e| info_err!(format!("Failed to read input playlist cache: {e}")))?;
-                let playlist: Vec<PlaylistGroup> = serde_json::from_str(&content)
-                    .map_err(|e| info_err!(format!("Failed to parse input playlist cache: {e}")))?;
-                Ok(playlist)
-            } else {
-                Ok(vec![])
-            }
+            load_input_m3u_playlist(app_config, &file_path).await
         }
     }
 }
