@@ -65,8 +65,8 @@ impl ConfigFile {
         let mapping_changed = paths.mapping_file_path.as_ref() != config_dto.mapping_path.as_ref();
         let mut config: Config = Config::from(config_dto);
         config.prepare(paths.config_path.as_str())?;
-        info!("Loaded config file {config_file}");
         update_app_state_config(app_state, config).await?;
+        info!("Loaded config file {config_file}");
         if mapping_changed {
             Self::load_mapping(app_state)?;
         }
@@ -82,8 +82,8 @@ impl ConfigFile {
         };
         prepare_sources_batch(&mut sources_dto, true).await?;
         let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
-        info!("Loaded sources file {sources_file}");
         update_app_state_sources(app_state, sources).await?;
+        info!("Loaded sources file {sources_file}");
         // mappings are not stored, so we need to reload and apply them if sources change.
         Self::load_mapping(app_state)
     }
