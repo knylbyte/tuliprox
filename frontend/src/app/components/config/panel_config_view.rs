@@ -172,7 +172,9 @@ fn ensure_required_params(params: &mut Vec<PanelApiQueryParamDto>, section: Pane
 fn with_input_mut(form: &mut SourcesConfigDto, source_idx: usize, input_idx: usize, f: impl FnOnce(&mut ConfigInputDto)) {
     if let Some(source) = form.sources.get_mut(source_idx) {
         if let Some(input) = source.inputs.get_mut(input_idx) {
-            f(input);
+            if let Some(input) = form.inputs.iter_mut().find(|i| &i.name == input) {
+                f(input);
+            }
         }
     }
 }
@@ -523,7 +525,12 @@ pub fn PanelConfigView() -> Html {
         .sources
         .iter()
         .enumerate()
-        .flat_map(|(sidx, s)| s.inputs.iter().enumerate().map(move |(iidx, inp)| (sidx, iidx, inp)))
+        .flat_map(|(sidx, s)| {
+            let form = &form_state.form;
+            s.inputs.iter().enumerate().filter_map(move |(iidx, name)| {
+                form.inputs.iter().find(|i| &i.name == name).map(|inp| (sidx, iidx, inp))
+            })
+        })
         .collect::<Vec<_>>();
 
     html! {

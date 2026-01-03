@@ -1,4 +1,4 @@
-use crate::utils::{default_as_true, deserialize_timestamp};
+use crate::utils::{is_blank_optional_string, is_true, default_as_true, deserialize_timestamp};
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{ProxyType, ProxyUserStatus};
 
@@ -14,25 +14,25 @@ pub enum UserConnectionPermission {
 pub struct ProxyUserCredentialsDto {
     pub username: String,
     pub password: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub token: Option<String>,
     #[serde(default = "ProxyType::default")]
     pub proxy: ProxyType,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub server: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub epg_timeshift: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<i64>,
-    #[serde(default, deserialize_with = "deserialize_timestamp")]
+    #[serde(default, deserialize_with = "deserialize_timestamp", skip_serializing_if = "Option::is_none")]
     pub exp_date: Option<i64>,
     #[serde(default)]
     pub max_connections: u32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<ProxyUserStatus>,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub ui_enabled: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub comment: Option<String>,
 }
 

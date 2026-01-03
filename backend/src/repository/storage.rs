@@ -28,8 +28,11 @@ pub fn get_target_storage_path(cfg: &Config, target_name: &str) -> Option<PathBu
 }
 
 pub fn get_input_storage_path(input_name: &str, working_dir: &str) -> std::io::Result<PathBuf> {
-    let name =  format!("input_{input_name}");
-    let path = Path::new(working_dir).join(name);
+    let sanitized_name: String = input_name.chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+    let name =  format!("input_{sanitized_name}");
+    let path = Path::new(working_dir).join("data").join(name);
     // Create the directory and return the path or propagate the error
     std::fs::create_dir_all(&path).map(|()| path)
 }

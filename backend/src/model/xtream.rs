@@ -14,7 +14,7 @@ pub struct XtreamLoginInfo {
 
 #[derive(Deserialize, Default)]
 pub struct XtreamCategory {
-    #[serde(deserialize_with = "deserialize_number_from_string_or_zero")]
+    #[serde(deserialize_with = "deserialize_number_from_string_or_zero", serialize_with = "shared::utils::serialize_number_as_string")]
     pub category_id: u32,
     #[serde(deserialize_with = "deserialize_as_string")]
     pub category_name: String,

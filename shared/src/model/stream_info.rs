@@ -1,3 +1,4 @@
+use crate::utils::is_blank_optional_string;
 use std::net::SocketAddr;
 use serde::{Deserialize, Serialize};
 use crate::model::{M3uPlaylistItem, PlaylistEntry, PlaylistItemType, XtreamCluster, XtreamPlaylistItem};
@@ -65,9 +66,9 @@ pub struct StreamInfo {
     pub user_agent: String,
     #[serde(default)]
     pub ts: u64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub country: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub session_token: Option<String>,
 }
 

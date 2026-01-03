@@ -12,13 +12,17 @@ pub fn current_time_secs() -> u64 {
 }
 
 pub fn unix_ts_to_str(ts: i64) -> Option<String> {
+    unix_ts_to_str_with_format(ts, "%d.%m.%Y")
+}
+
+pub fn unix_ts_to_str_with_format(ts: i64, format: &str) -> Option<String> {
     if ts > 0 {
         let normalized_ts = if ts > 4102444800 {
             ts / 1000
         } else {
             ts
         };
-        chrono::DateTime::from_timestamp(normalized_ts, 0).map(|dt| dt.format("%d.%m.%Y").to_string())
+        chrono::DateTime::from_timestamp(normalized_ts, 0).map(|dt| dt.format(format).to_string())
     } else {
         None
     }

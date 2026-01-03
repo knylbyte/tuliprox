@@ -7,11 +7,13 @@ templates:
     value: 'Title ~ ".*"'
   - name: final_channel_lineup
     value: "!all_channels! AND !not_red_button! AND !not_low_resolution!"
+inputs:
+  - name: iptv-org
+    type: m3u
+    url: https://iptv-org.github.io/iptv/countries/uk.m3u
 sources:
   - inputs:
-      - name: iptv-org
-        type: m3u
-        url: https://iptv-org.github.io/iptv/countries/uk.m3u
+      - iptv-org
     targets:
       - name: iptv-org
         output:

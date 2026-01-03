@@ -1337,6 +1337,36 @@ impl From<&XtreamPlaylistItem> for PlaylistItem {
     }
 }
 
+impl From<&M3uPlaylistItem> for PlaylistItem {
+    fn from(item: &M3uPlaylistItem) -> Self {
+        let header = PlaylistItemHeader {
+            uuid: item.get_uuid(),
+            virtual_id: item.virtual_id,
+            id: item.provider_id.clone(),
+            name: item.name.clone(),
+            title: item.title.clone(),
+            logo: item.logo.clone(),
+            logo_small: item.logo_small.clone(),
+            group: item.group.clone(),
+            parent_code: item.parent_code.clone(),
+            rec: item.rec.clone(),
+            url: item.url.clone(),
+            epg_channel_id: item.epg_channel_id.clone(),
+            xtream_cluster: XtreamCluster::try_from(item.item_type).unwrap_or(XtreamCluster::Live),
+            item_type: item.item_type,
+            category_id: 0,
+            input_name: item.input_name.clone(),
+            chno: item.chno,
+            audio_track: item.audio_track.clone(),
+            time_shift: item.time_shift.clone(),
+            additional_properties: None,
+        };
+
+        PlaylistItem {
+            header
+        }
+    }
+}
 
 
 impl PlaylistEntry for PlaylistItem {

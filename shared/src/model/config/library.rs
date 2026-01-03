@@ -1,39 +1,11 @@
+use crate::error::{info_err, TuliproxError};
+use crate::utils::{is_true, default_as_true, default_metadata_path,
+                   default_movie_category, default_series_category, default_storage_formats,
+                   default_supported_library_extensions, is_default_supported_library_extensions,
+                   default_tmdb_api_key, default_tmdb_cache_duration_days,
+                   default_tmdb_language, default_tmdb_rate_limit_ms, is_default_tmdb_cache_duration_days,
+                   is_default_tmdb_language, is_default_tmdb_rate_limit_ms, is_tmdb_default_api_key};
 use serde::{Deserialize, Serialize};
-use crate::error::{TuliproxError, info_err};
-use crate::utils::default_as_true;
-
-pub fn default_metadata_path() -> String {
-   "library_metadata".to_string()
-}
-fn default_tmdb_rate_limit_ms() -> u64 {
-    250
-}
-fn default_tmdb_cache_duration_days() -> u32 {
-    30
-}
-fn default_tmdb_language() -> String {
-    "en-US".to_string()
-}
-fn default_storage_formats() -> Vec<LibraryMetadataFormat> {
-    vec![]
-}
-fn default_movie_category() -> String {
-    "Local Movies".to_string()
-}
-fn default_series_category() -> String {
-    "Local TV Shows".to_string()
-}
-fn default_supported_extensions() -> Vec<String> {
-    [
-        "mp4",
-        "mkv",
-        "avi",
-        "mov",
-        "ts",
-        "m4v",
-        "webm",
-    ].iter().map(ToString::to_string).collect()
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
@@ -42,7 +14,7 @@ pub struct LibraryConfigDto {
     pub enabled: bool,
     #[serde(default)]
     pub scan_directories: Vec<LibraryScanDirectoryDto>,
-    #[serde(default="default_supported_extensions")]
+    #[serde(default = "default_supported_library_extensions", skip_serializing_if = "is_default_supported_library_extensions")]
     pub supported_extensions: Vec<String>,
     #[serde(default)]
     pub metadata: LibraryMetadataConfigDto,
@@ -53,12 +25,12 @@ pub struct LibraryConfigDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LibraryScanDirectoryDto {
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub enabled: bool,
     pub path: String,
     #[serde(default)]
     pub content_type: LibraryContentType,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub recursive: bool,
 }
 
@@ -82,7 +54,7 @@ pub struct LibraryMetadataConfigDto {
     pub tmdb: LibraryTmdbConfigDto,
     #[serde(default = "default_as_true")]
     pub fallback_to_filename: bool,
-    #[serde(default = "default_storage_formats")]
+    #[serde(default = "default_storage_formats", skip_serializing_if = "Vec::is_empty")]
     pub formats: Vec<LibraryMetadataFormat>,
 }
 
@@ -102,13 +74,19 @@ pub struct LibraryMetadataReadConfigDto {
 pub struct LibraryTmdbConfigDto {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default = "default_tmdb_api_key", skip_serializing_if = "is_tmdb_default_api_key")]
     pub api_key: Option<String>,
-    #[serde(default = "default_tmdb_rate_limit_ms")]
+    #[serde(
+        default = "default_tmdb_rate_limit_ms",
+        skip_serializing_if = "is_default_tmdb_rate_limit_ms"
+    )]
     pub rate_limit_ms: u64,
-    #[serde(default = "default_tmdb_cache_duration_days")]
+    #[serde(
+        default = "default_tmdb_cache_duration_days",
+        skip_serializing_if = "is_default_tmdb_cache_duration_days"
+    )]
     pub cache_duration_days: u32,
-    #[serde(default = "default_tmdb_language")]
+    #[serde(default = "default_tmdb_language", skip_serializing_if = "is_default_tmdb_language")]
     pub language: String,
 }
 

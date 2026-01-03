@@ -6,11 +6,11 @@ use crate::processing::parser::m3u;
 use crate::utils::prepare_file_path;
 use crate::utils::request;
 
-pub async fn download_m3u_playlist(client: &reqwest::Client, cfg: &Arc<Config>, input: &Arc<ConfigInput>) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
+pub async fn download_m3u_playlist(client: &reqwest::Client, cfg: &Arc<Config>, input: &ConfigInput) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
     let working_dir = &cfg.working_dir;
     let input_source: InputSource = {
         match input.staged.as_ref() {
-            None => input.as_ref().into(),
+            None => input.into(),
             Some(staged) => staged.into(),
         }
     };

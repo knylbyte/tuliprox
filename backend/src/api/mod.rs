@@ -9,3 +9,4 @@ mod serve;
 pub(crate) mod hdhomerun_ssdp;
 pub(crate) mod hdhomerun_proprietary;
 mod sys_usage;
+mod config_file;

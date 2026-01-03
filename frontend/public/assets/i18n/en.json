@@ -355,7 +355,8 @@
     "PANEL_STATUS_INVALID": "Invalid",
     "PANEL_STATUS_DISABLED": "Disabled",
     "VALIDATION": "Validation",
-    "TEMPLATES": "Templates"
+    "TEMPLATES": "Templates",
+    "CACHE_DURATION": "Cache duration"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "Playlist Category Selection"
@@ -373,6 +374,7 @@
     "CLIPBOARD_NOT_SUPPORTED": "Clipboard not supported.\nYour browser or current context does not allow clipboard access.\nPlease use HTTPS or localhost.",
     "FAILED_TO_KICK_USER_STREAM": "Failed to kick user stream",
     "FAILED_TO_RETRIEVE_WEBPLAYER_URL": "Failed to retrieve webplayer URL",
+    "CONFIRM_SOURCES_SAVE": "Warning: This is an experimental feature.\nUse at your own risk.\n\nProceed?",
     "DOWNLOAD": {
       "SUCCESS": "Successfully downloaded",
       "FAIL": "Failed to download!",

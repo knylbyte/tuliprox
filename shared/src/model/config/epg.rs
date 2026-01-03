@@ -1,6 +1,7 @@
 use crate::{info_err};
 use crate::error::{TuliproxError};
 use crate::model::EpgSmartMatchConfigDto;
+use crate::utils::{is_false};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -8,7 +9,7 @@ pub struct EpgSourceDto {
     pub url: String,
     #[serde(default)]
     pub priority: i16,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub logo_override: bool,
 }
 
@@ -27,9 +28,9 @@ impl EpgSourceDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Default)]
 #[serde(deny_unknown_fields)]
 pub struct EpgConfigDto {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sources: Option<Vec<EpgSourceDto>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub smart_match: Option<EpgSmartMatchConfigDto>,
     #[serde(skip)]
     pub t_sources: Vec<EpgSourceDto>,

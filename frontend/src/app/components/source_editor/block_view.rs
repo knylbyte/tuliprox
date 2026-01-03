@@ -93,7 +93,7 @@ pub fn BlockView(props: &BlockProps) -> Html {
 
     html! {
         <div id={format!("block-{block_id}")} class={format!("tp__source-editor__block no-select tp__source-editor__block-{}{}{}", block_type, if props.edited {" tp__source-editor__block-editing"} else {""}, if props.selected {" tp__source-editor__block-selected"} else {""})}
-              style={style}>
+              style={style} title={title.clone()}>
             <div class={"tp__source-editor__block-header"}>
                 // Block handle (drag)
                 <div class="tp__source-editor__block-handle" onmousedown={handle_mouse_down.clone()} />

@@ -21,7 +21,6 @@ pub(in crate::repository) trait IsEmpty {
     fn is_empty(&self) -> bool;
 }
 
-
 impl<T> IsEmpty for Vec<T> {
     fn is_empty(&self) -> bool {
         Vec::is_empty(self)

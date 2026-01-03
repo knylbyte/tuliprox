@@ -3,7 +3,7 @@ use base64::engine::general_purpose;
 use base64::Engine;
 use chrono::{NaiveDateTime, ParseError, TimeZone, Utc};
 use serde::de::Error;
-use serde::{Deserialize, Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use std::io;
 
@@ -182,30 +182,6 @@ where
     }
 }
 
-//
-// pub fn string_or_number_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>
-// where
-//     D: serde::Deserializer<'de>,
-// {
-//     let value: Value = serde::Deserialize::deserialize(deserializer)?;
-//
-//     match value {
-//         Value::Null => Ok(0u32),
-//         Value::Number(num) => {
-//             if let Some(v) = num.as_u64() {
-//                 Ok(u32::try_from(v).unwrap_or_default())
-//                 //.map_err(|_| serde::de::Error::custom("Number out of range for u32"))
-//             } else {
-//                 Ok(0u32),
-//                 //Err(serde::de::Error::custom("Invalid number"))
-//             }
-//         }
-//         Value::String(s) => Ok(s.parse::<u32>().unwrap_or_default())
-//         //.map_err(|_| serde::de::Error::custom("Invalid string number")),
-//         _ => Ok(0u32), //Err(serde::de::Error::custom("Expected number or string")),
-//     }
-// }
-
 #[inline]
 pub fn bin_serialize<T>(value: &T) -> io::Result<Vec<u8>>
 where
@@ -364,4 +340,47 @@ where
         | Some(Value::Bool(_)) => Ok(None),
         Some(v) => Ok(Some(serde_json::to_string(&v).map_err(D::Error::custom)?)),
     }
+}
+
+/// Serialize an Option<Vec<T>> in flow-style YAML (- { key: value, ... })
+pub fn serialize_option_slice_flow<T, S>(
+    opt: &Option<Vec<T>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    T: serde::Serialize,
+    S: serde::Serializer,
+{
+    match opt {
+        Some(items) if !items.is_empty() => {
+            serde_saphyr::FlowSeq(items).serialize(serializer)
+        }
+        _ => serializer.serialize_none(),
+    }
+}
+
+/// Serialize an Option<Vec<T>> as a block sequence where each item is in flow-style
+pub fn serialize_option_vec_flow_map_items<T, S>(
+    opt: &Option<Vec<T>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    T: serde::Serialize,
+    S: serde::Serializer,
+{
+    match opt {
+        Some(items) if !items.is_empty() => {
+            let flow_items: Vec<_> = items.iter().map(serde_saphyr::FlowMap).collect();
+            flow_items.serialize(serializer)
+        }
+        _ => serializer.serialize_none(),
+    }
+}
+
+pub fn serialize_number_as_string<N, S>(value: &N, serializer: S) -> Result<S::Ok, S::Error>
+where
+    N: std::fmt::Display,
+    S: Serializer,
+{
+    serializer.serialize_str(&value.to_string())
 }

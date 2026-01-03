@@ -1440,6 +1440,7 @@ mod tests {
             let mut accessor = ValueAccessor {
                 pli,
                 virtual_items: vec![],
+                match_as_ascii: false,
             };
             mapper.eval(&mut accessor, None);
             println!("Result: {pli:?}");
@@ -1536,6 +1537,7 @@ mod tests {
             let mut accessor = ValueAccessor {
                 pli,
                 virtual_items: vec![],
+                match_as_ascii: false,
             };
             mapper.eval(&mut accessor, None);
             println!("Result: {pli:?}");
@@ -1559,7 +1561,7 @@ mod tests {
                 ..Default::default()
             }
         };
-        let mut accessor = ValueAccessor { pli: &mut video, virtual_items: vec![] };
+        let mut accessor = ValueAccessor { pli: &mut video, virtual_items: vec![], match_as_ascii: false };
         mapper.eval(&mut accessor, None);
         assert_eq!(accessor.virtual_items.len(), 1);
         assert_eq!(accessor.virtual_items[0].1.header.group, "My Favs");

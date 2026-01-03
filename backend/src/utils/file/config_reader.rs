@@ -1,23 +1,24 @@
+use crate::api::model::AppState;
 use crate::model::Config;
 use crate::model::{ApiProxyConfig, AppConfig, SourcesConfig};
-use crate::{utils};
+use crate::repository::user_repository::{get_api_user_db_path, load_api_user};
 use crate::utils::file_reader;
 use crate::utils::sys_utils::exit;
 use crate::utils::{open_file, read_mappings_file, EnvResolvingReader, FileLockManager};
+use crate::utils;
+use arc_swap::access::Access;
 use arc_swap::{ArcSwap, ArcSwapAny};
 use chrono::Local;
 use log::{error, info, warn};
 use serde::Serialize;
 use shared::error::{create_tuliprox_error, info_err, TuliproxError, TuliproxErrorKind};
 use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto, TargetUserDto};
-use shared::utils::{CONSTANTS};
+use shared::utils::CONSTANTS;
 use std::env;
 use std::fs::File;
 use std::io::{self, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use arc_swap::access::{Access};
-use crate::repository::user_repository::{get_api_user_db_path, load_api_user};
 use tokio::fs;
 
 enum EitherReader<L, R> {
@@ -63,30 +64,35 @@ pub async fn read_api_proxy_config(config: &AppConfig, resolve_env: bool) -> Res
     }
 }
 
-pub fn read_sources_file(sources_file: &str, resolve_env: bool, include_computed: bool, hdhr_config: Option<&HdHomeRunDeviceOverview>) -> Result<SourcesConfigDto, TuliproxError> {
-    match open_file(&std::path::PathBuf::from(sources_file)) {
+pub fn read_sources_file_from_path(sources_file: &Path, resolve_env: bool, include_computed: bool, hdhr_config: Option<&HdHomeRunDeviceOverview>) -> Result<SourcesConfigDto, TuliproxError> {
+    match open_file(sources_file) {
         Ok(file) => {
-            let maybe_sources: Result<SourcesConfigDto, _> = serde_yaml::from_reader(config_file_reader(file, resolve_env));
+            let maybe_sources: Result<SourcesConfigDto, _> = serde_saphyr::from_reader(config_file_reader(file, resolve_env));
             match maybe_sources {
                 Ok(mut sources) => {
                     if resolve_env {
                         if let Err(err) = sources.prepare(include_computed, hdhr_config) {
-                            return Err(info_err!(format!("Can't read the sources-config file: {sources_file}: {err}")));
+                            return Err(info_err!(format!("Can't read the sources-config file: {}: {err}", sources_file.display())));
                         }
                     }
                     Ok(sources)
                 }
-                Err(err) => Err(info_err!(format!("Can't read the sources-config file: {sources_file}: {err}")))
+                Err(err) => Err(info_err!(format!("Can't read the sources-config file: {}: {err}", sources_file.display())))
             }
         }
-        Err(err) => Err(info_err!(format!("Can't read the sources-config file: {sources_file}: {err}")))
+        Err(err) => Err(info_err!(format!("Can't read the sources-config file: {}: {err}", sources_file.display())))
     }
+}
+
+
+pub fn read_sources_file(sources_file: &str, resolve_env: bool, include_computed: bool, hdhr_config: Option<&HdHomeRunDeviceOverview>) -> Result<SourcesConfigDto, TuliproxError> {
+    read_sources_file_from_path(&PathBuf::from(sources_file), resolve_env, include_computed, hdhr_config)
 }
 
 pub fn read_config_file(config_file: &str, resolve_env: bool, include_computed: bool) -> Result<ConfigDto, TuliproxError> {
     match open_file(&std::path::PathBuf::from(config_file)) {
         Ok(file) => {
-            let maybe_config: Result<ConfigDto, _> = serde_yaml::from_reader(config_file_reader(file, resolve_env));
+            let maybe_config: Result<ConfigDto, _> = serde_saphyr::from_reader(config_file_reader(file, resolve_env));
             match maybe_config {
                 Ok(mut config) => {
                     if resolve_env {
@@ -127,43 +133,37 @@ pub fn read_app_config_dto(paths: &ConfigPaths,
 }
 
 pub async fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_computed: bool) -> Result<(), TuliproxError> {
-
     let mut current_index = 0;
+    let max_id_in_source = sources.inputs.iter()
+        .flat_map(|item| {
+            std::iter::once(item.id).chain(
+                item.aliases
+                    .as_ref()
+                    .into_iter()
+                    .flatten()
+                    .map(|alias| alias.id),
+            )
+        })
+        .max()
+        .unwrap_or(0);
 
-    for source in &mut sources.sources {
-        let max_id_in_source = source.inputs.iter()
-            .flat_map(|item| {
-                std::iter::once(item.id).chain(
-                    item.aliases
-                        .as_ref()
-                        .into_iter()
-                        .flatten()
-                        .map(|alias| alias.id),
-                )
-            })
-            .max()
-            .unwrap_or(0);
+    current_index = std::cmp::max(current_index, max_id_in_source);
 
-        current_index = std::cmp::max(current_index, max_id_in_source);
-    }
-
-    for source in &mut sources.sources {
-        for input in &mut source.inputs {
-            match get_batch_aliases(input.input_type, input.url.as_str()).await {
-                Ok(Some((_, aliases))) => {
-                    if let Some(idx) = input.prepare_batch(aliases, current_index)? {
-                        current_index = idx;
-                    }
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    error!("Failed to read config files aliases: {err}");
-                    return Err(err);
+    for input in &mut sources.inputs {
+        match get_batch_aliases(input.input_type, input.url.as_str()).await {
+            Ok(Some((_, aliases))) => {
+                if let Some(idx) = input.prepare_batch(aliases, current_index)? {
+                    current_index = idx;
                 }
             }
-            // we need to prepare epg after alias, because epg `auto` depends on the first input url.
-            input.prepare_epg(include_computed)?;
+            Ok(None) => {}
+            Err(err) => {
+                error!("Failed to read config files aliases: {err}");
+                return Err(err);
+            }
         }
+        // we need to prepare epg after alias, because epg `auto` depends on the first input url.
+        input.prepare_epg(include_computed)?;
     }
     Ok(())
 }
@@ -205,16 +205,16 @@ pub async fn prepare_users(app_config_dto: &mut AppConfigDto, app_config: &AppCo
 }
 
 pub async fn read_initial_app_config(paths: &mut ConfigPaths,
-                       resolve_env: bool,
-                       include_computed: bool,
-                       server_mode: bool) -> Result<AppConfig, TuliproxError> {
+                                     resolve_env: bool,
+                                     include_computed: bool,
+                                     server_mode: bool) -> Result<AppConfig, TuliproxError> {
     let config_path = paths.config_path.as_str();
     let config_file = paths.config_file_path.as_str();
     let sources_file = paths.sources_file_path.as_str();
 
     let config_dto = read_config_file(config_file, resolve_env, include_computed)?;
     let mut sources_dto = read_sources_file(sources_file, resolve_env, include_computed, config_dto.get_hdhr_device_overview().as_ref())?;
-    prepare_sources_batch(&mut  sources_dto, include_computed).await?;
+    prepare_sources_batch(&mut sources_dto, include_computed).await?;
     let sources: SourcesConfig = SourcesConfig::try_from(sources_dto)?;
     let mut config: Config = Config::from(config_dto);
     config.prepare(config_path)?;
@@ -263,7 +263,7 @@ pub async fn read_initial_app_config(paths: &mut ConfigPaths,
 
 pub fn read_api_proxy_file(api_proxy_file: &str, resolve_env: bool) -> Result<Option<ApiProxyConfigDto>, TuliproxError> {
     open_file(&std::path::PathBuf::from(api_proxy_file)).map_or(Ok(None), |file| {
-        let maybe_api_proxy: Result<ApiProxyConfigDto, _> = serde_yaml::from_reader(config_file_reader(file, resolve_env));
+        let maybe_api_proxy: Result<ApiProxyConfigDto, _> = serde_saphyr::from_reader(config_file_reader(file, resolve_env));
         match maybe_api_proxy {
             Ok(mut api_proxy_dto) => {
                 if resolve_env {
@@ -302,7 +302,7 @@ pub async fn read_api_proxy(config: &AppConfig, resolve_env: bool) -> Option<Api
     }
 }
 
-async fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str, formatter: Option<&(dyn Fn(&str) -> String  + Send + Sync)>) -> Result<(), TuliproxError>
+async fn write_config_file<T>(file_path: &str, backup_dir: &str, config: &T, default_name: &str) -> Result<(), TuliproxError>
 where
     T: ?Sized + Serialize,
 {
@@ -317,213 +317,84 @@ where
     }
     info!("Saving file to {}", &path.to_str().unwrap_or("?"));
 
-    let mut serialized = serde_yaml::to_string(config)
-        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not serialize file {}: {}", &path.to_str().unwrap_or("?"), err))?;
-    if let Some(format) = formatter {
-        serialized = format(&serialized);
-    }
+    let mut serialized = String::new();
+    let options = serde_saphyr::SerializerOptions {
+        prefer_block_scalars: false,
+        ..Default::default()
+    };
+    serde_saphyr::to_fmt_writer_with_options(&mut serialized, &config, options)
+        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not serialize config: {}", err))?;
 
     fs::write(&path, serialized)
         .await
         .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
 }
 
-fn format_sources_yaml_panel_api_query_params_flow_style_impl(yaml: &str) -> String {
-    let has_trailing_newline = yaml.ends_with('\n');
-    let lines: Vec<&str> = yaml.split_terminator('\n').collect();
-    let mut out: Vec<String> = Vec::with_capacity(lines.len());
-
-    let mut panel_api_indent: Option<usize> = None;
-    let mut query_indent: Option<usize> = None;
-    let mut section_indent: Option<usize> = None;
-
-    let mut i = 0usize;
-    while i < lines.len() {
-        let line = lines[i];
-        let trimmed = line.trim_start();
-        let indent = line.len().saturating_sub(trimmed.len());
-
-        if !trimmed.is_empty() && !trimmed.starts_with('#') {
-            if let Some(pi) = panel_api_indent {
-                if indent <= pi && trimmed != "panel_api:" {
-                    panel_api_indent = None;
-                    query_indent = None;
-                    section_indent = None;
-                }
-            }
-            if let Some(qi) = query_indent {
-                if indent <= qi && trimmed != "query_parameter:" {
-                    query_indent = None;
-                    section_indent = None;
-                }
-            }
-            if let Some(si) = section_indent {
-                if indent < si {
-                    section_indent = None;
-                }
-            }
-
-            if panel_api_indent.is_none() && trimmed == "panel_api:" {
-                panel_api_indent = Some(indent);
-            } else if panel_api_indent.is_some() && query_indent.is_none() && trimmed == "query_parameter:" {
-                query_indent = Some(indent);
-            } else if query_indent.is_some()
-                && matches!(trimmed, "client_info:" | "client_new:" | "client_renew:")
-            {
-                section_indent = Some(indent);
-            }
-        }
-
-        let in_target_section = panel_api_indent.is_some() && query_indent.is_some() && section_indent.is_some();
-        if in_target_section
-            && indent == section_indent.unwrap_or(usize::MAX)
-            && trimmed.starts_with("- key:")
-            && !trimmed.starts_with("- {")
-            && i + 1 < lines.len()
-        {
-            let next = lines[i + 1];
-            let next_trimmed = next.trim_start();
-            let next_indent = next.len().saturating_sub(next_trimmed.len());
-
-            if next_trimmed.starts_with("value:")
-                && next_indent == indent.saturating_add(2)
-            {
-                let key_val = trimmed
-                    .strip_prefix("- key:")
-                    .unwrap_or_default()
-                    .trim();
-                let value_val = next_trimmed
-                    .strip_prefix("value:")
-                    .unwrap_or_default()
-                    .trim();
-
-                let new_line = format!(
-                    "{}- {{ key: {}, value: {} }}",
-                    " ".repeat(indent),
-                    key_val,
-                    value_val
-                );
-                out.push(new_line);
-                i += 2;
-                continue;
-            }
-        }
-
-        out.push(line.to_string());
-        i += 1;
-    }
-
-    if has_trailing_newline {
-        out.join("\n") + "\n"
-    } else {
-        out.join("\n")
-    }
-}
-
-fn parse_yaml_key_value_line(s: &str) -> Option<(String, String)> {
-    let (key, value) = s.split_once(':')?;
-    let key = key.trim();
-    if key.is_empty() {
-        return None;
-    }
-    let value = value.trim();
-    let value = if value.is_empty() { "null" } else { value };
-    Some((key.to_string(), value.to_string()))
-}
-
-fn format_sources_yaml_aliases_flow_style_impl(yaml: &str) -> String {
-    let has_trailing_newline = yaml.ends_with('\n');
-    let lines: Vec<&str> = yaml.split_terminator('\n').collect();
-    let mut out: Vec<String> = Vec::with_capacity(lines.len());
-
-    let mut aliases_indent: Option<usize> = None;
-
-    let mut i = 0usize;
-    while i < lines.len() {
-        let line = lines[i];
-        let trimmed = line.trim_start();
-        let indent = line.len().saturating_sub(trimmed.len());
-
-        if !trimmed.is_empty() && !trimmed.starts_with('#') {
-            if let Some(ai) = aliases_indent {
-                if indent < ai || (indent == ai && trimmed != "aliases:" && !trimmed.starts_with("- ")) {
-                    aliases_indent = None;
-                }
-            }
-            if trimmed == "aliases:" {
-                aliases_indent = Some(indent);
-            }
-        }
-
-        // Convert:
-        //   aliases:
-        //   - name: foo
-        //     url: http://...
-        // Into:
-        //   - { name: foo, url: http://... }
-        if aliases_indent.is_some() && trimmed.starts_with("- ") && !trimmed.starts_with("- {") {
-            let item_indent = indent;
-            let first = trimmed.strip_prefix("- ").unwrap_or(trimmed);
-            if let Some((k, v)) = parse_yaml_key_value_line(first) {
-                let mut parts: Vec<(String, String)> = vec![(k, v)];
-                let mut j = i + 1;
-                while j < lines.len() {
-                    let l2 = lines[j];
-                    let t2 = l2.trim_start();
-                    let ind2 = l2.len().saturating_sub(t2.len());
-                    if t2.is_empty() || t2.starts_with('#') {
-                        break;
-                    }
-                    if ind2 == item_indent.saturating_add(2) && !t2.starts_with("- ") {
-                        if let Some((k2, v2)) = parse_yaml_key_value_line(t2) {
-                            parts.push((k2, v2));
-                            j += 1;
-                            continue;
-                        }
-                    }
-                    break;
-                }
-
-                let formatted = parts
-                    .iter()
-                    .map(|(kk, vv)| format!("{kk}: {vv}"))
-                    .collect::<Vec<String>>()
-                    .join(", ");
-                out.push(format!("{}- {{ {} }}", " ".repeat(item_indent), formatted));
-                i = j;
-                continue;
-            }
-        }
-
-        out.push(line.to_string());
-        i += 1;
-    }
-
-    if has_trailing_newline {
-        out.join("\n") + "\n"
-    } else {
-        out.join("\n")
-    }
-}
-
-pub fn format_sources_yaml_panel_api_query_params_flow_style(yaml: &str) -> String {
-    let yaml = format_sources_yaml_panel_api_query_params_flow_style_impl(yaml);
-    format_sources_yaml_aliases_flow_style_impl(&yaml)
-}
-
 pub async fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfigDto) -> Result<(), TuliproxError> {
-    write_config_file(file_path, backup_dir, config, "api-proxy.yml", None).await
+    write_config_file(file_path, backup_dir, config, "api-proxy.yml").await
 }
 
 pub async fn save_main_config(file_path: &str, backup_dir: &str, config: &ConfigDto) -> Result<(), TuliproxError> {
-    write_config_file(file_path, backup_dir, config, "config.yml", None).await
+    write_config_file(file_path, backup_dir, config, "config.yml").await
 }
 
 pub async fn save_sources_config<T>(file_path: &str, backup_dir: &str, config: &T) -> Result<(), TuliproxError>
 where
-    T: ?Sized + Serialize
+    T: ?Sized + Serialize,
 {
-    write_config_file(file_path, backup_dir, config, "source.yml", Some(&format_sources_yaml_panel_api_query_params_flow_style)).await
+    write_config_file(file_path, backup_dir, config, "source.yml").await
+}
+
+pub async fn persist_source_config(app_state: &Arc<AppState>, source_file_path: Option<&Path>, doc: SourcesConfigDto) -> Result<SourcesConfigDto, TuliproxError>
+{
+    let source_file = {
+        source_file_path
+            .and_then(|p| p.to_str())
+            .map_or_else(|| {
+                let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&app_state.app_config.paths);
+                paths.sources_file_path.clone()
+            }, ToString::to_string)
+    };
+    let backup_dir = {
+        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.app_config.config);
+        config.get_backup_dir().to_string()
+    };
+
+    let mut source_config = doc.clone();
+    for input in &mut source_config.inputs {
+        if matches!(input.input_type, InputType::XtreamBatch | InputType::M3uBatch) && utils::is_csv_file(input.url.as_str()) {
+            if let Some(aliases) = &input.aliases {
+                if let Err(err) = utils::csv_write_inputs(input.url.as_str(), aliases).await {
+                    error!("Could not persist aliases to csv {}: {}", input.url, err);
+                }
+            }
+            input.aliases = None;
+        }
+        input.id = 0;
+        if let Some(aliases) = input.aliases.as_mut() {
+            for alias in aliases {
+                alias.id = 0;
+            }
+        }
+    }
+    for source in &mut source_config.sources {
+        for target in &mut source.targets {
+            target.id = 0;
+        }
+    }
+
+    save_sources_config(&source_file, &backup_dir, &source_config).await?;
+    Ok(doc)
+}
+
+pub async fn validate_and_persist_source_config(app_state: &Arc<AppState>, dto: SourcesConfigDto) -> Result<SourcesConfigDto, TuliproxError> {
+    {
+        let mut new_dto = dto.clone();
+        let config = <Arc<ArcSwap<Config>> as Access<Config>>::load(&app_state.app_config.config);
+        new_dto.prepare(true, config.get_hdhr_device_overview().as_ref())?;
+    }
+
+    persist_source_config(app_state, None, dto).await
 }
 
 pub fn resolve_env_var(value: &str) -> String {
@@ -542,56 +413,10 @@ pub fn resolve_env_var(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use crate::utils::resolve_env_var;
-    use crate::utils::format_sources_yaml_panel_api_query_params_flow_style;
 
     #[test]
     fn test_resolve() {
         let resolved = resolve_env_var("${env:HOME}");
         assert_eq!(resolved, std::env::var("HOME").unwrap());
-    }
-
-    #[test]
-    fn test_sources_yaml_panel_api_query_params_flow_style() {
-        let input = r"sources:
-- inputs:
-  - name: demo
-    panel_api:
-      url: https://example.invalid/api.php
-      query_parameter:
-        client_info:
-        - key: api_key
-          value: auto
-        - key: sub
-          value: '1'
-        client_new:
-        - key: type
-          value: m3u
-";
-        let out = format_sources_yaml_panel_api_query_params_flow_style(input);
-        assert!(out.contains("- { key: api_key, value: auto }"));
-        assert!(out.contains("- { key: sub, value: '1' }"));
-        assert!(out.contains("- { key: type, value: m3u }"));
-        assert!(!out.contains("- key: api_key\n"));
-    }
-
-    #[test]
-    fn test_sources_yaml_aliases_flow_style() {
-        let input = r"sources:
-- inputs:
-  - name: demo
-    aliases:
-    - name: demo-u1
-      url: http://line.example.invalid
-      username: u1
-      password: p1
-      priority: 0
-      max_connections: 1
-      exp_date: 123
-";
-        let out = format_sources_yaml_panel_api_query_params_flow_style(input);
-        assert!(
-            out.contains("- { name: demo-u1, url: http://line.example.invalid, username: u1, password: p1, priority: 0, max_connections: 1, exp_date: 123 }"),
-            "out:\n{out}"
-        );
     }
 }

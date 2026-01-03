@@ -1,16 +1,16 @@
+use crate::api::config_file::ConfigFile;
 use crate::api::model::AppState;
-use crate::model::{ConfigInput, is_input_expired, PanelApiQueryParam, PanelApiConfig};
-use crate::utils::{debug_if_enabled, save_sources_config};
-use crate::utils::{get_csv_file_path};
+use crate::model::{is_input_expired, ConfigInput, PanelApiConfig, PanelApiQueryParam};
+use crate::utils::{debug_if_enabled, persist_source_config, read_sources_file_from_path};
+use crate::utils::get_csv_file_path;
 use log::{debug, error, warn};
 use serde_json::Value;
 use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
-use shared::model::{InputType};
+use shared::model::{ConfigInputAliasDto, InputType};
 use shared::utils::{get_credentials_from_url, parse_timestamp, sanitize_sensitive_info, trim_last_slash};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use url::Url;
-use crate::api::config_watch::ConfigFile;
 
 #[derive(Debug, Clone)]
 struct AccountCredentials {
@@ -300,79 +300,29 @@ async fn patch_source_yml_add_alias(
     password: &str,
     exp_date: Option<i64>,
 ) -> Result<(), TuliproxError> {
-    let raw = tokio::fs::read_to_string(source_file_path)
-        .await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}")))?;
-    let mut doc: serde_yaml::Value = serde_yaml::from_str(&raw)
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to parse source file yaml: {e}")))?;
-
-    let Some(root) = doc.as_mapping_mut() else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: source.yml root is not a mapping");
-    };
-    let sources = root.get_mut(serde_yaml::Value::String("sources".to_string())).and_then(|v| v.as_sequence_mut());
-    let Some(sources) = sources else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: source.yml missing 'sources' list");
+    let mut sources = match read_sources_file_from_path(source_file_path, false, false, None) {
+        Ok(sources) => sources,
+        Err(e) => return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}"))),
     };
 
-    let mut found_input = None;
-    for src in sources.iter_mut() {
-        let Some(src_map) = src.as_mapping_mut() else { continue; };
-        let Some(inputs) = src_map.get_mut(serde_yaml::Value::String("inputs".to_string())).and_then(|v| v.as_sequence_mut()) else { continue; };
-        for inp in inputs.iter_mut() {
-            let Some(inp_map) = inp.as_mapping_mut() else { continue; };
-            let name = inp_map.get(serde_yaml::Value::String("name".to_string())).and_then(|v| v.as_str());
-            if name == Some(input_name) {
-                found_input = Some(inp_map);
-                break;
-            }
-        }
-        if found_input.is_some() {
-            break;
-        }
-    }
-    let Some(inp_map) = found_input else {
+    let Some(input) = sources.inputs.iter_mut().find(|i| i.name == input_name) else {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml");
     };
 
-    let aliases_key = serde_yaml::Value::String("aliases".to_string());
-    let aliases_value = inp_map
-        .entry(aliases_key.clone())
-        .or_insert_with(|| serde_yaml::Value::Sequence(vec![]));
-    match aliases_value {
-        serde_yaml::Value::Sequence(_) => {}
-        serde_yaml::Value::Null => {
-            *aliases_value = serde_yaml::Value::Sequence(vec![]);
-        }
-        serde_yaml::Value::Mapping(_) => {
-            // Some users might have a single alias stored as a mapping instead of a list.
-            // Normalize to a list so we can append safely.
-            let old = std::mem::replace(aliases_value, serde_yaml::Value::Sequence(vec![]));
-            if let serde_yaml::Value::Mapping(map) = old {
-                if let serde_yaml::Value::Sequence(seq) = aliases_value {
-                    seq.push(serde_yaml::Value::Mapping(map));
-                }
-            }
-        }
-        _ => {
-            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: input.aliases is not a list in source.yml");
-        }
-    }
-    let Some(alias_seq) = aliases_value.as_sequence_mut() else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: input.aliases is not a list in source.yml");
+    let alias = ConfigInputAliasDto {
+        id: 0,
+        name: alias_name.to_string(),
+        url: base_url.to_string(),
+        username: Some(username.to_string()),
+        password: Some(password.to_string()),
+        priority: 0,
+        max_connections: 0,
+        exp_date,
     };
 
-    let mut alias_map = serde_yaml::Mapping::new();
-    alias_map.insert(serde_yaml::Value::String("name".to_string()), serde_yaml::Value::String(alias_name.to_string()));
-    alias_map.insert(serde_yaml::Value::String("url".to_string()), serde_yaml::Value::String(base_url.to_string()));
-    alias_map.insert(serde_yaml::Value::String("username".to_string()), serde_yaml::Value::String(username.to_string()));
-    alias_map.insert(serde_yaml::Value::String("password".to_string()), serde_yaml::Value::String(password.to_string()));
-    alias_map.insert(serde_yaml::Value::String("max_connections".to_string()), serde_yaml::Value::Number(1.into()));
-    if let Some(ts) = exp_date {
-        alias_map.insert(serde_yaml::Value::String("exp_date".to_string()), serde_yaml::Value::Number(ts.into()));
-    }
-    alias_seq.push(serde_yaml::Value::Mapping(alias_map));
+    input.upsert_alias(alias)?;
 
-    persist_source_config(app_state, source_file_path, &doc).await?;
+    persist_source_config(app_state, Some(source_file_path), sources).await?;
     Ok(())
 }
 
@@ -383,65 +333,21 @@ async fn patch_source_yml_update_exp_date(
     account_name: &str,
     exp_date: i64,
 ) -> Result<(), TuliproxError> {
-    let raw = tokio::fs::read_to_string(source_file_path)
-        .await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}")))?;
-    let mut doc: serde_yaml::Value = serde_yaml::from_str(&raw)
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to parse source file yaml: {e}")))?;
-    let Some(root) = doc.as_mapping_mut() else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: source.yml root is not a mapping");
+    let mut sources = match read_sources_file_from_path(source_file_path, false, false, None) {
+        Ok(sources) => sources,
+        Err(e) => return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}"))),
     };
-    let sources = root.get_mut(serde_yaml::Value::String("sources".to_string())).and_then(|v| v.as_sequence_mut());
-    let Some(sources) = sources else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: source.yml missing 'sources' list");
-    };
-    for src in sources.iter_mut() {
-        let Some(src_map) = src.as_mapping_mut() else { continue; };
-        let Some(inputs) = src_map.get_mut(serde_yaml::Value::String("inputs".to_string())).and_then(|v| v.as_sequence_mut()) else { continue; };
-        for inp in inputs.iter_mut() {
-            let Some(inp_map) = inp.as_mapping_mut() else { continue; };
-            let name = inp_map.get(serde_yaml::Value::String("name".to_string())).and_then(|v| v.as_str());
-            if name != Some(input_name) {
-                continue;
-            }
-            if account_name == input_name {
-                inp_map.insert(serde_yaml::Value::String("exp_date".to_string()), serde_yaml::Value::Number(exp_date.into()));
-                inp_map.insert(serde_yaml::Value::String("enabled".to_string()), serde_yaml::Value::Bool(true));
-            } else if let Some(aliases_value) = inp_map.get_mut(serde_yaml::Value::String("aliases".to_string())) {
-                // Normalize aliases to a sequence if the file contains a single mapping.
-                if matches!(aliases_value, serde_yaml::Value::Mapping(_)) {
-                    let old = std::mem::replace(aliases_value, serde_yaml::Value::Sequence(vec![]));
-                    if let serde_yaml::Value::Mapping(map) = old {
-                        if let serde_yaml::Value::Sequence(seq) = aliases_value {
-                            seq.push(serde_yaml::Value::Mapping(map));
-                        }
-                    }
-                }
 
-                if let Some(aliases) = aliases_value.as_sequence_mut() {
-                    for a in aliases.iter_mut() {
-                        let Some(a_map) = a.as_mapping_mut() else { continue; };
-                        let a_name = a_map.get(serde_yaml::Value::String("name".to_string())).and_then(|v| v.as_str());
-                        if a_name == Some(account_name) {
-                            a_map.insert(serde_yaml::Value::String("exp_date".to_string()), serde_yaml::Value::Number(exp_date.into()));
-                        }
-                    }
-                }
-            }
-            persist_source_config(app_state, source_file_path, &doc).await?;
-            return Ok(());
-        }
+    let Some(input) = sources.inputs.iter_mut().find(|i| i.name == input_name) else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml");
+    };
+
+    if input.update_account_expiration_date(input_name, account_name, exp_date).is_err() {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml");
     }
-    create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml")
-}
 
-async fn persist_source_config(app_state: &Arc<AppState>, source_file_path: &Path, doc: &serde_yaml::Value) -> Result<(), TuliproxError> {
-
-    let paths = app_state.app_config.paths.load();
-    let source_file = paths.sources_file_path.as_str();
-    let config = app_state.app_config.config.load();
-    let backup_dir = config.get_backup_dir();
-    save_sources_config(source_file_path.to_str().unwrap_or(source_file), &backup_dir, &doc).await
+    persist_source_config(app_state, Some(source_file_path), sources).await?;
+    Ok(())
 }
 
 async fn patch_batch_csv_append(
@@ -613,7 +519,7 @@ async fn try_renew_expired_account(
                     }
                 }
 
-                if let Err(err) = reload_sources(app_state).await {
+                if let Err(err) = ConfigFile::load_sources(app_state).await {
                     debug_if_enabled!("panel_api reload sources failed: {}", err);
                 }
                 return true;
@@ -689,7 +595,7 @@ async fn try_create_new_account(
                 }
             }
 
-            if let Err(err) = reload_sources(app_state).await {
+            if let Err(err) = ConfigFile::load_sources(app_state).await {
                 error!("panel_api reload sources failed: {err}");
                 return false;
             }
@@ -752,81 +658,75 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
     let mut any_change = false;
 
     let sources = app_state.app_config.sources.load();
-    for source in &sources.sources {
-        for input in &source.inputs {
-            let Some(panel_cfg) = input.panel_api.as_ref() else { continue; };
-            if !panel_cfg.enabled || panel_cfg.url.trim().is_empty() {
-                continue;
-            }
+    for input in &sources.inputs {
+        let Some(panel_cfg) = input.panel_api.as_ref() else { continue; };
+        if !panel_cfg.enabled || panel_cfg.url.trim().is_empty() {
+            continue;
+        }
 
-            let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
-            let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
-            let csv_path = if is_batch { get_csv_file_path(batch_url).ok() } else { None };
+        let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
+        let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
+        let csv_path = if is_batch { get_csv_file_path(batch_url).ok() } else { None };
 
-            let mut accounts: Vec<AccountCredentials> = vec![];
-            if let Some((u, p)) = extract_account_creds_from_input(input.as_ref()) {
-                accounts.push(AccountCredentials {
-                    name: input.name.clone(),
-                    username: u,
-                    password: p,
-                    exp_date: input.exp_date,
-                });
-            }
-            if let Some(aliases) = input.aliases.as_ref() {
-                for a in aliases {
-                    if let (Some(u), Some(p)) = (a.username.as_deref(), a.password.as_deref()) {
-                        accounts.push(AccountCredentials {
-                            name: a.name.clone(),
-                            username: u.to_string(),
-                            password: p.to_string(),
-                            exp_date: a.exp_date,
-                        });
-                    }
+        let mut accounts: Vec<AccountCredentials> = vec![];
+        if let Some((u, p)) = extract_account_creds_from_input(input.as_ref()) {
+            accounts.push(AccountCredentials {
+                name: input.name.clone(),
+                username: u,
+                password: p,
+                exp_date: input.exp_date,
+            });
+        }
+        if let Some(aliases) = input.aliases.as_ref() {
+            for a in aliases {
+                if let (Some(u), Some(p)) = (a.username.as_deref(), a.password.as_deref()) {
+                    accounts.push(AccountCredentials {
+                        name: a.name.clone(),
+                        username: u.to_string(),
+                        password: p.to_string(),
+                        exp_date: a.exp_date,
+                    });
                 }
             }
+        }
 
-            for acct in &accounts {
-                let new_exp = match panel_client_info(app_state.as_ref(), panel_cfg, &acct.username, &acct.password).await {
-                    Ok(v) => v,
-                    Err(err) => {
-                        debug_if_enabled!(
+        for acct in &accounts {
+            let new_exp = match panel_client_info(app_state.as_ref(), panel_cfg, &acct.username, &acct.password).await {
+                Ok(v) => v,
+                Err(err) => {
+                    debug_if_enabled!(
                             "panel_api client_info failed for {}: {}",
                             sanitize_sensitive_info(&acct.name),
                             sanitize_sensitive_info(err.to_string().as_str())
                         );
-                        None
-                    }
-                };
-                let Some(new_exp) = new_exp else { continue; };
-                if acct.exp_date == Some(new_exp) {
+                    None
+                }
+            };
+            let Some(new_exp) = new_exp else { continue; };
+            if acct.exp_date == Some(new_exp) {
+                continue;
+            }
+
+            if let Some(csv_path) = csv_path.as_ref() {
+                let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
+                if let Err(err) = patch_batch_csv_update_exp_date(csv_path, &acct.name, &acct.username, &acct.password, new_exp).await {
+                    debug_if_enabled!("panel_api boot sync failed to persist exp_date to csv: {}", err);
                     continue;
                 }
-
-                if let Some(csv_path) = csv_path.as_ref() {
-                    let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
-                    if let Err(err) = patch_batch_csv_update_exp_date(csv_path, &acct.name, &acct.username, &acct.password, new_exp).await {
-                        debug_if_enabled!("panel_api boot sync failed to persist exp_date to csv: {}", err);
-                        continue;
-                    }
-                } else {
-                    let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                    if let Err(err) = patch_source_yml_update_exp_date(app_state, &sources_path, &input.name, &acct.name, new_exp).await {
-                        debug_if_enabled!("panel_api boot sync failed to persist exp_date to source.yml: {}", err);
-                        continue;
-                    }
+            } else {
+                let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
+                if let Err(err) = patch_source_yml_update_exp_date(app_state, &sources_path, &input.name, &acct.name, new_exp).await {
+                    debug_if_enabled!("panel_api boot sync failed to persist exp_date to source.yml: {}", err);
+                    continue;
                 }
-                any_change = true;
             }
+            any_change = true;
         }
     }
 
     if any_change {
-        if let Err(err) = reload_sources(app_state).await {
+        if let Err(err) = ConfigFile::load_sources(app_state).await {
             debug_if_enabled!("panel_api boot sync reload sources failed: {}", err);
         }
     }
-}
-
-async fn reload_sources(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
-    ConfigFile::load_sources(app_state).await
 }

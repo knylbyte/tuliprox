@@ -15,7 +15,7 @@ use bytes::Bytes;
 use futures::{stream, Stream, StreamExt};
 use indexmap::IndexMap;
 use log::error;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use shared::error::{create_tuliprox_error, create_tuliprox_error_result, info_err, notify_err, string_to_io_error, TuliproxError, TuliproxErrorKind};
 use shared::model::xtream_const::XTREAM_CLUSTER;
@@ -239,7 +239,7 @@ pub fn xtream_get_file_path(storage_path: &Path, cluster: XtreamCluster) -> Path
     xtream_get_file_path_for_name(storage_path, &cluster.as_str().to_lowercase())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct CategoryEntry {
     category_id: u32,
     category_name: String,
@@ -796,5 +796,54 @@ pub async fn persists_input_series_info(app_config: &Arc<AppConfig>, storage_pat
                                         cluster: XtreamCluster, input_name: &str, provider_id: u32,
                                         props: &SeriesStreamProperties) -> Result<(), Error> {
     persist_input_info(app_config, storage_path, cluster, input_name, provider_id, StreamProperties::Series(Box::new(props.clone()))).await
+}
+
+pub async fn load_input_xtream_playlist(app_config: &Arc<AppConfig>, storage_path: &Path, clusters: &[XtreamCluster]) -> Result<Vec<PlaylistGroup>, TuliproxError> {
+    let mut groups: IndexMap<u32, PlaylistGroup> = IndexMap::new();
+
+    for &cluster in clusters {
+        let xtream_path = xtream_get_file_path(storage_path, cluster);
+        if xtream_path.exists() {
+            let cat_col_name = match cluster {
+                XtreamCluster::Live => storage_const::COL_CAT_LIVE,
+                XtreamCluster::Video => storage_const::COL_CAT_VOD,
+                XtreamCluster::Series => storage_const::COL_CAT_SERIES,
+            };
+            let cat_path = get_collection_path(storage_path, cat_col_name);
+            
+            if cat_path.exists() {
+               if let Ok(content) = tokio::fs::read_to_string(&cat_path).await {
+                   if let Ok(cats) = serde_json::from_str::<Vec<CategoryEntry>>(&content) {
+                       for cat in cats {
+                           groups.insert(cat.category_id, PlaylistGroup {
+                               id: cat.category_id,
+                               title: cat.category_name,
+                               channels: Vec::new(),
+                               xtream_cluster: cluster,
+                           });
+                       }
+                   }
+               }
+            }
+
+            // Load Items
+            let _file_lock = app_config.file_locks.read_lock(&xtream_path).await;
+            if let Ok(mut query) = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path) {
+                for (_, ref item) in query.iter() {
+                     let cat_id = item.category_id;
+                     groups.entry(cat_id)
+                        .or_insert_with(|| PlaylistGroup {
+                             id: cat_id,
+                             title: String::from("Unknown"),
+                             channels: Vec::new(),
+                             xtream_cluster: cluster,
+                        })
+                        .channels.push(PlaylistItem::from(item));
+                }
+            }
+        }
+    }
+    
+    Ok(groups.into_values().collect())
 }
 

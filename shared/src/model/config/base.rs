@@ -1,6 +1,8 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
-use crate::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LibraryConfigDto, LogConfigDto, MessagingConfigDto, ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto, DEFAULT_VIDEO_EXTENSIONS};
-use crate::utils::default_connect_timeout_secs;
+use crate::model::{ConfigApiDto, HdHomeRunConfigDto, IpCheckConfigDto, LibraryConfigDto, LogConfigDto, MessagingConfigDto,
+                   ProxyConfigDto, ReverseProxyConfigDto, ScheduleConfigDto, VideoConfigDto, WebUiConfigDto};
+use crate::utils::{is_false, default_connect_timeout_secs, is_default_connect_timeout_secs, is_blank_optional_string,
+                   default_supported_video_extensions};
 
 pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
 
@@ -8,49 +10,49 @@ pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigDto {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub process_parallel: bool,
     pub api: ConfigApiDto,
     pub working_dir: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub backup_dir: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub user_config_dir: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub mapping_path: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub custom_stream_response_path: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub video: Option<VideoConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedules: Option<Vec<ScheduleConfigDto>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log: Option<LogConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub user_access_control: bool,
-    #[serde(default = "default_connect_timeout_secs")]
+    #[serde(default = "default_connect_timeout_secs", skip_serializing_if = "is_default_connect_timeout_secs")]
     pub connect_timeout_secs: u32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sleep_timer_mins: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub update_on_boot: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub config_hot_reload: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub accept_insecure_ssl_certificates: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web_ui: Option<WebUiConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub messaging: Option<MessagingConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reverse_proxy: Option<ReverseProxyConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hdhomerun: Option<HdHomeRunConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy: Option<ProxyConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ipcheck: Option<IpCheckConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub library: Option<LibraryConfigDto>,
 }
 
@@ -58,28 +60,28 @@ pub struct ConfigDto {
 // It has no other purpose than editing and saving the simple config values
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct MainConfigDto {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub process_parallel: bool,
     pub working_dir: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub backup_dir: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub user_config_dir: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub mapping_path: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub custom_stream_response_path: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub user_access_control: bool,
-    #[serde(default = "default_connect_timeout_secs")]
+    #[serde(default = "default_connect_timeout_secs", skip_serializing_if = "is_default_connect_timeout_secs")]
     pub connect_timeout_secs: u32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sleep_timer_mins: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub update_on_boot: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub config_hot_reload: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub accept_insecure_ssl_certificates: bool,
 }
 
@@ -195,7 +197,7 @@ impl ConfigDto {
         match &mut self.video {
             None => {
                 self.video = Some(VideoConfigDto {
-                    extensions: DEFAULT_VIDEO_EXTENSIONS.iter().map(ToString::to_string).collect(),
+                    extensions: default_supported_video_extensions(),
                     download: None,
                     web_search: None,
                 });

@@ -129,7 +129,6 @@ async fn geoip_update(axum::extract::State(app_state): axum::extract::State<Arc<
     axum::http::StatusCode::BAD_REQUEST.into_response()
 }
 
-
 async fn ipinfo(axum::extract::State(app_state): axum::extract::State<Arc<AppState>>) -> axum::response::Response {
     if let Some((ipv4, ipv6)) = create_ipinfo_check(&app_state).await {
         let ipcheck = IpCheckDto {

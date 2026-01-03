@@ -1,3 +1,4 @@
+use shared::utils::is_blank_optional_string;
 use serde::{Deserialize, Serialize};
 use shared::model::TraktContentType;
 use crate::utils::normalize_title_for_matching;
@@ -6,12 +7,16 @@ use crate::utils::normalize_title_for_matching;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraktListItem {
     pub id: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rank: Option<u32>,
     pub listed_at: String,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub notes: Option<String>,
     #[serde(rename = "type")]
     pub item_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub movie: Option<TraktMovie>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show: Option<TraktShow>,
     #[serde(skip)]
     pub content_type: TraktContentType,

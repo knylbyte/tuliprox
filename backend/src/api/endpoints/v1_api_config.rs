@@ -5,7 +5,7 @@ use axum::Router;
 use serde_json::json;
 use shared::model::{ApiProxyConfigDto, ApiProxyServerInfoDto, ConfigDto, SourcesConfigDto};
 use std::sync::Arc;
-use log::error;
+use log::{error};
 use shared::error::TuliproxError;
 use crate::api::api_utils::try_unwrap_body;
 use crate::{utils};
@@ -59,20 +59,17 @@ async fn save_config_sources(
     if let Err(err) = sources.prepare(false, None) {
         return (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": err.to_string()}))).into_response();
     }
-    let paths = app_state.app_config.paths.load();
-    let file_path = paths.sources_file_path.as_str();
-    let config = app_state.app_config.config.load();
-    let backup_dir = config.get_backup_dir();
-    match utils::save_sources_config(file_path, backup_dir.as_ref(), &sources).await {
-        Ok(()) => {}
+
+    let sources_config = match utils::validate_and_persist_source_config(&app_state, sources).await {
+        Ok(value) => value,
         Err(err) => {
             error!("Failed to save source.yml {err}");
             return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
         }
-    }
+    };
 
-    // update runtime (hot reload semantics like panel_api reload)
-    match crate::model::SourcesConfig::try_from(&sources) {
+    // update runtime
+    match crate::model::SourcesConfig::try_from(&sources_config) {
         Ok(src) => {
             if let Err(err) = app_state.app_config.set_sources(src) {
                 return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(json!({"error": err.to_string()}))).into_response();
