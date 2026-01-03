@@ -1,13 +1,16 @@
 use crate::app::components::config::config_page::{ConfigForm, LABEL_MESSAGING_CONFIG};
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::{Card, Chip, RadioButtonGroup};
-use crate::{config_field, config_field_bool, config_field_bool_empty, config_field_child, config_field_empty, config_field_hide, config_field_optional, config_field_optional_hide, edit_field_bool, edit_field_list, edit_field_text, edit_field_text_option, generate_form_reducer};
-use shared::model::{DiscordMessagingConfigDto, MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto, TelegramMessagingConfigDto};
+use crate::app::ConfigContext;
+use crate::{config_field, config_field_bool, config_field_bool_empty, config_field_child,
+            config_field_empty, config_field_hide, config_field_optional, edit_field_bool,
+            edit_field_list, edit_field_text, edit_field_text_option, generate_form_reducer};
+use shared::model::{DiscordMessagingConfigDto, MessagingConfigDto, MsgKind, PushoverMessagingConfigDto,
+                    RestMessagingConfigDto, TelegramMessagingConfigDto};
 use std::rc::Rc;
 use std::str::FromStr;
 use yew::prelude::*;
 use yew_i18n::use_translation;
-use crate::app::ConfigContext;
 
 const LABEL_NOTIFY_ON: &str = "LABEL.NOTIFY_ON";
 const LABEL_TELEGRAM: &str = "LABEL.TELEGRAM";
@@ -161,7 +164,7 @@ pub fn MessagingConfigView() -> Html {
         let p_state = pushover_state.clone();
         let r_state = rest_state.clone();
 
-        let msg_config : MessagingConfigDto = config_ctx
+        let msg_config: MessagingConfigDto = config_ctx
             .config
             .as_ref()
             .and_then(|c| c.config.messaging.as_ref())
@@ -250,7 +253,7 @@ pub fn MessagingConfigView() -> Html {
         Some(entry) => html! {
           <Card class="tp__config-view__card">
               <h1>{translate.t(LABEL_DISCORD)}</h1>
-              { config_field!(entry, translate.t(LABEL_WEBHOOK_URL), url) }
+              { config_field_hide!(entry, translate.t(LABEL_WEBHOOK_URL), url) }
               { config_field_optional!(entry, translate.t(LABEL_BODY_TEMPLATE), template) }
           </Card>
         },
@@ -358,7 +361,7 @@ pub fn MessagingConfigView() -> Html {
 
                 <Card class="tp__config-view__card">
                     <h1>{translate.t(LABEL_DISCORD)}</h1>
-                    { edit_field_text!(discord_state, translate.t(LABEL_WEBHOOK_URL), url, DiscordMessagingConfigFormAction::Url) }
+                    { edit_field_text!(discord_state, translate.t(LABEL_WEBHOOK_URL), url, DiscordMessagingConfigFormAction::Url, true) }
                     { edit_field_text_option!(discord_state, translate.t(LABEL_BODY_TEMPLATE), template, DiscordMessagingConfigFormAction::Template) }
                 </Card>
             </div>

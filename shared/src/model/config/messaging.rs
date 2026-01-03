@@ -31,7 +31,10 @@ pub struct RestMessagingConfigDto {
 
 impl RestMessagingConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.url.trim().is_empty() && self.headers.is_empty() && self.template.is_none()
+        self.url.trim().is_empty()
+            && is_blank_optional_str(self.method.as_deref())
+            && self.headers.is_empty()
+            && self.template.is_none()
     }
 }
 
@@ -45,7 +48,7 @@ pub struct DiscordMessagingConfigDto {
 
 impl DiscordMessagingConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.url.trim().is_empty()
+        self.url.trim().is_empty() && is_blank_optional_str(self.template.as_deref())
     }
 }
 

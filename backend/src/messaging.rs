@@ -6,7 +6,7 @@ use log::{debug, error};
 use reqwest::{header, Method};
 use serde_json::{json, Value};
 use shared::model::MsgKind;
-use shared::utils::{json_str_to_markdown, Constants};
+use shared::utils::{json_str_to_markdown};
 use std::borrow::Cow;
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -15,7 +15,7 @@ fn is_enabled(kind: MsgKind, cfg: &MessagingConfig) -> bool {
     cfg.notify_on.contains(&kind)
 }
 
-pub static HANDLEBARS: LazyLock<Handlebars> = LazyLock::new(|| Handlebars::new());
+static HANDLEBARS: LazyLock<Handlebars> = LazyLock::new(Handlebars::new);
 fn render_template(template: Option<&str>, msg: &str, kind: MsgKind) -> String {
     let timestamp = Utc::now().to_rfc3339();
 
