@@ -725,6 +725,7 @@ sources:
 
 Has the following top level entries:
 * `templates` _optional_
+* `inputs`
 * `sources`
 
 ### 2.1 `templates`
@@ -767,12 +768,7 @@ The template can now be used for sequence
           - '(?i)\bSD\b'
 ```
 
-### 2.2. `sources`
-`sources` is a sequence of source definitions, which have two top level entries:
--`inputs`
--`targets`
-
-### 2.2.1 `inputs`
+### 2.2 `inputs`
 `inputs` is a list of sources.
 
 Each input has the following attributes:
@@ -867,57 +863,60 @@ The `!suffix '.'` setting means: if a prefix is found, append it to the name usi
 
 Example input config for `m3u`
 ```yaml
+inputs:
+  - url: 'http://provder.net/get_php?...'
+    name: test_m3u
+    epg: 'test-epg.xml'
+    enabled: false
+    persist: 'playlist_1_{}.m3u'
+    options: {xtream_skip_series: true}
+  - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ad.m3u'
+  - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/au.m3u'
+  - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/za.m3u'
 sources:
-- inputs:
-    - url: 'http://provder.net/get_php?...'
-      name: test_m3u
-      epg: 'test-epg.xml'
-      enabled: false
-      persist: 'playlist_1_{}.m3u'
-      options: {xtream_skip_series: true}
-    - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ad.m3u'
-    - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/au.m3u'
-    - url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/za.m3u'
-  targets:
-   - name: test
-     output:
-       - type: m3u
-         filename: test.m3u
+  - inputs:
+    - test_m3u
+    targets:
+    - name: test
+      output:
+      - type: m3u
+        filename: test.m3u
 ```
 
 Example input config for `xtream`
 ```yaml
-sources:
-  inputs:
-    - type: xtream
-      persist: 'playlist_1_1{}.m3u'
-      headers:
-        User-Agent: "Mozilla/5.0 (AppleTV; U; CPU OS 14_2 like Mac OS X; en-us) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.1 Safari/605.1.15"
-        Accept: application/json
-        Accept-Encoding: gzip
-      url: 'http://localhost:8080'
-      username: test
-      password: test
+inputs:
+  - type: xtream
+    persist: 'playlist_1_1{}.m3u'
+    headers:
+      User-Agent: "Mozilla/5.0 (AppleTV; U; CPU OS 14_2 like Mac OS X; en-us) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.1 Safari/605.1.15"
+      Accept: application/json
+      Accept-Encoding: gzip
+    url: 'http://localhost:8080'
+    username: test
+    password: test
 ```
 
 Input alias definition for same provider with same content but different credentials.
 `max_connections` default is unlimited
 ```yaml
-- sources:
-- inputs:
+inputs:
   - type: xtream
     name: my_provider # Mandatory: used for playlist UUID generation
     url: 'http://provider.net'
     username: xyz
     password: secret1
     aliases:
-    - name: my_provider_2 
-      url: 'http://provider.net'
-      username: abcd
-      password: secret2
-      max_connections: 2
-  targets:
-  - name: test
+      - name: my_provider_2
+        url: 'http://provider.net'
+        username: abcd
+        password: secret2
+        max_connections: 2
+sources:
+  - inputs:
+    - my_provider
+    targets:
+    - name: test
 ```
 
 Input aliases can be defined as batches in csv files with `;` separator.
@@ -926,13 +925,16 @@ There are 2 batch input types  `xtream_batch` and `m3u_batch`.
 ##### `XtreamBatch`
 
 ```yaml
-- sources:
-- inputs:
+
+inputs:
   - type: xtream_batch
     name: my_provider # Mandatory: used for playlist UUID generation
     url: 'file:///home/tuliprox/config/my_provider_batch.csv'
-  targets:
-  - name: test
+sources:
+  - inputs:
+    - my_provider
+    targets:
+    - name: test
 ```
 
 ```csv
@@ -945,12 +947,14 @@ This is necessary because of playlist uuid generation and assigning same channel
 
 ##### `M3uBatch`
 ```yaml
-- sources:
-- inputs:
+inputs:
   - type: m3u_batch
     url: 'file:///home/tuliprox/config/my_provider_batch.csv'
-  targets:
-  - name: test
+sources:
+  - inputs:
+      - m3u_batch
+    targets:
+    - name: test
 ```
 
 ```csv
@@ -1023,8 +1027,7 @@ Tuliprox evaluates Panel API responses as JSON with the following logic, dependi
 -	Extract the expiration timestamp/date from the JSON field:
      -	`expire` → used to populate/update exp_date for the corresponding input/alias.
 ```yaml
-- sources:
-- inputs:
+inputs:
   - type: xtream
     name: my_provider
     url: 'http://provider.net'
@@ -1053,7 +1056,15 @@ Tuliprox evaluates Panel API responses as JSON with the following logic, dependi
           - { key: api_key, value: auto }
 ```
 
-### 2.2.2 `targets`
+### 2.3. `sources`
+`sources` is a sequence of source definitions, which have two top level entries:
+-`inputs`
+-`targets`
+
+### 2.3.1 `inputs`
+Is a list of input names, from the inputs defined in the inputs section of `source.yml`.
+
+### 2.3.2 `targets`
 Has the following top level entries:
 - `enabled` _optional_ default is `true`, if you disable the processing is skipped
 - `name` _optional_ default is `default`, if not default it has to be unique, for running selective targets
@@ -1336,11 +1347,14 @@ templates:
     Group ~ "((?i)FR[:|])?(?i)France.*"
 - name: PROV1_ALL
   value:  "!PROV1_TR! OR !PROV1_DE! OR !PROV1_FR!"
+inputs:
+  - enabled: true
+    name: my_provider_1
+    url: http://myserver.net/playlist.m3u
+    persist: ./playlist_{}.m3u
 sources:
   - inputs:
-      - enabled: true
-        url: http://myserver.net/playlist.m3u
-        persist: ./playlist_{}.m3u
+      - my_provider_1
     targets:
       - name: pl1
         output:
@@ -2117,24 +2131,28 @@ Now we have to define the sources we want to import. We do this inside `source.y
 templates:
 - name: ALL_CHAN
   value: 'Group ~ ".*"'
+
+inputs:
+- type: xtream
+  name: my_provider
+  url: 'http://fantastic.provider.xyz:8080'
+  epg_url: 'http://fantastic.provider.xyz:8080/xmltv.php?username=tvjunkie&password=junkie.secret'
+  username: tvjunkie
+  password: junkie.secret
+  options: {xtream_info_cache: true}
 sources:
 - inputs:
-    - type: xtream
-      url: 'http://fantastic.provider.xyz:8080'
-      epg_url: 'http://fantastic.provider.xyz:8080/xmltv.php?username=tvjunkie&password=junkie.secret'
-      username: tvjunkie
-      password: junkie.secret
-      options: {xtream_info_cache: true}
+  - my_provider
   targets:
-    - name: all_channels
-      output:
-        - type: xtream
-      filter: "!ALL_CHAN!"
-      options: {ignore_logo: false, skip_live_direct_source: true, skip_video_direct_source: true}
-      sort:
-        match_as_ascii: true
-        groups:
-          order: asc
+  - name: all_channels
+    output:
+      - type: xtream
+    filter: "!ALL_CHAN!"
+    options: {ignore_logo: false, skip_live_direct_source: true, skip_video_direct_source: true}
+    sort:
+      match_as_ascii: true
+      groups:
+        order: asc
 ```
 
 What did we do? First, we defined the input source based on the information we received from our provider.
@@ -2197,15 +2215,18 @@ What we have currently is: (for a better overview I have removed some parts and 
 templates:
 - name: ALL_CHAN
   value: 'Group ~ ".*"'
+inputs:
+- type: xtream
+  name: my_provider
+  ...
 sources:
 - inputs:
-    - type: xtream
-      ...
+  - my_provider
   targets:
-    - name: all_channels
-      output:
-        - type: xtream
-      filter: "!ALL_CHAN!"
+  - name: all_channels
+    output:
+      - type: xtream
+    filter: "!ALL_CHAN!"
       
 ```
 
@@ -2248,16 +2269,20 @@ templates:
 - name: MY_CHANNELS
   value: '!NO_SHOOPING! AND (!GERMAN_CHANNELS! OR !FRENCH_CHANNELS!)'
 
+inputs:
+- type: xtream
+  name: my_provider
+  ...
 sources:
 - inputs:
-    - type: xtream
-      ...
+  - my_provider
   targets:
-    - name: all_channels
-      output:
-        - type: xtream
-      filter: "!MY_CHANNELS!"
-      ...```
+  - name: all_channels
+    output:
+      - type: xtream
+    filter: "!MY_CHANNELS!"
+    ...
+ ```
 
 The resulting playlist contains all French and German channels except Shopping.
 

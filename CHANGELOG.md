@@ -1,5 +1,7 @@
 # Changelog
 # 3.3.0 (2025-12-xx)
+- !BREAKING CHANGE! To align input definitions with the SourceEditor, inputs are now defined globally in the inputs section of the config file.
+  Each source can reference one or more inputs by their name in the inputs attribute.
 - !BREAKING CHANGE! Due to some heavy refactoring, the old data format is invalid. You need to clean your data folder and update the playlists.
 - !BREAKING CHANGE! B+Tree storage format has changed to a more efficient Slotted Page architecture.
 - **B+Tree Storage Engine Optimizations**:

@@ -424,8 +424,6 @@ pub fn SourceEditor() -> Html {
             sources_config.inputs = gen_inputs;
             sources_config.sources = gen_sources;
 
-            web_sys::console::log_1(&format!("save {:?}", sources_config).into());
-
             let services = services.clone();
             let translate = translate.clone();
             wasm_bindgen_futures::spawn_local(async move {

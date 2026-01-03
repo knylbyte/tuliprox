@@ -2,7 +2,8 @@ use crate::utils::is_blank_optional_string;
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::{EpgConfigDto};
 use crate::utils::{is_false, is_true, default_as_true, get_credentials_from_url_str, get_trimmed_string,
-                   sanitize_sensitive_info, trim_last_slash, deserialize_timestamp, is_zero_u16};
+                   sanitize_sensitive_info, trim_last_slash, deserialize_timestamp, is_zero_u16,
+                   serialize_option_vec_flow_map_items};
 use super::PanelApiConfigDto;
 use crate::{check_input_credentials, check_input_connections, create_tuliprox_error_result, info_err};
 
@@ -303,7 +304,7 @@ pub struct ConfigInputDto {
     pub cache_duration: Option<String>,
     #[serde(skip, skip_serializing_if = "is_zero_u16")]
     pub cache_duration_seconds: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "crate::utils::serialize_option_slice_flow")]
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "serialize_option_vec_flow_map_items")]
     pub aliases: Option<Vec<ConfigInputAliasDto>>,
     #[serde(default)]
     pub priority: i16,

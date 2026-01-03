@@ -359,6 +359,24 @@ where
     }
 }
 
+/// Serialize an Option<Vec<T>> as a block sequence where each item is in flow-style
+pub fn serialize_option_vec_flow_map_items<T, S>(
+    opt: &Option<Vec<T>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    T: serde::Serialize,
+    S: serde::Serializer,
+{
+    match opt {
+        Some(items) if !items.is_empty() => {
+            let flow_items: Vec<_> = items.iter().map(serde_saphyr::FlowMap).collect();
+            flow_items.serialize(serializer)
+        }
+        _ => serializer.serialize_none(),
+    }
+}
+
 pub fn serialize_number_as_string<N, S>(value: &N, serializer: S) -> Result<S::Ok, S::Error>
 where
     N: std::fmt::Display,
@@ -366,15 +384,3 @@ where
 {
     serializer.serialize_str(&value.to_string())
 }
-
-//
-// pub fn serialize_option_number_as_string<N, S>(value: &Option<N>, serializer: S,) -> Result<S::Ok, S::Error>
-// where
-//     N: std::fmt::Display,
-//     S: Serializer,
-// {
-//     match value {
-//         Some(v) => serializer.serialize_str(&v.to_string()),
-//         None => serializer.serialize_str(""),
-//     }
-// }
