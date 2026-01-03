@@ -1,5 +1,6 @@
-use shared::model::{DiscordMessagingConfigDto, MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto, TelegramMessagingConfigDto};
+use log::warn;
 use crate::model::macros;
+use shared::model::{DiscordMessagingConfigDto, MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto, TelegramMessagingConfigDto};
 
 #[derive(Debug, Clone)]
 pub struct TelegramMessagingConfig {
@@ -9,7 +10,7 @@ pub struct TelegramMessagingConfig {
 }
 
 macros::from_impl!(TelegramMessagingConfig);
-impl From<&TelegramMessagingConfigDto>  for TelegramMessagingConfig {
+impl From<&TelegramMessagingConfigDto> for TelegramMessagingConfig {
     fn from(dto: &TelegramMessagingConfigDto) -> Self {
         Self {
             bot_token: dto.bot_token.clone(),
@@ -19,7 +20,7 @@ impl From<&TelegramMessagingConfigDto>  for TelegramMessagingConfig {
     }
 }
 
-impl From<&TelegramMessagingConfig>  for TelegramMessagingConfigDto {
+impl From<&TelegramMessagingConfig> for TelegramMessagingConfigDto {
     fn from(instance: &TelegramMessagingConfig) -> Self {
         Self {
             bot_token: instance.bot_token.clone(),
@@ -44,6 +45,8 @@ impl From<&RestMessagingConfigDto> for RestMessagingConfig {
         for h in &dto.headers {
             if let Some((k, v)) = h.split_once(':') {
                 headers.insert(k.trim().to_string(), v.trim().to_string());
+            } else if !h.trim().is_empty() {
+                warn!("Ignoring malformed header (missing ':'): {h}");
             }
         }
         Self {

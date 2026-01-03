@@ -234,7 +234,7 @@ pub fn MessagingConfigView() -> Html {
           <Card class="tp__config-view__card">
               <h1>{translate.t(LABEL_REST)}</h1>
               { config_field!(entry, translate.t(LABEL_URL), url) }
-              { config_field_optional_hide!(entry, translate.t(LABEL_METHOD), method) }
+              { config_field_optional!(entry, translate.t(LABEL_METHOD), method) }
               { config_field_optional!(entry, translate.t(LABEL_BODY_TEMPLATE), template) }
           </Card>
         },

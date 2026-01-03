@@ -1,7 +1,7 @@
 # Changelog
 # 3.3.0 (2026-01-03)
 
-### ⚠️ Breaking Changes
+## ⚠️ Breaking Changes
 - **Global Input Definitions**: To align input definitions with the SourceEditor, inputs are now defined globally in the `inputs` section of the config file. Each source can reference one or more inputs by their name in the `inputs` attribute.
 - **Data Format Migration**: Due to heavy refactoring, the old data format is invalid. You need to clean your `data` folder and update the playlists.
 - **B+Tree Storage Format**: Storage format has changed to a more efficient Slotted Page architecture.
@@ -12,7 +12,7 @@
 - **Input Batch Changes**: `name` attribute is now mandatory for input type batch to ensure stable playlist UUIDs.
 - **Favorites Redesign**: Replaced implicit `create_alias` with explicit `add_favourite(group_name)` script function.
 
-### 🌟 New Features
+## 🌟 New Features
 - **Discord Notifications**: Support for Discord notifications via webhooks with optional Handlebars templates.
 - **Enhanced REST Messaging**: Support for custom HTTP methods, headers, and Handlebars templating.
 - **Local Library Module**: Comprehensive local video file scanning and metadata management.
@@ -22,26 +22,26 @@
 - **Playlist Caching**: Added `cache_duration` to inputs, allowing configurable provider playlist cache times during subsequent updates (e.g., `60s`, `5m` `12h`, `1d`).
 - **Database Viewer**: New CLI flags `--dbx` and `--dbm` to inspect internal database content.
 
-### ⚙️ Engine & Storage Optimizations
+## ⚙️ Engine & Storage Optimizations
 - **Slotted Page Architecture**: Improved space utilization and support for variable-length keys.
 - **Adaptive LZ4 Compression**: Optimized disk footprint for stored values.
 - **Atomic I/O Layer**: Refactored for atomic writes and file locking, ensuring data integrity.
 - **B+Tree Compaction**: Reclaim space after deletions or mass updates.
 - **Batch Upsert**: Significantly higher throughput during mass inserts/updates.
 
-### 🔍 Mapping & Filtering Enhancements
+## 🔍 Mapping & Filtering Enhancements
 - **Accent-Independent Matching**: Integrated `match_as_ascii` flag for robust text matching (e.g., "Cinema" matches "Cinéma").
 - **Deunicoding Support**: `ValueProvider` and `ValueAccessor` now support on-the-fly deunicoding.
 - **Flexible Sorting**: Added `order: none` support to retain source order in mappings.
 
-### 💻 WebUI & API
+## 💻 WebUI & API
 - **Source Editor Integration**: Redesigned UI for global input management and hot-reloading.
 - **Messaging Config View**: New UI for configuring Discord and enhanced REST settings.
 - **Performance Monitoring**: Added CPU usage display to the dashboard.
 - **Stream Table Enhancements**: Added "Copy-To-Clipboard" functions and improved connection monitoring.
 - **UX Improvements**: Implemented API-user category selection and better session tracking for HLS.
 
-### 🚀 Performance & Stability
+## 🚀 Performance & Stability
 - **Full Async Runtime**: Transitioned to `#[tokio::main]` and async I/O throughout the entire application.
 - **Non-Blocking Operations**: Cache persistence, playlist exports, and config saves moved to async tasks to prevent runtime stalls.
 - **Zero-Copy Buffers**: Reduced memory usage for shared stream burst buffers.
@@ -60,7 +60,7 @@
 - **EPG Icon URLs**: Rewritten in reverse proxy mode.
 - **Short EPG**: Served from local disk.
 - **Client Requests**: Extended debug logging for client requests and ID chain.
-- **XTream Fixes**: Fixed series/catchup lookups using `series-info virtual_id`.
+- **XTream Fixes**: Fixed series/catch-up lookups using `series-info virtual_id`.
 - **Cloudflare Header**: Added `cloudflare_header` to reverse proxy `disable_header` settings.
 - **Kick Seconds**: `kick_secs` added to `config.yml web_ui` config.
 

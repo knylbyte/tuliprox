@@ -1,23 +1,24 @@
 use crate::model::MessagingConfig;
 use crate::utils::{telegram_create_instance, telegram_send_message, SendMessageOption, SendMessageParseMode};
+use chrono::Utc;
+use handlebars::Handlebars;
 use log::{debug, error};
 use reqwest::{header, Method};
-use shared::model::MsgKind;
-use shared::utils::json_str_to_markdown;
-use handlebars::Handlebars;
 use serde_json::{json, Value};
-use chrono::Utc;
+use shared::model::MsgKind;
+use shared::utils::{json_str_to_markdown, Constants};
 use std::borrow::Cow;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 fn is_enabled(kind: MsgKind, cfg: &MessagingConfig) -> bool {
     cfg.notify_on.contains(&kind)
 }
 
+pub static HANDLEBARS: LazyLock<Handlebars> = LazyLock::new(|| Handlebars::new());
 fn render_template(template: Option<&str>, msg: &str, kind: MsgKind) -> String {
-    let hb = Handlebars::new();
     let timestamp = Utc::now().to_rfc3339();
-    
+
     let mut data = json!({
         "message": msg,
         "kind": kind.to_string(),
@@ -32,7 +33,7 @@ fn render_template(template: Option<&str>, msg: &str, kind: MsgKind) -> String {
 
     match template {
         Some(t) => {
-            match hb.render_template(t, &data) {
+            match HANDLEBARS.render_template(t, &data) {
                 Ok(rendered) => rendered,
                 Err(e) => {
                     error!("Failed to render template: {e}");
@@ -48,9 +49,9 @@ async fn send_rest_message(client: &reqwest::Client, msg: &str, kind: MsgKind, m
     if let Some(rest) = &messaging.rest {
         let body = render_template(rest.template.as_deref(), msg, kind);
         let method = Method::from_str(&rest.method).unwrap_or(Method::POST);
-        
+
         let mut rb = client.request(method, &rest.url);
-        
+
         let has_content_type = rest.headers.keys().any(|k| k.eq_ignore_ascii_case("content-type"));
         if !has_content_type {
             rb = rb.header(header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string());
@@ -82,7 +83,13 @@ async fn send_discord_message(client: &reqwest::Client, msg: &str, kind: MsgKind
             .send()
             .await
         {
-            Ok(_) => debug!("Message sent successfully to Discord"),
+            Ok(response) => {
+                if response.status().is_success() {
+                    debug!("Message sent successfully to Discord");
+                } else {
+                    error!("Failed to send message to Discord, status code {}", response.status());
+                }
+            }
             Err(e) => error!("Message wasn't sent to Discord because of: {e}"),
         }
     }

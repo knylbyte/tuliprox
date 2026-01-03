@@ -21,14 +21,17 @@ impl TelegramMessagingConfigDto {
 #[serde(deny_unknown_fields)]
 pub struct RestMessagingConfigDto {
     pub url: String,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub method: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub headers: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub template: Option<String>,
 }
 
 impl RestMessagingConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.url.is_empty() && self.headers.is_empty() && self.template.is_none()
+        self.url.trim().is_empty() && self.headers.is_empty() && self.template.is_none()
     }
 }
 
