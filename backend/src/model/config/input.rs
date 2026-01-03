@@ -144,15 +144,17 @@ pub struct ConfigInput {
     pub exp_date: Option<i64>,
     pub t_batch_url: Option<String>,
     pub panel_api: Option<PanelApiConfig>,
+    pub cache_duration_seconds: u64,
 }
 
 impl ConfigInput {
     pub fn prepare(&mut self) -> Result<Option<PathBuf>, TuliproxError> {
         let batch_file_path = self.prepare_batch();
-        check_input_credentials!(self, self.input_type, false);
-        check_input_connections!(self, self.input_type);
+        self.name = self.name.trim().to_string();
+        check_input_credentials!(self, self.input_type, false, false);
+        check_input_connections!(self, self.input_type, false);
         if let Some(staged_input) = &mut self.staged {
-            check_input_credentials!(staged_input, staged_input.input_type, false);
+            check_input_credentials!(staged_input, staged_input.input_type, false, true);
             if !matches!(staged_input.input_type, InputType::M3u | InputType::Xtream) {
                 return Err(info_err!("Staged input can only be from type m3u or xtream".to_owned()));
             }
@@ -249,6 +251,7 @@ impl ConfigInput {
             exp_date: None,
             t_batch_url: None,
             panel_api: self.panel_api.clone(),
+            cache_duration_seconds: self.cache_duration_seconds,
         }
     }
 }
@@ -276,6 +279,7 @@ impl From<&ConfigInputDto> for ConfigInput {
             staged: dto.staged.as_ref().map(StagedInput::from),
             t_batch_url: None,
             panel_api: dto.panel_api.as_ref().map(PanelApiConfig::from),
+            cache_duration_seconds: dto.cache_duration_seconds,
         }
     }
 }

@@ -8,24 +8,11 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct ConfigSource {
-    pub batch_files: Vec<PathBuf>,
-    pub inputs: Vec<Arc<ConfigInput>>,
+    pub inputs: Vec<String>,
     pub targets: Vec<Arc<ConfigTarget>>,
 }
 
 impl ConfigSource {
-    pub fn get_inputs_for_target(&self, target_name: &str) -> Option<Vec<Arc<ConfigInput>>> {
-        for target in &self.targets {
-            if target.name.eq(target_name) {
-                let inputs = self.inputs.iter().filter(|&i| i.enabled).map(Arc::clone).collect::<Vec<Arc<ConfigInput>>>();
-                if !inputs.is_empty() {
-                    return Some(inputs);
-                }
-            }
-        }
-        None
-    }
-
     // Determines whether this source should be processed for the given user targets.
     //
     // Returns `true` if:
@@ -39,20 +26,11 @@ impl ConfigSource {
     }
 }
 
-macros::try_from_impl!(ConfigSource);
-impl TryFrom<&ConfigSourceDto> for ConfigSource {
-    type Error = TuliproxError;
-    fn try_from(dto: &ConfigSourceDto) -> Result<ConfigSource, TuliproxError> {
-        let mut batch_files = Vec::new();
-        let mut inputs: Vec<ConfigInput> = dto.inputs.iter().map(ConfigInput::from).collect();
-        for input in &mut inputs {
-            if let Some(batch_file_path) = input.prepare()? {
-                batch_files.push(batch_file_path);
-            }
-        }
+// macros::try_from_impl!(ConfigSource);
+impl ConfigSource {
+    pub fn from_dto(dto: &ConfigSourceDto) -> Result<ConfigSource, TuliproxError> {
         Ok(Self {
-            batch_files,
-            inputs: inputs.into_iter().map(Arc::new).collect(),
+            inputs: dto.inputs.clone(),
             targets: dto.targets.iter().map(|c| Arc::new(ConfigTarget::from(c))).collect(),
         })
     }
@@ -60,7 +38,9 @@ impl TryFrom<&ConfigSourceDto> for ConfigSource {
 
 #[derive(Default, Debug, Clone)]
 pub struct SourcesConfig {
+    pub batch_files: Vec<PathBuf>,
     pub templates: Option<Vec<PatternTemplate>>,
+    pub inputs: Vec<Arc<ConfigInput>>,
     pub sources: Vec<ConfigSource>,
 }
 
@@ -68,20 +48,41 @@ macros::try_from_impl!(SourcesConfig);
 impl TryFrom<&SourcesConfigDto> for SourcesConfig {
     type Error = TuliproxError;
     fn try_from(dto: &SourcesConfigDto) -> Result<Self, TuliproxError> {
-        let sources = dto.sources
-            .iter()
-            .map(ConfigSource::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut inputs = Vec::<Arc<ConfigInput>>::new();
+        let mut batch_files = Vec::<PathBuf>::new();
+        let mut input_names = HashSet::new();
+
+        for input_dto in &dto.inputs {
+            let mut input = ConfigInput::from(input_dto);
+            // Prepare input
+            if let Some(path) = input.prepare()? {
+                batch_files.push(path);
+            }
+            input_names.insert(input.name.clone());
+            inputs.push(Arc::new(input));
+        }
+
+        let mut sources = Vec::new();
+        for source_dto in &dto.sources {
+            // Validate that all input references exist
+            for input_name in &source_dto.inputs {
+                if !input_names.contains(input_name) {
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Source references unknown input: {input_name}");
+                }
+            }
+            sources.push(ConfigSource::from_dto(source_dto)?);
+        }
 
         Ok(Self {
+            batch_files,
             templates: dto.templates.clone(),
+            inputs,
             sources,
         })
     }
 }
 
 impl SourcesConfig {
-
     pub(crate) fn get_source_at(&self, idx: usize) -> Option<&ConfigSource> {
         self.sources.get(idx)
     }
@@ -97,6 +98,17 @@ impl SourcesConfig {
         None
     }
 
+    pub fn get_source_inputs_by_target_by_name(&self, target_name: &str) -> Option<Vec<String>> {
+        for source in &self.sources {
+            for target in &source.targets {
+                if target.name == target_name {
+                    return Some(source.inputs.clone());
+                }
+            }
+        }
+        None
+    }
+
     /// Returns the targets that were specified as parameters.
     /// If invalid targets are found, the program will be terminated.
     /// The return value has `enabled` set to true, if selective targets should be processed, otherwise false.
@@ -106,28 +118,23 @@ impl SourcesConfig {
     ///
     pub fn validate_targets(&self, target_args: Option<&Vec<String>>) -> Result<ProcessTargets, TuliproxError> {
         let mut enabled = true;
-        let mut inputs: Vec<u16> = vec![];
+        let inputs: Vec<u16> = self.inputs.iter().map(|i| i.id).collect();
         let mut targets: Vec<u16> = vec![];
         let mut target_names: Vec<String> = vec![];
         if let Some(user_targets) = target_args {
             let mut check_targets: HashMap<String, u16> = user_targets.iter().map(|t| (t.to_lowercase(), 0)).collect();
             for source in &self.sources {
-                let mut target_added = false;
                 for target in &source.targets {
                     for user_target in user_targets {
                         let key = user_target.to_lowercase();
                         if target.name.eq_ignore_ascii_case(key.as_str()) {
                             targets.push(target.id);
                             target_names.push(target.name.clone());
-                            target_added = true;
                             if let Some(value) = check_targets.get(key.as_str()) {
                                 check_targets.insert(key, value + 1);
                             }
                         }
                     }
-                }
-                if target_added {
-                    source.inputs.iter().map(|i| i.id).for_each(|id| inputs.push(id));
                 }
             }
 
@@ -163,11 +170,13 @@ impl SourcesConfig {
 
     pub fn get_input_files(&self) -> HashSet<PathBuf> {
         let mut file_names = HashSet::new();
-        for source in &self.sources {
-            for file in &source.batch_files {
-                file_names.insert(file.clone());
-            }
+        for file in &self.batch_files {
+            file_names.insert(file.clone());
         }
         file_names
+    }
+
+    pub fn get_input_by_name(&self, name: &str) -> Option<&Arc<ConfigInput>> {
+        self.inputs.iter().find(|i| i.name == name)
     }
 }

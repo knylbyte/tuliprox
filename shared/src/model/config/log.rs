@@ -1,13 +1,13 @@
-use crate::utils::{default_as_true, is_blank_optional_string};
+use crate::utils::{is_true, is_false, default_as_true, is_blank_optional_string, is_blank_optional_str};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LogConfigDto {
-    #[serde(default = "default_as_true")]
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
     pub sanitize_sensitive_info: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub log_active_user: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub log_level: Option<String>,
 }
 
@@ -23,11 +23,11 @@ impl Default for LogConfigDto {
 
 impl LogConfigDto {
     pub fn is_empty(&self) -> bool {
-        self.sanitize_sensitive_info && !self.log_active_user && is_blank_optional_string(self.log_level.as_deref())
+        self.sanitize_sensitive_info && !self.log_active_user && is_blank_optional_str(self.log_level.as_deref())
     }
 
     pub fn clean(&mut self) {
-        if is_blank_optional_string(self.log_level.as_deref()) {
+        if is_blank_optional_str(self.log_level.as_deref()) {
             self.log_level = None;
         }
     }

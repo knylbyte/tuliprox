@@ -1,3 +1,4 @@
+use shared::utils::serialize_number_as_string;
 use crate::model::{ApiProxyServerInfo, ProxyUserCredentials};
 use chrono::{Duration, Local};
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,9 @@ pub struct XtreamUserInfoResponse {
     pub active_cons: String,
     pub allowed_output_formats: Vec<String>,
     pub auth: u16, // 0 | 1
+    #[serde(serialize_with ="serialize_number_as_string")]
     pub created_at: i64, //1623429679,
+    #[serde(serialize_with ="serialize_number_as_string")]
     pub exp_date: i64, //1628755200,
     pub is_trial: String, // 0 | 1
     pub max_connections: String,
@@ -36,17 +39,6 @@ pub struct XtreamAuthorizationResponse {
     pub user_info: XtreamUserInfoResponse,
     pub server_info: XtreamServerInfoResponse,
 }
-
-// #[derive(Serialize)]
-// pub struct XtreamServerInfoDto {
-//     pub url: String,
-//     pub port: String,
-//     pub path: Option<String>,
-//     pub protocol: String, // http, https
-//     pub timezone: String,
-//     pub timestamp_now: i64,
-//     pub time_now: String, //"2021-06-28 17:07:37"
-// }
 
 impl XtreamAuthorizationResponse {
     pub fn new(server_info: &ApiProxyServerInfo, user: &ProxyUserCredentials, active_connections: u32, access_control: bool) -> Self {

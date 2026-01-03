@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use crate::error::{TuliproxError};
 use crate::info_err;
-use crate::utils::{is_blank_optional_string, parse_size_base_2};
+use crate::utils::{is_blank_optional_str, is_blank_optional_string, parse_size_base_2};
 use path_clean::PathClean;
 
 
@@ -10,15 +10,15 @@ use path_clean::PathClean;
 pub struct CacheConfigDto {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub size: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub dir: Option<String>,
 }
 
 impl CacheConfigDto {
     pub fn is_empty(&self) -> bool {
-        !self.enabled && is_blank_optional_string(self.size.as_deref()) && is_blank_optional_string(self.dir.as_deref())
+        !self.enabled && is_blank_optional_str(self.size.as_deref()) && is_blank_optional_str(self.dir.as_deref())
     }
 
     pub(crate) fn prepare(&mut self, working_dir: &str) -> Result<(), TuliproxError> {

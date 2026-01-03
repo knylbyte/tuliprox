@@ -1,10 +1,13 @@
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::info_err;
-use crate::utils::{default_grace_period_millis, default_grace_period_timeout_secs, parse_to_kbps};
+use crate::utils::{default_grace_period_millis, default_grace_period_timeout_secs,
+                   is_default_grace_period_millis, is_default_grace_period_timeout_secs,
+                   default_shared_burst_buffer_mb, is_default_shared_burst_buffer_mb,
+                   is_blank_optional_string,
+                   parse_to_kbps};
 
 const STREAM_QUEUE_SIZE: usize = 1024; // mpsc channel holding messages. with 8192byte chunks and 2Mbit/s approx 8MB
 const MIN_SHARED_BURST_BUFFER_MB: u64 = 1;
-const fn default_shared_burst_buffer_mb() -> u64 { 12 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -32,17 +35,17 @@ impl StreamBufferConfigDto {
 pub struct StreamConfigDto {
     #[serde(default)]
     pub retry: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub buffer: Option<StreamBufferConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub throttle: Option<String>,
-    #[serde(default = "default_grace_period_millis")]
+    #[serde(default = "default_grace_period_millis", skip_serializing_if = "is_default_grace_period_millis")]
     pub grace_period_millis: u64,
-    #[serde(default = "default_grace_period_timeout_secs")]
+    #[serde(default = "default_grace_period_timeout_secs", skip_serializing_if = "is_default_grace_period_timeout_secs")]
     pub grace_period_timeout_secs: u64,
     #[serde(default, skip)]
     pub throttle_kbps: u64,
-    #[serde(default = "default_shared_burst_buffer_mb")]
+    #[serde(default = "default_shared_burst_buffer_mb", skip_serializing_if = "is_default_shared_burst_buffer_mb")]
     pub shared_burst_buffer_mb: u64,
 }
 

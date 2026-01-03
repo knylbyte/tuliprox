@@ -1,4 +1,5 @@
 // Import the new MediaQuality struct
+use shared::utils::is_blank_optional_string;
 use crate::model::MediaQuality;
 use crate::model::{ApiProxyServerInfo, AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, StrmTargetOutput};
@@ -132,15 +133,22 @@ struct StrmItemInfo {
     group: String,
     title: String,
     item_type: PlaylistItemType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     provider_id: Option<u32>,
     virtual_id: u32,
     input_name: String,
     url: String,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     series_name: Option<String>,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     release_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     season: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     episode: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     added: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     tmdb_id: Option<u32>,
 }
 

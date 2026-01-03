@@ -1,7 +1,7 @@
 use crate::model::{Config, ConfigInput};
 use crate::utils::request::DynReader;
-use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, XtreamCluster, DEFAULT_VIDEO_EXTENSIONS};
-use shared::utils::extract_id_from_url;
+use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, XtreamCluster};
+use shared::utils::{default_supported_video_extensions, extract_id_from_url};
 use std::borrow::BorrowMut;
 use tokio::io::AsyncBufReadExt;
 
@@ -108,7 +108,7 @@ macro_rules! process_header_fields {
     };
 }
 
-fn process_header(input_name: &str, video_suffixes: &[&str], content: &str, url: String) -> PlaylistItemHeader {
+fn process_header(input_name: &str, video_suffixes: &[String], content: &str, url: String) -> PlaylistItemHeader {
     let url_id = extract_id_from_url(&url);
     let url_types = if video_suffixes.iter().any(|suffix| url.ends_with(suffix)) {
         // TODO find Series based on group or configured names
@@ -204,9 +204,9 @@ pub async fn consume_m3u<F: FnMut(PlaylistItem)>(cfg: &Config, input: &ConfigInp
 
     let video_suffixes = match cfg.video.as_ref() {
         Some(config) => {
-            config.extensions.iter().map(String::as_str).collect::<Vec<&str>>()
+            config.extensions.iter().map(Clone::clone).collect::<Vec<String>>()
         }
-        None => DEFAULT_VIDEO_EXTENSIONS.to_vec()
+        None => default_supported_video_extensions()
     };
     let mut lines = tokio::io::BufReader::new(lines).lines();
     while let Ok(Some(line)) = lines.next_line().await {

@@ -1,8 +1,9 @@
 use crate::model::macros;
 use shared::error::TuliproxError;
-use shared::model::{default_metadata_path, LibraryConfigDto, LibraryContentType, LibraryMetadataFormat};
+use shared::model::{LibraryConfigDto, LibraryContentType, LibraryMetadataFormat};
 use std::path::PathBuf;
 use shared::info_err;
+use shared::utils::default_metadata_path;
 
 #[derive(Debug, Clone, Default)]
 pub struct LibraryScanDirectory {

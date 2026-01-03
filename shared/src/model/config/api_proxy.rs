@@ -1,3 +1,5 @@
+use crate::utils::is_false;
+use crate::utils::is_blank_optional_string;
 use std::collections::HashSet;
 use crate::error::{info_err, TuliproxError};
 use crate::model::{ProxyUserCredentialsDto};
@@ -14,20 +16,22 @@ pub struct ApiProxyServerInfoDto {
     pub name: String,
     pub protocol: String,
     pub host: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub port: Option<String>,
     pub timezone: String,
     pub message: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ApiProxyConfigDto {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub server: Vec<ApiProxyServerInfoDto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user: Vec<TargetUserDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub use_user_db: bool,
 }
 

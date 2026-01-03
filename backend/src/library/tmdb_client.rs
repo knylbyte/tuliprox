@@ -7,8 +7,6 @@ use std::collections::HashSet;
 use tokio::time::{sleep, Duration};
 use url::Url;
 
-pub const TMDB_API_KEY: &str = "4219e299c89411838049ab0dab19ebd5";
-
 // TODO make this configurable in Library tmdb config
 const TMDB_API_BASE_URL: &str = "https://api.themoviedb.org/3";
 

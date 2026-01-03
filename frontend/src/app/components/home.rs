@@ -2,7 +2,8 @@ use crate::app::components::{AppIcon, DashboardView, EpgView, IconButton, InputR
 use crate::app::context::{ConfigContext, PlaylistContext, StatusContext};
 use crate::hooks::{use_server_status, use_service_context};
 use crate::model::{EventMessage, ViewType};
-use shared::model::{AppConfigDto, LibraryScanSummaryStatus, PlaylistUpdateState, StatusCheck, SystemInfo};
+use shared::model::{AppConfigDto, ConfigInputDto, LibraryScanSummaryStatus, PlaylistUpdateState, StatusCheck, SystemInfo};
+use std::collections::HashMap;
 use std::future;
 use std::rc::Rc;
 use yew::prelude::*;
@@ -103,15 +104,22 @@ pub fn Home() -> Html {
     let sources = use_memo(config.clone(), |config_ctx| {
         if let Some(cfg) = config_ctx.as_ref() {
             let mut sources = vec![];
+            // Create a map for a faster lookup of global inputs by name
+            let inputs_map: HashMap<String, &ConfigInputDto> = cfg.sources.inputs.iter().map(|i| (i.name.clone(), i)).collect();
+
             for source in &cfg.sources.sources {
                 let mut inputs = vec![];
-                for input_cfg in &source.inputs {
-                    let input = Rc::new(input_cfg.clone());
-                    inputs.push(Rc::new(InputRow::Input(Rc::clone(&input))));
-                    if let Some(aliases) = input_cfg.aliases.as_ref() {
-                        for alias in aliases {
-                            inputs.push(Rc::new(InputRow::Alias(Rc::new(alias.clone()), Rc::clone(&input))));
+                for input_name in &source.inputs {
+                    if let Some(input_cfg) = inputs_map.get(input_name) {
+                        let input = Rc::new((*input_cfg).clone());
+                        inputs.push(Rc::new(InputRow::Input(Rc::clone(&input))));
+                        if let Some(aliases) = input_cfg.aliases.as_ref() {
+                            for alias in aliases {
+                                inputs.push(Rc::new(InputRow::Alias(Rc::new(alias.clone()), Rc::clone(&input))));
+                            }
                         }
+                    } else {
+                        log::error!("Input '{}' not found in global inputs", input_name);
                     }
                 }
                 let mut targets = vec![];

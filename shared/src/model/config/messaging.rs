@@ -1,12 +1,13 @@
 use crate::model::MsgKind;
-use crate::utils::is_blank_optional_string;
+use crate::utils::{is_false, is_blank_optional_string, is_blank_optional_str};
 
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct TelegramMessagingConfigDto {
     pub bot_token: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chat_ids: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub markdown: bool,
 }
 
@@ -31,6 +32,7 @@ impl RestMessagingConfigDto {
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PushoverMessagingConfigDto {
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub url: Option<String>,
     pub token: String,
     pub user: String,
@@ -38,7 +40,7 @@ pub struct PushoverMessagingConfigDto {
 
 impl PushoverMessagingConfigDto {
     pub fn is_empty(&self) -> bool {
-        is_blank_optional_string(self.url.as_deref())
+        is_blank_optional_str(self.url.as_deref())
             && self.token.trim().is_empty()
             && self.user.trim().is_empty()
     }
@@ -47,13 +49,13 @@ impl PushoverMessagingConfigDto {
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct MessagingConfigDto {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notify_on: Vec<MsgKind>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telegram: Option<TelegramMessagingConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rest: Option<RestMessagingConfigDto>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pushover: Option<PushoverMessagingConfigDto>,
 }
 

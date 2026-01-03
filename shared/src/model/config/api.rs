@@ -3,7 +3,7 @@
 pub struct ConfigApiDto {
     pub host: String,
     pub port: u16,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub web_root: String,
 }
 

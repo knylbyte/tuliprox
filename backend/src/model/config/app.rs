@@ -1,19 +1,19 @@
+use crate::api::model::TransportStreamBuffer;
+use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Config, ConfigInput, ConfigInputOptions, ConfigTarget, CustomStreamResponse, HdHomeRunConfig, Mappings, ProxyUserCredentials, SourcesConfig, TargetOutput};
+use crate::utils;
+use arc_swap::access::Access;
+use arc_swap::{ArcSwap, ArcSwapOption};
+use log::{error, warn};
+use rand::Rng;
+use shared::create_tuliprox_error_result;
+use shared::error::{TuliproxError, TuliproxErrorKind};
+use shared::model::ConfigPaths;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use arc_swap::{ArcSwap, ArcSwapOption};
-use arc_swap::access::Access;
-use log::{error, warn};
-use rand::Rng;
-use shared::create_tuliprox_error_result;
-use shared::error::{TuliproxError, TuliproxErrorKind};
-use shared::model::ConfigPaths;
-use crate::api::model::TransportStreamBuffer;
-use crate::model::{ApiProxyConfig, ApiProxyServerInfo, Config, ConfigInput, ConfigInputOptions, ConfigTarget, CustomStreamResponse, HdHomeRunConfig, Mappings, ProxyUserCredentials, SourcesConfig, TargetOutput};
-use crate::utils;
 
 const CHANNEL_UNAVAILABLE: &str = "channel_unavailable.ts";
 const USER_CONNECTIONS_EXHAUSTED: &str = "user_connections_exhausted.ts";
@@ -41,7 +41,6 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-
     pub fn set_config(&self, config: Config) -> Result<(), TuliproxError> {
         self.config.store(Arc::new(config));
         self.prepare_paths();
@@ -165,10 +164,21 @@ impl AppConfig {
             None => None
         }
     }
-    
+
     pub fn get_inputs_for_target(&self, target_name: &str) -> Option<Vec<Arc<ConfigInput>>> {
         let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
-        sources.sources.iter().find_map(|s| s.get_inputs_for_target(target_name))
+        if let Some(inputs) = sources.get_source_inputs_by_target_by_name(target_name) {
+            let result: Vec<Arc<ConfigInput>> = sources
+                .inputs
+                .iter()
+                .filter(|s| inputs.contains(&s.name))
+                .map(Arc::clone)
+                .collect();
+            if !result.is_empty() {
+                return Some(result)
+            }
+        }
+        None
     }
 
     pub fn get_target_for_username(&self, username: &str) -> Option<(ProxyUserCredentials, Arc<ConfigTarget>)> {
@@ -193,11 +203,9 @@ impl AppConfig {
 
     pub fn get_input_by_name(&self, input_name: &str) -> Option<Arc<ConfigInput>> {
         let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
-        for source in &sources.sources {
-            for input in &source.inputs {
-                if input.name == input_name {
-                    return Some(Arc::clone(input));
-                }
+        for input in &sources.inputs {
+            if input.name == input_name {
+                return Some(Arc::clone(input));
             }
         }
         None
@@ -205,11 +213,9 @@ impl AppConfig {
 
     pub fn get_input_options_by_name(&self, input_name: &str) -> Option<ConfigInputOptions> {
         let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
-        for source in &sources.sources {
-            for input in &source.inputs {
-                if input.name == input_name {
-                    return input.options.clone();
-                }
+        for input in &sources.inputs {
+            if input.name == input_name {
+                return input.options.clone();
             }
         }
         None
@@ -217,8 +223,7 @@ impl AppConfig {
 
     pub fn get_input_by_id(&self, input_id: u16) -> Option<Arc<ConfigInput>> {
         let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
-        for source in &sources.sources {
-            for input in &source.inputs {
+            for input in &sources.inputs {
                 if input.id == input_id {
                     return Some(Arc::clone(input));
                 }
@@ -229,7 +234,6 @@ impl AppConfig {
                         }
                     }
                 }
-            }
         }
         None
     }
@@ -240,32 +244,31 @@ impl AppConfig {
     }
 
     fn check_unique_input_names(&self) -> Result<(), TuliproxError> {
-        let mut seen_names = HashSet::new();
+        let mut seen_names: HashSet<String> = HashSet::new();
         let sources = <Arc<ArcSwap<SourcesConfig>> as Access<SourcesConfig>>::load(&self.sources);
-        for source in &sources.sources {
-            for input in &source.inputs {
-                let input_name = input.name.trim().to_string();
-                if input_name.is_empty() {
-                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input name required");
-                }
-                if seen_names.contains(input_name.as_str()) {
-                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input names should be unique: {}", input_name);
-                }
-                seen_names.insert(input_name);
-                if let Some(aliases) = &input.aliases {
-                    for alias in aliases {
-                        let input_name = alias.name.trim().to_string();
-                        if input_name.is_empty() {
-                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input name required");
-                        }
-                        if seen_names.contains(input_name.as_str()) {
-                            return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input and alias names should be unique: {}", input_name);
-                        }
-                        seen_names.insert(input_name);
+        for input in &sources.inputs {
+            let input_name = input.name.trim();
+            if input_name.is_empty() {
+                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input name required");
+            }
+            if seen_names.contains(input_name) {
+                return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input names should be unique: {}", input_name);
+            }
+            seen_names.insert(input_name.to_string());
+            if let Some(aliases) = &input.aliases {
+                for alias in aliases {
+                    let input_name = alias.name.trim().to_string();
+                    if input_name.is_empty() {
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input name required");
                     }
+                    if seen_names.contains(&input_name) {
+                        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "input and alias names should be unique: {}", input_name);
+                    }
+                    seen_names.insert(input_name.clone());
                 }
             }
         }
+
         Ok(())
     }
 
@@ -290,7 +293,6 @@ impl AppConfig {
     *  if `include_computed` set to true for `app_state`
     */
     pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
-
         if include_computed {
             self.access_token_secret = generate_secret();
             self.encrypt_secret = <&[u8] as TryInto<[u8; 16]>>::try_into(&generate_secret()[0..16]).map_err(|err| TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))?;
@@ -409,7 +411,6 @@ impl AppConfig {
         let server_info_name = user.server.as_ref().map_or("default", |server_name| server_name.as_str());
         self.get_server_info(server_info_name)
     }
-
 }
 
 
