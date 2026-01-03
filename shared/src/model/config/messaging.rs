@@ -34,7 +34,7 @@ impl RestMessagingConfigDto {
         self.url.trim().is_empty()
             && is_blank_optional_str(self.method.as_deref())
             && self.headers.is_empty()
-            && self.template.is_none()
+            && is_blank_optional_str(self.template.as_deref())
     }
 }
 

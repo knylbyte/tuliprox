@@ -239,6 +239,19 @@ pub fn MessagingConfigView() -> Html {
               { config_field!(entry, translate.t(LABEL_URL), url) }
               { config_field_optional!(entry, translate.t(LABEL_METHOD), method) }
               { config_field_optional!(entry, translate.t(LABEL_BODY_TEMPLATE), template) }
+              { config_field_child!(translate.t(LABEL_HEADERS), {
+                  html! {
+                      <div class="tp__config-view__tags">
+                          {
+                              if entry.headers.is_empty() {
+                                  html! {}
+                              } else {
+                                  html! { for entry.headers.iter().map(|h| html! { <Chip label={h.clone()} /> }) }
+                              }
+                          }
+                      </div>
+                  }
+              })}
           </Card>
         },
         None => html! {

@@ -6,7 +6,7 @@ use log::{debug, error};
 use reqwest::{header, Method};
 use serde_json::{json, Value};
 use shared::model::MsgKind;
-use shared::utils::{json_str_to_markdown};
+use shared::utils::json_str_to_markdown;
 use std::borrow::Cow;
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -62,7 +62,13 @@ async fn send_rest_message(client: &reqwest::Client, msg: &str, kind: MsgKind, m
         }
 
         match rb.body(body).send().await {
-            Ok(_) => debug!("Message sent successfully to rest api"),
+            Ok(response) => {
+                if response.status().is_success() {
+                    debug!("Message sent successfully to rest api");
+                } else {
+                    error!("Failed to send message to rest api, status code {}", response.status());
+                }
+            }
             Err(e) => error!("Message wasn't sent to rest api because of: {e}"),
         }
     }
@@ -191,6 +197,15 @@ mod tests {
         let msg = "Hello World";
         let kind = MsgKind::Info;
         let rendered = render_template(None, msg, kind);
+        assert_eq!(rendered, "Hello World");
+    }
+
+    #[test]
+    fn test_render_template_invalid_syntax() {
+        let msg = "Hello World";
+        let kind = MsgKind::Info;
+        // Unclosed handlebars expression
+        let rendered = render_template(Some("Message: {{message"), msg, kind);
         assert_eq!(rendered, "Hello World");
     }
 }
