@@ -649,26 +649,54 @@ impl ProviderLineupManager {
         }
 
         // 3. Broadcast status updates to the UI/Event system.
-        // We collect entries first to release DashMap read locks quickly.
-        let snapshot: Vec<_> = self.provider_connections.iter()
-            .map(|e| (e.key().clone(), Arc::clone(e.value())))
-            .collect();
+        // We drop the snapshot before GC to ensure Arc counts are accurate.
+        {
+            let snapshot: Vec<_> = self.provider_connections.iter()
+                .map(|e| (e.key().clone(), Arc::clone(e.value())))
+                .collect();
 
-        for (name, conn_lock) in snapshot {
-            let count = conn_lock.read().await.current_connections;
-            self.event_manager.send_provider_event(&name, count);
+            for (name, conn_lock) in snapshot {
+                let count = conn_lock.read().await.current_connections;
+                self.event_manager.send_provider_event(&name, count);
+            }
         }
 
         // 4. Garbage Collection: Remove providers that are neither in the current config
         // nor referenced by any active stream allocations.
-        // Arc::strong_count == 1 means it's only held by this DashMap.
-        self.provider_connections.retain(|name, conn_lock| {
-            if Arc::strong_count(conn_lock) == 1 {
-                debug!("Purging stale provider connection record: {name}", );
-                false
-            } else {
-                true
+        //
+        // deterministic check: Is the name still in any current lineup?
+        let current_names: std::collections::HashSet<String> = {
+            let mut names = std::collections::HashSet::new();
+            let lineups = self.providers.load();
+            for lineup in lineups.iter() {
+                match lineup {
+                    ProviderLineup::Single(s) => { names.insert(s.provider.name.clone()); }
+                    ProviderLineup::Multi(m) => {
+                        names.insert(m.name.clone());
+                        for g in &m.providers {
+                            match g {
+                                ProviderPriorityGroup::SingleProviderGroup(p) => { names.insert(p.name.clone()); }
+                                ProviderPriorityGroup::MultiProviderGroup(_, group) => {
+                                    for p in group { names.insert(p.name.clone()); }
+                                }
+                            }
+                        }
+                    }
+                }
             }
+            names
+        };
+
+        // Arc::strong_count == 1 means it's only held by this DashMap registry.
+        self.provider_connections.retain(|name, conn_lock| {
+            if current_names.contains(name) {
+                return true; // Keep if in active config
+            }
+            if Arc::strong_count(conn_lock) > 1 {
+                return true; // Keep if held by an active stream
+            }
+            debug!("Purging stale provider connection record: {name}");
+            false
         });
     }
 
