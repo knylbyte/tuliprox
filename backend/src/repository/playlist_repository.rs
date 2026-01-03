@@ -1,6 +1,6 @@
 use crate::api::model::{AppState, PlaylistM3uStorage, PlaylistStorage, PlaylistStorageState, PlaylistXtreamStorage};
-use crate::model::{AppConfig, ConfigInput, ConfigTarget, TargetOutput};
 use crate::model::Epg;
+use crate::model::{AppConfig, ConfigInput, ConfigTarget, TargetOutput};
 use crate::processing::processor::playlist::apply_filter_to_playlist;
 use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery};
 use crate::repository::epg_repository::epg_write;
@@ -10,17 +10,17 @@ use crate::repository::strm_repository::write_strm_playlist;
 use crate::repository::target_id_mapping::{TargetIdMapping, VirtualIdRecord};
 use crate::repository::xtream_repository::{load_input_xtream_playlist, persist_input_xtream_playlist, xtream_get_file_path, xtream_get_storage_path, xtream_write_playlist};
 use crate::utils;
+use crate::utils::json_write_documents_to_file;
 use log::info;
 use shared::create_tuliprox_error;
 use shared::error::TuliproxError;
 use shared::error::{info_err, TuliproxErrorKind};
+use shared::model::xtream_const::XTREAM_CLUSTER;
 use shared::model::{InputType, M3uPlaylistItem, PlaylistEntry, PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, StreamProperties, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::{is_dash_url, is_hls_url};
 use std::collections::HashMap;
-use std::path::{Path};
+use std::path::Path;
 use std::sync::Arc;
-use shared::model::xtream_const::XTREAM_CLUSTER;
-use crate::utils::json_write_documents_to_file;
 
 struct LocalEpisodeKey {
     path: String,
@@ -191,7 +191,8 @@ fn rewrite_local_series_info_episode_virtual_id(pli: &mut PlaylistItem, local_li
 
 #[allow(clippy::implicit_hasher)]
 pub fn rewrite_provider_series_info_episode_virtual_id<P>(pli: &mut P, provider_series: &HashMap<String, Vec<ProviderEpisodeKey>>)
-where P: PlaylistEntry
+where
+    P: PlaylistEntry,
 {
     if let Some(episode_keys) = provider_series.get(&pli.get_uuid().to_string()) {
         if let Some(StreamProperties::Series(series)) = pli.get_additional_properties_mut() {
@@ -349,20 +350,30 @@ pub async fn persist_input_playlist(app_config: &Arc<AppConfig>, input: &ConfigI
         }
 
         _ => {
+            // TODO what is written and why not as BPlusTree?
+
             // Persist M3U/Other types
             let working_dir = &app_config.config.load().working_dir;
-             let storage_path = match get_input_storage_path(&input.name, working_dir) {
+            let storage_path = match get_input_storage_path(&input.name, working_dir) {
                 Ok(storage_path) => storage_path,
                 Err(err) => {
                     return (playlist, Some(create_tuliprox_error!( TuliproxErrorKind::Info, "Error creating input storage directory for input '{}' failed: {err}", input.name)));
                 }
             };
-            let file_path = storage_path.join("playlist.json");
-            match json_write_documents_to_file(&file_path, &playlist) {
-                Ok(()) => (playlist, None),
+            let sanitized_input_name: String = input.name.chars()
+                .map(|c| if c.is_alphanumeric() { c } else { '_' })
+                .collect();
+            let file_path = storage_path.join(format!("{sanitized_input_name}_playlist.json"));
+            let file_path_clone = file_path.clone();
+            let playlist_clone = playlist.clone();
+            match tokio::task::spawn_blocking(move || {
+                json_write_documents_to_file(&file_path_clone, &playlist_clone)
+            }).await {
+                Ok(Ok(())) => (playlist, None),
+                Ok(Err(e)) => (playlist, Some(info_err!(format!("Failed to persist input playlist: {e}")))),
                 Err(e) => (playlist, Some(info_err!(format!("Failed to persist input playlist: {e}")))),
             }
-        },
+        }
     };
 
     (result, err)
@@ -375,26 +386,26 @@ pub async fn load_input_playlist(app_config: &Arc<AppConfig>, input: &ConfigInpu
 
     match input.input_type {
         InputType::Xtream | InputType::XtreamBatch => {
-             let clusters_to_load = if let Some(c) = clusters {
-                 c
-             } else {
-                 &XTREAM_CLUSTER
-             };
-             
-             load_input_xtream_playlist(app_config, &storage_path, clusters_to_load).await
+            let clusters_to_load = if let Some(c) = clusters {
+                c
+            } else {
+                &XTREAM_CLUSTER
+            };
+
+            load_input_xtream_playlist(app_config, &storage_path, clusters_to_load).await
         }
         _ => {
-             // Load JSON for M3U
-             let file_path = storage_path.join("playlist.json");
-             if file_path.exists() {
-                 let content = tokio::fs::read_to_string(&file_path).await
-                     .map_err(|e| info_err!(format!("Failed to read input playlist cache: {e}")))?;
-                 let playlist: Vec<PlaylistGroup> = serde_json::from_str(&content)
-                     .map_err(|e| info_err!(format!("Failed to parse input playlist cache: {e}")))?;
-                 Ok(playlist)
-             } else {
-                 Ok(vec![])
-             }
+            // Load JSON for M3U
+            let file_path = storage_path.join("playlist.json");
+            if file_path.exists() {
+                let content = tokio::fs::read_to_string(&file_path).await
+                    .map_err(|e| info_err!(format!("Failed to read input playlist cache: {e}")))?;
+                let playlist: Vec<PlaylistGroup> = serde_json::from_str(&content)
+                    .map_err(|e| info_err!(format!("Failed to parse input playlist cache: {e}")))?;
+                Ok(playlist)
+            } else {
+                Ok(vec![])
+            }
         }
     }
 }

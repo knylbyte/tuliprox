@@ -302,7 +302,7 @@ pub struct ConfigInputDto {
     pub options: Option<ConfigInputOptionsDto>,
     #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub cache_duration: Option<String>,
-    #[serde(skip, skip_serializing_if = "is_zero_u16")]
+    #[serde(skip)]
     pub cache_duration_seconds: u64,
     #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "serialize_option_vec_flow_map_items")]
     pub aliases: Option<Vec<ConfigInputAliasDto>>,

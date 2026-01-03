@@ -88,8 +88,7 @@ impl ConfigFile {
         Self::load_mapping(app_state)
     }
 
-    async fn reload_source_file(app_state: &Arc<AppState>, file: &Path) -> Result<(), TuliproxError> {
-        info!("Loaded sources file {}", file.display());
+    async fn reload_source_file(app_state: &Arc<AppState>) -> Result<(), TuliproxError> {
         // TODO selective update and not complete sources update ?
         ConfigFile::load_sources(app_state).await
     }
@@ -115,7 +114,7 @@ impl ConfigFile {
             }
             ConfigFile::SourceFile => {
                 app_state.event_manager.send_event(EventMessage::ConfigChange(ConfigType::Sources));
-                ConfigFile::reload_source_file(app_state, file_path).await
+                ConfigFile::reload_source_file(app_state).await
             }
         }
     }

@@ -50,6 +50,7 @@ impl TryFrom<&SourcesConfigDto> for SourcesConfig {
     fn try_from(dto: &SourcesConfigDto) -> Result<Self, TuliproxError> {
         let mut inputs = Vec::<Arc<ConfigInput>>::new();
         let mut batch_files = Vec::<PathBuf>::new();
+        let mut input_names = HashSet::new();
 
         for input_dto in &dto.inputs {
             let mut input = ConfigInput::from(input_dto);
@@ -57,11 +58,18 @@ impl TryFrom<&SourcesConfigDto> for SourcesConfig {
             if let Some(path) = input.prepare()? {
                 batch_files.push(path);
             }
+            input_names.insert(input.name.clone());
             inputs.push(Arc::new(input));
         }
 
         let mut sources = Vec::new();
         for source_dto in &dto.sources {
+            // Validate that all input references exist
+            for input_name in &source_dto.inputs {
+                if !input_names.contains(input_name) {
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Source references unknown input: {input_name}");
+                }
+            }
             sources.push(ConfigSource::from_dto(source_dto)?);
         }
 

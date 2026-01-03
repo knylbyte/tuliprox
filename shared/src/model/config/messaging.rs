@@ -5,7 +5,7 @@ use crate::utils::{is_false, is_blank_optional_string, is_blank_optional_str};
 #[serde(deny_unknown_fields)]
 pub struct TelegramMessagingConfigDto {
     pub bot_token: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chat_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub markdown: bool,

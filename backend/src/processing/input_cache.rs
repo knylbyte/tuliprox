@@ -29,12 +29,13 @@ pub struct InputStatus {
 }
 
 pub fn resolve_input_storage_path(working_dir: &str, input_name: &str) -> PathBuf {
-    match get_input_storage_path(input_name, working_dir) {
-        Ok(path) => path,
-        Err(_) => Path::new(working_dir).join("data").join(format!("input_{input_name}")), // Fallback
+    if let Ok(path) = get_input_storage_path(input_name, working_dir) { path } else {
+        let sanitized_name: String = input_name.chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect();
+        Path::new(working_dir).join("data").join(format!("input_{sanitized_name}"))
     }
 }
-
 
 pub fn load_input_status(path: &Path) -> InputStatus {
     let status_path = path.join(STATUS_FILE);
