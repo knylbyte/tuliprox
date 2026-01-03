@@ -176,15 +176,28 @@ pub async fn iter_raw_m3u_playlist(config: &AppConfig, target: &ConfigTarget) ->
 }
 
 pub async fn persist_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &Path, playlist: &[PlaylistGroup]) -> Result<(), TuliproxError> {
-    let _file_lock = app_config.file_locks.write_lock(m3u_path).await;
-    let mut tree = BPlusTree::new();
-    for pg in playlist {
-        for item in &pg.channels {
-            let m3u = M3uPlaylistItem::from(item);
-            tree.insert(m3u.provider_id.clone(), m3u);
+
+    let file_lock = app_config.file_locks.write_lock(m3u_path).await;
+    let m3u_path_clone = m3u_path.to_path_buf();
+
+    let playlist_items: Vec<M3uPlaylistItem> = playlist
+        .iter()
+        .flat_map(|pg| &pg.channels)
+        .map(M3uPlaylistItem::from)
+        .collect();
+
+    task::spawn_blocking(move || -> Result<(), TuliproxError> {
+        let _guard = file_lock;
+        let mut tree = BPlusTree::new();
+        for m3u in &playlist_items {
+            tree.insert(m3u.provider_id.clone(), m3u.clone());
         }
-    }
-    tree.store(m3u_path).map_err(|err| cant_write_result!(&m3u_path, err))?;
+        tree.store(&m3u_path_clone).map_err(|err| cant_write_result!(&m3u_path_clone, err))?;
+        Ok(())
+    })
+    .await
+    .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Notify, "failed to write m3u playlist: {} - {err}", m3u_path.display()))??;
+
     Ok(())
 }
 
@@ -205,7 +218,7 @@ pub async fn load_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &Pat
                             id: group_cnt,
                             title: item.group.clone(),
                             channels: Vec::new(),
-                            xtream_cluster: XtreamCluster::Live,
+                            xtream_cluster: XtreamCluster::try_from(item.item_type).unwrap_or(XtreamCluster::Live),
                         }
                     })
                     .channels.push(PlaylistItem::from(item));

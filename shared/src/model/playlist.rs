@@ -1352,7 +1352,7 @@ impl From<&M3uPlaylistItem> for PlaylistItem {
             rec: item.rec.clone(),
             url: item.url.clone(),
             epg_channel_id: item.epg_channel_id.clone(),
-            xtream_cluster: XtreamCluster::Live, // TODO based on file ending
+            xtream_cluster: XtreamCluster::try_from(item.item_type).unwrap_or(XtreamCluster::Live),
             item_type: item.item_type,
             category_id: 0,
             input_name: item.input_name.clone(),
