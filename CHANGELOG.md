@@ -1,78 +1,68 @@
 # Changelog
-# 3.3.0 (2025-12-xx)
-- !BREAKING CHANGE! To align input definitions with the SourceEditor, inputs are now defined globally in the inputs section of the config file.
-  Each source can reference one or more inputs by their name in the inputs attribute.
-- !BREAKING CHANGE! Due to some heavy refactoring, the old data format is invalid. You need to clean your data folder and update the playlists.
-- !BREAKING CHANGE! B+Tree storage format has changed to a more efficient Slotted Page architecture.
-- **B+Tree Storage Engine Optimizations**:
-  - Transitioned to a **Slotted Page Architecture**, significantly improving space utilization and allowing for variable-length keys.
-  - Implemented **Adaptive LZ4 Compression** for stored values, optimizing disk footprint.
-  - Refactored I/O layer for **Atomic Writes** and file locking, ensuring data integrity during parallel access or power loss.
-  - Introduced **B+Tree Compaction** to reclaim space after deletions or mass updates.
-  - Added **Batch Upsert** functionality for much higher throughput during mass inserts/updates.
-- !BREAKING CHANGE! config.yml threads attribute is now renamed to process_parallel and is a boolean (true or false).
-- !BREAKING CHANGE! config.yml adds a reverse proxy config field rewrite_secret to keep resource URLs valid after restart.
-- !BREAKING CHANGE! removed `forced_retry_interval_secs`.
-- !BREAKING CHANGE! `name` attribute is mandatory for input type batch. The name attribute is used for playlist `uuid` and needs to be stable. The first alias is renamed with the input `name` attribute.
-- !BREAKING CHANGE! Redesigned Favorites handling: replaced the implicit `create_alias` flag with an explicit `add_favourite(group_name)` script function.
-- Mapping & Filtering Enhancements:
-  - Integrated `match_as_ascii` flag for robust, accent-independent text matching (e.g., matching "Cinema" against "Cinéma").
-  - `match_as_ascii` is supported in mapping filters, mapper scripts, and favorites.
-  - `ValueProvider` and `ValueAccessor` now support on-the-fly deunicoding.
-- Resource-Cache: 
-  - Avoid blocking the runtime when warming the cache.
-  - Async cache persistence write pipeline so response caching no longer blocks the runtime.
-  - Made cache storage more robust. Incomplete downloads will be deleted from cache.
-- File Operations
-  - Normalize FileLockManager paths so aliases share the same lock.
-  - Use async file operations for playlist persistence to avoid blocking the async runtime.
-  - JSON playlist/category writers (Xtream collections, user bouquets) now stream through Tokio I/O, so persisting these files no longer blocks the runtime.
-  - Playlist EPG exports now write via async file handles to avoid blocking during XML serialization.
-  - Config and API proxy save endpoints now serialize via Tokio I/O, so editing configs through the API no longer blocks runtime threads.
-  - Video download queue now uses async file I/O to keep the runtime responsive during large transfers
-- M3U playlist exports now stream asynchronously to keep the runtime responsive.
-- Shared stream burst buffer uses zero-copy data buffers to reduce memory usage.
-- Added detailed shared-stream/buffer/provider logging to trace lag, cache persistence, and session/provider lifecycle events.
-- Connection registration failures now trigger an explicit disconnect to prevent zombie sockets.
-- API user DB persistence (merge/backup/store) now executes through async Tokio I/O so user-management APIs remain responsive without blocking.
-- Playlist updates now use Tokio tasks instead of spawning per-source threads/runtimes, reducing CPU and memory overhead during large syncs.
-- XMLTV timeshift responses stream asynchronously end-to-end to keep the Axum runtime responsive.
-- main now uses #[tokio::main], removing manual runtime boilerplate and keeping every branch async end-to-end.
-- Healthcheck CLI path now uses the async Reqwest client so startup checks no longer block a dedicated thread.
-- Shared stream shutdown now drops registry locks before releasing provider handles to prevent cross-lock stalls.
-- Added order: none support for group/channel sorting, allowing mappings to retain source order.
-- Session tracking now matches repeated HLS segment connections by session token so a single user maintains one active connection count, even when new TCP sockets are opened.
-- EPG icon URLs are now rewritten in reverse proxy mode.
-- Short EPG is now served from local disk if available.
-- WebUI API-User category selection implemented.
-- Stream table "Copy-To-Clipboard" functions added.
-- Refactored provider connection handling to avoid potential race conditions.
-- WebUI: Added Panel API config view and new `/api/v1/config/sources` endpoint to persist + hot-reload `sources.yml`.
-- Added exp_date field to inputs, aliases, and CSV batch files; accepts dates in "YYYY-MM-DD HH:MM:SS" format or Unix timestamps (seconds since epoch).
-- Added cloudflare_header to reverse proxy disable_header settings.
-- Added CPU usage to the WebUI view.
-- Fixed race conditions during simultaneous access to shared streams.
-- Fixed race conditions during simultaneous access by the same user.
-- Added extended debug logging for client requests and ID chain (request/action/virtual) to trace stream resolution.
-- Fixed xtream series/catchup lookups using the series-info virtual_id so episode requests now keep their own virtual_id/session.
-- **NEW FEATURE `panel_api`** Added optional `panel_api` integration to renew expired accounts or provision new aliases when provider connections are exhausted.
-- **NEW FEATURE: Local library Module** - Comprehensive local video file scanning and metadata management
-  - Recursive directory scanning with async tokio::fs operations
-  - Automatic classification (Movies vs TV Series) using configurable regex patterns
-  - Multi-source metadata resolution with priority: NFO files → TMDB API → filename parsing
-  - JSON-based metadata storage with UUID tracking and virtual ID management
-  - TMDB API integration with configurable rate limiting (default 250ms)
-  - NFO file reading/writing support (Kodi/Jellyfin/Emby/Plex compatible)
-  - Incremental scanning (only processes changed files based on modification timestamps)
-  - Orphaned entry cleanup for deleted files
-  - New CLI flags: `--scan-library`, `--force-library-rescan`
-  - New API endpoints: `POST /api/v1/library/scan`, `GET /api/v1/library/status`
-  - New input type: `library` for source.yml integration
-- `kick_secs` added to config.yml `web_ui` config. Default 90 seconds, if a user is kicked from the `web_ui`, they can't connect for this duration.
-  This setting is also used for sleep-timed streams.
-- **NEW FEATURE: Added new db-viewer options to print db content** 
-  `tuliprox --dbx /opt/tuliprox/data/all_channels/xtream/video.db`
-  `tuliprox --dbm /opt/tuliprox/data/all_channels/m3u.db`
+# 3.3.0 (2026-01-03)
+
+## ⚠️ Breaking Changes
+- **Global Input Definitions**: To align input definitions with the SourceEditor, inputs are now defined globally in the `inputs` section of the config file. Each source can reference one or more inputs by their name in the `inputs` attribute.
+- **Data Format Migration**: Due to heavy refactoring, the old data format is invalid. You need to clean your `data` folder and update the playlists.
+- **B+Tree Storage Format**: Storage format has changed to a more efficient Slotted Page architecture.
+- **Configuration Renames**: 
+  - `threads` attribute in `config.yml` renamed to `process_parallel` (boolean).
+  - Added mandatory `rewrite_secret` to `reverse_proxy` config for stable resource URLs.
+  - Removed `forced_retry_interval_secs`.
+- **Input Batch Changes**: `name` attribute is now mandatory for input type batch to ensure stable playlist UUIDs.
+- **Favorites Redesign**: Replaced implicit `create_alias` with explicit `add_favourite(group_name)` script function.
+
+## 🌟 New Features
+- **Discord Notifications**: Support for Discord notifications via webhooks with optional Handlebars templates.
+- **Enhanced REST Messaging**: Support for custom HTTP methods, headers, and Handlebars templating.
+- **Local Library Module**: Comprehensive local video file scanning and metadata management.
+  - Recursive scanning, automatic classification, and NFO/TMDB metadata resolution.
+  - Incremental scanning and virtual ID management.
+- **Panel API Integration**: Optional integration to renew expired accounts or provision new aliases when connections are exhausted.
+- **Playlist Caching**: Added `cache_duration` to inputs, allowing configurable provider playlist cache times during subsequent updates (e.g., `60s`, `5m` `12h`, `1d`).
+- **Database Viewer**: New CLI flags `--dbx` and `--dbm` to inspect internal database content.
+
+## ⚙️ Engine & Storage Optimizations
+- **Slotted Page Architecture**: Improved space utilization and support for variable-length keys.
+- **Adaptive LZ4 Compression**: Optimized disk footprint for stored values.
+- **Atomic I/O Layer**: Refactored for atomic writes and file locking, ensuring data integrity.
+- **B+Tree Compaction**: Reclaim space after deletions or mass updates.
+- **Batch Upsert**: Significantly higher throughput during mass inserts/updates.
+
+## 🔍 Mapping & Filtering Enhancements
+- **Accent-Independent Matching**: Integrated `match_as_ascii` flag for robust text matching (e.g., "Cinema" matches "Cinéma").
+- **Deunicoding Support**: `ValueProvider` and `ValueAccessor` now support on-the-fly deunicoding.
+- **Flexible Sorting**: Added `order: none` support to retain source order in mappings.
+
+## 💻 WebUI & API
+- **Source Editor Integration**: Redesigned UI for global input management and hot-reloading.
+- **Messaging Config View**: New UI for configuring Discord and enhanced REST settings.
+- **Performance Monitoring**: Added CPU usage display to the dashboard.
+- **Stream Table Enhancements**: Added "Copy-To-Clipboard" functions and improved connection monitoring.
+- **UX Improvements**: Implemented API-user category selection and better session tracking for HLS.
+
+## 🚀 Performance & Stability
+- **Full Async Runtime**: Transitioned to `#[tokio::main]` and async I/O throughout the entire application.
+- **Non-Blocking Operations**: Cache persistence, playlist exports, and config saves moved to async tasks to prevent runtime stalls.
+- **Zero-Copy Buffers**: Reduced memory usage for shared stream burst buffers.
+- **Improved Connection Handling**: Refactored provider registration to prevent zombie sockets and race conditions.
+- **HLS Session Tracking**: Improved session matching to maintain correct active connection counts.
+- **Resource Cache**: Avoid blocking runtime, async persistence, robust storage, incomplete downloads deleted.
+- **File Operations**: Normalized FileLockManager paths, async playlist persistence, async JSON writers, async EPG exports, async config/API proxy saves, async video download queue.
+- **M3U Exports**: Stream asynchronously.
+- **Logging**: Detailed shared-stream/buffer/provider logging.
+- **Connection Failures**: Explicit disconnect on registration failures.
+- **API User DB**: Async persistence for user management APIs.
+- **Playlist Updates**: Use Tokio tasks for reduced overhead.
+- **XMLTV Timeshift**: Stream asynchronously.
+- **Healthcheck CLI**: Uses async Reqwest client.
+- **Shared Stream Shutdown**: Drops registry locks before releasing provider handles.
+- **EPG Icon URLs**: Rewritten in reverse proxy mode.
+- **Short EPG**: Served from local disk.
+- **Client Requests**: Extended debug logging for client requests and ID chain.
+- **XTream Fixes**: Fixed series/catch-up lookups using `series-info virtual_id`.
+- **Cloudflare Header**: Added `cloudflare_header` to reverse proxy `disable_header` settings.
+- **Kick Seconds**: `kick_secs` added to `config.yml web_ui` config.
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
