@@ -120,7 +120,7 @@ Be aware that different configurations (e.g. user bouquets) along the playlists 
 
 ### 1.4 `messaging`
 `messaging` is an optional configuration for receiving messages.
-Currently `telegram`, `rest` and `pushover.net` is supported.
+Currently `telegram`, `discord`, `rest` and `pushover.net` is supported.
 
 Messaging is Opt-In, you need to set the `notify_on` message types which are
 - `info`
@@ -144,13 +144,49 @@ messaging:
     chat_ids:
       - '<telegram chat id>'
       - '<telegram chat id>:<message thread id>'
+  discord:
+    url: '<discord webhook url>'
+    template: '{"content": "{{message}}"}' # optional handlebars template
   rest:
-    url: '<api url as POST endpoint for json data>'
+    url: '<api url>'
+    method: 'POST' # optional, default POST
+    headers:
+      - 'Content-Type: application/json'
+    template: '{"text": "{{message}}"}' # optional handlebars template
 
   pushover:
     token: <api_token>
     user: <api_username>
     url: `optional`, default is `https://api.pushover.net/1/messages.json`
+
+### 1.4.1 Messaging Templating
+For `discord` and `rest` messaging, you can use [Handlebars](https://handlebarsjs.com/) templates to format the message body.
+
+**Context Variables**:
+- `message`: The raw message content or event summary.
+- `kind`: The type of notification (`info`, `stats`, `error`, `watch`).
+- `timestamp`: Current UTC timestamp in RFC3339 format.
+- `event`: If the message is a JSON string (like `watch` events), it is parsed and available as an object.
+
+**Example REST Template (JSON)**:
+```handlebars
+{
+  "summary": "Tuliprox {{kind}}: {{message}}",
+  "occurred_at": "{{timestamp}}"
+}
+```
+
+**Example Discord Template (Complex Embed)**:
+```handlebars
+{
+  "content": "Tuliprox Notification",
+  "embeds": [{
+    "title": "Event: {{kind}}",
+    "description": "{{message}}",
+    "color": 3447003,
+    "footer": { "text": "Reported at {{timestamp}}" }
+  }]
+}
 ```
 
 For more information: [Telegram bots](https://core.telegram.org/bots/tutorial)
@@ -784,6 +820,11 @@ Each input has the following attributes:
 - `username` only mandatory for type `xtream`
 - `password` only mandatory for type `xtream`
 - `panel_api` _optional_ for provider panel api operations
+- `cache_duration` (_optional_): Playlist cache duration.  
+  Supported units are `s`, `m`, `h`, and `d` (seconds, minutes, hours, days).  
+  Examples: `12h`, `1d`, `30m`.
+  If `cache_duration` is set, the cached provider playlist stored on disk is reused
+  for subsequent updates instead of downloading it again.
 - `exp_date` optional, is a date as "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12` or Unix timestamp (seconds since epoch)
 - `options` is optional,
   + `xtream_skip_live` true or false, live section can be skipped.

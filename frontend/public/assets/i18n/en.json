@@ -356,7 +356,9 @@
     "PANEL_STATUS_DISABLED": "Disabled",
     "VALIDATION": "Validation",
     "TEMPLATES": "Templates",
-    "CACHE_DURATION": "Cache duration"
+    "CACHE_DURATION": "Cache duration",
+    "BODY_TEMPLATE": "Body Template",
+    "WEBHOOK_URL": "Webhook URL"
   },
   "TITLE": {
     "USER_BOUQUET_EDITOR": "Playlist Category Selection"

@@ -1,8 +1,8 @@
 use crate::app::components::config::config_page::{ConfigForm, LABEL_MESSAGING_CONFIG};
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::{Card, Chip, RadioButtonGroup};
-use crate::{config_field, config_field_bool, config_field_bool_empty, config_field_child, config_field_empty, config_field_hide, config_field_optional, edit_field_bool, edit_field_list, edit_field_text, edit_field_text_option, generate_form_reducer};
-use shared::model::{MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto, TelegramMessagingConfigDto};
+use crate::{config_field, config_field_bool, config_field_bool_empty, config_field_child, config_field_empty, config_field_hide, config_field_optional, config_field_optional_hide, edit_field_bool, edit_field_list, edit_field_text, edit_field_text_option, generate_form_reducer};
+use shared::model::{DiscordMessagingConfigDto, MessagingConfigDto, MsgKind, PushoverMessagingConfigDto, RestMessagingConfigDto, TelegramMessagingConfigDto};
 use std::rc::Rc;
 use std::str::FromStr;
 use yew::prelude::*;
@@ -19,6 +19,12 @@ const LABEL_MARKDOWN: &str = "LABEL.MARKDOWN";
 const LABEL_URL: &str = "LABEL.URL";
 const LABEL_TOKEN: &str = "LABEL.TOKEN";
 const LABEL_USER: &str = "LABEL.USER";
+const LABEL_DISCORD: &str = "LABEL.DISCORD";
+const LABEL_METHOD: &str = "LABEL.METHOD";
+const LABEL_HEADERS: &str = "LABEL.HEADERS";
+const LABEL_BODY_TEMPLATE: &str = "LABEL.BODY_TEMPLATE";
+const LABEL_WEBHOOK_URL: &str = "LABEL.WEBHOOK_URL";
+const LABEL_ADD_HEADER: &str = "LABEL.ADD_HEADER";
 
 generate_form_reducer!(
     state: TelegramMessagingConfigFormState { form: TelegramMessagingConfigDto },
@@ -35,6 +41,18 @@ generate_form_reducer!(
     action_name: RestMessagingConfigFormAction,
     fields {
         Url => url: String,
+        Method => method: Option<String>,
+        Headers => headers: Vec<String>,
+        Template => template: Option<String>,
+    }
+);
+
+generate_form_reducer!(
+    state: DiscordMessagingConfigFormState { form: DiscordMessagingConfigDto },
+    action_name: DiscordMessagingConfigFormAction,
+    fields {
+        Url => url: String,
+        Template => template: Option<String>,
     }
 );
 
@@ -79,6 +97,12 @@ pub fn MessagingConfigView() -> Html {
             modified: false,
         });
 
+    let discord_state: UseReducerHandle<DiscordMessagingConfigFormState> =
+        use_reducer(|| DiscordMessagingConfigFormState {
+            form: DiscordMessagingConfigDto::default(),
+            modified: false,
+        });
+
     let messaging_state: UseReducerHandle<MessagingConfigFormState> =
         use_reducer(|| MessagingConfigFormState {
             form: MessagingConfigDto::default(),
@@ -104,24 +128,28 @@ pub fn MessagingConfigView() -> Html {
         let telegram_state = telegram_state.clone();
         let rest_state = rest_state.clone();
         let pushover_state = pushover_state.clone();
+        let discord_state = discord_state.clone();
 
-        let deps = (
+        let dependencies = (
             messaging_state.modified,
             telegram_state.modified,
             rest_state.modified,
             pushover_state.modified,
+            discord_state.modified,
             messaging_state,
             telegram_state,
             rest_state,
             pushover_state,
+            discord_state,
         );
-        use_effect_with(deps, move |(mm, tm, rm, pm, m, t, r, p)| {
+        use_effect_with(dependencies, move |(mm, tm, rm, pm, dm, m, t, r, p, d)| {
             let mut form = m.form.clone();
             form.telegram = Some(t.form.clone());
             form.rest = Some(r.form.clone());
             form.pushover = Some(p.form.clone());
+            form.discord = Some(d.form.clone());
 
-            let modified = *mm || *tm || *rm || *pm;
+            let modified = *mm || *tm || *rm || *pm || *dm;
             on_form_change.emit(ConfigForm::Messaging(modified, form));
         });
     }
@@ -154,6 +182,13 @@ pub fn MessagingConfigView() -> Html {
         let pushover_cfg = msg_config.pushover.as_ref().map_or_else(PushoverMessagingConfigDto::default, |t| t.clone());
         use_effect_with((pushover_cfg, config_view_ctx.edit_mode.clone()), move |(pushover_cfg, _mode)| {
             p_state.dispatch(PushoverMessagingConfigFormAction::SetAll(pushover_cfg.clone()));
+            || ()
+        });
+
+        let discord_state = discord_state.clone();
+        let discord_cfg = msg_config.discord.as_ref().map_or_else(DiscordMessagingConfigDto::default, |t| t.clone());
+        use_effect_with((discord_cfg, config_view_ctx.edit_mode.clone()), move |(discord_cfg, _mode)| {
+            discord_state.dispatch(DiscordMessagingConfigFormAction::SetAll(discord_cfg.clone()));
             || ()
         });
 
@@ -199,12 +234,30 @@ pub fn MessagingConfigView() -> Html {
           <Card class="tp__config-view__card">
               <h1>{translate.t(LABEL_REST)}</h1>
               { config_field!(entry, translate.t(LABEL_URL), url) }
+              { config_field_optional_hide!(entry, translate.t(LABEL_METHOD), method) }
+              { config_field_optional!(entry, translate.t(LABEL_BODY_TEMPLATE), template) }
           </Card>
         },
         None => html! {
           <Card class="tp__config-view__card">
               <h1>{translate.t(LABEL_REST)}</h1>
               { config_field_empty!(translate.t(LABEL_URL)) }
+          </Card>
+        },
+    };
+
+    let render_discord = |discord: Option<&DiscordMessagingConfigDto>| match discord {
+        Some(entry) => html! {
+          <Card class="tp__config-view__card">
+              <h1>{translate.t(LABEL_DISCORD)}</h1>
+              { config_field!(entry, translate.t(LABEL_WEBHOOK_URL), url) }
+              { config_field_optional!(entry, translate.t(LABEL_BODY_TEMPLATE), template) }
+          </Card>
+        },
+        None => html! {
+          <Card class="tp__config-view__card">
+              <h1>{translate.t(LABEL_DISCORD)}</h1>
+              { config_field_empty!(translate.t(LABEL_WEBHOOK_URL)) }
           </Card>
         },
     };
@@ -249,6 +302,7 @@ pub fn MessagingConfigView() -> Html {
           {render_telegram(msg_state.form.telegram.as_ref())}
           {render_rest(msg_state.form.rest.as_ref())}
           {render_pushover(msg_state.form.pushover.as_ref())}
+          {render_discord(msg_state.form.discord.as_ref())}
         </div>
         </>
         }
@@ -290,6 +344,9 @@ pub fn MessagingConfigView() -> Html {
                 <Card class="tp__config-view__card">
                     <h1>{translate.t(LABEL_REST)}</h1>
                     { edit_field_text!(rest_state, translate.t(LABEL_URL), url, RestMessagingConfigFormAction::Url) }
+                    { edit_field_text_option!(rest_state, translate.t(LABEL_METHOD), method, RestMessagingConfigFormAction::Method) }
+                    { edit_field_list!(rest_state, translate.t(LABEL_HEADERS), headers, RestMessagingConfigFormAction::Headers, translate.t(LABEL_ADD_HEADER)) }
+                    { edit_field_text_option!(rest_state, translate.t(LABEL_BODY_TEMPLATE), template, RestMessagingConfigFormAction::Template) }
                 </Card>
 
                 <Card class="tp__config-view__card">
@@ -297,6 +354,12 @@ pub fn MessagingConfigView() -> Html {
                     { edit_field_text_option!(pushover_state, translate.t(LABEL_URL), url, PushoverMessagingConfigFormAction::Url) }
                     { edit_field_text!(pushover_state, translate.t(LABEL_TOKEN), token, PushoverMessagingConfigFormAction::Token, true) }
                     { edit_field_text!(pushover_state, translate.t(LABEL_USER), user, PushoverMessagingConfigFormAction::User) }
+                </Card>
+
+                <Card class="tp__config-view__card">
+                    <h1>{translate.t(LABEL_DISCORD)}</h1>
+                    { edit_field_text!(discord_state, translate.t(LABEL_WEBHOOK_URL), url, DiscordMessagingConfigFormAction::Url) }
+                    { edit_field_text_option!(discord_state, translate.t(LABEL_BODY_TEMPLATE), template, DiscordMessagingConfigFormAction::Template) }
                 </Card>
             </div>
             </>

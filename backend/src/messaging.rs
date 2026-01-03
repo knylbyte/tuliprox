@@ -1,27 +1,89 @@
-use std::borrow::Cow;
 use crate::model::MessagingConfig;
 use crate::utils::{telegram_create_instance, telegram_send_message, SendMessageOption, SendMessageParseMode};
 use log::{debug, error};
-use reqwest::header;
+use reqwest::{header, Method};
 use shared::model::MsgKind;
 use shared::utils::json_str_to_markdown;
+use handlebars::Handlebars;
+use serde_json::{json, Value};
+use chrono::Utc;
+use std::borrow::Cow;
+use std::str::FromStr;
 
 fn is_enabled(kind: MsgKind, cfg: &MessagingConfig) -> bool {
     cfg.notify_on.contains(&kind)
 }
 
-async fn send_http_post_request(client: &reqwest::Client, msg: &str, messaging: &MessagingConfig) {
+fn render_template(template: Option<&str>, msg: &str, kind: MsgKind) -> String {
+    let hb = Handlebars::new();
+    let timestamp = Utc::now().to_rfc3339();
+    
+    let mut data = json!({
+        "message": msg,
+        "kind": kind.to_string(),
+        "timestamp": timestamp,
+    });
+
+    if let Ok(json_val) = serde_json::from_str::<Value>(msg) {
+        if let Some(obj) = data.as_object_mut() {
+            obj.insert("event".to_string(), json_val);
+        }
+    }
+
+    match template {
+        Some(t) => {
+            match hb.render_template(t, &data) {
+                Ok(rendered) => rendered,
+                Err(e) => {
+                    error!("Failed to render template: {e}");
+                    msg.to_string()
+                }
+            }
+        }
+        None => msg.to_string(),
+    }
+}
+
+async fn send_rest_message(client: &reqwest::Client, msg: &str, kind: MsgKind, messaging: &MessagingConfig) {
     if let Some(rest) = &messaging.rest {
-    let data = msg.to_owned();
+        let body = render_template(rest.template.as_deref(), msg, kind);
+        let method = Method::from_str(&rest.method).unwrap_or(Method::POST);
+        
+        let mut rb = client.request(method, &rest.url);
+        
+        let has_content_type = rest.headers.keys().any(|k| k.eq_ignore_ascii_case("content-type"));
+        if !has_content_type {
+            rb = rb.header(header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string());
+        }
+
+        for (key, value) in &rest.headers {
+            rb = rb.header(key, value);
+        }
+
+        match rb.body(body).send().await {
+            Ok(_) => debug!("Message sent successfully to rest api"),
+            Err(e) => error!("Message wasn't sent to rest api because of: {e}"),
+        }
+    }
+}
+
+async fn send_discord_message(client: &reqwest::Client, msg: &str, kind: MsgKind, messaging: &MessagingConfig) {
+    if let Some(discord) = &messaging.discord {
+        let body = if let Some(template) = &discord.template {
+            render_template(Some(template), msg, kind)
+        } else {
+            json!({ "content": msg }).to_string()
+        };
+
         match client
-            .post(&rest.url)
+            .post(&discord.url)
             .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
-            .body(data)
+            .body(body)
             .send()
             .await
         {
-            Ok(_) => debug!("Text message sent successfully to rest api"),
-            Err(e) => error!("Text message wasn't sent to rest api because of: {e}"),
+            Ok(_) => debug!("Message sent successfully to Discord"),
+            Err(e) => error!("Message wasn't sent to Discord because of: {e}"),
         }
     }
 }
@@ -78,9 +140,10 @@ async fn dispatch_send_message(client: &reqwest::Client, kind: MsgKind, cfg: Opt
     if let Some(messaging) = cfg {
         if is_enabled(kind, messaging) {
             tokio::join!(
-            send_telegram_message(client, msg, messaging, json),
-            send_http_post_request(client, msg, messaging),
-            send_pushover_message(client, msg, messaging)
+                send_telegram_message(client, msg, messaging, json),
+                send_rest_message(client, msg, kind, messaging),
+                send_pushover_message(client, msg, messaging),
+                send_discord_message(client, msg, kind, messaging)
             );
         }
     }
@@ -92,4 +155,35 @@ pub async fn send_message_json(client: &reqwest::Client, kind: MsgKind, cfg: Opt
 
 pub async fn send_message(client: &reqwest::Client, kind: MsgKind, cfg: Option<&MessagingConfig>, msg: &str) {
     dispatch_send_message(client, kind, cfg, msg, false).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared::model::MsgKind;
+
+    #[test]
+    fn test_render_template_simple() {
+        let msg = "Hello World";
+        let kind = MsgKind::Info;
+        let rendered = render_template(Some("Message: {{message}}, Kind: {{kind}}"), msg, kind);
+        assert!(rendered.contains("Message: Hello World"));
+        assert!(rendered.contains("Kind: Info"));
+    }
+
+    #[test]
+    fn test_render_template_json() {
+        let msg = r#"{"name": "test", "value": 123}"#;
+        let kind = MsgKind::Watch;
+        let rendered = render_template(Some("Added: {{event.name}}"), msg, kind);
+        assert_eq!(rendered, "Added: test");
+    }
+
+    #[test]
+    fn test_render_template_none() {
+        let msg = "Hello World";
+        let kind = MsgKind::Info;
+        let rendered = render_template(None, msg, kind);
+        assert_eq!(rendered, "Hello World");
+    }
 }
