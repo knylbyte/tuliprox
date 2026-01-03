@@ -23,9 +23,9 @@ pub enum ProviderConfigAllocation {
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct ProviderConfigConnection {
-    current_connections: usize,
-    granted_grace: bool,
-    grace_ts: u64,
+    pub(crate) current_connections: usize,
+    pub(crate) granted_grace: bool,
+    pub(crate) grace_ts: u64,
 }
 
 /// This struct represents an individual provider configuration with fields like:
