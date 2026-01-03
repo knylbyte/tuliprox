@@ -358,7 +358,7 @@ async fn process_source(client: &reqwest::Client, app_config: Arc<AppConfig>, so
                 // Download the playlist for input
                 let (playlist_groups, mut error_list) = {
                     broadcast_step("Playlist download", &format!("Downloading input '{}'", input.name));
-                    // Caching Logic Integrated
+                    // Caching Logic
                     let (downloaded_playlist, mut download_err, was_cached) = playlist_download_from_input(client, &app_config, input).await;
 
                     let (playlist, error) = if was_cached {

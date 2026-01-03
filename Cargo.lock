@@ -1156,7 +1156,7 @@ dependencies = [
 
 [[package]]
 name = "frontend"
-version = "3.2.30"
+version = "3.2.32"
 dependencies = [
  "anyhow",
  "base64",
@@ -1864,6 +1864,22 @@ dependencies = [
  "cfg-if",
  "crunchy",
  "zerocopy",
+]
+
+[[package]]
+name = "handlebars"
+version = "6.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b3f9296c208515b87bd915a2f5d1163d4b3f863ba83337d7713cf478055948e"
+dependencies = [
+ "derive_builder",
+ "log",
+ "num-order",
+ "pest",
+ "pest_derive",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -2709,6 +2725,21 @@ dependencies = [
  "autocfg",
  "num-integer",
  "num-traits",
+]
+
+[[package]]
+name = "num-modular"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17bb261bf36fa7d83f4c294f834e91256769097b3cb505d44831e0a179ac647f"
+
+[[package]]
+name = "num-order"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "537b596b97c40fcf8056d153049eb22f481c17ebce72a513ec9286e4986d1bb6"
+dependencies = [
+ "num-modular",
 ]
 
 [[package]]
@@ -3961,7 +3992,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "3.2.30"
+version = "3.2.32"
 dependencies = [
  "base64",
  "bitflags 2.10.0",
@@ -4535,7 +4566,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tuliprox"
-version = "3.2.30"
+version = "3.2.32"
 dependencies = [
  "arc-swap",
  "async-compression",
@@ -4558,6 +4589,7 @@ dependencies = [
  "flate2",
  "fs2",
  "futures",
+ "handlebars",
  "hyper",
  "hyper-util",
  "indexmap",

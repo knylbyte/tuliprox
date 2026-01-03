@@ -21,11 +21,34 @@ impl TelegramMessagingConfigDto {
 #[serde(deny_unknown_fields)]
 pub struct RestMessagingConfigDto {
     pub url: String,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
+    pub method: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<String>,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
+    pub template: Option<String>,
 }
 
 impl RestMessagingConfigDto {
     pub fn is_empty(&self) -> bool {
         self.url.trim().is_empty()
+            && is_blank_optional_str(self.method.as_deref())
+            && self.headers.is_empty()
+            && is_blank_optional_str(self.template.as_deref())
+    }
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DiscordMessagingConfigDto {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
+    pub template: Option<String>,
+}
+
+impl DiscordMessagingConfigDto {
+    pub fn is_empty(&self) -> bool {
+        self.url.trim().is_empty() && is_blank_optional_str(self.template.as_deref())
     }
 }
 
@@ -57,6 +80,8 @@ pub struct MessagingConfigDto {
     pub rest: Option<RestMessagingConfigDto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pushover: Option<PushoverMessagingConfigDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discord: Option<DiscordMessagingConfigDto>,
 }
 
 impl MessagingConfigDto {
@@ -65,6 +90,7 @@ impl MessagingConfigDto {
             && (self.telegram.is_none() || self.telegram.as_ref().is_some_and(|c| c.is_empty()))
             && (self.rest.is_none()  || self.rest.as_ref().is_some_and(|c| c.is_empty()))
             && (self.pushover.is_none() || self.pushover.as_ref().is_some_and(|c| c.is_empty()))
+            && (self.discord.is_none() || self.discord.as_ref().is_some_and(|c| c.is_empty()))
     }
 
     pub fn clean(&mut self) {
@@ -76,6 +102,9 @@ impl MessagingConfigDto {
         }
         if self.pushover.as_ref().is_some_and(|c| c.is_empty()) {
             self.pushover = None;
+        }
+        if self.discord.as_ref().is_some_and(|c| c.is_empty()) {
+            self.discord = None;
         }
 
     }
