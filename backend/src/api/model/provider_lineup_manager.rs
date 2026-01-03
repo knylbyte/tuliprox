@@ -628,6 +628,50 @@ impl ProviderLineupManager {
         self.providers.store(Arc::new(new_lineups));
     }
 
+    pub async fn reconcile_connections(&self, counts: HashMap<String, usize>) {
+        // 1. Reset all known providers to 0 connections initially.
+        for entry in &self.provider_connections {
+            let mut conn = entry.value().write().await;
+            conn.current_connections = 0;
+            conn.granted_grace = false;
+            conn.grace_ts = 0;
+        }
+
+        // 2. Synchronize with actual active allocations.
+        // This handles renamed or newly added providers as well.
+        for (name, count) in counts {
+            let conn_lock = self.provider_connections
+                .entry(name)
+                .or_insert_with(|| Arc::new(RwLock::new(ProviderConfigConnection::default())))
+                .clone();
+            let mut conn = conn_lock.write().await;
+            conn.current_connections = count;
+        }
+
+        // 3. Broadcast status updates to the UI/Event system.
+        // We collect entries first to release DashMap read locks quickly.
+        let snapshot: Vec<_> = self.provider_connections.iter()
+            .map(|e| (e.key().clone(), Arc::clone(e.value())))
+            .collect();
+
+        for (name, conn_lock) in snapshot {
+            let count = conn_lock.read().await.current_connections;
+            self.event_manager.send_provider_event(&name, count);
+        }
+
+        // 4. Garbage Collection: Remove providers that are neither in the current config
+        // nor referenced by any active stream allocations.
+        // Arc::strong_count == 1 means it's only held by this DashMap.
+        self.provider_connections.retain(|name, conn_lock| {
+            if Arc::strong_count(conn_lock) == 1 {
+                debug!("Purging stale provider connection record: {name}", );
+                false
+            } else {
+                true
+            }
+        });
+    }
+
     gen_provider_search!(get_provider_config_by_name, name, &str);
 
 
