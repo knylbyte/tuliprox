@@ -10,14 +10,14 @@ mod modules;
 include_modules!();
 
 use crate::auth::generate_password;
+use crate::library::LibraryProcessor;
 use crate::model::{
     AppConfig, Config, Healthcheck, HealthcheckConfig, ProcessTargets, SourcesConfig,
 };
 use crate::processing::processor::playlist;
-use crate::utils::{db_viewer, init_logger};
 use crate::utils::request::create_client;
 use crate::utils::{config_file_reader, resolve_env_var};
-use crate::library::LibraryProcessor;
+use crate::utils::{db_viewer, init_logger};
 use arc_swap::access::Access;
 use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
@@ -178,13 +178,13 @@ fn print_info(app_config: &AppConfig) {
     info!("Config file: {:?}", &paths.config_file_path);
     info!("Source file: {:?}", &paths.sources_file_path);
     info!("Api Proxy File: {:?}", &paths.api_proxy_file_path);
-    info!(
-        "Mapping file: {:?}",
-        &paths
-            .mapping_file_path
-            .as_ref()
-            .map_or_else(|| "not used", |v| v.as_str())
-    );
+    info!("Mapping path: {:?}", &paths.mapping_file_path.as_ref().map_or_else(|| "not used", |v| v.as_str()));
+
+    if let Some(mapping_paths) = paths.mapping_files_used.as_ref() {
+        for mapping_path in mapping_paths {
+            info!("Mapping file loaded: {mapping_path}");
+        }
+    }
 
     if let Some(cache) = config.reverse_proxy.as_ref().and_then(|r| r.cache.as_ref()) {
         if cache.enabled {
@@ -208,6 +208,7 @@ fn get_file_paths(args: &Args) -> ConfigPaths {
         config_file_path: config_file,
         sources_file_path: sources_file,
         mapping_file_path: mappings_file, // need to be set after config read
+        mapping_files_used: None,
         api_proxy_file_path: api_proxy_file,
         custom_stream_response_path: None,
     }
