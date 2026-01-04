@@ -65,6 +65,10 @@
 - **XTream Fixes**: Fixed series/catch-up lookups using `series-info virtual_id`.
 - **Cloudflare Header**: Added `cloudflare_header` to reverse proxy `disable_header` settings.
 - **Kick Seconds**: `kick_secs` added to `config.yml web_ui` config.
+- **Improved connection handling** for users with strict connection limits during streaming operations.
+- **Fixed streaming response handling** for specific content types.
+- **Enhanced validation of response headers** to prevent invalid values.
+- **Corrected request header prioritization logic**.
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
