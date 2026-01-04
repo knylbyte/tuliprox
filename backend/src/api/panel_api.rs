@@ -1522,6 +1522,21 @@ pub(crate) async fn sync_exp_dates_by_panel_api(app_state: &Arc<AppState>) {
             }
 
             let min_pool = resolve_alias_pool_min(app_state.as_ref(), &input.name, panel_cfg);
+            if let Some(min_pool_value) = min_pool {
+                if alias_pool_both_auto(panel_cfg) {
+                    let enabled_users = count_enabled_proxy_users(app_state.as_ref(), &input.name);
+                    let current_valid = count_valid_accounts(&accounts);
+                    let current_valid_u16 = u16::try_from(current_valid).unwrap_or(u16::MAX);
+                    let needed = min_pool_value.saturating_sub(current_valid_u16);
+                    debug_if_enabled!(
+                        "panel_api boot/update alias pool auto for input {}: enabled_users={}, valid_accounts={}, to_provision={}",
+                        sanitize_sensitive_info(&input.name),
+                        enabled_users,
+                        current_valid,
+                        needed
+                    );
+                }
+            }
             let min_pool = min_pool.filter(|m| *m > 0);
             if let Some(min_pool) = min_pool {
                 if input_changed {
