@@ -7,6 +7,7 @@ use rphonetic::{DoubleMetaphone, Encoder};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use shared::model::{EpgSmartMatchConfigDto, PlaylistItem, XtreamCluster};
+use std::sync::Arc;
 
 pub struct EpgIdCache<'a> {
     pub channel_epg_id: HashSet<Cow<'a, str>>,
@@ -161,7 +162,7 @@ async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>
             let mut icon_assigned = HashSet::new();
             for epg_source in epg_sources {
                 // icon tags
-                let icon_tags: HashMap<&String, &XmlTag> = epg_source.children.iter()
+                let icon_tags: HashMap<&String, &Arc<XmlTag>> = epg_source.children.iter()
                     .filter(|tag| tag.icon != XmlTagIcon::Undefined)
                     .filter_map(|tag| tag.get_attribute_value(EPG_ATTRIB_ID).map(|id| (id, tag)))
                     .collect();
@@ -199,10 +200,10 @@ async fn assign_channel_epg(new_epg: &mut Vec<Epg>, fp: &mut FetchedPlaylist<'_>
                                     icon_assigned.insert(epg_channel_id.clone());
                                     if epg_source.logo_override || chan.header.logo.is_empty() {
                                         trace!("Matched channel {} to epg icon {icon}", chan.header.name);
-                                        chan.header.logo = (*icon).clone();
+                                        chan.header.logo = icon.clone();
                                     }
                                     if epg_source.logo_override || chan.header.logo_small.is_empty() {
-                                        chan.header.logo_small = (*icon).clone();
+                                        chan.header.logo_small = icon.clone();
                                     }
                                 }
                             }

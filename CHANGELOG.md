@@ -1,5 +1,6 @@
 # Changelog
-# 3.3.0 (2026-01-03)
+
+## 3.3.0 (2026-01-03)
 
 ## ⚠️ Breaking Changes
 - **Global Input Definitions**: To align input definitions with the SourceEditor, inputs are now defined globally in the `inputs` section of the config file. Each source can reference one or more inputs by their name in the `inputs` attribute.
@@ -69,6 +70,9 @@
 - **Fixed streaming response handling** for specific content types.
 - **Enhanced validation of response headers** to prevent invalid values.
 - **Corrected request header prioritization logic**.
+- **Fix**: Re-instated EPG Title Synchronization after playlist updates.
+- **Optimization**: Significant EPG memory reduction.
+- **Optimization**: Improved EPG parsing performance.
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
