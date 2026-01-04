@@ -37,16 +37,16 @@ pub enum XmlTagIcon {
 
 #[derive(Debug, Clone)]
 pub struct XmlTag {
-    pub name: String,
+    pub name: Arc<str>,
     pub value: Option<String>,
-    pub attributes: Option<HashMap<String, String>>,
-    pub children: Option<Vec<XmlTag>>,
+    pub attributes: Option<HashMap<Arc<str>, String>>,
+    pub children: Option<Vec<Arc<XmlTag>>>,
     pub icon: XmlTagIcon,
     pub normalized_epg_ids: Option<Vec<String>>,
 }
 
 impl XmlTag {
-    pub(crate) fn new(name: String, attribs: Option<HashMap<String, String>>) -> Self {
+    pub(crate) fn new(name: Arc<str>, attribs: Option<HashMap<Arc<str>, String>>) -> Self {
         Self {
             name,
             value: None,
@@ -60,7 +60,6 @@ impl XmlTag {
     pub fn get_attribute_value(&self, attr_name: &str) -> Option<&String> {
         self.attributes.as_ref().and_then(|attr| attr.get(attr_name))
     }
-
 }
 
 
@@ -68,20 +67,21 @@ impl XmlTag {
 pub struct Epg {
     pub priority: i16,
     pub logo_override: bool,
-    pub attributes: Option<HashMap<String, String>>,
-    pub children: Vec<XmlTag>,
+    pub attributes: Option<HashMap<Arc<str>, String>>,
+    pub children: Vec<Arc<XmlTag>>,
 }
 
 impl Epg {
     pub async fn write_to_async<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut quick_xml::writer::Writer<W>,
+        rename_map: Option<&HashMap<&str, &str>>,
     ) -> Result<(), quick_xml::Error> {
         // Start tv-element
         let mut elem = BytesStart::new("tv");
         if let Some(attrs) = &self.attributes {
             for (k, v) in attrs {
-                elem.push_attribute((k.as_str(), v.as_str()));
+                elem.push_attribute((k.as_ref(), v.as_str()));
             }
         }
         writer.write_event_async(Event::Start(elem)).await?;
@@ -92,37 +92,54 @@ impl Epg {
             .children
             .iter()
             .rev()
-            .map(|c| (c, false))
+            .map(|c| (c.as_ref(), false))
             .collect();
 
         let mut write_counter = 0usize;
+        let mut current_channel_id: Option<String> = None;
 
         while let Some((tag, ended)) = stack.pop() {
             if ended {
+                if tag.name.as_ref() == EPG_TAG_CHANNEL {
+                    current_channel_id = None;
+                }
                 // End-Event
                 writer
-                    .write_event_async(Event::End(BytesEnd::new(tag.name.as_str())))
+                    .write_event_async(Event::End(BytesEnd::new(tag.name.as_ref())))
                     .await?;
             } else {
             // Start-Event for the tag
-                let mut elem = BytesStart::new(tag.name.as_str());
+                let mut elem = BytesStart::new(tag.name.as_ref());
                 if let Some(attrs) = &tag.attributes {
                     for (k, v) in attrs {
-                        elem.push_attribute((k.as_str(), v.as_str()));
+                        elem.push_attribute((k.as_ref(), v.as_str()));
                     }
                 }
+
+                if tag.name.as_ref() == EPG_TAG_CHANNEL {
+                    current_channel_id = tag.get_attribute_value(EPG_ATTRIB_ID).cloned();
+                }
+
                 writer.write_event_async(Event::Start(elem)).await?;
 
                 // write text
-                if let Some(text) = &tag.value {
-                    writer.write_event_async(Event::Text(BytesText::new(text.as_str()))).await?;
+                let value_to_write = if tag.name.as_ref() == EPG_TAG_DISPLAY_NAME {
+                    current_channel_id.as_ref()
+                        .and_then(|cid| rename_map.and_then(|m| m.get(cid.as_str())).copied())
+                        .or(tag.value.as_deref())
+                } else {
+                    tag.value.as_deref()
+                };
+
+                if let Some(text) = value_to_write {
+                    writer.write_event_async(Event::Text(BytesText::new(text))).await?;
                 }
 
                 // End-Marker push + children push
                 stack.push((tag, true));
                 if let Some(children) = &tag.children {
                     for child in children.iter().rev() {
-                        stack.push((child, false));
+                        stack.push((child.as_ref(), false));
                     }
                 }
             }
@@ -174,18 +191,16 @@ fn filter_channels_and_programmes(
     channels: &mut Vec<EpgChannel>,
     programmes: &mut Vec<EpgProgramme>,
 ) {
-    for channel in channels.iter_mut() {
-        let mut i = 0;
-        while i < programmes.len() {
-            if programmes[i].channel == channel.id {
-                let prog = programmes.swap_remove(i);
-                channel.programmes.push(prog);
-            } else {
-                i += 1;
-            }
-        }
+    let mut prog_map: HashMap<String, Vec<EpgProgramme>> = HashMap::new();
+    for prog in programmes.drain(..) {
+        prog_map.entry(prog.channel.clone()).or_default().push(prog);
+    }
 
-        channel.programmes.sort_by_key(|p| p.start);
+    for channel in channels.iter_mut() {
+        if let Some(mut progs) = prog_map.remove(&channel.id) {
+            progs.sort_by_key(|p| p.start);
+            channel.programmes = progs;
+        }
     }
 
     channels.retain(|c| !c.programmes.is_empty());
