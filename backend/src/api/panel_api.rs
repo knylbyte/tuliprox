@@ -581,8 +581,7 @@ fn resolve_alias_pool_limits(
     let min = resolve_alias_pool_limit_value(min_val, auto_value);
     let max = match max_val {
         Some(PanelApiAliasPoolSizeValue::Number(value)) => Some(*value),
-        Some(PanelApiAliasPoolSizeValue::Auto(_)) => None,
-        None => None,
+        Some(PanelApiAliasPoolSizeValue::Auto(_)) | None => None,
     };
     if let (Some(min), Some(max)) = (min, max) {
         if min > max {
