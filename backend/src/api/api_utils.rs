@@ -1,13 +1,10 @@
 use crate::BUILD_TIMESTAMP;
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
-use crate::api::model::{
-    create_channel_unavailable_stream, create_custom_video_stream_response,
-    create_provider_connections_exhausted_stream, create_provider_stream,
-    get_stream_response_with_headers, ActiveClientStream, AppState,
-    CustomVideoStreamType,
-    ProviderStreamFactoryOptions, SharedStreamManager,
-    StreamError, ThrottledStream, UserApiRequest,
-};
+use crate::api::model::{create_channel_unavailable_stream, create_custom_video_stream_response,
+                        create_provider_connections_exhausted_stream, create_provider_stream,
+                        get_stream_response_with_headers, ActiveClientStream, AppState,
+                        CustomVideoStreamType, ProviderStreamFactoryOptions,
+                        SharedStreamManager, StreamError, ThrottledStream, UserApiRequest};
 use crate::api::model::{tee_stream, UserSession};
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
 use crate::api::panel_api::try_provision_account_on_exhausted;
@@ -1168,10 +1165,14 @@ pub async fn local_stream_response(
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
     }
     headers.insert("Accept-Ranges", HeaderValue::from_static("bytes"));
-    headers.insert(header::CONTENT_LENGTH, HeaderValue::from_str(&content_length.to_string()).unwrap_or_else(|_| HeaderValue::from_static("0")));
+    if let Ok(header_value) = HeaderValue::from_str(&content_length.to_string()) {
+        headers.insert(header::CONTENT_LENGTH, header_value);
+    }
 
     if range.is_some() {
-        headers.insert(header::CONTENT_RANGE, HeaderValue::from_str(&format!("bytes {start}-{end}/{file_size}")).unwrap_or_else(|_| HeaderValue::from_static("bytes=0-")));
+        if let Ok(header_value) = HeaderValue::from_str(&format!("bytes {start}-{end}/{file_size}")) {
+            headers.insert(header::CONTENT_RANGE, header_value);
+        }
     }
 
     response

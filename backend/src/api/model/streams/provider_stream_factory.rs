@@ -206,20 +206,12 @@ fn prepare_client(
         }
     }
 
-    // if !headers.contains_key(axum::http::header::HOST) {
-    //     if let Some(host_header) = get_host_and_optional_port(url) {
-    //         if let Ok(header_value) = axum::http::header::HeaderValue::from_str(&host_header) {
-    //             headers.insert(axum::http::header::HOST, header_value);
-    //         }
-    //     }
-    // }
-
-    if !headers.contains_key(axum::http::header::CONNECTION) {
-        headers.insert(
-            axum::http::header::CONNECTION,
-            axum::http::header::HeaderValue::from_static("keep-alive"),
-        );
-    }
+    // Force Connection: close so the provider releases its slot immediately when the stream ends.
+    // This prevents 509 errors from providers counting idle pooled connections against limits.
+    headers.insert(
+        axum::http::header::CONNECTION,
+        axum::http::header::HeaderValue::from_static("close"),
+    );
 
     if !headers.contains_key(axum::http::header::USER_AGENT) {
         headers.insert(
