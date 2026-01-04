@@ -1,6 +1,6 @@
 [package]
 name = "tuliprox"
-version = "3.2.33"
+version = "3.2.34"
 edition = "2021"
 rust-version = "1.87.0"
 

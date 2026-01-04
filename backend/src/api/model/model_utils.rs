@@ -11,7 +11,7 @@ pub fn get_response_headers(headers: &HeaderMap) -> Vec<(String, String)> {
             value.to_str().ok().map(|v| (key.to_string(), v.to_string()))
         })
         .collect();
-    response_headers.push((axum::http::header::CONNECTION.as_str().to_string(), "keep-alive".to_string()));
+    response_headers.push((axum::http::header::CONNECTION.as_str().to_string(), "close".to_string()));
     response_headers
 }
 
@@ -32,7 +32,7 @@ pub fn get_stream_response_with_headers(custom: Option<(Vec<(String, String)>, S
 
     let default_headers = vec![
         ("content-type", "application/octet-stream"),
-        //("connection", "keep-alive"),
+        ("connection", "close"),
     ];
 
     for (key, value) in default_headers {

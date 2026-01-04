@@ -11,6 +11,7 @@
   - Removed `forced_retry_interval_secs`.
 - **Input Batch Changes**: `name` attribute is now mandatory for input type batch to ensure stable playlist UUIDs.
 - **Favorites Redesign**: Replaced implicit `create_alias` with explicit `add_favourite(group_name)` script function.
+- **EpgSmartMatch**: Field `name_prefix` syntax needs to be changed from  `name_prefix: !suffix "."` to `name_prefix: { suffix: "." }`.
 
 ## 🌟 New Features
 - **Discord Notifications**: Support for Discord notifications via webhooks with optional Handlebars templates.
@@ -64,6 +65,10 @@
 - **XTream Fixes**: Fixed series/catch-up lookups using `series-info virtual_id`.
 - **Cloudflare Header**: Added `cloudflare_header` to reverse proxy `disable_header` settings.
 - **Kick Seconds**: `kick_secs` added to `config.yml web_ui` config.
+- **Improved connection handling** for users with strict connection limits during streaming operations.
+- **Fixed streaming response handling** for specific content types.
+- **Enhanced validation of response headers** to prevent invalid values.
+- **Corrected request header prioritization logic**.
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
