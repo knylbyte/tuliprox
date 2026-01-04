@@ -1,6 +1,8 @@
 use crate::model::{Epg, TVGuide, XmlTag, XmlTagIcon, EPG_ATTRIB_CHANNEL, EPG_ATTRIB_ID, EPG_TAG_CHANNEL, EPG_TAG_DISPLAY_NAME, EPG_TAG_ICON, EPG_TAG_PROGRAMME, EPG_TAG_TV};
 use crate::model::{EpgSmartMatchConfig, PersistedEpgSource};
 use crate::processing::processor::epg::EpgIdCache;
+use crate::utils::async_file_reader;
+use crate::utils::compressed_file_reader_async::CompressedFileReaderAsync;
 use dashmap::DashMap;
 use deunicode::deunicode;
 use quick_xml::events::{BytesStart, BytesText, Event};
@@ -8,27 +10,30 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use shared::model::EpgNamePrefix;
 use shared::utils::CONSTANTS;
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::mem;
-use tokio::io::AsyncRead;
-use crate::utils::async_file_reader;
-use crate::utils::compressed_file_reader_async::CompressedFileReaderAsync;
 use std::sync::{Arc, Mutex};
+use tokio::io::AsyncRead;
 
 struct EpgInterner {
-    map: DashMap<String, Arc<str>>,
+    map: RefCell<HashMap<String, Arc<str>>>,
 }
 
 impl EpgInterner {
     fn new() -> Self {
-        Self { map: DashMap::new() }
+        Self { map: RefCell::new(HashMap::new()) }
     }
 
     fn intern(&self, s: &str) -> Arc<str> {
-        self.map.entry(s.to_string())
-            .or_insert_with(|| Arc::from(s))
-            .clone()
+        let mut map = self.map.borrow_mut();
+        if let Some(arc) = map.get(s) {
+            return arc.clone();
+        }
+        let arc: Arc<str> = Arc::from(s);
+        map.insert(s.to_string(), arc.clone());
+        arc
     }
 }
 
@@ -130,7 +135,7 @@ impl TVGuide {
                 tag.get_attribute_value(EPG_ATTRIB_ID).cloned()
             };
             if let Some(epg_id) = maybe_epg_id {
-            tag.normalized_epg_ids
+                tag.normalized_epg_ids
                     .get_or_insert_with(Vec::new)
                     .push(normalize_channel_name(&epg_id, &id_cache.smart_match_config));
             }
@@ -331,7 +336,10 @@ impl TVGuide {
                     children,
                 })
             }
-            Err(_) => None
+            Err(e) => {
+                log::warn!("Failed to process EPG file {}: {e}", epg_source.file_path.display());
+                None
+            }
         }
     }
 
@@ -547,12 +555,12 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
-    use std::collections::{HashSet};
-    use std::io;
-    use std::path::PathBuf;
     use crate::model::{EpgSmartMatchConfig, PersistedEpgSource, TVGuide};
     use crate::processing::parser::xmltv::normalize_channel_name;
+    use std::borrow::Cow;
+    use std::collections::HashSet;
+    use std::io;
+    use std::path::PathBuf;
 
     #[test]
     /// Tests normalization of a channel name using the default smart match configuration.
@@ -622,9 +630,9 @@ mod tests {
         assert_eq!("odisea.bg", normalize_channel_name("BG | ODISEA ᵁᴴᴰ ³⁸⁴⁰ᴾ", &epg_smart_cfg));
     }
 
+    use crate::processing::processor::epg::EpgIdCache;
     use rphonetic::{Encoder, Metaphone};
     use shared::model::{EpgNamePrefix, EpgSmartMatchConfigDto};
-    use crate::processing::processor::epg::EpgIdCache;
 
     #[test]
     /// Demonstrates phonetic encoding (Metaphone) of normalized channel names with various prefixes and suffixes.
@@ -657,5 +665,4 @@ mod tests {
         println!("{}", metaphone.encode(&normalize_channel_name("BU | ODISEA ᵁᴴᴰ ³⁸⁴⁰ᴾ", &epg_smart_cfg)));
         println!("{}", metaphone.encode(&normalize_channel_name("BG | ODISEA ᵁᴴᴰ ³⁸⁴⁰ᴾ", &epg_smart_cfg)));
     }
-
 }
