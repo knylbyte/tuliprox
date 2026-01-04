@@ -493,6 +493,7 @@ mod tests {
                 config_file_path: String::new(),
                 sources_file_path: String::new(),
                 mapping_file_path: None,
+                mapping_files_used: None,
                 api_proxy_file_path: String::new(),
                 custom_stream_response_path: None,
             }))),
