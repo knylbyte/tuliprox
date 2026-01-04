@@ -12,7 +12,7 @@ use crate::api::endpoints::xtream_api::xtream_api_register;
 use crate::api::hdhomerun_proprietary::spawn_proprietary_tasks;
 use crate::api::hdhomerun_ssdp::spawn_ssdp_discover_task;
 use crate::api::model::{create_cache, create_http_client, ActiveProviderManager, ActiveUserManager, AppState, CancelTokens, ConnectionManager, DownloadQueue, EventManager, HdHomerunAppState, PlaylistStorageState, SharedStreamManager};
-use crate::api::panel_api::sync_panel_api_exp_dates_on_boot;
+use crate::api::panel_api::sync_exp_dates_by_panel_api;
 use crate::api::scheduler::exec_scheduler;
 use crate::api::serve::serve;
 use crate::model::{AppConfig, Config, Healthcheck, ProcessTargets, RateLimitConfig};
@@ -270,6 +270,8 @@ pub async fn start_server(
         )
     };
 
+    sync_exp_dates_by_panel_api(&app_state).await;
+
     if let Err(err) = load_playlists_into_memory_cache(&app_state).await {
         error!("Failed to load playlists into memory cache: {err}");
     }
@@ -290,8 +292,6 @@ pub async fn start_server(
         &app_state,
         &targets,
     );
-
-    sync_panel_api_exp_dates_on_boot(&app_state).await;
 
     exec_file_lock_prune(&app_state);
 
