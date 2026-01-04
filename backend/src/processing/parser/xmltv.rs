@@ -281,7 +281,7 @@ impl TVGuide {
         match CompressedFileReaderAsync::new(&epg_source.file_path).await {
             Ok(mut reader) => {
                 let mut children: Vec<Arc<XmlTag>> = vec![];
-                let mut tv_attributes: Option<HashMap<String, String>> = None;
+                let mut tv_attributes: Option<HashMap<Arc<str>, String>> = None;
                 let smart_match = id_cache.smart_match_config.enabled;
                 let fuzzy_matching = smart_match && id_cache.smart_match_config.fuzzy_matching;
                 let mut filter_tags = |mut tag: XmlTag| {
@@ -315,9 +315,7 @@ impl TVGuide {
                             }
                         }
                         EPG_TAG_TV => {
-                            tv_attributes = tag.attributes.as_ref().map(|attrs| {
-                                attrs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect::<HashMap<String, String>>()
-                            });
+                            tv_attributes.clone_from(&tag.attributes);
                         }
                         _ => {}
                     }
@@ -489,7 +487,7 @@ pub fn flatten_tvguide(tv_guides: &[Epg]) -> Option<Epg> {
         None
     } else {
         let epg_children: Mutex<Vec<Arc<XmlTag>>> = Mutex::new(Vec::new());
-        let epg_attributes = tv_guides.first().and_then(|t| t.attributes.clone());
+        let epg_attributes: Option<HashMap<Arc<str>, String>> = tv_guides.first().and_then(|t| t.attributes.clone());
         let count = tv_guides.iter().map(|tvg| tvg.children.len()).sum();
         let channel_mapping: DashMap<String, i16> = DashMap::with_capacity(count);
 

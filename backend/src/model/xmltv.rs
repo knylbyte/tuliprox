@@ -67,7 +67,7 @@ impl XmlTag {
 pub struct Epg {
     pub priority: i16,
     pub logo_override: bool,
-    pub attributes: Option<HashMap<String, String>>,
+    pub attributes: Option<HashMap<Arc<str>, String>>,
     pub children: Vec<Arc<XmlTag>>,
 }
 
@@ -81,7 +81,7 @@ impl Epg {
         let mut elem = BytesStart::new("tv");
         if let Some(attrs) = &self.attributes {
             for (k, v) in attrs {
-                elem.push_attribute((k.as_str(), v.as_str()));
+                elem.push_attribute((k.as_ref(), v.as_str()));
             }
         }
         writer.write_event_async(Event::Start(elem)).await?;
