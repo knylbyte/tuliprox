@@ -10,7 +10,7 @@ use crate::api::model::{
     StreamError, ThrottledStream, UserApiRequest,
 };
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
-use crate::api::panel_api::try_provision_account_on_exhausted;
+use crate::api::panel_api::{is_alias_pool_max_reached, try_provision_account_on_exhausted};
 use crate::model::{ConfigInput, ResourceRetryConfig, ReverseProxyDisabledHeaderConfig};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
@@ -887,6 +887,25 @@ async fn create_stream_response_details(
         && matches!(streaming_strategy.provider_stream_state, ProviderStreamState::GracePeriod(_, _));
 
     if should_use_panel_api_provisioning {
+        if is_alias_pool_max_reached(app_state, input) {
+            if let Some(handle) = streaming_strategy.provider_handle.take() {
+                app_state
+                    .connection_manager
+                    .release_provider_handle(Some(handle))
+                    .await;
+            }
+            let (stream, stream_info) =
+                create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
+            return StreamDetails {
+                stream,
+                stream_info,
+                provider_name: guard_provider_name.clone(),
+                grace_period_millis,
+                disable_provider_grace: true,
+                reconnect_flag: None,
+                provider_handle: None,
+            };
+        }
         if let ProviderStreamState::GracePeriod(_, request_url) =
             &streaming_strategy.provider_stream_state
         {

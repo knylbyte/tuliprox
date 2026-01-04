@@ -199,11 +199,6 @@ fn validate_panel_api_config(cfg: &PanelApiConfigDto) -> Result<(), TuliproxErro
     validate_client_new_params(&cfg.query_parameter.client_new)?;
     validate_client_renew_params(&cfg.query_parameter.client_renew)?;
     let (min_val, max_val) = alias_pool_limit_values(cfg);
-    let min_auto = min_val.is_some_and(PanelApiAliasPoolSizeValue::is_auto);
-    let max_auto = max_val.is_some_and(PanelApiAliasPoolSizeValue::is_auto);
-    if max_auto && !min_auto {
-        warn!("panel_api.alias_pool.size: max is set to auto without min; this configuration is not supported");
-    }
     if let Some(PanelApiAliasPoolSizeValue::Number(value)) = min_val {
         if *value == 0 {
             return create_tuliprox_error_result!(
@@ -636,6 +631,35 @@ fn collect_accounts(input: &ConfigInput) -> Vec<AccountCredentials> {
 
 fn count_valid_accounts(accounts: &[AccountCredentials]) -> usize {
     accounts.iter().filter(|acct| !is_input_expired(acct.exp_date)).count()
+}
+
+pub(crate) fn is_alias_pool_max_reached(app_state: &AppState, input: &ConfigInput) -> bool {
+    let Some(panel_cfg) = input.panel_api.as_ref() else {
+        return false;
+    };
+    if panel_cfg.url.trim().is_empty() {
+        return false;
+    }
+    if validate_panel_api_config(panel_cfg).is_err() {
+        return false;
+    }
+    let (_, max_pool) = match resolve_alias_pool_limits(app_state, &input.name, panel_cfg) {
+        Ok(limits) => limits,
+        Err(_) => return false,
+    };
+    if let Some(max_pool) = max_pool {
+        let valid_count = count_valid_accounts(&collect_accounts(input));
+        if valid_count >= max_pool as usize {
+            debug_if_enabled!(
+                "panel_api: alias_pool.size.max reached for input {} (valid_accounts={}, max={})",
+                sanitize_sensitive_info(&input.name),
+                valid_count,
+                max_pool
+            );
+            return true;
+        }
+    }
+    false
 }
 
 fn find_input_by_name(app_state: &AppState, input_name: &str) -> Option<Arc<ConfigInput>> {
