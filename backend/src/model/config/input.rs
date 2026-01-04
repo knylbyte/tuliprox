@@ -3,7 +3,10 @@ use crate::utils::get_csv_file_path;
 use chrono::Utc;
 use log::warn;
 use shared::error::TuliproxError;
-use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, PanelApiConfigDto, StagedInputDto};
+use shared::model::{
+    ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, PanelApiAliasPoolSizeValue,
+    PanelApiConfigDto, StagedInputDto,
+};
 use shared::utils::{get_base_url_from_str, get_credentials_from_url};
 use shared::{check_input_connections, info_err, write_if_some};
 use shared::check_input_credentials;
@@ -160,6 +163,32 @@ impl ConfigInput {
         if is_input_expired(self.exp_date) {
             warn!("Account {} expired for provider: {}", self.username.as_ref().map_or("?", |s| s.as_str()), self.name);
             self.enabled = false;
+        }
+
+        if let Some(size) = self
+            .panel_api
+            .as_ref()
+            .and_then(|cfg| cfg.alias_pool.as_ref())
+            .and_then(|pool| pool.size.as_ref())
+        {
+            let min = size.min.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+            let max = size.max.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+            if let (Some(min), Some(max)) = (min, max) {
+                if min > max {
+                    return Err(info_err!(
+                        "panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max".to_string()
+                    ));
+                }
+            }
+
+            let min_auto = size.min.as_ref().is_some_and(PanelApiAliasPoolSizeValue::is_auto);
+            let max_auto = size.max.as_ref().is_some_and(PanelApiAliasPoolSizeValue::is_auto);
+            if max_auto && !min_auto {
+                warn!(
+                    "panel_api.alias_pool.size.max is set to auto without min for input {}",
+                    self.name
+                );
+            }
         }
 
         Ok(batch_file_path)
