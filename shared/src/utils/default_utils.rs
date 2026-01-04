@@ -10,7 +10,7 @@ pub fn is_blank_optional_string(s: &Option<String>) -> bool {
 }
 
 pub fn is_empty_optional_vec<T>(s: &Option<Vec<T>>) -> bool {
-    s.as_ref().map_or(true, |v| v.is_empty())
+    s.as_ref().is_none_or(|v| v.is_empty())
 }
 
 pub fn default_as_default() -> String { "default".into() }

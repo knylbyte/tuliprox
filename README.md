@@ -158,6 +158,7 @@ messaging:
     token: <api_token>
     user: <api_username>
     url: `optional`, default is `https://api.pushover.net/1/messages.json`
+```
 
 ### 1.4.1 Messaging Templating
 For `discord` and `rest` messaging, you can use [Handlebars](https://handlebarsjs.com/) templates to format the message body.

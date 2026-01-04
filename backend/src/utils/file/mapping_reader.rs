@@ -101,7 +101,7 @@ fn read_mappings_from_directory(path: &Path, resolve_env: bool) -> Result<Option
         match read_mapping(&file_path, resolve_env, false) {
             Ok(Some(mapping)) => {
                 loaded_mapping_files.push(file_path);
-                mappings.push(mapping)
+                mappings.push(mapping);
             },
             Ok(None) => {}
             Err(err) => return create_tuliprox_error_result!(TuliproxErrorKind::Info, "Failed to read mapping file {file_path:?}: {err:?}"),
