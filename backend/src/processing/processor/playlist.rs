@@ -567,7 +567,7 @@ fn execute_pipe<'a>(target: &ConfigTarget, pipe: &ProcessingPipe, fpl: &FetchedP
     };
     if target.options.as_ref().is_some_and(|opt| opt.remove_duplicates) {
         for group in &mut new_fpl.playlist_groups {
-            // `HashSet::insert`  returns true for first insert, otherweise false
+            // `HashSet::insert`  returns true for first insert, otherwise false
             group.channels.retain(|item| duplicates.insert(duplicate_hash(item)));
         }
     }
@@ -614,7 +614,6 @@ async fn process_playlist_for_target(app_config: &Arc<AppConfig>,
                                      event_manager: Option<Arc<EventManager>>,
                                      playlist_state: Option<&Arc<PlaylistStorageState>>,
 ) -> Result<(), Vec<TuliproxError>> {
-    let pipe = get_processing_pipe(target);
     debug_if_enabled!("Processing order is {}", &target.processing_order);
 
     let mut duplicates: HashSet<UUIDType> = HashSet::new();
@@ -623,6 +622,7 @@ async fn process_playlist_for_target(app_config: &Arc<AppConfig>,
     debug!("Executing processing pipes");
     let broadcast_step = create_broadcast_callback(event_manager.as_ref());
 
+    let pipe = get_processing_pipe(target);
     let mut step = StepMeasure::new(&target.name, broadcast_step);
     for provider_fpl in playlists.iter_mut() {
         step.broadcast("Executing transformations on '{}' playlist", &target.name);

@@ -21,6 +21,7 @@ use shared::error::{create_tuliprox_error, create_tuliprox_error_result, info_er
 use shared::model::xtream_const::XTREAM_CLUSTER;
 use shared::model::{PlaylistGroup, PlaylistItem, PlaylistItemType, SeriesStreamProperties, StreamProperties, VideoStreamProperties, XtreamCluster, XtreamPlaylistItem};
 use shared::utils::get_u32_from_serde_value;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Error, ErrorKind};
@@ -107,24 +108,6 @@ async fn write_playlists_to_file(
     }
     Ok(())
 }
-//
-// async fn write_playlists_to_file_2(
-//     app_config: &Arc<AppConfig>,
-//     storage_path: &Path,
-//     cluster: XtreamCluster,
-//     playlist: Vec<XtreamPlaylistItem>,
-// ) -> Result<(), TuliproxError> {
-//     if !playlist.is_empty() {
-//         let xtream_path = xtream_get_file_path(storage_path, cluster);
-//         let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
-//         let mut tree = BPlusTree::new();
-//         for item in playlist {
-//             tree.insert(item.virtual_id, item);
-//         }
-//         tree.store(&xtream_path).map_err(|err| cant_write_result!(&xtream_path, err))?;
-//     }
-//     Ok(())
-// }
 
 pub async fn write_playlist_item_update(
     app_config: &Arc<AppConfig>,
@@ -185,10 +168,12 @@ fn get_map_item_as_str(map: &serde_json::Map<String, Value>, key: &str) -> Optio
     None
 }
 
-async fn load_old_category_ids(path: &Path) -> (u32, HashMap<String, u32>) {
+type CategoryKey = (XtreamCluster, Cow<'static, str>);
+
+async fn load_old_category_ids(path: &Path) -> (u32, HashMap<CategoryKey, u32>) {
     let old_path = path.to_path_buf();
     tokio::task::spawn_blocking(move || {
-        let mut result: HashMap<String, u32> = HashMap::new();
+        let mut result: HashMap<CategoryKey, u32> = HashMap::new();
         let mut max_id: u32 = 0;
         for (cluster, cat) in [
             (XtreamCluster::Live, storage_const::COL_CAT_LIVE),
@@ -197,7 +182,7 @@ async fn load_old_category_ids(path: &Path) -> (u32, HashMap<String, u32>) {
         {
             let col_path = get_collection_path(&old_path, cat);
             if col_path.exists() {
-                if let Ok(file) = File::open(col_path) {
+                if let Ok(file) = File::open(&col_path) {
                     let reader = file_reader(file);
                     match serde_json::from_reader(reader) {
                         Ok(value) => {
@@ -206,7 +191,7 @@ async fn load_old_category_ids(path: &Path) -> (u32, HashMap<String, u32>) {
                                     if let Some(category_id) = entry.get(crate::model::XC_TAG_CATEGORY_ID).and_then(get_u32_from_serde_value) {
                                         if let Value::Object(item) = entry {
                                             if let Some(category_name) = get_map_item_as_str(&item, crate::model::XC_TAG_CATEGORY_NAME) {
-                                                result.insert(format!("{cluster}{category_name}"), category_id);
+                                                result.insert((cluster, Cow::Owned(category_name)), category_id);
                                                 max_id = max_id.max(category_id);
                                             }
                                         }
@@ -214,7 +199,9 @@ async fn load_old_category_ids(path: &Path) -> (u32, HashMap<String, u32>) {
                                 }
                             }
                         }
-                        Err(_err) => {}
+                        Err(err) => {
+                            log::warn!("Failed to parse category file {}: {err}", col_path.display());
+                        }
                     }
                 }
             }
@@ -263,38 +250,29 @@ pub async fn xtream_write_playlist(
     let mut series_col = Vec::with_capacity(50_000);
     let mut vod_col = Vec::with_capacity(50_000);
 
-    // preserve category_ids
-    let (max_cat_id, existing_cat_ids) = load_old_category_ids(&path).await;
-    let mut cat_id_counter = max_cat_id;
-    for plg in playlist.iter_mut() {
-        if !plg.channels.is_empty() {
-            let cat_key = format!("{}{}", plg.xtream_cluster, &plg.title);
-            let cat_id = existing_cat_ids.get(&cat_key).unwrap_or_else(|| {
-                cat_id_counter += 1;
-                &cat_id_counter
-            });
-            plg.id = *cat_id;
-
-            match &plg.xtream_cluster {
+    let categories = create_categories(playlist, &path).await;
+    {
+        for (xtream_cluster, category) in categories {
+            match xtream_cluster {
                 XtreamCluster::Live => &mut cat_live_col,
                 XtreamCluster::Series => &mut cat_series_col,
                 XtreamCluster::Video => &mut cat_vod_col,
-            }.push(json!(CategoryEntry {
-                category_id: *cat_id,
-                category_name: plg.title.clone(),
-                parent_id: 0
-            }));
+            }.push(category);
+        }
+    }
 
-            for pli in &mut plg.channels {
-                let header = &mut pli.header;
-                header.category_id = *cat_id;
-                let col = match header.xtream_cluster {
-                    XtreamCluster::Live => &mut live_col,
-                    XtreamCluster::Series => &mut series_col,
-                    XtreamCluster::Video => &mut vod_col,
-                };
-                col.push(pli);
-            }
+    for plg in playlist.iter_mut() {
+        if plg.channels.is_empty() {
+            continue;
+        }
+
+        for pli in &plg.channels {
+            let col = match pli.header.xtream_cluster {
+                XtreamCluster::Live => &mut live_col,
+                XtreamCluster::Series => &mut series_col,
+                XtreamCluster::Video => &mut vod_col,
+            };
+            col.push(pli);
         }
     }
 
@@ -342,6 +320,60 @@ pub async fn xtream_write_playlist(
     }
 
     Ok(())
+}
+
+async fn create_categories(playlist: &mut [PlaylistGroup], path: &Path) -> Vec<(XtreamCluster, CategoryEntry)> {
+    // preserve category_ids
+    let (max_cat_id, existing_cat_ids) = load_old_category_ids(path).await;
+    let mut cat_id_counter = max_cat_id;
+
+    let mut new_categories: IndexMap<(XtreamCluster, Cow<'_, str>), CategoryEntry> = IndexMap::new();
+
+    let mut last_cluster: Option<XtreamCluster> = None;
+    let mut last_group = String::new();
+    let mut last_category_id: u32 = 0;
+
+    for plg in playlist.iter_mut() {
+        if plg.channels.is_empty() {
+            continue;
+        }
+
+        for channel in &mut plg.channels {
+            let cluster = channel.header.xtream_cluster;
+            let group = channel.header.group.as_str();
+
+            // Fast path
+            if last_cluster == Some(cluster) && last_group == group {
+                channel.header.category_id = last_category_id;
+                continue;
+            }
+
+            let key = (cluster, Cow::Borrowed(group));
+
+            let entry = new_categories.entry(key.clone()).or_insert_with(|| {
+                let cat_id = existing_cat_ids.get(&key).copied().unwrap_or_else(|| {
+                    cat_id_counter += 1;
+                    cat_id_counter
+                });
+
+                CategoryEntry {
+                    category_id: cat_id,
+                    category_name: group.to_string(),
+                    parent_id: 0,
+                }
+            });
+
+            last_cluster = Some(cluster);
+            last_group.clear();
+            last_group.push_str(group);
+            last_category_id = entry.category_id;
+
+            channel.header.category_id = last_category_id;
+        }
+    }
+    new_categories.into_iter()
+        .map(|((cluster, _group), value)| (cluster, value))
+        .collect::<Vec<(XtreamCluster, CategoryEntry)>>()
 }
 
 pub fn xtream_get_collection_path(
@@ -810,40 +842,40 @@ pub async fn load_input_xtream_playlist(app_config: &Arc<AppConfig>, storage_pat
                 XtreamCluster::Series => storage_const::COL_CAT_SERIES,
             };
             let cat_path = get_collection_path(storage_path, cat_col_name);
-            
+
             if cat_path.exists() {
-               if let Ok(content) = tokio::fs::read_to_string(&cat_path).await {
-                   if let Ok(cats) = serde_json::from_str::<Vec<CategoryEntry>>(&content) {
-                       for cat in cats {
-                           groups.insert(cat.category_id, PlaylistGroup {
-                               id: cat.category_id,
-                               title: cat.category_name,
-                               channels: Vec::new(),
-                               xtream_cluster: cluster,
-                           });
-                       }
-                   }
-               }
+                if let Ok(content) = tokio::fs::read_to_string(&cat_path).await {
+                    if let Ok(cats) = serde_json::from_str::<Vec<CategoryEntry>>(&content) {
+                        for cat in cats {
+                            groups.insert(cat.category_id, PlaylistGroup {
+                                id: cat.category_id,
+                                title: cat.category_name,
+                                channels: Vec::new(),
+                                xtream_cluster: cluster,
+                            });
+                        }
+                    }
+                }
             }
 
             // Load Items
             let _file_lock = app_config.file_locks.read_lock(&xtream_path).await;
             if let Ok(mut query) = BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path) {
                 for (_, ref item) in query.iter() {
-                     let cat_id = item.category_id;
-                     groups.entry(cat_id)
+                    let cat_id = item.category_id;
+                    groups.entry(cat_id)
                         .or_insert_with(|| PlaylistGroup {
-                             id: cat_id,
-                             title: String::from("Unknown"),
-                             channels: Vec::new(),
-                             xtream_cluster: cluster,
+                            id: cat_id,
+                            title: String::from("Unknown"),
+                            channels: Vec::new(),
+                            xtream_cluster: cluster,
                         })
                         .channels.push(PlaylistItem::from(item));
                 }
             }
         }
     }
-    
+
     Ok(groups.into_values().collect())
 }
 
