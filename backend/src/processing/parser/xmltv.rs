@@ -392,9 +392,7 @@ where
             } else if !stack.is_empty() {
                 let tag_arc = Arc::new(tag);
                 if let Some(mut parent) = stack.pop() {
-                    let mut children = parent.children.take().unwrap_or_default();
-                    children.push(tag_arc);
-                    parent.children = Some(children);
+                    parent.children.get_or_insert_with(Vec::new).push(tag_arc);
                     stack.push(parent);
                 }
             }
