@@ -108,24 +108,6 @@ async fn write_playlists_to_file(
     }
     Ok(())
 }
-//
-// async fn write_playlists_to_file_2(
-//     app_config: &Arc<AppConfig>,
-//     storage_path: &Path,
-//     cluster: XtreamCluster,
-//     playlist: Vec<XtreamPlaylistItem>,
-// ) -> Result<(), TuliproxError> {
-//     if !playlist.is_empty() {
-//         let xtream_path = xtream_get_file_path(storage_path, cluster);
-//         let _file_lock = app_config.file_locks.write_lock(&xtream_path).await;
-//         let mut tree = BPlusTree::new();
-//         for item in playlist {
-//             tree.insert(item.virtual_id, item);
-//         }
-//         tree.store(&xtream_path).map_err(|err| cant_write_result!(&xtream_path, err))?;
-//     }
-//     Ok(())
-// }
 
 pub async fn write_playlist_item_update(
     app_config: &Arc<AppConfig>,
@@ -200,7 +182,7 @@ async fn load_old_category_ids(path: &Path) -> (u32, HashMap<CategoryKey, u32>) 
         {
             let col_path = get_collection_path(&old_path, cat);
             if col_path.exists() {
-                if let Ok(file) = File::open(col_path) {
+                if let Ok(file) = File::open(&col_path) {
                     let reader = file_reader(file);
                     match serde_json::from_reader(reader) {
                         Ok(value) => {
@@ -217,7 +199,9 @@ async fn load_old_category_ids(path: &Path) -> (u32, HashMap<CategoryKey, u32>) 
                                 }
                             }
                         }
-                        Err(_err) => {}
+                        Err(err) => {
+                            log::warn!("Failed to parse category file {}: {err}", col_path.display());
+                        }
                     }
                 }
             }
