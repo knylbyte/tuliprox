@@ -218,7 +218,7 @@ Attributes:
 - `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
 - `grace_period_millis`  default set to 300 milliseconds.
 - `grace_period_timeout_secs` default set to 2 seconds.
-- `panel_api_provision_timeout` maximum wait time (seconds) to probe a newly created/renewed panel API account before forcing a client reconnect (default `60`).
+- `panel_api_provision_timeout` maximum wait time (seconds) to probe a newly created/renewed account before forcing a client reconnect (default `60`).
 - `shared_burst_buffer_mb` optional (default `12`). Minimum burst buffer size (in MB) used for shared streams.
 
 ##### 1.6.1.1 `retry`
@@ -843,19 +843,33 @@ If provider connections are exhausted, tuliprox can optionally call a provider p
 - otherwise create a new alias account and persist it
 
 Optional alias pool controls:
-- `alias_pool.size.min`: number or `auto`. Keep at least this many valid (not expired) accounts on boot/update. `auto` uses the number of enabled tuliprox users (Active/Trial and not expired) for targets in the same source. If below, tuliprox tries to renew expired accounts first and then creates new accounts until the minimum is met or `max` is reached.
-- `alias_pool.size.max`: number or `auto`. Upper bound for valid accounts. When the maximum is reached, provisioning (renew/create) is skipped. `auto` uses the same enabled user count. `min` must be `<= max` after resolving `auto`. Existing accounts are never deleted when the user count drops.
-- `alias_pool.remove_expired`: when `true`, remove expired accounts from `source.yml` or batch CSVs during boot/update. This cleanup runs last in the panel_api routines and only removes aliases/rows (the root input is not removed).
+- `alias_pool.size.min`: `number` or `auto`.
+  - `number`: keep at least this many valid (not expired) accounts on boot/update. Must be greater `0` and <= `max`.
+  - `auto`: uses the number of enabled tuliprox users (Active/Trial and not expired) for targets in the same source. If below, tuliprox tries to renew expired accounts first and then creates new accounts until the minimum is met during boot/update process. Zusätzlich 
+- `alias_pool.size.max`: `number` or `auto`. 
+  - `number`: upper bound for valid accounts when provisioning is triggered by provider exhaustion. When the maximum is reached, provisioning (renew/create) is skipped. Must be greater than `0` and >= `min`.
+  - `auto`: if both `min` and `max` are set to `auto`, alias-pool min check is triggered when tuliprox users are added/updated.
+- `alias_pool.remove_expired`: `boolean`
+  - `true`: remove expired accounts from `source.yml` or batch CSVs during boot/update. This cleanup runs last in the panel_api routines and only removes aliases/rows (the root input is not removed).
 
 The API is configured generically via predefined query parameters; only `type: m3u` is supported for `client_new`, `client_renew` and `client_adult_content`.
 Recommended section order in config/UI: `account_info`, `client_info`, `client_new`, `client_renew`, `client_adult_content`.
 
 Use the literal value `auto` to fill sensitive values at runtime:
-- `api_key: auto` is replaced by `panel_api.api_key`
-- in `client_renew`, `api_key: auto` is replaced by the specified global api key and `username: auto` / `password: auto` are replaced by the account being renewed
-- in `client_info`, `api_key: auto` is replaced by the specified global api key and `username: auto` / `password: auto` are replaced by the account being queried
-- in `client_adult_content`, `api_key: auto` is replaced by the specified global api key and `username: auto` / `password: auto` are replaced by the account being queried
-- in `account_info`, `api_key: auto` is replaced by the specified global api key
+- in `account_info`:
+  - `api_key: auto` is replaced by `panel_api.api_key`
+- in `client_renew`:
+  - `api_key: auto` is replaced by `panel_api.api_key`
+  - `username: auto`: are replaced by the account being renewed
+  - `password: auto` are replaced by the account being renewed
+- in `client_info`:
+  - `api_key: auto` is replaced by `panel_api.api_key`
+  - `username: auto`: are replaced by the account being queried
+  - `password: auto` are replaced by the account being queried
+- in `client_adult_content`:
+  - `api_key: auto` is replaced by `panel_api.api_key`
+  - `username: auto`: are replaced by the account being queried
+  - `password: auto` are replaced by the account being queried
 
 `account_info` is executed on boot/update to fetch account credits via the `credits` field. If credentials are required, (username/password=auto), Tuliprox uses the first available ones: the root input if present, otherwise the first alias in config order. If no credentials are required, none are used or if not auto the configured one is used.”
 

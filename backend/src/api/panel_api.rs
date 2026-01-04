@@ -198,9 +198,30 @@ fn validate_panel_api_config(cfg: &PanelApiConfigDto) -> Result<(), TuliproxErro
     validate_client_info_params(&cfg.query_parameter.client_info)?;
     validate_client_new_params(&cfg.query_parameter.client_new)?;
     validate_client_renew_params(&cfg.query_parameter.client_renew)?;
-    let (min, max) = alias_pool_limit_values(cfg);
-    let min = min.and_then(PanelApiAliasPoolSizeValue::as_number);
-    let max = max.and_then(PanelApiAliasPoolSizeValue::as_number);
+    let (min_val, max_val) = alias_pool_limit_values(cfg);
+    let min_auto = min_val.is_some_and(PanelApiAliasPoolSizeValue::is_auto);
+    let max_auto = max_val.is_some_and(PanelApiAliasPoolSizeValue::is_auto);
+    if max_auto && !min_auto {
+        warn!("panel_api.alias_pool.size: max is set to auto without min; this configuration is not supported");
+    }
+    if let Some(PanelApiAliasPoolSizeValue::Number(value)) = min_val {
+        if *value == 0 {
+            return create_tuliprox_error_result!(
+                TuliproxErrorKind::Info,
+                "panel_api.alias_pool.size.min must be greater than 0"
+            );
+        }
+    }
+    if let Some(PanelApiAliasPoolSizeValue::Number(value)) = max_val {
+        if *value == 0 {
+            return create_tuliprox_error_result!(
+                TuliproxErrorKind::Info,
+                "panel_api.alias_pool.size.max must be greater than 0"
+            );
+        }
+    }
+    let min = min_val.and_then(PanelApiAliasPoolSizeValue::as_number);
+    let max = max_val.and_then(PanelApiAliasPoolSizeValue::as_number);
     if let (Some(min), Some(max)) = (min, max) {
         if min > max {
             return create_tuliprox_error_result!(
@@ -460,6 +481,12 @@ fn alias_pool_limit_values(cfg: &PanelApiConfigDto) -> (Option<&PanelApiAliasPoo
     (min, max)
 }
 
+fn alias_pool_both_auto(cfg: &PanelApiConfigDto) -> bool {
+    let (min, max) = alias_pool_limit_values(cfg);
+    min.is_some_and(PanelApiAliasPoolSizeValue::is_auto)
+        && max.is_some_and(PanelApiAliasPoolSizeValue::is_auto)
+}
+
 fn resolve_alias_pool_limit_value(value: Option<&PanelApiAliasPoolSizeValue>, auto_value: Option<u16>) -> Option<u16> {
     match value {
         Some(PanelApiAliasPoolSizeValue::Number(v)) => Some(*v),
@@ -519,6 +546,27 @@ fn resolve_alias_pool_auto_value(app_state: &AppState, input_name: &str) -> u16 
     u16::try_from(enabled_users).unwrap_or(u16::MAX)
 }
 
+pub(crate) fn target_has_alias_pool_auto(app_state: &AppState, target_name: &str) -> bool {
+    let sources = app_state.app_config.sources.load();
+    for source in &sources.sources {
+        let target_match = source
+            .targets
+            .iter()
+            .any(|target| target.name.eq_ignore_ascii_case(target_name));
+        if !target_match {
+            continue;
+        }
+        for input in &source.inputs {
+            if let Some(panel_cfg) = input.panel_api.as_ref() {
+                if alias_pool_both_auto(panel_cfg) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 fn resolve_alias_pool_limits(
     app_state: &AppState,
     input_name: &str,
@@ -528,11 +576,14 @@ fn resolve_alias_pool_limits(
     if min_val.is_none() && max_val.is_none() {
         return Ok((None, None));
     }
-    let needs_auto = min_val.is_some_and(PanelApiAliasPoolSizeValue::is_auto)
-        || max_val.is_some_and(PanelApiAliasPoolSizeValue::is_auto);
-    let auto_value = needs_auto.then(|| resolve_alias_pool_auto_value(app_state, input_name));
+    let min_auto = min_val.is_some_and(PanelApiAliasPoolSizeValue::is_auto);
+    let auto_value = min_auto.then(|| resolve_alias_pool_auto_value(app_state, input_name));
     let min = resolve_alias_pool_limit_value(min_val, auto_value);
-    let max = resolve_alias_pool_limit_value(max_val, auto_value);
+    let max = match max_val {
+        Some(PanelApiAliasPoolSizeValue::Number(value)) => Some(*value),
+        Some(PanelApiAliasPoolSizeValue::Auto(_)) => None,
+        None => None,
+    };
     if let (Some(min), Some(max)) = (min, max) {
         if min > max {
             return create_tuliprox_error_result!(
@@ -542,6 +593,15 @@ fn resolve_alias_pool_limits(
         }
     }
     Ok((min, max))
+}
+
+fn resolve_alias_pool_min(app_state: &AppState, input_name: &str, cfg: &PanelApiConfigDto) -> Option<u16> {
+    let (min_val, _) = alias_pool_limit_values(cfg);
+    let min_val = min_val?;
+    let auto_value = min_val
+        .is_auto()
+        .then(|| resolve_alias_pool_auto_value(app_state, input_name));
+    resolve_alias_pool_limit_value(Some(min_val), auto_value)
 }
 
 fn alias_pool_remove_expired(cfg: &PanelApiConfigDto) -> bool {
@@ -1226,15 +1286,11 @@ async fn ensure_alias_pool_min(
     input_name: &str,
     panel_cfg: &PanelApiConfigDto,
     min_pool: u16,
-    max_pool: Option<u16>,
     is_batch: bool,
     sources_path: &Path,
 ) -> bool {
     let mut changed = false;
-    let max_attempts = max_pool
-        .map_or(min_pool as usize, |m| m as usize)
-        .saturating_add(5)
-        .max(1);
+    let max_attempts = (min_pool as usize).saturating_add(5).max(1);
     let mut attempts = 0;
 
     while attempts < max_attempts {
@@ -1243,11 +1299,6 @@ async fn ensure_alias_pool_min(
         let mut current_valid = count_valid_accounts(&accounts);
         if current_valid >= min_pool as usize {
             break;
-        }
-        if let Some(max_pool) = max_pool {
-            if current_valid >= max_pool as usize {
-                break;
-            }
         }
 
         let has_expired = accounts.iter().any(|acct| is_input_expired(acct.exp_date));
@@ -1262,22 +1313,12 @@ async fn ensure_alias_pool_min(
                 if current_valid >= min_pool as usize {
                     break;
                 }
-                if let Some(max_pool) = max_pool {
-                    if current_valid >= max_pool as usize {
-                        break;
-                    }
-                }
                 if current_valid > prev_valid {
                     continue;
                 }
             }
         }
 
-        if let Some(max_pool) = max_pool {
-            if current_valid >= max_pool as usize {
-                break;
-            }
-        }
         if try_create_new_account(app_state, &input, panel_cfg, is_batch, sources_path).await {
             changed = true;
             attempts += 1;
@@ -1457,17 +1498,7 @@ pub(crate) async fn sync_exp_dates_by_panel_api(app_state: &Arc<AppState>) {
                 }
             }
 
-            let (min_pool, max_pool) = match resolve_alias_pool_limits(app_state.as_ref(), &input.name, panel_cfg) {
-                Ok(limits) => limits,
-                Err(err) => {
-                    debug_if_enabled!(
-                        "panel_api boot sync skipped for {}: {}",
-                        sanitize_sensitive_info(&input.name),
-                        sanitize_sensitive_info(err.to_string().as_str())
-                    );
-                    continue;
-                }
-            };
+            let min_pool = resolve_alias_pool_min(app_state.as_ref(), &input.name, panel_cfg);
             let min_pool = min_pool.filter(|m| *m > 0);
             if let Some(min_pool) = min_pool {
                 if input_changed {
@@ -1480,7 +1511,6 @@ pub(crate) async fn sync_exp_dates_by_panel_api(app_state: &Arc<AppState>) {
                     &input.name,
                     panel_cfg,
                     min_pool,
-                    max_pool,
                     is_batch,
                     sources_path.as_path(),
                 )
@@ -1513,6 +1543,59 @@ pub(crate) async fn sync_exp_dates_by_panel_api(app_state: &Arc<AppState>) {
     if any_change {
         if let Err(err) = reload_sources(app_state) {
             debug_if_enabled!("panel_api boot sync reload sources failed: {}", err);
+        }
+    }
+}
+
+pub(crate) async fn sync_panel_api_alias_pool_for_target(app_state: &Arc<AppState>, target_name: &str) {
+    let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
+    let sources_path = PathBuf::from(&sources_file_path);
+
+    let sources = app_state.app_config.sources.load();
+    for source in &sources.sources {
+        let target_match = source
+            .targets
+            .iter()
+            .any(|target| target.name.eq_ignore_ascii_case(target_name));
+        if !target_match {
+            continue;
+        }
+
+        for input in &source.inputs {
+            let Some(panel_cfg) = input.panel_api.as_ref() else { continue; };
+            if panel_cfg.url.trim().is_empty() {
+                continue;
+            }
+            if !alias_pool_both_auto(panel_cfg) {
+                continue;
+            }
+            if let Err(err) = validate_panel_api_config(panel_cfg) {
+                debug_if_enabled!(
+                    "panel_api user sync skipped for {}: {}",
+                    sanitize_sensitive_info(&input.name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+                continue;
+            }
+
+            let min_pool = resolve_alias_pool_min(app_state.as_ref(), &input.name, panel_cfg).filter(|m| *m > 0);
+            let Some(min_pool) = min_pool else { continue; };
+
+            let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
+            let _input_lock = app_state
+                .app_config
+                .file_locks
+                .write_lock_str(format!("panel_api:{}", input.name).as_str())
+                .await;
+            let _ = ensure_alias_pool_min(
+                app_state.as_ref(),
+                &input.name,
+                panel_cfg,
+                min_pool,
+                is_batch,
+                sources_path.as_path(),
+            )
+            .await;
         }
     }
 }
