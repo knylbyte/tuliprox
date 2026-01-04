@@ -643,9 +643,8 @@ pub(crate) fn is_alias_pool_max_reached(app_state: &AppState, input: &ConfigInpu
     if validate_panel_api_config(panel_cfg).is_err() {
         return false;
     }
-    let (_, max_pool) = match resolve_alias_pool_limits(app_state, &input.name, panel_cfg) {
-        Ok(limits) => limits,
-        Err(_) => return false,
+    let Ok((_, max_pool)) = resolve_alias_pool_limits(app_state, &input.name, panel_cfg) else {
+        return false;
     };
     if let Some(max_pool) = max_pool {
         let valid_count = count_valid_accounts(&collect_accounts(input));
