@@ -231,7 +231,10 @@ fn ensure_required_params(params: &mut Vec<PanelApiQueryParamDto>, section: Pane
     };
     ensure(params, "api_key", "auto");
     match section {
-        PanelSection::AccountInfo => {}
+        PanelSection::AccountInfo => {
+            ensure(params, "username", "auto");
+            ensure(params, "password", "auto");
+        }
         PanelSection::New => {
             params.retain(|p| !p.key.trim().eq_ignore_ascii_case("user"));
             ensure(params, "type", "m3u");
@@ -245,7 +248,10 @@ fn ensure_required_params(params: &mut Vec<PanelApiQueryParamDto>, section: Pane
             ensure(params, "username", "auto");
             ensure(params, "password", "auto");
         }
-        PanelSection::AdultContent => {}
+        PanelSection::AdultContent => {
+            ensure(params, "username", "auto");
+            ensure(params, "password", "auto");
+        }
     }
 }
 
