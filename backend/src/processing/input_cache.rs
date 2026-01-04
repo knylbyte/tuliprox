@@ -33,7 +33,7 @@ pub fn resolve_input_storage_path(working_dir: &str, input_name: &str) -> PathBu
         let sanitized_name: String = input_name.chars()
             .map(|c| if c.is_alphanumeric() { c } else { '_' })
             .collect();
-        Path::new(working_dir).join("data").join(format!("input_{sanitized_name}"))
+        Path::new(working_dir).join(format!("input_{sanitized_name}"))
     }
 }
 
