@@ -39,6 +39,7 @@ pub struct ProviderStreamFactoryOptions {
     url: Url,
     headers: HeaderMap,
     range_bytes: Arc<Option<AtomicUsize>>,
+    range_requested: bool,
     reconnect_flag: Arc<AtomicOnceFlag>,
 }
 
@@ -61,15 +62,18 @@ impl ProviderStreamFactoryOptions {
         };
         let filter_header = get_header_filter_for_item_type(item_type);
         let mut req_headers = get_headers_from_request(req_headers, &filter_header);
-        // we need the range bytes from client request for seek ing to the right position
-        let range_start_bytes = get_request_range_start_bytes(&req_headers);
+        let requested_range = get_request_range_start_bytes(&req_headers);
         req_headers.remove("range");
 
         // We merge configured input headers with the headers from the request.
         let headers = get_request_headers(input_headers, Some(&req_headers), disabled_headers);
 
         let url = stream_url.clone();
-        let range_bytes = Arc::new(range_start_bytes.map(AtomicUsize::new));
+        let range_bytes = if matches!(item_type, PlaylistItemType::Live | PlaylistItemType::LiveUnknown) {
+            Arc::new(requested_range.map(AtomicUsize::new))
+        } else {
+            Arc::new(Some(AtomicUsize::new(requested_range.unwrap_or(0))))
+        };
 
         Self {
             // item_type,
@@ -83,6 +87,7 @@ impl ProviderStreamFactoryOptions {
             url,
             headers,
             range_bytes,
+            range_requested: requested_range.is_some(),
         }
     }
 
@@ -158,6 +163,11 @@ impl ProviderStreamFactoryOptions {
         self.reconnect_flag.is_active()
     }
 
+    #[inline]
+    pub fn was_range_requested(&self) -> bool {
+        self.range_requested
+    }
+
 }
 
 fn get_request_range_start_bytes(req_headers: &HashMap<String, Vec<u8>>) -> Option<usize> {
@@ -221,11 +231,15 @@ fn prepare_client(
     }
 
     let partial = if let Some(range) = range_start {
-        let range_header = format!("bytes={range}-");
-        if let Ok(header_value) = axum::http::header::HeaderValue::from_str(&range_header) {
-            headers.insert(RANGE, header_value);
+        if range > 0 || stream_options.was_range_requested() {
+            let range_header = format!("bytes={range}-");
+            if let Ok(header_value) = axum::http::header::HeaderValue::from_str(&range_header) {
+                headers.insert(RANGE, header_value);
+            }
+            true
+        } else {
+            false
         }
-        true
     } else {
         false
     };
@@ -362,7 +376,7 @@ async fn get_provider_stream(
             }
             Err(status) => {
                 debug!("Provider stream response error status response : {status}");
-                if matches!(status, StatusCode::FORBIDDEN | StatusCode::SERVICE_UNAVAILABLE | StatusCode::UNAUTHORIZED) {
+                if matches!(status, StatusCode::FORBIDDEN | StatusCode::SERVICE_UNAVAILABLE | StatusCode::UNAUTHORIZED | StatusCode::RANGE_NOT_SATISFIABLE) {
                     warn!("The stream could be unavailable. ({status}) {}",sanitize_sensitive_info(stream_options.get_url().as_str()));
                     break;
                 }
@@ -520,56 +534,83 @@ pub async fn create_provider_stream(
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::api::model::streams::provider_stream_factory::PlaylistItemType;
-//     use crate::api::model::streams::provider_stream_factory::{create_provider_stream, BufferStreamOptions};
-//     use actix_web::test;
-//     use actix_web::test::TestRequest;
-//     use actix_web::web;
-//     use actix_web::App;
-//     use actix_web::{HttpRequest, HttpResponse};
-//     use futures::StreamExt;
-//     use std::sync::Arc;
-//     use crate::model::Config;
-//
-//     #[tokio::test]
-//     async fn test_stream() {
-//         let app = App::new().route("/test", web::get().to(test_stream_handler));
-//         let server = test::init_service(app).await;
-//         let req = TestRequest::get().uri("/test").to_request();
-//         let _response = test::call_service(&server, req).await;
-//     }
-//     async fn test_stream_handler(req: axum::http::Request<axum::body::Body>) ->  impl axum::response::IntoResponse + Send {
-//         let cfg = Config::default();
-//         let mut counter = 5;
-//         let client = Arc::new(reqwest::Client::new());
-//         let url = url::Url::parse("https://info.cern.ch/hypertext/WWW/TheProject.html").unwrap();
-//         let input = None;
-//
-//         let options = BufferStreamOptions::new(PlaylistItemType::Live, true, true, 0, false);
-//         let value = create_provider_stream(&cfg, &client, &url, &req, input, options);
-//         let mut values = value.await;
-//         'outer: while let Some((ref mut stream, info)) = values.as_mut() {
-//             if info.is_some() {
-//                 println!("{:?}", info.as_ref().unwrap());
-//             }
-//             while let Some(result) = stream.next().await {
-//                 match result {
-//                     Ok(bytes) => {
-//                         println!("Received {} bytes  {bytes:?}", bytes.len());
-//                         counter -= 1;
-//                         if counter < 0 {
-//                             break 'outer;
-//                         }
-//                     }
-//                     Err(err) => {
-//                         eprintln!("Error occurred: {}", err);
-//                         break 'outer;
-//                     }
-//                 }
-//             }
-//         }
-//         HttpResponse::Ok().finish()
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared::model::PlaylistItemType;
+    use axum::http::HeaderMap;
+
+    #[test]
+    fn test_provider_stream_factory_options_range_logic() {
+        let addr = "127.0.0.1:8080".parse().unwrap();
+        let stream_url = Url::parse("http://example.com/stream").unwrap();
+        let stream_options = StreamOptions {
+            stream_retry: true,
+            buffer_enabled: true,
+            buffer_size: 1024,
+            pipe_provider_stream: false,
+        };
+        let disabled_headers = None;
+
+        // Case 1: VOD, no initial range requested
+        let mut req_headers = HeaderMap::new();
+        let options = ProviderStreamFactoryOptions::new(
+            addr,
+            PlaylistItemType::Video,
+            false,
+            &stream_options,
+            &stream_url,
+            &req_headers,
+            None,
+            disabled_headers,
+        );
+        assert!(!options.was_range_requested());
+        assert_eq!(options.get_total_bytes_send(), Some(0)); // Should track even if not requested
+
+        // Case 2: VOD, range requested
+        req_headers.insert("Range", "bytes=100-".parse().unwrap());
+        let options = ProviderStreamFactoryOptions::new(
+            addr,
+            PlaylistItemType::Video,
+            false,
+            &stream_options,
+            &stream_url,
+            &req_headers,
+            None,
+            disabled_headers,
+        );
+        assert!(options.was_range_requested());
+        assert_eq!(options.get_total_bytes_send(), Some(100));
+
+        // Case 3: Live, no initial range requested
+        let req_headers = HeaderMap::new();
+        let options = ProviderStreamFactoryOptions::new(
+            addr,
+            PlaylistItemType::Live,
+            false,
+            &stream_options,
+            &stream_url,
+            &req_headers,
+            None,
+            disabled_headers,
+        );
+        assert!(!options.was_range_requested());
+        assert_eq!(options.get_total_bytes_send(), None); // Should NOT track
+
+        // Case 4: Live, range requested (should be stripped)
+        let mut req_headers = HeaderMap::new();
+        req_headers.insert("Range", "bytes=100-".parse().unwrap());
+        let options = ProviderStreamFactoryOptions::new(
+            addr,
+            PlaylistItemType::Live,
+            false,
+            &stream_options,
+            &stream_url,
+            &req_headers,
+            None,
+            disabled_headers,
+        );
+        assert!(!options.was_range_requested()); // Stripped by filter
+        assert_eq!(options.get_total_bytes_send(), None); 
+    }
+}

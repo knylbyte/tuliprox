@@ -760,6 +760,10 @@ pub async fn force_provider_stream_response(
     let connection_permission = UserConnectionPermission::Allowed;
     let item_type = stream_channel.item_type;
 
+    // Release the existing provider connection for this session before acquiring a new one.
+    // This is critical for users with a connection limit of 1 to avoid "Provider exhausted" or provider-side 502/509 errors during seeking.
+    app_state.connection_manager.release_provider_connection(&user_session.addr).await;
+
     let stream_details = create_stream_response_details(
         app_state,
         &stream_options,
@@ -931,13 +935,29 @@ pub async fn stream_response(
                 axum::http::StatusCode::BAD_REQUEST.into_response()
             }
         } else {
-            let session_url = provider_response
-                .as_ref()
-                .and_then(|(_, _, u, _)| u.as_ref())
-                .map_or_else(
-                    || Cow::Borrowed(stream_url),
-                    |url| Cow::Owned(url.to_string()),
-                );
+            // Previously, we would always check if the provider redirected the request.
+            // If the provider redirected a movie from /movie/... to a temporary /live/... URL,
+            // We would save that redirected URL in your session.
+            // When we tried to seek or pause/resume, we would use that saved /live/ URL.
+            // However, providers often make these redirect links ephemeral or restricted—they
+            // might not support seeking, or they might trigger a 509 error if accessed again.
+            // For Movies/Series: We now ignore the redirect and always save the original,
+            // canonical URL (the one starting with /movie/) in your session.
+            // This ensures that every time you seek, we start "fresh" with the correct provider handshake,
+            // preventing the session from being "poisoned" by a temporary redirect.
+            // For everything else (Live): It continues to work as before, using the redirected URL if available,
+            // which is often desirable for live streams to stay on the same edge server.
+            let session_url = if matches!(item_type, PlaylistItemType::Catchup | PlaylistItemType::Video | PlaylistItemType::LocalVideo | PlaylistItemType::Series | PlaylistItemType::LocalSeries) {
+                Cow::Borrowed(stream_url)
+            } else {
+                provider_response
+                    .as_ref()
+                    .and_then(|(_, _, u, _)| u.as_ref())
+                    .map_or_else(
+                        || Cow::Borrowed(stream_url),
+                        |url| Cow::Owned(url.to_string()),
+                    )
+            };
             if log_enabled!(log::Level::Debug) {
                 if session_url.eq(&stream_url) {
                     debug!("Streaming stream request from {}", sanitize_sensitive_info(stream_url)
@@ -1508,9 +1528,6 @@ pub async fn is_seek_request(cluster: XtreamCluster, req_headers: &HeaderMap) ->
         .map(ToString::to_string);
 
     if let Some(range) = range {
-        // if range.starts_with("bytes=0-") {
-        //     return false;
-        // }
         if range.starts_with("bytes=") {
             return true;
         }
@@ -1541,4 +1558,35 @@ pub fn json_or_bin_response<T: Serialize>(accept: Option<&str>, data: &T) -> imp
 
 pub fn create_session_fingerprint(fingerprint: &str, username: &str, virtual_id: u32) -> String {
     format!("{fingerprint}|{username}|{virtual_id}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+    use shared::model::XtreamCluster;
+
+    #[tokio::test]
+    async fn test_is_seek_request() {
+        let mut headers = HeaderMap::new();
+
+        // No range header
+        assert!(!is_seek_request(XtreamCluster::Video, &headers).await);
+
+        // Range: bytes=0- (Should be true now to allow session takeover on restart)
+        headers.insert("range", "bytes=0-".parse().unwrap());
+        assert!(is_seek_request(XtreamCluster::Video, &headers).await);
+
+        // Range: bytes=100- (Should be true)
+        headers.insert("range", "bytes=100-".parse().unwrap());
+        assert!(is_seek_request(XtreamCluster::Video, &headers).await);
+
+        // Range: bytes=100-200 (Should be true)
+        headers.insert("range", "bytes=100-200".parse().unwrap());
+        assert!(is_seek_request(XtreamCluster::Video, &headers).await);
+
+        // Live cluster should always return false
+        headers.insert("range", "bytes=100-".parse().unwrap());
+        assert!(!is_seek_request(XtreamCluster::Live, &headers).await);
+    }
 }

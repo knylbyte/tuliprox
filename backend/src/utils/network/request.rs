@@ -2,7 +2,7 @@ use futures::{StreamExt, TryStreamExt};
 use log::{debug, error, log_enabled, trace, Level};
 use reqwest::header::CONTENT_ENCODING;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -221,6 +221,10 @@ pub fn get_client_request<S: ::std::hash::BuildHasher + Default>
 
 pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_headers: Option<&HashMap<String, String, S>>, custom_headers: Option<&HashMap<String, Vec<u8>, S>>, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>) -> HeaderMap {
     let mut headers = HeaderMap::default();
+    let mut has_user_agent = false;
+
+    // 1. First, we process the configured request headers (from input config).
+    // These should have the highest priority.
     if let Some(req_headers) = request_headers {
         for (key, value) in req_headers {
             if let (Ok(key), Ok(value)) = (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_bytes(value.as_bytes())) {
@@ -228,36 +232,49 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
                     if disabled_headers.as_ref().is_some_and(|d| d.should_remove(key.as_str())) {
                         continue;
                     }
+                    if key == axum::http::header::USER_AGENT {
+                        has_user_agent = true;
+                    }
                     headers.insert(key, value);
                 }
             }
         }
     }
+
+    // 2. Next, we process custom headers (from the client request).
+    // These are only added if they don't already exist in the headers map (i.e., not overridden by config).
     if let Some(custom) = custom_headers {
-        let header_keys: HashSet<String> = headers.keys().map(|k| k.as_str().to_lowercase()).collect();
         for (key, value) in custom {
             let key_lc = key.to_lowercase();
             if filter_request_header(key_lc.as_str()) {
                 if disabled_headers.as_ref().is_some_and(|d| d.should_remove(key_lc.as_str())) {
                     continue;
                 }
-                if header_keys.contains(key_lc.as_str()) {
-                    // debug_if_enabled!("Ignoring request header '{}={}'", key_lc, String::from_utf8_lossy(value));
-                } else if let (Ok(key), Ok(value)) = (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_bytes(value)) {
-                    headers.insert(key, value);
+                if let (Ok(name), Ok(val)) = (HeaderName::from_bytes(key.as_bytes()), HeaderValue::from_bytes(value)) {
+                    // Only insert if not already present (config takes precedence)
+                    if !headers.contains_key(&name) {
+                        if name == axum::http::header::USER_AGENT {
+                            has_user_agent = true;
+                        }
+                        headers.insert(name, val);
+                    }
                 }
             }
         }
     }
+
     if log_enabled!(Level::Trace) {
         let he: HashMap<String, String> = headers.iter().map(|(k, v)| (k.to_string(), String::from_utf8_lossy(v.as_bytes()).to_string())).collect();
         if !he.is_empty() {
             trace!("Request headers {he:?}");
         }
     }
-    if !headers.contains_key(axum::http::header::USER_AGENT) {
+
+    // 3. Finally, if no User-Agent was provided by config OR client, use the default.
+    if !has_user_agent {
         headers.insert(axum::http::header::USER_AGENT, HeaderValue::from_static(DEFAULT_USER_AGENT));
     }
+
     headers
 }
 
@@ -670,6 +687,36 @@ mod tests {
         let url = "http://my.provider.com:8080/xmltv?username=hello";
         let expected = "http://my.provider.com:8080";
         assert_eq!(get_base_url_from_str(url).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_get_request_headers_prioritization() {
+        use super::{get_request_headers, DEFAULT_USER_AGENT};
+        use std::collections::HashMap;
+        use axum::http::header::USER_AGENT;
+
+        // Case 1: No headers provided -> Default UA
+        let headers = get_request_headers::<std::collections::hash_map::RandomState>(None, None, None);
+        assert_eq!(headers.get(USER_AGENT).unwrap(), DEFAULT_USER_AGENT);
+
+        // Case 2: Only client header -> Client UA
+        let mut client_headers = HashMap::new();
+        client_headers.insert("User-Agent".to_string(), b"Client-UA".to_vec());
+        let headers = get_request_headers(None, Some(&client_headers), None);
+        assert_eq!(headers.get(USER_AGENT).unwrap(), "Client-UA");
+
+        // Case 3: Both config and client -> Config UA overrides
+        let mut config_headers = HashMap::new();
+        config_headers.insert("User-Agent".to_string(), "Config-UA".to_string());
+        let headers = get_request_headers(Some(&config_headers), Some(&client_headers), None);
+        assert_eq!(headers.get(USER_AGENT).unwrap(), "Config-UA");
+
+        // Case 4: Other headers also prioritized
+        config_headers.insert("X-Test".to_string(), "From-Config".to_string());
+        let mut client_headers = HashMap::new();
+        client_headers.insert("X-Test".to_string(), b"From-Client".to_vec());
+        let headers = get_request_headers(Some(&config_headers), Some(&client_headers), None);
+        assert_eq!(headers.get("X-Test").unwrap(), "From-Config");
     }
 }
 
