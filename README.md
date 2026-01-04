@@ -885,7 +885,7 @@ epg:
     fuzzy_matching: true
     match_threshold: 80
     best_match_threshold: 99
-    name_prefix: !suffix "."
+    name_prefix: { suffix: "." }
     name_prefix_separator: [':', '|', '-']
     strip :  ["3840p", "uhd", "fhd", "hd", "sd", "4k", "plus", "raw"]
     normalize_regex: '[^a-zA-Z0-9\-]'
@@ -900,7 +900,7 @@ The fuzzy matching tries to guess the EPG ID for a given channel. Some keys are 
 When looking at playlists, it's common for a country prefix to be included in the name, such as `US:` or `FR|`.
 The `name_prefix_separator` defines the possible separator characters used to identify this part.
 For EPG IDs, the country code is typically added as a suffix, like cnn.us. This is controlled by the name_prefix attribute. 
-The `!suffix '.'` setting means: if a prefix is found, append it to the name using the given separator character (in this case, a dot).
+The `{suffix: '.'}` setting means: if a prefix is found, append it to the name using the given separator character (in this case, a dot).
 
 Example input config for `m3u`
 ```yaml
@@ -931,8 +931,6 @@ inputs:
     persist: 'playlist_1_1{}.m3u'
     headers:
       User-Agent: "Mozilla/5.0 (AppleTV; U; CPU OS 14_2 like Mac OS X; en-us) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.1 Safari/605.1.15"
-      Accept: application/json
-      Accept-Encoding: gzip
     url: 'http://localhost:8080'
     username: test
     password: test
