@@ -9,6 +9,10 @@ pub fn is_blank_optional_string(s: &Option<String>) -> bool {
     s.as_ref().is_none_or(|s| s.chars().all(|c| c.is_whitespace()))
 }
 
+pub fn is_empty_optional_vec<T>(s: &Option<Vec<T>>) -> bool {
+    s.as_ref().map_or(true, |v| v.is_empty())
+}
+
 pub fn default_as_default() -> String { "default".into() }
 // Default delay values for resolving VOD or Series requests,
 // used to prevent frequent requests that could trigger a provider ban.

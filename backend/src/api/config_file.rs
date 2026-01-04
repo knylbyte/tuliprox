@@ -23,9 +23,11 @@ impl ConfigFile {
         let paths = <Arc<ArcSwap<ConfigPaths>> as Access<ConfigPaths>>::load(&app_state.app_config.paths);
         if let Some(mapping_file_path) = paths.mapping_file_path.as_ref() {
             match utils::read_mappings(mapping_file_path, true) {
-                Ok(Some(mappings_cfg)) => {
+                Ok(Some((mapping_files, mappings_cfg))) => {
                     app_state.app_config.set_mappings(mapping_file_path, &mappings_cfg);
-                    info!("Loaded mapping file {mapping_file_path}");
+                    for mapping_file in mapping_files {
+                        info!("Loaded mapping file {}", mapping_file.display());
+                    }
                 }
                 Ok(None) => {
                     info!("No mapping file loaded {mapping_file_path}");

@@ -117,7 +117,7 @@ pub fn read_app_config_dto(paths: &ConfigPaths,
     let config = read_config_file(config_file, resolve_env, include_computed)?;
     let sources = read_sources_file(sources_file, resolve_env, include_computed, config.get_hdhr_device_overview().as_ref())?;
     let mappings = if let Some(mappings_file) = paths.mapping_file_path.as_ref() {
-        read_mappings_file(mappings_file, resolve_env).unwrap_or(None)
+        read_mappings_file(mappings_file, resolve_env).unwrap_or(None).map(|(_, mappings)| mappings)
     } else {
         None
     };
@@ -244,7 +244,18 @@ pub async fn read_initial_app_config(paths: &mut ConfigPaths,
 
     if let Some(mappings_file) = &paths.mapping_file_path {
         match utils::read_mappings(mappings_file.as_str(), resolve_env) {
-            Ok(Some(mappings)) => app_config.set_mappings(mappings_file, &mappings),
+            Ok(Some((mapping_paths, mappings))) => {
+                app_config.set_mappings(mappings_file, &mappings);
+                paths.mapping_files_used = {
+                    let vec: Vec<String> = mapping_paths
+                        .iter()
+                        .map(|p| p.display().to_string())
+                        .collect();
+
+                    if vec.is_empty() { None } else { Some(vec) }
+                };
+                app_config.paths.store(Arc::new(paths.clone()));
+            },
             Ok(None) => info!("Mapping file: not used"),
             Err(err) => exit!("{err}"),
         }
