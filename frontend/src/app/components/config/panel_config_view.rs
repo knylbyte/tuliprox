@@ -4,7 +4,7 @@ use crate::app::components::input::Input;
 use crate::app::components::{Card, Chip, IconButton, ToggleSwitch};
 use crate::app::context::ConfigContext;
 use crate::html_if;
-use shared::model::{ConfigInputDto, PanelApiConfigDto, PanelApiQueryParamDto, SourcesConfigDto};
+use shared::model::{ConfigInputDto, PanelApiAliasPoolSizeValue, PanelApiConfigDto, PanelApiQueryParamDto, SourcesConfigDto};
 use std::rc::Rc;
 use yew::prelude::*;
 use yew_i18n::use_translation;
@@ -214,6 +214,16 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
                         errors.push("client_adult_content: password must be auto".to_string());
                     }
                 }
+            }
+        }
+    }
+
+    if let Some(size) = panel.alias_pool.as_ref().and_then(|p| p.size.as_ref()) {
+        let min = size.min.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+        let max = size.max.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+        if let (Some(min), Some(max)) = (min, max) {
+            if min > max {
+                errors.push("alias_pool.size: min must be <= max".to_string());
             }
         }
     }

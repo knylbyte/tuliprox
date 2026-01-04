@@ -840,6 +840,11 @@ If provider connections are exhausted, tuliprox can optionally call a provider p
 - renew expired accounts first (based on `exp_date`)
 - otherwise create a new alias account and persist it
 
+Optional alias pool controls:
+- `alias_pool.size.min`: number or `auto`. Keep at least this many valid (not expired) accounts on boot/update. `auto` uses the number of enabled tuliprox users (Active/Trial and not expired) for targets in the same source. If below, tuliprox tries to renew expired accounts first and then creates new accounts until the minimum is met or `max` is reached.
+- `alias_pool.size.max`: number or `auto`. Upper bound for valid accounts. When the maximum is reached, provisioning (renew/create) is skipped. `auto` uses the same enabled user count. `min` must be `<= max` after resolving `auto`. Existing accounts are never deleted when the user count drops.
+- `alias_pool.remove_expired`: when `true`, remove expired accounts from `source.yml` or batch CSVs during boot/update. This cleanup runs last in the panel_api routines and only removes aliases/rows (the root input is not removed).
+
 The API is configured generically via predefined query parameters; only `type: m3u` is supported for `client_new`, `client_renew` and `client_adult_content`.
 Recommended section order in config/UI: `account_info`, `client_info`, `client_new`, `client_renew`, `client_adult_content`.
 
@@ -911,6 +916,11 @@ Tuliprox evaluates Panel API responses as JSON with the following logic, dependi
     panel_api:
       url: 'https://panel.example.tld/api.php'
       api_key: '1234567890'
+      alias_pool:
+        size:
+          min: auto
+          max: auto
+        remove_expired: false
       query_parameter:
         account_info:
           - { key: action, value: account_info }

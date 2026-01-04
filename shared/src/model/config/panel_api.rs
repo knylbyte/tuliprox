@@ -22,6 +22,50 @@ pub struct PanelApiQueryParametersDto {
     pub client_adult_content: Vec<PanelApiQueryParamDto>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PanelApiAliasPoolAuto {
+    Auto,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum PanelApiAliasPoolSizeValue {
+    Auto(PanelApiAliasPoolAuto),
+    Number(u16),
+}
+
+impl PanelApiAliasPoolSizeValue {
+    pub fn as_number(&self) -> Option<u16> {
+        match self {
+            Self::Number(value) => Some(*value),
+            Self::Auto(_) => None,
+        }
+    }
+
+    pub fn is_auto(&self) -> bool {
+        matches!(self, Self::Auto(_))
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PanelApiAliasPoolSizeDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<PanelApiAliasPoolSizeValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<PanelApiAliasPoolSizeValue>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PanelApiAliasPoolDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<PanelApiAliasPoolSizeDto>,
+    #[serde(default)]
+    pub remove_expired: bool,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PanelApiConfigDto {
@@ -36,4 +80,6 @@ pub struct PanelApiConfigDto {
         skip_serializing_if = "Option::is_none"
     )]
     pub credits: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_pool: Option<PanelApiAliasPoolDto>,
 }
