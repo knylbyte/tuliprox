@@ -26,12 +26,9 @@ impl EpgInterner {
     }
 
     fn intern(&self, s: &str) -> Arc<str> {
-        if let Some(arc) = self.map.get(s) {
-            return arc.clone();
-        }
-        let arc: Arc<str> = Arc::from(s);
-        self.map.insert(s.to_string(), arc.clone());
-        arc
+        self.map.entry(s.to_string())
+            .or_insert_with(|| Arc::from(s))
+            .clone()
     }
 }
 
@@ -113,7 +110,7 @@ pub fn normalize_channel_name(name: &str, normalize_config: &EpgSmartMatchConfig
 
 impl TVGuide {
     pub fn merge(epgs: Vec<Epg>) -> Option<Epg> {
-        if let Some(first_epg) = epgs.get(0) {
+        if let Some(first_epg) = epgs.first() {
             let first_epg_attributes = first_epg.attributes.clone();
             let merged_children: Vec<Arc<XmlTag>> = epgs.into_iter().flat_map(|epg| epg.children).collect();
             Some(Epg {
