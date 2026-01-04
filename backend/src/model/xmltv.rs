@@ -76,6 +76,7 @@ impl Epg {
     pub async fn write_to_async<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut quick_xml::writer::Writer<W>,
+        rename_map: Option<&HashMap<&str, &str>>,
     ) -> Result<(), quick_xml::Error> {
         // Start tv-element
         let mut elem = BytesStart::new("tv");
@@ -96,9 +97,13 @@ impl Epg {
             .collect();
 
         let mut write_counter = 0usize;
+        let mut current_channel_id: Option<String> = None;
 
         while let Some((tag, ended)) = stack.pop() {
             if ended {
+                if tag.name == EPG_TAG_CHANNEL {
+                    current_channel_id = None;
+                }
                 // End-Event
                 writer
                     .write_event_async(Event::End(BytesEnd::new(tag.name.as_str())))
@@ -111,11 +116,24 @@ impl Epg {
                         elem.push_attribute((k.as_str(), v.as_str()));
                     }
                 }
+
+                if tag.name == EPG_TAG_CHANNEL {
+                    current_channel_id = tag.get_attribute_value(EPG_ATTRIB_ID).cloned();
+                }
+
                 writer.write_event_async(Event::Start(elem)).await?;
 
                 // write text
-                if let Some(text) = &tag.value {
-                    writer.write_event_async(Event::Text(BytesText::new(text.as_str()))).await?;
+                let value_to_write = if tag.name == EPG_TAG_DISPLAY_NAME {
+                    current_channel_id.as_ref()
+                        .and_then(|cid| rename_map.and_then(|m| m.get(cid.as_str())).copied())
+                        .or(tag.value.as_deref())
+                } else {
+                    tag.value.as_deref()
+                };
+
+                if let Some(text) = value_to_write {
+                    writer.write_event_async(Event::Text(BytesText::new(text))).await?;
                 }
 
                 // End-Marker push + children push

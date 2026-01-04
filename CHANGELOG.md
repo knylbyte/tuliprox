@@ -69,6 +69,7 @@
 - **Fixed streaming response handling** for specific content types.
 - **Enhanced validation of response headers** to prevent invalid values.
 - **Corrected request header prioritization logic**.
+- **EPG Title Synchronization**: Custom channel names in the playlist are now correctly reflected in EPG XML exports.
 
 # 3.2.0 (2025-11-14)
 - Added `name` attribute to Staged Input.
