@@ -186,10 +186,12 @@ fn get_map_item_as_str(map: &serde_json::Map<String, Value>, key: &str) -> Optio
     None
 }
 
-async fn load_old_category_ids(path: &Path) -> (u32, HashMap<String, u32>) {
+type CategoryKey = (XtreamCluster, Cow<'static, str>);
+
+async fn load_old_category_ids(path: &Path) -> (u32, HashMap<CategoryKey, u32>) {
     let old_path = path.to_path_buf();
     tokio::task::spawn_blocking(move || {
-        let mut result: HashMap<String, u32> = HashMap::new();
+        let mut result: HashMap<CategoryKey, u32> = HashMap::new();
         let mut max_id: u32 = 0;
         for (cluster, cat) in [
             (XtreamCluster::Live, storage_const::COL_CAT_LIVE),
@@ -207,7 +209,7 @@ async fn load_old_category_ids(path: &Path) -> (u32, HashMap<String, u32>) {
                                     if let Some(category_id) = entry.get(crate::model::XC_TAG_CATEGORY_ID).and_then(get_u32_from_serde_value) {
                                         if let Value::Object(item) = entry {
                                             if let Some(category_name) = get_map_item_as_str(&item, crate::model::XC_TAG_CATEGORY_NAME) {
-                                                result.insert(format!("{cluster}{category_name}"), category_id);
+                                                result.insert((cluster, Cow::Owned(category_name)), category_id);
                                                 max_id = max_id.max(category_id);
                                             }
                                         }
@@ -364,8 +366,8 @@ async fn create_categories(playlist: &mut [PlaylistGroup], path: &Path) -> Vec<(
 
             let key = (cluster, Cow::Borrowed(group));
 
-            let entry = new_categories.entry(key).or_insert_with(|| {
-                let cat_id = existing_cat_ids.get(group).copied().unwrap_or_else(|| {
+            let entry = new_categories.entry(key.clone()).or_insert_with(|| {
+                let cat_id = existing_cat_ids.get(&key).copied().unwrap_or_else(|| {
                     cat_id_counter += 1;
                     cat_id_counter
                 });
