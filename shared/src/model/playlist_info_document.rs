@@ -154,7 +154,7 @@ impl StreamProperties {
                 XtreamInfoDocument::Series(self.series_to_info_document(options, series, item_type, virtual_id, category_id))
             }
             StreamProperties::Episode(_episode) => {
-                // Epsiode streams don't expose info documents through the Xtream API.
+                // Episode streams don't expose info documents through the Xtream API.
                 XtreamInfoDocument::Empty(XtreamEmptyDoc {})
             }
         }
@@ -282,7 +282,7 @@ impl StreamProperties {
 
     fn series_episodes_to_info_document(&self, options: &XtreamMappingOptions,
                                         resource_url: Option<&str>,
-                                        episodes: &Vec<SeriesStreamDetailEpisodeProperties>) -> HashMap<String, Vec<XtreamSeriesEpisodeDoc>> {
+                                        episodes: &[SeriesStreamDetailEpisodeProperties]) -> HashMap<String, Vec<XtreamSeriesEpisodeDoc>> {
         let mut map: HashMap<u32, Vec<XtreamSeriesEpisodeDoc>> = HashMap::new();
         for ep in episodes {
             let doc = XtreamSeriesEpisodeDoc {
@@ -312,5 +312,53 @@ impl StreamProperties {
         map.into_iter()
             .map(|(season, episodes)| (season.to_string(), episodes))
             .collect()
+    }
+}
+
+
+impl Default for XtreamVideoInfoDoc {
+    fn default() -> Self {
+        Self {
+            info: XtreamVideoInfoData {
+                kinopoisk_url: String::new(),
+                tmdb_id: String::new(),
+                name: String::new(),
+                o_name: String::new(),
+                cover_big: String::new(),
+                movie_image: String::new(),
+                release_date: String::new(),
+                episode_run_time: 0,
+                youtube_trailer: String::new(),
+                director: String::new(),
+                actors: String::new(),
+                cast: String::new(),
+                description: String::new(),
+                plot: String::new(),
+                age: String::new(),
+                mpaa_rating: String::new(),
+                rating_count_kinopoisk: 0,
+                country: String::new(),
+                genre: String::new(),
+                backdrop_path: vec![],
+                duration_secs: String::new(),
+                duration: String::new(),
+                video: Value::Array(Vec::new()),
+                audio: Value::Array(Vec::new()),
+                bitrate: 0,
+                rating: String::new(),
+                runtime: String::new(),
+                status: String::new(),
+            },
+            movie_data: XtreamVideoMovieData {
+                stream_id: 0,
+                name: String::new(),
+                added: String::new(),
+                category_id: String::new(),
+                category_ids: vec![],
+                container_extension: String::new(),
+                custom_sid: None,
+                direct_source: String::new(),
+            },
+        }
     }
 }

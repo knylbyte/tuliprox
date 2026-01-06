@@ -330,14 +330,13 @@ impl XtreamPlaylistItem {
     }
 
     fn get_stream_icon(&self, resource_url: Option<String>) -> String {
-        let stream_icon = if !self.logo.is_empty() {
+        if !self.logo.is_empty() {
             InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
         } else if !self.logo_small.is_empty() {
             InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
         } else {
             String::new()
-        };
-        stream_icon
+        }
     }
 }
 

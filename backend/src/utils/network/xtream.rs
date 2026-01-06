@@ -13,8 +13,8 @@ use chrono::{DateTime, Utc};
 use log::{error, info, warn};
 use shared::error::{string_to_io_error, to_io_error, TuliproxError};
 use shared::model::{MsgKind, PlaylistEntry, PlaylistGroup, ProxyUserStatus, SeriesStreamProperties,
-                    StreamProperties, VideoStreamProperties, XtreamCluster,
-                    XtreamPlaylistItem, XtreamSeriesInfo, XtreamVideoInfo};
+                    StreamProperties, VideoStreamProperties, XtreamCluster, XtreamPlaylistItem,
+                    XtreamSeriesInfo, XtreamVideoInfo, XtreamVideoInfoDoc};
 use shared::utils::{extract_extension_from_url, get_i64_from_serde_value, get_string_from_serde_value, sanitize_sensitive_info};
 use std::collections::HashMap;
 use std::io::Error;
@@ -463,17 +463,16 @@ pub fn create_vod_info_from_item(target: &ConfigTarget, user: &ProxyUserCredenti
         .or_else(|| extract_extension_from_url(&pli.url))
         .map_or_else(String::new, ToString::to_string);
 
-    format!(r#"{{
-  "info": {{}},
-  "movie_data": {{
-    "added": "{added}",
-    "category_id": {category_id},
-    "category_ids": [{category_id}],
-    "container_extension": "{extension}",
-    "custom_sid": null,
-    "direct_source": "",
-    "name": "{name}",
-    "stream_id": {stream_id}
-  }}
-}}"#)
+    let mut doc = XtreamVideoInfoDoc::default();
+    doc.info.name.clone_from(name);
+    doc.movie_data.stream_id = stream_id;
+    doc.movie_data.name.clone_from(name);
+    doc.movie_data.added = added.to_string();
+    doc.movie_data.category_id = category_id.to_string();
+    doc.movie_data.category_ids.push(category_id);
+    doc.movie_data.container_extension = extension;
+    doc.movie_data.custom_sid = None;
+
+    serde_json::to_string(&doc).unwrap_or(String::new())
+
 }

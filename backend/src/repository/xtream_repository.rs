@@ -282,7 +282,7 @@ pub async fn xtream_write_playlist(
         (get_vod_cat_collection_path(&root_path), &cat_vod_col),
         (get_series_cat_collection_path(&root_path), &cat_series_col),
     ] {
-        let lock = app_config.file_locks.write_lock(&col_path);
+        let lock = app_config.file_locks.write_lock(&col_path).await;
         match json_write_documents_to_file(&col_path, data).await {
             Ok(()) => {}
             Err(err) => {
@@ -718,7 +718,7 @@ pub async fn persist_input_xtream_playlist(app_config: &Arc<AppConfig>, storage_
             XtreamCluster::Series => get_collection_path(&root_path, storage_const::COL_CAT_SERIES),
         };
         let data = fetched_categories.get_mut(cluster);
-        let lock = app_cfg.file_locks.write_lock(&col_path);
+        let lock = app_cfg.file_locks.write_lock(&col_path).await;
         if let Err(err) = json_write_documents_to_file(&col_path, data).await {
             errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
         }
