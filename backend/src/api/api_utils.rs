@@ -651,7 +651,9 @@ async fn create_panel_api_provisioning_stream_details(
     let _ = try_provision_account_on_exhausted(&app_state_clone, &input_clone).await;
 
     let mut ready = false;
+    let mut attempt = 0u64;
     while Instant::now() < provision_deadline {
+        attempt += 1;
         if let Some(new_handle) = app_state_clone
             .active_provider
             .acquire_connection_with_grace_override(&input_clone.name, &addr, false)
@@ -737,6 +739,12 @@ async fn create_panel_api_provisioning_stream_details(
             if ready {
                 break;
             }
+        } else {
+            debug_if_enabled!(
+                "panel_api provisioning probe skipped (no provider handle) for input {} attempt {}",
+                sanitize_sensitive_info(&input_clone.name),
+                attempt
+            );
         }
 
         tokio::time::sleep(probe_delay).await;
@@ -744,8 +752,10 @@ async fn create_panel_api_provisioning_stream_details(
 
     let (status, mut headers) = if ready {
         debug_if_enabled!(
-            "panel_api provisioning redirecting client to {}",
-            sanitize_sensitive_info(client_request_url)
+            "panel_api provisioning responding 302 (attempts={}) location={} for input {}",
+            attempt,
+            sanitize_sensitive_info(client_request_url),
+            sanitize_sensitive_info(&input.name)
         );
         (
             StatusCode::FOUND,
@@ -753,8 +763,9 @@ async fn create_panel_api_provisioning_stream_details(
         )
     } else {
         debug_if_enabled!(
-            "panel_api provisioning timeout reached; responding 504 for input {}",
-            sanitize_sensitive_info(&input.name)
+            "panel_api provisioning timeout reached; responding 504 for input {} (attempts={})",
+            sanitize_sensitive_info(&input.name),
+            attempt
         );
         (StatusCode::GATEWAY_TIMEOUT, Vec::new())
     };
@@ -1266,6 +1277,16 @@ pub async fn stream_response(
             .as_ref()
             .map(|(h, sc, response_url, cvt)| (h.clone(), *sc, response_url.clone(), *cvt));
         let provider_name = stream_details.provider_name.clone();
+
+        if let Some((headers, status, _response_url, Some(CustomVideoStreamType::Provisioning))) =
+            stream_details.stream_info.as_ref()
+        {
+            debug_if_enabled!(
+                "panel_api provisioning response to client: status={} headers={:?}",
+                status,
+                headers
+            );
+        }
 
         let provider_handle = if share_stream {
             stream_details.provider_handle.take()
