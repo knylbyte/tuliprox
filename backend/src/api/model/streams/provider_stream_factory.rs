@@ -325,13 +325,28 @@ async fn provider_stream_request(
             }
             Err(status)
         }
-        Err(_err) => {
+        Err(err) => {
+            let url = stream_options.get_url();
+            if err.is_timeout() {
+                let timeout_secs = app_state.app_config.config.load().connect_timeout_secs;
+                debug_if_enabled!(
+                    "Provider stream request timed out after {}s for {}",
+                    timeout_secs,
+                    sanitize_sensitive_info(url.as_str())
+                );
+            } else {
+                debug_if_enabled!(
+                    "Provider stream request failed for {}: {err}",
+                    sanitize_sensitive_info(url.as_str())
+                );
+            }
             handle_channel_unavailable_stream(app_state, stream_options).await
         }
     }
 }
 
 async fn provider_stream_request_once(
+    app_state: &Arc<AppState>,
     request_client: &reqwest::Client,
     stream_options: &ProviderStreamFactoryOptions,
 ) -> Result<ProviderStreamFactoryResponse, StatusCode> {
@@ -364,7 +379,23 @@ async fn provider_stream_request_once(
             }
             Err(status)
         }
-        Err(_) => Err(StatusCode::SERVICE_UNAVAILABLE),
+        Err(err) => {
+            let url = stream_options.get_url();
+            if err.is_timeout() {
+                let timeout_secs = app_state.app_config.config.load().connect_timeout_secs;
+                debug_if_enabled!(
+                    "Provider stream request (once) timed out after {}s for {}",
+                    timeout_secs,
+                    sanitize_sensitive_info(url.as_str())
+                );
+            } else {
+                debug_if_enabled!(
+                    "Provider stream request (once) failed for {}: {err}",
+                    sanitize_sensitive_info(url.as_str())
+                );
+            }
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        }
     }
 }
 
@@ -467,7 +498,7 @@ pub async fn create_provider_stream_once(
         .boxed()
     };
 
-    let Ok((init_stream, info)) = provider_stream_request_once(client, &stream_options).await else {
+    let Ok((init_stream, info)) = provider_stream_request_once(app_state, client, &stream_options).await else {
         return None;
     };
 
