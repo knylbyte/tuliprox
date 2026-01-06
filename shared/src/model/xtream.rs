@@ -1,6 +1,6 @@
 use crate::utils::{deserialize_as_option_string, deserialize_as_string_array,
                    deserialize_number_from_string, deserialize_number_from_string_or_zero,
-                   deserialize_as_string, string_default_on_null,
+                   deserialize_as_string, string_default_on_null, serialize_option_string_as_null_if_empty,
                    deserialize_json_as_opt_string, serialize_json_as_opt_string};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -17,7 +17,7 @@ pub struct XtreamVideoInfoMovieData {
     pub stream_id: u32,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub direct_source: String,
-    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string", serialize_with = "serialize_option_string_as_null_if_empty")]
     pub custom_sid: Option<String>,
     #[serde(default, deserialize_with = "deserialize_as_string")]
     pub added: String,
@@ -174,7 +174,7 @@ pub struct XtreamSeriesInfoEpisode {
     pub container_extension: String,
     #[serde(default)]
     pub info: Option<XtreamSeriesInfoEpisodeInfo>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_as_option_string", serialize_with = "serialize_option_string_as_null_if_empty")]
     pub custom_sid: Option<String>,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub added: String,
