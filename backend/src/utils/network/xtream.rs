@@ -470,7 +470,7 @@ pub fn create_vod_info_from_item(target: &ConfigTarget, user: &ProxyUserCredenti
     "category_id": {category_id},
     "category_ids": [{category_id}],
     "container_extension": "{extension}",
-    "custom_sid": "",
+    "custom_sid": null,
     "direct_source": "",
     "name": "{name}",
     "stream_id": {stream_id}

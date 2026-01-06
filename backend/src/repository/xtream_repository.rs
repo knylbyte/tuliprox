@@ -27,7 +27,6 @@ use std::fs::File;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::task;
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
@@ -278,25 +277,20 @@ pub async fn xtream_write_playlist(
 
     let root_path = path.clone();
     let app_config = app_cfg.clone();
-    let write_errors = task::spawn_blocking(move || {
-        let mut write_errors = vec![];
-        for (col_path, data) in [
-            (get_live_cat_collection_path(&root_path), &cat_live_col),
-            (get_vod_cat_collection_path(&root_path), &cat_vod_col),
-            (get_series_cat_collection_path(&root_path), &cat_series_col),
-        ] {
-            let lock = app_config.file_locks.write_lock(&col_path);
-            match json_write_documents_to_file(&col_path, data) {
-                Ok(()) => {}
-                Err(err) => {
-                    write_errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
-                }
+    for (col_path, data) in [
+        (get_live_cat_collection_path(&root_path), &cat_live_col),
+        (get_vod_cat_collection_path(&root_path), &cat_vod_col),
+        (get_series_cat_collection_path(&root_path), &cat_series_col),
+    ] {
+        let lock = app_config.file_locks.write_lock(&col_path);
+        match json_write_documents_to_file(&col_path, data).await {
+            Ok(()) => {}
+            Err(err) => {
+                errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
             }
-            drop(lock);
         }
-        write_errors
-    }).await.map_err(|e| notify_err!(format!("Task panicked: {}", e)))?;
-    errors.extend(write_errors);
+        drop(lock);
+    }
 
     if let Err(err) = write_playlists_to_file(
         app_cfg,
@@ -380,11 +374,11 @@ pub fn xtream_get_collection_path(
     cfg: &Config,
     target_name: &str,
     collection_name: &str,
-) -> Result<(Option<PathBuf>, Option<String>), Error> {
+) -> Result<PathBuf, Error> {
     if let Some(path) = xtream_get_storage_path(cfg, target_name) {
         let col_path = get_collection_path(&path, collection_name);
         if col_path.exists() {
-            return Ok((Some(col_path), None));
+            return Ok(col_path);
         }
     }
     Err(string_to_io_error(format!("Cant find collection: {target_name}/{collection_name}")))
@@ -634,7 +628,7 @@ pub(crate) async fn xtream_get_playlist_categories(config: &Config, target_name:
         XtreamCluster::Video => storage_const::COL_CAT_VOD,
         XtreamCluster::Series => storage_const::COL_CAT_SERIES,
     });
-    if let Ok((Some(file_path), _content)) = path {
+    if let Ok(file_path) = path {
         if let Ok(content) = tokio::fs::read_to_string(&file_path).await {
             return serde_json::from_str::<Vec<PlaylistXtreamCategory>>(&content).ok();
         }
@@ -717,23 +711,19 @@ pub async fn persist_input_xtream_playlist(app_config: &Arc<AppConfig>, storage_
 
     let root_path = storage_path.to_path_buf();
     let app_cfg = app_config.clone();
-    let write_errors = task::spawn_blocking(move || {
-        let mut write_errors = vec![];
-        for cluster in XTREAM_CLUSTER {
-            let col_path = match cluster {
-                XtreamCluster::Live => get_collection_path(&root_path, storage_const::COL_CAT_LIVE),
-                XtreamCluster::Video => get_collection_path(&root_path, storage_const::COL_CAT_VOD),
-                XtreamCluster::Series => get_collection_path(&root_path, storage_const::COL_CAT_SERIES),
-            };
-            let data = fetched_categories.get_mut(cluster);
-            let lock = app_cfg.file_locks.write_lock(&col_path);
-            if let Err(err) = json_write_documents_to_file(&col_path, data) {
-                write_errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
-            }
-            drop(lock);
+    for cluster in XTREAM_CLUSTER {
+        let col_path = match cluster {
+            XtreamCluster::Live => get_collection_path(&root_path, storage_const::COL_CAT_LIVE),
+            XtreamCluster::Video => get_collection_path(&root_path, storage_const::COL_CAT_VOD),
+            XtreamCluster::Series => get_collection_path(&root_path, storage_const::COL_CAT_SERIES),
+        };
+        let data = fetched_categories.get_mut(cluster);
+        let lock = app_cfg.file_locks.write_lock(&col_path);
+        if let Err(err) = json_write_documents_to_file(&col_path, data).await {
+            errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
         }
-        write_errors
-    }).await.map_err(|e| notify_err!(format!("Task panicked: {}", e)));
+        drop(lock);
+    }
 
     for cluster in XTREAM_CLUSTER {
         let col = processed_scratch.take(cluster);
@@ -760,11 +750,6 @@ pub async fn persist_input_xtream_playlist(app_config: &Arc<AppConfig>, storage_
                 .channels
                 .push(item);
         }
-    }
-
-    match write_errors {
-        Ok(write_err) => errors.extend(write_err),
-        Err(err) => errors.push(err.to_string()),
     }
 
     let result = groups.into_iter().map(|(_, group)| group).collect();

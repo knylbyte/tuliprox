@@ -4,7 +4,7 @@ use crate::api::api_utils::{create_session_fingerprint, local_stream_response, t
 use crate::api::api_utils::{
     force_provider_stream_response, get_user_target, get_user_target_by_credentials,
     is_seek_request, redirect_response, resource_response, separate_number_and_remainder,
-    serve_file, stream_response, RedirectParams,
+    stream_response, RedirectParams,
 };
 use crate::api::api_utils::{redirect, try_option_bad_request, try_result_bad_request, try_result_not_found};
 use crate::api::endpoints::hls_api::handle_hls_stream_request;
@@ -34,16 +34,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use shared::error::create_tuliprox_error_result;
 use shared::error::info_err;
-use shared::error::{str_to_io_error, TuliproxError, TuliproxErrorKind};
+use shared::error::{TuliproxError, TuliproxErrorKind};
 use shared::model::{create_stream_channel_with_type, PlaylistEntry, PlaylistItemType, ProxyType,
                     TargetType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{
-    extract_extension_from_url, generate_playlist_uuid, sanitize_sensitive_info,
-    trim_slash, HLS_EXT,
-};
-use std::collections::{HashMap, HashSet};
+use shared::utils::{ deserialize_as_string, extract_extension_from_url, generate_playlist_uuid,
+                     sanitize_sensitive_info, trim_slash, HLS_EXT};
 use std::fmt::{Display, Formatter};
-use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -149,12 +145,14 @@ impl<'a> ApiStreamRequest<'a> {
     }
 }
 
-pub fn serve_query(
-    file_path: &Path,
-    filter: &HashMap<&str, HashSet<String>>,
-) -> impl IntoResponse + Send {
-    let filtered = crate::utils::json_filter_file(file_path, filter);
-    axum::Json(filtered)
+
+#[derive(Serialize, Deserialize)]
+struct XtreamCategoryEntry {
+    #[serde(deserialize_with = "deserialize_as_string")]
+    category_id: String,
+    category_name: String,
+    #[serde(default)]
+    parent_id: u32,
 }
 
 pub(in crate::api) fn get_xtream_player_api_stream_url(
@@ -990,87 +988,39 @@ async fn xtream_player_api_handle_content_action(
     category_id: Option<u32>,
     user: &ProxyUserCredentials,
 ) -> Option<impl IntoResponse> {
-    if let Ok((path, content)) = match action {
-        crate::model::XC_ACTION_GET_LIVE_CATEGORIES => {
-            xtream_repository::xtream_get_collection_path(
-                config,
-                target_name,
-                storage_const::COL_CAT_LIVE,
-            )
-        }
-        crate::model::XC_ACTION_GET_VOD_CATEGORIES => {
-            xtream_repository::xtream_get_collection_path(
-                config,
-                target_name,
-                storage_const::COL_CAT_VOD,
-            )
-        }
-        crate::model::XC_ACTION_GET_SERIES_CATEGORIES => {
-            xtream_repository::xtream_get_collection_path(
-                config,
-                target_name,
-                storage_const::COL_CAT_SERIES,
-            )
-        }
-        _ => Err(str_to_io_error("")),
-    } {
-        if let Some(file_path) = path {
-            // load user bouquet
-            let filter = match action {
-                crate::model::XC_ACTION_GET_LIVE_CATEGORIES => {
-                    user_repository::user_get_bouquet_filter(
-                        config,
-                        &user.username,
-                        category_id,
-                        TargetType::Xtream,
-                        XtreamCluster::Live,
-                    )
-                        .await
+    let (collection, cluster) = match action {
+        crate::model::XC_ACTION_GET_LIVE_CATEGORIES => (storage_const::COL_CAT_LIVE, XtreamCluster::Live),
+        crate::model::XC_ACTION_GET_VOD_CATEGORIES => (storage_const::COL_CAT_VOD, XtreamCluster::Video),
+        crate::model::XC_ACTION_GET_SERIES_CATEGORIES => (storage_const::COL_CAT_SERIES, XtreamCluster::Series),
+        // we dont handle this action
+        _ => return None,
+    };
+    if let Ok(file_path) = xtream_repository::xtream_get_collection_path(config, target_name, collection) {
+        match tokio::fs::read_to_string(&file_path).await {
+            Ok(content) => {
+                let filter = user_repository::user_get_bouquet_filter(
+                    config,
+                    &user.username,
+                    category_id,
+                    TargetType::Xtream,
+                    cluster,
+                ).await;
+
+                match serde_json::from_str::<Vec<XtreamCategoryEntry>>(&content) {
+                    Ok(mut categories) => {
+                        if let Some(fltr) = filter {
+                            categories.retain(|c| fltr.contains(&c.category_id));
+                        }
+                        return Some(axum::Json(categories).into_response());
+                    },
+                    Err(err) => error!("Failed to parse json file {}: {err}", file_path.display()),
                 }
-                crate::model::XC_ACTION_GET_VOD_CATEGORIES => {
-                    user_repository::user_get_bouquet_filter(
-                        config,
-                        &user.username,
-                        category_id,
-                        TargetType::Xtream,
-                        XtreamCluster::Video,
-                    )
-                        .await
-                }
-                crate::model::XC_ACTION_GET_SERIES_CATEGORIES => {
-                    user_repository::user_get_bouquet_filter(
-                        config,
-                        &user.username,
-                        category_id,
-                        TargetType::Xtream,
-                        XtreamCluster::Series,
-                    )
-                        .await
-                }
-                _ => None,
-            };
-            if let Some(flt) = filter {
-                return Some(
-                    serve_query(
-                        &file_path,
-                        &HashMap::from([(crate::model::XC_TAG_CATEGORY_ID, flt)]),
-                    )
-                        .into_response(),
-                );
             }
-            return Some(
-                serve_file(&file_path, mime::APPLICATION_JSON.to_string())
-                    .await
-                    .into_response(),
-            );
-        } else if let Some(payload) = content {
-            return Some(try_unwrap_body!(axum::response::Response::builder()
-                .status(axum::http::StatusCode::OK)
-                .body(payload)));
+            Err(err) => error!("Failed to read collection file {}: {err}", file_path.display()),
         }
-        return Some(api_utils::empty_json_list_response().into_response());
     }
-    None
+
+    Some(api_utils::empty_json_list_response().into_response())
 }
 
 async fn xtream_get_catchup_response(
@@ -1300,9 +1250,7 @@ async fn xtream_player_api(
             action,
             category_id,
             &user,
-        )
-            .await
-        {
+        ).await {
             return response.into_response();
         }
 

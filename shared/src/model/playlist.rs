@@ -1,9 +1,7 @@
-use crate::model::info_doc_utils::InfoDocUtils;
-use crate::model::{xtream_const, ClusterFlags, CommonPlaylistItem, ConfigTargetOptions, EpisodeStreamProperties, LiveStreamProperties, SeriesStreamProperties, StreamProperties, VideoStreamProperties};
+use crate::model::{xtream_const, ClusterFlags, CommonPlaylistItem, ConfigTargetOptions, EpisodeStreamProperties, SeriesStreamProperties, StreamProperties, VideoStreamProperties, XtreamInfoDocument};
 use crate::utils::{extract_extension_from_url, generate_playlist_uuid, get_provider_id, parse_uuid_hex};
 use enum_iterator::Sequence;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::borrow::Cow;
 use std::fmt::Write;
 use std::fmt::{Display, Formatter};
@@ -285,7 +283,7 @@ pub trait PlaylistEntry: Send + Sync {
     fn get_item_type(&self) -> PlaylistItemType;
     fn get_group(&self) -> Cow<'_, str>;
     fn get_name(&self) -> Cow<'_, str>;
-    fn get_resolved_info_document(&self, options: &XtreamMappingOptions) -> Option<Value>;
+    fn get_resolved_info_document(&self, options: &XtreamMappingOptions) -> Option<XtreamInfoDocument>;
     fn get_additional_properties(&self) -> Option<&StreamProperties>;
     fn get_additional_properties_mut(&mut self) -> Option<&mut StreamProperties>;
 }
@@ -538,7 +536,7 @@ impl PlaylistEntry for M3uPlaylistItem {
     }
 
     #[inline]
-    fn get_resolved_info_document(&self, _options: &XtreamMappingOptions) -> Option<Value> {
+    fn get_resolved_info_document(&self, _options: &XtreamMappingOptions) -> Option<XtreamInfoDocument> {
         None
     }
     #[inline]
@@ -677,298 +675,6 @@ impl XtreamPlaylistItem {
         self.additional_properties.as_ref().is_some_and(|p| p.has_details())
     }
 
-    pub fn to_info_document(&self, options: &XtreamMappingOptions) -> Value {
-        if self.has_details() {
-            if let Some(doc) = self.additional_properties.as_ref()
-                .map(|p| p.to_info_document(options, self.item_type, self.virtual_id, self.category_id)) {
-                return doc;
-            }
-        }
-        let resource_url = options.get_resource_url(self.xtream_cluster, self.item_type, self.virtual_id);
-        self.to_info_document_no_props(resource_url)
-    }
-
-    fn to_info_document_no_props(&self, resource_url: Option<String>) -> Value {
-        match self.xtream_cluster {
-            XtreamCluster::Live => {
-                let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
-                } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
-                } else {
-                    String::new()
-                };
-                Value::Object(serde_json::Map::from_iter([
-                    ("num".to_string(), InfoDocUtils::build_u32(self.channel_no)),
-                    ("name".to_string(), Value::String(self.title.clone())), // name or title ?
-                    ("stream_id".to_string(), InfoDocUtils::build_u32(self.virtual_id)),
-                    ("stream_icon".to_string(), Value::String(stream_icon)),
-                    ("epg_channel_id".to_string(), InfoDocUtils::build_string(self.epg_channel_id.as_deref())),
-                    ("added".to_string(), InfoDocUtils::empty_string()),
-                    ("is_adult".to_string(), InfoDocUtils::build_u32(0u32)),
-                    ("category_id".to_string(), Value::String(self.category_id.to_string())),
-                    ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
-                    ("custom_sid".to_string(), Value::Null),
-                    ("direct_source".to_string(), InfoDocUtils::empty_string()),
-                    ("tv_archive".to_string(), InfoDocUtils::build_u32(0u32)),
-                    ("tv_archive_duration".to_string(), InfoDocUtils::build_u32(0u32)),
-                ]))
-            }
-            XtreamCluster::Video => {
-                let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
-                } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
-                } else {
-                    String::new()
-                };
-                Value::Object(serde_json::Map::from_iter([
-                    ("num".to_string(), Value::Number(serde_json::Number::from(self.channel_no))),
-                    ("name".to_string(), Value::String(self.title.clone())), // name or title ?
-                    ("stream_type".to_string(), Value::String("movie".to_string())),
-                    ("stream_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
-                    ("stream_icon".to_string(), Value::String(stream_icon)),
-                    ("rating".to_string(), InfoDocUtils::empty_string()),
-                    ("rating_5based".to_string(), InfoDocUtils::empty_string()),
-                    ("tmdb".to_string(), InfoDocUtils::empty_string()),
-                    ("trailer".to_string(), InfoDocUtils::empty_string()),
-                    ("added".to_string(), InfoDocUtils::empty_string()),
-                    ("is_adult".to_string(), Value::Number(serde_json::Number::from(0u32))),
-                    ("category_id".to_string(), Value::String(self.category_id.to_string())),
-                    ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
-                    ("container_extension".to_string(), InfoDocUtils::empty_string()),
-                    ("custom_sid".to_string(), Value::Null),
-                    ("direct_source".to_string(), InfoDocUtils::empty_string()),
-                ]))
-            }
-            XtreamCluster::Series => {
-                let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
-                } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
-                } else {
-                    String::new()
-                };
-                Value::Object(serde_json::Map::from_iter([
-                    ("num".to_string(), Value::Number(serde_json::Number::from(self.channel_no))),
-                    ("name".to_string(), Value::String(self.title.clone())), // name or title ?
-                    ("series_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
-                    ("cover".to_string(), Value::String(stream_icon)),
-                    ("plot".to_string(), InfoDocUtils::empty_string()),
-                    ("cast".to_string(), InfoDocUtils::empty_string()),
-                    ("director".to_string(), InfoDocUtils::empty_string()),
-                    ("genre".to_string(), InfoDocUtils::empty_string()),
-                    ("release_date".to_string(), InfoDocUtils::empty_string()),
-                    ("releaseDate".to_string(), InfoDocUtils::empty_string()),
-                    ("last_modified".to_string(), InfoDocUtils::empty_string()),
-                    ("rating".to_string(), InfoDocUtils::empty_string()),
-                    ("rating_5based".to_string(), InfoDocUtils::empty_string()),
-                    ("backdrop_path".to_string(), Value::Array(Vec::new())),
-                    ("youtube_trailer".to_string(), InfoDocUtils::empty_string()),
-                    ("tmdb".to_string(), InfoDocUtils::empty_string()),
-                    ("episode_runtime".to_string(), InfoDocUtils::empty_string()),
-                    ("category_id".to_string(), Value::String(self.category_id.to_string())),
-                    ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
-                ]))
-            }
-        }
-    }
-
-    pub fn to_document(&self, options: &XtreamMappingOptions) -> serde_json::Value {
-        if let Some(props) = self.additional_properties.as_ref() {
-            match props {
-                StreamProperties::Live(live) => {
-                    self.live_to_document(options, live)
-                }
-                StreamProperties::Video(video) => {
-                    self.video_to_document(options, video)
-                }
-                StreamProperties::Series(series) => {
-                    self.series_to_document(options, series)
-                }
-                StreamProperties::Episode(_episode) => {
-                    Value::Object(serde_json::Map::from_iter([]))
-                }
-            }
-        } else {
-            let resource_url = options.get_resource_url(self.xtream_cluster, self.item_type, self.virtual_id);
-            self.to_document_no_props(resource_url)
-        }
-    }
-
-    fn series_to_document(&self, options: &XtreamMappingOptions, series: &SeriesStreamProperties) -> Value {
-        let resource_url = options.get_resource_url(self.xtream_cluster, self.item_type, self.virtual_id);
-        Value::Object(serde_json::Map::from_iter([
-            ("num".to_string(), Value::Number(serde_json::Number::from(self.channel_no))),
-            ("name".to_string(), Value::String(self.title.clone())),
-            ("series_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
-            ("cover".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url.as_deref(), &series.cover, "cover"))),
-            ("plot".to_string(), InfoDocUtils::build_string(series.plot.as_deref())),
-            ("cast".to_string(), Value::String(series.cast.clone())),
-            ("director".to_string(), Value::String(series.director.clone())),
-            ("genre".to_string(), InfoDocUtils::build_string(series.genre.as_deref())),
-            ("release_date".to_string(), InfoDocUtils::build_string(series.release_date.as_deref())),
-            ("releaseDate".to_string(), InfoDocUtils::build_string(series.release_date.as_deref())),
-            ("last_modified".to_string(), InfoDocUtils::build_string(series.last_modified.as_deref())),
-            ("rating".to_string(), Value::String(InfoDocUtils::limited(series.rating))),
-            ("rating_5based".to_string(), Value::String(InfoDocUtils::limited(series.rating_5based))),
-            ("backdrop_path".to_string(), Value::Array(
-                series.backdrop_path.as_ref().map_or_else(Vec::new, |b| b.iter().enumerate().map(|(idx, p)|
-                    Value::String(
-                        InfoDocUtils::make_bdpath_resource_url(resource_url.as_deref(), p, idx, "")
-                    )
-                ).collect())
-            )),
-            ("youtube_trailer".to_string(), Value::String(series.youtube_trailer.clone())),
-            ("tmdb".to_string(), Value::String(series.tmdb.as_ref().map_or_else(String::new, ToString::to_string))),
-            ("episode_runtime".to_string(), InfoDocUtils::build_string(series.episode_run_time.as_deref())),
-            ("category_id".to_string(), Value::String(self.category_id.to_string())),
-            ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
-        ]))
-    }
-
-    fn video_to_document(&self, options: &XtreamMappingOptions, video: &VideoStreamProperties) -> Value {
-        let resource_url = options.get_resource_url(self.xtream_cluster, self.item_type, self.virtual_id);
-        let stream_icon = if !self.logo.is_empty() {
-            InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
-        } else if !self.logo_small.is_empty() {
-            InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
-        } else {
-            String::new()
-        };
-        Value::Object(serde_json::Map::from_iter([
-            ("num".to_string(), Value::Number(serde_json::Number::from(self.channel_no))),
-            ("name".to_string(), Value::String(self.title.clone())), // name or title ?
-            ("stream_type".to_string(), Value::String(video.stream_type.as_ref().map_or_else(|| "movie".to_string(), Clone::clone))),
-            ("stream_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
-            ("stream_icon".to_string(), Value::String(stream_icon)),
-            ("rating".to_string(), Value::String(InfoDocUtils::limited(video.rating.unwrap_or_default()))),
-            ("rating_5based".to_string(), Value::Number(serde_json::Number::from_f64(video.rating_5based.unwrap_or_default()).unwrap_or_else(|| serde_json::Number::from(0)))),
-            ("tmdb".to_string(), Value::String(video.tmdb.as_ref().map_or_else(String::new, ToString::to_string))),
-            ("trailer".to_string(), InfoDocUtils::build_string(video.trailer.as_deref())),
-            ("added".to_string(), Value::String(video.added.clone())),
-            ("is_adult".to_string(), Value::Number(serde_json::Number::from(video.is_adult))),
-            ("category_id".to_string(), Value::String(self.category_id.to_string())),
-            ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
-            ("container_extension".to_string(), Value::String(video.container_extension.clone())),
-            ("custom_sid".to_string(), video.custom_sid.as_ref().map_or(Value::Null, |s| Value::String(s.clone()))),
-            ("direct_source".to_string(), if options.skip_video_direct_source { InfoDocUtils::empty_string() } else { Value::String(video.direct_source.clone()) }),
-        ]))
-    }
-
-    fn live_to_document(&self, options: &XtreamMappingOptions, live: &LiveStreamProperties) -> Value {
-        let resource_url = options.get_resource_url(self.xtream_cluster, self.item_type, self.virtual_id);
-        let stream_icon = if !self.logo.is_empty() {
-            InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
-        } else if !self.logo_small.is_empty() {
-            InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
-        } else {
-            String::new()
-        };
-        Value::Object(serde_json::Map::from_iter([
-            ("num".to_string(), Value::Number(serde_json::Number::from(self.channel_no))),
-            ("name".to_string(), Value::String(self.title.clone())), // name or title ?
-            ("added".to_string(), InfoDocUtils::build_string(live.added.as_deref())),
-            ("stream_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
-            ("stream_icon".to_string(), Value::String(stream_icon)),
-            ("stream_type".to_string(), Value::String(live.stream_type.as_ref().map_or_else(|| "live".to_string(), Clone::clone))),
-            ("epg_channel_id".to_string(), InfoDocUtils::build_string(self.epg_channel_id.as_deref())),
-            ("is_adult".to_string(), Value::Number(serde_json::Number::from(live.is_adult))),
-            ("category_id".to_string(), Value::String(self.category_id.to_string())),
-            ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
-            ("custom_sid".to_string(), live.custom_sid.as_ref().map_or(Value::Null, |s| Value::String(s.clone()))),
-            ("direct_source".to_string(), if options.skip_live_direct_source { InfoDocUtils::empty_string() } else { Value::String(live.direct_source.clone()) }),
-            ("tv_archive".to_string(), Value::Number(serde_json::Number::from(live.tv_archive.unwrap_or_default()))),
-            ("tv_archive_duration".to_string(), Value::Number(serde_json::Number::from(live.tv_archive_duration.unwrap_or_default()))),
-        ]))
-    }
-
-    fn to_document_no_props(&self, resource_url: Option<String>) -> Value {
-        match self.xtream_cluster {
-            XtreamCluster::Live => {
-                let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
-                } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
-                } else {
-                    String::new()
-                };
-                Value::Object(serde_json::Map::from_iter([
-                    ("num".to_string(), Value::Number(serde_json::Number::from(self.channel_no))),
-                    ("name".to_string(), Value::String(self.title.clone())), // name or title ?
-                    ("stream_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
-                    ("stream_icon".to_string(), Value::String(stream_icon)),
-                    ("epg_channel_id".to_string(), InfoDocUtils::build_string(self.epg_channel_id.as_deref())),
-                    ("added".to_string(), InfoDocUtils::empty_string()),
-                    ("is_adult".to_string(), Value::Number(serde_json::Number::from(0u32))),
-                    ("category_id".to_string(), Value::String(self.category_id.to_string())),
-                    ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
-                    ("custom_sid".to_string(), Value::Null),
-                    ("direct_source".to_string(), InfoDocUtils::empty_string()),
-                    ("tv_archive".to_string(), Value::Number(serde_json::Number::from(0u32))),
-                    ("tv_archive_duration".to_string(), Value::Number(serde_json::Number::from(0u32))),
-                ]))
-            }
-            XtreamCluster::Video => {
-                let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
-                } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
-                } else {
-                    String::new()
-                };
-                Value::Object(serde_json::Map::from_iter([
-                    ("num".to_string(), Value::Number(serde_json::Number::from(self.channel_no))),
-                    ("name".to_string(), Value::String(self.title.clone())), // name or title ?
-                    ("stream_type".to_string(), Value::String("movie".to_string())),
-                    ("stream_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
-                    ("stream_icon".to_string(), Value::String(stream_icon)),
-                    ("rating".to_string(), InfoDocUtils::empty_string()),
-                    ("rating_5based".to_string(), InfoDocUtils::empty_string()),
-                    ("tmdb".to_string(), InfoDocUtils::empty_string()),
-                    ("trailer".to_string(), InfoDocUtils::empty_string()),
-                    ("added".to_string(), InfoDocUtils::empty_string()),
-                    ("is_adult".to_string(), Value::Number(serde_json::Number::from(0u32))),
-                    ("category_id".to_string(), Value::String(self.category_id.to_string())),
-                    ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
-                    ("container_extension".to_string(), InfoDocUtils::empty_string()),
-                    ("custom_sid".to_string(), Value::Null),
-                    ("direct_source".to_string(), InfoDocUtils::empty_string()),
-                ]))
-            }
-            XtreamCluster::Series => {
-                let stream_icon = if !self.logo.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo, "logo")
-                } else if !self.logo_small.is_empty() {
-                    InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.logo_small, "logo_small")
-                } else {
-                    String::new()
-                };
-                Value::Object(serde_json::Map::from_iter([
-                    ("num".to_string(), Value::Number(serde_json::Number::from(self.channel_no))),
-                    ("name".to_string(), Value::String(self.title.clone())), // name or title ?
-                    ("series_id".to_string(), Value::Number(serde_json::Number::from(self.virtual_id))),
-                    ("cover".to_string(), Value::String(stream_icon)),
-                    ("plot".to_string(), InfoDocUtils::empty_string()),
-                    ("cast".to_string(), InfoDocUtils::empty_string()),
-                    ("director".to_string(), InfoDocUtils::empty_string()),
-                    ("genre".to_string(), InfoDocUtils::empty_string()),
-                    ("release_date".to_string(), InfoDocUtils::empty_string()),
-                    ("releaseDate".to_string(), InfoDocUtils::empty_string()),
-                    ("last_modified".to_string(), InfoDocUtils::empty_string()),
-                    ("rating".to_string(), InfoDocUtils::empty_string()),
-                    ("rating_5based".to_string(), InfoDocUtils::empty_string()),
-                    ("backdrop_path".to_string(), Value::Array(Vec::new())),
-                    ("youtube_trailer".to_string(), InfoDocUtils::empty_string()),
-                    ("tmdb".to_string(), InfoDocUtils::empty_string()),
-                    ("episode_runtime".to_string(), InfoDocUtils::empty_string()),
-                    ("category_id".to_string(), Value::String(self.category_id.to_string())),
-                    ("category_ids".to_string(), Value::Array(Vec::from([Value::Number(serde_json::Number::from(self.category_id))]))),
-                ]))
-            }
-        }
-    }
-
     pub fn resolve_resource_url<'a>(&'a self, field: &str) -> Option<Cow<'a, str>> {
         self.additional_properties.as_ref().and_then(|a| a.resolve_resource_url(field))
     }
@@ -1014,7 +720,7 @@ impl PlaylistEntry for XtreamPlaylistItem {
         }
     }
 
-    fn get_resolved_info_document(&self, options: &XtreamMappingOptions) -> Option<Value> {
+    fn get_resolved_info_document(&self, options: &XtreamMappingOptions) -> Option<XtreamInfoDocument> {
         if self.has_details() {
             self.additional_properties.as_ref()
                 .map(|p| p.to_info_document(options, self.get_item_type(),
@@ -1031,33 +737,6 @@ impl PlaylistEntry for XtreamPlaylistItem {
     #[inline]
     fn get_additional_properties_mut(&mut self) -> Option<&mut StreamProperties> {
         self.additional_properties.as_mut()
-    }
-}
-
-pub fn get_backdrop_path_value<'a>(field: &'a str, value: Option<&'a Value>) -> Option<Cow<'a, str>> {
-    match value {
-        Some(Value::String(url)) => Some(Cow::Borrowed(url)),
-        Some(Value::Array(values)) => {
-            match values.as_slice() {
-                [Value::String(single)] => Some(Cow::Borrowed(single)),
-                multiple if !multiple.is_empty() => {
-                    if let Some(index) = field.rfind('_') {
-                        if let Ok(bd_index) = field[index + 1..].parse::<usize>() {
-                            if let Some(Value::String(selected)) = multiple.get(bd_index) {
-                                return Some(Cow::Borrowed(selected));
-                            }
-                        }
-                    }
-                    if let Value::String(url) = &multiple[0] {
-                        Some(Cow::Borrowed(url))
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        }
-        _ => None,
     }
 }
 
@@ -1415,7 +1094,7 @@ impl PlaylistEntry for PlaylistItem {
         }
     }
 
-    fn get_resolved_info_document(&self, options: &XtreamMappingOptions) -> Option<Value> {
+    fn get_resolved_info_document(&self, options: &XtreamMappingOptions) -> Option<XtreamInfoDocument> {
         if self.has_details() {
             self.header.additional_properties.as_ref().map(|p|
                 p.to_info_document(options, self.get_item_type(), self.get_virtual_id(),

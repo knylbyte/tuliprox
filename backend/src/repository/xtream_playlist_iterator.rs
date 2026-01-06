@@ -89,8 +89,6 @@ impl XtreamPlaylistIterator {
     }
 
     fn get_next(&mut self) -> Option<(XtreamPlaylistItem, bool)> {
-        // reader no longer has manual error state, BPlusTreeQuery handles it via Result elsewhere
-
         let filter_ids = self.filter_ids.as_ref();
         let cluster = self.cluster;
 
@@ -150,7 +148,11 @@ impl XtreamPlaylistJsonIterator {
 impl Iterator for XtreamPlaylistJsonIterator {
     type Item = (String, bool);
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.get_next().map(|(pli, has_next)| (pli.to_document(&self.inner.options).to_string(), has_next))
+        self.inner.get_next().map(|(pli, has_next)|
+            (
+            serde_json::to_string(&pli.to_document(&self.inner.options)).unwrap_or_else(|_| "{}".to_string()),
+            has_next
+            ))
     }
 }
 

@@ -1,12 +1,11 @@
 use crate::model::info_doc_utils::InfoDocUtils;
-use crate::model::{PlaylistEntry, PlaylistItemType, VirtualId, XtreamCluster, XtreamMappingOptions, XtreamSeriesInfo, XtreamVideoInfo};
+use crate::model::{PlaylistEntry, XtreamSeriesInfo, XtreamVideoInfo};
 use crate::utils::{deserialize_as_option_string, deserialize_as_string,
                    deserialize_as_string_array, deserialize_json_as_opt_string, serialize_json_as_opt_string,
-                   deserialize_number_from_string, deserialize_number_from_string_or_zero, string_default_on_null};
+                   deserialize_number_from_string, deserialize_number_from_string_or_zero, string_default_on_null,
+                   serialize_option_string_as_null_if_empty};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct LiveStreamProperties {
@@ -20,7 +19,7 @@ pub struct LiveStreamProperties {
     pub stream_icon: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub direct_source: String,
-    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string", serialize_with = "serialize_option_string_as_null_if_empty")]
     pub custom_sid: Option<String>,
     #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub added: Option<String>,
@@ -83,7 +82,7 @@ pub struct VideoStreamProperties {
     pub stream_icon: String,
     #[serde(default, deserialize_with = "deserialize_as_string")]
     pub direct_source: String,
-    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    #[serde(default, deserialize_with = "deserialize_as_option_string", serialize_with = "serialize_option_string_as_null_if_empty")]
     pub custom_sid: Option<String>,
     #[serde(default, deserialize_with = "deserialize_as_string")]
     pub added: String,
@@ -117,7 +116,7 @@ pub struct SeriesStreamDetailEpisodeProperties {
     pub title: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub container_extension: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_as_option_string", serialize_with = "serialize_option_string_as_null_if_empty")]
     pub custom_sid: Option<String>,
     #[serde(default, deserialize_with = "deserialize_as_string")]
     pub added: String,
@@ -458,199 +457,7 @@ impl StreamProperties {
         None
     }
 
-    pub fn to_info_document(&self, options: &XtreamMappingOptions, item_type: PlaylistItemType,
-                            virtual_id: VirtualId, category_id: u32) -> Value {
-        match self {
-            StreamProperties::Live(_live) => {
-                // Live streams don't expose info documents through the Xtream API.
-                Value::Object(serde_json::Map::new())
-            }
-            StreamProperties::Video(video) => {
-                self.video_to_info_document(options, video, item_type, virtual_id, category_id)
-            }
-            StreamProperties::Series(series) => {
-                self.series_to_info_document(options, series, item_type, virtual_id, category_id)
-            }
-            StreamProperties::Episode(_episode) => {
-                // Epsiode streams don't expose info documents through the Xtream API.
-                Value::Object(serde_json::Map::new())
-            }
-        }
-    }
 
-    fn series_to_info_document(&self, options: &XtreamMappingOptions, series: &SeriesStreamProperties,
-                               item_type: PlaylistItemType, virtual_id: VirtualId, category_id: u32) -> Value {
-        let resource_url = options.get_resource_url(XtreamCluster::Series, item_type, virtual_id);
-        Value::Object(serde_json::Map::from_iter([
-            ("seasons".to_string(), Value::Array(Vec::new())),
-            ("info".to_string(), Value::Object(serde_json::Map::from_iter([
-                ("name".to_string(), Value::String(series.name.clone())),
-                ("cover".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url.as_deref(), series.cover.as_ref(), "cover"))),
-                ("plot".to_string(), InfoDocUtils::build_string(series.plot.as_deref())),
-                ("cast".to_string(), Value::String(series.cast.clone())),
-                ("director".to_string(), Value::String(series.director.clone())),
-                ("genre".to_string(), InfoDocUtils::build_string(series.genre.as_deref())),
-                ("release_date".to_string(), InfoDocUtils::build_string(series.release_date.as_deref())),
-                ("releaseDate".to_string(), InfoDocUtils::build_string(series.release_date.as_deref())),
-                ("last_modified".to_string(), InfoDocUtils::build_string(series.last_modified.as_deref())),
-                ("rating".to_string(), Value::String(InfoDocUtils::limited(series.rating))),
-                ("rating_5based".to_string(), Value::String(InfoDocUtils::limited(series.rating_5based))),
-                ("backdrop_path".to_string(), Value::Array(
-                    series.backdrop_path.as_ref().map_or_else(Vec::new, |b| b.iter().enumerate().map(|(idx, p)|
-                        Value::String(
-                            InfoDocUtils::make_bdpath_resource_url(resource_url.as_deref(), p, idx, "")
-                        )
-                    ).collect())
-                )),
-                ("tmdb".to_string(), Value::String(series.tmdb.unwrap_or_default().to_string())),
-                ("youtube_trailer".to_string(), Value::String(series.youtube_trailer.clone())),
-                ("episode_run_time".to_string(), InfoDocUtils::build_string(series.episode_run_time.as_deref())),
-                ("category_id".to_string(), Value::String(category_id.to_string())),
-                ("category_ids".to_string(), Value::Array(Vec::from([InfoDocUtils::build_u32(category_id)]))),
-            ]))),
-            if let Some(episodes) = series.details.as_ref().and_then(|d| d.episodes.as_ref()) {
-                ("episodes".to_string(), self.series_episodes_to_info_document(options, resource_url.as_deref(), episodes))
-            } else {
-                ("episodes".to_string(), Value::Object(serde_json::Map::new()))
-            }
-        ]))
-    }
-
-    fn video_to_info_document(&self, options: &XtreamMappingOptions, video: &VideoStreamProperties,
-                              item_type: PlaylistItemType, virtual_id: VirtualId, category_id: u32) -> Value {
-        let resource_url = options.get_resource_url(XtreamCluster::Video, item_type, virtual_id);
-        let stream_icon = InfoDocUtils::make_resource_url(resource_url.as_deref(), &self.get_stream_icon(), "logo");
-
-        Value::Object(serde_json::Map::from_iter([
-            if let Some(details) = video.details.as_ref() {
-                ("info".to_string(), Value::Object(serde_json::Map::from_iter([
-                    ("actors".to_string(), InfoDocUtils::build_string(details.actors.as_deref())),
-                    ("age".to_string(), InfoDocUtils::build_string(details.age.as_deref())),
-                    ("audio".to_string(), InfoDocUtils::build_value(details.audio.as_deref())),
-                    ("video".to_string(), InfoDocUtils::build_value(details.video.as_deref())),
-                    ("backdrop_path".to_string(), Value::Array(
-                        details.backdrop_path.as_deref().map_or_else(Vec::new, |b| b.iter().enumerate().map(|(idx, p)|
-                            Value::String(
-                                InfoDocUtils::make_bdpath_resource_url(resource_url.as_deref(), p, idx, "nfo_")
-                            )
-                        ).collect())
-                    )),
-                    ("bitrate".to_string(), InfoDocUtils::build_u32(details.bitrate)),
-                    ("cast".to_string(), InfoDocUtils::build_string(details.cast.as_deref())),
-                    ("country".to_string(), InfoDocUtils::build_string(details.country.as_deref())),
-                    ("cover_big".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url.as_deref(), &details.cover_big.as_ref().map_or_else(String::new, Clone::clone), "nfo_cover_big"))),
-                    ("description".to_string(), InfoDocUtils::build_string(details.description.as_deref())),
-                    ("director".to_string(), InfoDocUtils::build_string(details.director.as_deref())),
-                    ("duration".to_string(), InfoDocUtils::build_string(details.duration.as_deref())),
-                    ("duration_secs".to_string(), InfoDocUtils::build_string(details.duration_secs.as_deref())),
-                    ("episode_run_time".to_string(), InfoDocUtils::build_u32(details.episode_run_time.unwrap_or_default())),
-                    ("genre".to_string(), InfoDocUtils::build_string(details.genre.as_deref())),
-                    ("kinopoisk_url".to_string(), InfoDocUtils::build_string(details.kinopoisk_url.as_deref())),
-                    ("movie_image".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url.as_deref(), &details.cover_big.as_ref().map_or_else(String::new, Clone::clone), "nfo_movie_image"))),
-                    ("mpaa_rating".to_string(), InfoDocUtils::build_string(details.mpaa_rating.as_deref())),
-                    ("name".to_string(), Value::String(video.name.clone())),
-                    ("o_name".to_string(), InfoDocUtils::build_string(details.o_name.as_deref())),
-                    ("plot".to_string(), InfoDocUtils::build_string(details.plot.as_deref())),
-                    ("rating".to_string(), Value::String(InfoDocUtils::limited(video.rating.unwrap_or_default()))),
-                    ("rating_count_kinopoisk".to_string(), InfoDocUtils::build_u32(details.rating_count_kinopoisk)),
-                    ("release_date".to_string(), InfoDocUtils::build_string(details.release_date.as_deref())),
-                    ("runtime".to_string(), InfoDocUtils::build_string(details.runtime.as_deref())),
-                    ("status".to_string(), InfoDocUtils::build_string(details.status.as_deref())),
-                    ("tmdb_id".to_string(), Value::String(video.tmdb.unwrap_or_default().to_string())),
-                    ("youtube_trailer".to_string(), InfoDocUtils::build_string(details.youtube_trailer.as_deref())),
-                ])))
-            } else {
-                ("info".to_string(), Value::Object(serde_json::Map::from_iter([
-                    ("actors".to_string(), InfoDocUtils::empty_string()),
-                    ("age".to_string(), InfoDocUtils::empty_string()),
-                    ("audio".to_string(), InfoDocUtils::build_value(None)),
-                    ("video".to_string(), InfoDocUtils::build_value(None)),
-                    ("backdrop_path".to_string(), Value::Array(Vec::from_iter([
-                        Value::String(stream_icon.clone()),
-                    ]))),
-                    ("bitrate".to_string(), InfoDocUtils::build_u32(0)),
-                    ("cast".to_string(), InfoDocUtils::empty_string()),
-                    ("country".to_string(), InfoDocUtils::empty_string()),
-                    ("cover_big".to_string(), Value::String(stream_icon.clone())),
-                    ("description".to_string(), InfoDocUtils::empty_string()),
-                    ("director".to_string(), InfoDocUtils::empty_string()),
-                    ("duration".to_string(), Value::String("0".to_string())),
-                    ("duration_secs".to_string(), Value::String("0".to_string())),
-                    ("episode_run_time".to_string(), InfoDocUtils::build_u32(0)),
-                    ("genre".to_string(), InfoDocUtils::empty_string()),
-                    ("kinopoisk_url".to_string(), InfoDocUtils::empty_string()),
-                    ("movie_image".to_string(), Value::String(stream_icon.clone())),
-                    ("mpaa_rating".to_string(), InfoDocUtils::empty_string()),
-                    ("name".to_string(), Value::String(video.name.clone())),
-                    ("o_name".to_string(), Value::String(video.name.clone())),
-                    ("plot".to_string(), InfoDocUtils::empty_string()),
-                    ("rating".to_string(), Value::String(InfoDocUtils::limited(video.rating.unwrap_or_default()))),
-                    ("rating_count_kinopoisk".to_string(), InfoDocUtils::build_u32(0)),
-                    ("release_date".to_string(), InfoDocUtils::empty_string()),
-                    ("runtime".to_string(), Value::String("0".to_string())),
-                    ("status".to_string(), Value::String("Released".to_string())),
-                    ("tmdb_id".to_string(), Value::String(video.tmdb.unwrap_or_default().to_string())),
-                    ("youtube_trailer".to_string(), InfoDocUtils::empty_string()),
-                ])))
-            },
-            ("movie_data".to_string(), Value::Object(serde_json::Map::from_iter([
-                ("added".to_string(), Value::String(video.added.clone())),
-                ("category_id".to_string(), Value::String(category_id.to_string())),
-                ("category_ids".to_string(), Value::Array(Vec::from([InfoDocUtils::build_u32(category_id)]))),
-                ("container_extension".to_string(), Value::String(video.container_extension.clone())),
-                ("custom_sid".to_string(), video.custom_sid.as_ref().map_or(Value::Null, |s| Value::String(s.clone()))),
-                ("direct_source".to_string(), if options.skip_video_direct_source { InfoDocUtils::empty_string() } else { Value::String(video.direct_source.clone()) }),
-                ("name".to_string(), Value::String(video.name.clone())),
-                ("stream_id".to_string(), Value::Number(serde_json::Number::from(virtual_id))),
-            ])))
-        ]))
-    }
-
-    fn series_episodes_to_info_document(&self, options: &XtreamMappingOptions,
-                                        resource_url: Option<&str>,
-                                        episodes: &Vec<SeriesStreamDetailEpisodeProperties>) -> Value {
-        let mut map: HashMap<u32, Vec<Value>> = HashMap::new();
-        for ep in episodes {
-            let value = Value::Object(serde_json::Map::from_iter([
-                ("id".to_string(), InfoDocUtils::build_u32(ep.id)),
-                ("episode_num".to_string(), InfoDocUtils::build_u32(ep.episode_num)),
-                ("title".to_string(), Value::String(ep.title.clone())),
-                ("container_extension".to_string(), Value::String(ep.container_extension.clone())),
-                ("info".to_string(), Value::Object(serde_json::Map::from_iter([
-                    ("id".to_string(), InfoDocUtils::build_u32(ep.tmdb.unwrap_or_default())),
-                    ("air_date".to_string(), Value::String(ep.release_date.clone())),
-                    ("rating".to_string(), Value::Number(serde_json::Number::from_f64(ep.rating.unwrap_or_default()).unwrap_or_else(|| serde_json::Number::from(0)))),
-                    ("movie_image".to_string(), Value::String(InfoDocUtils::make_resource_url(resource_url, &ep.movie_image, &build_season_episode_field(ep.season, ep.episode_num, "movie_image")))),
-                    ("duration".to_string(), Value::String(ep.duration.clone())),
-                    ("duration_secs".to_string(), InfoDocUtils::build_u32(ep.duration_secs)),
-                    ("video".to_string(), InfoDocUtils::build_value(ep.video.as_deref())),
-                    ("audio".to_string(), InfoDocUtils::build_value(ep.audio.as_deref())),
-                    ("bitrate".to_string(), InfoDocUtils::build_u32(ep.bitrate)),
-                ]))),
-                ("custom_sid".to_string(), ep.custom_sid.as_ref().map_or(Value::Null, |s| Value::String(s.clone()))),
-                ("added".to_string(), Value::String(ep.added.clone())),
-                ("season".to_string(), InfoDocUtils::build_u32(ep.season)),
-                ("direct_source".to_string(), if options.skip_series_direct_source { InfoDocUtils::empty_string() } else { Value::String(ep.direct_source.clone()) }),
-            ]));
-            map.entry(ep.season).or_default().push(value);
-        }
-
-        Value::Object(
-            map.into_iter()
-                .map(|(season, episodes)| {
-                    (
-                        season.to_string(),
-                        Value::Array(episodes)
-                    )
-                })
-                .collect::<serde_json::Map<String, Value>>()
-        )
-    }
-}
-
-#[inline]
-fn build_season_episode_field(season: u32, episode: u32, field: &str) -> String {
-    format!("nfo_ep_{season}_{episode}_{field}")
 }
 
 fn parse_season_episode_field(s: &str) -> Option<(u32, u32, String)> {
