@@ -535,19 +535,32 @@ fn truncate_log_body(body: &str, max_chars: usize) -> String {
     out
 }
 
-async fn probe_panel_api_test_url(app_state: &Arc<AppState>, test_url: &Url) {
+async fn probe_panel_api_test_url(
+    app_state: &Arc<AppState>,
+    test_url: &Url,
+    method: PanelApiProvisioningMethod,
+) {
     let client = app_state.http_client.load();
-    match client.get(test_url.clone()).send().await {
+    let request_method = provisioning_method_to_reqwest(method);
+    match client.request(request_method.clone(), test_url.clone()).send().await {
         Ok(response) => {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            let body_preview = truncate_log_body(&body, 2048);
-            debug_if_enabled!(
-                "panel_api provisioning test probe status: '{}' url: {} body: {}",
-                status,
-                sanitize_sensitive_info(test_url.as_str()),
-                sanitize_sensitive_info(&body_preview)
-            );
+            if request_method == Method::HEAD {
+                debug_if_enabled!(
+                    "panel_api provisioning test probe status: '{}' url: {}",
+                    status,
+                    sanitize_sensitive_info(test_url.as_str())
+                );
+            } else {
+                let body = response.text().await.unwrap_or_default();
+                let body_preview = truncate_log_body(&body, 2048);
+                debug_if_enabled!(
+                    "panel_api provisioning test probe status: '{}' url: {} body: {}",
+                    status,
+                    sanitize_sensitive_info(test_url.as_str()),
+                    sanitize_sensitive_info(&body_preview)
+                );
+            }
         }
         Err(err) => {
             debug_if_enabled!(
@@ -652,8 +665,9 @@ async fn create_panel_api_provisioning_blocking_stream_details(
                 new_handle.allocation.get_provider_config().as_deref(),
             )
             {
-                if let Some(test_url) = build_panel_api_test_url(&request_url, &username, &password) {
-                    probe_panel_api_test_url(app_state, &test_url).await;
+                if let Some(test_url) = build_panel_api_test_url(&request_url, &username, &password)
+                {
+                    probe_panel_api_test_url(app_state, &test_url, probe_method).await;
                 }
             }
 
@@ -863,7 +877,7 @@ async fn create_panel_api_provisioning_stream_details(
                     if let Some(test_url) =
                         build_panel_api_test_url(&request_url, &username, &password)
                     {
-                        probe_panel_api_test_url(&app_state_clone, &test_url).await;
+                        probe_panel_api_test_url(&app_state_clone, &test_url, probe_method).await;
                     }
                 }
 
