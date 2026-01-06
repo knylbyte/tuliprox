@@ -1,5 +1,6 @@
 mod cluster_flags;
 mod playlist;
+mod playlist_document;
 mod messaging;
 mod item_field;
 mod target_type;
@@ -26,6 +27,7 @@ mod library_request;
 mod stream_properties;
 mod xtream;
 mod info_doc_utils;
+mod playlist_info_document;
 
 pub use self::cluster_flags::*;
 pub use self::playlist::*;
@@ -53,3 +55,4 @@ pub use self::system_info::*;
 pub use self::library_request::*;
 pub use self::stream_properties::*;
 pub use self::xtream::*;
+pub use self::playlist_info_document::*;

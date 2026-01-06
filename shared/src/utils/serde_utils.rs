@@ -41,6 +41,20 @@ where
     }
 }
 
+pub fn serialize_option_string_as_null_if_empty<S>(
+    value: &Option<String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match value {
+        None => serializer.serialize_none(),
+        Some(s) if s.is_empty() => serializer.serialize_none(),
+        Some(s) => serializer.serialize_str(s),
+    }
+}
+
 pub fn deserialize_as_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,

@@ -1,5 +1,5 @@
-use crate::model::xtream_const;
 use serde_json::Value;
+use crate::model::xtream_const;
 
 pub struct InfoDocUtils {}
 
@@ -39,14 +39,6 @@ impl InfoDocUtils {
         }
     }
 
-    pub fn build_string(value: Option<&str>) -> Value {
-        Value::String(value.map_or_else(String::new, String::from))
-    }
-
-    pub fn empty_string() -> Value {
-        Value::String(String::new())
-    }
-
     pub fn build_value(value: Option<&str>) -> Value {
         if let Some(text) = value {
             if let Ok(result) = serde_json::from_str(text) {
@@ -54,10 +46,6 @@ impl InfoDocUtils {
             }
         }
         Value::Array(Vec::new())
-    }
-
-    pub fn build_u32(value: u32) -> Value {
-        Value::Number(serde_json::Number::from(value))
     }
 
     pub fn make_resource_url(resource_url: Option<&str>, value: &str, field: &str) -> String {

@@ -1,5 +1,5 @@
-use crate::model::{xtream_mapping_option_from_target_options, AppConfig, ProxyUserCredentials};
 use crate::model::ConfigTarget;
+use crate::model::{xtream_mapping_option_from_target_options, AppConfig, ProxyUserCredentials};
 use crate::repository::bplustree::{BPlusTreeDiskIteratorOwned, BPlusTreeQuery};
 use crate::repository::user_repository::user_get_bouquet_filter;
 use crate::repository::xtream_repository::{xtream_get_file_path, xtream_get_storage_path};
@@ -89,8 +89,6 @@ impl XtreamPlaylistIterator {
     }
 
     fn get_next(&mut self) -> Option<(XtreamPlaylistItem, bool)> {
-        // reader no longer has manual error state, BPlusTreeQuery handles it via Result elsewhere
-
         let filter_ids = self.filter_ids.as_ref();
         let cluster = self.cluster;
 
@@ -150,7 +148,14 @@ impl XtreamPlaylistJsonIterator {
 impl Iterator for XtreamPlaylistJsonIterator {
     type Item = (String, bool);
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.get_next().map(|(pli, has_next)| (pli.to_document(&self.inner.options).to_string(), has_next))
+        self.inner.get_next().map(|(pli, has_next)| {
+            let json = serde_json::to_string(&pli.to_document(&self.inner.options))
+                .unwrap_or_else(|err| {
+                    error!("Failed to serialize playlist item {}: {err}", pli.virtual_id);
+                    "{}".to_string()
+                });
+            (json, has_next)
+        })
     }
 }
 
