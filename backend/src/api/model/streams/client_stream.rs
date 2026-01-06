@@ -1,7 +1,7 @@
 use crate::api::model::BoxedProviderStream;
 use crate::api::model::StreamError;
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
-use crate::utils::trace_if_enabled;
+use crate::utils::{debug_if_enabled, trace_if_enabled};
 use bytes::Bytes;
 use futures::Stream;
 use log::trace;
@@ -37,7 +37,7 @@ impl Stream for ClientStream {
             match Pin::as_mut(&mut self.inner).poll_next(cx) {
                 Poll::Ready(Some(Ok(bytes))) => {
                     if bytes.is_empty() {
-                        trace!("client stream empty bytes");
+                        trace!("Client stream empty bytes");
                         // Empty payload signals upstream closure; notify and let consumer see final chunk
                         self.close_signal.notify();
                     } else if let Some(counter) = self.total_bytes.as_ref() {
@@ -52,12 +52,16 @@ impl Stream for ClientStream {
                 }
                 Poll::Pending => Poll::Pending,
                 Poll::Ready(Some(Err(err))) => {
-                    trace!("client stream error: {err}");
+                    trace!("Client stream error: {err}");
                     self.close_signal.notify();
                     Poll::Ready(Some(Err(err)))
                 }
             }
         } else {
+            debug_if_enabled!(
+                "Client stream closed by reconnect for {}",
+                sanitize_sensitive_info(&self.url)
+            );
             Poll::Ready(None)
         }
     }
