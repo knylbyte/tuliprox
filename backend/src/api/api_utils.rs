@@ -701,7 +701,7 @@ fn create_panel_api_provisioning_stream_details(
                     }
                 }
 
-                let reconnect_reason = if let Some(stream_info) = probe_provider_stream_status_info(
+                let should_reconnect = if let Some(stream_info) = probe_provider_stream_status_info(
                     &app_state_clone,
                     &stream_options,
                     addr,
@@ -735,20 +735,20 @@ fn create_panel_api_provisioning_stream_details(
                             "panel_api provisioning ready for input {}",
                             sanitize_sensitive_info(&input_clone.name)
                         );
-                        Some("ready")
+                        true
                     } else {
                         debug_if_enabled!(
                             "panel_api provisioning probe returned non-ready status for {}",
                             sanitize_sensitive_info(&request_url)
                         );
-                        Some("non-ready")
+                        false
                     }
                 } else {
                     debug_if_enabled!(
                         "panel_api provisioning probe request failed for {}",
                         sanitize_sensitive_info(&request_url)
                     );
-                    Some("probe-failed")
+                    false
                 };
 
                 app_state_clone
@@ -756,10 +756,9 @@ fn create_panel_api_provisioning_stream_details(
                     .release_provider_handle(Some(new_handle))
                     .await;
 
-                if let Some(reason) = reconnect_reason {
+                if should_reconnect {
                     debug_if_enabled!(
-                        "panel_api provisioning reconnecting client (reason={}) for input {}",
-                        reason,
+                        "panel_api provisioning reconnecting client (ready) for input {}",
                         sanitize_sensitive_info(&input_clone.name)
                     );
                     reconnect_flag_clone.notify();
