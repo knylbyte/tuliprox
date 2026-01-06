@@ -1059,7 +1059,8 @@ pub fn PanelConfigView() -> Html {
                                                 on_change={Some(on_alias_pool_max)}
                                                 placeholder={Some("auto".to_string())}/>
                                             <div class="tp__panel-config-view__toggle">
-                                                <span class="lbl">{ translate.t(LABEL_PANEL_ALIAS_POOL_REMOVE_EXPIRED) }</span>
+                                                <label>{ translate.t(LABEL_PANEL_ALIAS_POOL_REMOVE_EXPIRED) }</label>
+                                                <span class="lbl">{ translate.t(LABEL_ENABLED) }</span>
                                                 <ToggleSwitch value={alias_pool_remove_expired} readonly={false} on_change={on_alias_pool_remove_expired} />
                                             </div>
                                         </div>
