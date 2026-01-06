@@ -318,7 +318,7 @@ impl XtreamPlaylistItem {
                     last_modified: String::new(),
                     rating: "0".to_string(),
                     rating_5based: "0".to_string(),
-                    backdrop_path: vec![stream_icon],
+                    backdrop_path: if stream_icon.is_empty() { vec![] } else { vec![stream_icon] },
                     youtube_trailer: String::new(),
                     tmdb: String::new(),
                     episode_runtime: "0".to_string(),
