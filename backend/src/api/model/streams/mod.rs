@@ -12,7 +12,6 @@ mod throttled_stream;
 pub mod persist_pipe_stream;
 
 pub(in crate) use self::transport_stream_buffer::*;
-pub(in crate::api) use self::client_stream::*;
 pub(in crate::api) use self::provider_stream::*;
 pub(in crate::api) use self::provider_stream_factory::*;
 pub(in crate::api) use self::shared_stream_manager::*;

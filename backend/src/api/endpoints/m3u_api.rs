@@ -232,12 +232,18 @@ async fn m3u_api_stream(
         .into_response();
     }
 
+    let client_request_url = format!(
+        "{}/{}",
+        stream_req.action_path.trim_end_matches('/'),
+        stream_req.stream_id
+    );
     stream_response(
         fingerprint,
         app_state,
         &session_key,
         pli.to_stream_channel(target.id),
         session_url,
+        &client_request_url,
         req_headers,
         &input,
         &target,

@@ -390,6 +390,15 @@ async fn xtream_player_api_stream(
     }
 
     let stream_channel = create_stream_channel_with_type(target.id, &pli, item_type);
+    let client_request_url = if stream_req.action_path.is_empty() {
+        format!("/{}", stream_req.stream_id)
+    } else {
+        format!(
+            "{}/{}",
+            stream_req.action_path.trim_end_matches('/'),
+            stream_req.stream_id
+        )
+    };
 
     stream_response(
         fingerprint,
@@ -397,6 +406,7 @@ async fn xtream_player_api_stream(
         session_key.as_str(),
         stream_channel,
         &stream_url,
+        &client_request_url,
         req_headers,
         &input,
         &target,
@@ -521,12 +531,22 @@ async fn xtream_player_api_stream_with_token(
             "Streaming stream request from {}",
             sanitize_sensitive_info(&stream_url)
         );
+        let client_request_url = if stream_req.action_path.is_empty() {
+            format!("/{}", stream_req.stream_id)
+        } else {
+            format!(
+                "{}/{}",
+                stream_req.action_path.trim_end_matches('/'),
+                stream_req.stream_id
+            )
+        };
         stream_response(
             fingerprint,
             app_state,
             session_key.as_str(),
             pli.to_stream_channel(target.id),
             &stream_url,
+            &client_request_url,
             req_headers,
             &input,
             &target,
