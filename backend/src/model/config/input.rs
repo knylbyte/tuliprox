@@ -191,6 +191,14 @@ impl ConfigInput {
             }
         }
 
+        if let Some(panel) = self.panel_api.as_ref() {
+            if panel.provisioning.probe_interval_sec == 0 {
+                return Err(info_err!(
+                    "panel_api.provisioning.probe_interval_sec must be greater than 0".to_string()
+                ));
+            }
+        }
+
         Ok(batch_file_path)
     }
 

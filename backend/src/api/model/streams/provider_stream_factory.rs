@@ -2,7 +2,7 @@ use crate::api::api_utils::{get_headers_from_request, StreamOptions};
 use crate::api::model::{get_response_headers, AppState, CustomVideoStreamType};
 use crate::api::model::StreamError;
 use crate::api::model::{create_channel_unavailable_stream, get_header_filter_for_item_type};
-use crate::api::model::{BoxedProviderStream, ProviderStreamFactoryResponse};
+use crate::api::model::{BoxedProviderStream, ProviderStreamFactoryResponse, ProviderStreamInfo};
 use crate::model::{ReverseProxyDisabledHeaderConfig};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::utils::debug_if_enabled;
@@ -11,6 +11,7 @@ use futures::stream::{self};
 use futures::{StreamExt, TryStreamExt};
 use log::{debug, log_enabled, warn};
 use reqwest::header::{HeaderMap, RANGE};
+use reqwest::Method;
 use reqwest::StatusCode;
 use shared::model::{PlaylistItemType, DEFAULT_USER_AGENT};
 use shared::utils::{filter_request_header, sanitize_sensitive_info};
@@ -185,9 +186,10 @@ fn get_request_range_start_bytes(req_headers: &HashMap<String, Vec<u8>>) -> Opti
 //     }
 // }
 
-fn prepare_client(
+fn prepare_client_with_method(
     request_client: &reqwest::Client,
     stream_options: &ProviderStreamFactoryOptions,
+    method: Method,
 ) -> (reqwest::RequestBuilder, bool) {
     let url = stream_options.get_url();
     let range_start = stream_options.get_total_bytes_send();
@@ -249,9 +251,16 @@ fn prepare_client(
         debug!("{}", sanitize_sensitive_info(&message));
     }
 
-    let request_builder = request_client.get(url.clone()).headers(headers);
+    let request_builder = request_client.request(method, url.clone()).headers(headers);
 
     (request_builder, partial)
+}
+
+fn prepare_client(
+    request_client: &reqwest::Client,
+    stream_options: &ProviderStreamFactoryOptions,
+) -> (reqwest::RequestBuilder, bool) {
+    prepare_client_with_method(request_client, stream_options, Method::GET)
 }
 
 async fn provider_stream_request(
@@ -341,6 +350,52 @@ async fn provider_stream_request(
                 );
             }
             handle_channel_unavailable_stream(app_state, stream_options).await
+        }
+    }
+}
+
+pub async fn probe_provider_stream_status(
+    app_state: &Arc<AppState>,
+    request_client: &reqwest::Client,
+    stream_options: &ProviderStreamFactoryOptions,
+    method: Method,
+) -> Result<ProviderStreamInfo, StatusCode> {
+    let (client, _partial_content) = prepare_client_with_method(request_client, stream_options, method);
+    match client.send().await {
+        Ok(mut response) => {
+            let status = response.status();
+            if log_enabled!(log::Level::Debug) {
+                let message = format!(
+                    "Provider probe response status: '{}' headers: {:?}",
+                    status,
+                    response.headers_mut()
+                );
+                debug!("{}", sanitize_sensitive_info(&message));
+            }
+            let response_headers = get_response_headers(response.headers());
+            Ok(Some((
+                response_headers,
+                status,
+                Some(response.url().clone()),
+                None,
+            )))
+        }
+        Err(err) => {
+            let url = stream_options.get_url();
+            if err.is_timeout() {
+                let timeout_secs = app_state.app_config.config.load().connect_timeout_secs;
+                debug_if_enabled!(
+                    "Provider probe request timed out after {}s for {}",
+                    timeout_secs,
+                    sanitize_sensitive_info(url.as_str())
+                );
+            } else {
+                debug_if_enabled!(
+                    "Provider probe request failed for {}: {err}",
+                    sanitize_sensitive_info(url.as_str())
+                );
+            }
+            Err(StatusCode::SERVICE_UNAVAILABLE)
         }
     }
 }

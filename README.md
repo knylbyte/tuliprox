@@ -218,7 +218,6 @@ Attributes:
 - `throttle` Allowed units are `KB/s`,`MB/s`,`KiB/s`,`MiB/s`,`kbps`,`mbps`,`Mibps`. Default unit is `kbps`
 - `grace_period_millis`  default set to 300 milliseconds.
 - `grace_period_timeout_secs` default set to 2 seconds.
-- `panel_api_provision_timeout` maximum wait time (seconds) to probe a newly created/renewed account before forcing a client reconnect (default `60`).
 - `shared_burst_buffer_mb` optional (default `12`). Minimum burst buffer size (in MB) used for shared streams.
 
 ##### 1.6.1.1 `retry`
@@ -269,10 +268,6 @@ If the connection is not throttled, the player will play its buffered content lo
 
 ##### 1.6.1.4 `grace_period_timeout_secs`
 How long the grace grant will last, until another grace grant can made.
-
-##### 1.6.1.5 `panel_api_provision_timeout`
-Maximum wait time (in seconds) after a new panel API account is created/renewed to probe for a successful (2xx) stream response.
-When provisioning is active, the client is forced to reconnect after the first 2xx or once this timeout expires. Default `60`.
 
 #### 1.6.2 `cache`
 LRU-Cache is for resources. If it is `enabled`, the resources/images are persisted in the given `dir`. If the cache size exceeds `size`,
@@ -510,10 +505,8 @@ Following attributes are available:
 - ` provider_connections_exhausted`: _optional_
 - `panel_api_provisioning`: _optional_
 
-Video files with name `channel_unavailable.ts`, `user_connections_exhausted`, `provider_connections_exhausted`
+Video files with name `channel_unavailable.ts`, `user_connections_exhausted`, `provider_connections_exhausted`, `panel_api_provisioning` 
 are already available in the docker image.
-
-`panel_api_provisioning` is served while panel API provisioning probes run; the stream ends to force a reconnect after the first 2xx or when `panel_api_provision_timeout` expires.
 
 You can convert an image with `ffmpeg`.
 
@@ -851,6 +844,12 @@ Optional alias pool controls:
   - `auto`: no upper bound; if `min` is also `auto`, alias-pool min checks are triggered when tuliprox users are added/updated. If only `max` is `auto`, tuliprox logs a warning.
 - `alias_pool.remove_expired`: `boolean`
   - `true`: remove expired accounts from `source.yml` or batch CSVs during boot/update. This cleanup runs last in the panel_api routines and only removes aliases/rows (the root input is not removed).
+
+Provisioning (stream probes):
+- `panel_api.provisioning.timeout_sec`: maximum wait time (seconds) to probe a newly created/renewed account before forcing a client reconnect (default `60`).
+- `panel_api.provisioning.method`: HTTP method used for probes (`HEAD`, `GET`, `POST`). Default `HEAD`.
+- `panel_api.provisioning.probe_interval_sec`: probe interval in seconds (default `5`).
+- Each probe also calls `<scheme>://<host>/player_api.php?username=<username>&password=<password>` and logs status/response for debugging.
 
 The API is configured generically via predefined query parameters; only `type: m3u` is supported for `client_new`, `client_renew` and `client_adult_content`.
 Recommended section order in config/UI: `account_info`, `client_info`, `client_new`, `client_renew`, `client_adult_content`.

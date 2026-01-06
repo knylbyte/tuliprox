@@ -225,6 +225,12 @@ fn validate_panel_api_config(cfg: &PanelApiConfigDto) -> Result<(), TuliproxErro
             );
         }
     }
+    if cfg.provisioning.probe_interval_sec == 0 {
+        return create_tuliprox_error_result!(
+            TuliproxErrorKind::Info,
+            "panel_api.provisioning.probe_interval_sec must be greater than 0"
+        );
+    }
     Ok(())
 }
 

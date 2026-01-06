@@ -6,8 +6,8 @@ use crate::api::model::{
     create_provider_stream_once,
     get_stream_response_with_headers, ActiveClientStream, AppState,
     ClientStream, CustomVideoStream, CustomVideoStreamType, ProviderHandle,
-    ProviderStreamFactoryOptions, ProviderStreamFactoryResponse, ProviderStreamInfo, SharedStreamManager,
-    StreamError, ThrottledStream, UserApiRequest,
+    ProviderStreamFactoryOptions, ProviderStreamInfo,
+    SharedStreamManager, probe_provider_stream_status, StreamError, ThrottledStream, UserApiRequest,
 };
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
 use crate::api::panel_api::{is_alias_pool_max_reached, try_provision_account_on_exhausted};
@@ -27,16 +27,19 @@ use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error,  log_enabled, trace, warn};
 use reqwest::header::RETRY_AFTER;
+use reqwest::Method;
 use serde::Serialize;
-use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{
-    bin_serialize, default_grace_period_millis, default_panel_api_provision_timeout_secs, trim_slash,
+use shared::model::{
+    Claims, InputFetchMethod, PanelApiProvisioningMethod, PlaylistEntry, PlaylistItemType,
+    StreamChannel, TargetType, UserConnectionPermission, XtreamCluster,
 };
+use shared::utils::{bin_serialize, default_grace_period_millis, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
@@ -47,7 +50,6 @@ use url::Url;
 
 const CONTENT_TYPE_BIN: &str = "application/cbor";
 const PANEL_API_PROVISIONING_THROTTLE_KBPS: usize = 8000;
-const PANEL_API_PROVISIONING_RETRY_INTERVAL_MILLIS: u64 = 1000;
 
 #[macro_export]
 macro_rules! try_option_bad_request {
@@ -500,8 +502,74 @@ fn is_ready_provider_stream(stream_info: &ProviderStreamInfo) -> bool {
     )
 }
 
+fn provisioning_method_to_reqwest(method: PanelApiProvisioningMethod) -> Method {
+    match method {
+        PanelApiProvisioningMethod::Head => Method::HEAD,
+        PanelApiProvisioningMethod::Get => Method::GET,
+        PanelApiProvisioningMethod::Post => Method::POST,
+    }
+}
+
+fn build_panel_api_test_url(request_url: &str, username: &str, password: &str) -> Option<Url> {
+    let url = Url::parse(request_url).ok()?;
+    let host = url.host_str()?;
+    let scheme = url.scheme();
+    let mut base = format!("{scheme}://{host}");
+    if let Some(port) = url.port() {
+        let _ = write!(base, ":{port}");
+    }
+    base.push_str("/player_api.php");
+    let mut test_url = Url::parse(&base).ok()?;
+    test_url
+        .query_pairs_mut()
+        .append_pair("username", username)
+        .append_pair("password", password);
+    Some(test_url)
+}
+
+fn truncate_log_body(body: &str, max_chars: usize) -> String {
+    let mut out = body.trim().chars().take(max_chars).collect::<String>();
+    if body.trim().chars().count() > max_chars {
+        out.push_str("...");
+    }
+    out
+}
+
+async fn probe_panel_api_test_url(app_state: &Arc<AppState>, test_url: &Url) {
+    let client = app_state.http_client.load();
+    match client.get(test_url.clone()).send().await {
+        Ok(response) => {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            let body_preview = truncate_log_body(&body, 2048);
+            debug_if_enabled!(
+                "panel_api provisioning test probe status: '{}' url: {} body: {}",
+                status,
+                sanitize_sensitive_info(test_url.as_str()),
+                sanitize_sensitive_info(&body_preview)
+            );
+        }
+        Err(err) => {
+            debug_if_enabled!(
+                "panel_api provisioning test probe failed for {}: {err}",
+                sanitize_sensitive_info(test_url.as_str())
+            );
+        }
+    }
+}
+
+fn resolve_probe_credentials(
+    input: &ConfigInput,
+    provider_cfg: Option<&ProviderConfig>,
+) -> Option<(String, String)> {
+    provider_cfg
+        .and_then(ProviderConfig::get_user_info)
+        .map(|info| (info.username, info.password))
+        .or_else(|| input.get_user_info().map(|info| (info.username, info.password)))
+}
+
 #[allow(clippy::too_many_arguments)]
-async fn open_provider_stream_once(
+async fn probe_provider_stream_status_info(
     app_state: &Arc<AppState>,
     stream_options: &StreamOptions,
     addr: SocketAddr,
@@ -511,7 +579,8 @@ async fn open_provider_stream_once(
     input_headers: Option<&HashMap<String, String>>,
     disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>,
     request_url: &str,
-) -> Option<ProviderStreamFactoryResponse> {
+    method: PanelApiProvisioningMethod,
+) -> Option<ProviderStreamInfo> {
     let url = Url::parse(request_url).ok()?;
     let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
         addr,
@@ -523,12 +592,15 @@ async fn open_provider_stream_once(
         input_headers,
         disabled_headers,
     );
-    create_provider_stream_once(
+    let method = provisioning_method_to_reqwest(method);
+    probe_provider_stream_status(
         app_state,
         &app_state.http_client.load(),
-        provider_stream_factory_options,
+        &provider_stream_factory_options,
+        method,
     )
     .await
+    .ok()
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
@@ -545,12 +617,15 @@ async fn create_panel_api_provisioning_blocking_stream_details(
     provider_handle: Option<ProviderHandle>,
     input_headers: Option<HashMap<String, String>>,
     max_wait_secs: u64,
+    probe_method: PanelApiProvisioningMethod,
+    probe_interval_secs: u64,
 ) -> Option<StreamDetails> {
     let deadline = Instant::now() + Duration::from_secs(max_wait_secs);
     if !try_provision_account_on_exhausted(app_state, input).await {
         return None;
     }
 
+    let probe_delay = Duration::from_secs(probe_interval_secs.max(1));
     while Instant::now() < deadline {
         if let Some(new_handle) = app_state
             .active_provider
@@ -572,69 +647,104 @@ async fn create_panel_api_provisioning_blocking_stream_details(
                     },
                 );
 
-            if let Ok(url) = Url::parse(&request_url) {
-                let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
-                    fingerprint.addr,
-                    item_type,
-                    share_stream,
-                    stream_options,
-                    &url,
-                    req_headers,
-                    input_headers.as_ref(),
-                    disabled_headers.as_ref(),
-                );
-                let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
-                if let Some((stream, stream_info)) = create_provider_stream_once(
-                    app_state,
-                    &app_state.http_client.load(),
-                    provider_stream_factory_options,
-                )
-                .await
+            if let Some((username, password)) = resolve_probe_credentials(
+                input,
+                new_handle.allocation.get_provider_config().as_deref(),
+            )
+            {
+                if let Some(test_url) = build_panel_api_test_url(&request_url, &username, &password) {
+                    probe_panel_api_test_url(app_state, &test_url).await;
+                }
+            }
+
+            if let Some(probe_info) = probe_provider_stream_status_info(
+                app_state,
+                stream_options,
+                fingerprint.addr,
+                item_type,
+                share_stream,
+                req_headers,
+                input_headers.as_ref(),
+                disabled_headers.as_ref(),
+                &request_url,
+                probe_method,
+            )
+            .await
+            {
+                if let Some((headers, status, response_url, custom_video_type)) = probe_info.as_ref()
                 {
-                    if log_enabled!(log::Level::Debug) {
-                        if let Some((headers, status, response_url, custom_video_type)) =
-                            stream_info.as_ref()
+                    debug_if_enabled!(
+                        "panel_api provisioning probe status: '{}' headers: {:?} url: {} custom_video: {:?}",
+                        status,
+                        headers,
+                        sanitize_sensitive_info(
+                            response_url
+                                .as_ref()
+                                .map_or(request_url.as_str(), |u| u.as_str())
+                        ),
+                        custom_video_type
+                    );
+                }
+                if is_ready_provider_stream(&probe_info) {
+                    if let Ok(url) = Url::parse(&request_url) {
+                        let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
+                            fingerprint.addr,
+                            item_type,
+                            share_stream,
+                            stream_options,
+                            &url,
+                            req_headers,
+                            input_headers.as_ref(),
+                            disabled_headers.as_ref(),
+                        );
+                        let reconnect_flag =
+                            provider_stream_factory_options.get_reconnect_flag_clone();
+                        if let Some((stream, stream_info)) = create_provider_stream_once(
+                            app_state,
+                            &app_state.http_client.load(),
+                            provider_stream_factory_options,
+                        )
+                        .await
                         {
-                            debug!(
-                                "panel_api provisioning probe status: '{}' headers: {:?} url: {} custom_video: {:?}",
-                                status,
-                                headers,
-                                sanitize_sensitive_info(
-                                    response_url
-                                        .as_ref()
-                                        .map_or(request_url.as_str(), |u| u.as_str())
-                                ),
-                                custom_video_type
+                            if is_ready_provider_stream(&stream_info) {
+                                if let Some(old_handle) = provider_handle.clone() {
+                                    app_state
+                                        .connection_manager
+                                        .release_provider_handle(Some(old_handle))
+                                        .await;
+                                }
+                                return Some(StreamDetails {
+                                    stream: Some(stream),
+                                    stream_info,
+                                    provider_name: new_handle.allocation.get_provider_name(),
+                                    grace_period_millis,
+                                    disable_provider_grace: false,
+                                    reconnect_flag: Some(reconnect_flag),
+                                    provider_handle: Some(new_handle),
+                                });
+                            }
+                            debug_if_enabled!(
+                                "panel_api provisioning probe stream not ready for {}",
+                                sanitize_sensitive_info(&request_url)
+                            );
+                        } else {
+                            debug_if_enabled!(
+                                "panel_api provisioning probe failed to open stream for {}",
+                                sanitize_sensitive_info(&request_url)
                             );
                         }
                     }
-                    if is_ready_provider_stream(&stream_info) {
-                        if let Some(old_handle) = provider_handle.clone() {
-                            app_state
-                                .connection_manager
-                                .release_provider_handle(Some(old_handle))
-                                .await;
-                        }
-                        return Some(StreamDetails {
-                            stream: Some(stream),
-                            stream_info,
-                            provider_name: new_handle.allocation.get_provider_name(),
-                            grace_period_millis,
-                            disable_provider_grace: false,
-                            reconnect_flag: Some(reconnect_flag),
-                            provider_handle: Some(new_handle),
-                        });
-                    }
-                    trace_if_enabled!(
-                        "panel_api provisioning probe returned non-ready stream for {}",
-                        sanitize_sensitive_info(&request_url)
-                    );
                 } else {
-                    trace_if_enabled!(
-                        "panel_api provisioning probe failed to open stream for {}",
+                    debug_if_enabled!(
+                        "panel_api provisioning probe returned non-ready status for {}",
                         sanitize_sensitive_info(&request_url)
                     );
                 }
+            } else {
+                debug_if_enabled!(
+                    "panel_api provisioning probe request failed for {}",
+                    sanitize_sensitive_info(&request_url)
+                );
             }
 
             app_state
@@ -643,10 +753,7 @@ async fn create_panel_api_provisioning_blocking_stream_details(
                 .await;
         }
 
-        tokio::time::sleep(Duration::from_millis(
-            PANEL_API_PROVISIONING_RETRY_INTERVAL_MILLIS,
-        ))
-        .await;
+        tokio::time::sleep(probe_delay).await;
     }
 
     None
@@ -668,6 +775,8 @@ async fn create_panel_api_provisioning_stream_details(
     provider_name: Option<String>,
     input_headers: Option<HashMap<String, String>>,
     max_wait_secs: u64,
+    probe_method: PanelApiProvisioningMethod,
+    probe_interval_secs: u64,
 ) -> Option<StreamDetails> {
     let Some(panel_api_provisioning) = app_state
         .app_config
@@ -688,6 +797,8 @@ async fn create_panel_api_provisioning_stream_details(
                 provider_handle,
                 input_headers,
                 max_wait_secs,
+                probe_method,
+                probe_interval_secs,
             )
             .await;
         };
@@ -715,6 +826,7 @@ async fn create_panel_api_provisioning_stream_details(
         pipe_provider_stream: stream_options.pipe_provider_stream,
     };
     let addr = fingerprint.addr;
+    let probe_delay = Duration::from_secs(probe_interval_secs.max(1));
 
     tokio::spawn(async move {
         let _ = try_provision_account_on_exhausted(&app_state_clone, &input_clone).await;
@@ -744,7 +856,18 @@ async fn create_panel_api_provisioning_stream_details(
                         },
                     );
 
-                if let Some((_stream, stream_info)) = open_provider_stream_once(
+                if let Some((username, password)) = resolve_probe_credentials(
+                    &input_clone,
+                    new_handle.allocation.get_provider_config().as_deref(),
+                ) {
+                    if let Some(test_url) =
+                        build_panel_api_test_url(&request_url, &username, &password)
+                    {
+                        probe_panel_api_test_url(&app_state_clone, &test_url).await;
+                    }
+                }
+
+                if let Some(stream_info) = probe_provider_stream_status_info(
                     &app_state_clone,
                     &stream_options,
                     addr,
@@ -754,25 +877,24 @@ async fn create_panel_api_provisioning_stream_details(
                     input_headers_clone.as_ref(),
                     disabled_headers.as_ref(),
                     &request_url,
+                    probe_method,
                 )
                 .await
                 {
-                    if log_enabled!(log::Level::Debug) {
-                        if let Some((headers, status, response_url, custom_video_type)) =
-                            stream_info.as_ref()
-                        {
-                            debug!(
-                                "panel_api provisioning probe status: '{}' headers: {:?} url: {} custom_video: {:?}",
-                                status,
-                                headers,
-                                sanitize_sensitive_info(
-                                    response_url
-                                        .as_ref()
-                                        .map_or(request_url.as_str(), |u| u.as_str())
-                                ),
-                                custom_video_type
-                            );
-                        }
+                    if let Some((headers, status, response_url, custom_video_type)) =
+                        stream_info.as_ref()
+                    {
+                        debug_if_enabled!(
+                            "panel_api provisioning probe status: '{}' headers: {:?} url: {} custom_video: {:?}",
+                            status,
+                            headers,
+                            sanitize_sensitive_info(
+                                response_url
+                                    .as_ref()
+                                    .map_or(request_url.as_str(), |u| u.as_str())
+                            ),
+                            custom_video_type
+                        );
                     }
                     if is_ready_provider_stream(&stream_info) {
                         debug_if_enabled!(
@@ -786,13 +908,13 @@ async fn create_panel_api_provisioning_stream_details(
                         reconnect_flag_clone.notify();
                         return;
                     }
-                    trace_if_enabled!(
-                        "panel_api provisioning probe returned non-ready stream for {}",
+                    debug_if_enabled!(
+                        "panel_api provisioning probe returned non-ready status for {}",
                         sanitize_sensitive_info(&request_url)
                     );
                 } else {
-                    trace_if_enabled!(
-                        "panel_api provisioning probe failed to open stream for {}",
+                    debug_if_enabled!(
+                        "panel_api provisioning probe request failed for {}",
                         sanitize_sensitive_info(&request_url)
                     );
                 }
@@ -803,10 +925,7 @@ async fn create_panel_api_provisioning_stream_details(
                     .await;
             }
 
-            tokio::time::sleep(Duration::from_millis(
-                PANEL_API_PROVISIONING_RETRY_INTERVAL_MILLIS,
-            ))
-            .await;
+            tokio::time::sleep(probe_delay).await;
         }
         reconnect_flag_clone.notify();
     });
@@ -869,16 +988,12 @@ async fn create_stream_response_details(
         .as_ref()
         .and_then(|guard| guard.allocation.get_provider_name());
 
-    let panel_api_max_wait_secs = app_state
-        .app_config
-        .config
-        .load()
-        .reverse_proxy
-        .as_ref()
-        .and_then(|r| r.stream.as_ref())
-        .map_or_else(default_panel_api_provision_timeout_secs, |s| {
-            s.panel_api_provision_timeout
-        });
+    let panel_api_provisioning = input.panel_api.as_ref().map(|p| &p.provisioning);
+    let panel_api_max_wait_secs = panel_api_provisioning.map_or(0, |p| p.timeout_sec);
+    let panel_api_probe_interval_secs = panel_api_provisioning.map_or(0, |p| p.probe_interval_sec);
+    let panel_api_probe_method = panel_api_provisioning
+        .map(|p| p.method)
+        .unwrap_or_default();
 
     let should_use_panel_api_provisioning = panel_api_max_wait_secs > 0
         && force_provider.is_none()
@@ -924,6 +1039,8 @@ async fn create_stream_response_details(
                 guard_provider_name.clone(),
                 streaming_strategy.input_headers.clone(),
                 panel_api_max_wait_secs,
+                panel_api_probe_method,
+                panel_api_probe_interval_secs,
             )
             .await
             {

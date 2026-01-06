@@ -1,4 +1,4 @@
-use super::PanelApiConfigDto;
+use super::{PanelApiAliasPoolSizeValue, PanelApiConfigDto};
 use crate::error::{TuliproxError, TuliproxErrorKind};
 use crate::model::EpgConfigDto;
 use crate::utils::{
@@ -359,6 +359,26 @@ impl ConfigInputDto {
             if !matches!(staged_input.input_type, InputType::M3u | InputType::Xtream) {
                 return Err(info_err!(
                     "Staged input can only be of type m3u or xtream".to_owned()
+                ));
+            }
+        }
+
+        if let Some(panel) = self.panel_api.as_ref() {
+            if let Some(size) = panel.alias_pool.as_ref().and_then(|pool| pool.size.as_ref()) {
+                let min = size.min.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+                let max = size.max.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+                if let (Some(min), Some(max)) = (min, max) {
+                    if min > max {
+                        return Err(info_err!(
+                            "panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max".to_string()
+                        ));
+                    }
+                }
+            }
+
+            if panel.provisioning.probe_interval_sec == 0 {
+                return Err(info_err!(
+                    "panel_api.provisioning.probe_interval_sec must be greater than 0".to_string()
                 ));
             }
         }

@@ -1,10 +1,14 @@
 use crate::app::components::config::config_page::{ConfigForm, LABEL_PANEL_CONFIG};
 use crate::app::components::config::config_view_context::ConfigViewContext;
 use crate::app::components::input::Input;
-use crate::app::components::{Card, Chip, IconButton, ToggleSwitch};
+use crate::app::components::select::Select;
+use crate::app::components::{Card, Chip, DropDownOption, DropDownSelection, IconButton, ToggleSwitch};
 use crate::app::context::ConfigContext;
 use crate::html_if;
-use shared::model::{ConfigInputDto, PanelApiAliasPoolSizeValue, PanelApiConfigDto, PanelApiQueryParamDto, SourcesConfigDto};
+use shared::model::{
+    ConfigInputDto, PanelApiAliasPoolAuto, PanelApiAliasPoolSizeValue, PanelApiConfigDto,
+    PanelApiProvisioningMethod, PanelApiQueryParamDto, SourcesConfigDto,
+};
 use std::rc::Rc;
 use yew::prelude::*;
 use yew_i18n::use_translation;
@@ -20,6 +24,14 @@ const LABEL_PANEL_CREDITS: &str = "LABEL.PANEL_CREDITS";
 const LABEL_VALIDATION: &str = "LABEL.VALIDATION";
 const HINT_PANEL_INFO: &str = "HINT.CONFIG.PANEL.INFO";
 const HINT_PANEL_ENABLE: &str = "HINT.CONFIG.PANEL.ENABLE";
+const LABEL_PANEL_PROVISIONING: &str = "LABEL.PANEL_PROVISIONING";
+const LABEL_PANEL_PROVISION_TIMEOUT: &str = "LABEL.PANEL_PROVISION_TIMEOUT_SEC";
+const LABEL_PANEL_PROBE_INTERVAL: &str = "LABEL.PANEL_PROBE_INTERVAL_SEC";
+const LABEL_PANEL_PROVISION_METHOD: &str = "LABEL.PANEL_PROVISION_METHOD";
+const LABEL_PANEL_ALIAS_POOL: &str = "LABEL.PANEL_ALIAS_POOL";
+const LABEL_PANEL_ALIAS_POOL_MIN: &str = "LABEL.PANEL_ALIAS_POOL_MIN";
+const LABEL_PANEL_ALIAS_POOL_MAX: &str = "LABEL.PANEL_ALIAS_POOL_MAX";
+const LABEL_PANEL_ALIAS_POOL_REMOVE_EXPIRED: &str = "LABEL.PANEL_ALIAS_POOL_REMOVE_EXPIRED";
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum PanelSection {
@@ -66,6 +78,36 @@ enum PanelConfigFormAction {
         source_idx: usize,
         input_idx: usize,
         api_key: String,
+    },
+    SetProvisioningTimeout {
+        source_idx: usize,
+        input_idx: usize,
+        timeout_sec: u64,
+    },
+    SetProvisioningProbeInterval {
+        source_idx: usize,
+        input_idx: usize,
+        probe_interval_sec: u64,
+    },
+    SetProvisioningMethod {
+        source_idx: usize,
+        input_idx: usize,
+        method: PanelApiProvisioningMethod,
+    },
+    SetAliasPoolMin {
+        source_idx: usize,
+        input_idx: usize,
+        value: Option<PanelApiAliasPoolSizeValue>,
+    },
+    SetAliasPoolMax {
+        source_idx: usize,
+        input_idx: usize,
+        value: Option<PanelApiAliasPoolSizeValue>,
+    },
+    SetAliasPoolRemoveExpired {
+        source_idx: usize,
+        input_idx: usize,
+        remove_expired: bool,
     },
     AddParam {
         source_idx: usize,
@@ -123,6 +165,30 @@ fn get_param_value(params: &[PanelApiQueryParamDto], key: &str) -> Option<String
         .iter()
         .find(|p| p.key.trim().eq_ignore_ascii_case(key))
         .map(|p| p.value.trim().to_string())
+}
+
+fn alias_pool_size_to_string(value: Option<&PanelApiAliasPoolSizeValue>) -> String {
+    match value {
+        Some(PanelApiAliasPoolSizeValue::Auto(_)) => "auto".to_string(),
+        Some(PanelApiAliasPoolSizeValue::Number(num)) => num.to_string(),
+        None => String::new(),
+    }
+}
+
+fn parse_alias_pool_size(value: &str) -> Option<PanelApiAliasPoolSizeValue> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if "auto".starts_with(&trimmed.to_ascii_lowercase()) {
+        return Some(PanelApiAliasPoolSizeValue::Auto(
+            PanelApiAliasPoolAuto::Auto,
+        ));
+    }
+    trimmed
+        .parse::<u16>()
+        .ok()
+        .map(PanelApiAliasPoolSizeValue::Number)
 }
 
 fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
@@ -226,6 +292,19 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
                 errors.push("alias_pool.size: min must be <= max".to_string());
             }
         }
+        if let Some(min) = min {
+            if min == 0 {
+                errors.push("alias_pool.size: min must be > 0".to_string());
+            }
+        }
+        if let Some(max) = max {
+            if max == 0 {
+                errors.push("alias_pool.size: max must be > 0".to_string());
+            }
+        }
+    }
+    if panel.provisioning.probe_interval_sec == 0 {
+        errors.push("provisioning: probe_interval_sec must be > 0".to_string());
     }
     errors
 }
@@ -342,6 +421,119 @@ impl Reducible for PanelConfigFormState {
                     } else {
                         Some(api_key)
                     };
+                });
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
+            }
+            PanelConfigFormAction::SetProvisioningTimeout {
+                source_idx,
+                input_idx,
+                timeout_sec,
+            } => {
+                let mut form = self.form.clone();
+                with_input_mut(&mut form, source_idx, input_idx, |input| {
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
+                    panel.provisioning.timeout_sec = timeout_sec;
+                });
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
+            }
+            PanelConfigFormAction::SetProvisioningProbeInterval {
+                source_idx,
+                input_idx,
+                probe_interval_sec,
+            } => {
+                let mut form = self.form.clone();
+                with_input_mut(&mut form, source_idx, input_idx, |input| {
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
+                    panel.provisioning.probe_interval_sec = probe_interval_sec;
+                });
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
+            }
+            PanelConfigFormAction::SetProvisioningMethod {
+                source_idx,
+                input_idx,
+                method,
+            } => {
+                let mut form = self.form.clone();
+                with_input_mut(&mut form, source_idx, input_idx, |input| {
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
+                    panel.provisioning.method = method;
+                });
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
+            }
+            PanelConfigFormAction::SetAliasPoolMin {
+                source_idx,
+                input_idx,
+                value,
+            } => {
+                let mut form = self.form.clone();
+                with_input_mut(&mut form, source_idx, input_idx, |input| {
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
+                    let alias_pool = panel.alias_pool.get_or_insert_with(Default::default);
+                    let size = alias_pool.size.get_or_insert_with(Default::default);
+                    size.min = value;
+                });
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
+            }
+            PanelConfigFormAction::SetAliasPoolMax {
+                source_idx,
+                input_idx,
+                value,
+            } => {
+                let mut form = self.form.clone();
+                with_input_mut(&mut form, source_idx, input_idx, |input| {
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
+                    let alias_pool = panel.alias_pool.get_or_insert_with(Default::default);
+                    let size = alias_pool.size.get_or_insert_with(Default::default);
+                    size.max = value;
+                });
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
+            }
+            PanelConfigFormAction::SetAliasPoolRemoveExpired {
+                source_idx,
+                input_idx,
+                remove_expired,
+            } => {
+                let mut form = self.form.clone();
+                with_input_mut(&mut form, source_idx, input_idx, |input| {
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
+                    let alias_pool = panel.alias_pool.get_or_insert_with(Default::default);
+                    alias_pool.remove_expired = remove_expired;
                 });
                 Self {
                     form,
@@ -643,10 +835,95 @@ pub fn PanelConfigView() -> Html {
                 });
             })
         };
+        let on_provision_timeout = {
+            let form_state = form_state.clone();
+            Callback::from(move |value: String| {
+                let timeout_sec = value.trim().parse::<u64>().unwrap_or(0);
+                form_state.dispatch(PanelConfigFormAction::SetProvisioningTimeout {
+                    source_idx,
+                    input_idx,
+                    timeout_sec,
+                });
+            })
+        };
+        let on_probe_interval = {
+            let form_state = form_state.clone();
+            Callback::from(move |value: String| {
+                let probe_interval_sec = value.trim().parse::<u64>().unwrap_or(0);
+                form_state.dispatch(PanelConfigFormAction::SetProvisioningProbeInterval {
+                    source_idx,
+                    input_idx,
+                    probe_interval_sec,
+                });
+            })
+        };
+        let on_method_select = {
+            let form_state = form_state.clone();
+            Callback::from(move |(_name, selection): (String, DropDownSelection)| {
+                if let DropDownSelection::Single(option) = selection {
+                    if let Ok(method) = option.parse::<PanelApiProvisioningMethod>() {
+                        form_state.dispatch(PanelConfigFormAction::SetProvisioningMethod {
+                            source_idx,
+                            input_idx,
+                            method,
+                        });
+                    }
+                }
+            })
+        };
+        let on_alias_pool_min = {
+            let form_state = form_state.clone();
+            Callback::from(move |value: String| {
+                form_state.dispatch(PanelConfigFormAction::SetAliasPoolMin {
+                    source_idx,
+                    input_idx,
+                    value: parse_alias_pool_size(&value),
+                });
+            })
+        };
+        let on_alias_pool_max = {
+            let form_state = form_state.clone();
+            Callback::from(move |value: String| {
+                form_state.dispatch(PanelConfigFormAction::SetAliasPoolMax {
+                    source_idx,
+                    input_idx,
+                    value: parse_alias_pool_size(&value),
+                });
+            })
+        };
+        let on_alias_pool_remove_expired = {
+            let form_state = form_state.clone();
+            Callback::from(move |value: bool| {
+                form_state.dispatch(PanelConfigFormAction::SetAliasPoolRemoveExpired {
+                    source_idx,
+                    input_idx,
+                    remove_expired: value,
+                });
+            })
+        };
 
         let panel = input.panel_api.as_ref();
         let url_val = panel.map(|p| p.url.clone()).unwrap_or_default();
         let api_key_val = panel.and_then(|p| p.api_key.clone()).unwrap_or_default();
+        let provisioning_timeout_val = panel
+            .map(|p| p.provisioning.timeout_sec.to_string())
+            .unwrap_or_default();
+        let provisioning_probe_interval_val = panel
+            .map(|p| p.provisioning.probe_interval_sec.to_string())
+            .unwrap_or_default();
+        let provisioning_method = panel
+            .map(|p| p.provisioning.method)
+            .unwrap_or_default();
+        let alias_pool = panel.and_then(|p| p.alias_pool.as_ref());
+        let alias_pool_min = alias_pool
+            .and_then(|p| p.size.as_ref())
+            .and_then(|s| s.min.as_ref());
+        let alias_pool_max = alias_pool
+            .and_then(|p| p.size.as_ref())
+            .and_then(|s| s.max.as_ref());
+        let alias_pool_min_val = alias_pool_size_to_string(alias_pool_min);
+        let alias_pool_max_val = alias_pool_size_to_string(alias_pool_max);
+        let alias_pool_remove_expired = alias_pool.is_some_and(|p| p.remove_expired);
         let client_info = panel
             .map(|p| p.query_parameter.client_info.as_slice())
             .unwrap_or(&[]);
@@ -669,6 +946,45 @@ pub fn PanelConfigView() -> Html {
             .unwrap_or_else(|| "—".to_string());
         let credits_label = format!("{}: {}", translate.t(LABEL_PANEL_CREDITS), credits_value);
         let type_label = input.input_type.to_string().to_uppercase();
+        let provisioning_method_label = provisioning_method.to_string();
+        let provisioning_summary = format!(
+            "{} / {}s / {}s",
+            provisioning_method_label,
+            provisioning_timeout_val,
+            provisioning_probe_interval_val
+        );
+        let alias_pool_min_label = if alias_pool_min_val.is_empty() {
+            "—".to_string()
+        } else {
+            alias_pool_min_val.clone()
+        };
+        let alias_pool_max_label = if alias_pool_max_val.is_empty() {
+            "—".to_string()
+        } else {
+            alias_pool_max_val.clone()
+        };
+        let alias_pool_remove_label = if alias_pool_remove_expired {
+            "true".to_string()
+        } else {
+            "false".to_string()
+        };
+        let method_options = Rc::new(vec![
+            DropDownOption::new(
+                "HEAD",
+                html! {<span>{ "HEAD" }</span>},
+                provisioning_method == PanelApiProvisioningMethod::Head,
+            ),
+            DropDownOption::new(
+                "GET",
+                html! {<span>{ "GET" }</span>},
+                provisioning_method == PanelApiProvisioningMethod::Get,
+            ),
+            DropDownOption::new(
+                "POST",
+                html! {<span>{ "POST" }</span>},
+                provisioning_method == PanelApiProvisioningMethod::Post,
+            ),
+        ]);
 
         html! {
             <Card class="tp__config-view__card tp__panel-config-view__input-card">
@@ -699,6 +1015,56 @@ pub fn PanelConfigView() -> Html {
                             <>
                                 <Input name="panel_url" label={Some(translate.t(LABEL_URL))} value={url_val} on_change={Some(on_url)} placeholder={Some("https://panel.example.tld/api.php".to_string())}/>
                                 <Input name="panel_api_key" label={Some(translate.t(LABEL_API_KEY))} value={api_key_val} hidden={true} on_change={Some(on_api_key)} placeholder={Some("...".to_string())}/>
+                                <div class="tp__panel-config-view__section">
+                                    <div class="tp__panel-config-view__section-header">
+                                        <h2>{ translate.t(LABEL_PANEL_PROVISIONING) }</h2>
+                                    </div>
+                                    <div class="tp__panel-config-view__params">
+                                        <div class="tp__panel-config-view__param-row">
+                                            <Input name="panel_provision_timeout"
+                                                label={Some(translate.t(LABEL_PANEL_PROVISION_TIMEOUT))}
+                                                value={provisioning_timeout_val.clone()}
+                                                on_change={Some(on_provision_timeout)}
+                                                placeholder={Some("60".to_string())}/>
+                                            <Input name="panel_probe_interval"
+                                                label={Some(translate.t(LABEL_PANEL_PROBE_INTERVAL))}
+                                                value={provisioning_probe_interval_val.clone()}
+                                                on_change={Some(on_probe_interval)}
+                                                placeholder={Some("5".to_string())}/>
+                                            <div class="tp__input">
+                                                <label>{ translate.t(LABEL_PANEL_PROVISION_METHOD) }</label>
+                                                <Select
+                                                    name="panel_provision_method"
+                                                    options={method_options.clone()}
+                                                    on_select={on_method_select.clone()}
+                                                    />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="tp__panel-config-view__section">
+                                    <div class="tp__panel-config-view__section-header">
+                                        <h2>{ translate.t(LABEL_PANEL_ALIAS_POOL) }</h2>
+                                    </div>
+                                    <div class="tp__panel-config-view__params">
+                                        <div class="tp__panel-config-view__param-row">
+                                            <Input name="panel_alias_pool_min"
+                                                label={Some(translate.t(LABEL_PANEL_ALIAS_POOL_MIN))}
+                                                value={alias_pool_min_val.clone()}
+                                                on_change={Some(on_alias_pool_min)}
+                                                placeholder={Some("auto".to_string())}/>
+                                            <Input name="panel_alias_pool_max"
+                                                label={Some(translate.t(LABEL_PANEL_ALIAS_POOL_MAX))}
+                                                value={alias_pool_max_val.clone()}
+                                                on_change={Some(on_alias_pool_max)}
+                                                placeholder={Some("auto".to_string())}/>
+                                            <div class="tp__panel-config-view__toggle">
+                                                <span class="lbl">{ translate.t(LABEL_PANEL_ALIAS_POOL_REMOVE_EXPIRED) }</span>
+                                                <ToggleSwitch value={alias_pool_remove_expired} readonly={false} on_change={on_alias_pool_remove_expired} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::AccountInfo, translate.t(PanelSection::AccountInfo.label_key()), account_info) }
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::Info, translate.t(PanelSection::Info.label_key()), client_info) }
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::New, translate.t(PanelSection::New.label_key()), client_new) }
@@ -725,6 +1091,22 @@ pub fn PanelConfigView() -> Html {
                                     <div class="tp__form-field tp__form-field__text">
                                         <label>{ translate.t(LABEL_API_KEY) }</label>
                                         <span class="tp__form-field__value">{ if api_key_val.is_empty() { "—".to_string() } else { "••••••••".to_string() } }</span>
+                                    </div>
+                                    <div class="tp__form-field tp__form-field__text">
+                                        <label>{ translate.t(LABEL_PANEL_PROVISIONING) }</label>
+                                        <span class="tp__form-field__value">{ provisioning_summary }</span>
+                                    </div>
+                                    <div class="tp__form-field tp__form-field__text">
+                                        <label>{ translate.t(LABEL_PANEL_ALIAS_POOL_MIN) }</label>
+                                        <span class="tp__form-field__value">{ alias_pool_min_label }</span>
+                                    </div>
+                                    <div class="tp__form-field tp__form-field__text">
+                                        <label>{ translate.t(LABEL_PANEL_ALIAS_POOL_MAX) }</label>
+                                        <span class="tp__form-field__value">{ alias_pool_max_label }</span>
+                                    </div>
+                                    <div class="tp__form-field tp__form-field__text">
+                                        <label>{ translate.t(LABEL_PANEL_ALIAS_POOL_REMOVE_EXPIRED) }</label>
+                                        <span class="tp__form-field__value">{ alias_pool_remove_label }</span>
                                     </div>
                                     <div class="tp__form-field tp__form-field__text">
                                         <label>{ translate.t(PanelSection::AccountInfo.label_key()) }</label>

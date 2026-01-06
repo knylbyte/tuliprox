@@ -23,6 +23,9 @@ pub const fn default_grace_period_timeout_secs() -> u64 {
 pub const fn default_panel_api_provision_timeout_secs() -> u64 {
     60
 }
+pub const fn default_panel_api_provision_probe_interval_secs() -> u64 {
+    5
+}
 pub const fn default_connect_timeout_secs() -> u32 {
     6
 }
