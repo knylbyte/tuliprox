@@ -2,10 +2,10 @@ use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStr
 use crate::api::model::{tee_stream, UserSession};
 use crate::api::model::{
     create_channel_unavailable_stream, create_custom_video_stream_response,
-    create_provider_connections_exhausted_stream, create_provider_stream,
-    create_provider_stream_once,
+    create_panel_api_provisioning_stream, create_provider_connections_exhausted_stream,
+    create_provider_stream,
     get_stream_response_with_headers, ActiveClientStream, AppState,
-    ClientStream, CustomVideoStream, CustomVideoStreamType, ProviderHandle,
+    ClientStream, CustomVideoStreamType, ProviderHandle,
     ProviderStreamFactoryOptions, ProviderStreamInfo,
     SharedStreamManager, probe_provider_stream_status, StreamError, ThrottledStream, UserApiRequest,
 };
@@ -49,7 +49,6 @@ use tokio::sync::Mutex;
 use url::Url;
 
 const CONTENT_TYPE_BIN: &str = "application/cbor";
-const PANEL_API_PROVISIONING_THROTTLE_KBPS: usize = 8000;
 
 #[macro_export]
 macro_rules! try_option_bad_request {
@@ -617,164 +616,7 @@ async fn probe_provider_stream_status_info(
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-async fn create_panel_api_provisioning_blocking_stream_details(
-    app_state: &Arc<AppState>,
-    stream_options: &StreamOptions,
-    stream_url: &str,
-    fingerprint: &Fingerprint,
-    req_headers: &HeaderMap,
-    input: &ConfigInput,
-    item_type: PlaylistItemType,
-    share_stream: bool,
-    grace_period_millis: u64,
-    provider_handle: Option<ProviderHandle>,
-    input_headers: Option<HashMap<String, String>>,
-    max_wait_secs: u64,
-    probe_method: PanelApiProvisioningMethod,
-    probe_interval_secs: u64,
-) -> Option<StreamDetails> {
-    let deadline = Instant::now() + Duration::from_secs(max_wait_secs);
-    if !try_provision_account_on_exhausted(app_state, input).await {
-        return None;
-    }
-
-    let probe_delay = Duration::from_secs(probe_interval_secs.max(1));
-    while Instant::now() < deadline {
-        if let Some(new_handle) = app_state
-            .active_provider
-            .acquire_connection_with_grace_override(&input.name, &fingerprint.addr, false)
-            .await
-        {
-            let disabled_headers = app_state.get_disabled_headers();
-            let request_url = new_handle
-                .allocation
-                .get_provider_config()
-                .map_or_else(
-                    || stream_url.to_string(),
-                    |provider_cfg| {
-                        if provider_cfg.id == input.id {
-                            stream_url.to_string()
-                        } else {
-                            get_stream_alternative_url(stream_url, input, &provider_cfg)
-                        }
-                    },
-                );
-
-            if let Some((username, password)) = resolve_probe_credentials(
-                input,
-                new_handle.allocation.get_provider_config().as_deref(),
-            )
-            {
-                if let Some(test_url) = build_panel_api_test_url(&request_url, &username, &password)
-                {
-                    probe_panel_api_test_url(app_state, &test_url, probe_method).await;
-                }
-            }
-
-            if let Some(probe_info) = probe_provider_stream_status_info(
-                app_state,
-                stream_options,
-                fingerprint.addr,
-                item_type,
-                share_stream,
-                req_headers,
-                input_headers.as_ref(),
-                disabled_headers.as_ref(),
-                &request_url,
-                probe_method,
-            )
-            .await
-            {
-                if let Some((headers, status, response_url, custom_video_type)) = probe_info.as_ref()
-                {
-                    debug_if_enabled!(
-                        "panel_api provisioning probe status: '{}' headers: {:?} url: {} custom_video: {:?}",
-                        status,
-                        headers,
-                        sanitize_sensitive_info(
-                            response_url
-                                .as_ref()
-                                .map_or(request_url.as_str(), |u| u.as_str())
-                        ),
-                        custom_video_type
-                    );
-                }
-                if is_ready_provider_stream(&probe_info) {
-                    if let Ok(url) = Url::parse(&request_url) {
-                        let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
-                            fingerprint.addr,
-                            item_type,
-                            share_stream,
-                            stream_options,
-                            &url,
-                            req_headers,
-                            input_headers.as_ref(),
-                            disabled_headers.as_ref(),
-                        );
-                        let reconnect_flag =
-                            provider_stream_factory_options.get_reconnect_flag_clone();
-                        if let Some((stream, stream_info)) = create_provider_stream_once(
-                            app_state,
-                            &app_state.http_client.load(),
-                            provider_stream_factory_options,
-                        )
-                        .await
-                        {
-                            if is_ready_provider_stream(&stream_info) {
-                                if let Some(old_handle) = provider_handle.clone() {
-                                    app_state
-                                        .connection_manager
-                                        .release_provider_handle(Some(old_handle))
-                                        .await;
-                                }
-                                return Some(StreamDetails {
-                                    stream: Some(stream),
-                                    stream_info,
-                                    provider_name: new_handle.allocation.get_provider_name(),
-                                    grace_period_millis,
-                                    disable_provider_grace: false,
-                                    reconnect_flag: Some(reconnect_flag),
-                                    provider_handle: Some(new_handle),
-                                });
-                            }
-                            debug_if_enabled!(
-                                "panel_api provisioning probe stream not ready for {}",
-                                sanitize_sensitive_info(&request_url)
-                            );
-                        } else {
-                            debug_if_enabled!(
-                                "panel_api provisioning probe failed to open stream for {}",
-                                sanitize_sensitive_info(&request_url)
-                            );
-                        }
-                    }
-                } else {
-                    debug_if_enabled!(
-                        "panel_api provisioning probe returned non-ready status for {}",
-                        sanitize_sensitive_info(&request_url)
-                    );
-                }
-            } else {
-                debug_if_enabled!(
-                    "panel_api provisioning probe request failed for {}",
-                    sanitize_sensitive_info(&request_url)
-                );
-            }
-
-            app_state
-                .connection_manager
-                .release_provider_handle(Some(new_handle))
-                .await;
-        }
-
-        tokio::time::sleep(probe_delay).await;
-    }
-
-    None
-}
-
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-async fn create_panel_api_provisioning_stream_details(
+fn create_panel_api_provisioning_stream_details(
     app_state: &Arc<AppState>,
     stream_options: &StreamOptions,
     stream_url: &str,
@@ -792,36 +634,14 @@ async fn create_panel_api_provisioning_stream_details(
     probe_method: PanelApiProvisioningMethod,
     probe_interval_secs: u64,
 ) -> Option<StreamDetails> {
-    let Some(panel_api_provisioning) = app_state
-        .app_config
-        .custom_stream_response
-        .load()
-        .as_ref()
-        .and_then(|c| c.panel_api_provisioning.clone()) else {
-            return create_panel_api_provisioning_blocking_stream_details(
-                app_state,
-                stream_options,
-                stream_url,
-                fingerprint,
-                req_headers,
-                input,
-                item_type,
-                share_stream,
-                grace_period_millis,
-                provider_handle,
-                input_headers,
-                max_wait_secs,
-                probe_method,
-                probe_interval_secs,
-            )
-            .await;
+    let (Some(loading_stream), stream_info) =
+        create_panel_api_provisioning_stream(&app_state.app_config, &[]) else {
+            debug_if_enabled!(
+                "panel_api provisioning custom response missing for input {}",
+                sanitize_sensitive_info(&input.name)
+            );
+            return None;
         };
-
-    let loading_stream = ThrottledStream::new(
-        CustomVideoStream::new(panel_api_provisioning),
-        PANEL_API_PROVISIONING_THROTTLE_KBPS,
-    )
-    .boxed();
 
     let reconnect_flag = Arc::new(AtomicOnceFlag::new());
 
@@ -830,7 +650,7 @@ async fn create_panel_api_provisioning_stream_details(
     let req_headers_clone = req_headers.clone();
     let stream_url = stream_url.to_string();
     let grace_request_url = grace_request_url.to_string();
-    let input_headers_clone = input_headers.clone();
+    let input_headers_clone = input_headers;
     let reconnect_flag_clone = Arc::clone(&reconnect_flag);
     let disabled_headers = app_state.get_disabled_headers();
     let stream_options = StreamOptions {
@@ -881,7 +701,7 @@ async fn create_panel_api_provisioning_stream_details(
                     }
                 }
 
-                if let Some(stream_info) = probe_provider_stream_status_info(
+                let reconnect_reason = if let Some(stream_info) = probe_provider_stream_status_info(
                     &app_state_clone,
                     &stream_options,
                     addr,
@@ -915,40 +735,47 @@ async fn create_panel_api_provisioning_stream_details(
                             "panel_api provisioning ready for input {}",
                             sanitize_sensitive_info(&input_clone.name)
                         );
-                        app_state_clone
-                            .connection_manager
-                            .release_provider_handle(Some(new_handle))
-                            .await;
-                        reconnect_flag_clone.notify();
-                        return;
+                        Some("ready")
+                    } else {
+                        debug_if_enabled!(
+                            "panel_api provisioning probe returned non-ready status for {}",
+                            sanitize_sensitive_info(&request_url)
+                        );
+                        Some("non-ready")
                     }
-                    debug_if_enabled!(
-                        "panel_api provisioning probe returned non-ready status for {}",
-                        sanitize_sensitive_info(&request_url)
-                    );
                 } else {
                     debug_if_enabled!(
                         "panel_api provisioning probe request failed for {}",
                         sanitize_sensitive_info(&request_url)
                     );
-                }
+                    Some("probe-failed")
+                };
 
                 app_state_clone
                     .connection_manager
                     .release_provider_handle(Some(new_handle))
                     .await;
+
+                if let Some(reason) = reconnect_reason {
+                    debug_if_enabled!(
+                        "panel_api provisioning reconnecting client (reason={}) for input {}",
+                        reason,
+                        sanitize_sensitive_info(&input_clone.name)
+                    );
+                    reconnect_flag_clone.notify();
+                    return;
+                }
             }
 
             tokio::time::sleep(probe_delay).await;
         }
+        debug_if_enabled!(
+            "panel_api provisioning timeout reached; reconnecting client for input {}",
+            sanitize_sensitive_info(&input_clone.name)
+        );
         reconnect_flag_clone.notify();
     });
 
-    let headers = vec![(
-        axum::http::header::CONTENT_TYPE.as_str().to_string(),
-        "video/mp2t".to_string(),
-    )];
-    let stream_info = Some((headers, axum::http::StatusCode::OK, None, None));
     let range_bytes = Arc::new(None::<AtomicUsize>);
     let provisioning_stream = ClientStream::new(
         loading_stream,
@@ -1056,7 +883,6 @@ async fn create_stream_response_details(
                 panel_api_probe_method,
                 panel_api_probe_interval_secs,
             )
-            .await
             {
                 return stream_details;
             }

@@ -19,7 +19,8 @@ pub enum CustomVideoStreamType {
     ChannelUnavailable,
     UserConnectionsExhausted,
     ProviderConnectionsExhausted,
-    UserAccountExpired
+    UserAccountExpired,
+    Provisioning,
 }
 
 impl fmt::Display for CustomVideoStreamType {
@@ -29,6 +30,7 @@ impl fmt::Display for CustomVideoStreamType {
             CustomVideoStreamType::UserConnectionsExhausted => "user_connections_exhausted",
             CustomVideoStreamType::ProviderConnectionsExhausted => "provider_connections_exhausted",
             CustomVideoStreamType::UserAccountExpired => "user_account_expired",
+            CustomVideoStreamType::Provisioning => "provisioning",
         };
         write!(f, "{s}")
     }
@@ -43,6 +45,7 @@ impl FromStr for CustomVideoStreamType {
             "user_connections_exhausted" => Ok(Self::UserConnectionsExhausted),
             "provider_connections_exhausted" => Ok(Self::ProviderConnectionsExhausted),
             "user_account_expired" => Ok(Self::UserAccountExpired),
+            "provisioning" => Ok(Self::Provisioning),
             _ => Err(format!("Unknown stream type: {s}")),
         }
     }
@@ -103,6 +106,14 @@ pub fn create_user_account_expired_stream(cfg: &AppConfig, headers: &[(String, S
     create_video_stream(CustomVideoStreamType::UserAccountExpired, video, headers, "Streaming response user account expired")
 }
 
+pub fn create_panel_api_provisioning_stream(cfg: &AppConfig, headers: &[(String, String)]) -> ProviderStreamResponse {
+    let custom_stream_response = cfg.custom_stream_response.load();
+    let video = custom_stream_response
+        .as_ref()
+        .and_then(|c| c.panel_api_provisioning.as_ref());
+    create_video_stream(CustomVideoStreamType::Provisioning, video, headers, "Streaming response panel api provisioning")
+}
+
 pub async fn create_custom_video_stream_response(app_state: &Arc<AppState>, addr: &SocketAddr, video_response: CustomVideoStreamType) -> impl axum::response::IntoResponse + Send {
     let config = &app_state.app_config;
     if let (Some(stream), Some((headers, status_code, _, _))) = match video_response {
@@ -110,6 +121,7 @@ pub async fn create_custom_video_stream_response(app_state: &Arc<AppState>, addr
         CustomVideoStreamType::UserConnectionsExhausted => create_user_connections_exhausted_stream(config, &[]),
         CustomVideoStreamType::ProviderConnectionsExhausted => create_provider_connections_exhausted_stream(config, &[]),
         CustomVideoStreamType::UserAccountExpired => create_user_account_expired_stream(config, &[]),
+        CustomVideoStreamType::Provisioning => create_panel_api_provisioning_stream(config, &[]),
     } {
         app_state.connection_manager.update_stream_detail(addr, video_response).await;
         app_state.connection_manager.release_provider_connection(addr).await;
