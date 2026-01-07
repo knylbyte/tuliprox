@@ -487,6 +487,7 @@ fn alias_pool_limit_values(cfg: &PanelApiConfigDto) -> (Option<&PanelApiAliasPoo
     (min, max)
 }
 
+#[allow(dead_code)]
 fn alias_pool_both_auto(cfg: &PanelApiConfigDto) -> bool {
     let (min, max) = alias_pool_limit_values(cfg);
     min.is_some_and(PanelApiAliasPoolSizeValue::is_auto)
@@ -513,7 +514,7 @@ fn is_proxy_user_enabled(user: &ProxyUserCredentials) -> bool {
 fn find_input_target_names(app_state: &AppState, input_name: &str) -> Vec<String> {
     let sources = app_state.app_config.sources.load();
     for source in &sources.sources {
-        if source.inputs.iter().any(|input| input.name == input_name) {
+        if source.inputs.iter().any(|name| name == input_name) {
             return source.targets.iter().map(|t| t.name.clone()).collect();
         }
     }
@@ -552,6 +553,7 @@ fn resolve_alias_pool_auto_value(app_state: &AppState, input_name: &str) -> u16 
     u16::try_from(enabled_users).unwrap_or(u16::MAX)
 }
 
+#[allow(dead_code)]
 pub(crate) fn target_has_alias_pool_auto(app_state: &AppState, target_name: &str) -> bool {
     let sources = app_state.app_config.sources.load();
     for source in &sources.sources {
@@ -562,7 +564,10 @@ pub(crate) fn target_has_alias_pool_auto(app_state: &AppState, target_name: &str
         if !target_match {
             continue;
         }
-        for input in &source.inputs {
+        for input_name in &source.inputs {
+            let Some(input) = sources.get_input_by_name(input_name) else {
+                continue;
+            };
             if let Some(panel_cfg) = input.panel_api.as_ref() {
                 if !panel_cfg.enabled {
                     continue;
@@ -603,6 +608,7 @@ fn resolve_alias_pool_limits(
     Ok((min, max))
 }
 
+#[allow(dead_code)]
 fn resolve_alias_pool_min(app_state: &AppState, input_name: &str, cfg: &PanelApiConfigDto) -> Option<u16> {
     let (min_val, _) = alias_pool_limit_values(cfg);
     let min_val = min_val?;
@@ -698,32 +704,24 @@ pub(crate) fn can_provision_on_exhausted(app_state: &AppState, input: &ConfigInp
     true
 }
 
+#[allow(dead_code)]
 pub(crate) fn find_input_by_name(app_state: &AppState, input_name: &str) -> Option<Arc<ConfigInput>> {
     let sources = app_state.app_config.sources.load();
-    for source in &sources.sources {
-        for input in &source.inputs {
-            if input.name == input_name {
-                return Some(Arc::clone(input));
-            }
-        }
-    }
-    None
+    sources.get_input_by_name(input_name).map(Arc::clone)
 }
 
 pub(crate) fn find_input_by_provider_name(app_state: &AppState, provider_name: &str) -> Option<Arc<ConfigInput>> {
     let sources = app_state.app_config.sources.load();
-    for source in &sources.sources {
-        for input in &source.inputs {
-            if input.name == provider_name {
-                return Some(Arc::clone(input));
-            }
-            if input
-                .aliases
-                .as_ref()
-                .is_some_and(|aliases| aliases.iter().any(|alias| alias.name == provider_name))
-            {
-                return Some(Arc::clone(input));
-            }
+    for input in &sources.inputs {
+        if input.name == provider_name {
+            return Some(Arc::clone(input));
+        }
+        if input
+            .aliases
+            .as_ref()
+            .is_some_and(|aliases| aliases.iter().any(|alias| alias.name == provider_name))
+        {
+            return Some(Arc::clone(input));
         }
     }
     None
@@ -1203,6 +1201,29 @@ fn derive_unique_alias_name(existing: &[String], input_name: &str, username: &st
     base
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum PanelApiProvisionOutcome {
+    Renewed { username: String, password: String },
+    Created { username: String, password: String },
+}
+
+impl PanelApiProvisionOutcome {
+    pub(crate) fn credentials(&self) -> (&str, &str) {
+        match self {
+            Self::Renewed { username, password } | Self::Created { username, password } => {
+                (username.as_str(), password.as_str())
+            }
+        }
+    }
+
+    pub(crate) fn kind_label(&self) -> &'static str {
+        match self {
+            Self::Renewed { .. } => "client_renew",
+            Self::Created { .. } => "client_new",
+        }
+    }
+}
+
 async fn try_renew_expired_account(
     app_state: &Arc<AppState>,
     input: &ConfigInput,
@@ -1210,7 +1231,7 @@ async fn try_renew_expired_account(
     is_batch: bool,
     sources_path: &Path,
     treat_missing_exp_date_as_expired: bool,
-) -> bool {
+) -> Option<PanelApiProvisionOutcome> {
     let mut candidates = collect_accounts(input);
     for acct in &mut candidates {
         if treat_missing_exp_date_as_expired && acct.exp_date.is_none() {
@@ -1272,7 +1293,10 @@ async fn try_renew_expired_account(
                 if let Err(err) = ConfigFile::load_sources(app_state).await {
                     debug_if_enabled!("panel_api reload sources failed: {}", err);
                 }
-                return true;
+                return Some(PanelApiProvisionOutcome::Renewed {
+                    username: acct.username.clone(),
+                    password: acct.password.clone(),
+                });
             }
             Err(err) => {
                 debug_if_enabled!(
@@ -1283,7 +1307,7 @@ async fn try_renew_expired_account(
             }
         }
     }
-    false
+    None
 }
 
 async fn try_create_new_account(
@@ -1292,7 +1316,7 @@ async fn try_create_new_account(
     panel_cfg: &PanelApiConfigDto,
     is_batch: bool,
     sources_path: &Path,
-) -> bool {
+) -> Option<PanelApiProvisionOutcome> {
     match panel_client_new(app_state, panel_cfg).await {
         Ok((username, password, base_url_from_resp)) => {
             let base_url = base_url_from_resp.unwrap_or_else(|| input.url.clone());
@@ -1331,7 +1355,7 @@ async fn try_create_new_account(
                             patch_batch_csv_append(&csv_path, batch_type, &alias_name, &base_url, &username, &password, exp_date).await
                         {
                             warn!("panel_api failed to append new account to csv: {err}");
-                            return false;
+                            return None;
                         }
                     }
                     Err(err) => {
@@ -1340,7 +1364,7 @@ async fn try_create_new_account(
                             sanitize_sensitive_info(batch_url),
                             err
                         );
-                        return false;
+                        return None;
                     }
                 }
             } else {
@@ -1349,35 +1373,38 @@ async fn try_create_new_account(
                     patch_source_yml_add_alias(sources_path, &input.name, &alias_name, &base_url, &username, &password, exp_date).await
                 {
                     warn!("panel_api failed to persist new alias to source.yml: {err}");
-                    return false;
+                    return None;
                 }
             }
 
             if let Err(err) = ConfigFile::load_sources(app_state).await {
                 error!("panel_api reload sources failed: {err}");
-                return false;
+                return None;
             }
-            true
+            Some(PanelApiProvisionOutcome::Created { username, password })
         }
         Err(err) => {
             debug_if_enabled!("panel_api client_new failed: {}", sanitize_sensitive_info(err.to_string().as_str()));
-            false
+            None
         }
     }
 }
 
-pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input: &ConfigInput) -> bool {
+pub async fn try_provision_account_on_exhausted(
+    app_state: &Arc<AppState>,
+    input: &ConfigInput,
+) -> Option<PanelApiProvisionOutcome> {
     let Some(panel_cfg) = input.panel_api.as_ref() else {
         debug_if_enabled!("panel_api: skipped (no panel_api config) for input {}", sanitize_sensitive_info(&input.name));
-        return false;
+        return None;
     };
     if !panel_cfg.enabled {
         debug_if_enabled!("panel_api: skipped (panel_api.enabled false) for input {}", sanitize_sensitive_info(&input.name));
-        return false;
+        return None;
     }
     if panel_cfg.url.trim().is_empty() {
         debug_if_enabled!("panel_api: skipped (panel_api.url empty) for input {}", sanitize_sensitive_info(&input.name));
-        return false;
+        return None;
     }
 
     let _input_lock = app_state
@@ -1388,10 +1415,10 @@ pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input
 
     if let Err(err) = validate_panel_api_config(panel_cfg) {
         debug_if_enabled!("panel_api config invalid: {}", sanitize_sensitive_info(err.to_string().as_str()));
-        return false;
+        return None;
     }
     if is_alias_pool_max_reached(app_state, input) {
-        return false;
+        return None;
     }
 
     debug_if_enabled!(
@@ -1404,19 +1431,25 @@ pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input
     let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
     let sources_path = PathBuf::from(&sources_file_path);
 
-    if try_renew_expired_account(app_state, input, panel_cfg, is_batch, sources_path.as_path(), true).await {
-        debug_if_enabled!("panel_api: provisioning succeeded via client_renew for input {}", sanitize_sensitive_info(&input.name));
-        return true;
+    if let Some(outcome) =
+        try_renew_expired_account(app_state, input, panel_cfg, is_batch, sources_path.as_path(), true).await
+    {
+        debug_if_enabled!(
+            "panel_api: provisioning succeeded via client_renew for input {}",
+            sanitize_sensitive_info(&input.name)
+        );
+        return Some(outcome);
     }
     let created = try_create_new_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await;
     debug_if_enabled!(
         "panel_api: provisioning via client_new for input {} => {}",
         sanitize_sensitive_info(&input.name),
-        if created { "success" } else { "failed" }
+        if created.is_some() { "success" } else { "failed" }
     );
     created
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) {
     let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
     let sources_path = PathBuf::from(&sources_file_path);
