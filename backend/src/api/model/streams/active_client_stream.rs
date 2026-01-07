@@ -1,6 +1,6 @@
 use crate::api::api_utils::run_panel_api_provisioning_probe;
 use crate::api::model::{AppState, ConnectionManager, CustomVideoStreamType, ProviderHandle, ProvisioningStream, StreamDetails};
-use crate::api::panel_api::{can_provision_on_exhausted, find_input_by_name};
+use crate::api::panel_api::{can_provision_on_exhausted, find_input_by_provider_name};
 use crate::api::model::BoxedProviderStream;
 use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
@@ -140,7 +140,7 @@ impl ActiveClientStream {
         stream_details: &StreamDetails,
     ) -> (Option<ProvisioningStream>, Option<GraceProvisioningInfo>) {
         let provider_name = stream_details.provider_name.as_deref();
-        let input = provider_name.and_then(|name| find_input_by_name(app_state, name));
+        let input = provider_name.and_then(|name| find_input_by_provider_name(app_state, name));
         let Some(input) = input else {
             return (None, None);
         };

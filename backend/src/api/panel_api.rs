@@ -696,6 +696,25 @@ pub(crate) fn find_input_by_name(app_state: &AppState, input_name: &str) -> Opti
     None
 }
 
+pub(crate) fn find_input_by_provider_name(app_state: &AppState, provider_name: &str) -> Option<Arc<ConfigInput>> {
+    let sources = app_state.app_config.sources.load();
+    for source in &sources.sources {
+        for input in &source.inputs {
+            if input.name == provider_name {
+                return Some(Arc::clone(input));
+            }
+            if input
+                .aliases
+                .as_ref()
+                .is_some_and(|aliases| aliases.iter().any(|alias| alias.name == provider_name))
+            {
+                return Some(Arc::clone(input));
+            }
+        }
+    }
+    None
+}
+
 async fn patch_source_yml_add_alias(
     source_file_path: &Path,
     input_name: &str,
