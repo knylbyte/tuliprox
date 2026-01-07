@@ -1,12 +1,12 @@
 use crate::api::config_file::ConfigFile;
 use crate::api::model::AppState;
-use crate::model::{is_input_expired, ConfigInput, PanelApiConfig, PanelApiQueryParam};
+use crate::model::{is_input_expired, ConfigInput};
 use crate::utils::{debug_if_enabled, persist_source_config, read_sources_file_from_path};
 use crate::utils::get_csv_file_path;
 use log::{debug, error, warn};
 use serde_json::Value;
 use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
-use shared::model::{ConfigInputAliasDto, InputType};
+use shared::model::{ConfigInputAliasDto, InputType, PanelApiConfigDto, PanelApiQueryParamDto};
 use shared::utils::{get_credentials_from_url, parse_timestamp, sanitize_sensitive_info, trim_last_slash};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -74,7 +74,7 @@ fn extract_base_url(url_str: &str) -> Option<String> {
 }
 
 fn resolve_query_params(
-    params: &[PanelApiQueryParam],
+    params: &[PanelApiQueryParamDto],
     api_key: Option<&str>,
     creds: Option<(&str, &str)>,
 ) -> Result<Vec<(String, String)>, TuliproxError> {
@@ -171,7 +171,7 @@ async fn panel_get_json(app_state: &AppState, url: Url) -> Result<Value, Tulipro
     Ok(json)
 }
 
-async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfig) -> Result<(String, String, Option<String>), TuliproxError> {
+async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfigDto) -> Result<(String, String, Option<String>), TuliproxError> {
     let params = resolve_query_params(&cfg.query_parameter.client_new, cfg.api_key.as_deref(), None)?;
     let url = build_panel_url(cfg.url.as_str(), &params)?;
     let json = panel_get_json(app_state, url).await?;
@@ -194,7 +194,7 @@ async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfig) -> Result<
     create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_new response missing username/password (and no parsable url)")
 }
 
-async fn panel_client_renew(app_state: &AppState, cfg: &PanelApiConfig, username: &str, password: &str) -> Result<(), TuliproxError> {
+async fn panel_client_renew(app_state: &AppState, cfg: &PanelApiConfigDto, username: &str, password: &str) -> Result<(), TuliproxError> {
     let params = resolve_query_params(
         &cfg.query_parameter.client_renew,
         cfg.api_key.as_deref(),
@@ -212,7 +212,7 @@ async fn panel_client_renew(app_state: &AppState, cfg: &PanelApiConfig, username
     Ok(())
 }
 
-async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfig, username: &str, password: &str) -> Result<Option<i64>, TuliproxError> {
+async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfigDto, username: &str, password: &str) -> Result<Option<i64>, TuliproxError> {
     let params = resolve_query_params(
         &cfg.query_parameter.client_info,
         cfg.api_key.as_deref(),
@@ -489,7 +489,7 @@ fn derive_unique_alias_name(existing: &[String], input_name: &str, username: &st
 async fn try_renew_expired_account(
     app_state: &Arc<AppState>,
     input: &ConfigInput,
-    panel_cfg: &PanelApiConfig,
+    panel_cfg: &PanelApiConfigDto,
     is_batch: bool,
     sources_path: &Path,
 ) -> bool {
@@ -539,7 +539,7 @@ async fn try_renew_expired_account(
 async fn try_create_new_account(
     app_state: &Arc<AppState>,
     input: &ConfigInput,
-    panel_cfg: &PanelApiConfig,
+    panel_cfg: &PanelApiConfigDto,
     is_batch: bool,
     sources_path: &Path,
 ) -> bool {
@@ -613,11 +613,6 @@ pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input
         debug_if_enabled!("panel_api: skipped (no panel_api config) for input {}", sanitize_sensitive_info(&input.name));
         return false;
     };
-    if !panel_cfg.enabled {
-        debug_if_enabled!("panel_api: skipped (panel_api.enabled false) for input {}", sanitize_sensitive_info(&input.name));
-        return false;
-    }
-
     if panel_cfg.url.trim().is_empty() {
         debug_if_enabled!("panel_api: skipped (panel_api.url empty) for input {}", sanitize_sensitive_info(&input.name));
         return false;
@@ -660,7 +655,7 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
     let sources = app_state.app_config.sources.load();
     for input in &sources.inputs {
         let Some(panel_cfg) = input.panel_api.as_ref() else { continue; };
-        if !panel_cfg.enabled || panel_cfg.url.trim().is_empty() {
+        if panel_cfg.url.trim().is_empty() {
             continue;
         }
 

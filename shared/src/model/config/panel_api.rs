@@ -1,4 +1,10 @@
-use crate::utils::{is_true, default_as_true};
+use crate::utils::{
+    default_panel_api_provision_probe_interval_secs, default_panel_api_provision_timeout_secs,
+    deserialize_as_option_string,
+};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -11,21 +17,160 @@ pub struct PanelApiQueryParamDto {
 #[serde(deny_unknown_fields)]
 pub struct PanelApiQueryParametersDto {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub account_info: Vec<PanelApiQueryParamDto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub client_info: Vec<PanelApiQueryParamDto>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub client_new: Vec<PanelApiQueryParamDto>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub client_renew: Vec<PanelApiQueryParamDto>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub client_adult_content: Vec<PanelApiQueryParamDto>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PanelApiAliasPoolAuto {
+    Auto,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum PanelApiAliasPoolSizeValue {
+    Auto(PanelApiAliasPoolAuto),
+    Number(u16),
+}
+
+impl PanelApiAliasPoolSizeValue {
+    pub fn as_number(&self) -> Option<u16> {
+        match self {
+            Self::Number(value) => Some(*value),
+            Self::Auto(_) => None,
+        }
+    }
+
+    pub fn is_auto(&self) -> bool {
+        matches!(self, Self::Auto(_))
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PanelApiAliasPoolSizeDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<PanelApiAliasPoolSizeValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<PanelApiAliasPoolSizeValue>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PanelApiAliasPoolDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<PanelApiAliasPoolSizeDto>,
+    #[serde(default)]
+    pub remove_expired: bool,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum PanelApiProvisioningMethod {
+    Head,
+    Get,
+    Post,
+}
+
+impl Default for PanelApiProvisioningMethod {
+    fn default() -> Self {
+        Self::Head
+    }
+}
+
+impl fmt::Display for PanelApiProvisioningMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Head => "HEAD",
+            Self::Get => "GET",
+            Self::Post => "POST",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl FromStr for PanelApiProvisioningMethod {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_uppercase().as_str() {
+            "HEAD" => Ok(Self::Head),
+            "GET" => Ok(Self::Get),
+            "POST" => Ok(Self::Post),
+            _ => Err(format!("Unknown provisioning method: {s}")),
+        }
+    }
+}
+
+impl Serialize for PanelApiProvisioningMethod {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for PanelApiProvisioningMethod {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PanelApiProvisioningDto {
+    #[serde(default = "default_panel_api_provision_timeout_secs")]
+    pub timeout_sec: u64,
+    #[serde(default)]
+    pub method: PanelApiProvisioningMethod,
+    #[serde(default = "default_panel_api_provision_probe_interval_secs")]
+    pub probe_interval_sec: u64,
+}
+
+impl Default for PanelApiProvisioningDto {
+    fn default() -> Self {
+        Self {
+            timeout_sec: default_panel_api_provision_timeout_secs(),
+            method: PanelApiProvisioningMethod::default(),
+            probe_interval_sec: default_panel_api_provision_probe_interval_secs(),
+        }
+    }
+}
+
+impl PanelApiProvisioningDto {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PanelApiConfigDto {
-    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
-    pub enabled: bool,
     pub url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "PanelApiProvisioningDto::is_default")]
+    pub provisioning: PanelApiProvisioningDto,
     #[serde(default)]
     pub query_parameter: PanelApiQueryParametersDto,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_as_option_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub credits: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_pool: Option<PanelApiAliasPoolDto>,
 }
