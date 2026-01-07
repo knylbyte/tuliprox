@@ -1,6 +1,6 @@
 use crate::utils::{
-    default_panel_api_provision_probe_interval_secs, default_panel_api_provision_timeout_secs,
-    deserialize_as_option_string,
+    default_as_true, default_panel_api_provision_probe_interval_secs,
+    default_panel_api_provision_timeout_secs, deserialize_as_option_string, is_true,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
@@ -158,6 +158,8 @@ impl PanelApiProvisioningDto {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PanelApiConfigDto {
+    #[serde(default = "default_as_true", skip_serializing_if = "is_true")]
+    pub enabled: bool,
     pub url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,

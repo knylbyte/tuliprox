@@ -167,37 +167,38 @@ impl ConfigInput {
             self.enabled = false;
         }
 
-        if let Some(size) = self
-            .panel_api
-            .as_ref()
-            .and_then(|cfg| cfg.alias_pool.as_ref())
-            .and_then(|pool| pool.size.as_ref())
-        {
-            let min = size.min.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
-            let max = size.max.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
-            if let (Some(min), Some(max)) = (min, max) {
-                if min > max {
+        if let Some(panel) = self.panel_api.as_ref() {
+            if panel.enabled {
+                if let Some(size) = panel
+                    .alias_pool
+                    .as_ref()
+                    .and_then(|pool| pool.size.as_ref())
+                {
+                    let min = size.min.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+                    let max = size.max.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+                    if let (Some(min), Some(max)) = (min, max) {
+                        if min > max {
+                            return Err(info_err!(
+                                "panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max".to_string()
+                            ));
+                        }
+                    }
+
+                    let min_auto = size.min.as_ref().is_some_and(PanelApiAliasPoolSizeValue::is_auto);
+                    let max_auto = size.max.as_ref().is_some_and(PanelApiAliasPoolSizeValue::is_auto);
+                    if max_auto && !min_auto {
+                        warn!(
+                            "panel_api.alias_pool.size.max is set to auto without min for input {}",
+                            self.name
+                        );
+                    }
+                }
+
+                if panel.provisioning.probe_interval_sec == 0 {
                     return Err(info_err!(
-                        "panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max".to_string()
+                        "panel_api.provisioning.probe_interval_sec must be greater than 0".to_string()
                     ));
                 }
-            }
-
-            let min_auto = size.min.as_ref().is_some_and(PanelApiAliasPoolSizeValue::is_auto);
-            let max_auto = size.max.as_ref().is_some_and(PanelApiAliasPoolSizeValue::is_auto);
-            if max_auto && !min_auto {
-                warn!(
-                    "panel_api.alias_pool.size.max is set to auto without min for input {}",
-                    self.name
-                );
-            }
-        }
-
-        if let Some(panel) = self.panel_api.as_ref() {
-            if panel.provisioning.probe_interval_sec == 0 {
-                return Err(info_err!(
-                    "panel_api.provisioning.probe_interval_sec must be greater than 0".to_string()
-                ));
             }
         }
 

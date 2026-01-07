@@ -349,7 +349,10 @@ async fn resolve_streaming_strategy(
         None => app_state.active_provider.acquire_connection(&input.name, &fingerprint.addr).await,
     };
 
-    if provider_connection_handle.is_none() && force_provider.is_none() && input.panel_api.is_some() {
+    if provider_connection_handle.is_none()
+        && force_provider.is_none()
+        && input.panel_api.as_ref().is_some_and(|panel_api| panel_api.enabled)
+    {
         provider_connection_handle = try_provision_and_reacquire_on_provider_pool_exhausted(app_state, fingerprint, input).await;
     }
 

@@ -181,6 +181,9 @@ fn validate_client_adult_content_params(params: &[PanelApiQueryParamDto]) -> Res
 }
 
 fn validate_panel_api_config(cfg: &PanelApiConfigDto) -> Result<(), TuliproxError> {
+    if !cfg.enabled {
+        return Ok(());
+    }
     if cfg.url.trim().is_empty() {
         return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: url is missing");
     }
@@ -561,6 +564,9 @@ pub(crate) fn target_has_alias_pool_auto(app_state: &AppState, target_name: &str
         }
         for input in &source.inputs {
             if let Some(panel_cfg) = input.panel_api.as_ref() {
+                if !panel_cfg.enabled {
+                    continue;
+                }
                 if alias_pool_both_auto(panel_cfg) {
                     return true;
                 }
@@ -645,6 +651,9 @@ pub(crate) fn is_alias_pool_max_reached(app_state: &AppState, input: &ConfigInpu
     let Some(panel_cfg) = input.panel_api.as_ref() else {
         return false;
     };
+    if !panel_cfg.enabled {
+        return false;
+    }
     if panel_cfg.url.trim().is_empty() {
         return false;
     }
@@ -673,6 +682,9 @@ pub(crate) fn can_provision_on_exhausted(app_state: &AppState, input: &ConfigInp
     let Some(panel_cfg) = input.panel_api.as_ref() else {
         return false;
     };
+    if !panel_cfg.enabled {
+        return false;
+    }
     if panel_cfg.url.trim().is_empty() {
         return false;
     }
@@ -1359,6 +1371,10 @@ pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input
         debug_if_enabled!("panel_api: skipped (no panel_api config) for input {}", sanitize_sensitive_info(&input.name));
         return false;
     };
+    if !panel_cfg.enabled {
+        debug_if_enabled!("panel_api: skipped (panel_api.enabled false) for input {}", sanitize_sensitive_info(&input.name));
+        return false;
+    }
     if panel_cfg.url.trim().is_empty() {
         debug_if_enabled!("panel_api: skipped (panel_api.url empty) for input {}", sanitize_sensitive_info(&input.name));
         return false;
@@ -1409,6 +1425,9 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
     let sources = app_state.app_config.sources.load();
     for input in &sources.inputs {
         let Some(panel_cfg) = input.panel_api.as_ref() else { continue; };
+        if !panel_cfg.enabled {
+            continue;
+        }
         if panel_cfg.url.trim().is_empty() {
             continue;
         }
