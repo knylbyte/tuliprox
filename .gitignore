@@ -15,6 +15,9 @@ dist
 docker/binaries
 .DS_Store
 
+# AI Agents
+AGENTS.md
+
 *.m3u
 
 .idea
