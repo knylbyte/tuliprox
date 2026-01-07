@@ -1,5 +1,5 @@
 use crate::api::api_utils::{HeaderFilter};
-use crate::api::model::{AppState, CustomVideoStream, ThrottledStream};
+use crate::api::model::{AppState, CustomVideoStream, ProvisioningStream, ThrottledStream};
 use crate::model::{AppConfig};
 use shared::model::PlaylistItemType;
 use log::{trace};
@@ -8,6 +8,7 @@ use axum::response::IntoResponse;
 use crate::api::model::stream::ProviderStreamResponse;
 use crate::api::model::TransportStreamBuffer;
 use crate::api::api_utils::try_unwrap_body;
+use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use std::str::FromStr;
 use std::fmt;
 use std::net::SocketAddr;
@@ -112,6 +113,38 @@ pub fn create_panel_api_provisioning_stream(cfg: &AppConfig, headers: &[(String,
         .as_ref()
         .and_then(|c| c.panel_api_provisioning.as_ref());
     create_video_stream(CustomVideoStreamType::Provisioning, video, headers, "Streaming response panel api provisioning")
+}
+
+pub fn create_panel_api_provisioning_stream_with_stop(
+    cfg: &AppConfig,
+    headers: &[(String, String)],
+    stop_signal: Arc<AtomicOnceFlag>,
+) -> ProviderStreamResponse {
+    let custom_stream_response = cfg.custom_stream_response.load();
+    let video = custom_stream_response
+        .as_ref()
+        .and_then(|c| c.panel_api_provisioning.as_ref());
+    if let Some(video) = video {
+        trace!("Streaming response panel api provisioning");
+        let mut response_headers: Vec<(String, String)> = headers
+            .iter()
+            .filter(|(key, _)| !(key.eq("content-type") || key.eq("content-length") || key.contains("range")))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        response_headers.push(("content-type".to_string(), "video/mp2t".to_string()));
+        let stream = ProvisioningStream::new(video.clone(), stop_signal);
+        (
+            Some(Box::pin(ThrottledStream::new(stream, 8000))),
+            Some((
+                response_headers,
+                StatusCode::OK,
+                None,
+                Some(CustomVideoStreamType::Provisioning),
+            )),
+        )
+    } else {
+        (None, None)
+    }
 }
 
 pub async fn create_custom_video_stream_response(app_state: &Arc<AppState>, addr: &SocketAddr, video_response: CustomVideoStreamType) -> impl axum::response::IntoResponse + Send {

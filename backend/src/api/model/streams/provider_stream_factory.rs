@@ -354,6 +354,7 @@ async fn provider_stream_request(
     }
 }
 
+#[allow(dead_code)]
 pub async fn probe_provider_stream_status(
     app_state: &Arc<AppState>,
     request_client: &reqwest::Client,
