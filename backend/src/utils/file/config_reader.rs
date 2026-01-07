@@ -341,6 +341,183 @@ where
         .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
 }
 
+fn format_sources_yaml_panel_api_query_params_flow_style_impl(yaml: &str) -> String {
+    let has_trailing_newline = yaml.ends_with('\n');
+    let lines: Vec<&str> = yaml.split_terminator('\n').collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+
+    let mut panel_api_indent: Option<usize> = None;
+    let mut query_indent: Option<usize> = None;
+    let mut section_indent: Option<usize> = None;
+
+    let mut i = 0usize;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        let indent = line.len().saturating_sub(trimmed.len());
+
+        if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            if let Some(pi) = panel_api_indent {
+                if indent <= pi && trimmed != "panel_api:" {
+                    panel_api_indent = None;
+                    query_indent = None;
+                    section_indent = None;
+                }
+            }
+            if let Some(qi) = query_indent {
+                if indent <= qi && trimmed != "query_parameter:" {
+                    query_indent = None;
+                    section_indent = None;
+                }
+            }
+            if let Some(si) = section_indent {
+                if indent < si {
+                    section_indent = None;
+                }
+            }
+
+            if panel_api_indent.is_none() && trimmed == "panel_api:" {
+                panel_api_indent = Some(indent);
+            } else if panel_api_indent.is_some() && query_indent.is_none() && trimmed == "query_parameter:" {
+                query_indent = Some(indent);
+            } else if query_indent.is_some()
+                && matches!(trimmed, "account_info:" | "client_info:" | "client_new:" | "client_renew:" | "client_adult_content:")
+            {
+                section_indent = Some(indent);
+            }
+        }
+
+        let in_target_section = panel_api_indent.is_some() && query_indent.is_some() && section_indent.is_some();
+        if in_target_section
+            && indent == section_indent.unwrap_or(usize::MAX)
+            && trimmed.starts_with("- key:")
+            && !trimmed.starts_with("- {")
+            && i + 1 < lines.len()
+        {
+            let next = lines[i + 1];
+            let next_trimmed = next.trim_start();
+            let next_indent = next.len().saturating_sub(next_trimmed.len());
+
+            if next_trimmed.starts_with("value:")
+                && next_indent == indent.saturating_add(2)
+            {
+                let key_val = trimmed
+                    .strip_prefix("- key:")
+                    .unwrap_or_default()
+                    .trim();
+                let value_val = next_trimmed
+                    .strip_prefix("value:")
+                    .unwrap_or_default()
+                    .trim();
+
+                let new_line = format!(
+                    "{}- {{ key: {}, value: {} }}",
+                    " ".repeat(indent),
+                    key_val,
+                    value_val
+                );
+                out.push(new_line);
+                i += 2;
+                continue;
+            }
+        }
+
+        out.push(line.to_string());
+        i += 1;
+    }
+
+    if has_trailing_newline {
+        out.join("\n") + "\n"
+    } else {
+        out.join("\n")
+    }
+}
+
+fn parse_yaml_key_value_line(s: &str) -> Option<(String, String)> {
+    let (key, value) = s.split_once(':')?;
+    let key = key.trim();
+    if key.is_empty() {
+        return None;
+    }
+    let value = value.trim();
+    let value = if value.is_empty() { "null" } else { value };
+    Some((key.to_string(), value.to_string()))
+}
+
+fn format_sources_yaml_aliases_flow_style_impl(yaml: &str) -> String {
+    let has_trailing_newline = yaml.ends_with('\n');
+    let lines: Vec<&str> = yaml.split_terminator('\n').collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+
+    let mut aliases_indent: Option<usize> = None;
+
+    let mut i = 0usize;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        let indent = line.len().saturating_sub(trimmed.len());
+
+        if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            if let Some(ai) = aliases_indent {
+                if indent < ai || (indent == ai && trimmed != "aliases:" && !trimmed.starts_with("- ")) {
+                    aliases_indent = None;
+                }
+            }
+            if trimmed == "aliases:" {
+                aliases_indent = Some(indent);
+            }
+        }
+
+        if aliases_indent.is_some() && trimmed.starts_with("- ") && !trimmed.starts_with("- {") {
+            let item_indent = indent;
+            let first = trimmed.strip_prefix("- ").unwrap_or(trimmed);
+            if let Some((k, v)) = parse_yaml_key_value_line(first) {
+                let mut parts: Vec<(String, String)> = vec![(k, v)];
+                let mut j = i + 1;
+                while j < lines.len() {
+                    let l2 = lines[j];
+                    let t2 = l2.trim_start();
+                    let ind2 = l2.len().saturating_sub(t2.len());
+                    if t2.is_empty() || t2.starts_with('#') {
+                        break;
+                    }
+                    if ind2 == item_indent.saturating_add(2) && !t2.starts_with("- ") {
+                        if let Some((k2, v2)) = parse_yaml_key_value_line(t2) {
+                            parts.push((k2, v2));
+                            j += 1;
+                            continue;
+                        }
+                    }
+                    break;
+                }
+
+                let formatted = parts
+                    .iter()
+                    .map(|(kk, vv)| format!("{kk}: {vv}"))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                out.push(format!("{}- {{ {} }}", " ".repeat(item_indent), formatted));
+                i = j;
+                continue;
+            }
+        }
+
+        out.push(line.to_string());
+        i += 1;
+    }
+
+    if has_trailing_newline {
+        out.join("\n") + "\n"
+    } else {
+        out.join("\n")
+    }
+}
+
+pub fn format_sources_yaml_panel_api_query_params_flow_style(yaml: &str) -> String {
+    let yaml = format_sources_yaml_panel_api_query_params_flow_style_impl(yaml);
+    format_sources_yaml_aliases_flow_style_impl(&yaml)
+}
+
 pub async fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfigDto) -> Result<(), TuliproxError> {
     write_config_file(file_path, backup_dir, config, "api-proxy.yml").await
 }
