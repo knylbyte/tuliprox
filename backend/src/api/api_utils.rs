@@ -467,7 +467,7 @@ fn build_panel_api_test_url(base_url: &str, username: &str, password: &str) -> O
     if let Some(port) = url.port() {
         let _ = write!(base, ":{port}");
     }
-    base.push_str("/player_api");
+    base.push_str("/player_api.php");
     let mut test_url = Url::parse(&base).ok()?;
     test_url
         .query_pairs_mut()
