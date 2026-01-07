@@ -684,7 +684,7 @@ pub(crate) fn can_provision_on_exhausted(app_state: &AppState, input: &ConfigInp
     true
 }
 
-fn find_input_by_name(app_state: &AppState, input_name: &str) -> Option<Arc<ConfigInput>> {
+pub(crate) fn find_input_by_name(app_state: &AppState, input_name: &str) -> Option<Arc<ConfigInput>> {
     let sources = app_state.app_config.sources.load();
     for source in &sources.sources {
         for input in &source.inputs {

@@ -30,7 +30,7 @@ use reqwest::Method;
 use serde::Serialize;
 use shared::model::{
     Claims, InputFetchMethod, PanelApiProvisioningMethod, PlaylistEntry, PlaylistItemType,
-    StreamChannel, TargetType, UserConnectionPermission, XtreamCluster,
+    StreamChannel, TargetType, UserConnectionPermission, VirtualId, XtreamCluster,
 };
 use shared::utils::{bin_serialize, default_grace_period_millis, trim_slash};
 use shared::utils::{
@@ -39,6 +39,7 @@ use shared::utils::{
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -458,20 +459,15 @@ fn provisioning_method_to_reqwest(method: PanelApiProvisioningMethod) -> Method 
     }
 }
 
-fn build_panel_api_test_url(panel_api_url: &str, username: &str, password: &str) -> Option<Url> {
-    let url = Url::parse(panel_api_url).ok()?;
+fn build_panel_api_test_url(base_url: &str, username: &str, password: &str) -> Option<Url> {
+    let url = Url::parse(base_url).ok()?;
     let host = url.host_str()?;
     let scheme = url.scheme();
     let mut base = format!("{scheme}://{host}");
     if let Some(port) = url.port() {
         let _ = write!(base, ":{port}");
     }
-    let test_path = if url.path().ends_with(".php") {
-        "/player_api.php"
-    } else {
-        "/player_api"
-    };
-    base.push_str(test_path);
+    base.push_str("/player_api");
     let mut test_url = Url::parse(&base).ok()?;
     test_url
         .query_pairs_mut()
@@ -495,10 +491,12 @@ async fn probe_panel_api_test_url(
     Ok(response.status())
 }
 
-async fn run_panel_api_provisioning_probe(
+pub(crate) async fn run_panel_api_provisioning_probe(
     app_state: Arc<AppState>,
     input: ConfigInput,
     stop_signal: Arc<AtomicOnceFlag>,
+    addr: SocketAddr,
+    virtual_id: VirtualId,
 ) {
     let Some(panel_cfg) = input.panel_api.as_ref() else {
         debug_if_enabled!(
@@ -506,6 +504,10 @@ async fn run_panel_api_provisioning_probe(
             sanitize_sensitive_info(&input.name)
         );
         stop_signal.notify();
+        let _ = app_state
+            .connection_manager
+            .kick_connection(&addr, virtual_id, 0)
+            .await;
         return;
     };
     if panel_cfg.url.trim().is_empty() {
@@ -514,6 +516,10 @@ async fn run_panel_api_provisioning_probe(
             sanitize_sensitive_info(&input.name)
         );
         stop_signal.notify();
+        let _ = app_state
+            .connection_manager
+            .kick_connection(&addr, virtual_id, 0)
+            .await;
         return;
     }
 
@@ -555,10 +561,19 @@ async fn run_panel_api_provisioning_probe(
             sanitize_sensitive_info(&input.name)
         );
         stop_signal.notify();
+        debug_if_enabled!(
+            "panel_api provisioning closing client connection for input {} addr={}",
+            sanitize_sensitive_info(&input.name),
+            sanitize_sensitive_info(addr.to_string().as_str())
+        );
+        let _ = app_state
+            .connection_manager
+            .kick_connection(&addr, virtual_id, 0)
+            .await;
         return;
     };
 
-    let Some(test_url) = build_panel_api_test_url(panel_cfg.url.as_str(), username, password) else {
+    let Some(test_url) = build_panel_api_test_url(input.url.as_str(), username, password) else {
         if max_wait_secs > 0 {
             tokio::time::sleep(Duration::from_secs(max_wait_secs)).await;
         }
@@ -567,6 +582,10 @@ async fn run_panel_api_provisioning_probe(
             sanitize_sensitive_info(&input.name)
         );
         stop_signal.notify();
+        let _ = app_state
+            .connection_manager
+            .kick_connection(&addr, virtual_id, 0)
+            .await;
         return;
     };
 
@@ -628,6 +647,15 @@ async fn run_panel_api_provisioning_probe(
         );
     }
     stop_signal.notify();
+    debug_if_enabled!(
+        "panel_api provisioning closing client connection for input {} addr={}",
+        sanitize_sensitive_info(&input.name),
+        sanitize_sensitive_info(addr.to_string().as_str())
+    );
+    let _ = app_state
+        .connection_manager
+        .kick_connection(&addr, virtual_id, 0)
+        .await;
 }
 
 async fn create_panel_api_provisioning_stream_details(
@@ -635,6 +663,8 @@ async fn create_panel_api_provisioning_stream_details(
     input: &ConfigInput,
     provider_name: Option<String>,
     grace_period_millis: u64,
+    addr: SocketAddr,
+    virtual_id: VirtualId,
 ) -> StreamDetails {
     let stop_signal = Arc::new(AtomicOnceFlag::new());
     let headers = [("connection".to_string(), "close".to_string())];
@@ -666,7 +696,7 @@ async fn create_panel_api_provisioning_stream_details(
     let input_clone = input.clone();
     let stop_clone = Arc::clone(&stop_signal);
     tokio::spawn(async move {
-        run_panel_api_provisioning_probe(app_state_clone, input_clone, stop_clone).await;
+        run_panel_api_provisioning_probe(app_state_clone, input_clone, stop_clone, addr, virtual_id).await;
     });
 
     StreamDetails {
@@ -692,6 +722,7 @@ async fn create_stream_response_details(
     share_stream: bool,
     connection_permission: UserConnectionPermission,
     force_provider: Option<&str>,
+    virtual_id: VirtualId,
 ) -> StreamDetails {
     let mut streaming_strategy = resolve_streaming_strategy(app_state, stream_url, fingerprint, input, force_provider).await;
     let config_grace_period_millis = app_state
@@ -731,6 +762,8 @@ async fn create_stream_response_details(
             input,
             guard_provider_name.clone(),
             grace_period_millis,
+            fingerprint.addr,
+            virtual_id,
         )
         .await;
     }
@@ -1014,6 +1047,7 @@ pub async fn force_provider_stream_response(
         share_stream,
         connection_permission,
         Some(&user_session.provider),
+        stream_channel.virtual_id,
     )
         .await;
 
@@ -1119,6 +1153,7 @@ pub async fn stream_response(
         share_stream,
         connection_permission,
         None,
+        stream_channel.virtual_id,
     ).await;
 
     if stream_details.has_stream() {
