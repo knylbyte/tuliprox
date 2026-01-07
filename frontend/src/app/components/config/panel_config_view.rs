@@ -349,14 +349,12 @@ fn ensure_required_params(params: &mut Vec<PanelApiQueryParamDto>, section: Pane
 
 fn with_input_mut(
     form: &mut SourcesConfigDto,
-    source_idx: usize,
+    _source_idx: usize,
     input_idx: usize,
     f: impl FnOnce(&mut ConfigInputDto),
 ) {
-    if let Some(source) = form.sources.get_mut(source_idx) {
-        if let Some(input) = source.inputs.get_mut(input_idx) {
-            f(input);
-        }
+    if let Some(input) = form.inputs.get_mut(input_idx) {
+        f(input);
     }
 }
 
@@ -1155,15 +1153,9 @@ pub fn PanelConfigView() -> Html {
 
     let inputs = form_state
         .form
-        .sources
+        .inputs
         .iter()
         .enumerate()
-        .flat_map(|(sidx, s)| {
-            s.inputs
-                .iter()
-                .enumerate()
-                .map(move |(iidx, inp)| (sidx, iidx, inp))
-        })
         .collect::<Vec<_>>();
 
     html! {
@@ -1178,7 +1170,7 @@ pub fn PanelConfigView() -> Html {
                 </Card>
             </div>
             <div class="tp__panel-config-view__body tp__config-view-page__body">
-                { for inputs.into_iter().map(|(sidx, iidx, inp)| render_input_card(sidx, iidx, inp)) }
+                { for inputs.into_iter().map(|(input_idx, inp)| render_input_card(input_idx, input_idx, inp)) }
             </div>
         </div>
     }
