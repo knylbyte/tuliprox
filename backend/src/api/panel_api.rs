@@ -5,7 +5,9 @@ use crate::utils::{format_sources_yaml_panel_api_query_params_flow_style, get_cs
 use log::{debug, error, warn};
 use serde_json::Value;
 use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
-use shared::model::{InputType, PanelApiAliasPoolSizeValue, PanelApiConfigDto, PanelApiQueryParamDto, ProxyUserStatus};
+use shared::model::{
+    InputType, PanelApiAliasPoolSizeValue, PanelApiConfigDto, PanelApiProvisioningMethod, PanelApiQueryParamDto, ProxyUserStatus,
+};
 use shared::utils::{get_credentials_from_url, parse_timestamp, sanitize_sensitive_info, trim_last_slash};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -473,6 +475,133 @@ fn extract_account_creds_from_input(input: &ConfigInput) -> Option<(String, Stri
             _ => None,
         }
     })
+}
+
+fn provisioning_method_to_reqwest(method: PanelApiProvisioningMethod) -> reqwest::Method {
+    match method {
+        PanelApiProvisioningMethod::Head => reqwest::Method::HEAD,
+        PanelApiProvisioningMethod::Get => reqwest::Method::GET,
+        PanelApiProvisioningMethod::Post => reqwest::Method::POST,
+    }
+}
+
+fn build_panel_api_test_url(base_url: &str, username: &str, password: &str) -> Option<Url> {
+    let url = Url::parse(base_url).ok()?;
+    let host = url.host_str()?;
+    let scheme = url.scheme();
+    let mut base = format!("{scheme}://{host}");
+    if let Some(port) = url.port() {
+        base.push_str(format!(":{port}").as_str());
+    }
+    base.push_str("/player_api.php");
+    let mut test_url = Url::parse(&base).ok()?;
+    test_url
+        .query_pairs_mut()
+        .append_pair("username", username)
+        .append_pair("password", password)
+        .append_pair("action", "account_info");
+    Some(test_url)
+}
+
+async fn wait_for_panel_api_account_ready(
+    app_state: &Arc<AppState>,
+    input: &ConfigInput,
+    panel_cfg: &PanelApiConfigDto,
+    username: &str,
+    password: &str,
+) -> bool {
+    let timeout_sec = panel_cfg.provisioning.timeout_sec;
+    let probe_interval_sec = panel_cfg.provisioning.probe_interval_sec;
+    let method = panel_cfg.provisioning.method;
+
+    let Some(test_url) = build_panel_api_test_url(input.url.as_str(), username, password) else {
+        if timeout_sec > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(timeout_sec)).await;
+        }
+        debug_if_enabled!(
+            "panel_api boot/update probe failed to build test url for input {}",
+            sanitize_sensitive_info(&input.name)
+        );
+        return false;
+    };
+
+    debug_if_enabled!(
+        "panel_api boot/update probe start for input {} (timeout={}s interval={}s method={})",
+        sanitize_sensitive_info(&input.name),
+        timeout_sec,
+        probe_interval_sec,
+        method
+    );
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_sec);
+    let probe_delay = std::time::Duration::from_secs(probe_interval_sec.max(1));
+    let mut attempt = 0u64;
+    let mut ready = false;
+
+    while std::time::Instant::now() < deadline {
+        attempt += 1;
+        let client = app_state.http_client.load();
+        let request_method = provisioning_method_to_reqwest(method);
+        let result = client
+            .request(request_method, test_url.clone())
+            .send()
+            .await
+            .map(|r| r.status());
+
+        match result {
+            Ok(status) => {
+                debug_if_enabled!(
+                    "panel_api boot/update probe status: '{}' url: {} attempt={}",
+                    status,
+                    sanitize_sensitive_info(test_url.as_str()),
+                    attempt
+                );
+                if status.is_success() {
+                    ready = true;
+                    break;
+                }
+            }
+            Err(err) => {
+                if err.is_timeout() {
+                    debug_if_enabled!(
+                        "panel_api boot/update probe timeout for {} attempt={}",
+                        sanitize_sensitive_info(test_url.as_str()),
+                        attempt
+                    );
+                } else {
+                    debug_if_enabled!(
+                        "panel_api boot/update probe failed for {} attempt={}: {err}",
+                        sanitize_sensitive_info(test_url.as_str()),
+                        attempt
+                    );
+                }
+            }
+        }
+
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            break;
+        }
+        let remaining = deadline.checked_duration_since(now).unwrap_or_default();
+        let sleep_for = if remaining < probe_delay { remaining } else { probe_delay };
+        tokio::time::sleep(sleep_for).await;
+    }
+
+    if ready {
+        debug_if_enabled!(
+            "panel_api boot/update probe ready for input {} (attempts={})",
+            sanitize_sensitive_info(&input.name),
+            attempt
+        );
+    } else {
+        debug_if_enabled!(
+            "panel_api boot/update probe timeout reached for input {} (attempts={})",
+            sanitize_sensitive_info(&input.name),
+            attempt
+        );
+    }
+
+    ready
 }
 
 fn alias_pool_limit_values(cfg: &PanelApiConfigDto) -> (Option<&PanelApiAliasPoolSizeValue>, Option<&PanelApiAliasPoolSizeValue>) {
@@ -1620,6 +1749,16 @@ pub(crate) async fn sync_exp_dates_by_panel_api(app_state: &Arc<AppState>) {
                                     sanitize_sensitive_info(err.to_string().as_str())
                                 );
                             }
+
+                            let _ready = wait_for_panel_api_account_ready(
+                                app_state,
+                                input.as_ref(),
+                                panel_cfg,
+                                root_username.as_str(),
+                                root_password.as_str(),
+                            )
+                            .await;
+
                             let refreshed_exp = panel_client_info(
                                 app_state.as_ref(),
                                 panel_cfg,
