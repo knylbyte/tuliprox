@@ -69,7 +69,7 @@ impl LRUResourceCache {
                 };
 
                 let file_size = usize::try_from(metadata.len()).unwrap_or(0);
-                // we need to duplicate because of closure we cant call insert_to_cache
+                // we need to duplicate because of closure we can't call insert_to_cache
                 {  // insert_to_cache
 
                     let mut path = self.cache_dir.clone();

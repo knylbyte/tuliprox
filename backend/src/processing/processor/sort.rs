@@ -109,10 +109,22 @@ fn playlist_comparator(
 }
 
 fn playlistgroup_comparator(a: &PlaylistGroup, b: &PlaylistGroup, group_sort: &ConfigSortGroup, match_as_ascii: bool) -> Ordering {
-    let value_a = if match_as_ascii { deunicode(&a.title) } else { a.title.clone() };
-    let value_b = if match_as_ascii { deunicode(&b.title) } else { b.title.clone() };
+    let ascii_a;
+    let ascii_b;
+    let value_a: &str = if match_as_ascii {
+        ascii_a = deunicode(&a.title);
+        &ascii_a
+    } else {
+        &a.title
+    };
+    let value_b: &str = if match_as_ascii {
+        ascii_b = deunicode(&b.title);
+        &ascii_b
+    } else {
+        &b.title
+    };
 
-    playlist_comparator(group_sort.sequence.as_ref(), group_sort.order, &value_a, &value_b)
+    playlist_comparator(group_sort.sequence.as_ref(), group_sort.order, value_a, value_b)
 }
 
 fn playlistitem_comparator(
@@ -144,7 +156,7 @@ pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new
                 }
                 let regexp = &channel_sort.group_pattern;
                 for group in new_playlist.iter_mut() {
-                    let group_title = if match_as_ascii { deunicode(&group.title) } else { group.title.clone() };
+                    let group_title = if match_as_ascii { deunicode(&group.title) } else { group.title.to_string() };
                     if regexp.is_match(group_title.as_str()) {
                         group.channels.sort_by(|chan1, chan2| playlistitem_comparator(chan1, chan2, channel_sort, match_as_ascii));
                     }

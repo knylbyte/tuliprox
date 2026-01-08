@@ -52,7 +52,7 @@ impl StoredProxyUserCredentialsDeprecated {
 // This is a Helper class to store all user into one Database file.
 // For the Config files we keep the old structure where a user is assigned to a target.
 // But for storing inside one db file it is easier to store the target next to the user.
-// due to known issue with  bincode and skip_serialization_if we have to list all fields and cant use ProxyUserCredentials
+// due to known issue with  bincode and skip_serialization_if we have to list all fields and can't use ProxyUserCredentials
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct StoredProxyUserCredentials {
     pub target: String,

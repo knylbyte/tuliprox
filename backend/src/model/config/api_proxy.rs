@@ -129,7 +129,7 @@ impl ApiProxyConfig {
         } else {
             let user_db_path = get_api_user_db_path(cfg);
             if let Ok(true) = tokio::fs::try_exists(&user_db_path).await {
-                // we cant have user defined in db file.
+                // we can't have user defined in db file.
                 // we need to load them and save them into the config file
                 if let Ok(stored_users) = load_api_user(cfg).await {
                     for stored_user in stored_users {
