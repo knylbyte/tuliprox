@@ -142,16 +142,22 @@ pub fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {
 #[macro_export]
 macro_rules! concat_string {
     (cap = $cap:expr; $($arg:expr),* $(,)?) => {{
-        let mut __s = ::std::string::String::with_capacity($cap);
-        $( let _ = ::std::fmt::Write::write_fmt(&mut __s, format_args!("{}", $arg)); )*
-        __s
+        let mut s = String::with_capacity($cap);
+        $( s.push_str($arg); )*
+        s
     }};
-    ( $($arg:expr),* $(,)?) => {{
-        let mut __s = ::std::string::String::new();
-        $( let _ = ::std::fmt::Write::write_fmt(&mut __s, format_args!("{}", $arg)); )*
-        __s
+    ($($s:expr),+ $(,)?) => {{
+        let parts = [$($s),+];
+        let cap = parts.iter().map(|s| s.len()).sum();
+
+        let mut out = String::with_capacity(cap);
+        for s in parts {
+            out.push_str(s);
+        }
+        out
     }};
 }
+
 
 #[cfg(test)]
 mod test {
@@ -179,14 +185,14 @@ mod test {
         let a = "hello";
         let b = String::from("world");
         let n = 42;
-        let s = shared::concat_string!(a, " ", b, " ", n);
+        let s = shared::concat_string!(a, " ", &b, " ", &n.to_string());
         assert_eq!(s, "hello world 42");
     }
 
     #[test]
     fn test_concat_string_with_cap() {
         let part = "abc";
-        let s = shared::concat_string!(cap = 16; part, "/", 123);
+        let s = shared::concat_string!(cap = 16; part, "/", &123.to_string());
         assert_eq!(s, "abc/123");
     }
 

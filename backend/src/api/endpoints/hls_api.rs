@@ -21,7 +21,7 @@ use axum::response::IntoResponse;
 use log::{debug, error};
 use serde::Deserialize;
 use shared::model::{PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{is_hls_url, replace_url_extension, sanitize_sensitive_info, CUSTOM_VIDEO_PREFIX, HLS_EXT};
+use shared::utils::{intern, is_hls_url, replace_url_extension, sanitize_sensitive_info, CUSTOM_VIDEO_PREFIX, HLS_EXT};
 use std::sync::Arc;
 
 const PLAYLIST_TEMPLATE: &str = r"#EXTM3U
@@ -132,6 +132,7 @@ pub(in crate::api) async fn handle_hls_stream_request(
         &input_source,
         Some(&headers),
         None,
+        false
     )
         .await
     {
@@ -196,7 +197,7 @@ async fn resolve_stream_channel(
             provider_id: 0,
             item_type: PlaylistItemType::LiveHls,
             cluster: XtreamCluster::Live,
-            group: "Unknown".to_string(),
+            group: intern("Unknown"),
             title: "Unknown".to_string(),
             url: hls_url.to_string(),
             shared: false,
@@ -235,7 +236,7 @@ async fn hls_api_stream(
     let input = try_option_bad_request!(
         app_state.app_config.get_input_by_id(params.input_id),
         true,
-        format!("Cant find input {} for target {target_name}, stream_id {virtual_id}, hls", params.input_id)
+        format!("Can't find input {} for target {target_name}, stream_id {virtual_id}, hls", params.input_id)
     );
 
     debug_if_enabled!("ID chain for hls endpoint: request_stream_id={} -> virtual_id={virtual_id}", params.stream_id);

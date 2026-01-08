@@ -5,7 +5,7 @@ use crate::utils::{debug_if_enabled, persist_source_config, read_sources_file_fr
 use crate::utils::get_csv_file_path;
 use log::{debug, error, warn};
 use serde_json::Value;
-use shared::error::{create_tuliprox_error_result, info_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{info_err_res, info_err, TuliproxError};
 use shared::model::{ConfigInputAliasDto, InputType};
 use shared::utils::{get_credentials_from_url, parse_timestamp, sanitize_sensitive_info, trim_last_slash};
 use std::path::{Path, PathBuf};
@@ -88,17 +88,17 @@ fn resolve_query_params(
         if value.eq_ignore_ascii_case("auto") {
             if key.eq_ignore_ascii_case("api_key") {
                 let Some(k) = api_key.filter(|s| !s.trim().is_empty()) else {
-                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: query param {key} uses 'auto' but panel_api.api_key is missing");
+                    return info_err_res!("panel_api: query param {key} uses 'auto' but panel_api.api_key is missing");
                 };
                 value = k.to_string();
             } else if key.eq_ignore_ascii_case("username") {
                 let Some((u, _)) = creds else {
-                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: query param {key} uses 'auto' but no account username is available");
+                    return info_err_res!("panel_api: query param {key} uses 'auto' but no account username is available");
                 };
                 value = u.to_string();
             } else if key.eq_ignore_ascii_case("password") {
                 let Some((_, pw)) = creds else {
-                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: query param {key} uses 'auto' but no account password is available");
+                    return info_err_res!("panel_api: query param {key} uses 'auto' but no account password is available");
                 };
                 value = pw.to_string();
             }
@@ -109,7 +109,7 @@ fn resolve_query_params(
 }
 
 fn build_panel_url(base_url: &str, query_params: &[(String, String)]) -> Result<Url, TuliproxError> {
-    let mut url = Url::parse(base_url).map_err(|e| info_err!(format!("panel_api: invalid url {base_url}: {e}")))?;
+    let mut url = Url::parse(base_url).map_err(|e| info_err!("panel_api: invalid url {base_url}: {e}"))?;
     {
         let mut pairs = url.query_pairs_mut();
         for (k, v) in query_params {
@@ -156,14 +156,14 @@ async fn panel_get_json(app_state: &AppState, url: Url) -> Result<Value, Tulipro
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api request failed: {e}")))?;
+        .map_err(|e|info_err!("panel_api request failed: {e}"))?;
     let status = resp.status();
     let body = resp
         .text()
         .await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api read response failed: {e}")))?;
+        .map_err(|e| info_err!("panel_api read response failed: {e}"))?;
     let json: Value = serde_json::from_str(&body)
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api invalid json (http {status}): {e}")))?;
+        .map_err(|e| info_err!("panel_api invalid json (http {status}): {e}"))?;
     let json_for_log = sanitize_panel_api_json_for_log(&json);
     if let Ok(json_str) = serde_json::to_string(&json_for_log) {
         debug_if_enabled!("panel_api response (http {}): {}", status, sanitize_sensitive_info(&json_str));
@@ -176,11 +176,11 @@ async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfig) -> Result<
     let url = build_panel_url(cfg.url.as_str(), &params)?;
     let json = panel_get_json(app_state, url).await?;
     let Some(obj) = first_json_object(&json) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_new response is not a JSON object/array");
+        return info_err_res!("panel_api: client_new response is not a JSON object/array");
     };
     let status_ok = obj.get("status").is_some_and(parse_boolish);
     if !status_ok {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_new status=false");
+        return info_err_res!("panel_api: client_new status=false");
     }
     if let Some((u, p)) = extract_username_password_from_json(obj) {
         return Ok((u, p, None));
@@ -191,7 +191,7 @@ async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfig) -> Result<
             return Ok((u, p, base));
         }
     }
-    create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_new response missing username/password (and no parsable url)")
+    info_err_res!("panel_api: client_new response missing username/password (and no parsable url)")
 }
 
 async fn panel_client_renew(app_state: &AppState, cfg: &PanelApiConfig, username: &str, password: &str) -> Result<(), TuliproxError> {
@@ -203,11 +203,11 @@ async fn panel_client_renew(app_state: &AppState, cfg: &PanelApiConfig, username
     let url = build_panel_url(cfg.url.as_str(), &params)?;
     let json = panel_get_json(app_state, url).await?;
     let Some(obj) = first_json_object(&json) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_renew response is not a JSON object/array");
+        return info_err_res!("panel_api: client_renew response is not a JSON object/array");
     };
     let status_ok = obj.get("status").is_some_and(parse_boolish);
     if !status_ok {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_renew status=false");
+        return info_err_res!("panel_api: client_renew status=false");
     }
     Ok(())
 }
@@ -221,11 +221,11 @@ async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfig, username:
     let url = build_panel_url(cfg.url.as_str(), &params)?;
     let json = panel_get_json(app_state, url).await?;
     let Some(obj) = first_json_object(&json) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_info response is not a JSON object/array");
+        return info_err_res!("panel_api: client_info response is not a JSON object/array");
     };
     let status_ok = obj.get("status").is_some_and(parse_boolish);
     if !status_ok {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_info status=false");
+        return info_err_res!("panel_api: client_info status=false");
     }
     let expire = obj.get("expire").and_then(|v| v.as_str()).unwrap_or_default().trim();
     let parsed = parse_timestamp(expire).ok().flatten();
@@ -302,11 +302,11 @@ async fn patch_source_yml_add_alias(
 ) -> Result<(), TuliproxError> {
     let mut sources = match read_sources_file_from_path(source_file_path, false, false, None) {
         Ok(sources) => sources,
-        Err(e) => return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}"))),
+        Err(e) => return info_err_res!("panel_api: failed to read source file: {e}"),
     };
 
     let Some(input) = sources.inputs.iter_mut().find(|i| i.name == input_name) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml");
+        return info_err_res!("panel_api: could not find input '{input_name}' in source.yml");
     };
 
     let alias = ConfigInputAliasDto {
@@ -335,15 +335,15 @@ async fn patch_source_yml_update_exp_date(
 ) -> Result<(), TuliproxError> {
     let mut sources = match read_sources_file_from_path(source_file_path, false, false, None) {
         Ok(sources) => sources,
-        Err(e) => return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}"))),
+        Err(e) => return info_err_res!("panel_api: failed to read source file: {e}"),
     };
 
     let Some(input) = sources.inputs.iter_mut().find(|i| i.name == input_name) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml");
+        return info_err_res!("panel_api: could not find input '{input_name}' in source.yml");
     };
 
     if input.update_account_expiration_date(input_name, account_name, exp_date).is_err() {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml");
+        return info_err_res!("panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml");
     }
 
     persist_source_config(app_state, Some(source_file_path), sources).await?;
@@ -399,7 +399,7 @@ async fn patch_batch_csv_append(
     lines.push(record.join(";"));
     tokio::fs::write(csv_path, lines.join("\n") + "\n")
         .await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write csv: {e}")))?;
+        .map_err(|e| info_err!("panel_api: failed to write csv: {e}"))?;
     Ok(())
 }
 
@@ -412,11 +412,11 @@ async fn patch_batch_csv_update_exp_date(
 ) -> Result<(), TuliproxError> {
     let raw = tokio::fs::read_to_string(csv_path)
         .await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read csv: {e}")))?;
+        .map_err(|e| info_err!("panel_api: failed to read csv: {e}"))?;
     let mut lines: Vec<String> = raw.lines().map(ToString::to_string).collect();
     let header_line_idx = lines.iter().position(|l| l.trim_start().starts_with('#'));
     let Some(header_idx) = header_line_idx else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: csv missing header line");
+        return info_err_res!("panel_api: csv missing header line");
     };
     let header = lines[header_idx].trim_start_matches('#').trim();
     let cols: Vec<String> = header.split(';').map(|s| s.trim().to_lowercase()).collect();
@@ -461,7 +461,7 @@ async fn patch_batch_csv_update_exp_date(
             lines[i] = fields.join(";");
             tokio::fs::write(csv_path, lines.join("\n") + "\n")
                 .await
-                .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write csv: {e}")))?;
+                .map_err(|e| info_err!("panel_api: failed to write csv: {e}"))?;
             return Ok(());
         }
     }

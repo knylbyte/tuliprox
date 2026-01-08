@@ -81,7 +81,7 @@ fn get_epg_path_for_target_of_type(target_name: &str, epg_path: PathBuf) -> Opti
         return Some(epg_path);
     }
     trace!(
-        "Cant find epg file for {target_name} target: {}",
+        "Can't find epg file for {target_name} target: {}",
         epg_path.to_str().unwrap_or("?")
     );
     None

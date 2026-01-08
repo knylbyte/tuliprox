@@ -11,7 +11,7 @@ use arc_swap::{ArcSwap, ArcSwapAny};
 use chrono::Local;
 use log::{error, info, warn};
 use serde::Serialize;
-use shared::error::{create_tuliprox_error, info_err, TuliproxError, TuliproxErrorKind};
+use shared::error::{info_err, info_err_res, TuliproxError};
 use shared::model::{ApiProxyConfigDto, AppConfigDto, ConfigDto, ConfigInputAliasDto, ConfigPaths, HdHomeRunDeviceOverview, InputType, SourcesConfigDto, TargetUserDto};
 use shared::utils::CONSTANTS;
 use std::env;
@@ -59,7 +59,7 @@ pub async fn read_api_proxy_config(config: &AppConfig, resolve_env: bool) -> Res
         }
         Ok(Some(api_proxy))
     } else {
-        warn!("cant read api_proxy_config file: {api_proxy_file_path}");
+        warn!("can't read api_proxy_config file: {api_proxy_file_path}");
         Ok(None)
     }
 }
@@ -72,15 +72,15 @@ pub fn read_sources_file_from_path(sources_file: &Path, resolve_env: bool, inclu
                 Ok(mut sources) => {
                     if resolve_env {
                         if let Err(err) = sources.prepare(include_computed, hdhr_config) {
-                            return Err(info_err!(format!("Can't read the sources-config file: {}: {err}", sources_file.display())));
+                            return info_err_res!("Can't read the sources-config file: {}: {err}", sources_file.display());
                         }
                     }
                     Ok(sources)
                 }
-                Err(err) => Err(info_err!(format!("Can't read the sources-config file: {}: {err}", sources_file.display())))
+                Err(err) => info_err_res!("Can't read the sources-config file: {}: {err}", sources_file.display())
             }
         }
-        Err(err) => Err(info_err!(format!("Can't read the sources-config file: {}: {err}", sources_file.display())))
+        Err(err) => info_err_res!("Can't read the sources-config file: {}: {err}", sources_file.display())
     }
 }
 
@@ -100,10 +100,10 @@ pub fn read_config_file(config_file: &str, resolve_env: bool, include_computed: 
                     }
                     Ok(config)
                 }
-                Err(err) => Err(info_err!(format!("Can't read the config file: {config_file}: {err}")))
+                Err(err) => info_err_res!("Can't read the config file: {config_file}: {err}")
             }
         }
-        Err(err) => Err(info_err!(format!("Can't read the config file: {config_file}: {err}")))
+        Err(err) => info_err_res!("Can't read the config file: {config_file}: {err}")
     }
 }
 
@@ -175,7 +175,7 @@ pub async fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Optio
                 Ok(Some((file_path, batch_aliases)))
             }
             Err(err) => {
-                Err(TuliproxError::new(TuliproxErrorKind::Info, err.to_string()))
+                info_err_res!("{err}")
             }
         };
     }
@@ -279,13 +279,13 @@ pub fn read_api_proxy_file(api_proxy_file: &str, resolve_env: bool) -> Result<Op
             Ok(mut api_proxy_dto) => {
                 if resolve_env {
                     if let Err(err) = api_proxy_dto.prepare() {
-                        exit!("cant read api-proxy-config file: {err}");
+                        exit!("can't read api-proxy-config file: {err}");
                     }
                 }
                 Ok(Some(api_proxy_dto))
             }
             Err(err) => {
-                Err(info_err!(format!("cant read api-proxy-config file: {err}")))
+                info_err_res!("can't read api-proxy-config file: {err}")
             }
         }
     })
@@ -319,8 +319,25 @@ where
 {
     let path = PathBuf::from(file_path);
     let filename = path.file_name().map_or(default_name.to_string(), |f| f.to_string_lossy().to_string());
-    let backup_path = PathBuf::from(backup_dir).join(format!("{filename}_{}", Local::now().format("%Y%m%d_%H%M%S")));
+    
+    let mut serialized = String::new();
+    let options = serde_saphyr::SerializerOptions {
+        prefer_block_scalars: false,
+        ..Default::default()
+    };
+    serde_saphyr::to_fmt_writer_with_options(&mut serialized, &config, options)
+        .map_err(|err| info_err!("Could not serialize config: {}", err))?;
 
+    if path.exists() {
+        if let Ok(existing) = fs::read_to_string(&path).await {
+            if existing == serialized {
+                // info!("File {} unchanged, skipping write", path.display());
+                return Ok(());
+            }
+        }
+    }
+
+    let backup_path = PathBuf::from(backup_dir).join(format!("{filename}_{}", Local::now().format("%Y%m%d_%H%M%S")));
 
     match fs::copy(&path, &backup_path).await {
         Ok(_) => {}
@@ -328,17 +345,9 @@ where
     }
     info!("Saving file to {}", &path.to_str().unwrap_or("?"));
 
-    let mut serialized = String::new();
-    let options = serde_saphyr::SerializerOptions {
-        prefer_block_scalars: false,
-        ..Default::default()
-    };
-    serde_saphyr::to_fmt_writer_with_options(&mut serialized, &config, options)
-        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not serialize config: {}", err))?;
-
     fs::write(&path, serialized)
         .await
-        .map_err(|err| create_tuliprox_error!(TuliproxErrorKind::Info, "Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
+        .map_err(|err| info_err!("Could not write file {}: {}", &path.to_str().unwrap_or("?"), err))
 }
 
 pub async fn save_api_proxy(file_path: &str, backup_dir: &str, config: &ApiProxyConfigDto) -> Result<(), TuliproxError> {

@@ -88,7 +88,7 @@ pub async fn tee_dyn_reader(
     let file = match tokio::fs::File::create(persist_path).await {
         Ok(f) => f,
         Err(err) => {
-            error!("Cant open file to write: {}, {err}", persist_path.display());
+            error!("Can't open file to write: {}, {err}", persist_path.display());
             return reader;
         }
     };
