@@ -9,7 +9,9 @@ use crate::api::model::{
     SharedStreamManager, StreamError, ThrottledStream, UserApiRequest,
 };
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
-use crate::api::panel_api::{can_provision_on_exhausted, try_provision_account_on_exhausted, PanelApiProvisionOutcome};
+use crate::api::panel_api::{
+    can_provision_on_exhausted, try_provision_account_on_exhausted, wait_for_panel_api_account_ready, PanelApiProvisionOutcome,
+};
 use crate::model::{ConfigInput, ResourceRetryConfig};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
@@ -19,30 +21,25 @@ use crate::utils::request;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::BUILD_TIMESTAMP;
 use arc_swap::ArcSwapOption;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error,  log_enabled, trace, warn};
 use reqwest::header::RETRY_AFTER;
-use reqwest::Method;
 use serde::Serialize;
-use shared::model::{
-    Claims, InputFetchMethod, PanelApiProvisioningMethod, PlaylistEntry, PlaylistItemType,
-    StreamChannel, TargetType, UserConnectionPermission, VirtualId, XtreamCluster,
-};
+use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, VirtualId, XtreamCluster};
 use shared::utils::{bin_serialize, default_grace_period_millis, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fmt::Write;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -451,47 +448,6 @@ fn get_grace_period_millis(
     }
 }
 
-fn provisioning_method_to_reqwest(method: PanelApiProvisioningMethod) -> Method {
-    match method {
-        PanelApiProvisioningMethod::Head => Method::HEAD,
-        PanelApiProvisioningMethod::Get => Method::GET,
-        PanelApiProvisioningMethod::Post => Method::POST,
-    }
-}
-
-fn build_panel_api_test_url(base_url: &str, username: &str, password: &str) -> Option<Url> {
-    let url = Url::parse(base_url).ok()?;
-    let host = url.host_str()?;
-    let scheme = url.scheme();
-    let mut base = format!("{scheme}://{host}");
-    if let Some(port) = url.port() {
-        let _ = write!(base, ":{port}");
-    }
-    base.push_str("/player_api.php");
-    let mut test_url = Url::parse(&base).ok()?;
-    test_url
-        .query_pairs_mut()
-        .append_pair("username", username)
-        .append_pair("password", password)
-        .append_pair("action", "account_info");
-    Some(test_url)
-}
-
-async fn probe_panel_api_test_url(
-    app_state: &Arc<AppState>,
-    test_url: &Url,
-    method: PanelApiProvisioningMethod,
-) -> Result<StatusCode, reqwest::Error> {
-    let client = app_state.http_client.load();
-    let request_method = provisioning_method_to_reqwest(method);
-    let response = client
-        .request(request_method, test_url.clone())
-        .send()
-        .await?;
-    Ok(response.status())
-}
-
-#[allow(clippy::too_many_lines)]
 pub(crate) async fn run_panel_api_provisioning_probe(
     app_state: Arc<AppState>,
     input: ConfigInput,
@@ -536,7 +492,6 @@ pub(crate) async fn run_panel_api_provisioning_probe(
         probe_method
     );
 
-    let deadline = Instant::now() + Duration::from_secs(max_wait_secs);
     let outcome = try_provision_account_on_exhausted(&app_state, &input).await;
     let credentials = outcome.as_ref().map(PanelApiProvisionOutcome::credentials);
 
@@ -574,79 +529,19 @@ pub(crate) async fn run_panel_api_provisioning_probe(
         return;
     };
 
-    let Some(test_url) = build_panel_api_test_url(input.url.as_str(), username, password) else {
-        if max_wait_secs > 0 {
-            tokio::time::sleep(Duration::from_secs(max_wait_secs)).await;
-        }
-        debug_if_enabled!(
-            "panel_api provisioning probe failed to build test url for input {}",
-            sanitize_sensitive_info(&input.name)
-        );
-        stop_signal.notify();
-        let _ = app_state
-            .connection_manager
-            .kick_connection(&addr, virtual_id, 0)
-            .await;
-        return;
-    };
-
-    let probe_delay = Duration::from_secs(probe_interval_secs);
-    let mut attempt = 0u64;
-    let mut ready = false;
-    while Instant::now() < deadline {
-        attempt += 1;
-        match probe_panel_api_test_url(&app_state, &test_url, probe_method).await {
-            Ok(status) => {
-                debug_if_enabled!(
-                    "panel_api provisioning probe status: '{}' url: {} attempt={}",
-                    status,
-                    sanitize_sensitive_info(test_url.as_str()),
-                    attempt
-                );
-                if status.is_success() {
-                    ready = true;
-                    break;
-                }
-            }
-            Err(err) => {
-                if err.is_timeout() {
-                    debug_if_enabled!(
-                        "panel_api provisioning probe timeout for {} attempt={}",
-                        sanitize_sensitive_info(test_url.as_str()),
-                        attempt
-                    );
-                } else {
-                    debug_if_enabled!(
-                        "panel_api provisioning probe failed for {} attempt={}: {err}",
-                        sanitize_sensitive_info(test_url.as_str()),
-                        attempt
-                    );
-                }
-            }
-        }
-
-        let now = Instant::now();
-        if now >= deadline {
-            break;
-        }
-        let remaining = deadline.checked_duration_since(now).unwrap_or_default();
-        let sleep_for = if remaining < probe_delay { remaining } else { probe_delay };
-        tokio::time::sleep(sleep_for).await;
-    }
-
-    if ready {
-        debug_if_enabled!(
-            "panel_api provisioning ready for input {} (attempts={})",
-            sanitize_sensitive_info(&input.name),
-            attempt
-        );
-    } else {
-        debug_if_enabled!(
-            "panel_api provisioning probe timeout reached for input {} (attempts={})",
-            sanitize_sensitive_info(&input.name),
-            attempt
-        );
-    }
+    let ready = wait_for_panel_api_account_ready(
+        &app_state,
+        &input,
+        panel_cfg,
+        username,
+        password,
+    )
+    .await;
+    trace_if_enabled!(
+        "panel_api provisioning probe done for input {} ready={}",
+        sanitize_sensitive_info(&input.name),
+        ready
+    );
     stop_signal.notify();
     debug_if_enabled!(
         "panel_api provisioning closing client connection for input {} addr={}",
