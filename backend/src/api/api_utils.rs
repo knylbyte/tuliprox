@@ -491,6 +491,7 @@ async fn probe_panel_api_test_url(
     Ok(response.status())
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) async fn run_panel_api_provisioning_probe(
     app_state: Arc<AppState>,
     input: ConfigInput,
@@ -658,7 +659,7 @@ pub(crate) async fn run_panel_api_provisioning_probe(
         .await;
 }
 
-async fn create_panel_api_provisioning_stream_details(
+fn create_panel_api_provisioning_stream_details(
     app_state: &Arc<AppState>,
     input: &ConfigInput,
     provider_name: Option<String>,
@@ -765,7 +766,7 @@ async fn create_stream_response_details(
             fingerprint.addr,
             virtual_id,
         )
-        .await;
+        ;
     }
 
     match streaming_strategy.provider_stream_state {

@@ -1197,8 +1197,9 @@ pub(crate) enum PanelApiProvisionOutcome {
 impl PanelApiProvisionOutcome {
     pub(crate) fn credentials(&self) -> (&str, &str) {
         match self {
-            Self::Renewed { username, password } => (username.as_str(), password.as_str()),
-            Self::Created { username, password } => (username.as_str(), password.as_str()),
+            Self::Renewed { username, password } | Self::Created { username, password } => {
+                (username.as_str(), password.as_str())
+            }
         }
     }
 
@@ -1589,6 +1590,91 @@ pub(crate) async fn sync_exp_dates_by_panel_api(app_state: &Arc<AppState>) {
                 input_changed = true;
             }
 
+            // On boot/update, also try to renew the root input account (not only aliases),
+            // so expired/missing exp_date root credentials don't keep the provider disabled.
+            if let Some(root_idx) = accounts.iter().position(|acct| acct.name == input.name) {
+                let root_expired_or_unknown =
+                    accounts[root_idx].exp_date.is_none() || is_input_expired(accounts[root_idx].exp_date);
+                if root_expired_or_unknown {
+                    let (root_name, root_username, root_password) = {
+                        let root = &accounts[root_idx];
+                        (root.name.clone(), root.username.clone(), root.password.clone())
+                    };
+                    debug_if_enabled!(
+                        "panel_api boot sync renewing root account for input {} (exp_date={:?})",
+                        sanitize_sensitive_info(&input.name),
+                        accounts[root_idx].exp_date
+                    );
+                    match panel_client_renew(app_state.as_ref(), panel_cfg, root_username.as_str(), root_password.as_str()).await {
+                        Ok(()) => {
+                            if let Err(err) = panel_client_adult_content(
+                                app_state.as_ref(),
+                                panel_cfg,
+                                Some((root_username.as_str(), root_password.as_str())),
+                            )
+                            .await
+                            {
+                                debug_if_enabled!(
+                                    "panel_api client_adult_content failed for {}: {}",
+                                    sanitize_sensitive_info(&root_name),
+                                    sanitize_sensitive_info(err.to_string().as_str())
+                                );
+                            }
+                            let refreshed_exp = panel_client_info(
+                                app_state.as_ref(),
+                                panel_cfg,
+                                root_username.as_str(),
+                                root_password.as_str(),
+                            )
+                            .await
+                            .ok()
+                            .flatten();
+                            if let Some(new_exp) = refreshed_exp {
+                                if let Some(csv_path) = csv_path.as_ref() {
+                                    let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
+                                    if let Err(err) = patch_batch_csv_update_exp_date(
+                                        csv_path,
+                                        &root_name,
+                                        &root_username,
+                                        &root_password,
+                                        new_exp,
+                                    )
+                                    .await
+                                    {
+                                        debug_if_enabled!("panel_api boot sync failed to persist root renew exp_date to csv: {}", err);
+                                    } else {
+                                        accounts[root_idx].exp_date = Some(new_exp);
+                                        any_change = true;
+                                        input_changed = true;
+                                    }
+                                } else {
+                                    let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
+                                    if let Err(err) = patch_source_yml_update_exp_date(&sources_path, &input.name, &input.name, new_exp).await {
+                                        debug_if_enabled!("panel_api boot sync failed to persist root renew exp_date to source.yml: {}", err);
+                                    } else {
+                                        accounts[root_idx].exp_date = Some(new_exp);
+                                        any_change = true;
+                                        input_changed = true;
+                                    }
+                                }
+                            } else {
+                                debug_if_enabled!(
+                                    "panel_api boot sync root renew succeeded but exp_date refresh failed for input {}",
+                                    sanitize_sensitive_info(&input.name)
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            debug_if_enabled!(
+                                "panel_api client_renew failed for {}: {}",
+                                sanitize_sensitive_info(&root_name),
+                                sanitize_sensitive_info(err.to_string().as_str())
+                            );
+                        }
+                    }
+                }
+            }
+
             if !panel_cfg.query_parameter.client_adult_content.is_empty() {
                 for acct in &accounts {
                     if let Err(err) = panel_client_adult_content(app_state.as_ref(), panel_cfg, Some((acct.username.as_str(), acct.password.as_str()))).await {
@@ -1662,6 +1748,55 @@ pub(crate) async fn sync_exp_dates_by_panel_api(app_state: &Arc<AppState>) {
         if let Err(err) = reload_sources(app_state) {
             debug_if_enabled!("panel_api boot sync reload sources failed: {}", err);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::patch_source_yml_update_exp_date;
+    use serde_yaml::Value;
+
+    #[tokio::test]
+    async fn patch_source_yml_update_exp_date_updates_root_and_enables() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("source.yml");
+        tokio::fs::write(
+            &path,
+            r#"
+sources:
+  - name: s1
+    inputs:
+      - name: prov1
+        enabled: false
+        url: "http://example.invalid"
+        username: "u"
+        password: "p"
+        exp_date: 1
+"#,
+        )
+        .await
+        .expect("write");
+
+        patch_source_yml_update_exp_date(&path, "prov1", "prov1", 123)
+            .await
+            .expect("patch");
+
+        let raw = tokio::fs::read_to_string(&path).await.expect("read");
+        let doc: Value = serde_yaml::from_str(&raw).expect("parse");
+        let sources = doc
+            .get("sources")
+            .and_then(Value::as_sequence)
+            .expect("sources");
+        let inputs = sources[0]
+            .get("inputs")
+            .and_then(Value::as_sequence)
+            .expect("inputs");
+        let input = inputs
+            .iter()
+            .find(|i| i.get("name").and_then(Value::as_str) == Some("prov1"))
+            .expect("input prov1");
+        assert_eq!(input.get("exp_date").and_then(Value::as_i64), Some(123));
+        assert_eq!(input.get("enabled").and_then(Value::as_bool), Some(true));
     }
 }
 

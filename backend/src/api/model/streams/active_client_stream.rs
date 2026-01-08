@@ -162,6 +162,7 @@ impl ActiveClientStream {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn stream_grace_period(app_state: &Arc<AppState>,
                            stream_details: &StreamDetails,
                            user_grace_period: bool,

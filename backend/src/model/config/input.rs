@@ -181,14 +181,6 @@ impl ConfigInput {
                 }
             }
 
-            let min_auto = size.min.as_ref().is_some_and(PanelApiAliasPoolSizeValue::is_auto);
-            let max_auto = size.max.as_ref().is_some_and(PanelApiAliasPoolSizeValue::is_auto);
-            if max_auto && !min_auto {
-                warn!(
-                    "panel_api.alias_pool.size.max is set to auto without min for input {}",
-                    self.name
-                );
-            }
         }
 
         if let Some(panel) = self.panel_api.as_ref() {

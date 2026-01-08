@@ -841,7 +841,7 @@ Optional alias pool controls:
   - `auto`: uses the number of enabled tuliprox users (Active/Trial and not expired) for targets in the same source. If below, tuliprox tries to renew expired accounts first and then creates new accounts until the minimum is met during boot/update. User add/update triggers only when `max` is also `auto`.
 - `alias_pool.size.max`: `number` or `auto`. 
   - `number`: upper bound for valid accounts when provisioning is triggered by provider exhaustion. When the maximum is reached, provisioning (renew/create) is skipped. Must be greater than `0` and >= `min`.
-  - `auto`: no upper bound; if `min` is also `auto`, alias-pool min checks are triggered when tuliprox users are added/updated. If only `max` is `auto`, tuliprox logs a warning.
+  - `auto`: no upper bound; if `min` is also `auto`, alias-pool min checks are triggered when tuliprox users are added/updated.
 - `alias_pool.remove_expired`: `boolean`
   - `true`: remove expired accounts from `source.yml` or batch CSVs during boot/update. This cleanup runs last in the panel_api routines and only removes aliases/rows (the root input is not removed).
 
