@@ -319,7 +319,7 @@ async fn playlist_download_from_input(client: &reqwest::Client, app_config: &Arc
             let (p, e) = m3u::download_m3u_playlist(client, config, input).await;
             (p, e, false)
         }
-        InputType::Xtream => xtream::download_xtream_playlist(config, client, input, clusters_to_download.as_deref()).await,
+        InputType::Xtream => xtream::download_xtream_playlist(app_config, client, input, clusters_to_download.as_deref()).await,
         InputType::M3uBatch | InputType::XtreamBatch => (vec![], vec![], false),
         InputType::Library => {
             let (p, e) = library::download_library_playlist(client, app_config, input).await;
@@ -398,14 +398,13 @@ async fn process_source(source_idx: usize, ctx: &PlaylistProcessingContext) -> (
                     (playlist, download_err)
                 };
 
-                let (tvguide, mut tvguide_errors) = if input.input_type == InputType::Library {
-                    (None, vec!())
+                let tvguide = if input.input_type == InputType::Library {
+                    None
                 } else {
-                    download_input_epg(ctx,input, &mut errors).await
+                    download_input_epg(ctx,input, &mut error_list).await
                 };
 
                 errors.append(&mut error_list);
-                errors.append(&mut tvguide_errors);
                 let group_count = playlist_groups.get_group_count();
                 let channel_count = playlist_groups.get_channel_count();
                 let input_name = &input.name;
@@ -455,16 +454,16 @@ async fn process_source(source_idx: usize, ctx: &PlaylistProcessingContext) -> (
 }
 
 async fn download_input_epg(ctx: &PlaylistProcessingContext,  input: &Arc<ConfigInput>,
-                            error_list: &mut [TuliproxError]) -> (Option<TVGuide>, Vec<TuliproxError>) {
+                            error_list: &mut Vec<TuliproxError>) -> Option<TVGuide> {
     // Download epg for input
-    let (tvguide, tvguide_errors) = if error_list.is_empty() {
-        debug!("Downloading epg for input '{}'", input.name);
+    let (tvguide, mut tvguide_errors) = if error_list.is_empty() {
         let working_dir = &ctx.config.config.load().working_dir;
         epg::get_xmltv(ctx, input, working_dir).await
     } else {
         (None, vec![])
     };
-    (tvguide, tvguide_errors)
+    error_list.append(&mut tvguide_errors);
+    tvguide
 }
 
 async fn download_input(ctx: &PlaylistProcessingContext, input: &Arc<ConfigInput>)

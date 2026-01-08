@@ -389,9 +389,7 @@ pub fn LibraryConfigView() -> Html {
         <>
          <div class="tp__library-config-view__header">
             { edit_field_bool!(form_state, translate.t(LABEL_ENABLED), enabled, LibraryConfigFormAction::Enabled) }
-            <Card class="tp__config-view__card">
             { render_scan_directories_edit() }
-            </Card>
          </div>
          <div class="tp__library-config-view__body tp__config-view-page__body">
              <Card class="tp__config-view__card">

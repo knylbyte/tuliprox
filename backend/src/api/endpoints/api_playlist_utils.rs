@@ -1,4 +1,4 @@
-use crate::model::{AppConfig, Config, ConfigInput, ConfigTarget};
+use crate::model::{AppConfig, ConfigInput, ConfigTarget};
 use crate::repository::{m3u_repository, xtream_repository};
 use crate::utils::{m3u, xtream};
 use crate::utils;
@@ -144,14 +144,15 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
     (axum::http::StatusCode::BAD_REQUEST, axum::Json(json!({"error": "Invalid Arguments"}))).into_response()
 }
 
-pub(in crate::api::endpoints) async fn get_playlist(client: &reqwest::Client, cfg_input: Option<&Arc<ConfigInput>>, cfg: &Arc<Config>, accept: Option<&str>) -> impl IntoResponse + Send {
+pub(in crate::api::endpoints) async fn get_playlist(client: &reqwest::Client, cfg_input: Option<&Arc<ConfigInput>>, app_config: &Arc<AppConfig>, accept: Option<&str>) -> impl IntoResponse + Send {
+    let cfg = app_config.config.load();
     match cfg_input {
         Some(input) => {
             let (result, errors) =
                 match input.input_type {
-                    InputType::M3u | InputType::M3uBatch => m3u::download_m3u_playlist(client, cfg, input).await,
+                    InputType::M3u | InputType::M3uBatch => m3u::download_m3u_playlist(client, &cfg, input).await,
                     InputType::Xtream | InputType::XtreamBatch => {
-                        let (pl, err, _) = xtream::download_xtream_playlist(cfg, client, input, None).await;
+                        let (pl, err, _) = xtream::download_xtream_playlist(app_config, client, input, None).await;
                         (pl, err)
                     }
                     InputType::Library => {

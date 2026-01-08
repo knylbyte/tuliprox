@@ -46,12 +46,12 @@ async fn download_epg_file(url: &str, ctx: &PlaylistProcessingContext, input: &C
     }
 
     let lock_key = persist_file_path.display().to_string();
-    let _input_lock = ctx.get_input_lock(&lock_key);
+    let _input_lock = ctx.get_input_lock(&lock_key).await;
 
     if ctx.is_input_downloaded(&lock_key).await {
         return Ok(persist_file_path);
     }
-
+    debug!("Downloading epg for input '{}'", input.name);
     match request::get_input_epg_content_as_file(&ctx.client, input, working_dir, url, &persist_file_path).await {
         Ok(path) => {
             ctx.mark_input_downloaded(lock_key.clone()).await;

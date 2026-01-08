@@ -1,6 +1,6 @@
 use crate::api::model::AppState;
 use crate::messaging::send_message;
-use crate::model::{is_input_expired, xtream_mapping_option_from_target_options, Config, ConfigInput, ConfigTarget, XtreamLoginInfo, XtreamTargetOutput};
+use crate::model::{is_input_expired, xtream_mapping_option_from_target_options, AppConfig, Config, ConfigInput, ConfigTarget, XtreamLoginInfo, XtreamTargetOutput};
 use crate::model::{InputSource, ProxyUserCredentials};
 use crate::processing::parser::xtream;
 use crate::processing::parser::xtream::parse_xtream_series_info;
@@ -336,8 +336,9 @@ pub async fn notify_account_expire(exp_date: Option<i64>, cfg: &Config, client: 
     }
 }
 
-pub async fn download_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Client, input: &ConfigInput, clusters: Option<&[XtreamCluster]>)
+pub async fn download_xtream_playlist(app_config: &Arc<AppConfig>, client: &reqwest::Client, input: &ConfigInput, clusters: Option<&[XtreamCluster]>)
                                       -> (Vec<PlaylistGroup>, Vec<TuliproxError>, bool) {
+    let cfg = app_config.config.load();
     let input_source: InputSource = {
         match input.staged.as_ref() {
             None => input.into(),
@@ -351,9 +352,9 @@ pub async fn download_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Clien
     let base_url = get_xtream_stream_url_base(&input_source.url, username, password);
     let input_source_login = input_source.with_url(base_url.clone());
 
-    check_alias_user_state(cfg, client, input).await;
+    check_alias_user_state(&cfg, client, input).await;
 
-    if let Err(err) = xtream_login(cfg, client, &input_source_login, username).await {
+    if let Err(err) = xtream_login(&cfg, client, &input_source_login, username).await {
         error!("Could not log in with xtream user {username} for provider {}. {err}", input.name);
         return (Vec::with_capacity(0), vec![err], false);
     }
@@ -381,7 +382,7 @@ pub async fn download_xtream_playlist(cfg: &Arc<Config>, client: &reqwest::Clien
                 (Ok(category_content), Ok(stream_content)) => {
                     if cfg.disk_based_processing {
                         // trace!("Using disk input playlist optimization for cluster {}", xtream_cluster);
-                        if let Err(err) = process_xtream_cluster_to_disk(cfg, input, *xtream_cluster, category_content, stream_content).await {
+                        if let Err(err) = process_xtream_cluster_to_disk(app_config, input, *xtream_cluster, category_content, stream_content).await {
                             error!("process_xtream_cluster_to_disk failed: {err}");
                             errors.push(err);
                         } else {
@@ -498,15 +499,16 @@ pub fn create_vod_info_from_item(target: &ConfigTarget, user: &ProxyUserCredenti
 const BATCH_SIZE: usize = 1000;
 
 async fn process_xtream_cluster_to_disk(
-    cfg: &Arc<Config>,
+    app_config: &Arc<AppConfig>,
     input: &ConfigInput,
     cluster: XtreamCluster,
     categories: DynReader,
     streams: DynReader,
 ) -> Result<(), TuliproxError> {
+    let cfg = app_config.config.load();
     // trace!("Starting process_xtream_cluster_to_disk for cluster {}", cluster);
     let storage_path = {
-        ensure_input_storage_path(cfg, &input.name)?
+        ensure_input_storage_path(&cfg, &input.name)?
     };
     let xtream_path = xtream_get_file_path(&storage_path, cluster);
 
@@ -587,6 +589,9 @@ async fn process_xtream_cluster_to_disk(
     // 2. Success! Swap temporary files to permanent ones
     let tmp_xtream_path = xtream_path.with_extension("tmp");
 
+    // Acquire write lock to serialize compact/swap/cleanup operations across concurrent API calls
+    let swap_lock = app_config.file_locks.write_lock(&xtream_path).await;
+
     if let Ok(mut tree_update) = BPlusTreeUpdate::<u32, XtreamPlaylistItem>::try_new(&tmp_xtream_path) {
         // Compact the TEMPORARY file (tmp_xtream_path) in place.
         // We ensure the .tmp file is compacted before we rename it to the final destination,
@@ -617,6 +622,7 @@ async fn process_xtream_cluster_to_disk(
         let _ = tokio::fs::remove_file(tmp_col_path).await;
     }
 
+    drop(swap_lock);
     // trace!("Cluster {} updated successfully", cluster);
     Ok(())
 }
