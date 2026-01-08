@@ -560,17 +560,19 @@ impl PlaylistProcessingContext {
 
     pub async fn get_input_lock(&self, input_name: &str) -> OwnedRwLockWriteGuard<()> {
         let mut locks = self.input_locks.lock().await;
-        // Clean up stale weak references
+        // Try to upgrade the existing weak reference
+        let lock = locks.get(input_name)
+            .and_then(Weak::upgrade)
+            .unwrap_or_else(|| {
+                let new_lock = Arc::new(RwLock::new(()));
+                locks.insert(input_name.to_string(), Arc::downgrade(&new_lock));
+                new_lock
+            });
+
+        // Clean up stale references periodically
         locks.retain(|_, weak| weak.strong_count() > 0);
 
-        if let Some(weak) = locks.get(input_name) {
-            if let Some(strong) = weak.upgrade() {
-                return strong.write_owned().await;
-            }
-        }
-
-        let lock = Arc::new(RwLock::new(()));
-        locks.insert(input_name.to_string(), Arc::downgrade(&lock));
+        drop(locks); // Release mutex before awaiting write lock
         lock.write_owned().await
     }
 }
@@ -776,7 +778,7 @@ pub fn process_favourites(playlist: &mut Vec<PlaylistGroup>, favourites_cfg: Opt
         let mut fav_groups: IndexMap<Arc<str>, Vec<PlaylistItem>> = IndexMap::new();
         for pg in playlist.iter() {
             for pli in &pg.channels {
-                // series episodes cant be included in favourites
+                // series episodes can't be included in favourites
                 if pli.header.item_type == PlaylistItemType::Series || pli.header.item_type == PlaylistItemType::LocalSeries {
                     continue;
                 }

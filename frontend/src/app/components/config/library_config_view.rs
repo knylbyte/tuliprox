@@ -245,6 +245,9 @@ pub fn LibraryConfigView() -> Html {
         let form_state = form_state.clone();
         Callback::from(move |idx: usize| {
             let mut current_list = form_state.form.scan_directories.clone();
+            if idx >= current_list.len() {
+               return;
+            }
             current_list.remove(idx);
             form_state.dispatch(LibraryConfigFormAction::ScanDirectories(current_list));
         })

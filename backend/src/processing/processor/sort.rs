@@ -109,10 +109,22 @@ fn playlist_comparator(
 }
 
 fn playlistgroup_comparator(a: &PlaylistGroup, b: &PlaylistGroup, group_sort: &ConfigSortGroup, match_as_ascii: bool) -> Ordering {
-    let value_a = if match_as_ascii { deunicode(&a.title) } else { a.title.to_string() };
-    let value_b = if match_as_ascii { deunicode(&b.title) } else { b.title.to_string() };
+    let ascii_a;
+    let ascii_b;
+    let value_a: &str = if match_as_ascii {
+        ascii_a = deunicode(&a.title);
+        &ascii_a
+    } else {
+        &a.title
+    };
+    let value_b: &str = if match_as_ascii {
+        ascii_b = deunicode(&b.title);
+        &ascii_b
+    } else {
+        &b.title
+    };
 
-    playlist_comparator(group_sort.sequence.as_ref(), group_sort.order, &value_a, &value_b)
+    playlist_comparator(group_sort.sequence.as_ref(), group_sort.order, value_a, value_b)
 }
 
 fn playlistitem_comparator(

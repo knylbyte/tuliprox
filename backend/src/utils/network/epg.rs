@@ -37,7 +37,7 @@ async fn download_epg_file(url: &str, ctx: &PlaylistProcessingContext, input: &C
                 if let Ok(elapsed) = std::time::SystemTime::now().duration_since(modified) {
                     if elapsed.as_secs() < input.cache_duration_seconds {
                         debug!("Using cached epg file: {}", persist_file_path.display());
-                        return Ok(persist_file_path.clone());
+                        return Ok(persist_file_path);
                     }
                 }
             }
@@ -49,7 +49,7 @@ async fn download_epg_file(url: &str, ctx: &PlaylistProcessingContext, input: &C
     let _input_lock = ctx.get_input_lock(&lock_key);
 
     if ctx.is_input_downloaded(&lock_key).await {
-        return Ok(persist_file_path.clone());
+        return Ok(persist_file_path);
     }
 
     match request::get_input_epg_content_as_file(&ctx.client, input, working_dir, url, &persist_file_path).await {

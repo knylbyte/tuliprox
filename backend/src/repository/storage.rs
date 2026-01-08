@@ -4,7 +4,7 @@ use crate::utils;
 use shared::error::notify_err;
 use shared::error::TuliproxError;
 use std::path::{Path, PathBuf};
-use shared::notify_err_res;
+use shared::{concat_string, notify_err_res};
 
 pub(in crate::repository) fn get_target_id_mapping_file(target_path: &Path) -> PathBuf {
     // Join directly with &str to avoid an intermediate PathBuf allocation
@@ -32,7 +32,7 @@ pub fn get_input_storage_path(input_name: &str, working_dir: &str) -> std::io::R
     let sanitized_name: String = input_name.chars()
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
         .collect();
-    let name = format!("input_{sanitized_name}");
+    let name = concat_string!(cap = 6 + sanitized_name.len(); "input_", &sanitized_name);
     let path = Path::new(working_dir).join(name);
     // Create the directory and return the path or propagate the error
     std::fs::create_dir_all(&path).map(|()| path)

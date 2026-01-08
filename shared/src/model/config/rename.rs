@@ -14,7 +14,7 @@ impl ConfigRenameDto {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         self.pattern = apply_templates_to_pattern_single(&self.pattern, templates)?;
         if let Err(err) = regex::Regex::new(&self.pattern) {
-            return info_err_res!("cant parse regex: {} {err}", &self.pattern);
+            return info_err_res!("can't parse regex: {} {err}", &self.pattern);
         }
         Ok(())
     }

@@ -133,11 +133,12 @@ where
                     url: stream_url,
                 };
                 match serde_json::to_string(&lineup) {
-                    Ok(content) => Ok(Bytes::from(if has_next {
-                        format!("{content},")
-                    } else {
-                        content
-                    })),
+                    Ok(mut content) => {
+                        if has_next {
+                            content.push(',');
+                        }
+                        Ok(Bytes::from(content))
+                    },
                     Err(_) => Ok(Bytes::from("")),
                 }
             });
@@ -165,11 +166,12 @@ where
                         .clone(),
                 };
                 match serde_json::to_string(&lineup) {
-                    Ok(content) => Ok(Bytes::from(if has_next {
-                        format!("{content},")
-                    } else {
-                        content
-                    })),
+                    Ok(mut content) => {
+                        if has_next {
+                            content.push(',');
+                        }
+                        Ok(Bytes::from(content))
+                    },
                     Err(_) => Ok(Bytes::from("")),
                 }
             });

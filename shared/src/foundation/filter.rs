@@ -163,7 +163,7 @@ fn get_caption<'a>(provider: &'a ValueProvider<'a>, rewc: &'a CompiledRegex) -> 
         }
     }
 
-    if let Some(value) = provider.get("title") {
+    if let Some(value) = provider.get("name") {
         if rewc.re.is_match(&value) {
             return (true, value);
         }
@@ -293,7 +293,7 @@ fn get_parser_regexp(
         let regstr = apply_templates_to_pattern_single(&parsed_text, templates)?;
         let re = regex::Regex::new(regstr.as_str());
         if re.is_err() {
-            return info_err_res!("cant parse regex: {}", regstr);
+            return info_err_res!("can't parse regex: {}", regstr);
         }
         let regexp = re.unwrap();
         if log_enabled!(Level::Trace) {
@@ -344,7 +344,7 @@ fn get_parser_type_comparison(expr: Pair<Rule>) -> Result<Filter, TuliproxError>
     let expr_inner = expr.into_inner();
     let text_item_type = expr_inner.as_str();
     let item_type = get_filter_item_type(text_item_type);
-    item_type.map_or_else(|| info_err_res!("cant parse item type: {text_item_type}"),
+    item_type.map_or_else(|| info_err_res!("can't parse item type: {text_item_type}"),
                           |itype| Ok(Filter::TypeComparison(ItemField::Type, itype)))
 }
 

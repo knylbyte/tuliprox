@@ -68,7 +68,7 @@ pub async fn get_input_epg_content_as_file(client: &reqwest::Client, input: &Con
         match download_epg_content_as_file(client, input, url_str, persist_filepath).await {
             Ok(content) => Ok(content),
             Err(e) => {
-                error!("cant download input {} epg url: {}  => {}", input.name, sanitize_sensitive_info(url_str), sanitize_sensitive_info(e.to_string().as_str()));
+                error!("can't download input {} epg url: {}  => {}", input.name, sanitize_sensitive_info(url_str), sanitize_sensitive_info(e.to_string().as_str()));
                 notify_err_res!("Failed to download")
             }
         }
@@ -77,7 +77,7 @@ pub async fn get_input_epg_content_as_file(client: &reqwest::Client, input: &Con
             Some(filepath) => {
                 if filepath.exists() {
                     if let Err(e) = tokio::fs::copy(&filepath, persist_filepath).await {
-                        error!("cant persist to: {}  => {}", persist_filepath.display(), e);
+                        error!("can't persist to: {}  => {}", persist_filepath.display(), e);
                         return notify_err_res!("Failed to persist: {}  => {}", persist_filepath.display(), e);
                     }
                     if filepath.exists() {
@@ -93,7 +93,7 @@ pub async fn get_input_epg_content_as_file(client: &reqwest::Client, input: &Con
         };
 
         result.map_or_else(|| {
-            let msg = format!("cant read input url: {}", sanitize_sensitive_info(url_str));
+            let msg = format!("can't read input url: {}", sanitize_sensitive_info(url_str));
             error!("{msg}");
             notify_err_res!("{msg}")
         }, Ok)
@@ -118,7 +118,7 @@ pub async fn get_input_text_content(client: &reqwest::Client, input: &InputSourc
                     if let Some(persist_file_value) = persist_filepath {
                         let to_file = &persist_file_value;
                         if let Err(e) = tokio::fs::copy(&filepath, to_file).await {
-                            error!("cant persist to: {}  => {}", to_file.to_str().unwrap_or("?"), e);
+                            error!("can't persist to: {}  => {}", to_file.to_str().unwrap_or("?"), e);
                             return notify_err_res!("Failed to persist: {}  => {}", to_file.to_str().unwrap_or("?"), e);
                         }
                     }
@@ -136,7 +136,7 @@ pub async fn get_input_text_content(client: &reqwest::Client, input: &InputSourc
             None => None
         };
         result.map_or_else(|| {
-            let msg = format!("cant read input url: {}", sanitize_sensitive_info(&input.url));
+            let msg = format!("can't read input url: {}", sanitize_sensitive_info(&input.url));
             error!("{msg}");
             notify_err_res!("{msg}")
         }, Ok)
@@ -181,7 +181,7 @@ pub async fn get_input_text_content_as_stream(client: &reqwest::Client, input: &
             None => None
         };
         result.map_or_else(|| {
-            let msg = format!("cant read input url: {}", sanitize_sensitive_info(&input.url));
+            let msg = format!("can't read input url: {}", sanitize_sensitive_info(&input.url));
             error!("{msg}");
             notify_err_res!("{msg}")
         }, Ok)
@@ -539,7 +539,7 @@ async fn download_json_content(client: &reqwest::Client, disabled_headers: Optio
 pub async fn get_input_json_content(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>, trace_log: bool) -> Result<serde_json::Value, TuliproxError> {
     match download_json_content(client, disabled_headers, input, persist_filepath, trace_log).await {
         Ok(content) => Ok(content),
-        Err(e) => notify_err_res!("cant download input {}, => {}", input.name, sanitize_sensitive_info(e.to_string().as_str()))
+        Err(e) => notify_err_res!("can't download input {}, => {}", input.name, sanitize_sensitive_info(e.to_string().as_str()))
     }
 }
 
@@ -554,7 +554,7 @@ async fn download_json_content_as_stream(client: &reqwest::Client, disabled_head
 pub async fn get_input_json_content_as_stream(client: &reqwest::Client, disabled_headers: Option<&ReverseProxyDisabledHeaderConfig>, input: &InputSource, persist_filepath: Option<PathBuf>) -> Result<DynReader, TuliproxError> {
     match download_json_content_as_stream(client, disabled_headers, input, persist_filepath).await {
         Ok(stream) => Ok(stream),
-        Err(e) => notify_err_res!("cant download input {} => {}", input.name, sanitize_sensitive_info(e.to_string().as_str()))
+        Err(e) => notify_err_res!("can't download input {} => {}", input.name, sanitize_sensitive_info(e.to_string().as_str()))
     }
 }
 

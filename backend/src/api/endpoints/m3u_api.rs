@@ -128,7 +128,7 @@ async fn m3u_api_stream(
       .app_config
       .get_input_by_name(&pli.input_name),
       true,
-      format!("Cant find input {} for target {target_name}, stream_id {virtual_id}", pli.input_name)
+      format!("Can't find input {} for target {target_name}, stream_id {virtual_id}", pli.input_name)
     );
 
     if pli.item_type.is_local() {

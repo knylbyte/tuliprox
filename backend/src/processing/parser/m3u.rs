@@ -5,6 +5,7 @@ use shared::utils::{default_supported_video_extensions, extract_id_from_url, Str
 use std::borrow::BorrowMut;
 use tokio::io::AsyncBufReadExt;
 use indexmap::IndexMap;
+use shared::concat_string;
 
 // other implementations like calculating text_distance on all titles took too much time
 // we keep it now as simple as possible and less memory intensive.
@@ -13,7 +14,7 @@ fn get_title_group(text: &str) -> String {
     let parts = alphabetic_only.split_whitespace();
     let mut combination = String::new();
     for p in parts {
-        combination = format!("{combination} {p}").trim().to_string();
+        combination = concat_string!(&combination, " " , p);
         if combination.len() > 2 {
             return combination;
         }

@@ -167,7 +167,7 @@ fn get_map_item_as_str(map: &serde_json::Map<String, Value>, key: &str) -> Optio
 
 pub type CategoryKey = (XtreamCluster, Arc<str>);
 
-// Because interner is not thread safe we cant use it currently for interning.
+// Because interner is not thread safe we can't use it currently for interning.
 // We leave the argument for later optimizations.
 async fn load_old_category_ids(path: &Path, _interner: &mut StringInterner) -> (u32, HashMap<CategoryKey, u32>) {
     let old_path = path.to_path_buf();
@@ -378,7 +378,7 @@ pub fn xtream_get_collection_path(
             return Ok(col_path);
         }
     }
-    Err(string_to_io_error(format!("Cant find collection: {target_name}/{collection_name}")))
+    Err(string_to_io_error(format!("Can't find collection: {target_name}/{collection_name}")))
 }
 
 async fn xtream_read_item_for_stream_id(

@@ -5,13 +5,12 @@ use reqwest::header::HeaderMap;
 use shared::utils::{filter_response_header};
 
 pub fn get_response_headers(headers: &HeaderMap) -> Vec<(String, String)> {
-    let response_headers: Vec<(String, String)> = headers.iter()
+    headers.iter()
         .filter(|(key, _)| filter_response_header(key.as_str()))
         .filter_map(|(key, value)| {
             value.to_str().ok().map(|v| (key.to_string(), v.to_string()))
         })
-        .collect();
-    response_headers
+        .collect()
 }
 
 pub fn get_stream_response_with_headers(custom: Option<(Vec<(String, String)>, StatusCode)>) ->  (axum::http::StatusCode, axum::http::HeaderMap) {

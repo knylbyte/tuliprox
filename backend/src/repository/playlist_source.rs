@@ -339,7 +339,7 @@ macro_rules! impl_single_file_disk_source {
 
             fn update_playlist<'a>(&'a mut self, _plg: &'a PlaylistGroup) -> BoxFuture<'a, ()> {
                 Box::pin(async move {
-                    warn!("update_playlist should not be called for M3U Disk playlist");
+                    warn!("update_playlist should not be called for Disk playlist");
                 })
             }
 

@@ -43,11 +43,11 @@ impl ApiProxyServerInfoDto {
         }
         self.protocol = self.protocol.trim().to_string();
         if self.protocol.is_empty() {
-            return info_err_res!("protocol cant be empty for api server config");
+            return info_err_res!("protocol can't be empty for api server config");
         }
         self.host = self.host.trim().to_string();
         if self.host.is_empty() {
-            return info_err_res!("host cant be empty for api server config");
+            return info_err_res!("host can't be empty for api server config");
         }
         if let Some(port) = self.port.as_ref() {
             let port = port.trim().to_string();

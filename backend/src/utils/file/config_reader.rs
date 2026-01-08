@@ -59,7 +59,7 @@ pub async fn read_api_proxy_config(config: &AppConfig, resolve_env: bool) -> Res
         }
         Ok(Some(api_proxy))
     } else {
-        warn!("cant read api_proxy_config file: {api_proxy_file_path}");
+        warn!("can't read api_proxy_config file: {api_proxy_file_path}");
         Ok(None)
     }
 }
@@ -279,13 +279,13 @@ pub fn read_api_proxy_file(api_proxy_file: &str, resolve_env: bool) -> Result<Op
             Ok(mut api_proxy_dto) => {
                 if resolve_env {
                     if let Err(err) = api_proxy_dto.prepare() {
-                        exit!("cant read api-proxy-config file: {err}");
+                        exit!("can't read api-proxy-config file: {err}");
                     }
                 }
                 Ok(Some(api_proxy_dto))
             }
             Err(err) => {
-                info_err_res!("cant read api-proxy-config file: {err}")
+                info_err_res!("can't read api-proxy-config file: {err}")
             }
         }
     })

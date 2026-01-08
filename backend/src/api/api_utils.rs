@@ -41,6 +41,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
 use url::Url;
+use shared::concat_string;
 
 const CONTENT_TYPE_BIN: &str = "application/cbor";
 
@@ -548,7 +549,7 @@ async fn create_stream_response_details(
             let provider_handle = if stream.is_none() {
                 let provider_handle = streaming_strategy.provider_handle.take();
                 app_state.connection_manager.release_provider_handle(provider_handle).await;
-                error!("Cant open stream {}", sanitize_sensitive_info(&request_url));
+                error!("Can't open stream {}", sanitize_sensitive_info(&request_url));
                 None
             } else {
                 streaming_strategy.provider_handle.take()
@@ -597,9 +598,9 @@ where
 
         // if there is an action_path (like for timeshift duration/start), it will be added in front of the stream_id
         if self.action_path.is_empty() {
-            format!("{provider_id}{extension}")
+            concat_string!(&provider_id.to_string(), &extension)
         } else {
-            format!("{}/{provider_id}{extension}", trim_slash(self.action_path))
+            concat_string!(&trim_slash(self.action_path), "/", &provider_id.to_string(), &extension)
         }
     }
 }
@@ -671,7 +672,7 @@ where
                 &provider_url,
             ) {
                 None => {
-                    error!("Cant find stream url for target {target_name}, context {}, stream_id {virtual_id}", params.req_context);
+                    error!("Can't find stream url for target {target_name}, context {}, stream_id {virtual_id}", params.req_context);
                     return Some(axum::http::StatusCode::BAD_REQUEST.into_response());
                 }
                 Some(url) => {

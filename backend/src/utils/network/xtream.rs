@@ -147,7 +147,7 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
                                 let config = &app_state.app_config.config.load();
                                 match get_target_storage_path(config, target.name.as_str()) {
                                     None => {
-                                        error!("Failed to get target storage path {}. Cant save episodes", &target.name);
+                                        error!("Failed to get target storage path {}. Can't save episodes", &target.name);
                                     }
                                     Some(target_path) => {
                                         let mut in_memory_updates = Vec::new();
@@ -224,7 +224,7 @@ pub async fn get_xtream_stream_info(client: &reqwest::Client,
         }
     }
 
-    Err(string_to_io_error(format!("Cant find stream with id: {}/{}/{}",
+    Err(string_to_io_error(format!("Can't find stream with id: {}/{}/{}",
                                    target.name.replace(' ', "_").as_str(), &cluster, pli.get_virtual_id())))
 }
 

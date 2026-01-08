@@ -98,7 +98,7 @@ impl EpgSmartMatchConfigDto {
         if let Some(regstr) = self.normalize_regex.as_ref() {
             let re = regex::Regex::new(regstr.as_str());
             if re.is_err() {
-                return info_err_res!("cant parse regex: {}", regstr);
+                return info_err_res!("can't parse regex: {}", regstr);
             }
         };
 

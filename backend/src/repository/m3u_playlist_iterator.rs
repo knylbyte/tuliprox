@@ -94,13 +94,13 @@ impl M3uPlaylistIterator {
             shared::concat_string!(
                 cap = cap;
                 &self.base_url, "/", prefix_path, "/", stream_type, "/",
-                &self.username, "/", &self.password, "/", m3u_pli.virtual_id
+                &self.username, "/", &self.password, "/", &m3u_pli.virtual_id.to_string()
             )
         } else {
             shared::concat_string!(
                 cap = cap;
                 &self.base_url, "/", prefix_path, "/",
-                &self.username, "/", &self.password, "/", m3u_pli.virtual_id
+                &self.username, "/", &self.password, "/", &m3u_pli.virtual_id.to_string()
             )
         }
     }

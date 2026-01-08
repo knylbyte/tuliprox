@@ -252,7 +252,7 @@ async fn xtream_player_api_stream(
     let input = try_option_bad_request!(
       app_state.app_config.get_input_by_name(&pli.input_name),
       true,
-      format!( "Cant find input {} for target {target_name}, context {}, stream_id {virtual_id}", pli.input_name, stream_req.context)
+      format!( "Can't find input {} for target {target_name}, context {}, stream_id {virtual_id}", pli.input_name, stream_req.context)
     );
 
     if pli.item_type.is_local() {
@@ -368,7 +368,7 @@ async fn xtream_player_api_stream(
         get_xtream_player_api_stream_url(&input, stream_req.context, &query_path, session_url),
         true,
         format!(
-            "Cant find stream url for target {target_name}, context {}, stream_id {virtual_id}",
+            "Can't find stream url for target {target_name}, context {}, stream_id {virtual_id}",
             stream_req.context
         )
     );
@@ -445,7 +445,7 @@ async fn xtream_player_api_stream_with_token(
                 .get_input_by_name(&pli.input_name),
             true,
             format!(
-                "Cant find input {} for target {target_name}, context {}, stream_id {}",
+                "Can't find input {} for target {target_name}, context {}, stream_id {}",
                 pli.input_name, stream_req.context, pli.virtual_id
             )
         );
@@ -529,7 +529,7 @@ async fn xtream_player_api_stream_with_token(
             ),
             true,
             format!(
-                "Cant find stream url for target {target_name}, context {}, stream_id {}",
+                "Can't find stream url for target {target_name}, context {}, stream_id {}",
                 stream_req.context, virtual_id
             )
         );
@@ -973,7 +973,7 @@ async fn xtream_get_short_epg(
             }
         }
     }
-    warn!("Cant find short epg with id: {target_name}/{stream_id}");
+    warn!("Can't find short epg with id: {target_name}/{stream_id}");
     get_empty_epg_response().into_response()
 }
 
@@ -1285,7 +1285,7 @@ async fn xtream_player_api(
                 )
                 .await
             ),
-            _ => Some(info_err_res!("Cant find content: {action} for target: {}", &target.name)),
+            _ => Some(info_err_res!("Can't find content: {action} for target: {}", &target.name)),
         };
 
         match result {
@@ -1319,7 +1319,7 @@ async fn xtream_player_api(
         }
     } else {
         match (user_target.is_none(), api_req.action.is_empty()) {
-            (true, _) => debug!("Cant find user!"),
+            (true, _) => debug!("Can't find user!"),
             (_, true) => debug!("Parameter action is empty!"),
             _ => debug!("Bad request!"),
         }
@@ -1331,16 +1331,14 @@ fn xtream_create_content_stream(
     xtream_iter: impl Iterator<Item=(String, bool)>,
 ) -> impl Stream<Item=Result<Bytes, String>> {
     stream::once(async { Ok::<Bytes, String>(Bytes::from("[")) }).chain(
-        stream::iter(xtream_iter.map(move |(line, has_next)| {
-            Ok::<Bytes, String>(Bytes::from(if has_next {
-                format!("{line},")
-            } else {
-                line.clone()
-            }))
-        }))
-            .chain(stream::once(async {
-                Ok::<Bytes, String>(Bytes::from("]"))
-            })),
+        stream::iter(xtream_iter.map(move |(mut line, has_next)| {
+            if has_next {
+                line.push(',');
+            }
+            Ok::<Bytes, String>(Bytes::from(line))
+        })).chain(stream::once(async {
+            Ok::<Bytes, String>(Bytes::from("]"))
+        })),
     )
 }
 

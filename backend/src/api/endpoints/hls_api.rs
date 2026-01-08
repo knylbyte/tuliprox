@@ -236,7 +236,7 @@ async fn hls_api_stream(
     let input = try_option_bad_request!(
         app_state.app_config.get_input_by_id(params.input_id),
         true,
-        format!("Cant find input {} for target {target_name}, stream_id {virtual_id}, hls", params.input_id)
+        format!("Can't find input {} for target {target_name}, stream_id {virtual_id}, hls", params.input_id)
     );
 
     debug_if_enabled!("ID chain for hls endpoint: request_stream_id={} -> virtual_id={virtual_id}", params.stream_id);

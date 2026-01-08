@@ -2477,17 +2477,16 @@ where
 
             for (k, v) in query.iter() {
                 let value_bytes = binary_serialize(&v)?;
-                let len = value_bytes.len();
-
                 let offset = current_offset;
 
                 // Write value header (flag + payload)
-                write_buffer.write_all(&[COMPRESSION_FLAG_NONE])?;
-                write_buffer.write_all(&value_bytes)?;
+                let (flag, payload) = compress_if_beneficial(&value_bytes);
+                write_buffer.write_all(&[flag])?;
+                write_buffer.write_all(&payload)?;
 
-                current_offset += 1 + len as u64;
+                let stored_len = u32::try_from(1 + payload.len()).map_err(to_io_error)?;
+                current_offset += u64::from(stored_len);
 
-                let stored_len = u32::try_from(len + 1).map_err(to_io_error)?;
                 value_infos.push((k, ValueInfo {
                     mode: ValueStorageMode::Single(offset),
                     length: stored_len,

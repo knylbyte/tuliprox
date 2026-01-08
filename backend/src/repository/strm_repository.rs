@@ -12,7 +12,7 @@ use filetime::{set_file_times, FileTime};
 use log::{error, trace};
 use regex::Regex;
 use serde::Serialize;
-use shared::error::{TuliproxError, info_err_res, info_err};
+use shared::error::{TuliproxError, info_err_res};
 use shared::model::{ClusterFlags, PlaylistGroup, PlaylistItem, PlaylistItemType, StreamProperties, StrmExportStyle, UUIDType};
 use shared::utils::{ arc_str_serde, extract_extension_from_url, hash_bytes, hash_string_as_hex, truncate_string, ExportStyleConfig, CONSTANTS};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -764,7 +764,7 @@ pub async fn write_strm_playlist(
             continue; // skip creation
         }
 
-        // if we cant create the directory skip this entry
+        // if we can't create the directory skip this entry
         if !ensure_strm_file_directory(&mut failed, &output_path).await {
             continue;
         }
@@ -797,7 +797,7 @@ pub async fn write_strm_playlist(
     if failed.is_empty() {
         Ok(())
     } else {
-        Err(info_err!("{}", failed.join(", ")))
+        info_err_res!("{}", failed.join(", "))
     }
 }
 async fn write_strm_index_file(
@@ -990,7 +990,7 @@ impl DirNode {
 }
 
 /// Because of rust ownership we don't want to use References or Mutexes.
-/// Because of async operations ve cant use recursion.
+/// Because of async operations ve can't use recursion.
 /// We use paths identifier to handle the tree construction.
 /// Rust sucks!!!
 async fn build_directory_tree(root_path: &Path) -> HashMap<PathBuf, DirNode> {

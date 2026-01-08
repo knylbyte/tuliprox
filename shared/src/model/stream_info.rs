@@ -1,3 +1,4 @@
+use crate::utils::arc_str_serde;
 use crate::utils::is_blank_optional_string;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -12,6 +13,7 @@ pub struct StreamChannel {
     pub provider_id: u32,
     pub item_type: PlaylistItemType,
     pub cluster: XtreamCluster,
+    #[serde(with = "arc_str_serde")]
     pub group: Arc<str>,
     pub title: String,
     pub url: String,

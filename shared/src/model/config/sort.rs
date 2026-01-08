@@ -10,7 +10,7 @@ fn compile_regex_vec(patterns: Option<&Vec<String>>) -> Result<Option<Vec<Regex>
         .map(|seq| {
             seq.iter()
                 .map(|s| Regex::new(s).map_err(|err| {
-                    info_err!("cant parse regex: {s} {err}")
+                    info_err!("can't parse regex: {s} {err}")
                 }))
                 .collect::<Result<Vec<_>, _>>()
         })
@@ -106,7 +106,7 @@ impl ConfigSortChannelDto {
         self.group_pattern = apply_templates_to_pattern_single(&self.group_pattern, templates)?;
         // Compile group_pattern
         Regex::new(&self.group_pattern).map_err(|err| {
-            info_err!("cant parse regex: {} {err}", &self.group_pattern)
+            info_err!("can't parse regex: {} {err}", &self.group_pattern)
         })?;
 
         // Transform sequence with templates if provided, otherwise use raw sequence
