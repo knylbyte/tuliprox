@@ -370,9 +370,22 @@ pub(crate) async fn user_get_series_bouquet(cfg: &Config, username: &str, target
     user_get_cluster_bouquet(cfg, username, target, XtreamCluster::Series).await
 }
 
+/// Returns a filter set for bouquet categories based on user preferences.
+///
+/// # Arguments
+/// * `category_id` - Optional category filter:
+///   - `Some(id)` where id > 0: Returns only the specified category
+///   - `Some(0)`: Treated as uncategorized, uses bouquet filtering
+///   - `None`: Uses user's saved bouquet configuration
+///
+/// # Returns
+/// * `Some(HashSet)` - Set of category IDs or names to include
+/// * `None` - No filtering applied
 pub async fn user_get_bouquet_filter(config: &Config, username: &str, category_id: Option<u32>, target: TargetType, cluster: XtreamCluster) -> Option<HashSet<String>> {
     if let Some(cid) = category_id {
-        return Some(HashSet::from([cid.to_string()]));
+        if cid > 0 {
+            return Some(HashSet::from([cid.to_string()]));
+        }
     }
 
     let bouquet = match cluster {

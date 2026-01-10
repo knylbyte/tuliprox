@@ -222,17 +222,21 @@ impl PlaylistItemType {
     pub fn as_u8(self) -> u8 {
         self as u8
     }
+
+    pub fn as_str(&self) -> Cow<'static, str> {
+        match self {
+            Self::Live | Self::LiveHls | Self::LiveDash | Self::LiveUnknown => Cow::Borrowed(Self::LIVE),
+            Self::Video | Self::LocalVideo => Cow::Borrowed(Self::VIDEO),
+            Self::Series | Self::LocalSeries => Cow::Borrowed(Self::SERIES),
+            Self::SeriesInfo | Self::LocalSeriesInfo => Cow::Borrowed(Self::SERIES_INFO),
+            Self::Catchup => Cow::Borrowed(Self::CATCHUP),
+        }
+    }
 }
 
 impl Display for PlaylistItemType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Live | Self::LiveHls | Self::LiveDash | Self::LiveUnknown => Self::LIVE,
-            Self::Video | Self::LocalVideo => Self::VIDEO,
-            Self::Series | Self::LocalSeries => Self::SERIES,
-            Self::SeriesInfo | Self::LocalSeriesInfo => Self::SERIES_INFO,
-            Self::Catchup => Self::CATCHUP,
-        })
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -399,61 +403,78 @@ macro_rules! generate_field_accessor_impl_for_playlist_item_header {
     ($($prop:ident),*;) => {
         impl crate::model::FieldGetAccessor for crate::model::PlaylistItemHeader {
             fn get_field(&self, field: &str) -> Option<Cow<'_, str>> {
-                let field = field.to_lowercase();
-                match field.as_str() {
-                    $(
-                        stringify!($prop) => Some(Cow::Borrowed(&self.$prop)),
-                    )*
-                    "group" => Some(Cow::Borrowed(&*self.group)),
-                    "chno" => Some(Cow::Owned(self.chno.to_string())),
-                    "input" =>  Some(Cow::Borrowed(&*self.input_name)),
-                    "type" => Some(Cow::Owned(self.item_type.to_string())),
-                    "caption" =>  Some(if self.title.is_empty() { Cow::Borrowed(&self.name) } else { Cow::Borrowed(&self.title) }),
-                    "epg_channel_id" | "epg_id" => self.epg_channel_id.as_ref().map(|s| Cow::Borrowed(s.as_str())),
-                    _ => None,
+                let bytes = field.as_bytes();
+
+                $(
+                    {
+                        let target = stringify!($prop).as_bytes();
+                        if bytes.eq_ignore_ascii_case(target) {
+                            return Some(Cow::Borrowed(&self.$prop));
+                        }
+                    }
+                )*
+
+                if bytes.eq_ignore_ascii_case(b"group") {
+                        Some(Cow::Borrowed(&*self.group))
+                } else if bytes.eq_ignore_ascii_case(b"caption") {
+                    Some(if self.title.is_empty() {
+                        Cow::Borrowed(&self.name)
+                    } else {
+                        Cow::Borrowed(&self.title)
+                    })
+                } else if bytes.eq_ignore_ascii_case(b"input") {
+                    Some(Cow::Borrowed(&*self.input_name))
+                } else if bytes.eq_ignore_ascii_case(b"type") {
+                    Some(Cow::Owned(self.item_type.to_string()))
+                } else if bytes.eq_ignore_ascii_case(b"epg_channel_id") || bytes.eq_ignore_ascii_case(b"epg_id") {
+                    self.epg_channel_id.as_ref().map(|s| Cow::Borrowed(s.as_str()))
+                } else if bytes.eq_ignore_ascii_case(b"chno") {
+                    Some(Cow::Owned(self.chno.to_string()))
+                } else {
+                    None
                 }
             }
          }
+
          impl crate::model::FieldSetAccessor for crate::model::PlaylistItemHeader {
             fn set_field(&mut self, field: &str, value: &str) -> bool {
-                let field = field.to_lowercase();
-                let val = String::from(value);
-                match field.as_str() {
-                    $(
-                        stringify!($prop) => {
-                            self.$prop = val;
-                            true
+                let bytes = field.as_bytes();
+                $(
+                    {
+                        let target = stringify!($prop).as_bytes();
+                        if bytes.eq_ignore_ascii_case(target) {
+                            self.$prop = String::from(value);
+                            return true;
                         }
-                    )*
-                    "group" => {
-                        self.group = crate::utils::intern(value);
-                        true
                     }
-                    "chno" => {
-                        if let Ok(val) = value.parse::<u32>() {
-                            self.chno = val;
-                            true
-                        } else {
-                            false
-                        }
-                    },
-                    "caption" => {
-                        self.title = val.clone();
-                        self.name = val;
+                )*
+
+                if bytes.eq_ignore_ascii_case(b"group") {
+                    self.group = crate::utils::intern(value);
+                    true
+                } else if bytes.eq_ignore_ascii_case(b"caption") {
+                    self.title = String::from(value);
+                    self.name = String::from(value);
+                    true
+                } else if bytes.eq_ignore_ascii_case(b"epg_channel_id") || bytes.eq_ignore_ascii_case(b"epg_id") {
+                    self.epg_channel_id = Some(String::from(value));
+                    true
+                } else if bytes.eq_ignore_ascii_case(b"chno") {
+                    if let Ok(parsed) = value.parse::<u32>() {
+                        self.chno = parsed;
                         true
+                    } else {
+                        false
                     }
-                    "epg_channel_id" | "epg_id" => {
-                        self.epg_channel_id = Some(value.to_owned());
-                        true
-                    }
-                    _ => false,
+                } else {
+                    false
                 }
             }
         }
     }
 }
 
-generate_field_accessor_impl_for_playlist_item_header!(id, /*virtual_id,*/ name, logo, logo_small, title, parent_code, audio_track, time_shift, rec, url;);
+generate_field_accessor_impl_for_playlist_item_header!(id, /*virtual_id,*/ title, name, logo, logo_small, parent_code, audio_track, time_shift, rec, url;);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct M3uPlaylistItem {
@@ -600,22 +621,38 @@ macro_rules! generate_field_accessor_impl_for_m3u_playlist_item {
     ($($prop:ident),*;) => {
         impl crate::model::FieldGetAccessor for M3uPlaylistItem {
             fn get_field(&self, field: &str) -> Option<Cow<'_, str>> {
-                let field = field.to_lowercase();
-                match field.as_str() {
-                    $(
-                        stringify!($prop) => Some(Cow::Borrowed(&self.$prop)),
-                    )*
-                    "chno" => Some(Cow::Owned(self.chno.to_string())),
-                    "caption" =>  Some(if self.title.is_empty() { Cow::Borrowed(&self.name) } else { Cow::Borrowed(&self.title) }),
-                    "epg_channel_id" | "epg_id" => self.epg_channel_id.as_ref().map(|s| Cow::Borrowed(s.as_str())),
-                    _ => None,
+                let bytes = field.as_bytes();
+                $(
+                    {
+                        let target = stringify!($prop).as_bytes();
+                        if bytes.len() == target.len() &&
+                           bytes.iter().zip(target).all(|(a, b)| a.to_ascii_lowercase() == *b)
+                        {
+                            return Some(Cow::Borrowed(&self.$prop));
+                        }
+                    }
+                )*
+                if bytes.eq_ignore_ascii_case(b"group") {
+                    Some(Cow::Borrowed(&*self.group))
+                } else if bytes.eq_ignore_ascii_case(b"caption") {
+                    Some(if self.title.is_empty() {
+                        Cow::Borrowed(&self.name)
+                    } else {
+                        Cow::Borrowed(&self.title)
+                    })
+                } else if bytes.eq_ignore_ascii_case(b"epg_channel_id") || bytes.eq_ignore_ascii_case(b"epg_id") {
+                    self.epg_channel_id.as_ref().map(|s| Cow::Borrowed(s.as_str()))
+                } else if bytes.eq_ignore_ascii_case(b"chno") {
+                    Some(Cow::Owned(self.chno.to_string()))
+                } else  {
+                    None
                 }
             }
         }
     }
 }
 
-generate_field_accessor_impl_for_m3u_playlist_item!(provider_id, name, logo, logo_small, group, title, parent_code, audio_track, time_shift, rec, url;);
+generate_field_accessor_impl_for_m3u_playlist_item!(title, name, provider_id, logo, logo_small, parent_code, audio_track, time_shift, rec, url;);
 
 impl From<M3uPlaylistItem> for CommonPlaylistItem {
     fn from(item: M3uPlaylistItem) -> Self {
@@ -726,6 +763,12 @@ impl XtreamPlaylistItem {
     }
 
     pub fn resolve_resource_url<'a>(&'a self, field: &str) -> Option<Cow<'a, str>> {
+        let bytes = field.as_bytes();
+        if bytes.eq_ignore_ascii_case(b"logo") && !self.logo.is_empty() {
+            return Some(Cow::Borrowed(self.logo.as_str()));
+        } else if bytes.eq_ignore_ascii_case(b"logo_small") && !self.logo_small.is_empty() {
+            return Some(Cow::Borrowed(self.logo_small.as_str()));
+        }
         self.additional_properties.as_ref().and_then(|a| a.resolve_resource_url(field))
     }
 }
@@ -794,61 +837,77 @@ macro_rules! generate_field_accessor_impl_for_xtream_playlist_item {
     ($($prop:ident),*;) => {
         impl crate::model::FieldGetAccessor for crate::model::XtreamPlaylistItem {
             fn get_field(&self, field: &str) -> Option<Cow<'_, str>> {
-                let field = field.to_lowercase();
-                match field.as_str() {
-                    $(
-                        stringify!($prop) => Some(Cow::Borrowed(&self.$prop)),
-                    )*
-                    "caption" =>  Some(if self.title.is_empty() { Cow::Borrowed(&self.name) } else { Cow::Borrowed(&self.title) }),
-                    "epg_channel_id" | "epg_id" => self.epg_channel_id.as_ref().map(|s| Cow::Borrowed(s.as_str())),
-                    _ => {
-                        if field.starts_with(xtream_const::XC_PROP_BACKDROP_PATH)
-                            || field == xtream_const::XC_PROP_COVER
+                let bytes = field.as_bytes();
+
+                $(
+                    {
+                        let target = stringify!($prop).as_bytes();
+                        if bytes.len() == target.len() &&
+                           bytes.iter().zip(target).all(|(a, b)| a.to_ascii_lowercase() == *b)
                         {
-                            match self.additional_properties.as_ref() {
-                                Some(additional_properties) => match additional_properties {
-                                    StreamProperties::Live(_) => None,
-                                    StreamProperties::Video(video) => {
-                                        if field == xtream_const::XC_PROP_COVER {
-                                            video.details.as_ref().and_then(|details| {
-                                                details.cover_big.as_ref()
-                                                    .or(details.movie_image.as_ref())
-                                                    .or_else(|| details.backdrop_path.as_ref().and_then(|p| p.first()))
-                                                    .map(|s| Cow::<str>::Borrowed(s))
-                                            })
-                                        } else {
-                                            video.details.as_ref().and_then(|details| {
-                                                details.backdrop_path.as_ref().and_then(|p| p.first())
-                                                .or(details.movie_image.as_ref())
-                                                .or(details.cover_big.as_ref())
-                                                .map(|s| Cow::<str>::Borrowed(s))
-                                            })
-                                        }
-                                    }
-                                    StreamProperties::Series(series) => {
-                                        if field == xtream_const::XC_PROP_COVER {
-                                            if series.cover.is_empty() {
-                                                 series.backdrop_path.as_ref().and_then(|p| p.first()).map(|s| Cow::<str>::Borrowed(s))
-                                             } else {
-                                                 Some(Cow::Borrowed(&series.cover))
-                                             }
-                                        } else {
-                                            match series.backdrop_path.as_ref() {
-                                                None => if series.cover.is_empty() { None } else { Some(Cow::Borrowed(&series.cover)) }
-                                                Some(p) => p.first().map(|s| Cow::<str>::Borrowed(s))
-                                            }
-                                        }
-                                    }
-                                    StreamProperties::Episode(episode) => {
-                                        Some(Cow::<str>::Borrowed(&episode.movie_image))
-                                    }
-                                },
-                                None => None,
-                            }
-                        } else {
-                            None
+                            return Some(Cow::Borrowed(&self.$prop));
                         }
                     }
+                )*
+
+                // Caption
+                if bytes.eq_ignore_ascii_case(b"caption") {
+                    Some(if self.title.is_empty() {
+                        Cow::Borrowed(self.name.as_str())
+                    } else {
+                        Cow::Borrowed(self.title.as_str())
+                    })
+                }
+                // epg_channel_id / epg_id
+                else if bytes.eq_ignore_ascii_case(b"epg_channel_id") || bytes.eq_ignore_ascii_case(b"epg_id") {
+                    self.epg_channel_id.as_ref().map(|s| Cow::<str>::Borrowed(s.as_str()))
+                }
+                // Additional Properties
+                else if field.starts_with(xtream_const::XC_PROP_BACKDROP_PATH)
+                     || bytes.eq_ignore_ascii_case(xtream_const::XC_PROP_COVER.as_bytes())
+                {
+                    match self.additional_properties.as_ref() {
+                        Some(additional_properties) => match additional_properties {
+                            StreamProperties::Live(_) => None,
+                            StreamProperties::Video(video) => {
+                                if bytes.eq_ignore_ascii_case(xtream_const::XC_PROP_COVER.as_bytes()) {
+                                    video.details.as_ref().and_then(|details| {
+                                        details.cover_big.as_ref()
+                                            .or(details.movie_image.as_ref())
+                                            .or_else(|| details.backdrop_path.as_ref().and_then(|p| p.first()))
+                                            .map(|s| Cow::<str>::Borrowed(s.as_str()))
+                                    })
+                                } else {
+                                    video.details.as_ref().and_then(|details| {
+                                        details.backdrop_path.as_ref().and_then(|p| p.first())
+                                        .or(details.movie_image.as_ref())
+                                        .or(details.cover_big.as_ref())
+                                        .map(|s| Cow::<str>::Borrowed(s.as_str()))
+                                    })
+                                }
+                            }
+                            StreamProperties::Series(series) => {
+                                if bytes.eq_ignore_ascii_case(xtream_const::XC_PROP_COVER.as_bytes()) {
+                                    if series.cover.is_empty() {
+                                        series.backdrop_path.as_ref().and_then(|p| p.first()).map(|s| Cow::<str>::Borrowed(s.as_str()))
+                                    } else {
+                                        Some(Cow::<str>::Borrowed(series.cover.as_str()))
+                                    }
+                                } else {
+                                    match series.backdrop_path.as_ref() {
+                                        None => if series.cover.is_empty() { None } else { Some(Cow::Borrowed(&series.cover)) },
+                                        Some(p) => p.first().map(|s| Cow::<str>::Borrowed(s.as_str())),
+                                    }
+                                }
+                            }
+                            StreamProperties::Episode(episode) => Some(Cow::<str>::Borrowed(episode.movie_image.as_str())),
+                        },
+                        None => None,
+                    }
+                }
+                // Default fallback
+                else {
+                    None
                 }
             }
         }
@@ -867,7 +926,7 @@ pub struct PlaylistItem {
     pub header: PlaylistItemHeader,
 }
 
-generate_field_accessor_impl_for_xtream_playlist_item!(name, logo, logo_small, group, title, parent_code, rec, url;);
+generate_field_accessor_impl_for_xtream_playlist_item!(group, title, name, logo, logo_small, parent_code, rec, url;);
 
 impl PlaylistItem {
 

@@ -99,6 +99,10 @@ pub struct XtreamSeriesInfoSeason {
     pub cover: String,
     #[serde(default, deserialize_with = "string_default_on_null")]
     pub cover_big: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub cover_tmdb: String,
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub duration: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
