@@ -13,6 +13,24 @@
 - **Input Batch Changes**: `name` attribute is now mandatory for input type batch to ensure stable playlist UUIDs.
 - **Favorites Redesign**: Replaced implicit `create_alias` with explicit `add_favourite(group_name)` script function.
 - **EpgSmartMatch**: Field `name_prefix` syntax needs to be changed from  `name_prefix: !suffix "."` to `name_prefix: { suffix: "." }`.
+- **Sort**: Sort can now use filter to sort specific entries.
+  ```yaml
+    sort:
+      match_as_ascii: true
+      rules:
+        - target: group
+          field: group
+          filter: Input ~ "provider_1"
+          order: asc
+        - target: channel  
+          field: caption
+          filter: Group ~ "!US_TNT_ENTERTAIN!"
+          order: asc
+          sequence:
+            - "!CHAN_SEQ!"
+            - '(?i)\bHD\b'
+            - '(?i)\bSD\b'
+  ```
 
 ## 🌟 New Features
 - **Discord Notifications**: Support for Discord notifications via webhooks with optional Handlebars templates.

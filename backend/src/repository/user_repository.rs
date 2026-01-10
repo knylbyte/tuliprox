@@ -372,7 +372,9 @@ pub(crate) async fn user_get_series_bouquet(cfg: &Config, username: &str, target
 
 pub async fn user_get_bouquet_filter(config: &Config, username: &str, category_id: Option<u32>, target: TargetType, cluster: XtreamCluster) -> Option<HashSet<String>> {
     if let Some(cid) = category_id {
-        return Some(HashSet::from([cid.to_string()]));
+        if cid > 0 {
+            return Some(HashSet::from([cid.to_string()]));
+        }
     }
 
     let bouquet = match cluster {

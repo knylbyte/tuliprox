@@ -1,4 +1,4 @@
-use crate::app::components::{convert_bool_to_chip_style, Card, Chip};
+use crate::app::components::{convert_bool_to_chip_style, Card, Chip, FilterView};
 use shared::model::{ConfigTargetDto};
 use std::rc::Rc;
 use yew::prelude::*;
@@ -17,54 +17,33 @@ pub fn TargetSort(props: &TargetSortProps) -> Html {
         Some(s) => s,
         None => return html! {},
     };
-
-    let groups_html = match sort.groups.as_ref() {
-        Some(groups) => {
-            match groups.sequence.as_ref() {
-                Some(seq) => html! {
-                    <Card class="tp__target-sort__card">
-                    <h2>{translator.t("LABEL.GROUPS")}</h2>
-                    <div class="tp__target-sort__section tp__target-sort__row">
-                        <span class="tp__target-sort__label">{translator.t("LABEL.ORDER")}</span>
-                        <span>{ groups.order.to_string() }</span>
-                    </div>
-                    <div class="tp__target-sort__section  tp__target-sort__row">
-                        <span class="tp__target-sort__label">{translator.t("LABEL.SEQUENCE")}</span>
-                        <span class="tp__target-sort__sequence">
-                            <ul>
-                                { for seq.iter().map(|p| html! { <li>{p}</li> }) }
-                            </ul>
-                        </span>
-                    </div>
-                    </Card>
-                },
-                None => html! {},
-            }
-        },
-        None => html! {},
-    };
-
-    let channels_html = match sort.channels.as_ref() {
-        Some(channels) => html! {
+    let rules_html = if sort.rules.is_empty() {
+        html! {}
+    } else {
+        html! {
         <Card class="tp__target-sort__card">
             <h2>{ translator.t("LABEL.CHANNELS") }</h2>
             {
-                for channels.iter().map(|channel| html! {
+                for sort.rules.iter().map(|rule| html! {
                     <>
                         <div class="tp__target-sort__section tp__target-sort__row tp__target-sort__new-field">
-                            <span class="tp__target-sort__label">{ translator.t("LABEL.FIELD") }</span>
-                            <span>{ channel.field.to_string() }</span>
+                            <span class="tp__target-sort__label">{ translator.t("LABEL.TARGET") }</span>
+                            <span>{ rule.target.as_str() }</span>
                         </div>
                         <div class="tp__target-sort__section tp__target-sort__row">
-                            <span class="tp__target-sort__label">{ translator.t("LABEL.GROUP_PATTERN") }</span>
-                            <span>{ channel.group_pattern.to_string() }</span>
+                            <span class="tp__target-sort__label">{ translator.t("LABEL.FIELD") }</span>
+                            <span>{ rule.field.as_str() }</span>
                         </div>
                         <div class="tp__target-sort__section tp__target-sort__row">
                             <span class="tp__target-sort__label">{ translator.t("LABEL.ORDER") }</span>
-                            <span>{ channel.order.to_string() }</span>
+                            <span>{ rule.order.to_string() }</span>
+                        </div>
+                        <div class="tp__target-sort__section tp__target-sort__row">
+                            <span class="tp__target-sort__label">{ translator.t("LABEL.FILTER") }</span>
+                            <FilterView inline={true} filter={rule.t_filter.clone()} />
                         </div>
                         {
-                            match channel.sequence.as_ref() {
+                            match rule.sequence.as_ref() {
                                 Some(seq) => html! {
                                     <div class="tp__target-sort__section tp__target-sort__row">
                                         <span class="tp__target-sort__label">{ translator.t("LABEL.SEQUENCE") }</span>
@@ -81,11 +60,9 @@ pub fn TargetSort(props: &TargetSortProps) -> Html {
                     </>
                 })
             }
-        </Card>
-    },
-        None => html! {},
+            </Card>
+        }
     };
-
 
     html! {
         <div class="tp__target-sort">
@@ -94,8 +71,7 @@ pub fn TargetSort(props: &TargetSortProps) -> Html {
                 <Chip class={ convert_bool_to_chip_style(sort.match_as_ascii) }
                       label={translator.t("LABEL.MATCH_AS_ASCII")} />
             </div>
-            { groups_html }
-            { channels_html }
+            { rules_html }
         </div>
     }
 }

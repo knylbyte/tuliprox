@@ -1,8 +1,15 @@
-use crate::model::{ConfigSortChannel, ConfigSortGroup, ConfigTarget};
-use deunicode::deunicode;
+use crate::model::{ConfigSortRule, ConfigTarget};
 use std::cmp::Ordering;
-use shared::foundation::filter::get_field_value;
-use shared::model::{PlaylistGroup, PlaylistItem, SortOrder};
+use shared::foundation::filter::{ValueProvider};
+use shared::model::{PlaylistGroup, SortOrder, SortTarget};
+
+fn direction(order: SortOrder, ordering: Ordering) -> Ordering {
+    match order {
+        SortOrder::Asc => if ordering == Ordering::Less { Ordering::Less } else { Ordering::Greater },
+        SortOrder::Desc => if ordering == Ordering::Less { Ordering::Greater } else { Ordering::Less },
+        SortOrder::None => Ordering::Equal,
+    }
+}
 
 fn playlist_comparator(
     sequence: Option<&Vec<regex::Regex>>,
@@ -77,16 +84,8 @@ fn playlist_comparator(
                     SortOrder::None => Ordering::Equal,
                 }
             }
-            (Some(_), None) => match order {
-                SortOrder::Asc => Ordering::Less,
-                SortOrder::Desc => Ordering::Greater,
-                SortOrder::None => Ordering::Equal,
-            },
-            (None, Some(_)) => match order {
-                SortOrder::Asc => Ordering::Greater,
-                SortOrder::Desc => Ordering::Less,
-                SortOrder::None => Ordering::Equal,
-            },
+            (Some(_), None) => direction(order, Ordering::Less),
+            (None, Some(_)) => direction(order, Ordering::Greater),
             (None, None) => {
                 // NP match → fallback
                 let o = value_a.cmp(value_b);
@@ -108,82 +107,165 @@ fn playlist_comparator(
     }
 }
 
-fn playlistgroup_comparator(a: &PlaylistGroup, b: &PlaylistGroup, group_sort: &ConfigSortGroup, match_as_ascii: bool) -> Ordering {
-    let ascii_a;
-    let ascii_b;
-    let value_a: &str = if match_as_ascii {
-        ascii_a = deunicode(&a.title);
-        &ascii_a
-    } else {
-        &a.title
-    };
-    let value_b: &str = if match_as_ascii {
-        ascii_b = deunicode(&b.title);
-        &ascii_b
-    } else {
-        &b.title
+pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, playlist: &mut [PlaylistGroup]) -> bool {
+    let Some(sort) = &target.sort else {
+        return false;
     };
 
-    playlist_comparator(group_sort.sequence.as_ref(), group_sort.order, value_a, value_b)
+    let rules = &sort.rules;
+    let match_as_ascii = sort.match_as_ascii;
+    sort_groups(playlist, rules, match_as_ascii);
+    sort_channels_in_groups(playlist, rules, match_as_ascii);
+
+    true
 }
 
-fn playlistitem_comparator(
-    a: &PlaylistItem,
-    b: &PlaylistItem,
-    channel_sort: &ConfigSortChannel,
+fn sort_groups(
+    groups: &mut [PlaylistGroup],
+    rules: &[ConfigSortRule],
     match_as_ascii: bool,
-) -> Ordering {
-    let raw_value_a = get_field_value(a, channel_sort.field);
-    let raw_value_b = get_field_value(b, channel_sort.field);
-    let value_a = if match_as_ascii { deunicode(&raw_value_a) } else { raw_value_a };
-    let value_b = if match_as_ascii { deunicode(&raw_value_b) } else { raw_value_b };
+) {
+    let group_rules: Vec<_> = rules
+        .iter()
+        .filter(|r| matches!(r.target, SortTarget::Group))
+        .collect();
 
-    playlist_comparator(channel_sort.sequence.as_ref(), channel_sort.order, &value_a, &value_b)
-}
+    if group_rules.is_empty() {
+        return;
+    }
 
-pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, new_playlist: &mut [PlaylistGroup]) -> bool {
-    if let Some(sort) = &target.sort {
-        let match_as_ascii = sort.match_as_ascii;
-        if let Some(group_sort) = &sort.groups {
-            if !matches!(group_sort.order, SortOrder::None) {
-                new_playlist.sort_by(|a, b| playlistgroup_comparator(a, b, group_sort, match_as_ascii));
+    groups.sort_by(|a_grp, b_grp| {
+        for rule in &group_rules {
+            if rule.order == SortOrder::None {
+                continue;
             }
-        }
-        if let Some(channel_sorts) = &sort.channels {
-            for channel_sort in channel_sorts {
-                if matches!(channel_sort.order, SortOrder::None) {
-                    continue;
-                }
-                let regexp = &channel_sort.group_pattern;
-                for group in new_playlist.iter_mut() {
-                    let group_title = if match_as_ascii { deunicode(&group.title) } else { group.title.to_string() };
-                    if regexp.is_match(group_title.as_str()) {
-                        group.channels.sort_by(|chan1, chan2| playlistitem_comparator(chan1, chan2, channel_sort, match_as_ascii));
+
+            let (Some(a_chan), Some(b_chan)) = (a_grp.channels.first(), b_grp.channels.first()) else {
+                continue;
+            };
+
+            let provider_a = ValueProvider { pli: a_chan, match_as_ascii };
+            let provider_b = ValueProvider { pli: b_chan, match_as_ascii };
+
+            match (rule.filter.filter(&provider_a), rule.filter.filter(&provider_b)) {
+                (false, false) => return Ordering::Equal,
+                (true, false) =>  return direction(rule.order, Ordering::Less),
+                (false, true) => return direction(rule.order, Ordering::Greater),
+                (true, true) => { /* fallthrough */}
+            }
+
+            let va = provider_a.get(rule.field.as_str());
+            let vb = provider_b.get(rule.field.as_str());
+            match (va, vb) {
+                (None, None) => return Ordering::Equal,
+                (Some(_), None) => return direction(rule.order, Ordering::Less),
+                (None, Some(_)) => return direction(rule.order, Ordering::Greater),
+                (Some(va), Some(vb)) => {
+                    let ord = playlist_comparator(
+                        rule.sequence.as_ref(),
+                        rule.order,
+                        &va,
+                        &vb,
+                    );
+
+                    if ord != Ordering::Equal {
+                        return ord;
                     }
                 }
             }
         }
-        true
-    } else {
-        false
+
+        Ordering::Equal
+    });
+}
+
+fn sort_channels_in_groups(
+    groups: &mut [PlaylistGroup],
+    rules: &[ConfigSortRule],
+    match_as_ascii: bool,
+) {
+    let channel_rules: Vec<_> = rules
+        .iter()
+        .filter(|r| matches!(r.target, SortTarget::Channel))
+        .collect();
+
+    if channel_rules.is_empty() {
+        return;
+    }
+
+    for group in groups {
+        group.channels.sort_by(|a, b| {
+            for rule in &channel_rules {
+                if rule.order == SortOrder::None {
+                    continue;
+                }
+
+                let provider_a = ValueProvider { pli: a, match_as_ascii };
+                let provider_b = ValueProvider { pli: b, match_as_ascii };
+
+                match (rule.filter.filter(&provider_a), rule.filter.filter(&provider_b)) {
+                    (false, false) => continue,
+                    (true, false) => return direction(rule.order, Ordering::Less),
+                    (false, true) => return direction(rule.order, Ordering::Greater),
+                    (true, true) => {}
+                }
+
+                let va = provider_a.get(rule.field.as_str());
+                let vb = provider_b.get(rule.field.as_str());
+                match (va, vb) {
+                    (None, None) => return Ordering::Equal,
+                    (Some(_), None) => return direction(rule.order, Ordering::Less),
+                    (None, Some(_)) => return direction(rule.order, Ordering::Greater),
+                    (Some(va), Some(vb)) => {
+                        let ord = playlist_comparator(
+                            rule.sequence.as_ref(),
+                            rule.order,
+                            &va,
+                            &vb,
+                        );
+
+                        if ord != Ordering::Equal {
+                            return ord;
+                        }
+                    }
+                }
+            }
+
+            a.header.source_ordinal.cmp(&b.header.source_ordinal)
+        });
     }
 }
 
+
+
 #[cfg(test)]
 mod tests {
-    use crate::processing::processor::sort::playlistitem_comparator;
+    use std::cmp::Ordering;
     use regex::Regex;
-    use shared::model::{ItemField, PlaylistItem, PlaylistItemHeader, SortOrder};
-    use crate::model::ConfigSortChannel;
+    use shared::foundation::filter::Filter;
+    use shared::model::{ItemField, PlaylistItem, PlaylistItemHeader, SortOrder, SortTarget};
+    use crate::model::ConfigSortRule;
+    use crate::processing::processor::sort::playlist_comparator;
 
     #[test]
     fn test_sort() {
         let mut channels: Vec<PlaylistItem> = vec![
             ("D", "HD"), ("A", "FHD"), ("Z", "HD"), ("K", "HD"), ("B", "HD"), ("A", "HD"),
             ("K", "UHD"), ("C", "HD"), ("L", "FHD"), ("R", "UHD"), ("T", "SD"), ("A", "FHD"),
-        ].into_iter().map(|(name, quality)| PlaylistItem { header: PlaylistItemHeader { title: format!("Chanel {name} [{quality}]"), ..Default::default() } }).collect::<Vec<PlaylistItem>>();
+        ]
+            .into_iter()
+            .enumerate()
+            .map(|(i, (name, quality))| PlaylistItem {
+                header: PlaylistItemHeader {
+                    title: format!("Chanel {name} [{quality}]"),
+                    source_ordinal: i as u32,
+                    ..Default::default()
+                },
+            })
+            .collect();
 
-        let channel_sort = ConfigSortChannel {
+        let channel_sort = ConfigSortRule {
+            target: SortTarget::Channel,
             field: ItemField::Caption,
             order: SortOrder::Asc,
             sequence: Some(vec![
@@ -191,12 +273,47 @@ mod tests {
                 Regex::new(r"(?P<c1>.*?)\bFHD\b").unwrap(),
                 Regex::new(r"(?P<c1>.*?)\bHD\b").unwrap(),
             ]),
-            group_pattern: Regex::new(".*").unwrap(),
+            filter: Filter::default(),
         };
 
-        channels.sort_by(|chan1, chan2| playlistitem_comparator(chan1, chan2, &channel_sort, true));
-        let expected = vec!["Chanel K [UHD]", "Chanel R [UHD]", "Chanel A [FHD]", "Chanel A [FHD]", "Chanel L [FHD]", "Chanel A [HD]", "Chanel B [HD]", "Chanel C [HD]", "Chanel D [HD]", "Chanel K [HD]", "Chanel Z [HD]", "Chanel T [SD]"];
-        let sorted = channels.into_iter().map(|pli| pli.header.title.clone()).collect::<Vec<String>>();
+        channels.sort_by(|a, b| {
+            let va = &a.header.title;
+            let vb = &b.header.title;
+
+            let ord = playlist_comparator(
+                channel_sort.sequence.as_ref(),
+                channel_sort.order,
+                va,
+                vb,
+            );
+
+            if ord != Ordering::Equal {
+                ord
+            } else {
+                a.header.source_ordinal.cmp(&b.header.source_ordinal)
+            }
+        });
+
+        let expected = vec![
+            "Chanel K [UHD]",
+            "Chanel R [UHD]",
+            "Chanel A [FHD]",
+            "Chanel A [FHD]",
+            "Chanel L [FHD]",
+            "Chanel A [HD]",
+            "Chanel B [HD]",
+            "Chanel C [HD]",
+            "Chanel D [HD]",
+            "Chanel K [HD]",
+            "Chanel Z [HD]",
+            "Chanel T [SD]",
+        ];
+
+        let sorted = channels
+            .into_iter()
+            .map(|pli| pli.header.title)
+            .collect::<Vec<_>>();
+
         assert_eq!(expected, sorted);
     }
 
@@ -227,9 +344,20 @@ mod tests {
             "US| East d",
             "US| West e",
             "US| West f",
-        ].into_iter().map(|name| PlaylistItem { header: PlaylistItemHeader { title: name.to_string(), ..Default::default() } }).collect::<Vec<PlaylistItem>>();
+        ]
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| PlaylistItem {
+                header: PlaylistItemHeader {
+                    title: name.to_string(),
+                    source_ordinal: i as u32,
+                    ..Default::default()
+                },
+            })
+            .collect();
 
-        let channel_sort = ConfigSortChannel {
+        let channel_sort = ConfigSortRule {
+            target: SortTarget::Channel,
             field: ItemField::Caption,
             order: SortOrder::Asc,
             sequence: Some(vec![
@@ -242,12 +370,57 @@ mod tests {
                 Regex::new(r"^US\| WEST.*?\[\bHD\b\](?P<c1>.*)").unwrap(),
                 Regex::new(r"^US\| WEST.*?\[\bSD\b\](?P<c1>.*)").unwrap(),
             ]),
-            group_pattern: Regex::new(".*").unwrap(),
+            filter: Filter::default(),
         };
 
-        channels.sort_by(|chan1, chan2| playlistitem_comparator(chan1, chan2, &channel_sort, true));
-        let sorted = channels.into_iter().map(|pli| pli.header.title.clone()).collect::<Vec<String>>();
-        let expected = vec!["US| EAST [UHD] m", "US| EAST [FHD] abc", "US| EAST [FHD] bc", "US| EAST [FHD] de", "US| EAST [FHD] def", "US| EAST [FHD] ghi", "US| EAST [HD] f", "US| EAST [HD] h", "US| EAST [HD] jkl", "US| EAST [HD] mno", "US| EAST [HD] pqrs", "US| EAST [HD] tuv", "US| EAST [HD] wxy", "US| EAST [HD] z", "US| EAST [SD] a", "US| EAST [SD] ijk", "US| EAST [SD] l", "US| WEST [FHD] no", "US| WEST [HD] qrst", "US| WEST [HD] uvw", "US| (West) xv", "US| East d", "US| West e", "US| West f"];
+        channels.sort_by(|a, b| {
+            let ord = playlist_comparator(
+                channel_sort.sequence.as_ref(),
+                channel_sort.order,
+                &a.header.title,
+                &b.header.title,
+            );
+
+            if ord != Ordering::Equal {
+                ord
+            } else {
+                a.header.source_ordinal.cmp(&b.header.source_ordinal)
+            }
+        });
+
+        let expected = vec![
+            "US| EAST [UHD] m",
+            "US| EAST [FHD] abc",
+            "US| EAST [FHD] bc",
+            "US| EAST [FHD] de",
+            "US| EAST [FHD] def",
+            "US| EAST [FHD] ghi",
+            "US| EAST [HD] f",
+            "US| EAST [HD] h",
+            "US| EAST [HD] jkl",
+            "US| EAST [HD] mno",
+            "US| EAST [HD] pqrs",
+            "US| EAST [HD] tuv",
+            "US| EAST [HD] wxy",
+            "US| EAST [HD] z",
+            "US| EAST [SD] a",
+            "US| EAST [SD] ijk",
+            "US| EAST [SD] l",
+            "US| WEST [FHD] no",
+            "US| WEST [HD] qrst",
+            "US| WEST [HD] uvw",
+            "US| (West) xv",
+            "US| East d",
+            "US| West e",
+            "US| West f",
+        ];
+
+        let sorted = channels
+            .into_iter()
+            .map(|pli| pli.header.title)
+            .collect::<Vec<_>>();
+
         assert_eq!(expected, sorted);
     }
+
 }

@@ -105,6 +105,28 @@ pub struct VideoStreamProperties {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct SeriesStreamDetailSeasonProperties {
+    #[serde(default, deserialize_with = "string_default_on_null")]
+    pub name: String,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub season_number: u32,
+    #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
+    pub episode_count: u32,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub overview: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub air_date: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub cover: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub cover_tmdb: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub cover_big: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub duration: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SeriesStreamDetailEpisodeProperties {
     #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub id: u32,
@@ -128,6 +150,8 @@ pub struct SeriesStreamDetailEpisodeProperties {
     pub release_date: String,
     #[serde(default, deserialize_with = "deserialize_as_option_string")]
     pub plot: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_as_option_string")]
+    pub crew: Option<String>,
     #[serde(default, deserialize_with = "deserialize_number_from_string_or_zero")]
     pub duration_secs: u32,
     #[serde(default, deserialize_with = "deserialize_as_string")]
@@ -148,6 +172,7 @@ pub struct SeriesStreamDetailEpisodeProperties {
 pub struct SeriesStreamDetailProperties {
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub year: Option<u32>,
+    pub seasons: Option<Vec<SeriesStreamDetailSeasonProperties>>,
     pub episodes: Option<Vec<SeriesStreamDetailEpisodeProperties>>,
 }
 
@@ -438,6 +463,34 @@ impl StreamProperties {
             }
             return None;
         }
+
+        if field.starts_with("nfo_s_") {
+            if let Some((season_num, field)) = parse_season_field(field) {
+                if let StreamProperties::Series(series) = self {
+                    if let Some(details) = series.details.as_ref() {
+                        if let Some(seasons) = details.seasons.as_ref() {
+                            for season in seasons {
+                                if season.season_number == season_num {
+                                    if field == "cover" {
+                                        return season.cover.as_ref().map(|c| Cow::Borrowed(c.as_str()));
+                                    }
+                                    if field == "cover_tmdb" {
+                                        return season.cover_tmdb.as_ref().map(|c| Cow::Borrowed(c.as_str()));
+                                    }
+                                    if field == "cover_big" {
+                                        return season.cover_big.as_ref().map(|c| Cow::Borrowed(c.as_str()));
+                                    }
+                                    if field == "overview" {
+                                        return season.overview.as_ref().map(|c| Cow::Borrowed(c.as_str()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if field.starts_with("nfo_ep_") {
             if let Some((season, episode_num, field)) = parse_season_episode_field(field) {
                 if let StreamProperties::Series(series) = self {
@@ -456,8 +509,24 @@ impl StreamProperties {
 
         None
     }
+}
 
+fn parse_season_field(s: &str) -> Option<(u32, String)> {
+    let mut parts = s.split('_');
 
+    let (prefix, suffix) = (parts.next()?, parts.next()?);
+    if prefix != "nfo" || suffix != "s" {
+        return None;
+    }
+
+    let season: u32 = parts.next()?.parse().ok()?;
+
+    let kind = parts.collect::<Vec<_>>().join("_");
+    if kind.is_empty() {
+        return None;
+    }
+
+    Some((season, kind))
 }
 
 fn parse_season_episode_field(s: &str) -> Option<(u32, u32, String)> {
@@ -572,6 +641,21 @@ impl SeriesStreamProperties {
             tmdb: info.info.tmdb,
             details: Some(SeriesStreamDetailProperties {
                 year: InfoDocUtils::extract_year_from_release_date(&info.info.release_date),
+                seasons: info.seasons.as_ref().map(|list| {
+                    list.iter().map(|s| {
+                        SeriesStreamDetailSeasonProperties {
+                            name: s.name.clone(),
+                            season_number: s.season_number,
+                            episode_count: s.episode_count,
+                            overview: Some(s.overview.clone()),
+                            air_date: Some(s.air_date.clone()),
+                            cover: Some(s.cover.clone()),
+                            cover_tmdb: Some(s.cover_tmdb.clone()),
+                            cover_big: Some(s.cover_big.clone()),
+                            duration: Some(s.duration.clone()),
+                        }
+                    }).collect()
+                }),
                 episodes: info.episodes.as_ref().map(|list|
                     list.iter().map(|e| {
                         SeriesStreamDetailEpisodeProperties {
@@ -586,6 +670,7 @@ impl SeriesStreamProperties {
                             tmdb: info.info.tmdb,
                             release_date: e.info.as_ref().map(|i| i.air_date.clone()).unwrap_or_default(),
                             plot: None,
+                            crew: e.info.as_ref().map(|i| i.crew.clone()),
                             duration_secs: e.info.as_ref().map(|i| i.duration_secs).unwrap_or_default(),
                             duration: e.info.as_ref().map(|i| i.duration.clone()).unwrap_or_default(),
                             movie_image: e.info.as_ref().map(|i| i.movie_image.clone()).unwrap_or_default(),
