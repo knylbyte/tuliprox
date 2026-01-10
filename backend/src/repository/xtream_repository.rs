@@ -715,11 +715,14 @@ pub async fn persist_input_xtream_playlist(app_config: &Arc<AppConfig>, storage_
             XtreamCluster::Series => get_collection_path(&root_path, storage_const::COL_CAT_SERIES),
         };
         let data = fetched_categories.get_mut(cluster);
-        let lock = app_cfg.file_locks.write_lock(&col_path).await;
-        if let Err(err) = json_write_documents_to_file(&col_path, data).await {
-            errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
+        // if there is no data save only if no file exists! Prevent data loss from failed download attempt
+        if !data.is_empty() || tokio::fs::try_exists(&col_path).await.is_ok_and(|v| !v) {
+            let lock = app_cfg.file_locks.write_lock(&col_path).await;
+            if let Err(err) = json_write_documents_to_file(&col_path, data).await {
+                errors.push(format!("Persisting collection failed: {}: {err}", col_path.display()));
+            }
+            drop(lock);
         }
-        drop(lock);
     }
 
     for cluster in XTREAM_CLUSTER {

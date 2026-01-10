@@ -3,12 +3,18 @@ use crate::utils::deserialize_as_option_string;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use serde_json::Value;
-use crate::model::{PlaylistItemType, SeriesStreamDetailEpisodeProperties, SeriesStreamProperties, StreamProperties, VideoStreamProperties, VirtualId, XtreamCluster, XtreamMappingOptions};
+use crate::concat_string;
+use crate::model::{PlaylistItemType, SeriesStreamDetailEpisodeProperties, SeriesStreamDetailSeasonProperties, SeriesStreamProperties, StreamProperties, VideoStreamProperties, VirtualId, XtreamCluster, XtreamMappingOptions};
 use crate::model::info_doc_utils::InfoDocUtils;
 
 #[inline]
 fn build_season_episode_field(season: u32, episode: u32, field: &str) -> String {
-    format!("nfo_ep_{season}_{episode}_{field}")
+    concat_string!("nfo_ep_", &season.to_string(), "_", &episode.to_string(), "_", field)
+}
+
+#[inline]
+fn build_season_field(season: u32, field: &str) -> String {
+    concat_string!("nfo_s_", &season.to_string(), "_", field)
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -84,10 +90,35 @@ pub struct XtreamVideoMovieData {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct XtreamSeriesInfoDoc {
     #[serde(default)]
-    pub seasons: Vec<Value>,
+    pub seasons: Vec<XtreamSeriesSeasonDoc>,
     pub info: XtreamSeriesInfoData,
     pub episodes: HashMap<String, Vec<XtreamSeriesEpisodeDoc>>,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct XtreamSeriesSeasonDoc {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub season_number: u32,
+    #[serde(default)]
+    pub episode_count: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overview: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub air_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_tmdb: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_big: Option<String>,
+    #[serde(default, rename = "releaseDate", skip_serializing_if = "Option::is_none")]
+    pub release_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+}
+
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct XtreamSeriesInfoData {
@@ -130,6 +161,8 @@ pub struct XtreamSeriesEpisodeInfoData {
     #[serde(rename = "id")]
     pub tmdb_id: u32,
     pub air_date: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crew: Option<String>,
     pub rating: f64,
     pub movie_image: String,
     pub duration: String,
@@ -164,7 +197,11 @@ impl StreamProperties {
                                item_type: PlaylistItemType, virtual_id: VirtualId, category_id: u32) -> XtreamSeriesInfoDoc {
         let resource_url = options.get_resource_url(XtreamCluster::Series, item_type, virtual_id);
         XtreamSeriesInfoDoc {
-            seasons: Vec::new(),
+            seasons: if let Some(seasons) = series.details.as_ref().and_then(|d| d.seasons.as_ref()) {
+                self.series_seasons_to_info_document(resource_url.as_deref(), seasons)
+            } else {
+                Vec::new()
+            },
             info: XtreamSeriesInfoData {
                 name: series.name.clone(),
                 cover: InfoDocUtils::make_resource_url(resource_url.as_deref(), series.cover.as_ref(), "cover"),
@@ -280,6 +317,29 @@ impl StreamProperties {
         }
     }
 
+    fn series_seasons_to_info_document(&self,
+                                        resource_url: Option<&str>,
+                                        seasons: &[SeriesStreamDetailSeasonProperties]) -> Vec<XtreamSeriesSeasonDoc> {
+        seasons.iter().map(|season|
+            XtreamSeriesSeasonDoc {
+                name: season.name.clone(),
+                season_number: season.season_number,
+                episode_count: season.episode_count.to_string(),
+                overview: season.overview.as_ref().map(|v| if v.starts_with("http") {
+                    InfoDocUtils::make_resource_url(resource_url, v, &build_season_field(season.season_number, "overview"))
+                } else {
+                    v.clone()
+                }),
+                air_date: season.air_date.clone(),
+                cover: season.cover.as_ref().map(|v| InfoDocUtils::make_resource_url(resource_url, v, &build_season_field(season.season_number, "cover"))),
+                cover_tmdb: season.cover_tmdb.as_ref().map(|v| InfoDocUtils::make_resource_url(resource_url, v, &build_season_field(season.season_number, "cover_tmdb"))),
+                cover_big: season.cover_big.as_ref().map(|v| InfoDocUtils::make_resource_url(resource_url, v, &build_season_field(season.season_number, "cover_big"))),
+                release_date: season.air_date.clone(),
+                duration: season.duration.clone(),
+            }
+            ).collect()
+    }
+
     fn series_episodes_to_info_document(&self, options: &XtreamMappingOptions,
                                         resource_url: Option<&str>,
                                         episodes: &[SeriesStreamDetailEpisodeProperties]) -> HashMap<String, Vec<XtreamSeriesEpisodeDoc>> {
@@ -293,6 +353,7 @@ impl StreamProperties {
                 info: XtreamSeriesEpisodeInfoData {
                     tmdb_id: ep.tmdb.unwrap_or_default(),
                     air_date: ep.release_date.clone(),
+                    crew: ep.crew.clone(),
                     rating: ep.rating.unwrap_or_default(),
                     movie_image: InfoDocUtils::make_resource_url(resource_url, &ep.movie_image, &build_season_episode_field(ep.season, ep.episode_num, "movie_image")),
                     duration: ep.duration.clone(),

@@ -14,18 +14,17 @@ use crate::info_err;
 pub use crate::model::{ItemField, PatternTemplate, PlaylistItem, PlaylistItemType, FieldGetAccessor, FieldSetAccessor, TemplateValue};
 use crate::utils::{DirectedGraph, StringInterner, CONSTANTS};
 
-pub fn get_field_value(pli: &PlaylistItem, field: ItemField) -> String {
+pub fn get_field_value(pli: &PlaylistItem, field: ItemField) -> Cow<'_, str> {
     let header = &pli.header;
-    let value = match field {
-        ItemField::Group => header.group.to_string(),
-        ItemField::Name => header.name.to_string(),
-        ItemField::Title => header.title.to_string(),
-        ItemField::Url => header.url.to_string(),
-        ItemField::Input => header.input_name.to_string(),
-        ItemField::Type => header.item_type.to_string(),
-        ItemField::Caption => if header.title.is_empty() { header.name.to_string() } else { header.title.to_string() },
-    };
-    value.to_string()
+    match field {
+        ItemField::Group => Cow::Borrowed(&*header.group),
+        ItemField::Name => Cow::Borrowed(&*header.name),
+        ItemField::Title => Cow::Borrowed(&*header.title),
+        ItemField::Url => Cow::Borrowed(&*header.url),
+        ItemField::Input => Cow::Borrowed(&*header.input_name),
+        ItemField::Type => header.item_type.as_str(),
+        ItemField::Caption => if header.title.is_empty() { Cow::Borrowed(&*header.name) } else { Cow::Borrowed(&*header.title) },
+    }
 }
 
 pub fn set_field_value(pli: &mut PlaylistItem, field: ItemField, value: String, interner: &mut StringInterner) -> bool {
@@ -154,6 +153,12 @@ pub enum Filter {
     TypeComparison(ItemField, PlaylistItemType),
     UnaryExpression(UnaryOperator, Box<Filter>),
     BinaryExpression(Box<Filter>, BinaryOperator, Box<Filter>),
+}
+
+impl Default for Filter {
+    fn default() -> Self {
+        Self::Group(Box::new(Filter::FieldComparison(ItemField::Group, CompiledRegex { restr: ".*".to_string(), re: regex::Regex::new(".*").unwrap() })))
+    }
 }
 
 fn get_caption<'a>(provider: &'a ValueProvider<'a>, rewc: &'a CompiledRegex) -> (bool, Cow<'a, str>) {

@@ -116,8 +116,8 @@ fn exec_rename(pli: &mut PlaylistItem, rename: Option<&Vec<ConfigRename>>, inter
             let result = pli;
             for r in renames {
                 let value = get_field_value(result, r.field);
-                let cap = r.pattern.replace_all(value.as_str(), &r.new_name);
-                if log_enabled!(log::Level::Debug) && *value != cap {
+                let cap = r.pattern.replace_all(&value, &r.new_name);
+                if log_enabled!(log::Level::Debug) && value != cap {
                     trace_if_enabled!("Renamed {}={value} to {cap}", &r.field);
                 }
                 let value = cap.into_owned();

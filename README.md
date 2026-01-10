@@ -794,11 +794,15 @@ It can be used inside a sequence
 The template can now be used for sequence
 ```yaml
   sort:
-    groups:
-      order: asc
-    channels:
-      - field: caption
-        group_pattern: "!US_TNT_ENTERTAIN!"
+    match_as_ascii: true
+    rules:
+      - target: group
+        field: group
+        filter: Input ~ "provider_1"
+        order: asc
+      - target: channel  
+        field: caption
+        filter: Group ~ "!US_TNT_ENTERTAIN!"
         order: asc
         sequence:
           - "!CHAN_SEQ!"
@@ -1123,34 +1127,37 @@ Placing playlist into memory causes more RAM usage but reduces disk access.
 ### 2.2.2.1 `sort`
 Has three top level attributes
 - `match_as_ascii` _optional_ default is `false`
-- `groups`
-- `channels`
+- `rules`
 
-#### `groups`
-Used for sorting at the group (category) level.
-It has one top-level attribute `order` which can be set to `asc`, `desc`, or `none` to preserve the source order for that level.
-#### `channels`
-Used for sorting the channels within a group/category.
-This is a list of sort configurations for groups. Each configuration has the following top-level entries:
-- `field` - can be  `title`, `name`, `caption` or `url`.
-- `group_pattern` - a regular expression like `'^TR.:\s?(.*)'` matched against group title.
+#### `rules`
+
+This is a list of sort configurations. Each configuration has the following top-level entries:
+- `target` - can be `group` or `channel`. 
+- `field`:
+  - for target `channel`: `title`, `name`, `caption` or `url`.
+  - for target `group`: `group`.
+- `filter` - a filter expression.
 - `order` - can be `asc`, `desc`, or `none` (which skips sorting for that group_pattern and keeps the playlist order coming from the sources).
 - `sequence` _optional_  - a list of regexp matching field values (based on `field`). These are used to sort based on index. The `order` is ignored for this entries.
 
-The pattern should be selected taking into account the processing sequence.
+The pattern should be selected considering the processing sequence.
 
 ```yaml
-  groups:
-  order: asc
-  sequence:
-    - '^Freetv'
-    - '^Shopping'
-    - '^Entertainment'
-    - '^Sunrise'
-  channels:
-    - field: caption
-      group_pattern: '^Freetv'
+sort:
+  rules:
+    - target: group
       order: asc
+      filter: Group ~ ".*" 
+      field: group
+      sequence:
+        - '^Freetv'
+        - '^Shopping'
+        - '^Entertainment'
+        - '^Sunrise'
+    - target: channel
+      order: asc
+      filter: Group ~ ".*"
+      field: title
       sequence:
         - '(?P<c1>.*?)\bUHD\b'
         - '(?P<c1>.*?)\bFHD\b'
@@ -1158,7 +1165,7 @@ The pattern should be selected taking into account the processing sequence.
         - '(?P<c1>.*?)\bSD\b'
 ```
 In the example above, groups are sorted based on the specified sequence.
-Channels within the `Freetv` group are first sorted by `quality` (as matched by the regex sequence), and then by the `captured prefix`.
+Channels within the `Freetv` group are first sorted by `quality` (as matched by the regexp sequence), and then by the `captured prefix`.
 
 To sort by specific parts of the content, use named capture groups such as `c1`, `c2`, `c3`, etc.
 The numeric suffix indicates the priority: `c1` is evaluated first, followed by `c2`, and so on.
@@ -1549,8 +1556,8 @@ It is whitespace-tolerant and uses familiar programming concepts with a custom s
 - FieldNames: `Playlist Field Names` starting with `@` following compose of ASCII alphanumeric characters and underscores.
 - Strings / Text: Enclosed in double quotes. "example string" 
 - Null value `null`
-- Regex Matching:   `@FieldName ~ "Regex"` like in filter statements. You can match a `FieldName` or a existing `variable`.
-- Access a field in a regex match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at `1` like `result.1`, `result.2`.
+- Regexp Matching:   `@FieldName ~ "Regexp"` like in filter statements. You can match a `FieldName` or a existing `variable`.
+- Access a field in a regexp match result:  with `result.capture`. For example, if you have multiple captures you can access them by their name, or their index beginning at `1` like `result.1`, `result.2`.
 - Builtin functions: 
   - concat(a, b, ...)
   - uppercase(a)
@@ -2190,10 +2197,6 @@ sources:
       - type: xtream
     filter: "!ALL_CHAN!"
     options: {ignore_logo: false, skip_live_direct_source: true, skip_video_direct_source: true}
-    sort:
-      match_as_ascii: true
-      groups:
-        order: asc
 ```
 
 What did we do? First, we defined the input source based on the information we received from our provider.
@@ -2538,7 +2541,7 @@ The result should look like
     @Group = concat("FR | MOVIES ", year_group)
 ```
 Filter: Matches channels where the Group starts with "FR" and the Caption ends in a 4-digit year (optionally inside parentheses).
-Regex extraction: Pulls the 4-digit year from the caption.
+Regexp extraction: Pulls the 4-digit year from the caption.
 Mapping:
  If the year is ≤ 2019, it maps to " < 2020".
  Otherwise, the group is named by the actual year (e.g., "2021").

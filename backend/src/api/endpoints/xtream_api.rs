@@ -34,13 +34,12 @@ use log::{debug, error, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use shared::error::{info_err_res, info_err, TuliproxError};
-use shared::model::{create_stream_channel_with_type, PlaylistEntry, PlaylistItemType, ProxyType,
-                    TargetType, UserConnectionPermission, XtreamCluster};
-use shared::utils::{ deserialize_as_string, extract_extension_from_url, generate_playlist_uuid,
-                     sanitize_sensitive_info, trim_slash, HLS_EXT};
+use shared::model::{create_stream_channel_with_type, PlaylistEntry, PlaylistItemType, ProxyType, TargetType, UserConnectionPermission, XtreamCluster, XtreamPlaylistItem};
+use shared::utils::{deserialize_as_string, extract_extension_from_url, generate_playlist_uuid, sanitize_sensitive_info, trim_slash, HLS_EXT};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::sync::Arc;
+use shared::concat_string;
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ApiStreamContext {
@@ -188,6 +187,7 @@ pub(in crate::api) fn get_xtream_player_api_stream_url(
 async fn get_user_info(user: &ProxyUserCredentials, app_state: &AppState) -> XtreamAuthorizationResponse {
     let server_info = app_state.app_config.get_user_server_info(user);
     let active_connections = app_state.get_active_connections_for_user(&user.username).await;
+
     XtreamAuthorizationResponse::new(
         &server_info,
         user,
@@ -353,16 +353,7 @@ async fn xtream_player_api_stream(
         return response.into_response();
     }
 
-    let extension = stream_ext.unwrap_or_else(|| {
-        extract_extension_from_url(&pli.url)
-            .map_or_else(String::new, std::string::ToString::to_string)
-    });
-
-    let query_path = if stream_req.action_path.is_empty() {
-        format!("{}{extension}", pli.provider_id)
-    } else {
-        format!("{}/{}{extension}", stream_req.action_path, pli.provider_id)
-    };
+    let (query_path, extension) = get_query_path(stream_req.action_path, stream_ext.as_ref(), &pli);
 
     let stream_url = try_option_bad_request!(
         get_xtream_player_api_stream_url(&input, stream_req.context, &query_path, session_url),
@@ -409,6 +400,28 @@ async fn xtream_player_api_stream(
     )
         .await
         .into_response()
+}
+
+fn get_query_path(action_path: &str, stream_ext: Option<&String>, pli: &XtreamPlaylistItem) -> (String, String) {
+    let provider_id = pli.provider_id.to_string();
+
+    let extracted_ext;
+    let extension: &str = if pli.item_type.is_live() {
+        ""
+    } else if let Some(ext) = stream_ext {
+        ext
+    } else {
+        extracted_ext = extract_extension_from_url(&pli.url);
+        extracted_ext.unwrap_or("")
+    };
+
+    let query_path = if action_path.is_empty() {
+        concat_string!(&provider_id, extension)
+    } else {
+        let path = trim_slash(action_path);
+        concat_string!(path.as_ref(), "/", &provider_id, extension)
+    };
+    (query_path, extension.to_string())
 }
 
 #[allow(clippy::too_many_lines)]
@@ -509,16 +522,7 @@ async fn xtream_player_api_stream_with_token(
                 .into_response();
         }
 
-        let extension = stream_ext.unwrap_or_else(|| {
-            extract_extension_from_url(&pli.url)
-                .map_or_else(String::new, std::string::ToString::to_string)
-        });
-
-        let query_path = if stream_req.action_path.is_empty() {
-            format!("{}{extension}", pli.provider_id)
-        } else {
-            format!("{}/{}{extension}", stream_req.action_path, pli.provider_id)
-        };
+        let (query_path, _extension) = get_query_path(stream_req.action_path, stream_ext.as_ref(), &pli);
 
         let stream_url = try_option_bad_request!(
             get_xtream_player_api_stream_url(

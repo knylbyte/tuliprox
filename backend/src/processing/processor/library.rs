@@ -1,10 +1,12 @@
+use std::collections::HashMap;
 use crate::library::{MediaMetadata, MetadataAsyncIter, MetadataCacheEntry};
 use crate::model::{AppConfig, ConfigInput};
 use shared::error::TuliproxError;
-use shared::model::{EpisodeStreamProperties, PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, SeriesStreamDetailEpisodeProperties, SeriesStreamDetailProperties, SeriesStreamProperties, StreamProperties, UUIDType, VideoStreamDetailProperties, VideoStreamProperties, XtreamCluster};
+use shared::model::{EpisodeStreamProperties, PlaylistGroup, PlaylistItem, PlaylistItemHeader, PlaylistItemType, SeriesStreamDetailEpisodeProperties, SeriesStreamDetailProperties, SeriesStreamDetailSeasonProperties, SeriesStreamProperties, StreamProperties, UUIDType, VideoStreamDetailProperties, VideoStreamProperties, XtreamCluster};
 use shared::utils::{generate_playlist_uuid, StringInterner};
 use std::path::Path;
 use std::sync::Arc;
+use shared::concat_string;
 
 pub async fn download_library_playlist(_client: &reqwest::Client, app_config: &Arc<AppConfig>, input: &ConfigInput) -> (Vec<PlaylistGroup>, Vec<TuliproxError>) {
     let config = &*app_config.config.load();
@@ -218,6 +220,7 @@ pub fn metadata_cache_entry_to_xtream_movie_info(
     Some(StreamProperties::Video(Box::new(properties)))
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn metadata_cache_entry_to_xtream_series_info(
     entry: &MetadataCacheEntry,
 ) -> Option<StreamProperties> {
@@ -230,6 +233,21 @@ pub fn metadata_cache_entry_to_xtream_series_info(
     let release_date = series.year.map(|y| format!("{y}-01-01"));
     let youtube_trailer = series.videos.as_ref().and_then(|v| v.iter().find(|video| video.site.eq_ignore_ascii_case("youtube")).map(|video| video.key.clone())).unwrap_or_default();
 
+    let mut season_data = HashMap::new();
+    series.seasons.as_ref().iter().for_each(|seasons| seasons.iter().for_each(|season_metadata| {
+        season_data.insert(season_metadata.season_number,SeriesStreamDetailSeasonProperties {
+            name: season_metadata.name.clone(),
+            season_number: season_metadata.season_number,
+            episode_count: 0,
+            overview: season_metadata.overview.clone(),
+            air_date: season_metadata.air_date.clone(),
+            cover: season_metadata.poster_path.clone(),
+            cover_tmdb: season_metadata.poster_path.clone(),
+            cover_big: None,
+            duration: Some(String::from("0")),
+        });
+    }));
+
     let episodes = series.episodes.as_ref().map(|episodes| {
         episodes.iter().filter(|episode| !episode.file_path.is_empty()).map(|episode| {
             let container_extension = Path::new(&episode.file_path)
@@ -239,6 +257,21 @@ pub fn metadata_cache_entry_to_xtream_series_info(
                 .unwrap_or_default();
             let episode_release_date = episode.aired.as_ref().map(ToString::to_string).unwrap_or_default();
             let tmdb_id = (episode.tmdb_id > 0).then_some(episode.tmdb_id);
+
+            let season_entry =season_data.entry(episode.season).or_insert_with(|| {
+                SeriesStreamDetailSeasonProperties {
+                    name: concat_string!(&series.title, " ", &episode.season.to_string()),
+                    season_number: episode.season,
+                    episode_count: 0,
+                    overview: series.poster.clone(),
+                    air_date: episode.aired.clone(),
+                    cover: series.poster.clone(),
+                    cover_tmdb: None,
+                    cover_big: None,
+                    duration: None,
+                }
+             });
+             season_entry.episode_count = season_entry.episode_count.saturating_add(1);
 
             SeriesStreamDetailEpisodeProperties {
                 id: tmdb_id.unwrap_or_default(),
@@ -252,6 +285,7 @@ pub fn metadata_cache_entry_to_xtream_series_info(
                 tmdb: tmdb_id,
                 release_date: episode_release_date.clone(),
                 plot: episode.plot.clone(),
+                crew: Some(actor_names.clone()),
                 duration_secs: episode.runtime.map_or(0, |r| r * 60),
                 duration: episode.runtime
                     .map(|r| format!("{:02}:{:02}:00", r / 60, r % 60))
@@ -264,6 +298,10 @@ pub fn metadata_cache_entry_to_xtream_series_info(
             }
         }).collect::<Vec<_>>()
     });
+
+
+    let mut seasons = season_data.into_values().collect::<Vec<_>>();
+    seasons.sort_by_key(|s| s.season_number);
 
     let properties = SeriesStreamProperties {
         name: series.title.clone(),
@@ -293,7 +331,7 @@ pub fn metadata_cache_entry_to_xtream_series_info(
         tmdb: series.tmdb_id,
         details: Some(SeriesStreamDetailProperties {
             year: series.year,
-            // seasons are not delivered through xtream get_series_info.
+            seasons: Some(seasons),
             episodes,
         }),
     };
