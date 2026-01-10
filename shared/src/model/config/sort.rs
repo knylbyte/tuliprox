@@ -92,12 +92,7 @@ impl<'de> Deserialize<'de> for SortTarget {
 
 impl Display for SortTarget {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}",
-               match self {
-                   Self::Group => Self::GROUP,
-                   Self::Channel => Self::CHANNEL,
-               }
-        )
+        f.write_str(self.as_str())
     }
 }
 

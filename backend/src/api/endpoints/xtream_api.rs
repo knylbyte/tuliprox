@@ -418,7 +418,8 @@ fn get_query_path(action_path: &str, stream_ext: Option<&String>, pli: &XtreamPl
     let query_path = if action_path.is_empty() {
         concat_string!(&provider_id, extension)
     } else {
-        concat_string!(action_path, "/", &provider_id, extension)
+        let path = trim_slash(action_path);
+        concat_string!(path.as_ref(), "/", &provider_id, extension)
     };
     (query_path, extension.to_string())
 }
