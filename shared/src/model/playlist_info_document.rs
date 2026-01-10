@@ -325,7 +325,7 @@ impl StreamProperties {
                 name: season.name.clone(),
                 season_number: season.season_number,
                 episode_count: season.episode_count.to_string(),
-                overview: season.cover_big.as_ref().map(|v| if v.starts_with("http") {
+                overview: season.overview.as_ref().map(|v| if v.starts_with("http") {
                     InfoDocUtils::make_resource_url(resource_url, v, &build_season_field(season.season_number, "overview"))
                 } else {
                     v.clone()

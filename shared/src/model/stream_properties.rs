@@ -172,7 +172,9 @@ pub struct SeriesStreamDetailEpisodeProperties {
 pub struct SeriesStreamDetailProperties {
     #[serde(default, deserialize_with = "deserialize_number_from_string")]
     pub year: Option<u32>,
+    #[serde(default)]
     pub seasons: Option<Vec<SeriesStreamDetailSeasonProperties>>,
+    #[serde(default)]
     pub episodes: Option<Vec<SeriesStreamDetailEpisodeProperties>>,
 }
 

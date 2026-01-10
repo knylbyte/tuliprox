@@ -78,8 +78,8 @@ impl ConfigService {
                     for target in source.targets.iter_mut() {
                         target.t_filter = get_filter(target.filter.as_str(), templates.as_ref()).ok();
                         if let Some(sort) = target.sort.as_mut() {
-                            for channel in sort.rules.iter_mut() {
-                                channel.t_filter = get_filter(&channel.filter, templates.as_ref()).map_err(|e| error!("Failed to parse groups sort filter: {}", e)).ok();
+                            for rule in sort.rules.iter_mut() {
+                                rule.t_filter = get_filter(&rule.filter, templates.as_ref()).map_err(|e| error!("Failed to parse groups sort filter: {}", e)).ok();
                             }
                         }
                         for output in target.output.iter_mut() {

@@ -220,6 +220,7 @@ pub fn metadata_cache_entry_to_xtream_movie_info(
     Some(StreamProperties::Video(Box::new(properties)))
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn metadata_cache_entry_to_xtream_series_info(
     entry: &MetadataCacheEntry,
 ) -> Option<StreamProperties> {
@@ -257,7 +258,7 @@ pub fn metadata_cache_entry_to_xtream_series_info(
             let episode_release_date = episode.aired.as_ref().map(ToString::to_string).unwrap_or_default();
             let tmdb_id = (episode.tmdb_id > 0).then_some(episode.tmdb_id);
 
-            let _ =season_data.entry(episode.season).or_insert_with(|| {
+            let season_entry =season_data.entry(episode.season).or_insert_with(|| {
                 SeriesStreamDetailSeasonProperties {
                     name: concat_string!(&series.title, " ", &episode.season.to_string()),
                     season_number: episode.season,
@@ -269,7 +270,8 @@ pub fn metadata_cache_entry_to_xtream_series_info(
                     cover_big: None,
                     duration: None,
                 }
-            }).episode_count.saturating_add(1);
+             });
+             season_entry.episode_count = season_entry.episode_count.saturating_add(1);
 
             SeriesStreamDetailEpisodeProperties {
                 id: tmdb_id.unwrap_or_default(),
@@ -283,7 +285,7 @@ pub fn metadata_cache_entry_to_xtream_series_info(
                 tmdb: tmdb_id,
                 release_date: episode_release_date.clone(),
                 plot: episode.plot.clone(),
-                crew: series.actors.as_ref().map(|a| a.iter().map(|a| a.name.clone()).collect::<Vec<_>>().join(", ")),
+                crew: Some(actor_names.clone()),
                 duration_secs: episode.runtime.map_or(0, |r| r * 60),
                 duration: episode.runtime
                     .map(|r| format!("{:02}:{:02}:00", r / 60, r % 60))

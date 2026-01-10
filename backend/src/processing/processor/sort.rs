@@ -1,13 +1,14 @@
 use crate::model::{ConfigSortRule, ConfigTarget};
-use std::cmp::Ordering;
-use shared::foundation::filter::{ValueProvider};
+use shared::foundation::filter::ValueProvider;
 use shared::model::{PlaylistGroup, SortOrder, SortTarget};
+use std::cmp::Ordering;
 
 fn direction(order: SortOrder, ordering: Ordering) -> Ordering {
-    match order {
-        SortOrder::Asc => if ordering == Ordering::Less { Ordering::Less } else { Ordering::Greater },
-        SortOrder::Desc => if ordering == Ordering::Less { Ordering::Greater } else { Ordering::Less },
-        SortOrder::None => Ordering::Equal,
+    match (order, ordering) {
+        (SortOrder::None, _)
+        | (_, Ordering::Equal) => Ordering::Equal,
+        (SortOrder::Asc, o) => o,
+        (SortOrder::Desc, o) => o.reverse(),
     }
 }
 
@@ -134,14 +135,16 @@ fn sort_groups(
         return;
     }
 
-    groups.sort_by(|a_grp, b_grp| {
-        for rule in &group_rules {
-            if rule.order == SortOrder::None {
-                continue;
-            }
-
-            let (Some(a_chan), Some(b_chan)) = (a_grp.channels.first(), b_grp.channels.first()) else {
-                continue;
+    for rule in &group_rules {
+        if rule.order == SortOrder::None {
+            continue;
+        }
+        groups.sort_by(|a_grp, b_grp| {
+            let (a_chan, b_chan) = match (a_grp.channels.first(), b_grp.channels.first()) {
+                (None, None) => return Ordering::Equal,
+                (Some(_), None) => return direction(rule.order, Ordering::Less),
+                (None, Some(_)) => return direction(rule.order, Ordering::Greater),
+                (Some(a), Some(b)) => (a, b),
             };
 
             let provider_a = ValueProvider { pli: a_chan, match_as_ascii };
@@ -149,9 +152,9 @@ fn sort_groups(
 
             match (rule.filter.filter(&provider_a), rule.filter.filter(&provider_b)) {
                 (false, false) => return Ordering::Equal,
-                (true, false) =>  return direction(rule.order, Ordering::Less),
+                (true, false) => return direction(rule.order, Ordering::Less),
                 (false, true) => return direction(rule.order, Ordering::Greater),
-                (true, true) => { /* fallthrough */}
+                (true, true) => { /* fallthrough */ }
             }
 
             let va = provider_a.get(rule.field.as_str());
@@ -173,10 +176,9 @@ fn sort_groups(
                     }
                 }
             }
-        }
-
-        Ordering::Equal
-    });
+            Ordering::Equal
+        });
+    }
 }
 
 fn sort_channels_in_groups(
@@ -193,59 +195,53 @@ fn sort_channels_in_groups(
         return;
     }
 
-    for group in groups {
-        group.channels.sort_by(|a, b| {
-            for rule in &channel_rules {
-                if rule.order == SortOrder::None {
-                    continue;
-                }
+    for rule in channel_rules {
+        for group in &mut *groups {
+            if rule.order == SortOrder::None {
+                group.channels.sort_by(|a, b|
+                    a.header.source_ordinal.cmp(&b.header.source_ordinal));
+            } else {
+                group.channels.sort_by(|a, b| {
+                    let provider_a = ValueProvider { pli: a, match_as_ascii };
+                    let provider_b = ValueProvider { pli: b, match_as_ascii };
 
-                let provider_a = ValueProvider { pli: a, match_as_ascii };
-                let provider_b = ValueProvider { pli: b, match_as_ascii };
+                    match (rule.filter.filter(&provider_a), rule.filter.filter(&provider_b)) {
+                        (false, false) => return Ordering::Equal,
+                        (true, false) => return direction(rule.order, Ordering::Less),
+                        (false, true) => return direction(rule.order, Ordering::Greater),
+                        (true, true) => { /* fallthrough */ }
+                    }
 
-                match (rule.filter.filter(&provider_a), rule.filter.filter(&provider_b)) {
-                    (false, false) => continue,
-                    (true, false) => return direction(rule.order, Ordering::Less),
-                    (false, true) => return direction(rule.order, Ordering::Greater),
-                    (true, true) => {}
-                }
-
-                let va = provider_a.get(rule.field.as_str());
-                let vb = provider_b.get(rule.field.as_str());
-                match (va, vb) {
-                    (None, None) => return Ordering::Equal,
-                    (Some(_), None) => return direction(rule.order, Ordering::Less),
-                    (None, Some(_)) => return direction(rule.order, Ordering::Greater),
-                    (Some(va), Some(vb)) => {
-                        let ord = playlist_comparator(
-                            rule.sequence.as_ref(),
-                            rule.order,
-                            &va,
-                            &vb,
-                        );
-
-                        if ord != Ordering::Equal {
-                            return ord;
+                    let va = provider_a.get(rule.field.as_str());
+                    let vb = provider_b.get(rule.field.as_str());
+                    match (va, vb) {
+                        (None, None) => Ordering::Equal,
+                        (Some(_), None) => direction(rule.order, Ordering::Less),
+                        (None, Some(_)) => direction(rule.order, Ordering::Greater),
+                        (Some(va), Some(vb)) => {
+                            playlist_comparator(
+                                rule.sequence.as_ref(),
+                                rule.order,
+                                &va,
+                                &vb,
+                            )
                         }
                     }
-                }
+                });
             }
-
-            a.header.source_ordinal.cmp(&b.header.source_ordinal)
-        });
+        }
     }
 }
 
 
-
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
+    use crate::model::ConfigSortRule;
+    use crate::processing::processor::sort::playlist_comparator;
     use regex::Regex;
     use shared::foundation::filter::Filter;
     use shared::model::{ItemField, PlaylistItem, PlaylistItemHeader, SortOrder, SortTarget};
-    use crate::model::ConfigSortRule;
-    use crate::processing::processor::sort::playlist_comparator;
+    use std::cmp::Ordering;
 
     #[test]
     fn test_sort() {
@@ -422,5 +418,4 @@ mod tests {
 
         assert_eq!(expected, sorted);
     }
-
 }

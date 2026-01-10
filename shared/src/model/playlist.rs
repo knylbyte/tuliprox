@@ -771,6 +771,11 @@ impl XtreamPlaylistItem {
     }
 
     pub fn resolve_resource_url<'a>(&'a self, field: &str) -> Option<Cow<'a, str>> {
+        if field == "logo" {
+            return Some(Cow::Borrowed(&self.logo));
+        } else if field == "logo_small" {
+            return Some(Cow::Borrowed(&self.logo_small));
+        }
         self.additional_properties.as_ref().and_then(|a| a.resolve_resource_url(field))
     }
 }

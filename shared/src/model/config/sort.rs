@@ -29,14 +29,19 @@ pub enum SortOrder {
     None,
 }
 
+impl SortOrder {
+    pub fn as_str(&self) -> &'static str {
+        match *self {
+            Self::Asc => "asc",
+            Self::Desc => "desc",
+            Self::None => "none",
+        }
+    }
+}
+
 impl Display for SortOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let str = match self {
-            SortOrder::Asc => "asc".to_string(),
-            SortOrder::Desc => "desc".to_string(),
-            SortOrder::None => "none".to_string(),
-        };
-        write!(f, "{str}")
+        f.write_str(self.as_str())
     }
 }
 
@@ -115,6 +120,7 @@ pub struct ConfigSortRuleDto {
 impl PartialEq for ConfigSortRuleDto {
     fn eq(&self, other: &Self) -> bool {
         self.field == other.field
+            && self.target == other.target
             && self.order == other.order
             && self.sequence == other.sequence
             && self.filter == other.filter
@@ -124,11 +130,11 @@ impl PartialEq for ConfigSortRuleDto {
 
 impl ConfigSortRuleDto {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
-        if self.target == SortTarget::Group  {
+        if self.target == SortTarget::Group {
             if !matches!(self.field, ItemField::Group | ItemField::Title | ItemField::Name | ItemField::Caption) {
                 return info_err_res!("Group sorting can only be done on the Group field");
             }
-             self.field = ItemField::Group; // hard coded because we only can't match a group until we can use PlaylistGroup with filter
+            self.field = ItemField::Group; // hard coded because we only can't match a group until we can use PlaylistGroup with filter
         }
 
         self.t_filter = Some(get_filter(&self.filter, templates)?);
