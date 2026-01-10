@@ -521,16 +521,7 @@ async fn xtream_player_api_stream_with_token(
                 .into_response();
         }
 
-        let extension = stream_ext.unwrap_or_else(|| {
-            extract_extension_from_url(&pli.url)
-                .map_or_else(String::new, std::string::ToString::to_string)
-        });
-
-        let query_path = if stream_req.action_path.is_empty() {
-            format!("{}{extension}", pli.provider_id)
-        } else {
-            format!("{}/{}{extension}", stream_req.action_path, pli.provider_id)
-        };
+        let (query_path, _extension) = get_query_path(stream_req.action_path, stream_ext.as_ref(), &pli);
 
         let stream_url = try_option_bad_request!(
             get_xtream_player_api_stream_url(

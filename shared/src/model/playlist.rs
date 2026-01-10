@@ -236,13 +236,7 @@ impl PlaylistItemType {
 
 impl Display for PlaylistItemType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Self::Live | Self::LiveHls | Self::LiveDash | Self::LiveUnknown => Self::LIVE,
-            Self::Video | Self::LocalVideo => Self::VIDEO,
-            Self::Series | Self::LocalSeries => Self::SERIES,
-            Self::SeriesInfo | Self::LocalSeriesInfo => Self::SERIES_INFO,
-            Self::Catchup => Self::CATCHUP,
-        })
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -414,7 +408,7 @@ macro_rules! generate_field_accessor_impl_for_playlist_item_header {
                 $(
                     {
                         let target = stringify!($prop).as_bytes();
-                        if bytes.len() == target.len() && bytes.iter().zip(target).all(|(a, b)| a.to_ascii_lowercase() == *b) {
+                        if bytes.eq_ignore_ascii_case(target) {
                             return Some(Cow::Borrowed(&self.$prop));
                         }
                     }
@@ -448,9 +442,7 @@ macro_rules! generate_field_accessor_impl_for_playlist_item_header {
                 $(
                     {
                         let target = stringify!($prop).as_bytes();
-                        if bytes.len() == target.len() &&
-                           bytes.iter().zip(target).all(|(a, b)| a.to_ascii_lowercase() == *b)
-                        {
+                        if bytes.eq_ignore_ascii_case(target) {
                             self.$prop = String::from(value);
                             return true;
                         }
@@ -771,10 +763,11 @@ impl XtreamPlaylistItem {
     }
 
     pub fn resolve_resource_url<'a>(&'a self, field: &str) -> Option<Cow<'a, str>> {
-        if field == "logo" {
-            return Some(Cow::Borrowed(&self.logo));
-        } else if field == "logo_small" {
-            return Some(Cow::Borrowed(&self.logo_small));
+        let bytes = field.as_bytes();
+        if bytes.eq_ignore_ascii_case(b"logo") && !self.logo.is_empty() {
+            return Some(Cow::Borrowed(self.logo.as_str()));
+        } else if bytes.eq_ignore_ascii_case(b"logo_small") && !self.logo_small.is_empty() {
+            return Some(Cow::Borrowed(self.logo_small.as_str()));
         }
         self.additional_properties.as_ref().and_then(|a| a.resolve_resource_url(field))
     }

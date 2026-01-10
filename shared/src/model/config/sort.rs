@@ -131,6 +131,7 @@ impl PartialEq for ConfigSortRuleDto {
 impl ConfigSortRuleDto {
     pub fn prepare(&mut self, templates: Option<&Vec<PatternTemplate>>) -> Result<(), TuliproxError> {
         if self.target == SortTarget::Group {
+            // What the user sets is not important, we allow this but force to use Group
             if !matches!(self.field, ItemField::Group | ItemField::Title | ItemField::Name | ItemField::Caption) {
                 return info_err_res!("Group sorting can only be done on the Group field");
             }
