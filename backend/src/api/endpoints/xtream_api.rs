@@ -353,7 +353,7 @@ async fn xtream_player_api_stream(
         return response.into_response();
     }
 
-    let (query_path, extension) = get_query_path(stream_req.action_path, stream_ext.as_ref(), &pli);
+    let (query_path, extension) = get_query_path(stream_req.action_path, stream_ext.as_ref(), &pli, app_state);
 
     let stream_url = try_option_bad_request!(
         get_xtream_player_api_stream_url(&input, stream_req.context, &query_path, session_url),
@@ -402,11 +402,12 @@ async fn xtream_player_api_stream(
         .into_response()
 }
 
-fn get_query_path(action_path: &str, stream_ext: Option<&String>, pli: &XtreamPlaylistItem) -> (String, String) {
-    let provider_id = pli.provider_id.to_string();
+fn get_query_path(action_path: &str, stream_ext: Option<&String>, pli: &XtreamPlaylistItem, app_state: &Arc<AppState>) -> (String, String) {
+
+    let discard_extension = pli.item_type.is_live() && app_state.app_config.sources.load().get_input_by_name(&pli.input_name).as_ref().and_then(|i| i.options.as_ref()).is_some_and(|o| o.xtream_live_stream_without_extension);
 
     let extracted_ext;
-    let extension: &str = if pli.item_type.is_live() {
+    let extension: &str = if discard_extension {
         ""
     } else if let Some(ext) = stream_ext {
         ext
@@ -414,6 +415,8 @@ fn get_query_path(action_path: &str, stream_ext: Option<&String>, pli: &XtreamPl
         extracted_ext = extract_extension_from_url(&pli.url);
         extracted_ext.unwrap_or("")
     };
+
+    let provider_id = pli.provider_id.to_string();
 
     let query_path = if action_path.is_empty() {
         concat_string!(&provider_id, extension)
@@ -522,7 +525,7 @@ async fn xtream_player_api_stream_with_token(
                 .into_response();
         }
 
-        let (query_path, _extension) = get_query_path(stream_req.action_path, stream_ext.as_ref(), &pli);
+        let (query_path, _extension) = get_query_path(stream_req.action_path, stream_ext.as_ref(), &pli, app_state);
 
         let stream_url = try_option_bad_request!(
             get_xtream_player_api_stream_url(

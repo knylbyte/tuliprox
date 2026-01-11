@@ -5,8 +5,7 @@ use std::cmp::Ordering;
 
 fn direction(order: SortOrder, ordering: Ordering) -> Ordering {
     match (order, ordering) {
-        (SortOrder::None, _)
-        | (_, Ordering::Equal) => Ordering::Equal,
+        (SortOrder::None, _) | (_, Ordering::Equal) => Ordering::Equal,
         (SortOrder::Asc, o) => o,
         (SortOrder::Desc, o) => o.reverse(),
     }
@@ -108,7 +107,10 @@ fn playlist_comparator(
     }
 }
 
-pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, playlist: &mut [PlaylistGroup]) -> bool {
+pub(in crate::processing::processor) fn sort_playlist(
+    target: &ConfigTarget,
+    playlist: &mut [PlaylistGroup],
+) -> bool {
     let Some(sort) = &target.sort else {
         return false;
     };
@@ -121,11 +123,7 @@ pub(in crate::processing::processor) fn sort_playlist(target: &ConfigTarget, pla
     true
 }
 
-fn sort_groups(
-    groups: &mut [PlaylistGroup],
-    rules: &[ConfigSortRule],
-    match_as_ascii: bool,
-) {
+fn sort_groups(groups: &mut [PlaylistGroup], rules: &[ConfigSortRule], match_as_ascii: bool) {
     let group_rules: Vec<_> = rules
         .iter()
         .filter(|r| matches!(r.target, SortTarget::Group))
@@ -147,14 +145,24 @@ fn sort_groups(
                 (Some(a), Some(b)) => (a, b),
             };
 
-            let provider_a = ValueProvider { pli: a_chan, match_as_ascii };
-            let provider_b = ValueProvider { pli: b_chan, match_as_ascii };
+            let provider_a = ValueProvider {
+                pli: a_chan,
+                match_as_ascii,
+            };
+            let provider_b = ValueProvider {
+                pli: b_chan,
+                match_as_ascii,
+            };
 
-            match (rule.filter.filter(&provider_a), rule.filter.filter(&provider_b)) {
-                (false, false) => return Ordering::Equal,
-                (true, false) => return direction(rule.order, Ordering::Less),
-                (false, true) => return direction(rule.order, Ordering::Greater),
+            match (
+                rule.filter.filter(&provider_a),
+                rule.filter.filter(&provider_b),
+            ) {
+                // (false, false) => return Ordering::Equal,
+                // (true, false) => return direction(rule.order, Ordering::Less),
+                // (false, true) => return direction(rule.order, Ordering::Greater),
                 (true, true) => { /* fallthrough */ }
+                _ => return Ordering::Equal,
             }
 
             let va = provider_a.get(rule.field.as_str());
@@ -164,12 +172,7 @@ fn sort_groups(
                 (Some(_), None) => return direction(rule.order, Ordering::Less),
                 (None, Some(_)) => return direction(rule.order, Ordering::Greater),
                 (Some(va), Some(vb)) => {
-                    let ord = playlist_comparator(
-                        rule.sequence.as_ref(),
-                        rule.order,
-                        &va,
-                        &vb,
-                    );
+                    let ord = playlist_comparator(rule.sequence.as_ref(), rule.order, &va, &vb);
 
                     if ord != Ordering::Equal {
                         return ord;
@@ -198,41 +201,43 @@ fn sort_channels_in_groups(
     for rule in channel_rules {
         for group in &mut *groups {
             if rule.order == SortOrder::None {
-                group.channels.sort_by(|a, b|
-                    a.header.source_ordinal.cmp(&b.header.source_ordinal));
-            } else {
-                group.channels.sort_by(|a, b| {
-                    let provider_a = ValueProvider { pli: a, match_as_ascii };
-                    let provider_b = ValueProvider { pli: b, match_as_ascii };
-
-                    match (rule.filter.filter(&provider_a), rule.filter.filter(&provider_b)) {
-                        (false, false) => return Ordering::Equal,
-                        (true, false) => return direction(rule.order, Ordering::Less),
-                        (false, true) => return direction(rule.order, Ordering::Greater),
-                        (true, true) => { /* fallthrough */ }
-                    }
-
-                    let va = provider_a.get(rule.field.as_str());
-                    let vb = provider_b.get(rule.field.as_str());
-                    match (va, vb) {
-                        (None, None) => Ordering::Equal,
-                        (Some(_), None) => direction(rule.order, Ordering::Less),
-                        (None, Some(_)) => direction(rule.order, Ordering::Greater),
-                        (Some(va), Some(vb)) => {
-                            playlist_comparator(
-                                rule.sequence.as_ref(),
-                                rule.order,
-                                &va,
-                                &vb,
-                            )
-                        }
-                    }
-                });
+                continue;
             }
+            group.channels.sort_by(|a, b| {
+                let provider_a = ValueProvider {
+                    pli: a,
+                    match_as_ascii,
+                };
+                let provider_b = ValueProvider {
+                    pli: b,
+                    match_as_ascii,
+                };
+
+                match (
+                    rule.filter.filter(&provider_a),
+                    rule.filter.filter(&provider_b),
+                ) {
+                    // (false, false) => return Ordering::Equal,
+                    // (true, false) => return direction(rule.order, Ordering::Less),
+                    // (false, true) => return direction(rule.order, Ordering::Greater),
+                    (true, true) => { /* fallthrough */ }
+                    _ => return Ordering::Equal,
+                }
+
+                let va = provider_a.get(rule.field.as_str());
+                let vb = provider_b.get(rule.field.as_str());
+                match (va, vb) {
+                    (None, None) => Ordering::Equal,
+                    (Some(_), None) => direction(rule.order, Ordering::Less),
+                    (None, Some(_)) => direction(rule.order, Ordering::Greater),
+                    (Some(va), Some(vb)) => {
+                        playlist_comparator(rule.sequence.as_ref(), rule.order, &va, &vb)
+                    }
+                }
+            });
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -246,19 +251,29 @@ mod tests {
     #[test]
     fn test_sort() {
         let mut channels: Vec<PlaylistItem> = vec![
-            ("D", "HD"), ("A", "FHD"), ("Z", "HD"), ("K", "HD"), ("B", "HD"), ("A", "HD"),
-            ("K", "UHD"), ("C", "HD"), ("L", "FHD"), ("R", "UHD"), ("T", "SD"), ("A", "FHD"),
+            ("D", "HD"),
+            ("A", "FHD"),
+            ("Z", "HD"),
+            ("K", "HD"),
+            ("B", "HD"),
+            ("A", "HD"),
+            ("K", "UHD"),
+            ("C", "HD"),
+            ("L", "FHD"),
+            ("R", "UHD"),
+            ("T", "SD"),
+            ("A", "FHD"),
         ]
-            .into_iter()
-            .enumerate()
-            .map(|(i, (name, quality))| PlaylistItem {
-                header: PlaylistItemHeader {
-                    title: format!("Chanel {name} [{quality}]"),
-                    source_ordinal: i as u32,
-                    ..Default::default()
-                },
-            })
-            .collect();
+        .into_iter()
+        .enumerate()
+        .map(|(i, (name, quality))| PlaylistItem {
+            header: PlaylistItemHeader {
+                title: format!("Chanel {name} [{quality}]"),
+                source_ordinal: i as u32,
+                ..Default::default()
+            },
+        })
+        .collect();
 
         let channel_sort = ConfigSortRule {
             target: SortTarget::Channel,
@@ -276,12 +291,8 @@ mod tests {
             let va = &a.header.title;
             let vb = &b.header.title;
 
-            let ord = playlist_comparator(
-                channel_sort.sequence.as_ref(),
-                channel_sort.order,
-                va,
-                vb,
-            );
+            let ord =
+                playlist_comparator(channel_sort.sequence.as_ref(), channel_sort.order, va, vb);
 
             if ord != Ordering::Equal {
                 ord
@@ -341,16 +352,16 @@ mod tests {
             "US| West e",
             "US| West f",
         ]
-            .into_iter()
-            .enumerate()
-            .map(|(i, name)| PlaylistItem {
-                header: PlaylistItemHeader {
-                    title: name.to_string(),
-                    source_ordinal: i as u32,
-                    ..Default::default()
-                },
-            })
-            .collect();
+        .into_iter()
+        .enumerate()
+        .map(|(i, name)| PlaylistItem {
+            header: PlaylistItemHeader {
+                title: name.to_string(),
+                source_ordinal: i as u32,
+                ..Default::default()
+            },
+        })
+        .collect();
 
         let channel_sort = ConfigSortRule {
             target: SortTarget::Channel,
