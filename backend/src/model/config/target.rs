@@ -1,7 +1,8 @@
 use crate::model::mapping::Mapping;
 use crate::model::config::trakt::TraktConfig;
 use arc_swap::ArcSwapOption;
-use shared::model::{ConfigTargetDto, ConfigTargetOptions, HdHomeRunTargetOutputDto, M3uTargetOutputDto, ProcessingOrder, StrmExportStyle, StrmTargetOutputDto, TargetOutputDto, TargetType, TraktConfigDto, XtreamTargetOutputDto};
+use shared::model::{ConfigTargetDto, ConfigTargetOptions, HdHomeRunTargetOutputDto, M3uTargetOutputDto,
+                    ProcessingOrder, StrmExportStyle, StrmTargetOutputDto, TargetOutputDto, TargetType, TraktConfigDto, XtreamTargetOutputDto};
 use shared::model::PlaylistItemType;
 use std::sync::Arc;
 use regex::Regex;

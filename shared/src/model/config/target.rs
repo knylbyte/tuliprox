@@ -6,7 +6,7 @@ use crate::foundation::filter::{get_filter, Filter};
 use crate::model::{ClusterFlags, ConfigFavouritesDto, ConfigRenameDto, ConfigSortDto, HdHomeRunDeviceOverview,
                    PatternTemplate, ProcessingOrder, StrmExportStyle, TargetType, TraktConfigDto};
 use crate::utils::{is_true, is_false, default_as_true, default_resolve_delay_secs, default_as_default,
-                   is_default_resolve_delay_secs, is_zero_u16, is_config_target_options_empty};
+                   is_default_resolve_delay_secs, is_zero_u16, is_config_target_options_empty, is_default_processing_order};
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigTargetOptions {
@@ -220,7 +220,7 @@ pub struct ConfigTargetDto {
     pub mapping: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub favourites: Option<Vec<ConfigFavouritesDto>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default_processing_order")]
     pub processing_order: ProcessingOrder,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<Vec<String>>,

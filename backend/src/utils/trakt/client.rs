@@ -3,7 +3,8 @@ use shared::error::TuliproxError;
 use reqwest::header::{HeaderMap, HeaderValue};
 use log::{debug, info};
 use shared::error::{info_err};
-use shared::utils::trim_last_slash;
+use shared::model::DEFAULT_USER_AGENT;
+use shared::utils::{trim_last_slash, TRAKT_API_KEY};
 use super::errors::{handle_trakt_api_error};
 
 pub struct TraktClient {
@@ -23,12 +24,13 @@ impl TraktClient {
         }
     }
 
-    fn create_headers(api_config: &TraktApiConfig) -> axum::http::HeaderMap {
+    fn create_headers(api_config: &TraktApiConfig) -> HeaderMap {
         let mut headers = HeaderMap::new();
 
         headers.insert(reqwest::header::CONTENT_TYPE, HeaderValue::from_static(mime::APPLICATION_JSON.as_ref()));
-        headers.insert("trakt-api-key", HeaderValue::from_str(api_config.key.as_str()).unwrap_or_else(|_| HeaderValue::from_static("")));
-        headers.insert("trakt-api-version", HeaderValue::from_str(api_config.version.as_str()).unwrap_or_else(|_| HeaderValue::from_static("")));
+        headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_str(api_config.user_agent.as_str()).unwrap_or_else(|_| HeaderValue::from_static(DEFAULT_USER_AGENT)));
+        headers.insert("trakt-api-key", HeaderValue::from_str(api_config.api_key.as_str()).unwrap_or_else(|_| HeaderValue::from_static(TRAKT_API_KEY)));
+        headers.insert("trakt-api-version", HeaderValue::from_str(api_config.version.as_str()).unwrap_or_else(|_| HeaderValue::from_static("2")));
 
         headers
     }
@@ -41,7 +43,6 @@ impl TraktClient {
         debug!("Fetching Trakt list {}:{}", list_config.user, list_config.list_slug);
 
         let url = self.build_list_url(&list_config.user, &list_config.list_slug);
-
         let response = self.client
             .get(&url)
             .headers(self.headers.clone())

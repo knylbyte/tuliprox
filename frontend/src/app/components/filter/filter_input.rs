@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use crate::app::components::{AppIcon, FilterEditor, FilterView};
 use crate::app::ConfigContext;
 use crate::model::{DialogAction, DialogActions, DialogResult};
@@ -60,13 +62,6 @@ pub fn FilterInput(props: &FilterInputProps) -> Html {
         });
     }
 
-    let handle_filter_edit = {
-        let filter = filter_state.clone();
-        Callback::from(move |flt: Option<String>| {
-            filter.set(flt);
-        })
-    };
-
     let handle_templates_edit = {
         let templates = templates_state.clone();
         Callback::from(move |templ: Option<Vec<PatternTemplate>>| {
@@ -79,7 +74,6 @@ pub fn FilterInput(props: &FilterInputProps) -> Html {
         let filter_state = filter_state.clone();
         let templates_state = templates_state.clone();
         let on_change = props.on_change.clone();
-        let handle_filter_edit = handle_filter_edit.clone();
         let handle_templates_edit = handle_templates_edit.clone();
         let dialog_actions = dialog_actions.clone();
         Callback::from(move |e: MouseEvent| {
@@ -87,7 +81,6 @@ pub fn FilterInput(props: &FilterInputProps) -> Html {
             let original_filter = (*filter_state).clone();
             let original_templates = (*templates_state).clone();
             let current_filter = (*filter_state).clone();
-            let handle_filter_edit = handle_filter_edit.clone();
             let handle_templates_edit = handle_templates_edit.clone();
             let actions = dialog_actions.clone();
             let dlg = dialog.clone();
@@ -95,12 +88,24 @@ pub fn FilterInput(props: &FilterInputProps) -> Html {
             let templates_state = templates_state.clone();
             let on_change = on_change.clone();
             spawn_local(async move {
+                // we need this refcell because the state hook does not update
+                // when we close the dialog
+                let filter_ref = Rc::new(RefCell::new((*filter_state).clone()));
+                let handle_filter_edit = {
+                    let filter_ref_set = filter_ref.clone();
+                    let filter = filter_state.clone();
+                    Callback::from(move |flt: Option<String>| {
+                        *filter_ref_set.borrow_mut() = flt.clone();
+                        filter.set(flt);
+                    })
+                };
+
                 let filter_view = html! {<FilterEditor filter={current_filter}
                     on_filter_change={handle_filter_edit}
                     on_templates_change={handle_templates_edit} />};
                 let result = dlg.content(filter_view, (*actions).clone(), false).await;
                 match result {
-                    DialogResult::Ok => on_change.emit((*filter_state).clone()),
+                    DialogResult::Ok => on_change.emit(filter_ref.borrow().clone()),
                     _ => {
                         filter_state.set(original_filter);
                         templates_state.set(original_templates);

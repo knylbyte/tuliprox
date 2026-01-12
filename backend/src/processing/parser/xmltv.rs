@@ -4,11 +4,10 @@ use crate::processing::processor::epg::EpgIdCache;
 use crate::utils::async_file_reader;
 use crate::utils::compressed_file_reader_async::CompressedFileReaderAsync;
 use dashmap::DashMap;
-use deunicode::deunicode;
 use quick_xml::events::{BytesStart, BytesText, Event};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use shared::model::EpgNamePrefix;
-use shared::utils::CONSTANTS;
+use shared::utils::{deunicode_string, CONSTANTS};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::cmp::min;
@@ -92,7 +91,7 @@ fn combine(join: &str, left: &str, right: &str) -> String {
 
 /// # Panics
 pub fn normalize_channel_name(name: &str, normalize_config: &EpgSmartMatchConfig) -> String {
-    let normalized = deunicode(name.trim()).to_lowercase();
+    let normalized = deunicode_string(name.trim()).to_lowercase();
     let (channel_name, suffix) = name_prefix(&normalized, normalize_config);
     // Remove all non-alphanumeric characters (except dashes and underscores).
     let cleaned_name = normalize_config.normalize_regex.replace_all(channel_name, "");
