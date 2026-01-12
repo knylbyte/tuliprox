@@ -3,11 +3,10 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use tokio::sync::{RwLock, Mutex};
 use std::sync::Arc;
-use deunicode::deunicode;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{VideoDownloadConfig};
-use shared::utils::{CONSTANTS, FILENAME_TRIM_PATTERNS, hash_string_as_hex};
+use shared::utils::{CONSTANTS, FILENAME_TRIM_PATTERNS, hash_string_as_hex, deunicode_string};
 
 /// File-Download information.
 #[derive(Clone)]
@@ -70,7 +69,7 @@ impl FileDownload {
     pub fn new(req_url: &str, req_filename: &str, download_cfg: &VideoDownloadConfig) -> Option<Self> {
         match reqwest::Url::parse(req_url) {
             Ok(url) => {
-                let tmp_filename = CONSTANTS.re_filename.replace_all(&deunicode(req_filename)
+                let tmp_filename = CONSTANTS.re_filename.replace_all(&deunicode_string(req_filename)
                     .replace(' ', "_"), "")
                     .replace("__", "_")
                     .replace("_-_", "-");

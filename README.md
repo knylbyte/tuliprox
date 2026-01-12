@@ -1318,6 +1318,11 @@ You can define a `Trakt` config like
             resolve_series: false
             resolve_vod: false
             trakt:
+              api:
+                api_key: "your api key"
+                version: "2"
+                url: "https://api.trakt.tv"
+                user_agent: "Mozilla/5.0"
               lists:
                 - user: "linaspurinis"
                   list_slug: "top-watched-movies-of-the-week"

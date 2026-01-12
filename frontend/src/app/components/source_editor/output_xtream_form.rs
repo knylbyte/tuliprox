@@ -15,12 +15,13 @@ const LABEL_SERIES: &str = "LABEL.SERIES";
 const LABEL_RESOLVE: &str = "LABEL.RESOLVE";
 const LABEL_RESOLVE_DELAY_SEC: &str = "LABEL.RESOLVE_DELAY_SEC";
 const LABEL_FILTER: &str = "LABEL.FILTER";
-const LABEL_TRAKT_API_KEY: &str = "LABEL.TRAKT_API_KEY";
-const LABEL_TRAKT_API_VERSION: &str = "LABEL.TRAKT_API_VERSION";
-const LABEL_TRAKT_API_URL: &str = "LABEL.TRAKT_API_URL";
+const LABEL_TRAKT_API_KEY: &str = "LABEL.API_KEY";
+const LABEL_TRAKT_API_VERSION: &str = "LABEL.API_VERSION";
+const LABEL_TRAKT_API_URL: &str = "LABEL.API_URL";
 const LABEL_TRAKT_LISTS: &str = "LABEL.TRAKT_LISTS";
 const LABEL_ADD_TRAKT_LIST: &str = "LABEL.ADD_TRAKT_LIST";
 const LABEL_API_CONFIGURATION: &str = "LABEL.API_CONFIGURATION";
+const LABEL_USER_AGENT: &str = "LABEL.API_USER_AGENT";
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum OutputFormPage {
@@ -40,9 +41,10 @@ generate_form_reducer!(
     state: TraktApiConfigFormState { form: TraktApiConfigDto },
     action_name: TraktApiConfigFormAction,
     fields {
-        Key => key: String,
+        ApiKey => api_key: String,
         Version => version: String,
         Url => url: String,
+        UserAgent => user_agent: String,
     }
 );
 
@@ -214,9 +216,10 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
                 // Trakt API Configuration
                 <div class="tp__form-section">
                     <h3>{translate.t(LABEL_API_CONFIGURATION)}</h3>
-                    { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_KEY), key, TraktApiConfigFormAction::Key) }
+                    { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_KEY), api_key, TraktApiConfigFormAction::ApiKey) }
                     { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_VERSION), version, TraktApiConfigFormAction::Version) }
                     { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_URL), url, TraktApiConfigFormAction::Url) }
+                    { edit_field_text!(trakt_api, translate.t(LABEL_USER_AGENT), user_agent, TraktApiConfigFormAction::UserAgent) }
                 </div>
 
                 // Trakt Lists

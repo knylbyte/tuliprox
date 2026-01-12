@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use log::{error, warn};
-
-use crate::repository::storage::get_input_storage_path;
+use crate::repository::storage::{build_input_storage_path, get_input_storage_path};
 
 pub const STATUS_FILE: &str = "status.json";
 
@@ -30,10 +29,7 @@ pub struct InputStatus {
 
 pub fn resolve_input_storage_path(working_dir: &str, input_name: &str) -> PathBuf {
     if let Ok(path) = get_input_storage_path(input_name, working_dir) { path } else {
-        let sanitized_name: String = input_name.chars()
-            .map(|c| if c.is_alphanumeric() { c } else { '_' })
-            .collect();
-        Path::new(working_dir).join(format!("input_{sanitized_name}"))
+        build_input_storage_path(input_name, working_dir)
     }
 }
 

@@ -28,12 +28,20 @@ pub fn get_target_storage_path(cfg: &Config, target_name: &str) -> Option<PathBu
     utils::get_file_path(&cfg.working_dir, Some(std::path::PathBuf::from(target_name.replace(' ', "_"))))
 }
 
-pub fn get_input_storage_path(input_name: &str, working_dir: &str) -> std::io::Result<PathBuf> {
-    let sanitized_name: String = input_name.chars()
+pub fn sanitize_name(name: &str) -> String {
+    name.chars()
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect();
+        .collect()
+}
+
+pub fn build_input_storage_path(input_name: &str, working_dir: &str) -> PathBuf {
+    let sanitized_name: String = sanitize_name(input_name);
     let name = concat_string!(cap = 6 + sanitized_name.len(); "input_", &sanitized_name);
-    let path = Path::new(working_dir).join(name);
+    Path::new(working_dir).join(name)
+}
+
+pub fn get_input_storage_path(input_name: &str, working_dir: &str) -> std::io::Result<PathBuf> {
+    let path = build_input_storage_path(input_name, working_dir);
     // Create the directory and return the path or propagate the error
     std::fs::create_dir_all(&path).map(|()| path)
 }

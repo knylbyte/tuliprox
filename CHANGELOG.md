@@ -31,6 +31,7 @@
             - '(?i)\bHD\b'
             - '(?i)\bSD\b'
   ```
+  - Trakt api config field `key` is now `api_key`. Added `user_agent` field to Trakt api config
 
 ## 🌟 New Features
 - **Discord Notifications**: Support for Discord notifications via webhooks with optional Handlebars templates.
