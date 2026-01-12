@@ -43,9 +43,6 @@ impl TraktClient {
         debug!("Fetching Trakt list {}:{}", list_config.user, list_config.list_slug);
 
         let url = self.build_list_url(&list_config.user, &list_config.list_slug);
-
-        debug!("trakt headers {:?}, {}", self.headers, url);
-
         let response = self.client
             .get(&url)
             .headers(self.headers.clone())
