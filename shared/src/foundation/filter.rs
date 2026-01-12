@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use crate::error::{info_err_res, TuliproxError};
 use crate::info_err;
 pub use crate::model::{ItemField, PatternTemplate, PlaylistItem, PlaylistItemType, FieldGetAccessor, FieldSetAccessor, TemplateValue};
-use crate::utils::{DirectedGraph, StringInterner, CONSTANTS};
+use crate::utils::{deunicode_string, DirectedGraph, StringInterner, CONSTANTS};
 
 pub fn get_field_value(pli: &PlaylistItem, field: ItemField) -> Cow<'_, str> {
     let header = &pli.header;
@@ -53,7 +53,7 @@ impl ValueProvider<'_> {
     pub fn get(&self, field: &str) -> Option<Cow<'_, str>> {
         let val = self.pli.header.get_field(field)?;
         if self.match_as_ascii {
-            return Some(Cow::Owned(deunicode::deunicode(&val)));
+            return Some(Cow::Owned(deunicode_string(&val).into_owned()))
         }
         Some(val)
     }
@@ -69,7 +69,7 @@ impl ValueAccessor<'_> {
     pub fn get(&self, field: &str) -> Option<Cow<'_, str>> {
         let val = self.pli.header.get_field(field)?;
         if self.match_as_ascii {
-            return Some(Cow::Owned(deunicode::deunicode(&val)));
+            return Some(Cow::Owned(deunicode_string(&val).into_owned()))
         }
         Some(val)
     }

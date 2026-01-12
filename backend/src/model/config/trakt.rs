@@ -4,18 +4,20 @@ use crate::model::macros;
 
 #[derive(Debug, Clone)]
 pub struct TraktApiConfig {
-    pub key: String,
+    pub api_key: String,
     pub version: String,
     pub url: String,
+    pub user_agent: String,
 }
 
 macros::from_impl!(TraktApiConfig);
 impl From<&TraktApiConfigDto> for TraktApiConfig {
     fn from(dto: &TraktApiConfigDto) -> Self {
         Self {
-            key: dto.key.clone(),
+            api_key: dto.api_key.clone(),
             version: dto.version.clone(),
             url: dto.url.clone(),
+            user_agent: dto.user_agent.clone(),
         }
     }
 }
@@ -23,9 +25,10 @@ impl From<&TraktApiConfigDto> for TraktApiConfig {
 impl From<&TraktApiConfig> for TraktApiConfigDto {
     fn from(instance: &TraktApiConfig) -> Self {
         Self {
-            key: instance.key.clone(),
+            api_key: instance.api_key.clone(),
             version: instance.version.clone(),
             url: instance.url.clone(),
+            user_agent: instance.user_agent.clone(),
         }
     }
 }

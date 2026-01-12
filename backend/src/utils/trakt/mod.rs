@@ -3,14 +3,12 @@ mod client;
 mod errors;
 
 pub use self::client::*;
-pub use self::errors::*;
 
-use deunicode::deunicode;
-use shared::utils::CONSTANTS;
+use shared::utils::{deunicode_string, CONSTANTS};
 
 /// Normalize title for matching - optimized version with reduced allocations
 pub fn normalize_title_for_matching(title: &str) -> String {
-    let normalized = deunicode(title.trim());
+    let normalized = deunicode_string(title.trim());
 
     let mut result = String::with_capacity(normalized.len());
 

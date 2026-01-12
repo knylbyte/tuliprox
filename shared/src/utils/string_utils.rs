@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use deunicode::deunicode_with_tofu_cow;
 
 pub trait Capitalize {
     fn capitalize(&self) -> String;
@@ -125,6 +126,10 @@ pub fn humanize_snake_case(s: &str) -> String {
     }
 
     result
+}
+
+pub fn deunicode_string(s: &str) -> Cow<'_, str> {
+    deunicode_with_tofu_cow(s,  "[?]")
 }
 
 pub fn longest<'a>(a: &'a str, b: &'a str) -> &'a str {

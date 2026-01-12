@@ -1,4 +1,4 @@
-use crate::model::{ConfigTargetOptions, LibraryMetadataFormat};
+use crate::model::{ConfigTargetOptions, LibraryMetadataFormat, ProcessingOrder};
 
 pub const fn is_zero_u16(v: &u16) -> bool { *v == 0 }
 pub const fn is_true(v: &bool) -> bool { *v }
@@ -133,6 +133,9 @@ pub fn is_config_target_options_empty(v: &Option<ConfigTargetOptions>) -> bool {
     v.as_ref().is_none_or(|c| c.is_empty() )
 }
 
+pub fn is_default_processing_order(p: &ProcessingOrder) -> bool {
+    *p == ProcessingOrder::default()
+}
 
 //////////////////////////////
 // HDHomerun Device Defaults
@@ -158,3 +161,26 @@ pub fn is_default_firmware_name(value: &String) -> bool { value == DEFAULT_FIRMW
 pub fn is_default_firmware_version(value: &String) -> bool { value == DEFAULT_FIRMWARE_VERSION }
 pub fn is_default_device_type(value: &String) -> bool { value == DEFAULT_DEVICE_TYPE }
 pub fn is_default_device_udn(value: &String) -> bool { value == DEFAULT_DEVICE_UDN }
+
+//////////////////////////
+// trakt
+////////////////////////////
+pub const  TRAKT_API_KEY: &str = "0183a05ad97098d87287fe46da4ae286f434f32e8e951caad4cc147c947d79a3";
+pub const  TRAKT_API_VERSION: &str = "2";
+pub const  TRAKT_API_URL: &str = "https://api.trakt.tv";
+
+pub fn default_trakt_api_key() -> String {
+    String::from(TRAKT_API_KEY)
+}
+
+pub fn default_trakt_api_version() -> String {
+    String::from(TRAKT_API_VERSION)
+}
+
+pub fn default_trakt_api_url() -> String {
+    String::from(TRAKT_API_URL)
+}
+
+pub fn default_trakt_fuzzy_threshold() -> u8 {
+    80
+}
