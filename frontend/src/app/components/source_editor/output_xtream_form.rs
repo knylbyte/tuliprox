@@ -219,7 +219,7 @@ pub fn XtreamTargetOutputView(props: &XtreamTargetOutputViewProps) -> Html {
                     { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_KEY), api_key, TraktApiConfigFormAction::ApiKey) }
                     { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_VERSION), version, TraktApiConfigFormAction::Version) }
                     { edit_field_text!(trakt_api, translate.t(LABEL_TRAKT_API_URL), url, TraktApiConfigFormAction::Url) }
-                    { edit_field_text!(trakt_api, translate.t(LABEL_USER_AGENT), url, TraktApiConfigFormAction::UserAgent) }
+                    { edit_field_text!(trakt_api, translate.t(LABEL_USER_AGENT), user_agent, TraktApiConfigFormAction::UserAgent) }
                 </div>
 
                 // Trakt Lists

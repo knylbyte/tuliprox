@@ -34,10 +34,14 @@ pub fn sanitize_name(name: &str) -> String {
         .collect()
 }
 
-pub fn get_input_storage_path(input_name: &str, working_dir: &str) -> std::io::Result<PathBuf> {
+pub fn build_input_storage_path(input_name: &str, working_dir: &str) -> PathBuf {
     let sanitized_name: String = sanitize_name(input_name);
     let name = concat_string!(cap = 6 + sanitized_name.len(); "input_", &sanitized_name);
-    let path = Path::new(working_dir).join(name);
+    Path::new(working_dir).join(name)
+}
+
+pub fn get_input_storage_path(input_name: &str, working_dir: &str) -> std::io::Result<PathBuf> {
+    let path = build_input_storage_path(input_name, working_dir);
     // Create the directory and return the path or propagate the error
     std::fs::create_dir_all(&path).map(|()| path)
 }

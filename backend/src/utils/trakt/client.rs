@@ -24,7 +24,7 @@ impl TraktClient {
         }
     }
 
-    fn create_headers(api_config: &TraktApiConfig) -> axum::http::HeaderMap {
+    fn create_headers(api_config: &TraktApiConfig) -> HeaderMap {
         let mut headers = HeaderMap::new();
 
         headers.insert(reqwest::header::CONTENT_TYPE, HeaderValue::from_static(mime::APPLICATION_JSON.as_ref()));
