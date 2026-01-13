@@ -3,13 +3,15 @@ use crate::model::{AppConfig, ProxyUserCredentials};
 use crate::model::{Config, ConfigTarget, M3uTargetOutput};
 use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery};
 use crate::repository::m3u_playlist_iterator::M3uPlaylistM3uTextIterator;
-use crate::repository::storage::get_target_storage_path;
+use crate::repository::storage::{get_file_path_for_db_index, get_target_storage_path};
 use crate::repository::storage_const;
+use crate::repository::xtream_repository::CategoryKey;
 use crate::utils;
 use crate::utils::{async_file_writer, IO_BUFFER_SIZE};
 use indexmap::IndexMap;
 use log::error;
-use shared::error::{notify_err, info_err, string_to_io_error, str_to_io_error, TuliproxError};
+use shared::concat_string;
+use shared::error::{info_err, notify_err, str_to_io_error, string_to_io_error, TuliproxError};
 use shared::model::{M3uPlaylistItem, PlaylistGroup};
 use shared::model::{PlaylistItem, PlaylistItemType, XtreamCluster};
 use std::io::Error;
@@ -25,12 +27,12 @@ macro_rules! cant_write_result {
     }
 }
 
-pub fn m3u_get_file_path(target_path: &Path) -> PathBuf {
-    target_path.join(PathBuf::from(format!("{}.{}", storage_const::FILE_M3U, storage_const::FILE_SUFFIX_DB)))
+pub fn m3u_get_file_path_for_db(target_path: &Path) -> PathBuf {
+    target_path.join(PathBuf::from(concat_string!(storage_const::FILE_M3U, ".", storage_const::FILE_SUFFIX_DB)))
 }
 
 pub fn m3u_get_epg_file_path(target_path: &Path) -> PathBuf {
-    let path = target_path.join(PathBuf::from(format!("{}.{}", storage_const::FILE_M3U, storage_const::FILE_SUFFIX_DB)));
+    let path = target_path.join(PathBuf::from(concat_string!(storage_const::FILE_M3U, ".", storage_const::FILE_SUFFIX_DB)));
     utils::add_prefix_to_filename(&path, "epg_", Some("xml"))
 }
 
@@ -86,7 +88,7 @@ pub async fn m3u_write_playlist(
         return Ok(());
     }
 
-    let m3u_path = m3u_get_file_path(target_path);
+    let m3u_path = m3u_get_file_path_for_db(target_path);
     let m3u_playlist = Arc::new(
         new_playlist
             .iter()
@@ -111,7 +113,7 @@ pub async fn m3u_write_playlist(
         for m3u in playlist.iter() {
             tree.insert(m3u.virtual_id, m3u.clone());
         }
-        tree.store(&m3u_path_clone).map_err(|err| cant_write_result!(&m3u_path_clone, err))?;
+        tree.store_with_index(&m3u_path_clone, |pli| pli.source_ordinal).map_err(|err| cant_write_result!(&m3u_path_clone, err))?;
         Ok(())
     })
         .await
@@ -144,7 +146,7 @@ pub async fn m3u_get_item_for_stream_id(stream_id: u32, app_state: &AppState, ta
 
         let cfg: &AppConfig = &app_state.app_config;
         let target_path = get_target_storage_path(&cfg.config.load(), target.name.as_str()).ok_or_else(|| string_to_io_error(format!("Could not find path for target {}", &target.name)))?;
-        let m3u_path = m3u_get_file_path(&target_path);
+        let m3u_path = m3u_get_file_path_for_db(&target_path);
         let _file_lock = cfg.file_locks.read_lock(&m3u_path).await;
 
         let mut query = BPlusTreeQuery::<u32, M3uPlaylistItem>::try_new(&m3u_path)?;
@@ -158,7 +160,7 @@ pub async fn m3u_get_item_for_stream_id(stream_id: u32, app_state: &AppState, ta
 
 pub async fn iter_raw_m3u_playlist(config: &AppConfig, target: &ConfigTarget) -> Option<(utils::FileReadGuard, impl Iterator<Item=(M3uPlaylistItem, bool)>)> {
     let target_path = get_target_storage_path(&config.config.load(), target.name.as_str())?;
-    let m3u_path = m3u_get_file_path(&target_path);
+    let m3u_path = m3u_get_file_path_for_db(&target_path);
     if let Ok(false) = tokio::fs::try_exists(&m3u_path).await {
         return None;
     }
@@ -166,16 +168,34 @@ pub async fn iter_raw_m3u_playlist(config: &AppConfig, target: &ConfigTarget) ->
     match BPlusTreeQuery::<u32, M3uPlaylistItem>::try_new(&m3u_path)
         .map_err(|err| info_err!("Could not open BPlusTreeQuery {m3u_path:?} - {err}")) {
         Ok(mut query) => {
-            let items: Vec<M3uPlaylistItem> = query.iter().map(|(_, v)| v).collect();
+            let index_path = get_file_path_for_db_index(&m3u_path);
+            let items: Vec<M3uPlaylistItem> = if index_path.exists() {
+                match query.disk_iter_sorted::<u32>() {
+                    Ok(iter) => iter.filter_map(Result::ok).map(|(_, v)| v).collect(),
+                    Err(err) => {
+                        error!("Sorted index error {}: {err}", m3u_path.display());
+                        // Re-open query for fallback
+                        match BPlusTreeQuery::<u32, M3uPlaylistItem>::try_new(&m3u_path) {
+                            Ok(mut query) => query.iter().map(|(_, v)| v).collect(),
+                            Err(fallback_err) => {
+                                error!("Fallback query also failed {}: {fallback_err}", m3u_path.display());
+                                Vec::new()
+                            }
+                        }
+                    }
+                }
+            } else {
+                query.iter().map(|(_, v)| v).collect()
+            };
+
             let len = items.len();
-            Some((file_lock, items.into_iter().enumerate().map(move |(i, v)| (v, i < len - 1))))
+            Some((file_lock, items.into_iter().enumerate().map(move |(i, v)| (v, i + 1 < len))))
         }
         Err(_) => None
     }
 }
 
 pub async fn persist_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &Path, playlist: &[PlaylistGroup]) -> Result<(), TuliproxError> {
-
     let file_lock = app_config.file_locks.write_lock(m3u_path).await;
     let m3u_path_clone = m3u_path.to_path_buf();
 
@@ -194,14 +214,14 @@ pub async fn persist_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &
         tree.store(&m3u_path_clone).map_err(|err| cant_write_result!(&m3u_path_clone, err))?;
         Ok(())
     })
-    .await
-    .map_err(|err| notify_err!("failed to write m3u playlist: {} - {err}", m3u_path.display()))??;
+        .await
+        .map_err(|err| notify_err!("failed to write m3u playlist: {} - {err}", m3u_path.display()))??;
 
     Ok(())
 }
 
 pub async fn load_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &Path) -> Result<Vec<PlaylistGroup>, TuliproxError> {
-    let mut groups: IndexMap<Arc<str>, PlaylistGroup> = IndexMap::new();
+    let mut groups: IndexMap<CategoryKey, PlaylistGroup> = IndexMap::new();
 
     if tokio::fs::try_exists(m3u_path).await.unwrap_or(false) {
         // Load Items
@@ -209,15 +229,16 @@ pub async fn load_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &Pat
         if let Ok(mut query) = BPlusTreeQuery::<String, M3uPlaylistItem>::try_new(m3u_path) {
             let mut group_cnt = 0;
             for (_, ref item) in query.iter() {
-                let cat_id = item.group.clone();
-                groups.entry(cat_id)
+                let cluster = XtreamCluster::try_from(item.item_type).unwrap_or(XtreamCluster::Live);
+                let key = (cluster, item.group.clone());
+                groups.entry(key)
                     .or_insert_with(|| {
                         group_cnt += 1;
                         PlaylistGroup {
                             id: group_cnt,
                             title: item.group.clone(),
                             channels: Vec::new(),
-                            xtream_cluster: XtreamCluster::try_from(item.item_type).unwrap_or(XtreamCluster::Live),
+                            xtream_cluster: cluster,
                         }
                     })
                     .channels.push(PlaylistItem::from(item));
