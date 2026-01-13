@@ -1,9 +1,10 @@
+use crate::error::{TuliproxError};
+use crate::info_err;
 use crate::utils::is_blank_optional_string;
-use std::fmt::Display;
+use crate::utils::{default_best_match_threshold, default_match_threshold, is_default_best_match_threshold,
+                   is_default_match_threshold, is_false};
 use log::warn;
-use crate::error::{info_err_res, TuliproxError};
-use crate::utils::{is_false, default_match_threshold, default_best_match_threshold,
-                   is_default_match_threshold, is_default_best_match_threshold};
+use std::fmt::Display;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -45,9 +46,15 @@ pub struct EpgSmartMatchConfigDto {
     pub name_prefix_separator: Option<Vec<char>>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub fuzzy_matching: bool,
-    #[serde(default = "default_match_threshold", skip_serializing_if = "is_default_match_threshold")]
+    #[serde(
+        default = "default_match_threshold",
+        skip_serializing_if = "is_default_match_threshold"
+    )]
     pub match_threshold: u16,
-    #[serde(default = "default_best_match_threshold", skip_serializing_if = "is_default_best_match_threshold")]
+    #[serde(
+        default = "default_best_match_threshold",
+        skip_serializing_if = "is_default_best_match_threshold"
+    )]
     pub best_match_threshold: u16,
 }
 impl Default for EpgSmartMatchConfigDto {
@@ -66,7 +73,6 @@ impl Default for EpgSmartMatchConfigDto {
 }
 
 impl EpgSmartMatchConfigDto {
-
     /// # Panics
     ///
     /// Prepares the EPG smart match configuration by validating thresholds, compiling normalization regex, and setting default values as needed.
@@ -96,11 +102,9 @@ impl EpgSmartMatchConfigDto {
         }
 
         if let Some(regstr) = self.normalize_regex.as_ref() {
-            let re = crate::model::REGEX_CACHE.get_or_compile(regstr.as_str());
-            if re.is_err() {
-                return info_err_res!("can't parse regex: {}", regstr);
-            }
-        };
+            crate::model::REGEX_CACHE.get_or_compile(regstr.as_str())
+                .map_err(|_| info_err!("can't parse regex: {}", regstr))?;
+        }
 
         Ok(())
     }

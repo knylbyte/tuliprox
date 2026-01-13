@@ -206,7 +206,7 @@ fn map_playlist(source: &mut dyn PlaylistSource, target: &ConfigTarget, _interne
         Box::new(iter.flat_map(move |chan| map_channel_and_flatten(chan, mapping)))
             as Box<dyn Iterator<Item=PlaylistItem>>
     });
-    let mut next_groups: IndexMap<(XtreamCluster, Arc<str>), PlaylistGroup> = IndexMap::new();
+    let mut next_groups: IndexMap<CategoryKey, PlaylistGroup> = IndexMap::new();
     let mut grp_id: u32 = 0;
     for channel in mapped_iter {
         let group_title = channel.header.group.clone();

@@ -598,7 +598,10 @@ pub async fn iter_raw_xtream_playlist(app_config: &AppConfig, target: &ConfigTar
                         // Re-open query for fallback
                         match BPlusTreeQuery::<u32, XtreamPlaylistItem>::try_new(&xtream_path) {
                             Ok(mut query) => query.iter().map(|(_, v)| v).collect(),
-                            Err(_) => Vec::new(),
+                            Err(fallback_err) => {
+                                error!("Fallback query also failed {}: {fallback_err}", xtream_path.display());
+                                Vec::new()
+                            }
                         }
                     }
                 }
@@ -607,7 +610,7 @@ pub async fn iter_raw_xtream_playlist(app_config: &AppConfig, target: &ConfigTar
             };
 
             let len = items.len();
-            Some((file_lock, items.into_iter().enumerate().map(move |(i, v)| (v, i < len - 1))))
+            Some((file_lock, items.into_iter().enumerate().map(move |(i, v)| (v, i + 1 < len))))
         }
             Err(_) => None
         }

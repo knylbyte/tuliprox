@@ -22,8 +22,11 @@ impl From<&EpgSmartMatchConfigDto> for EpgSmartMatchConfig {
         Self {
             enabled: dto.enabled,
             normalize_regex: match &dto.normalize_regex {
-              Some(regex_str) =>  shared::model::REGEX_CACHE.get_or_compile(regex_str).unwrap_or_else(|_| CONSTANTS.re_epg_normalize.clone()),
-              None => CONSTANTS.re_epg_normalize.clone(),
+                Some(regex_str) => shared::model::REGEX_CACHE.get_or_compile(regex_str).unwrap_or_else(|e| {
+                    log::warn!("Invalid normalize_regex '{regex_str}': {e}, using default");
+                    CONSTANTS.re_epg_normalize.clone()
+                }),
+                None => CONSTANTS.re_epg_normalize.clone(),
             },
             strip: match &dto.strip {
                 Some(list) => list.iter().map(|s| s.to_lowercase()).collect(),

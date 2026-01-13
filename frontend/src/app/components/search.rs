@@ -50,6 +50,7 @@ pub fn Search(props: &SearchProps) -> Html {
                         } else {
                             regex_active.set(RegexState::Invalid);
                         }
+                        shared::model::REGEX_CACHE.sweep();
                     }
                 }
             }

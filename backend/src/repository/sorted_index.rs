@@ -192,8 +192,7 @@ where
         self.writer.flush()?;
 
         // Seek back to count position and write final count
-        let file = self.writer.into_inner()?;
-        let mut file = file;
+        let mut file = self.writer.into_inner()?;
         file.seek(SeekFrom::Start(8))?; // After magic + version
         file.write_all(&self.count.to_le_bytes())?;
         file.sync_all()?;
@@ -433,9 +432,9 @@ where
 
             // Update cache
             if self.block_cache.len() >= CACHE_CAPACITY {
-                self.block_cache.shift_remove_index(0); // Remove LRU
+                self.block_cache.shift_remove_index(0); // FIFO eviction
             }
-            self.block_cache.insert(block_offset, buf.clone());
+            self.block_cache.insert(block_offset, buf);
         }
 
         let block_buffer = self.block_cache.get(&block_offset).unwrap();
@@ -444,6 +443,14 @@ where
         let count = u32::from_le_bytes(block_buffer[0..4].try_into().map_err(|e| {
             io::Error::new(io::ErrorKind::InvalidData, format!("Invalid count: {e}"))
         })?);
+
+        if u32::from(value_index) >= count {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Value index {value_index} out of bounds (count: {count})"),
+            ));
+        }
+
         let mut pos = 4;
 
         // Skip to target value

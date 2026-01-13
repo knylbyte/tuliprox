@@ -166,7 +166,10 @@ impl M3uPlaylistIterator {
             }
         } else {
             match self.reader.next() {
-                Some(Ok((_, v))) => Some((v, self.reader.peek().is_some())),
+                Some(Ok((_, v))) => {
+                    let has_next = matches!(self.reader.peek(), Some(Ok(_)));
+                    Some((v, has_next))
+                },
                 Some(Err(e)) => {
                     error!("Iterator error: {e}");
                     None

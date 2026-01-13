@@ -5,21 +5,21 @@ use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery};
 use crate::repository::m3u_playlist_iterator::M3uPlaylistM3uTextIterator;
 use crate::repository::storage::{get_file_path_for_db_index, get_target_storage_path};
 use crate::repository::storage_const;
+use crate::repository::xtream_repository::CategoryKey;
 use crate::utils;
 use crate::utils::{async_file_writer, IO_BUFFER_SIZE};
 use indexmap::IndexMap;
 use log::error;
-use shared::error::{notify_err, info_err, string_to_io_error, str_to_io_error, TuliproxError};
+use shared::concat_string;
+use shared::error::{info_err, notify_err, str_to_io_error, string_to_io_error, TuliproxError};
 use shared::model::{M3uPlaylistItem, PlaylistGroup};
 use shared::model::{PlaylistItem, PlaylistItemType, XtreamCluster};
-use crate::repository::xtream_repository::CategoryKey;
 use std::io::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::task;
-use shared::concat_string;
 
 macro_rules! cant_write_result {
     ($path:expr, $err:expr) => {
@@ -32,7 +32,7 @@ pub fn m3u_get_file_path_for_db(target_path: &Path) -> PathBuf {
 }
 
 pub fn m3u_get_epg_file_path(target_path: &Path) -> PathBuf {
-    let path = target_path.join(PathBuf::from(format!("{}.{}", storage_const::FILE_M3U, storage_const::FILE_SUFFIX_DB)));
+    let path = target_path.join(PathBuf::from(concat_string!(storage_const::FILE_M3U, ".", storage_const::FILE_SUFFIX_DB)));
     utils::add_prefix_to_filename(&path, "epg_", Some("xml"))
 }
 
@@ -177,7 +177,10 @@ pub async fn iter_raw_m3u_playlist(config: &AppConfig, target: &ConfigTarget) ->
                         // Re-open query for fallback
                         match BPlusTreeQuery::<u32, M3uPlaylistItem>::try_new(&m3u_path) {
                             Ok(mut query) => query.iter().map(|(_, v)| v).collect(),
-                            Err(_) => Vec::new(),
+                            Err(fallback_err) => {
+                                error!("Fallback query also failed {}: {fallback_err}", m3u_path.display());
+                                Vec::new()
+                            }
                         }
                     }
                 }
@@ -186,14 +189,13 @@ pub async fn iter_raw_m3u_playlist(config: &AppConfig, target: &ConfigTarget) ->
             };
 
             let len = items.len();
-            Some((file_lock, items.into_iter().enumerate().map(move |(i, v)| (v, i < len - 1))))
+            Some((file_lock, items.into_iter().enumerate().map(move |(i, v)| (v, i + 1 < len))))
         }
         Err(_) => None
     }
 }
 
 pub async fn persist_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &Path, playlist: &[PlaylistGroup]) -> Result<(), TuliproxError> {
-
     let file_lock = app_config.file_locks.write_lock(m3u_path).await;
     let m3u_path_clone = m3u_path.to_path_buf();
 
@@ -212,8 +214,8 @@ pub async fn persist_input_m3u_playlist(app_config: &Arc<AppConfig>, m3u_path: &
         tree.store(&m3u_path_clone).map_err(|err| cant_write_result!(&m3u_path_clone, err))?;
         Ok(())
     })
-    .await
-    .map_err(|err| notify_err!("failed to write m3u playlist: {} - {err}", m3u_path.display()))??;
+        .await
+        .map_err(|err| notify_err!("failed to write m3u playlist: {} - {err}", m3u_path.display()))??;
 
     Ok(())
 }
