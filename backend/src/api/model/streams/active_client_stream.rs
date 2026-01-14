@@ -3,7 +3,7 @@ use crate::api::model::StreamError;
 use crate::api::model::TimedClientStream;
 use crate::api::model::TransportStreamBuffer;
 use crate::api::model::{AppState, ConnectionManager, CustomVideoStreamType, ProviderHandle, StreamDetails};
-use crate::api::panel_api::{can_provision_on_exhausted, find_input_by_provider_name, run_panel_api_provisioning_probe};
+use crate::api::panel_api::{can_provision_on_exhausted, run_panel_api_provisioning_probe};
 use crate::auth::Fingerprint;
 use crate::model::{ConfigInput, ProxyUserCredentials};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
@@ -132,8 +132,7 @@ impl ActiveClientStream {
             return None;
         }
         let provider_name = stream_details.provider_name.as_deref();
-        let input = provider_name.and_then(|name| find_input_by_provider_name(app_state, name));
-        let input = input?;
+        let input = provider_name.and_then(|name| app_state.app_config.get_input_by_name(name))?;
         if !can_provision_on_exhausted(app_state, &input) {
             return None;
         }

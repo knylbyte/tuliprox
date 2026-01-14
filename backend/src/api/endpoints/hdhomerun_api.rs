@@ -3,9 +3,7 @@ use crate::api::model::HdHomerunAppState;
 use crate::auth::AuthBasic;
 use crate::model::{AppConfig, ConfigTarget, ProxyUserCredentials};
 use crate::processing::parser::xtream::get_xtream_url;
-use crate::repository::m3u_playlist_iterator::M3uPlaylistIterator;
-use crate::repository::m3u_repository;
-use crate::repository::xtream_playlist_iterator::XtreamPlaylistIterator;
+use crate::repository::{iter_raw_m3u_playlist, M3uPlaylistIterator, XtreamPlaylistIterator};
 use axum::response::IntoResponse;
 use bytes::Bytes;
 use futures::{stream, Stream, StreamExt};
@@ -278,7 +276,7 @@ async fn lineup_status(
         {
             if target.has_output(TargetType::M3u) {
                 if let Some((_guard, iter)) =
-                    m3u_repository::iter_raw_m3u_playlist(&cfg, &target).await
+                    iter_raw_m3u_playlist(&cfg, &target).await
                 {
                     iter.count()
                 } else {
@@ -287,9 +285,9 @@ async fn lineup_status(
             } else if target.has_output(TargetType::Xtream) {
                 let credentials = Arc::new(user);
                 let live =
-                    XtreamPlaylistIterator::new(XtreamCluster::Live, &cfg, &target, None, &credentials).await.map_or(0, std::iter::Iterator::count);
+                    XtreamPlaylistIterator::new(XtreamCluster::Live, &cfg, &target, None, &credentials).await.map_or(0, Iterator::count);
                 let vod =
-                    XtreamPlaylistIterator::new(XtreamCluster::Video, &cfg, &target, None, &credentials).await.map_or(0, std::iter::Iterator::count);
+                    XtreamPlaylistIterator::new(XtreamCluster::Video, &cfg, &target, None, &credentials).await.map_or(0, Iterator::count);
                 live + vod
             } else {
                 0

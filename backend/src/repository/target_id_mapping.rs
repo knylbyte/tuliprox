@@ -8,7 +8,7 @@ use log::error;
 use serde::{Deserialize, Serialize};
 
 use shared::model::{PlaylistItemType, UUIDType};
-use crate::repository::bplustree::BPlusTree;
+use crate::repository::BPlusTree;
 
 // TODO make configurable
 const EXPIRATION_DURATION: i64 = 86400;
@@ -127,8 +127,8 @@ impl Drop for TargetIdMapping {
 #[cfg(test)]
 mod tests {
     // use std::path::PathBuf;
-    // use crate::repository::bplustree::BPlusTree;
-    // use crate::repository::target_id_mapping::{VirtualIdRecord};
+    // use crate::repository::BPlusTree;
+    // use crate::repository::{VirtualIdRecord};
 
     // #[test]
     // fn test_id_mapping() {

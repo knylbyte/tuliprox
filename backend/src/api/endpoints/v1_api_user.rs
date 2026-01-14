@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use crate::api::model::AppState;
 use crate::model::{ApiProxyConfig, ProxyUserCredentials, TargetUser};
-use crate::repository::user_repository::store_api_user;
+use crate::repository::store_api_user;
 use axum::response::IntoResponse;
 use axum::Router;
 use serde_json::json;

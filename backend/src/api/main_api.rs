@@ -16,7 +16,7 @@ use crate::api::scheduler::exec_scheduler;
 use crate::api::serve::serve;
 use crate::model::{AppConfig, Config, Healthcheck, ProcessTargets, RateLimitConfig};
 use crate::processing::processor::playlist;
-use crate::repository::playlist_repository::load_playlists_into_memory_cache;
+use crate::repository::load_playlists_into_memory_cache;
 use crate::VERSION;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use axum::Router;
@@ -34,7 +34,7 @@ use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_http::services::ServeDir;
 use crate::api::panel_api::sync_panel_api_exp_dates_on_boot;
 use crate::api::sys_usage::exec_system_usage;
-use crate::repository::storage::get_geoip_path;
+use crate::repository::get_geoip_path;
 use crate::utils::{exec_file_lock_prune, GeoIp};
 
 fn get_web_dir_path(web_ui_enabled: bool, web_root: &str) -> Result<PathBuf, std::io::Error> {

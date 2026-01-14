@@ -4,9 +4,7 @@ use crate::api::model::AppState;
 use crate::api::model::UserApiRequest;
 use crate::model::{get_attr_value, Config, EPG_TAG_ICON, EPG_TAG_PROGRAMME};
 use crate::model::{ConfigTarget, ProxyUserCredentials, TargetOutput};
-use crate::repository::storage::get_target_storage_path;
-use crate::repository::storage_const;
-use crate::repository::xtream_repository::{xtream_get_epg_file_path, xtream_get_storage_path};
+use crate::repository::{get_target_storage_path, storage_const, xtream_get_epg_file_path, xtream_get_storage_path};
 use crate::utils;
 use crate::utils::{async_file_reader, deobscure_text, obscure_text};
 use axum::response::IntoResponse;
@@ -19,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
-use crate::repository::m3u_repository::m3u_get_epg_file_path;
+use crate::repository::m3u_get_epg_file_path;
 
 pub fn get_empty_epg_response() -> axum::response::Response {
     try_unwrap_body!(axum::response::Response::builder()

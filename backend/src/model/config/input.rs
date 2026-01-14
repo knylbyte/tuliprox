@@ -1,5 +1,4 @@
 use crate::model::{macros, EpgConfig};
-use crate::utils::get_csv_file_path;
 use chrono::Utc;
 use log::warn;
 use shared::error::TuliproxError;
@@ -14,6 +13,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use url::Url;
+use crate::repository::get_csv_file_path;
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]

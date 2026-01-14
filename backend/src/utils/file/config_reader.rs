@@ -1,7 +1,6 @@
 use crate::api::model::AppState;
 use crate::model::Config;
 use crate::model::{ApiProxyConfig, AppConfig, SourcesConfig};
-use crate::repository::user_repository::{get_api_user_db_path, load_api_user};
 use crate::utils::file_reader;
 use crate::utils::sys_utils::exit;
 use crate::utils::{open_file, read_mappings_file, EnvResolvingReader, FileLockManager};
@@ -20,6 +19,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
+use crate::repository::{csv_read_inputs, csv_write_inputs, get_api_user_db_path, is_csv_file, load_api_user};
 
 enum EitherReader<L, R> {
     Left(L),
@@ -170,7 +170,7 @@ pub async fn prepare_sources_batch(sources: &mut SourcesConfigDto, include_compu
 
 pub async fn get_batch_aliases(input_type: InputType, url: &str) -> Result<Option<(PathBuf, Vec<ConfigInputAliasDto>)>, TuliproxError> {
     if input_type == InputType::M3uBatch || input_type == InputType::XtreamBatch {
-        return match utils::csv_read_inputs(input_type, url).await {
+        return match csv_read_inputs(input_type, url).await {
             Ok((file_path, batch_aliases)) => {
                 Ok(Some((file_path, batch_aliases)))
             }
@@ -382,9 +382,9 @@ pub async fn persist_source_config(app_state: &Arc<AppState>, source_file_path: 
 
     let mut source_config = doc.clone();
     for input in &mut source_config.inputs {
-        if matches!(input.input_type, InputType::XtreamBatch | InputType::M3uBatch) && utils::is_csv_file(input.url.as_str()) {
+        if matches!(input.input_type, InputType::XtreamBatch | InputType::M3uBatch) && is_csv_file(input.url.as_str()) {
             if let Some(aliases) = &input.aliases {
-                if let Err(err) = utils::csv_write_inputs(input.url.as_str(), aliases).await {
+                if let Err(err) = csv_write_inputs(input.url.as_str(), aliases).await {
                     error!("Could not persist aliases to csv {}: {}", input.url, err);
                 }
             }

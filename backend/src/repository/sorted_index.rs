@@ -32,9 +32,9 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use crate::repository::bplustree::{COMPRESSION_FLAG_LZ4, PAGE_SIZE_USIZE};
+use crate::repository::{COMPRESSION_FLAG_LZ4, PAGE_SIZE_USIZE};
 use indexmap::IndexMap;
-use crate::repository::storage::get_file_path_for_db_index;
+use crate::repository::get_file_path_for_db_index;
 
 const MAGIC: &[u8; 4] = b"SIDX";
 const VERSION: u32 = 3; // Bumped for new format with flexible value location

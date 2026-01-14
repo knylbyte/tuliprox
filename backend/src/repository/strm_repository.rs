@@ -3,7 +3,7 @@ use shared::utils::is_blank_optional_string;
 use crate::model::MediaQuality;
 use crate::model::{ApiProxyServerInfo, AppConfig, ProxyUserCredentials};
 use crate::model::{ConfigTarget, StrmTargetOutput};
-use crate::repository::storage::{ensure_target_storage_path};
+use crate::repository::{ensure_target_storage_path};
 use crate::repository::storage_const;
 use crate::utils::{async_file_reader, async_file_writer, normalize_string_path, truncate_filename,
                    IO_BUFFER_SIZE};
@@ -1082,7 +1082,7 @@ async fn remove_empty_dirs(root_path: PathBuf) {
 
 // #[cfg(test)]
 // mod tests {
-//     use crate::repository::kodi_repository::remove_empty_dirs;
+//     use crate::repository::remove_empty_dirs;
 //     use std::path::PathBuf;
 //
 //     #[tokio::test]

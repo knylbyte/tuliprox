@@ -3,18 +3,18 @@ use crate::api::config_file::ConfigFile;
 use crate::api::model::{create_panel_api_provisioning_stream_with_stop, create_provider_connections_exhausted_stream, AppState, StreamDetails};
 use crate::model::{is_input_expired, ConfigInput, ProxyUserCredentials};
 use crate::utils::{debug_if_enabled, persist_source_config, read_sources_file_from_path};
-use crate::utils::get_csv_file_path;
-use log::{debug, error, warn};
+use log::{error, warn};
 use serde_json::Value;
 use shared::error::{info_err_res, info_err, TuliproxError};
 use shared::model::{ConfigInputAliasDto, InputType, PanelApiAliasPoolSizeValue, PanelApiConfigDto, PanelApiProvisioningMethod, PanelApiQueryParamDto, ProxyUserStatus, VirtualId};
-use shared::utils::{get_credentials_from_url, parse_timestamp, sanitize_sensitive_info, trim_last_slash};
+use shared::utils::{get_base_url_from_str, get_credentials_from_url, get_credentials_from_url_str, parse_timestamp, sanitize_sensitive_info};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use axum::http::{Method, StatusCode};
 use url::Url;
 use shared::{concat_string};
+use crate::repository::{get_csv_file_path, csv_patch_batch_append, csv_patch_batch_remove_expired, csv_patch_batch_update_exp_date};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 
 #[derive(Debug, Clone)]
@@ -78,20 +78,6 @@ fn extract_username_password_from_json(obj: &serde_json::Map<String, Value>) -> 
         (Some(u), Some(p)) => Some((u.to_string(), p.to_string())),
         _ => None,
     }
-}
-
-fn extract_username_password_from_url(url_str: &str) -> Option<(String, String)> {
-    Url::parse(url_str).ok().and_then(|url| {
-        let (u, p) = get_credentials_from_url(&url);
-        match (u, p) {
-            (Some(u), Some(p)) if !u.trim().is_empty() && !p.trim().is_empty() => Some((u, p)),
-            _ => None,
-        }
-    })
-}
-
-fn extract_base_url(url_str: &str) -> Option<String> {
-    Url::parse(url_str).ok().map(|u| u.origin().ascii_serialization())
 }
 
 fn validate_type_is_m3u(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
@@ -331,8 +317,8 @@ async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfigDto) -> Resu
         return Ok((u, p, None));
     }
     if let Some(url_str) = obj.get("url").and_then(|v| v.as_str()) {
-        if let Some((u, p)) = extract_username_password_from_url(url_str) {
-            let base = extract_base_url(url_str);
+        if let (Some(u), Some(p)) = get_credentials_from_url_str(url_str) {
+            let base = get_base_url_from_str(url_str);
             return Ok((u, p, base));
         }
     }
@@ -688,23 +674,6 @@ pub(crate) fn find_input_by_name(app_state: &AppState, input_name: &str) -> Opti
     sources.get_input_by_name(input_name).map(Arc::clone)
 }
 
-pub(crate) fn find_input_by_provider_name(app_state: &AppState, provider_name: &str) -> Option<Arc<ConfigInput>> {
-    let sources = app_state.app_config.sources.load();
-    for input in &sources.inputs {
-        if input.name == provider_name {
-            return Some(Arc::clone(input));
-        }
-        if input
-            .aliases
-            .as_ref()
-            .is_some_and(|aliases| aliases.iter().any(|alias| alias.name == provider_name))
-        {
-            return Some(Arc::clone(input));
-        }
-    }
-    None
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn patch_source_yml_add_alias(
     app_state: &Arc<AppState>,
@@ -818,178 +787,6 @@ async fn patch_source_yml_remove_expired_aliases(
     Ok(true)
 }
 
-
-async fn patch_batch_csv_append(
-    csv_path: &Path,
-    batch_type: InputType,
-    alias_name: &str,
-    base_url: &str,
-    username: &str,
-    password: &str,
-    exp_date: Option<i64>,
-) -> Result<(), TuliproxError> {
-    let raw = tokio::fs::read_to_string(csv_path).await.unwrap_or_default();
-    let mut lines: Vec<String> = raw.lines().map(ToString::to_string).collect();
-    let header_line_idx = lines.iter().position(|l| l.trim_start().starts_with('#'));
-    let header = header_line_idx
-        .and_then(|idx| lines.get(idx).map(|s| s.trim_start_matches('#').trim().to_string()))
-        .unwrap_or_else(|| match batch_type {
-            InputType::XtreamBatch => "name;username;password;url;max_connections;priority;exp_date".to_string(),
-            _ => "url;max_connections;priority;name;username;password;exp_date".to_string(),
-        });
-    let cols: Vec<String> = header.split(';').map(|s| s.trim().to_lowercase()).collect();
-    if header_line_idx.is_none() {
-        lines.insert(0, format!("#{header}"));
-    }
-    let mut record: Vec<String> = vec![String::new(); cols.len()];
-    for (i, c) in cols.iter().enumerate() {
-        record[i] = match c.as_str() {
-            "name" => alias_name.to_string(),
-            "username" => username.to_string(),
-            "password" => password.to_string(),
-            "url" => {
-                if batch_type == InputType::M3uBatch {
-                    format!(
-                        "{}/get.php?username={}&password={}&type=m3u_plus",
-                        trim_last_slash(base_url),
-                        username,
-                        password
-                    )
-                } else {
-                    base_url.to_string()
-                }
-            }
-            "max_connections" => "1".to_string(),
-            "priority" => "0".to_string(),
-            "exp_date" => exp_date.map_or(String::new(), |ts| ts.to_string()),
-            _ => String::new(),
-        };
-    }
-    lines.push(record.join(";"));
-    tokio::fs::write(csv_path, lines.join("\n") + "\n")
-        .await
-        .map_err(|e| info_err!("panel_api: failed to write csv: {e}"))?;
-    Ok(())
-}
-
-async fn patch_batch_csv_update_exp_date(
-    csv_path: &Path,
-    account_name: &str,
-    username: &str,
-    password: &str,
-    exp_date: i64,
-) -> Result<(), TuliproxError> {
-    let raw = tokio::fs::read_to_string(csv_path)
-        .await
-        .map_err(|e| info_err!("panel_api: failed to read csv: {e}"))?;
-    let mut lines: Vec<String> = raw.lines().map(ToString::to_string).collect();
-    let header_line_idx = lines.iter().position(|l| l.trim_start().starts_with('#'));
-    let Some(header_idx) = header_line_idx else {
-        return info_err_res!("panel_api: csv missing header line");
-    };
-    let header = lines[header_idx].trim_start_matches('#').trim();
-    let cols: Vec<String> = header.split(';').map(|s| s.trim().to_lowercase()).collect();
-    let exp_idx = cols.iter().position(|c| c == "exp_date");
-    let name_idx = cols.iter().position(|c| c == "name");
-    let user_idx = cols.iter().position(|c| c == "username");
-    let pass_idx = cols.iter().position(|c| c == "password");
-    let url_idx = cols.iter().position(|c| c == "url");
-    let Some(exp_idx) = exp_idx else {
-        debug!("panel_api: csv has no exp_date column; skipping exp_date persistence");
-        return Ok(());
-    };
-
-    for i in (header_idx + 1)..lines.len() {
-        let line = lines[i].trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let mut fields: Vec<String> = line.split(';').map(ToString::to_string).collect();
-        fields.resize(cols.len(), String::new());
-
-        let mut matches = false;
-        if let Some(n_idx) = name_idx {
-            if fields.get(n_idx).map(|s| s.trim()) == Some(account_name) {
-                matches = true;
-            }
-        }
-        if !matches {
-            if let (Some(u_idx), Some(p_idx)) = (user_idx, pass_idx) {
-                matches = fields.get(u_idx).map(|s| s.trim()) == Some(username)
-                    && fields.get(p_idx).map(|s| s.trim()) == Some(password);
-            } else if let Some(u_idx) = url_idx {
-                if let Some(url_str) = fields.get(u_idx) {
-                    if let Some((u, p)) = extract_username_password_from_url(url_str) {
-                        matches = u == username && p == password;
-                    }
-                }
-            }
-        }
-        if matches {
-            fields[exp_idx] = exp_date.to_string();
-            lines[i] = fields.join(";");
-            tokio::fs::write(csv_path, lines.join("\n") + "\n")
-                .await
-                .map_err(|e| info_err!("panel_api: failed to write csv: {e}"))?;
-            return Ok(());
-        }
-    }
-    warn!("panel_api: could not find batch csv row for account {account_name}");
-    Ok(())
-}
-
-async fn patch_batch_csv_remove_expired(csv_path: &Path) -> Result<bool, TuliproxError> {
-    let raw = tokio::fs::read_to_string(csv_path)
-        .await
-        .map_err(|e| info_err!("panel_api: failed to read csv: {e}"))?;
-    let lines: Vec<String> = raw.lines().map(ToString::to_string).collect();
-    let header_line_idx = lines.iter().position(|l| l.trim_start().starts_with('#'));
-    let Some(header_idx) = header_line_idx else {
-        return info_err_res!("panel_api: csv missing header line");
-    };
-    let header = lines[header_idx].trim_start_matches('#').trim();
-    let cols: Vec<String> = header.split(';').map(|s| s.trim().to_lowercase()).collect();
-    let exp_idx = cols.iter().position(|c| c == "exp_date");
-    let Some(exp_idx) = exp_idx else {
-        debug!("panel_api: csv has no exp_date column; skipping expired removal");
-        return Ok(false);
-    };
-
-    let mut out: Vec<String> = Vec::with_capacity(lines.len());
-    if header_idx > 0 {
-        out.extend(lines[..header_idx].iter().cloned());
-    }
-    out.push(lines[header_idx].clone());
-
-    let mut changed = false;
-    for line in lines.iter().skip(header_idx + 1) {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            out.push(line.clone());
-            continue;
-        }
-        let mut fields: Vec<String> = line.split(';').map(ToString::to_string).collect();
-        fields.resize(cols.len(), String::new());
-        let exp_date = fields
-            .get(exp_idx)
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .and_then(|s| parse_timestamp(s).ok().flatten());
-        if exp_date.is_some_and(|ts| is_input_expired(Some(ts))) {
-            changed = true;
-            continue;
-        }
-        out.push(line.clone());
-    }
-
-    if changed {
-        tokio::fs::write(csv_path, out.join("\n") + "\n")
-            .await
-            .map_err(|e| info_err!("panel_api: failed to write csv: {e}"))?;
-    }
-    Ok(changed)
-}
-
 const MAX_ALIAS_NAME_ATTEMPTS: usize = 1000;
 
 fn derive_unique_alias_name(existing: &[String], input_name: &str, username: &str) -> String {
@@ -1084,7 +881,7 @@ async fn try_renew_expired_account(
                         let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
                         if let Ok(csv_path) = get_csv_file_path(batch_url) {
                             let _csv_lock = app_state.app_config.file_locks.write_lock(&csv_path).await;
-                            if let Err(err) = patch_batch_csv_update_exp_date(&csv_path, &acct.name, &acct.username, &acct.password, new_exp).await {
+                            if let Err(err) = csv_patch_batch_update_exp_date(input.input_type, &csv_path, &acct.name, &acct.username, &acct.password, new_exp).await {
                                 debug_if_enabled!("panel_api failed to persist renew exp_date to csv: {}", err);
                             }
                         }
@@ -1126,7 +923,7 @@ async fn try_create_new_account(
     match panel_client_new(app_state, panel_cfg).await {
         Ok((username, password, base_url_from_resp)) => {
             let base_url = base_url_from_resp.unwrap_or_else(|| input.url.clone());
-            let base_url = extract_base_url(base_url.as_str()).unwrap_or_else(|| base_url.clone());
+            let base_url = get_base_url_from_str(base_url.as_str()).unwrap_or_else(|| base_url.clone());
 
             let mut existing_names: Vec<String> = vec![input.name.clone()];
             if let Some(aliases) = input.aliases.as_ref() {
@@ -1158,7 +955,7 @@ async fn try_create_new_account(
                         };
                         let _csv_lock = app_state.app_config.file_locks.write_lock(&csv_path).await;
                         if let Err(err) =
-                            patch_batch_csv_append(&csv_path, batch_type, &alias_name, &base_url, &username, &password, exp_date).await
+                            csv_patch_batch_append(&csv_path, batch_type, &alias_name, &base_url, &username, &password, exp_date).await
                         {
                             warn!("panel_api failed to append new account to csv: {err}");
                             return None;
@@ -1329,7 +1126,7 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
 
             if let Some(csv_path) = csv_path.as_ref() {
                 let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
-                if let Err(err) = patch_batch_csv_update_exp_date(csv_path, &acct.name, &acct.username, &acct.password, new_exp).await {
+                if let Err(err) = csv_patch_batch_update_exp_date(input.input_type, csv_path, &acct.name, &acct.username, &acct.password, new_exp).await {
                     debug_if_enabled!("panel_api boot sync failed to persist exp_date to csv: {}", err);
                     continue;
                 }
@@ -1359,7 +1156,7 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
         if alias_pool_remove_expired(panel_cfg) {
             if let Some(csv_path) = csv_path.as_ref() {
                 let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
-                match patch_batch_csv_remove_expired(csv_path).await {
+                match csv_patch_batch_remove_expired(input.input_type, csv_path).await {
                     Ok(true) => {
                         any_change = true;
                     }

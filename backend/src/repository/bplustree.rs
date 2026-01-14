@@ -12,7 +12,7 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
-use crate::repository::storage::get_file_path_for_db_index;
+use crate::repository::get_file_path_for_db_index;
 
 // Constants (Restored)
 const PAGE_SIZE: u16 = 4096;
@@ -2772,7 +2772,7 @@ mod tests {
     use std::collections::HashSet;
     use std::io;
 
-    use crate::repository::bplustree::{BPlusTree, BPlusTreeQuery, BPlusTreeUpdate};
+    use crate::repository::{BPlusTree, BPlusTreeQuery, BPlusTreeUpdate};
     use serde::{Deserialize, Serialize};
     use shared::utils::generate_random_string;
 
@@ -3873,7 +3873,7 @@ mod tests {
     #[test]
     fn test_node_serialization_overhead() -> io::Result<()> {
         use crate::utils::binary_serialize;
-        use crate::repository::bplustree::{ValueInfo, ValueStorageMode, PAGE_SIZE_USIZE};
+        use crate::repository::{ValueInfo, ValueStorageMode, PAGE_SIZE_USIZE};
 
         // Simulate a leaf node with u32 keys and ValueInfo
         let key_counts = [10, 30, 50, 80, 100];

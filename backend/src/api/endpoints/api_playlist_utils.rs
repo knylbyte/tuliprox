@@ -1,5 +1,4 @@
 use crate::model::{AppConfig, ConfigInput, ConfigTarget};
-use crate::repository::{m3u_repository, xtream_repository};
 use crate::utils::{m3u, xtream};
 use crate::utils;
 use axum::response::IntoResponse;
@@ -10,6 +9,7 @@ use shared::model::{CommonPlaylistItem, InputType, M3uPlaylistItem, PlaylistCate
                     PlaylistGroup, PlaylistItemType, PlaylistResponseGroup, TargetType, XtreamCluster};
 use std::sync::Arc;
 use crate::api::api_utils::{json_or_bin_response};
+use crate::repository::{iter_raw_m3u_playlist, iter_raw_xtream_playlist};
 
 fn group_playlist_items<T>(
     cluster: XtreamCluster,
@@ -107,7 +107,7 @@ async fn grouped_channels(
     target: &ConfigTarget,
     cluster: XtreamCluster,
 ) -> Option<Vec<PlaylistResponseGroup>> {
-    xtream_repository::iter_raw_xtream_playlist(cfg, target, cluster).await
+    iter_raw_xtream_playlist(cfg, target, cluster).await
         .map(|(_guard, iter)| group_playlist_items::<CommonPlaylistItem>(
             cluster,
             iter.filter(|(item, _)| item.item_type != PlaylistItemType::LocalSeries).map(|(v, _)| v.to_common()),
@@ -130,7 +130,7 @@ pub(in crate::api::endpoints) async fn get_playlist_for_target(cfg_target: Optio
 
             return json_or_bin_response(accept, &response).into_response();
         } else if target.has_output(TargetType::M3u) {
-            let all_channels = m3u_repository::iter_raw_m3u_playlist(cfg, target).await;
+            let all_channels = iter_raw_m3u_playlist(cfg, target).await;
             let (live_channels, vod_channels, series_channels) = group_playlist_items_by_cluster(all_channels);
             let response = PlaylistCategoriesResponse {
                 live: Some(group_playlist_items::<M3uPlaylistItem>(XtreamCluster::Live, live_channels.into_iter(), |item| item.group.clone())),

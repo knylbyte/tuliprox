@@ -1,21 +1,20 @@
-use shared::error::{string_to_io_error, to_io_error};
+use crate::model::is_input_expired;
+use crate::utils::request::get_local_csv_file_content;
 use crate::utils::EnvResolvingReader;
 use crate::utils::{file_reader, resolve_relative_path};
-use log::error;
+use futures::TryFutureExt;
+use log::{error, warn};
+use shared::error::{string_to_io_error, to_io_error, TuliproxError};
+use shared::model::{ConfigInputAliasDto, InputType};
+use shared::utils::{get_credentials_from_url, get_credentials_from_url_str, parse_timestamp, trim_last_slash};
+use shared::info_err;
 use std::io;
 use std::io::{BufRead, Cursor, Error};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use url::Url;
-use shared::model::{ConfigInputAliasDto, InputType};
-use shared::utils::{get_credentials_from_url, parse_timestamp, trim_last_slash};
-use crate::utils::request::get_local_file_content;
 
 const CSV_SEPARATOR: char = ';';
 const HEADER_PREFIX: char = '#';
-
-pub fn is_csv_file(url: &str) -> bool {
-    url.to_lowercase().ends_with(".csv")
-}
 const FIELD_MAX_CON: &str = "max_connections";
 const FIELD_PRIO: &str = "priority";
 const FIELD_URL: &str = "url";
@@ -25,6 +24,11 @@ const FIELD_PASSWORD: &str = "password";
 const FIELD_EXP_DATE: &str = "exp_date";
 const FIELD_UNKNOWN: &str = "?";
 const DEFAULT_COLUMNS: &[&str] = &[FIELD_URL, FIELD_MAX_CON, FIELD_PRIO, FIELD_NAME, FIELD_USERNAME, FIELD_PASSWORD, FIELD_EXP_DATE];
+const CSV_EXTENSION: &str = ".csv";
+
+pub fn is_csv_file(url: &str) -> bool {
+    url.to_lowercase().ends_with(CSV_EXTENSION)
+}
 
 fn csv_assign_mandatory_fields(alias: &mut ConfigInputAliasDto, input_type: InputType) {
     if !alias.url.is_empty() {
@@ -163,17 +167,20 @@ pub fn csv_read_inputs_from_reader(batch_input_type: InputType, reader: impl Buf
     Ok(result)
 }
 
-
-pub async fn csv_read_inputs(input_type: InputType, file_uri: &str) -> Result<(PathBuf, Vec<ConfigInputAliasDto>), Error> {
-    let file_path = get_csv_file_path(file_uri)?;
-    match get_local_file_content(&file_path).await {
+async fn csv_read_inputs_from_path(input_type: InputType, file_path: &Path) -> Result<(PathBuf, Vec<ConfigInputAliasDto>), Error> {
+    match get_local_csv_file_content(file_path).await {
         Ok(content) => {
-            Ok((file_path, csv_read_inputs_from_reader(input_type, EnvResolvingReader::new(file_reader(Cursor::new(content))))?))
+            Ok((file_path.to_path_buf(), csv_read_inputs_from_reader(input_type, EnvResolvingReader::new(file_reader(Cursor::new(content))))?))
         }
         Err(err) => {
             Err(err)
         }
     }
+}
+
+pub async fn csv_read_inputs(input_type: InputType, file_uri: &str) -> Result<(PathBuf, Vec<ConfigInputAliasDto>), Error> {
+    let file_path = get_csv_file_path(file_uri)?;
+    csv_read_inputs_from_path(input_type, &file_path).await
 }
 
 pub fn get_csv_file_path(file_uri: &str) -> Result<PathBuf, Error> {
@@ -191,8 +198,7 @@ pub fn get_csv_file_path(file_uri: &str) -> Result<PathBuf, Error> {
     }
 }
 
-pub async fn csv_write_inputs(file_uri: &str, aliases: &[ConfigInputAliasDto]) -> Result<(), Error> {
-    let file_path = get_csv_file_path(file_uri)?;
+async fn csv_write_input_to_path(file_path: &Path, aliases: &[ConfigInputAliasDto]) -> Result<(), Error> {
     let mut content = String::new();
     content.push(HEADER_PREFIX);
     content.push_str(FIELD_NAME);
@@ -228,12 +234,95 @@ pub async fn csv_write_inputs(file_uri: &str, aliases: &[ConfigInputAliasDto]) -
     tokio::fs::write(file_path, content).await.map_err(to_io_error)
 }
 
+pub async fn csv_write_inputs(file_uri: &str, aliases: &[ConfigInputAliasDto]) -> Result<(), Error> {
+    let file_path = get_csv_file_path(file_uri)?;
+    csv_write_input_to_path(&file_path, aliases).await
+}
+
+pub async fn csv_patch_batch_append(
+    csv_path: &Path,
+    input_type: InputType,
+    alias_name: &str,
+    base_url: &str,
+    username: &str,
+    password: &str,
+    exp_date: Option<i64>,
+) -> Result<(), TuliproxError> {
+
+    // TODO check if alias name exists in any config ?
+
+    let (file_path, mut aliases) = csv_read_inputs_from_path(input_type, csv_path).map_err(|err| info_err!("{err}")).await?;
+
+    let url = if input_type == InputType::M3uBatch {
+        format!("{}/get.php?username={username}&password={password}&type=m3u_plus", trim_last_slash(base_url))
+    } else {
+        base_url.to_string()
+    };
+
+    let alias = ConfigInputAliasDto {
+        id: 0,
+        name: alias_name.to_string(),
+        url,
+        username: Some(username.to_string()),
+        password: Some(password.to_string()),
+        priority: 0,
+        max_connections: 1,
+        exp_date,
+    };
+    aliases.push(alias);
+
+    csv_write_input_to_path(&file_path, &aliases).map_err(|err| info_err!("{err}")).await?;
+    Ok(())
+}
+
+pub async fn csv_patch_batch_update_exp_date(
+    input_type: InputType,
+    csv_path: &Path,
+    account_name: &str,
+    username: &str,
+    password: &str,
+    exp_date: i64,
+) -> Result<(), TuliproxError> {
+    let mut matched = false;
+    let (file_path, mut aliases) = csv_read_inputs_from_path(input_type, csv_path).map_err(|err| info_err!("{err}")).await?;
+    for alias in &mut aliases {
+        if alias.name == account_name || (alias.username == Some(username.to_string()) && alias.password == Some(password.to_string())) {
+            alias.exp_date = Some(exp_date);
+            matched = true;
+        } else if let (Some(u), Some(p)) = get_credentials_from_url_str(&alias.url) {
+            if u == username && p == password {
+                alias.exp_date = Some(exp_date);
+                matched = true;
+            }
+        }
+    }
+
+    if matched {
+        csv_write_input_to_path(&file_path, &aliases).map_err(|err| info_err!("{err}")).await?;
+    } else {
+        warn!("panel_api: could not find batch csv row for account {account_name}");
+    }
+    Ok(())
+}
+
+pub async fn csv_patch_batch_remove_expired(input_type: InputType, csv_path: &Path) -> Result<bool, TuliproxError> {
+    let (file_path, mut aliases) = csv_read_inputs_from_path(input_type, csv_path).map_err(|err| info_err!("{err}")).await?;
+    let before_len = aliases.len();
+    aliases.retain(|alias| !is_input_expired(alias.exp_date));
+    let changed = before_len != aliases.len();
+    if changed {
+        csv_write_input_to_path(&file_path, &aliases).map_err(|err| info_err!("{err}")).await?;
+    }
+    Ok(changed)
+}
+
+
 #[cfg(test)]
 mod tests {
-    use crate::utils::file::csv_input_reader::csv_read_inputs_from_reader;
+    use crate::repository::csv_read_inputs_from_reader;
     use crate::utils::{file_reader, resolve_env_var};
-    use std::io::{Cursor};
     use shared::model::InputType;
+    use std::io::Cursor;
 
     const M3U_BATCH: &str = r"
 #url;name;max_connections;priority

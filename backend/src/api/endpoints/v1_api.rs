@@ -18,7 +18,7 @@ use crate::api::endpoints::extract_accept_header::ExtractAcceptHeader;
 use crate::api::endpoints::v1_api_config::v1_api_config_register;
 use crate::api::endpoints::library_api::library_api_register;
 use crate::model::InputSource;
-use crate::repository::storage::get_geoip_path;
+use crate::repository::get_geoip_path;
 use crate::utils::GeoIp;
 use crate::utils::request::download_text_content;
 

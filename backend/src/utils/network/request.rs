@@ -123,7 +123,7 @@ pub async fn get_input_text_content(client: &reqwest::Client, input: &InputSourc
                         }
                     }
 
-                    match get_local_file_content(&filepath).await {
+                    match get_local_csv_file_content(&filepath).await {
                         Ok(content) => Some(content),
                         Err(err) => {
                             return notify_err_res!("Failed : {}", err);
@@ -270,7 +270,7 @@ pub fn get_request_headers<S: ::std::hash::BuildHasher + Default>(request_header
     headers
 }
 
-pub async fn get_local_file_content(file_path: &Path) -> Result<String, std::io::Error> {
+pub async fn get_local_csv_file_content(file_path: &Path) -> Result<String, std::io::Error> {
     // Datei öffnen
     let file = File::open(file_path).await.map_err(|err| {
         std::io::Error::new(ErrorKind::NotFound, format!("Failed to open file: {}, {err:?}", file_path.display()))
@@ -457,7 +457,7 @@ pub async fn download_text_content(
     let result = if let Ok(url) = input.url.parse::<url::Url>() {
         let result = if url.scheme() == "file" {
             match url.to_file_path() {
-                Ok(file_path) => get_local_file_content(&file_path).await.map(|c| (c, url.to_string())),
+                Ok(file_path) => get_local_csv_file_content(&file_path).await.map(|c| (c, url.to_string())),
                 Err(()) => Err(string_to_io_error(format!("Unknown file {}", sanitize_sensitive_info(&input.url)))),
             }
         } else {

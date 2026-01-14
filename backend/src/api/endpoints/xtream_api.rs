@@ -18,10 +18,7 @@ use crate::auth::Fingerprint;
 use crate::model::{xtream_mapping_option_from_target_options, ConfigTarget};
 use crate::model::{Config, ConfigInput};
 use crate::model::{InputSource, ProxyUserCredentials};
-use crate::repository::playlist_repository::get_target_id_mapping;
-use crate::repository::storage::get_target_storage_path;
-use crate::repository::target_id_mapping::VirtualIdRecord;
-use crate::repository::{storage_const, user_repository, xtream_repository};
+use crate::repository::{get_target_id_mapping, get_target_storage_path, storage_const, user_get_bouquet_filter, xtream_get_collection_path, xtream_get_item_for_stream_id, xtream_load_rewrite_playlist, VirtualIdRecord};
 use crate::utils::xtream::create_vod_info_from_item;
 use crate::utils::{debug_if_enabled, trace_if_enabled};
 use crate::utils::{request, xtream};
@@ -240,7 +237,7 @@ async fn xtream_player_api_stream(
     let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
     let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
     let pli = try_result_not_found!(
-        xtream_repository::xtream_get_item_for_stream_id(req_virtual_id, app_state, &target, None).await,
+        xtream_get_item_for_stream_id(req_virtual_id, app_state, &target, None).await,
         true,
         format!("Failed to read xtream item for stream id {req_virtual_id}")
     );
@@ -445,7 +442,7 @@ async fn xtream_player_api_stream_with_token(
         let (action_stream_id, stream_ext) = separate_number_and_remainder(stream_req.stream_id);
         let req_virtual_id: u32 = try_result_bad_request!(action_stream_id.trim().parse());
         let pli = try_result_bad_request!(
-            xtream_repository::xtream_get_item_for_stream_id(
+            xtream_get_item_for_stream_id(
                 req_virtual_id,
                 app_state,
                 &target,
@@ -594,7 +591,7 @@ async fn xtream_player_api_resource(
     let req_virtual_id: u32 = try_result_bad_request!(resource_req.stream_id.trim().parse());
     let resource = resource_req.action_path.trim();
     let pli = try_result_bad_request!(
-        xtream_repository::xtream_get_item_for_stream_id(
+        xtream_get_item_for_stream_id(
             req_virtual_id,
             app_state,
             &target,
@@ -824,7 +821,7 @@ async fn xtream_get_stream_info_response(
         Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
     };
 
-    if let Ok(pli) = xtream_repository::xtream_get_item_for_stream_id(
+    if let Ok(pli) = xtream_get_item_for_stream_id(
         virtual_id,
         app_state,
         target,
@@ -910,7 +907,7 @@ async fn xtream_get_short_epg(
             Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
         };
 
-        if let Ok(pli) = xtream_repository::xtream_get_item_for_stream_id(
+        if let Ok(pli) = xtream_get_item_for_stream_id(
             virtual_id,
             app_state,
             target,
@@ -998,10 +995,10 @@ async fn xtream_player_api_handle_content_action(
         // we dont handle this action
         _ => return None,
     };
-    if let Ok(file_path) = xtream_repository::xtream_get_collection_path(config, target_name, collection) {
+    if let Ok(file_path) = xtream_get_collection_path(config, target_name, collection) {
         match tokio::fs::read_to_string(&file_path).await {
             Ok(content) => {
-                let filter = user_repository::user_get_bouquet_filter(
+                let filter = user_get_bouquet_filter(
                     config,
                     &user.username,
                     category_id,
@@ -1034,7 +1031,7 @@ async fn xtream_get_catchup_response(
     end: &str,
 ) -> impl IntoResponse + Send {
     let req_virtual_id: u32 = try_result_bad_request!(FromStr::from_str(stream_id));
-    let pli = try_result_bad_request!(xtream_repository::xtream_get_item_for_stream_id(
+    let pli = try_result_bad_request!(xtream_get_item_for_stream_id(
         req_virtual_id,
         app_state,
         target,
@@ -1261,7 +1258,7 @@ async fn xtream_player_api(
         let result = match action {
             crate::model::XC_ACTION_GET_LIVE_STREAMS => skip_flag_optional!(
                 skip_live,
-                xtream_repository::xtream_load_rewrite_playlist(
+                xtream_load_rewrite_playlist(
                     XtreamCluster::Live,
                     &app_state.app_config,
                     &target,
@@ -1272,7 +1269,7 @@ async fn xtream_player_api(
             ),
             crate::model::XC_ACTION_GET_VOD_STREAMS => skip_flag_optional!(
                 skip_vod,
-                xtream_repository::xtream_load_rewrite_playlist(
+                xtream_load_rewrite_playlist(
                     XtreamCluster::Video,
                     &app_state.app_config,
                     &target,
@@ -1283,7 +1280,7 @@ async fn xtream_player_api(
             ),
             crate::model::XC_ACTION_GET_SERIES => skip_flag_optional!(
                 skip_series,
-                xtream_repository::xtream_load_rewrite_playlist(
+                xtream_load_rewrite_playlist(
                     XtreamCluster::Series,
                     &app_state.app_config,
                     &target,

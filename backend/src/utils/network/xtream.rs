@@ -4,12 +4,12 @@ use crate::model::{is_input_expired, xtream_mapping_option_from_target_options, 
 use crate::model::{InputSource, ProxyUserCredentials};
 use crate::processing::parser::xtream;
 use crate::processing::parser::xtream::parse_xtream_series_info;
-use crate::repository::bplustree::BPlusTreeUpdate;
-use crate::repository::playlist_repository::{get_target_id_mapping, rewrite_provider_series_info_episode_virtual_id, ProviderEpisodeKey};
-use crate::repository::storage::{ensure_input_storage_path, get_input_storage_path, get_target_storage_path};
-use crate::repository::target_id_mapping::VirtualIdRecord;
-use crate::repository::xtream_repository::{get_live_cat_collection_path, get_series_cat_collection_path, get_vod_cat_collection_path, xtream_get_file_path, CategoryEntry};
-use crate::repository::xtream_repository::{persist_input_vod_info, persists_input_series_info, write_playlist_batch_item_upsert, write_playlist_item_update};
+use crate::repository::BPlusTreeUpdate;
+use crate::repository::{get_target_id_mapping, rewrite_provider_series_info_episode_virtual_id, ProviderEpisodeKey};
+use crate::repository::{ensure_input_storage_path, get_input_storage_path, get_target_storage_path};
+use crate::repository::VirtualIdRecord;
+use crate::repository::{get_live_cat_collection_path, get_series_cat_collection_path, get_vod_cat_collection_path, xtream_get_file_path, CategoryEntry};
+use crate::repository::{persist_input_vod_info, persists_input_series_info, write_playlist_batch_item_upsert, write_playlist_item_update};
 use crate::utils::request;
 use chrono::{DateTime, Utc};
 use log::{error, info, warn};
@@ -530,7 +530,7 @@ async fn process_xtream_cluster_to_disk(
         // trace!("Spawned consumer_task for cluster {}", cluster);
         let tmp_xtream_path = xtream_path_for_consumer.with_extension("tmp");
         // trace!("Creating fresh ghost database at {:?}", tmp_xtream_path);
-        crate::repository::bplustree::BPlusTree::<u32, XtreamPlaylistItem>::new()
+        crate::repository::BPlusTree::<u32, XtreamPlaylistItem>::new()
             .store(&tmp_xtream_path)
             .map_err(|e| {
                 error!("Failed to initialize ghost BPlusTree at {}: {e}", tmp_xtream_path.display());
