@@ -694,7 +694,13 @@ async fn patch_source_yml_add_alias(
         return info_err_res!("panel_api: could not find input '{input_name}' in source.yml");
     };
 
-    let alias = ConfigInputAliasDto {
+    let aliases = input.aliases.get_or_insert_with(Vec::new);
+    let next_index = aliases.iter().map(|a| a.id).max().unwrap_or(0);
+    if next_index == u16::MAX {
+        return info_err_res!("panel_api: cannot add alias for '{input_name}': alias id overflow");
+    }
+
+    let mut alias = ConfigInputAliasDto {
         id: 0,
         name: alias_name.to_string(),
         url: base_url.to_string(),
@@ -705,7 +711,8 @@ async fn patch_source_yml_add_alias(
         exp_date,
     };
 
-    input.upsert_alias(alias)?;
+    alias.prepare(next_index, &input.input_type)?;
+    aliases.push(alias);
 
     persist_source_config(app_state, Some(source_file_path), sources).await?;
     Ok(())
