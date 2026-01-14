@@ -644,7 +644,7 @@ impl SeriesStreamProperties {
             details: Some(SeriesStreamDetailProperties {
                 year: InfoDocUtils::extract_year_from_release_date(&info.info.release_date),
                 seasons: info.seasons.as_ref().map(|list| {
-                    list.iter().map(|s| {
+                    let mut seasons: Vec<SeriesStreamDetailSeasonProperties> = list.iter().map(|s| {
                         SeriesStreamDetailSeasonProperties {
                             name: s.name.clone(),
                             season_number: s.season_number,
@@ -656,10 +656,12 @@ impl SeriesStreamProperties {
                             cover_big: Some(s.cover_big.clone()),
                             duration: Some(s.duration.clone()),
                         }
-                    }).collect()
+                    }).collect();
+                    seasons.sort_by_key(|season| season.season_number);
+                    seasons
                 }),
-                episodes: info.episodes.as_ref().map(|list|
-                    list.iter().map(|e| {
+                episodes: info.episodes.as_ref().map(|list| {
+                    let mut episodes: Vec<SeriesStreamDetailEpisodeProperties> = list.iter().map(|e| {
                         SeriesStreamDetailEpisodeProperties {
                             id: e.id,
                             episode_num: e.episode_num,
@@ -681,7 +683,10 @@ impl SeriesStreamProperties {
                             video: e.info.as_ref().map(|i| i.video.clone()).unwrap_or_default(),
                             audio: e.info.as_ref().map(|i| i.audio.clone()).unwrap_or_default(),
                         }
-                    }).collect()),
+                    }).collect();
+                    episodes.sort_by_key(|episode| (episode.season, episode.episode_num));
+                    episodes
+                }),
             }),
         }
     }
