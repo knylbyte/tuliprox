@@ -1058,19 +1058,21 @@ pub fn PanelConfigView() -> Html {
                                                 value={alias_pool_min_val.clone()}
                                                 on_change={Some(on_alias_pool_min)}
                                                 placeholder={Some("auto".to_string())}/>
-                                            <Input name="panel_alias_pool_max"
-                                                label={Some(translate.t(LABEL_PANEL_ALIAS_POOL_MAX))}
-                                                value={alias_pool_max_val.clone()}
-                                                on_change={Some(on_alias_pool_max)}
-                                                placeholder={Some("auto".to_string())}/>
-                                            <div class="tp__panel-api-config-view__toggle">
-                                                <label>{ translate.t(LABEL_PANEL_ALIAS_POOL_REMOVE_EXPIRED) }</label>
-                                                <span class="lbl">{ translate.t(LABEL_ENABLED) }</span>
-                                                <ToggleSwitch value={alias_pool_remove_expired} readonly={false} on_change={on_alias_pool_remove_expired} />
+                                                <Input name="panel_alias_pool_max"
+                                                    label={Some(translate.t(LABEL_PANEL_ALIAS_POOL_MAX))}
+                                                    value={alias_pool_max_val.clone()}
+                                                    on_change={Some(on_alias_pool_max)}
+                                                    placeholder={Some("auto".to_string())}/>
+                                                <div class="tp__input">
+                                                    <label>{ translate.t(LABEL_PANEL_ALIAS_POOL_REMOVE_EXPIRED) }</label>
+                                                    <div class="tp__panel-api-config-view__toggle">
+                                                        <span class="lbl">{ translate.t(LABEL_ENABLED) }</span>
+                                                        <ToggleSwitch value={alias_pool_remove_expired} readonly={false} on_change={on_alias_pool_remove_expired} />
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::AccountInfo, translate.t(PanelSection::AccountInfo.label_key()), account_info) }
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::Info, translate.t(PanelSection::Info.label_key()), client_info) }
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::New, translate.t(PanelSection::New.label_key()), client_new) }
