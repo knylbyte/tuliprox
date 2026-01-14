@@ -687,20 +687,20 @@ fn render_param_editor(
     };
 
     html! {
-        <div class="tp__panel-config-view__section">
-            <div class="tp__panel-config-view__section-header">
+        <div class="tp__panel-api-config-view__section">
+            <div class="tp__panel-api-config-view__section-header">
                 <h2>{ section_title }</h2>
                 { html_if!(edit_mode, {
-                    <div class="tp__panel-config-view__section-actions">
+                    <div class="tp__panel-api-config-view__section-actions">
                         <IconButton name="required" icon="Accept" class="secondary" onclick={add_required}/>
                         <IconButton name="add" icon="Add" class="primary" onclick={add_param}/>
                     </div>
                 })}
             </div>
-            <div class="tp__panel-config-view__params">
+            <div class="tp__panel-api-config-view__params">
             {
                 if params.is_empty() {
-                    html!{ <div class="tp__panel-config-view__params-empty">{ "—" }</div> }
+                    html!{ <div class="tp__panel-api-config-view__params-empty">{ "—" }</div> }
                 } else {
                     html!{ for params.iter().enumerate().map(|(param_idx, p)| {
                         let on_key = {
@@ -725,8 +725,8 @@ fn render_param_editor(
                         };
                         html!{
                             <div class={classes!(
-                                "tp__panel-config-view__param-row",
-                                if edit_mode { None } else { Some("tp__panel-config-view__param-row--view") }
+                                "tp__panel-api-config-view__param-row",
+                                if edit_mode { None } else { Some("tp__panel-api-config-view__param-row--view") }
                             )}>
                                 {
                                     if edit_mode {
@@ -734,12 +734,12 @@ fn render_param_editor(
                                             <>
                                                 <Input name="key" label={Option::<String>::None} value={p.key.clone()} placeholder={Some("key".to_string())} on_change={Some(on_key)} />
                                                 <Input name="value" label={Option::<String>::None} value={p.value.clone()} placeholder={Some("value".to_string())} on_change={Some(on_val)} />
-                                                <IconButton name="rm" icon="Delete" class="tp__panel-config-view__param-remove" onclick={on_remove}/>
+                                                <IconButton name="rm" icon="Delete" class="tp__panel-api-config-view__param-remove" onclick={on_remove}/>
                                             </>
                                         }
                                     } else {
                                         html!{
-                                            <div class="tp__panel-config-view__param-view">
+                                            <div class="tp__panel-api-config-view__param-view">
                                                 <span class="k">{ &p.key }</span>
                                                 <span class="v">{ &p.value }</span>
                                             </div>
@@ -992,19 +992,19 @@ pub fn PanelConfigView() -> Html {
         ]);
 
         html! {
-            <Card class="tp__config-view__card tp__panel-config-view__input-card">
-                <div class="tp__panel-config-view__input-header">
-                    <div class="tp__panel-config-view__input-title">
+            <Card class="tp__config-view__card tp__panel-api-config-view__input-card">
+                <div class="tp__panel-api-config-view__input-header">
+                    <div class="tp__panel-api-config-view__input-title">
                         <h1>{ &input.name }</h1>
-                        <div class="tp__panel-config-view__input-badges">
+                        <div class="tp__panel-api-config-view__input-badges">
                             <Chip label={type_label} class={Option::<String>::None}/>
-                            <Chip label={credits_label} class={Some("tp__panel-config-view__credits-chip".to_string())}/>
+                            <Chip label={credits_label} class={Some("tp__panel-api-config-view__credits-chip".to_string())}/>
                         </div>
                     </div>
-                    <div class="tp__panel-config-view__input-status">
+                    <div class="tp__panel-api-config-view__input-status">
                         { status_chip }
                         { html_if!(*config_view_ctx.edit_mode, {
-                            <div class="tp__panel-config-view__toggle">
+                            <div class="tp__panel-api-config-view__toggle">
                                 <span class="lbl">{ translate.t(LABEL_ENABLED) }</span>
                                 <ToggleSwitch value={panel_enabled} readonly={false} on_change={on_toggle} />
                             </div>
@@ -1014,18 +1014,18 @@ pub fn PanelConfigView() -> Html {
 
                 {
                     if !panel_enabled {
-                        html! { <div class="tp__panel-config-view__disabled-hint">{ translate.t(HINT_PANEL_ENABLE) }</div> }
+                        html! { <div class="tp__panel-api-config-view__disabled-hint">{ translate.t(HINT_PANEL_ENABLE) }</div> }
                     } else if *config_view_ctx.edit_mode {
                         html! {
                             <>
                                 <Input name="panel_url" label={Some(translate.t(LABEL_URL))} value={url_val} on_change={Some(on_url)} placeholder={Some("https://panel.example.tld/api.php".to_string())}/>
                                 <Input name="panel_api_key" label={Some(translate.t(LABEL_API_KEY))} value={api_key_val} hidden={true} on_change={Some(on_api_key)} placeholder={Some("...".to_string())}/>
-                                <div class="tp__panel-config-view__section">
-                                    <div class="tp__panel-config-view__section-header">
+                                <div class="tp__panel-api-config-view__section">
+                                    <div class="tp__panel-api-config-view__section-header">
                                         <h2>{ translate.t(LABEL_PANEL_PROVISIONING) }</h2>
                                     </div>
-                                    <div class="tp__panel-config-view__params">
-                                        <div class="tp__panel-config-view__param-row">
+                                    <div class="tp__panel-api-config-view__params">
+                                        <div class="tp__panel-api-config-view__param-row">
                                             <Input name="panel_provision_timeout"
                                                 label={Some(translate.t(LABEL_PANEL_PROVISION_TIMEOUT))}
                                                 value={provisioning_timeout_val.clone()}
@@ -1047,12 +1047,12 @@ pub fn PanelConfigView() -> Html {
                                         </div>
                                     </div>
                                 </div>
-                                <div class="tp__panel-config-view__section">
-                                    <div class="tp__panel-config-view__section-header">
+                                <div class="tp__panel-api-config-view__section">
+                                    <div class="tp__panel-api-config-view__section-header">
                                         <h2>{ translate.t(LABEL_PANEL_ALIAS_POOL) }</h2>
                                     </div>
-                                    <div class="tp__panel-config-view__params">
-                                        <div class="tp__panel-config-view__param-row">
+                                    <div class="tp__panel-api-config-view__params">
+                                        <div class="tp__panel-api-config-view__param-row">
                                             <Input name="panel_alias_pool_min"
                                                 label={Some(translate.t(LABEL_PANEL_ALIAS_POOL_MIN))}
                                                 value={alias_pool_min_val.clone()}
@@ -1063,7 +1063,7 @@ pub fn PanelConfigView() -> Html {
                                                 value={alias_pool_max_val.clone()}
                                                 on_change={Some(on_alias_pool_max)}
                                                 placeholder={Some("auto".to_string())}/>
-                                            <div class="tp__panel-config-view__toggle">
+                                            <div class="tp__panel-api-config-view__toggle">
                                                 <label>{ translate.t(LABEL_PANEL_ALIAS_POOL_REMOVE_EXPIRED) }</label>
                                                 <span class="lbl">{ translate.t(LABEL_ENABLED) }</span>
                                                 <ToggleSwitch value={alias_pool_remove_expired} readonly={false} on_change={on_alias_pool_remove_expired} />
@@ -1077,7 +1077,7 @@ pub fn PanelConfigView() -> Html {
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::Renew, translate.t(PanelSection::Renew.label_key()), client_renew) }
                                 { render_param_editor(&form_state, true, source_idx, input_idx, PanelSection::AdultContent, translate.t(PanelSection::AdultContent.label_key()), adult_content) }
                                 { html_if!(has_errors, {
-                                    <div class="tp__panel-config-view__errors">
+                                    <div class="tp__panel-api-config-view__errors">
                                         <h2>{ translate.t(LABEL_VALIDATION) }</h2>
                                         <ul>
                                             { for errors.iter().map(|e| html!{ <li>{ e }</li> }) }
@@ -1089,7 +1089,7 @@ pub fn PanelConfigView() -> Html {
                     } else {
                         html!{
                             <>
-                                <div class="tp__panel-config-view__summary">
+                                <div class="tp__panel-api-config-view__summary">
                                     <div class="tp__form-field tp__form-field__text">
                                         <label>{ translate.t(LABEL_URL) }</label>
                                         <span class="tp__form-field__value">{ if url_val.is_empty() { "—".to_string() } else { url_val } }</span>
@@ -1136,7 +1136,7 @@ pub fn PanelConfigView() -> Html {
                                     </div>
                                 </div>
                                 { html_if!(has_errors, {
-                                    <div class="tp__panel-config-view__errors">
+                                    <div class="tp__panel-api-config-view__errors">
                                         <h2>{ translate.t(LABEL_VALIDATION) }</h2>
                                         <ul>
                                             { for errors.iter().map(|e| html!{ <li>{ e }</li> }) }
@@ -1159,17 +1159,17 @@ pub fn PanelConfigView() -> Html {
         .collect::<Vec<_>>();
 
     html! {
-        <div class="tp__panel-config-view tp__config-view-page">
+        <div class="tp__panel-api-config-view tp__config-view-page">
             <div class="tp__config-view-page__title">{ translate.t(LABEL_PANEL_CONFIG) }</div>
-            <div class="tp__panel-config-view__header tp__config-view-page__header">
-                <Card class="tp__config-view__card tp__panel-config-view__info-card">
+            <div class="tp__panel-api-config-view__header tp__config-view-page__header">
+                <Card class="tp__config-view__card tp__panel-api-config-view__info-card">
                     <h1>{ translate.t(LABEL_PANEL_CONFIG) }</h1>
-                    <div class="tp__panel-config-view__info-text">
+                    <div class="tp__panel-api-config-view__info-text">
                         { translate.t(HINT_PANEL_INFO) }
                     </div>
                 </Card>
             </div>
-            <div class="tp__panel-config-view__body tp__config-view-page__body">
+            <div class="tp__panel-api-config-view__body tp__config-view-page__body">
                 { for inputs.into_iter().map(|(input_idx, inp)| render_input_card(input_idx, input_idx, inp)) }
             </div>
         </div>
