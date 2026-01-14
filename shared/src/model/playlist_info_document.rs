@@ -92,7 +92,7 @@ pub struct XtreamSeriesInfoDoc {
     #[serde(default)]
     pub seasons: Vec<XtreamSeriesSeasonDoc>,
     pub info: XtreamSeriesInfoData,
-    pub episodes: HashMap<String, Vec<XtreamSeriesEpisodeDoc>>,
+    pub episodes: HashMap<String, Vec<XtreamSeriesEpisodeInfoDoc>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -143,8 +143,8 @@ pub struct XtreamSeriesInfoData {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct XtreamSeriesEpisodeDoc {
-    pub id: u32,
+pub struct XtreamSeriesEpisodeInfoDoc {
+    pub id: String,
     pub episode_num: u32,
     pub title: String,
     pub container_extension: String,
@@ -342,11 +342,11 @@ impl StreamProperties {
 
     fn series_episodes_to_info_document(&self, options: &XtreamMappingOptions,
                                         resource_url: Option<&str>,
-                                        episodes: &[SeriesStreamDetailEpisodeProperties]) -> HashMap<String, Vec<XtreamSeriesEpisodeDoc>> {
-        let mut map: HashMap<u32, Vec<XtreamSeriesEpisodeDoc>> = HashMap::new();
+                                        episodes: &[SeriesStreamDetailEpisodeProperties]) -> HashMap<String, Vec<XtreamSeriesEpisodeInfoDoc>> {
+        let mut map: HashMap<u32, Vec<XtreamSeriesEpisodeInfoDoc>> = HashMap::new();
         for ep in episodes {
-            let doc = XtreamSeriesEpisodeDoc {
-                id: ep.id,
+            let doc = XtreamSeriesEpisodeInfoDoc {
+                id: ep.id.to_string(),
                 episode_num: ep.episode_num,
                 title: ep.title.clone(),
                 container_extension: ep.container_extension.clone(),
