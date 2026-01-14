@@ -305,6 +305,99 @@ pub async fn csv_patch_batch_update_exp_date(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn csv_patch_batch_update_credentials(
+    input_type: InputType,
+    csv_path: &Path,
+    account_name: &str,
+    old_username: &str,
+    old_password: &str,
+    new_username: &str,
+    new_password: &str,
+    exp_date: Option<i64>,
+) -> Result<(), TuliproxError> {
+    let mut matched = false;
+    let (file_path, mut aliases) = csv_read_inputs_from_path(input_type, csv_path)
+        .map_err(|err| info_err!("{err}"))
+        .await?;
+
+    for alias in &mut aliases {
+        let mut is_match = alias.name == account_name;
+        if !is_match {
+            is_match = alias.username.as_deref() == Some(old_username) && alias.password.as_deref() == Some(old_password);
+        }
+        if !is_match {
+            is_match = alias.username.as_deref() == Some(new_username) && alias.password.as_deref() == Some(new_password);
+        }
+        if !is_match {
+            if let (Some(u), Some(p)) = get_credentials_from_url_str(&alias.url) {
+                is_match = u == old_username && p == old_password;
+            }
+        }
+        if !is_match {
+            if let (Some(u), Some(p)) = get_credentials_from_url_str(&alias.url) {
+                is_match = u == new_username && p == new_password;
+            }
+        }
+        if !is_match {
+            continue;
+        }
+
+        alias.username = Some(new_username.to_string());
+        alias.password = Some(new_password.to_string());
+        if let Some(exp_date) = exp_date {
+            alias.exp_date = Some(exp_date);
+        }
+
+        if matches!(input_type, InputType::M3uBatch | InputType::M3u) {
+            if let Ok(mut url) = Url::parse(alias.url.as_str()) {
+                let mut pairs: Vec<(String, String)> = url
+                    .query_pairs()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect();
+                let mut has_user = false;
+                let mut has_pass = false;
+                for (k, v) in &mut pairs {
+                    if k.eq_ignore_ascii_case("username") {
+                        *v = new_username.to_string();
+                        has_user = true;
+                    } else if k.eq_ignore_ascii_case("password") {
+                        *v = new_password.to_string();
+                        has_pass = true;
+                    }
+                }
+                if has_user || has_pass {
+                    if !has_user {
+                        pairs.push(("username".to_string(), new_username.to_string()));
+                    }
+                    if !has_pass {
+                        pairs.push(("password".to_string(), new_password.to_string()));
+                    }
+                    url.query_pairs_mut().clear();
+                    {
+                        let mut qp = url.query_pairs_mut();
+                        for (k, v) in pairs {
+                            qp.append_pair(k.as_str(), v.as_str());
+                        }
+                    }
+                    alias.url = url.to_string();
+                }
+            }
+        }
+
+        matched = true;
+    }
+
+    if matched {
+        csv_write_input_to_path(&file_path, &aliases)
+            .map_err(|err| info_err!("{err}"))
+            .await?;
+    } else {
+        warn!("panel_api: could not find batch csv row to update credentials for account {account_name}");
+    }
+    Ok(())
+}
+
 pub async fn csv_patch_batch_remove_expired(input_type: InputType, csv_path: &Path) -> Result<bool, TuliproxError> {
     let (file_path, mut aliases) = csv_read_inputs_from_path(input_type, csv_path).map_err(|err| info_err!("{err}")).await?;
     let before_len = aliases.len();

@@ -7,6 +7,7 @@ use shared::model::{InputType, PlaylistEpgRequest, PlaylistRequest, WebplayerUrl
 use shared::utils::sanitize_sensitive_info;
 use crate::api::endpoints::api_playlist_utils::{get_playlist, get_playlist_for_target};
 use crate::api::model::AppState;
+use crate::api::panel_api::sync_panel_api_exp_dates_on_boot;
 use crate::auth::create_access_token;
 use crate::model::{parse_xmltv_for_web_ui_from_file, parse_xmltv_for_web_ui_from_url, ConfigInput, ConfigInputOptions};
 use crate::processing::processor::playlist;
@@ -67,6 +68,7 @@ async fn playlist_update(
             let valid_targets = Arc::new(valid_targets);
             tokio::spawn({
                async move {
+                   sync_panel_api_exp_dates_on_boot(&app_state).await;
                    playlist::exec_processing(&http_client, app_config, valid_targets, Some(event_manager),
                                              Some(playlist_state), Some(app_state.update_guard.clone())).await;
                }

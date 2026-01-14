@@ -279,6 +279,8 @@ pub async fn start_server(
 
     let client = shared_data.http_client.load();
 
+    sync_panel_api_exp_dates_on_boot(&app_state).await;
+
     exec_scheduler(
         client.as_ref(),
         &app_state,
@@ -291,8 +293,6 @@ pub async fn start_server(
         &app_state,
         &targets,
     );
-
-    sync_panel_api_exp_dates_on_boot(&app_state).await;
 
     exec_file_lock_prune(&app_state);
 
