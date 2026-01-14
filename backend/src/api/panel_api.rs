@@ -1,17 +1,21 @@
+use std::net::SocketAddr;
 use crate::api::config_file::ConfigFile;
-use crate::api::model::AppState;
-use crate::model::{is_input_expired, ConfigInput, PanelApiConfig, PanelApiQueryParam};
+use crate::api::model::{create_panel_api_provisioning_stream_with_stop, create_provider_connections_exhausted_stream, AppState, StreamDetails};
+use crate::model::{is_input_expired, ConfigInput, ProxyUserCredentials};
 use crate::utils::{debug_if_enabled, persist_source_config, read_sources_file_from_path};
 use crate::utils::get_csv_file_path;
 use log::{debug, error, warn};
 use serde_json::Value;
 use shared::error::{info_err_res, info_err, TuliproxError};
-use shared::model::{ConfigInputAliasDto, InputType};
+use shared::model::{ConfigInputAliasDto, InputType, PanelApiAliasPoolSizeValue, PanelApiConfigDto, PanelApiProvisioningMethod, PanelApiQueryParamDto, ProxyUserStatus, VirtualId};
 use shared::utils::{get_credentials_from_url, parse_timestamp, sanitize_sensitive_info, trim_last_slash};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+use axum::http::{Method, StatusCode};
 use url::Url;
-use shared::info_err_res;
+use shared::{concat_string};
+use crate::tools::atomic_once_flag::AtomicOnceFlag;
 
 #[derive(Debug, Clone)]
 struct AccountCredentials {
@@ -27,6 +31,22 @@ fn parse_boolish(value: &Value) -> bool {
         Value::Number(n) => n.as_i64().unwrap_or(0) != 0,
         Value::String(s) => matches!(s.trim().to_lowercase().as_str(), "true" | "1" | "yes" | "y" | "ok"),
         _ => false,
+    }
+}
+
+fn extract_stringish(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
     }
 }
 
@@ -74,8 +94,131 @@ fn extract_base_url(url_str: &str) -> Option<String> {
     Url::parse(url_str).ok().map(|u| u.origin().ascii_serialization())
 }
 
+fn validate_type_is_m3u(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    let typ = params
+        .iter()
+        .find(|p| p.key.trim().eq_ignore_ascii_case("type"))
+        .map(|p| p.value.trim().to_string());
+    match typ {
+        Some(v) if v.eq_ignore_ascii_case("m3u") => Ok(()),
+        Some(v) => info_err_res!("panel_api: unsupported type={v}, only m3u is supported"),
+        None => info_err_res!("panel_api: missing required query param 'type=m3u'"),
+    }
+}
+
+fn require_api_key_param(params: &[PanelApiQueryParamDto], section: &str) -> Result<(), TuliproxError> {
+    let api_key = params.iter().find(|p| p.key.trim().eq_ignore_ascii_case("api_key"));
+    let Some(api_key) = api_key else {
+        return info_err_res!("panel_api: {section} must contain query param 'api_key' (use value 'auto')"
+        );
+    };
+    if api_key.value.trim().is_empty() {
+        return info_err_res!("panel_api: {section} query param 'api_key' must not be empty (use value 'auto')");
+    }
+    Ok(())
+}
+
+fn require_username_password_params_auto(params: &[PanelApiQueryParamDto], section: &str) -> Result<(), TuliproxError> {
+    let username = params.iter().find(|p| p.key.trim().eq_ignore_ascii_case("username"));
+    let password = params.iter().find(|p| p.key.trim().eq_ignore_ascii_case("password"));
+    if username.is_none() || password.is_none() {
+        return info_err_res!("panel_api: {section} must contain query params 'username' and 'password' (use value 'auto')");
+    }
+    if !username.is_some_and(|p| p.value.trim().eq_ignore_ascii_case("auto"))
+        || !password.is_some_and(|p| p.value.trim().eq_ignore_ascii_case("auto"))
+    {
+        return info_err_res!("panel_api: {section} requires 'username: auto' and 'password: auto' (credentials must not be hardcoded)");
+    }
+    Ok(())
+}
+
+fn validate_client_new_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    require_api_key_param(params, "query_parameter.client_new")?;
+    validate_type_is_m3u(params)?;
+    if params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("user")) {
+        return info_err_res!("panel_api: client_new must not contain query param 'user'");
+    }
+    Ok(())
+}
+
+fn validate_client_renew_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    require_api_key_param(params, "query_parameter.client_renew")?;
+    validate_type_is_m3u(params)?;
+    require_username_password_params_auto(params, "query_parameter.client_renew")?;
+    Ok(())
+}
+
+fn validate_client_info_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    require_api_key_param(params, "query_parameter.client_info")?;
+    require_username_password_params_auto(params, "query_parameter.client_info")?;
+    Ok(())
+}
+
+fn validate_account_info_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    require_api_key_param(params, "query_parameter.account_info")?;
+    let has_user = params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("username"));
+    let has_pass = params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("password"));
+    if has_user || has_pass {
+        require_username_password_params_auto(params, "query_parameter.account_info")?;
+    }
+    Ok(())
+}
+
+fn validate_client_adult_content_params(params: &[PanelApiQueryParamDto]) -> Result<(), TuliproxError> {
+    require_api_key_param(params, "query_parameter.client_adult_content")?;
+    let has_user = params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("username"));
+    let has_pass = params.iter().any(|p| p.key.trim().eq_ignore_ascii_case("password"));
+    if has_user || has_pass {
+        require_username_password_params_auto(params, "query_parameter.client_adult_content")?;
+    }
+    Ok(())
+}
+
+fn validate_panel_api_config(cfg: &PanelApiConfigDto) -> Result<(), TuliproxError> {
+    if !cfg.enabled {
+        return Ok(());
+    }
+    if cfg.url.trim().is_empty() {
+        return info_err_res!("panel_api: url is missing");
+    }
+    if cfg.api_key.as_ref().is_none_or(|k| k.trim().is_empty()) {
+        return info_err_res!("panel_api: api_key is missing");
+    }
+    if cfg.query_parameter.client_info.is_empty()
+        || cfg.query_parameter.client_new.is_empty()
+        || cfg.query_parameter.client_renew.is_empty()
+    {
+        return info_err_res!("panel_api: query_parameter.client_info/client_new/client_renew must be configured");
+    }
+    validate_client_info_params(&cfg.query_parameter.client_info)?;
+    validate_client_new_params(&cfg.query_parameter.client_new)?;
+    validate_client_renew_params(&cfg.query_parameter.client_renew)?;
+    let (min_val, max_val) = alias_pool_limit_values(cfg);
+    if let Some(PanelApiAliasPoolSizeValue::Number(value)) = min_val {
+        if *value == 0 {
+            return info_err_res!("panel_api.alias_pool.size.min must be greater than 0");
+        }
+    }
+    if let Some(PanelApiAliasPoolSizeValue::Number(value)) = max_val {
+        if *value == 0 {
+            return info_err_res!("panel_api.alias_pool.size.max must be greater than 0");
+        }
+    }
+    let min = min_val.and_then(PanelApiAliasPoolSizeValue::as_number);
+    let max = max_val.and_then(PanelApiAliasPoolSizeValue::as_number);
+    if let (Some(min), Some(max)) = (min, max) {
+        if min > max {
+            return info_err_res!("panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max");
+        }
+    }
+    if cfg.provisioning.probe_interval_sec == 0 {
+        return info_err_res!("panel_api.provisioning.probe_interval_sec must be greater than 0");
+    }
+    Ok(())
+}
+
 fn resolve_query_params(
-    params: &[PanelApiQueryParam],
+    params: &[PanelApiQueryParamDto],
     api_key: Option<&str>,
     creds: Option<(&str, &str)>,
 ) -> Result<Vec<(String, String)>, TuliproxError> {
@@ -263,14 +406,14 @@ async fn panel_account_info(
     let url = build_panel_url(cfg.url.as_str(), &params)?;
     let json = panel_get_json(app_state, url).await?;
     let Some(obj) = first_json_object(&json) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: account_info response is not a JSON object/array");
+        return info_err_res!("panel_api: account_info response is not a JSON object/array");
     };
     let status_ok = obj.get("status").is_some_and(parse_boolish);
     if !status_ok {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: account_info status=false");
+        return info_err_res!("panel_api: account_info status=false");
     }
     let Some(credits) = obj.get("credits").and_then(extract_stringish) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: account_info response missing credits");
+        return info_err_res!("panel_api: account_info response missing credits");
     };
     Ok(Some(credits))
 }
@@ -292,11 +435,11 @@ async fn panel_client_adult_content(
     let url = build_panel_url(cfg.url.as_str(), &params)?;
     let json = panel_get_json(app_state, url).await?;
     let Some(obj) = first_json_object(&json) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_adult_content response is not a JSON object/array");
+        return info_err_res!("panel_api: client_adult_content response is not a JSON object/array");
     };
     let status_ok = obj.get("status").is_some_and(parse_boolish);
     if !status_ok {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_adult_content status=false");
+        return info_err_res!("panel_api: client_adult_content status=false");
     }
     Ok(())
 }
@@ -436,9 +579,7 @@ fn resolve_alias_pool_limits(
     };
     if let (Some(min), Some(max)) = (min, max) {
         if min > max {
-            return create_tuliprox_error_result!(
-                TuliproxErrorKind::Info,
-                "panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max"
+            return info_err_res!("panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max"
             );
         }
     }
@@ -457,39 +598,6 @@ fn resolve_alias_pool_min(app_state: &AppState, input_name: &str, cfg: &PanelApi
 
 fn alias_pool_remove_expired(cfg: &PanelApiConfigDto) -> bool {
     cfg.alias_pool.as_ref().is_some_and(|p| p.remove_expired)
-}
-
-
-fn collect_expired_accounts(input: &ConfigInput) -> Vec<AccountCredentials> {
-    let mut out = Vec::new();
-    if is_input_expired(input.exp_date) {
-        if let Some((u, p)) = extract_account_creds_from_input(input) {
-            out.push(AccountCredentials {
-                name: input.name.clone(),
-                username: u,
-                password: p,
-                exp_date: input.exp_date,
-            });
-        }
-    }
-    if let Some(aliases) = input.aliases.as_ref() {
-        for a in aliases {
-            if is_input_expired(a.exp_date) {
-                if let (Some(u), Some(p)) = (a.username.as_deref(), a.password.as_deref()) {
-                    if !u.trim().is_empty() && !p.trim().is_empty() {
-                        out.push(AccountCredentials {
-                            name: a.name.clone(),
-                            username: u.to_string(),
-                            password: p.to_string(),
-                            exp_date: a.exp_date,
-                        });
-                    }
-                }
-            }
-        }
-    }
-    out.sort_by_key(|a| a.exp_date.unwrap_or(i64::MAX));
-    out
 }
 
 fn collect_accounts(input: &ConfigInput) -> Vec<AccountCredentials> {
@@ -610,11 +718,11 @@ async fn patch_source_yml_add_alias(
 ) -> Result<(), TuliproxError> {
     let mut sources = match read_sources_file_from_path(source_file_path, false, false, None) {
         Ok(sources) => sources,
-        Err(e) => return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}"))),
+        Err(e) => return info_err_res!("panel_api: failed to read source file: {e}"),
     };
 
     let Some(input) = sources.inputs.iter_mut().find(|i| i.name == input_name) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml");
+        return info_err_res!("panel_api: could not find input '{input_name}' in source.yml");
     };
 
     let alias = ConfigInputAliasDto {
@@ -635,59 +743,29 @@ async fn patch_source_yml_add_alias(
 }
 
 async fn patch_source_yml_update_panel_api_credits(
+    app_state: &Arc<AppState>,
     source_file_path: &Path,
     input_name: &str,
     credits: &str,
 ) -> Result<(), TuliproxError> {
-    let raw = tokio::fs::read_to_string(source_file_path)
-        .await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}")))?;
-    let mut doc: serde_yaml::Value = serde_yaml::from_str(&raw)
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to parse source file yaml: {e}")))?;
-    let Some(root) = doc.as_mapping_mut() else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: source.yml root is not a mapping");
+    let mut sources = match read_sources_file_from_path(source_file_path, false, false, None) {
+        Ok(sources) => sources,
+        Err(e) => return info_err_res!("panel_api: failed to read source file: {e}"),
     };
-    let sources = root.get_mut(serde_yaml::Value::String("sources".to_string())).and_then(|v| v.as_sequence_mut());
-    let Some(sources) = sources else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: source.yml missing 'sources' list");
-    };
-    for src in sources.iter_mut() {
-        let Some(src_map) = src.as_mapping_mut() else { continue; };
-        let Some(inputs) = src_map.get_mut(serde_yaml::Value::String("inputs".to_string())).and_then(|v| v.as_sequence_mut()) else { continue; };
-        for inp in inputs.iter_mut() {
-            let Some(inp_map) = inp.as_mapping_mut() else { continue; };
-            let name = inp_map.get(serde_yaml::Value::String("name".to_string())).and_then(|v| v.as_str());
-            if name != Some(input_name) {
-                continue;
-            }
 
-            let panel_key = serde_yaml::Value::String("panel_api".to_string());
-            let credits_key = serde_yaml::Value::String("credits".to_string());
-            let panel_value = inp_map.entry(panel_key).or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
-            match panel_value {
-                serde_yaml::Value::Mapping(map) => {
-                    map.insert(credits_key, serde_yaml::Value::String(credits.to_string()));
-                }
-                serde_yaml::Value::Null => {
-                    let mut map = serde_yaml::Mapping::new();
-                    map.insert(credits_key, serde_yaml::Value::String(credits.to_string()));
-                    *panel_value = serde_yaml::Value::Mapping(map);
-                }
-                _ => {
-                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: input.panel_api is not a mapping in source.yml");
-                }
-            }
+    for input in &mut sources.inputs {
+        if input.name == input_name {
+            let Some(panel_api) = input.panel_api.as_mut() else {
+                return info_err_res!("panel_api: could not find panel_api for input '{input_name}' in source.yml");
+            };
 
-            let serialized = serde_yaml::to_string(&doc)
-                .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
-            let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
-            tokio::fs::write(source_file_path, serialized)
-                .await
-                .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
+            panel_api.credits = Some(credits.to_string());
+            persist_source_config(app_state, Some(source_file_path), sources).await?;
             return Ok(());
         }
     }
-    create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml")
+
+    info_err_res!("panel_api: could not find input '{input_name}' in source.yml")
 }
 
 async fn patch_source_yml_update_exp_date(
@@ -699,15 +777,15 @@ async fn patch_source_yml_update_exp_date(
 ) -> Result<(), TuliproxError> {
     let mut sources = match read_sources_file_from_path(source_file_path, false, false, None) {
         Ok(sources) => sources,
-        Err(e) => return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}"))),
+        Err(e) => return info_err_res!("panel_api: failed to read source file: {e}"),
     };
 
     let Some(input) = sources.inputs.iter_mut().find(|i| i.name == input_name) else {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml");
+        return info_err_res!("panel_api: could not find input '{input_name}' in source.yml");
     };
 
     if input.update_account_expiration_date(input_name, account_name, exp_date).is_err() {
-        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml");
+        return info_err_res!("panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml");
     }
 
     persist_source_config(app_state, Some(source_file_path), sources).await?;
@@ -730,7 +808,7 @@ async fn patch_source_yml_remove_expired_aliases(
 
     if let Some(aliases) = input.aliases.as_mut() {
         let before_len = aliases.len();
-        aliases.retain(|alias| is_input_expired(alias.exp_date.clone()));
+        aliases.retain(|alias| is_input_expired(alias.exp_date));
         if aliases.len() == before_len {
             return Ok(false);
         }
@@ -863,11 +941,11 @@ async fn patch_batch_csv_update_exp_date(
 async fn patch_batch_csv_remove_expired(csv_path: &Path) -> Result<bool, TuliproxError> {
     let raw = tokio::fs::read_to_string(csv_path)
         .await
-        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read csv: {e}")))?;
+        .map_err(|e| info_err!("panel_api: failed to read csv: {e}"))?;
     let lines: Vec<String> = raw.lines().map(ToString::to_string).collect();
     let header_line_idx = lines.iter().position(|l| l.trim_start().starts_with('#'));
     let Some(header_idx) = header_line_idx else {
-        return info_err_res!(TuliproxErrorKind::Info, "panel_api: csv missing header line");
+        return info_err_res!("panel_api: csv missing header line");
     };
     let header = lines[header_idx].trim_start_matches('#').trim();
     let cols: Vec<String> = header.split(';').map(|s| s.trim().to_lowercase()).collect();
@@ -907,7 +985,7 @@ async fn patch_batch_csv_remove_expired(csv_path: &Path) -> Result<bool, Tulipro
     if changed {
         tokio::fs::write(csv_path, out.join("\n") + "\n")
             .await
-            .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write csv: {e}")))?;
+            .map_err(|e| info_err!("panel_api: failed to write csv: {e}"))?;
     }
     Ok(changed)
 }
@@ -1012,7 +1090,7 @@ async fn try_renew_expired_account(
                         }
                     } else {
                         let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
-                        if let Err(err) = patch_source_yml_update_exp_date(sources_path, &input.name, &acct.name, new_exp).await {
+                        if let Err(err) = patch_source_yml_update_exp_date(app_state, sources_path, &input.name, &acct.name, new_exp).await {
                             debug_if_enabled!("panel_api failed to persist renew exp_date to source.yml: {}", err);
                         }
                     }
@@ -1214,7 +1292,7 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
                         && panel_cfg.credits.as_deref().map(str::trim) != Some(normalized.as_str())
                     {
                         let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                        if let Err(err) = patch_source_yml_update_panel_api_credits(&sources_path, &input.name, normalized.as_str()).await {
+                        if let Err(err) = patch_source_yml_update_panel_api_credits(app_state, &sources_path, &input.name, normalized.as_str()).await {
                             debug_if_enabled!("panel_api boot sync failed to persist credits to source.yml: {}", err);
                         } else {
                             any_change = true;
@@ -1290,7 +1368,7 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
                 }
             } else {
                 let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                match patch_source_yml_remove_expired_aliases(&sources_path, &input.name).await {
+                match patch_source_yml_remove_expired_aliases(app_state, &sources_path, &input.name).await {
                     Ok(true) => {
                         any_change = true;
                     }
@@ -1305,5 +1383,239 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
         if let Err(err) = ConfigFile::load_sources(app_state).await {
             debug_if_enabled!("panel_api boot sync reload sources failed: {}", err);
         }
+    }
+}
+
+
+fn provisioning_method_to_reqwest(method: PanelApiProvisioningMethod) -> Method {
+    match method {
+        PanelApiProvisioningMethod::Head => Method::HEAD,
+        PanelApiProvisioningMethod::Get => Method::GET,
+        PanelApiProvisioningMethod::Post => Method::POST,
+    }
+}
+
+fn build_panel_api_test_url(base_url: &str, username: &str, password: &str) -> Option<Url> {
+    let url = Url::parse(base_url).ok()?;
+    let host = url.host_str()?;
+    let scheme = url.scheme();
+    let mut base = concat_string!(scheme, "://", host);
+    if let Some(port) = url.port() {
+        base.push(':');
+        base.push_str(port.to_string().as_str());
+    }
+    base.push_str("/player_api.php");
+    let mut test_url = Url::parse(&base).ok()?;
+    test_url
+        .query_pairs_mut()
+        .append_pair("username", username)
+        .append_pair("password", password)
+        .append_pair("action", "account_info");
+    Some(test_url)
+}
+
+async fn probe_panel_api_test_url(
+    app_state: &Arc<AppState>,
+    test_url: &Url,
+    method: PanelApiProvisioningMethod,
+) -> Result<StatusCode, reqwest::Error> {
+    let client = app_state.http_client.load();
+    let request_method = provisioning_method_to_reqwest(method);
+    let response = client.request(request_method, test_url.clone()).send().await?;
+    Ok(response.status())
+}
+
+#[allow(clippy::too_many_lines)]
+pub(crate) async fn run_panel_api_provisioning_probe(
+    app_state: Arc<AppState>,
+    input: ConfigInput,
+    stop_signal: Arc<AtomicOnceFlag>,
+    addr: SocketAddr,
+    virtual_id: VirtualId,
+) {
+    let Some(panel_cfg) = input.panel_api.as_ref() else {
+        debug_if_enabled!("panel_api provisioning probe skipped (missing config) for input {}", sanitize_sensitive_info(&input.name));
+        stop_signal.notify();
+        let _ = app_state.connection_manager.kick_connection(&addr, virtual_id, 0).await;
+        return;
+    };
+    if !panel_cfg.enabled {
+        debug_if_enabled!("panel_api provisioning probe skipped (panel_api.enabled false) for input {}", sanitize_sensitive_info(&input.name));
+        stop_signal.notify();
+        let _ = app_state.connection_manager.kick_connection(&addr, virtual_id, 0).await;
+        return;
+    }
+    if panel_cfg.url.trim().is_empty() {
+        debug_if_enabled!("panel_api provisioning probe skipped (panel_api.url empty) for input {}", sanitize_sensitive_info(&input.name));
+        stop_signal.notify();
+        let _ = app_state.connection_manager.kick_connection(&addr, virtual_id, 0).await;
+        return;
+    }
+
+    let max_wait_secs = panel_cfg.provisioning.timeout_sec;
+    let probe_interval_secs = panel_cfg.provisioning.probe_interval_sec.max(1);
+    let probe_method = panel_cfg.provisioning.method;
+
+    debug_if_enabled!(
+        "panel_api provisioning probe start for input {} (timeout={}s interval={}s method={})",
+        sanitize_sensitive_info(&input.name),
+        max_wait_secs,
+        probe_interval_secs,
+        probe_method
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(max_wait_secs);
+    let outcome = try_provision_account_on_exhausted(&app_state, &input).await;
+    let credentials = outcome.as_ref().map(PanelApiProvisionOutcome::credentials);
+
+    if let Some(outcome) = outcome.as_ref() {
+        debug_if_enabled!(
+            "panel_api provisioning {} completed for input {}",
+            outcome.kind_label(),
+            sanitize_sensitive_info(&input.name)
+        );
+    } else {
+        debug_if_enabled!("panel_api provisioning failed for input {}; waiting for timeout", sanitize_sensitive_info(&input.name));
+    }
+
+    let Some((username, password)) = credentials else {
+        if max_wait_secs > 0 {
+            tokio::time::sleep(Duration::from_secs(max_wait_secs)).await;
+        }
+        debug_if_enabled!("panel_api provisioning probe timeout reached for input {} (no credentials)", sanitize_sensitive_info(&input.name));
+        stop_signal.notify();
+        debug_if_enabled!(
+            "panel_api provisioning closing client connection for input {} addr={}",
+            sanitize_sensitive_info(&input.name),
+            sanitize_sensitive_info(addr.to_string().as_str())
+        );
+        let _ = app_state.connection_manager.kick_connection(&addr, virtual_id, 0).await;
+        return;
+    };
+
+    let Some(test_url) = build_panel_api_test_url(input.url.as_str(), username, password) else {
+        if max_wait_secs > 0 {
+            tokio::time::sleep(Duration::from_secs(max_wait_secs)).await;
+        }
+        debug_if_enabled!("panel_api provisioning probe failed to build test url for input {}", sanitize_sensitive_info(&input.name) );
+        stop_signal.notify();
+        let _ = app_state.connection_manager.kick_connection(&addr, virtual_id, 0).await;
+        return;
+    };
+
+    let probe_delay = Duration::from_secs(probe_interval_secs);
+    let mut attempt = 0u64;
+    let mut ready = false;
+    while Instant::now() < deadline {
+        attempt += 1;
+        match probe_panel_api_test_url(&app_state, &test_url, probe_method).await {
+            Ok(status) => {
+                debug_if_enabled!(
+                    "panel_api provisioning probe status: '{}' url: {} attempt={}",
+                    status,
+                    sanitize_sensitive_info(test_url.as_str()),
+                    attempt
+                );
+                if status.is_success() {
+                    ready = true;
+                    break;
+                }
+            }
+            Err(err) => {
+                if err.is_timeout() {
+                    debug_if_enabled!(
+                        "panel_api provisioning probe timeout for {} attempt={}",
+                        sanitize_sensitive_info(test_url.as_str()),
+                        attempt
+                    );
+                } else {
+                    debug_if_enabled!(
+                        "panel_api provisioning probe failed for {} attempt={}: {err}",
+                        sanitize_sensitive_info(test_url.as_str()),
+                        attempt
+                    );
+                }
+            }
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        let remaining = deadline.checked_duration_since(now).unwrap_or_default();
+        let sleep_for = if remaining < probe_delay { remaining } else { probe_delay };
+        tokio::time::sleep(sleep_for).await;
+    }
+
+    if ready {
+        debug_if_enabled!(
+            "panel_api provisioning ready for input {} (attempts={})",
+            sanitize_sensitive_info(&input.name),
+            attempt
+        );
+    } else {
+        debug_if_enabled!(
+            "panel_api provisioning probe timeout reached for input {} (attempts={})",
+            sanitize_sensitive_info(&input.name),
+            attempt
+        );
+    }
+    stop_signal.notify();
+    debug_if_enabled!(
+        "panel_api provisioning closing client connection for input {} addr={}",
+        sanitize_sensitive_info(&input.name),
+        sanitize_sensitive_info(addr.to_string().as_str())
+    );
+    let _ = app_state
+        .connection_manager
+        .kick_connection(&addr, virtual_id, 0)
+        .await;
+}
+
+pub fn create_panel_api_provisioning_stream_details(
+    app_state: &Arc<AppState>,
+    input: &ConfigInput,
+    provider_name: Option<String>,
+    grace_period_millis: u64,
+    addr: SocketAddr,
+    virtual_id: VirtualId,
+) -> StreamDetails {
+    let stop_signal = Arc::new(AtomicOnceFlag::new());
+    let headers = [("connection".to_string(), "close".to_string())];
+    let (stream, stream_info) = create_panel_api_provisioning_stream_with_stop(
+        &app_state.app_config,
+        &headers,
+        Arc::clone(&stop_signal),
+    );
+
+    if stream.is_none() {
+        debug_if_enabled!("panel_api provisioning stream missing; falling back to provider exhausted for input {}", sanitize_sensitive_info(&input.name));
+        let (stream, stream_info) = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
+        return StreamDetails {
+            stream,
+            stream_info,
+            provider_name,
+            grace_period_millis,
+            disable_provider_grace: true,
+            reconnect_flag: None,
+            provider_handle: None,
+        };
+    }
+
+    let app_state_clone = Arc::clone(app_state);
+    let input_clone = input.clone();
+    let stop_clone = Arc::clone(&stop_signal);
+    tokio::spawn(async move {
+        run_panel_api_provisioning_probe(app_state_clone, input_clone, stop_clone, addr, virtual_id).await;
+    });
+
+    StreamDetails {
+        stream,
+        stream_info,
+        provider_name,
+        grace_period_millis,
+        disable_provider_grace: true,
+        reconnect_flag: None,
+        provider_handle: None,
     }
 }

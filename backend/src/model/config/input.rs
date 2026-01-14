@@ -167,6 +167,12 @@ impl ConfigInput {
             self.enabled = false;
         }
 
+        let () = self.prepare_panel_api()?;
+
+        Ok(batch_file_path)
+    }
+
+    fn prepare_panel_api(&mut self) -> Result<(), TuliproxError> {
         if let Some(panel) = self.panel_api.as_ref() {
             if panel.enabled {
                 if let Some(size) = panel
@@ -178,9 +184,7 @@ impl ConfigInput {
                     let max = size.max.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
                     if let (Some(min), Some(max)) = (min, max) {
                         if min > max {
-                            return Err(info_err!(
-                                "panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max".to_string()
-                            ));
+                            return info_err_res!("panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max");
                         }
                     }
 
@@ -195,14 +199,11 @@ impl ConfigInput {
                 }
 
                 if panel.provisioning.probe_interval_sec == 0 {
-                    return Err(info_err!(
-                        "panel_api.provisioning.probe_interval_sec must be greater than 0".to_string()
-                    ));
+                    return info_err_res!("panel_api.provisioning.probe_interval_sec must be greater than 0");
                 }
             }
         }
-
-        Ok(batch_file_path)
+        Ok(())
     }
 
     pub fn get_user_info(&self) -> Option<InputUserInfo> {

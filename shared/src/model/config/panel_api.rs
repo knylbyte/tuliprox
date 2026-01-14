@@ -72,17 +72,12 @@ pub struct PanelApiAliasPoolDto {
     pub remove_expired: bool,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PanelApiProvisioningMethod {
+    #[default]
     Head,
     Get,
     Post,
-}
-
-impl Default for PanelApiProvisioningMethod {
-    fn default() -> Self {
-        Self::Head
-    }
 }
 
 impl fmt::Display for PanelApiProvisioningMethod {
