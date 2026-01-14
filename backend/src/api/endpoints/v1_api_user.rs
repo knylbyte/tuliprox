@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use crate::api::model::AppState;
+use crate::api::panel_api::{sync_panel_api_alias_pool_for_target, target_has_alias_pool_auto};
 use crate::model::{ApiProxyConfig, ProxyUserCredentials, TargetUser};
 use crate::repository::store_api_user;
 use axum::response::IntoResponse;
@@ -9,6 +10,7 @@ use shared::model::{ApiProxyConfigDto, ProxyUserCredentialsDto};
 use std::sync::Arc;
 use shared::utils::mask_credentials;
 
+#[allow(clippy::too_many_lines)]
 async fn save_config_api_proxy_user(
     method: axum::http::Method,
     axum::extract::State(app_state): axum::extract::State<Arc<AppState>>,
@@ -137,6 +139,14 @@ async fn save_config_api_proxy_user(
 
     // Update state after successful save
     app_state.app_config.api_proxy.store(Some(Arc::clone(&new_api_proxy)));
+
+    if target_has_alias_pool_auto(&app_state, &target_name) {
+        let app_state_clone = Arc::clone(&app_state);
+        let target_name_clone = target_name.clone();
+        tokio::spawn(async move {
+            sync_panel_api_alias_pool_for_target(&app_state_clone, &target_name_clone).await;
+        });
+    }
 
     axum::http::StatusCode::OK.into_response()
 }

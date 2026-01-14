@@ -3873,7 +3873,7 @@ mod tests {
     #[test]
     fn test_node_serialization_overhead() -> io::Result<()> {
         use crate::utils::binary_serialize;
-        use crate::repository::{ValueInfo, ValueStorageMode, PAGE_SIZE_USIZE};
+        use super::{ValueInfo, ValueStorageMode, PAGE_SIZE_USIZE};
 
         // Simulate a leaf node with u32 keys and ValueInfo
         let key_counts = [10, 30, 50, 80, 100];
@@ -4000,4 +4000,3 @@ mod page_tests {
         }
     }
 }
-

@@ -1137,12 +1137,6 @@ async fn ensure_alias_pool_min(
         return false;
     }
 
-    let _input_lock = app_state
-        .app_config
-        .file_locks
-        .write_lock_str(format!("panel_api:{input_name}").as_str())
-        .await;
-
     let mut changed = false;
     let max_attempts = usize::from(min_pool).saturating_add(10);
     for _ in 0..max_attempts {
@@ -1186,6 +1180,457 @@ async fn ensure_alias_pool_min(
 }
 
 #[allow(clippy::too_many_lines)]
+async fn sync_panel_api_for_input_on_boot(
+    app_state: &Arc<AppState>,
+    input: &Arc<ConfigInput>,
+    sources_path: &Path,
+) -> bool {
+    let Some(panel_cfg) = input.panel_api.as_ref() else {
+        return false;
+    };
+    if !panel_cfg.enabled || panel_cfg.url.trim().is_empty() {
+        return false;
+    }
+
+    if let Err(err) = validate_panel_api_config(panel_cfg) {
+        debug_if_enabled!(
+            "panel_api boot sync skipped for {}: {}",
+            sanitize_sensitive_info(&input.name),
+            sanitize_sensitive_info(err.to_string().as_str())
+        );
+        return false;
+    }
+
+    let input_name = input.name.as_str();
+    let _input_lock = app_state
+        .app_config
+        .file_locks
+        .write_lock_str(format!("panel_api:{input_name}").as_str())
+        .await;
+
+    let mut any_change = false;
+    let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
+    let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
+    let csv_path = if is_batch { get_csv_file_path(batch_url).ok() } else { None };
+    let mut input_changed = false;
+
+    let mut accounts = collect_accounts(input.as_ref());
+
+    if !panel_cfg.query_parameter.account_info.is_empty() {
+        let creds = accounts.first().map(|acct| (acct.username.as_str(), acct.password.as_str()));
+        match panel_account_info(app_state.as_ref(), panel_cfg, creds).await {
+            Ok(Some(credits)) => {
+                let normalized = credits.trim().to_string();
+                if !normalized.is_empty()
+                    && panel_cfg.credits.as_deref().map(str::trim) != Some(normalized.as_str())
+                {
+                    let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
+                    if let Err(err) = patch_source_yml_update_panel_api_credits(
+                        app_state,
+                        sources_path,
+                        &input.name,
+                        normalized.as_str(),
+                    )
+                    .await
+                    {
+                        debug_if_enabled!("panel_api boot sync failed to persist credits to source.yml: {}", err);
+                    } else {
+                        any_change = true;
+                        input_changed = true;
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                debug_if_enabled!(
+                    "panel_api account_info failed for {}: {}",
+                    sanitize_sensitive_info(&input.name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+            }
+        }
+    }
+
+    for acct in &mut accounts {
+        let new_exp = match panel_client_info(app_state.as_ref(), panel_cfg, &acct.username, &acct.password).await {
+            Ok(v) => v,
+            Err(err) => {
+                debug_if_enabled!(
+                    "panel_api client_info failed for {}: {}",
+                    sanitize_sensitive_info(&acct.name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+                None
+            }
+        };
+        let Some(new_exp) = new_exp else { continue; };
+        if acct.exp_date == Some(new_exp) {
+            continue;
+        }
+
+        if let Some(csv_path) = csv_path.as_ref() {
+            let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
+            if let Err(err) = csv_patch_batch_update_exp_date(
+                input.input_type,
+                csv_path,
+                &acct.name,
+                &acct.username,
+                &acct.password,
+                new_exp,
+            )
+            .await
+            {
+                debug_if_enabled!("panel_api boot sync failed to persist exp_date to csv: {}", err);
+                continue;
+            }
+        } else {
+            let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
+            if let Err(err) =
+                patch_source_yml_update_exp_date(app_state, sources_path, &input.name, &acct.name, new_exp).await
+            {
+                debug_if_enabled!("panel_api boot sync failed to persist exp_date to source.yml: {}", err);
+                continue;
+            }
+        }
+        acct.exp_date = Some(new_exp);
+        any_change = true;
+        input_changed = true;
+    }
+
+    // On boot/update, also try to renew the root input account (not only aliases),
+    // so expired/missing exp_date root credentials don't keep the provider disabled.
+    if let Some(root_idx) = accounts.iter().position(|acct| acct.name == input.name) {
+        if accounts[root_idx].exp_date.is_none() {
+            let refreshed = panel_client_info(
+                app_state.as_ref(),
+                panel_cfg,
+                accounts[root_idx].username.as_str(),
+                accounts[root_idx].password.as_str(),
+            )
+            .await
+            .ok()
+            .flatten();
+
+            if let Some(refreshed_exp) = refreshed {
+                if let Some(csv_path) = csv_path.as_ref() {
+                    let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
+                    if let Err(err) = csv_patch_batch_update_exp_date(
+                        input.input_type,
+                        csv_path,
+                        &input.name,
+                        &accounts[root_idx].username,
+                        &accounts[root_idx].password,
+                        refreshed_exp,
+                    )
+                    .await
+                    {
+                        debug_if_enabled!(
+                            "panel_api boot sync failed to persist root exp_date refresh to csv: {}",
+                            err
+                        );
+                    } else {
+                        any_change = true;
+                        input_changed = true;
+                        accounts[root_idx].exp_date = Some(refreshed_exp);
+                    }
+                } else {
+                    let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
+                    if let Err(err) =
+                        patch_source_yml_update_exp_date(app_state, sources_path, &input.name, &input.name, refreshed_exp).await
+                    {
+                        debug_if_enabled!(
+                            "panel_api boot sync failed to persist root exp_date refresh to source.yml: {}",
+                            err
+                        );
+                    } else {
+                        any_change = true;
+                        input_changed = true;
+                        accounts[root_idx].exp_date = Some(refreshed_exp);
+                    }
+                }
+            }
+        }
+
+        // Only renew/create when we are sure the root account is expired.
+        let root_expired = is_input_expired(accounts[root_idx].exp_date);
+        if root_expired {
+            let (root_name, root_username, root_password) = {
+                let root = &accounts[root_idx];
+                (root.name.clone(), root.username.clone(), root.password.clone())
+            };
+
+            debug_if_enabled!(
+                "panel_api boot sync renewing root account for input {} (exp_date={:?})",
+                sanitize_sensitive_info(&input.name),
+                accounts[root_idx].exp_date
+            );
+
+            let (active_username, active_password, creds_changed) = match panel_client_renew(
+                app_state.as_ref(),
+                panel_cfg,
+                root_username.as_str(),
+                root_password.as_str(),
+            )
+            .await
+            {
+                Ok(()) => (root_username.clone(), root_password.clone(), false),
+                Err(err) => {
+                    debug_if_enabled!(
+                        "panel_api client_renew failed for {}: {}",
+                        sanitize_sensitive_info(&root_name),
+                        sanitize_sensitive_info(err.to_string().as_str())
+                    );
+
+                    match panel_client_new(app_state.as_ref(), panel_cfg).await {
+                        Ok((new_username, new_password, _base_url_from_resp)) => {
+                            debug_if_enabled!(
+                                "panel_api boot sync client_new succeeded for input {}",
+                                sanitize_sensitive_info(&input.name)
+                            );
+
+                            if let Some(csv_path) = csv_path.as_ref() {
+                                let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
+                                if let Err(err) = csv_patch_batch_update_credentials(
+                                    input.input_type,
+                                    csv_path,
+                                    &root_name,
+                                    &root_username,
+                                    &root_password,
+                                    &new_username,
+                                    &new_password,
+                                    None,
+                                )
+                                .await
+                                {
+                                    debug_if_enabled!(
+                                        "panel_api boot sync failed to persist root credentials to csv: {}",
+                                        err
+                                    );
+                                } else {
+                                    any_change = true;
+                                    input_changed = true;
+                                }
+                            } else {
+                                let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
+                                if let Err(err) = patch_source_yml_update_root_credentials(
+                                    app_state,
+                                    sources_path,
+                                    &input.name,
+                                    &new_username,
+                                    &new_password,
+                                    None,
+                                )
+                                .await
+                                {
+                                    debug_if_enabled!(
+                                        "panel_api boot sync failed to persist root credentials to source.yml: {}",
+                                        err
+                                    );
+                                } else {
+                                    any_change = true;
+                                    input_changed = true;
+                                }
+                            }
+
+                            accounts[root_idx].username.clone_from(&new_username);
+                            accounts[root_idx].password.clone_from(&new_password);
+                            (new_username, new_password, true)
+                        }
+                        Err(err) => {
+                            debug_if_enabled!(
+                                "panel_api client_new failed for input {}: {}",
+                                sanitize_sensitive_info(&input.name),
+                                sanitize_sensitive_info(err.to_string().as_str())
+                            );
+                            return any_change;
+                        }
+                    }
+                }
+            };
+
+            if let Err(err) = panel_client_adult_content(
+                app_state.as_ref(),
+                panel_cfg,
+                Some((active_username.as_str(), active_password.as_str())),
+            )
+            .await
+            {
+                debug_if_enabled!(
+                    "panel_api client_adult_content failed for {}: {}",
+                    sanitize_sensitive_info(&root_name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+            }
+
+            let _ready = wait_for_panel_api_account_ready(
+                app_state,
+                input.as_ref(),
+                panel_cfg,
+                active_username.as_str(),
+                active_password.as_str(),
+            )
+            .await;
+
+            let refreshed_exp = panel_client_info(
+                app_state.as_ref(),
+                panel_cfg,
+                active_username.as_str(),
+                active_password.as_str(),
+            )
+            .await
+            .ok()
+            .flatten();
+
+            if let Some(new_exp) = refreshed_exp {
+                if let Some(csv_path) = csv_path.as_ref() {
+                    let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
+                    let result = if creds_changed {
+                        csv_patch_batch_update_credentials(
+                            input.input_type,
+                            csv_path,
+                            &root_name,
+                            &root_username,
+                            &root_password,
+                            active_username.as_str(),
+                            active_password.as_str(),
+                            Some(new_exp),
+                        )
+                        .await
+                    } else {
+                        csv_patch_batch_update_exp_date(
+                            input.input_type,
+                            csv_path,
+                            &root_name,
+                            &root_username,
+                            &root_password,
+                            new_exp,
+                        )
+                        .await
+                    };
+                    if let Err(err) = result {
+                        debug_if_enabled!(
+                            "panel_api boot sync failed to persist root exp_date to csv: {}",
+                            err
+                        );
+                    } else {
+                        accounts[root_idx].exp_date = Some(new_exp);
+                        any_change = true;
+                        input_changed = true;
+                    }
+                } else {
+                    let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
+                    let res = if creds_changed {
+                        patch_source_yml_update_root_credentials(
+                            app_state,
+                            sources_path,
+                            &input.name,
+                            active_username.as_str(),
+                            active_password.as_str(),
+                            Some(new_exp),
+                        )
+                        .await
+                    } else {
+                        patch_source_yml_update_exp_date(app_state, sources_path, &input.name, &input.name, new_exp).await
+                    };
+                    if let Err(err) = res {
+                        debug_if_enabled!(
+                            "panel_api boot sync failed to persist root exp_date to source.yml: {}",
+                            err
+                        );
+                    } else {
+                        accounts[root_idx].exp_date = Some(new_exp);
+                        any_change = true;
+                        input_changed = true;
+                    }
+                }
+            } else {
+                debug_if_enabled!(
+                    "panel_api boot sync root renew/create succeeded but exp_date refresh failed for input {}",
+                    sanitize_sensitive_info(&input.name)
+                );
+            }
+        } else if accounts[root_idx].exp_date.is_none() {
+            debug_if_enabled!(
+                "panel_api boot sync root exp_date is missing for input {}; skipping renew/new",
+                sanitize_sensitive_info(&input.name)
+            );
+        }
+    }
+
+    if !panel_cfg.query_parameter.client_adult_content.is_empty() {
+        for acct in &accounts {
+            if let Err(err) = panel_client_adult_content(
+                app_state.as_ref(),
+                panel_cfg,
+                Some((acct.username.as_str(), acct.password.as_str())),
+            )
+            .await
+            {
+                debug_if_enabled!(
+                    "panel_api client_adult_content failed for {}: {}",
+                    sanitize_sensitive_info(&acct.name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+            }
+        }
+    }
+
+    let min_pool = resolve_alias_pool_min(app_state.as_ref(), &input.name, panel_cfg);
+    if let Some(min_pool_value) = min_pool {
+        if alias_pool_both_auto(panel_cfg) {
+            let enabled_users = count_enabled_proxy_users(app_state.as_ref(), &input.name);
+            let current_valid = count_valid_accounts(&accounts);
+            let current_valid_u16 = u16::try_from(current_valid).unwrap_or(u16::MAX);
+            let needed = min_pool_value.saturating_sub(current_valid_u16);
+            debug_if_enabled!(
+                "panel_api boot/update alias pool auto for input {}: enabled_users={}, valid_accounts={}, to_provision={}",
+                sanitize_sensitive_info(&input.name),
+                enabled_users,
+                current_valid,
+                needed
+            );
+        }
+    }
+    let min_pool = min_pool.filter(|m| *m > 0);
+    if let Some(min_pool) = min_pool {
+        if input_changed {
+            if let Err(err) = ConfigFile::load_sources(app_state).await {
+                debug_if_enabled!(
+                    "panel_api boot sync reload sources failed before alias pool min: {}",
+                    err
+                );
+            }
+        }
+        if ensure_alias_pool_min(app_state, &input.name, panel_cfg, min_pool, sources_path).await {
+            any_change = true;
+        }
+    }
+
+    if alias_pool_remove_expired(panel_cfg) {
+        if let Some(csv_path) = csv_path.as_ref() {
+            let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
+            match csv_patch_batch_remove_expired(input.input_type, csv_path).await {
+                Ok(true) => {
+                    any_change = true;
+                }
+                Ok(false) => {}
+                Err(err) => debug_if_enabled!("panel_api boot sync failed to remove expired csv accounts: {}", err),
+            }
+        } else {
+            let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
+            match patch_source_yml_remove_expired_aliases(app_state, sources_path, &input.name).await {
+                Ok(true) => {
+                    any_change = true;
+                }
+                Ok(false) => {}
+                Err(err) => debug_if_enabled!("panel_api boot sync failed to remove expired source accounts: {}", err),
+            }
+        }
+    }
+
+    any_change
+}
+
 pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) {
     let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
     let sources_path = PathBuf::from(&sources_file_path);
@@ -1193,426 +1638,64 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
 
     let sources = app_state.app_config.sources.load();
     for input in &sources.inputs {
-        let Some(panel_cfg) = input.panel_api.as_ref() else { continue; };
-        if !panel_cfg.enabled || panel_cfg.url.trim().is_empty() {
-            continue;
-        }
-
-        if let Err(err) = validate_panel_api_config(panel_cfg) {
-            debug_if_enabled!(
-                "panel_api boot sync skipped for {}: {}",
-                sanitize_sensitive_info(&input.name),
-                sanitize_sensitive_info(err.to_string().as_str())
-            );
-            continue;
-        }
-
-        let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
-        let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
-        let csv_path = if is_batch { get_csv_file_path(batch_url).ok() } else { None };
-        let mut input_changed = false;
-
-        let mut accounts = collect_accounts(input.as_ref());
-
-        if !panel_cfg.query_parameter.account_info.is_empty() {
-            let creds = accounts.first().map(|acct| (acct.username.as_str(), acct.password.as_str()));
-            match panel_account_info(app_state.as_ref(), panel_cfg, creds).await {
-                Ok(Some(credits)) => {
-                    let normalized = credits.trim().to_string();
-                    if !normalized.is_empty()
-                        && panel_cfg.credits.as_deref().map(str::trim) != Some(normalized.as_str())
-                    {
-                        let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                        if let Err(err) = patch_source_yml_update_panel_api_credits(app_state, &sources_path, &input.name, normalized.as_str()).await {
-                            debug_if_enabled!("panel_api boot sync failed to persist credits to source.yml: {}", err);
-                        } else {
-                            any_change = true;
-                            input_changed = true;
-                        }
-                    }
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    debug_if_enabled!(
-                        "panel_api account_info failed for {}: {}",
-                        sanitize_sensitive_info(&input.name),
-                        sanitize_sensitive_info(err.to_string().as_str())
-                    );
-                }
-            }
-        }
-
-        for acct in &mut accounts {
-            let new_exp = match panel_client_info(app_state.as_ref(), panel_cfg, &acct.username, &acct.password).await {
-                Ok(v) => v,
-                Err(err) => {
-                    debug_if_enabled!(
-                            "panel_api client_info failed for {}: {}",
-                            sanitize_sensitive_info(&acct.name),
-                            sanitize_sensitive_info(err.to_string().as_str())
-                        );
-                    None
-                }
-            };
-            let Some(new_exp) = new_exp else { continue; };
-            if acct.exp_date == Some(new_exp) {
-                continue;
-            }
-
-            if let Some(csv_path) = csv_path.as_ref() {
-                let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
-                if let Err(err) = csv_patch_batch_update_exp_date(input.input_type, csv_path, &acct.name, &acct.username, &acct.password, new_exp).await {
-                    debug_if_enabled!("panel_api boot sync failed to persist exp_date to csv: {}", err);
-                    continue;
-                }
-            } else {
-                let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                if let Err(err) = patch_source_yml_update_exp_date(app_state, &sources_path, &input.name, &acct.name, new_exp).await {
-                    debug_if_enabled!("panel_api boot sync failed to persist exp_date to source.yml: {}", err);
-                    continue;
-                }
-            }
-            acct.exp_date = Some(new_exp);
+        if sync_panel_api_for_input_on_boot(app_state, input, sources_path.as_path()).await {
             any_change = true;
-            input_changed = true;
-        }
-
-        // On boot/update, also try to renew the root input account (not only aliases),
-        // so expired/missing exp_date root credentials don't keep the provider disabled.
-        if let Some(root_idx) = accounts.iter().position(|acct| acct.name == input.name) {
-            if accounts[root_idx].exp_date.is_none() {
-                let refreshed = panel_client_info(
-                    app_state.as_ref(),
-                    panel_cfg,
-                    accounts[root_idx].username.as_str(),
-                    accounts[root_idx].password.as_str(),
-                )
-                .await
-                .ok()
-                .flatten();
-                if let Some(refreshed_exp) = refreshed {
-                    if let Some(csv_path) = csv_path.as_ref() {
-                        let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
-                        if let Err(err) = csv_patch_batch_update_exp_date(
-                            input.input_type,
-                            csv_path,
-                            &input.name,
-                            &accounts[root_idx].username,
-                            &accounts[root_idx].password,
-                            refreshed_exp,
-                        )
-                        .await
-                        {
-                            debug_if_enabled!(
-                                "panel_api boot sync failed to persist root exp_date refresh to csv: {}",
-                                err
-                            );
-                        } else {
-                            any_change = true;
-                            input_changed = true;
-                            accounts[root_idx].exp_date = Some(refreshed_exp);
-                        }
-                    } else {
-                        let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                        if let Err(err) = patch_source_yml_update_exp_date(
-                            app_state,
-                            &sources_path,
-                            &input.name,
-                            &input.name,
-                            refreshed_exp,
-                        )
-                        .await
-                        {
-                            debug_if_enabled!(
-                                "panel_api boot sync failed to persist root exp_date refresh to source.yml: {}",
-                                err
-                            );
-                        } else {
-                            any_change = true;
-                            input_changed = true;
-                            accounts[root_idx].exp_date = Some(refreshed_exp);
-                        }
-                    }
-                }
-            }
-
-            // Only renew/create when we are sure the root account is expired.
-            let root_expired = is_input_expired(accounts[root_idx].exp_date);
-            if root_expired {
-                let (root_name, root_username, root_password) = {
-                    let root = &accounts[root_idx];
-                    (root.name.clone(), root.username.clone(), root.password.clone())
-                };
-
-                debug_if_enabled!(
-                    "panel_api boot sync renewing root account for input {} (exp_date={:?})",
-                    sanitize_sensitive_info(&input.name),
-                    accounts[root_idx].exp_date
-                );
-
-                let (active_username, active_password, creds_changed) =
-                    match panel_client_renew(
-                        app_state.as_ref(),
-                        panel_cfg,
-                        root_username.as_str(),
-                        root_password.as_str(),
-                    )
-                    .await
-                    {
-                        Ok(()) => (root_username.clone(), root_password.clone(), false),
-                        Err(err) => {
-                            debug_if_enabled!(
-                                "panel_api client_renew failed for {}: {}",
-                                sanitize_sensitive_info(&root_name),
-                                sanitize_sensitive_info(err.to_string().as_str())
-                            );
-
-                            match panel_client_new(app_state.as_ref(), panel_cfg).await {
-                                Ok((new_username, new_password, _base_url_from_resp)) => {
-                                    debug_if_enabled!(
-                                        "panel_api boot sync client_new succeeded for input {}",
-                                        sanitize_sensitive_info(&input.name)
-                                    );
-
-                                    if let Some(csv_path) = csv_path.as_ref() {
-                                        let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
-                                        if let Err(err) = csv_patch_batch_update_credentials(
-                                            input.input_type,
-                                            csv_path,
-                                            &root_name,
-                                            &root_username,
-                                            &root_password,
-                                            &new_username,
-                                            &new_password,
-                                            None,
-                                        )
-                                        .await
-                                        {
-                                            debug_if_enabled!(
-                                                "panel_api boot sync failed to persist root credentials to csv: {}",
-                                                err
-                                            );
-                                        } else {
-                                            any_change = true;
-                                            input_changed = true;
-                                        }
-                                    } else {
-                                        let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                                        if let Err(err) = patch_source_yml_update_root_credentials(
-                                            app_state,
-                                            &sources_path,
-                                            &input.name,
-                                            &new_username,
-                                            &new_password,
-                                            None,
-                                        )
-                                        .await
-                                        {
-                                            debug_if_enabled!(
-                                                "panel_api boot sync failed to persist root credentials to source.yml: {}",
-                                                err
-                                            );
-                                        } else {
-                                            any_change = true;
-                                            input_changed = true;
-                                        }
-                                    }
-
-                                    accounts[root_idx].username.clone_from(&new_username);
-                                    accounts[root_idx].password.clone_from(&new_password);
-                                    (new_username, new_password, true)
-                                }
-                                Err(err) => {
-                                    debug_if_enabled!(
-                                        "panel_api client_new failed for input {}: {}",
-                                        sanitize_sensitive_info(&input.name),
-                                        sanitize_sensitive_info(err.to_string().as_str())
-                                    );
-                                    continue;
-                                }
-                            }
-                        }
-                    };
-
-                if let Err(err) = panel_client_adult_content(
-                    app_state.as_ref(),
-                    panel_cfg,
-                    Some((active_username.as_str(), active_password.as_str())),
-                )
-                .await
-                {
-                    debug_if_enabled!(
-                        "panel_api client_adult_content failed for {}: {}",
-                        sanitize_sensitive_info(&root_name),
-                        sanitize_sensitive_info(err.to_string().as_str())
-                    );
-                }
-
-                let _ready = wait_for_panel_api_account_ready(
-                    app_state,
-                    input.as_ref(),
-                    panel_cfg,
-                    active_username.as_str(),
-                    active_password.as_str(),
-                )
-                .await;
-
-                let refreshed_exp = panel_client_info(
-                    app_state.as_ref(),
-                    panel_cfg,
-                    active_username.as_str(),
-                    active_password.as_str(),
-                )
-                .await
-                .ok()
-                .flatten();
-
-                if let Some(new_exp) = refreshed_exp {
-                    if let Some(csv_path) = csv_path.as_ref() {
-                        let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
-                        let result = if creds_changed {
-                            csv_patch_batch_update_credentials(
-                                input.input_type,
-                                csv_path,
-                                &root_name,
-                                &root_username,
-                                &root_password,
-                                active_username.as_str(),
-                                active_password.as_str(),
-                                Some(new_exp),
-                            )
-                            .await
-                        } else {
-                            csv_patch_batch_update_exp_date(
-                                input.input_type,
-                                csv_path,
-                                &root_name,
-                                &root_username,
-                                &root_password,
-                                new_exp,
-                            )
-                            .await
-                        };
-                        if let Err(err) = result {
-                            debug_if_enabled!(
-                                "panel_api boot sync failed to persist root exp_date to csv: {}",
-                                err
-                            );
-                        } else {
-                            accounts[root_idx].exp_date = Some(new_exp);
-                            any_change = true;
-                            input_changed = true;
-                        }
-                    } else {
-                        let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                        let res = if creds_changed {
-                            patch_source_yml_update_root_credentials(
-                                app_state,
-                                &sources_path,
-                                &input.name,
-                                active_username.as_str(),
-                                active_password.as_str(),
-                                Some(new_exp),
-                            )
-                            .await
-                        } else {
-                            patch_source_yml_update_exp_date(app_state, &sources_path, &input.name, &input.name, new_exp)
-                                .await
-                        };
-                        if let Err(err) = res {
-                            debug_if_enabled!(
-                                "panel_api boot sync failed to persist root exp_date to source.yml: {}",
-                                err
-                            );
-                        } else {
-                            accounts[root_idx].exp_date = Some(new_exp);
-                            any_change = true;
-                            input_changed = true;
-                        }
-                    }
-                } else {
-                    debug_if_enabled!(
-                        "panel_api boot sync root renew/create succeeded but exp_date refresh failed for input {}",
-                        sanitize_sensitive_info(&input.name)
-                    );
-                }
-            } else if accounts[root_idx].exp_date.is_none() {
-                debug_if_enabled!(
-                    "panel_api boot sync root exp_date is missing for input {}; skipping renew/new",
-                    sanitize_sensitive_info(&input.name)
-                );
-            }
-        }
-
-        if !panel_cfg.query_parameter.client_adult_content.is_empty() {
-            for acct in &accounts {
-                if let Err(err) = panel_client_adult_content(app_state.as_ref(), panel_cfg, Some((acct.username.as_str(), acct.password.as_str()))).await {
-                    debug_if_enabled!(
-                        "panel_api client_adult_content failed for {}: {}",
-                        sanitize_sensitive_info(&acct.name),
-                        sanitize_sensitive_info(err.to_string().as_str())
-                    );
-                }
-            }
-        }
-
-        let min_pool = resolve_alias_pool_min(app_state.as_ref(), &input.name, panel_cfg);
-        if let Some(min_pool_value) = min_pool {
-            if alias_pool_both_auto(panel_cfg) {
-                let enabled_users = count_enabled_proxy_users(app_state.as_ref(), &input.name);
-                let current_valid = count_valid_accounts(&accounts);
-                let current_valid_u16 = u16::try_from(current_valid).unwrap_or(u16::MAX);
-                let needed = min_pool_value.saturating_sub(current_valid_u16);
-                debug_if_enabled!(
-                    "panel_api boot/update alias pool auto for input {}: enabled_users={}, valid_accounts={}, to_provision={}",
-                    sanitize_sensitive_info(&input.name),
-                    enabled_users,
-                    current_valid,
-                    needed
-                );
-            }
-        }
-        let min_pool = min_pool.filter(|m| *m > 0);
-        if let Some(min_pool) = min_pool {
-            if input_changed {
-                if let Err(err) = ConfigFile::load_sources(app_state).await {
-                    debug_if_enabled!(
-                        "panel_api boot sync reload sources failed before alias pool min: {}",
-                        err
-                    );
-                }
-            }
-            if ensure_alias_pool_min(app_state, &input.name, panel_cfg, min_pool, sources_path.as_path()).await {
-                any_change = true;
-            }
-        }
-
-        if alias_pool_remove_expired(panel_cfg) {
-            if let Some(csv_path) = csv_path.as_ref() {
-                let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
-                match csv_patch_batch_remove_expired(input.input_type, csv_path).await {
-                    Ok(true) => {
-                        any_change = true;
-                    }
-                    Ok(false) => {}
-                    Err(err) => debug_if_enabled!("panel_api boot sync failed to remove expired csv accounts: {}", err),
-                }
-            } else {
-                let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
-                match patch_source_yml_remove_expired_aliases(app_state, &sources_path, &input.name).await {
-                    Ok(true) => {
-                        any_change = true;
-                    }
-                    Ok(false) => {}
-                    Err(err) => debug_if_enabled!("panel_api boot sync failed to remove expired source accounts: {}", err),
-                }
-            }
         }
     }
 
     if any_change {
         if let Err(err) = ConfigFile::load_sources(app_state).await {
             debug_if_enabled!("panel_api boot sync reload sources failed: {}", err);
+        }
+    }
+}
+
+pub(crate) async fn sync_panel_api_alias_pool_for_target(app_state: &Arc<AppState>, target_name: &str) {
+    let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
+    let sources_path = PathBuf::from(&sources_file_path);
+    let mut any_change = false;
+
+    let sources = app_state.app_config.sources.load();
+    for source in &sources.sources {
+        let target_match = source
+            .targets
+            .iter()
+            .any(|target| target.name.eq_ignore_ascii_case(target_name));
+        if !target_match {
+            continue;
+        }
+
+        for input_name in &source.inputs {
+            let Some(input) = sources.get_input_by_name(input_name) else {
+                continue;
+            };
+            let Some(panel_cfg) = input.panel_api.as_ref() else {
+                continue;
+            };
+            if !panel_cfg.enabled || panel_cfg.url.trim().is_empty() {
+                continue;
+            }
+            if !alias_pool_both_auto(panel_cfg) {
+                continue;
+            }
+            if let Err(err) = validate_panel_api_config(panel_cfg) {
+                debug_if_enabled!(
+                    "panel_api user sync skipped for {}: {}",
+                    sanitize_sensitive_info(&input.name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+                continue;
+            }
+
+            if sync_panel_api_for_input_on_boot(app_state, input, sources_path.as_path()).await {
+                any_change = true;
+            }
+        }
+    }
+
+    if any_change {
+        if let Err(err) = ConfigFile::load_sources(app_state).await {
+            debug_if_enabled!("panel_api user sync reload sources failed: {}", err);
         }
     }
 }
