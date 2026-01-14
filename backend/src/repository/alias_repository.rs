@@ -288,10 +288,12 @@ pub async fn csv_patch_batch_update_exp_date(
     for alias in &mut aliases {
         if alias.name == account_name || (alias.username == Some(username.to_string()) && alias.password == Some(password.to_string())) {
             alias.exp_date = Some(exp_date);
+            alias.max_connections = 1;
             matched = true;
         } else if let (Some(u), Some(p)) = get_credentials_from_url_str(&alias.url) {
             if u == username && p == password {
                 alias.exp_date = Some(exp_date);
+                alias.max_connections = 1;
                 matched = true;
             }
         }
@@ -345,6 +347,7 @@ pub async fn csv_patch_batch_update_credentials(
 
         alias.username = Some(new_username.to_string());
         alias.password = Some(new_password.to_string());
+        alias.max_connections = 1;
         if let Some(exp_date) = exp_date {
             alias.exp_date = Some(exp_date);
         }

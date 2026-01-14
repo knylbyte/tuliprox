@@ -701,7 +701,7 @@ async fn patch_source_yml_add_alias(
         username: Some(username.to_string()),
         password: Some(password.to_string()),
         priority: 0,
-        max_connections: 0,
+        max_connections: 1,
         exp_date,
     };
 
@@ -756,6 +756,7 @@ async fn patch_source_yml_update_exp_date(
     if account_name == input_name {
         input.exp_date = Some(exp_date);
         input.enabled = true;
+        input.max_connections = 1;
     } else if let Some(aliases) = input.aliases.as_mut() {
         let Some(alias) = aliases.iter_mut().find(|a| a.name == account_name) else {
             return info_err_res!(
@@ -763,6 +764,7 @@ async fn patch_source_yml_update_exp_date(
             );
         };
         alias.exp_date = Some(exp_date);
+        alias.max_connections = 1;
     } else {
         return info_err_res!(
             "panel_api: input '{input_name}' has no aliases; cannot update exp_date for '{account_name}'"
@@ -793,6 +795,7 @@ async fn patch_source_yml_update_root_credentials(
     input.username = Some(username.to_string());
     input.password = Some(password.to_string());
     input.enabled = true;
+    input.max_connections = 1;
     if let Some(exp_date) = exp_date {
         input.exp_date = Some(exp_date);
     }
