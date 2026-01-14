@@ -3,7 +3,10 @@ use crate::utils::get_csv_file_path;
 use chrono::Utc;
 use log::warn;
 use shared::error::TuliproxError;
-use shared::model::{ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType, StagedInputDto};
+use shared::model::{
+    ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType,
+    PanelApiAliasPoolSizeValue, PanelApiConfigDto, StagedInputDto,
+};
 use shared::utils::{get_credentials_from_url};
 use shared::{check_input_connections, info_err_res, write_if_some};
 use shared::check_input_credentials;
@@ -11,7 +14,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use url::Url;
-use crate::model::config::panel_api::PanelApiConfig;
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
@@ -143,7 +145,7 @@ pub struct ConfigInput {
     pub staged: Option<StagedInput>,
     pub exp_date: Option<i64>,
     pub t_batch_url: Option<String>,
-    pub panel_api: Option<PanelApiConfig>,
+    pub panel_api: Option<PanelApiConfigDto>,
     pub cache_duration_seconds: u64,
 }
 
@@ -165,8 +167,39 @@ impl ConfigInput {
             self.enabled = false;
         }
 
-        if let Some(panel_api) = &mut self.panel_api {
-            panel_api.prepare()?;
+        if let Some(panel) = self.panel_api.as_ref() {
+            if panel.enabled {
+                if let Some(size) = panel
+                    .alias_pool
+                    .as_ref()
+                    .and_then(|pool| pool.size.as_ref())
+                {
+                    let min = size.min.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+                    let max = size.max.as_ref().and_then(PanelApiAliasPoolSizeValue::as_number);
+                    if let (Some(min), Some(max)) = (min, max) {
+                        if min > max {
+                            return Err(info_err!(
+                                "panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max".to_string()
+                            ));
+                        }
+                    }
+
+                    let min_auto = size.min.as_ref().is_some_and(PanelApiAliasPoolSizeValue::is_auto);
+                    let max_auto = size.max.as_ref().is_some_and(PanelApiAliasPoolSizeValue::is_auto);
+                    if max_auto && !min_auto {
+                        warn!(
+                            "panel_api.alias_pool.size.max is set to auto without min for input {}",
+                            self.name
+                        );
+                    }
+                }
+
+                if panel.provisioning.probe_interval_sec == 0 {
+                    return Err(info_err!(
+                        "panel_api.provisioning.probe_interval_sec must be greater than 0".to_string()
+                    ));
+                }
+            }
         }
 
         Ok(batch_file_path)
@@ -278,7 +311,7 @@ impl From<&ConfigInputDto> for ConfigInput {
             exp_date: dto.exp_date,
             staged: dto.staged.as_ref().map(StagedInput::from),
             t_batch_url: None,
-            panel_api: dto.panel_api.as_ref().map(PanelApiConfig::from),
+            panel_api: dto.panel_api.clone(),
             cache_duration_seconds: dto.cache_duration_seconds,
         }
     }

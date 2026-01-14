@@ -11,6 +11,7 @@ use shared::utils::{get_credentials_from_url, parse_timestamp, sanitize_sensitiv
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use url::Url;
+use shared::info_err_res;
 
 #[derive(Debug, Clone)]
 struct AccountCredentials {
@@ -171,7 +172,8 @@ async fn panel_get_json(app_state: &AppState, url: Url) -> Result<Value, Tulipro
     Ok(json)
 }
 
-async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfig) -> Result<(String, String, Option<String>), TuliproxError> {
+async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfigDto) -> Result<(String, String, Option<String>), TuliproxError> {
+    validate_client_new_params(&cfg.query_parameter.client_new)?;
     let params = resolve_query_params(&cfg.query_parameter.client_new, cfg.api_key.as_deref(), None)?;
     let url = build_panel_url(cfg.url.as_str(), &params)?;
     let json = panel_get_json(app_state, url).await?;
@@ -194,7 +196,8 @@ async fn panel_client_new(app_state: &AppState, cfg: &PanelApiConfig) -> Result<
     info_err_res!("panel_api: client_new response missing username/password (and no parsable url)")
 }
 
-async fn panel_client_renew(app_state: &AppState, cfg: &PanelApiConfig, username: &str, password: &str) -> Result<(), TuliproxError> {
+async fn panel_client_renew(app_state: &AppState, cfg: &PanelApiConfigDto, username: &str, password: &str) -> Result<(), TuliproxError> {
+    validate_client_renew_params(&cfg.query_parameter.client_renew)?;
     let params = resolve_query_params(
         &cfg.query_parameter.client_renew,
         cfg.api_key.as_deref(),
@@ -212,7 +215,8 @@ async fn panel_client_renew(app_state: &AppState, cfg: &PanelApiConfig, username
     Ok(())
 }
 
-async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfig, username: &str, password: &str) -> Result<Option<i64>, TuliproxError> {
+async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfigDto, username: &str, password: &str) -> Result<Option<i64>, TuliproxError> {
+    validate_client_info_params(&cfg.query_parameter.client_info)?;
     let params = resolve_query_params(
         &cfg.query_parameter.client_info,
         cfg.api_key.as_deref(),
@@ -242,6 +246,61 @@ async fn panel_client_info(app_state: &AppState, cfg: &PanelApiConfig, username:
     Ok(None)
 }
 
+async fn panel_account_info(
+    app_state: &AppState,
+    cfg: &PanelApiConfigDto,
+    creds: Option<(&str, &str)>,
+) -> Result<Option<String>, TuliproxError> {
+    if cfg.query_parameter.account_info.is_empty() {
+        return Ok(None);
+    }
+    validate_account_info_params(&cfg.query_parameter.account_info)?;
+    let params = resolve_query_params(
+        &cfg.query_parameter.account_info,
+        cfg.api_key.as_deref(),
+        creds,
+    )?;
+    let url = build_panel_url(cfg.url.as_str(), &params)?;
+    let json = panel_get_json(app_state, url).await?;
+    let Some(obj) = first_json_object(&json) else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: account_info response is not a JSON object/array");
+    };
+    let status_ok = obj.get("status").is_some_and(parse_boolish);
+    if !status_ok {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: account_info status=false");
+    }
+    let Some(credits) = obj.get("credits").and_then(extract_stringish) else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: account_info response missing credits");
+    };
+    Ok(Some(credits))
+}
+
+async fn panel_client_adult_content(
+    app_state: &AppState,
+    cfg: &PanelApiConfigDto,
+    creds: Option<(&str, &str)>,
+) -> Result<(), TuliproxError> {
+    if cfg.query_parameter.client_adult_content.is_empty() {
+        return Ok(());
+    }
+    validate_client_adult_content_params(&cfg.query_parameter.client_adult_content)?;
+    let params = resolve_query_params(
+        &cfg.query_parameter.client_adult_content,
+        cfg.api_key.as_deref(),
+        creds,
+    )?;
+    let url = build_panel_url(cfg.url.as_str(), &params)?;
+    let json = panel_get_json(app_state, url).await?;
+    let Some(obj) = first_json_object(&json) else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_adult_content response is not a JSON object/array");
+    };
+    let status_ok = obj.get("status").is_some_and(parse_boolish);
+    if !status_ok {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: client_adult_content status=false");
+    }
+    Ok(())
+}
+
 fn extract_account_creds_from_input(input: &ConfigInput) -> Option<(String, String)> {
     if let (Some(u), Some(p)) = (input.username.as_deref(), input.password.as_deref()) {
         if !u.trim().is_empty() && !p.trim().is_empty() {
@@ -256,6 +315,150 @@ fn extract_account_creds_from_input(input: &ConfigInput) -> Option<(String, Stri
         }
     })
 }
+
+
+fn alias_pool_limit_values(cfg: &PanelApiConfigDto) -> (Option<&PanelApiAliasPoolSizeValue>, Option<&PanelApiAliasPoolSizeValue>) {
+    let size = cfg.alias_pool.as_ref().and_then(|p| p.size.as_ref());
+    let min = size.and_then(|s| s.min.as_ref());
+    let max = size.and_then(|s| s.max.as_ref());
+    (min, max)
+}
+
+#[allow(dead_code)]
+fn alias_pool_both_auto(cfg: &PanelApiConfigDto) -> bool {
+    let (min, max) = alias_pool_limit_values(cfg);
+    min.is_some_and(PanelApiAliasPoolSizeValue::is_auto)
+        && max.is_some_and(PanelApiAliasPoolSizeValue::is_auto)
+}
+
+fn resolve_alias_pool_limit_value(value: Option<&PanelApiAliasPoolSizeValue>, auto_value: Option<u16>) -> Option<u16> {
+    match value {
+        Some(PanelApiAliasPoolSizeValue::Number(v)) => Some(*v),
+        Some(PanelApiAliasPoolSizeValue::Auto(_)) => auto_value,
+        None => None,
+    }
+}
+
+fn is_proxy_user_enabled(user: &ProxyUserCredentials) -> bool {
+    if let Some(status) = user.status {
+        if !matches!(status, ProxyUserStatus::Active | ProxyUserStatus::Trial) {
+            return false;
+        }
+    }
+    !is_input_expired(user.exp_date)
+}
+
+fn find_input_target_names(app_state: &AppState, input_name: &str) -> Vec<String> {
+    let sources = app_state.app_config.sources.load();
+    for source in &sources.sources {
+        if source.inputs.iter().any(|name| name == input_name) {
+            return source.targets.iter().map(|t| t.name.clone()).collect();
+        }
+    }
+    vec![]
+}
+
+fn count_enabled_proxy_users(app_state: &AppState, input_name: &str) -> usize {
+    let api_proxy_guard = app_state.app_config.api_proxy.load();
+    let Some(api_proxy) = api_proxy_guard.as_ref() else {
+        return 0;
+    };
+    let target_names = find_input_target_names(app_state, input_name);
+    if target_names.is_empty() {
+        return 0;
+    }
+    api_proxy
+        .user
+        .iter()
+        .filter(|target_user| {
+            target_names
+                .iter()
+                .any(|target| target.eq_ignore_ascii_case(&target_user.target))
+        })
+        .map(|target_user| {
+            target_user
+                .credentials
+                .iter()
+                .filter(|cred| is_proxy_user_enabled(cred))
+                .count()
+        })
+        .sum()
+}
+
+fn resolve_alias_pool_auto_value(app_state: &AppState, input_name: &str) -> u16 {
+    let enabled_users = count_enabled_proxy_users(app_state, input_name);
+    u16::try_from(enabled_users).unwrap_or(u16::MAX)
+}
+
+#[allow(dead_code)]
+pub(crate) fn target_has_alias_pool_auto(app_state: &AppState, target_name: &str) -> bool {
+    let sources = app_state.app_config.sources.load();
+    for source in &sources.sources {
+        let target_match = source
+            .targets
+            .iter()
+            .any(|target| target.name.eq_ignore_ascii_case(target_name));
+        if !target_match {
+            continue;
+        }
+        for input_name in &source.inputs {
+            let Some(input) = sources.get_input_by_name(input_name) else {
+                continue;
+            };
+            if let Some(panel_cfg) = input.panel_api.as_ref() {
+                if !panel_cfg.enabled {
+                    continue;
+                }
+                if alias_pool_both_auto(panel_cfg) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn resolve_alias_pool_limits(
+    app_state: &AppState,
+    input_name: &str,
+    cfg: &PanelApiConfigDto,
+) -> Result<(Option<u16>, Option<u16>), TuliproxError> {
+    let (min_val, max_val) = alias_pool_limit_values(cfg);
+    if min_val.is_none() && max_val.is_none() {
+        return Ok((None, None));
+    }
+    let min_auto = min_val.is_some_and(PanelApiAliasPoolSizeValue::is_auto);
+    let auto_value = min_auto.then(|| resolve_alias_pool_auto_value(app_state, input_name));
+    let min = resolve_alias_pool_limit_value(min_val, auto_value);
+    let max = match max_val {
+        Some(PanelApiAliasPoolSizeValue::Number(value)) => Some(*value),
+        Some(PanelApiAliasPoolSizeValue::Auto(_)) | None => None,
+    };
+    if let (Some(min), Some(max)) = (min, max) {
+        if min > max {
+            return create_tuliprox_error_result!(
+                TuliproxErrorKind::Info,
+                "panel_api.alias_pool.size.min must be <= panel_api.alias_pool.size.max"
+            );
+        }
+    }
+    Ok((min, max))
+}
+
+#[allow(dead_code)]
+fn resolve_alias_pool_min(app_state: &AppState, input_name: &str, cfg: &PanelApiConfigDto) -> Option<u16> {
+    let (min_val, _) = alias_pool_limit_values(cfg);
+    let min_val = min_val?;
+    let auto_value = min_val
+        .is_auto()
+        .then(|| resolve_alias_pool_auto_value(app_state, input_name));
+    resolve_alias_pool_limit_value(Some(min_val), auto_value)
+}
+
+fn alias_pool_remove_expired(cfg: &PanelApiConfigDto) -> bool {
+    cfg.alias_pool.as_ref().is_some_and(|p| p.remove_expired)
+}
+
 
 fn collect_expired_accounts(input: &ConfigInput) -> Vec<AccountCredentials> {
     let mut out = Vec::new();
@@ -289,6 +492,111 @@ fn collect_expired_accounts(input: &ConfigInput) -> Vec<AccountCredentials> {
     out
 }
 
+fn collect_accounts(input: &ConfigInput) -> Vec<AccountCredentials> {
+    let mut out = Vec::new();
+    if let Some((u, p)) = extract_account_creds_from_input(input) {
+        out.push(AccountCredentials {
+            name: input.name.clone(),
+            username: u,
+            password: p,
+            exp_date: input.exp_date,
+        });
+    }
+    if let Some(aliases) = input.aliases.as_ref() {
+        for a in aliases {
+            if let (Some(u), Some(p)) = (a.username.as_deref(), a.password.as_deref()) {
+                if !u.trim().is_empty() && !p.trim().is_empty() {
+                    out.push(AccountCredentials {
+                        name: a.name.clone(),
+                        username: u.to_string(),
+                        password: p.to_string(),
+                        exp_date: a.exp_date,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+fn count_valid_accounts(accounts: &[AccountCredentials]) -> usize {
+    accounts.iter().filter(|acct| !is_input_expired(acct.exp_date)).count()
+}
+
+pub(crate) fn is_alias_pool_max_reached(app_state: &AppState, input: &ConfigInput) -> bool {
+    let Some(panel_cfg) = input.panel_api.as_ref() else {
+        return false;
+    };
+    if !panel_cfg.enabled {
+        return false;
+    }
+    if panel_cfg.url.trim().is_empty() {
+        return false;
+    }
+    if validate_panel_api_config(panel_cfg).is_err() {
+        return false;
+    }
+    let Ok((_, max_pool)) = resolve_alias_pool_limits(app_state, &input.name, panel_cfg) else {
+        return false;
+    };
+    if let Some(max_pool) = max_pool {
+        let valid_count = count_valid_accounts(&collect_accounts(input));
+        if valid_count >= max_pool as usize {
+            debug_if_enabled!(
+                "panel_api: alias_pool.size.max reached for input {} (valid_accounts={}, max={})",
+                sanitize_sensitive_info(&input.name),
+                valid_count,
+                max_pool
+            );
+            return true;
+        }
+    }
+    false
+}
+
+pub(crate) fn can_provision_on_exhausted(app_state: &AppState, input: &ConfigInput) -> bool {
+    let Some(panel_cfg) = input.panel_api.as_ref() else {
+        return false;
+    };
+    if !panel_cfg.enabled {
+        return false;
+    }
+    if panel_cfg.url.trim().is_empty() {
+        return false;
+    }
+    if let Err(err) = validate_panel_api_config(panel_cfg) {
+        debug_if_enabled!("panel_api config invalid: {}", sanitize_sensitive_info(err.to_string().as_str()));
+        return false;
+    }
+    if is_alias_pool_max_reached(app_state, input) {
+        return false;
+    }
+    true
+}
+
+#[allow(dead_code)]
+pub(crate) fn find_input_by_name(app_state: &AppState, input_name: &str) -> Option<Arc<ConfigInput>> {
+    let sources = app_state.app_config.sources.load();
+    sources.get_input_by_name(input_name).map(Arc::clone)
+}
+
+pub(crate) fn find_input_by_provider_name(app_state: &AppState, provider_name: &str) -> Option<Arc<ConfigInput>> {
+    let sources = app_state.app_config.sources.load();
+    for input in &sources.inputs {
+        if input.name == provider_name {
+            return Some(Arc::clone(input));
+        }
+        if input
+            .aliases
+            .as_ref()
+            .is_some_and(|aliases| aliases.iter().any(|alias| alias.name == provider_name))
+        {
+            return Some(Arc::clone(input));
+        }
+    }
+    None
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn patch_source_yml_add_alias(
     app_state: &Arc<AppState>,
@@ -302,11 +610,11 @@ async fn patch_source_yml_add_alias(
 ) -> Result<(), TuliproxError> {
     let mut sources = match read_sources_file_from_path(source_file_path, false, false, None) {
         Ok(sources) => sources,
-        Err(e) => return info_err_res!("panel_api: failed to read source file: {e}"),
+        Err(e) => return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}"))),
     };
 
     let Some(input) = sources.inputs.iter_mut().find(|i| i.name == input_name) else {
-        return info_err_res!("panel_api: could not find input '{input_name}' in source.yml");
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml");
     };
 
     let alias = ConfigInputAliasDto {
@@ -326,6 +634,62 @@ async fn patch_source_yml_add_alias(
     Ok(())
 }
 
+async fn patch_source_yml_update_panel_api_credits(
+    source_file_path: &Path,
+    input_name: &str,
+    credits: &str,
+) -> Result<(), TuliproxError> {
+    let raw = tokio::fs::read_to_string(source_file_path)
+        .await
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}")))?;
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to parse source file yaml: {e}")))?;
+    let Some(root) = doc.as_mapping_mut() else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: source.yml root is not a mapping");
+    };
+    let sources = root.get_mut(serde_yaml::Value::String("sources".to_string())).and_then(|v| v.as_sequence_mut());
+    let Some(sources) = sources else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: source.yml missing 'sources' list");
+    };
+    for src in sources.iter_mut() {
+        let Some(src_map) = src.as_mapping_mut() else { continue; };
+        let Some(inputs) = src_map.get_mut(serde_yaml::Value::String("inputs".to_string())).and_then(|v| v.as_sequence_mut()) else { continue; };
+        for inp in inputs.iter_mut() {
+            let Some(inp_map) = inp.as_mapping_mut() else { continue; };
+            let name = inp_map.get(serde_yaml::Value::String("name".to_string())).and_then(|v| v.as_str());
+            if name != Some(input_name) {
+                continue;
+            }
+
+            let panel_key = serde_yaml::Value::String("panel_api".to_string());
+            let credits_key = serde_yaml::Value::String("credits".to_string());
+            let panel_value = inp_map.entry(panel_key).or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+            match panel_value {
+                serde_yaml::Value::Mapping(map) => {
+                    map.insert(credits_key, serde_yaml::Value::String(credits.to_string()));
+                }
+                serde_yaml::Value::Null => {
+                    let mut map = serde_yaml::Mapping::new();
+                    map.insert(credits_key, serde_yaml::Value::String(credits.to_string()));
+                    *panel_value = serde_yaml::Value::Mapping(map);
+                }
+                _ => {
+                    return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: input.panel_api is not a mapping in source.yml");
+                }
+            }
+
+            let serialized = serde_yaml::to_string(&doc)
+                .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to serialize source.yml: {e}")))?;
+            let serialized = format_sources_yaml_panel_api_query_params_flow_style(&serialized);
+            tokio::fs::write(source_file_path, serialized)
+                .await
+                .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write source.yml: {e}")))?;
+            return Ok(());
+        }
+    }
+    create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml")
+}
+
 async fn patch_source_yml_update_exp_date(
     app_state: &Arc<AppState>,
     source_file_path: &Path,
@@ -335,6 +699,28 @@ async fn patch_source_yml_update_exp_date(
 ) -> Result<(), TuliproxError> {
     let mut sources = match read_sources_file_from_path(source_file_path, false, false, None) {
         Ok(sources) => sources,
+        Err(e) => return Err(TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read source file: {e}"))),
+    };
+
+    let Some(input) = sources.inputs.iter_mut().find(|i| i.name == input_name) else {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find input '{input_name}' in source.yml");
+    };
+
+    if input.update_account_expiration_date(input_name, account_name, exp_date).is_err() {
+        return create_tuliprox_error_result!(TuliproxErrorKind::Info, "panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml");
+    }
+
+    persist_source_config(app_state, Some(source_file_path), sources).await?;
+    Ok(())
+}
+
+async fn patch_source_yml_remove_expired_aliases(
+    app_state: &Arc<AppState>,
+    source_file_path: &Path,
+    input_name: &str,
+) -> Result<bool, TuliproxError> {
+    let mut sources = match read_sources_file_from_path(source_file_path, false, false, None) {
+        Ok(sources) => sources,
         Err(e) => return info_err_res!("panel_api: failed to read source file: {e}"),
     };
 
@@ -342,13 +728,18 @@ async fn patch_source_yml_update_exp_date(
         return info_err_res!("panel_api: could not find input '{input_name}' in source.yml");
     };
 
-    if input.update_account_expiration_date(input_name, account_name, exp_date).is_err() {
-        return info_err_res!("panel_api: could not find account '{account_name}' under input '{input_name}' in source.yml");
+    if let Some(aliases) = input.aliases.as_mut() {
+        let before_len = aliases.len();
+        aliases.retain(|alias| is_input_expired(alias.exp_date.clone()));
+        if aliases.len() == before_len {
+            return Ok(false);
+        }
     }
 
     persist_source_config(app_state, Some(source_file_path), sources).await?;
-    Ok(())
+    Ok(true)
 }
+
 
 async fn patch_batch_csv_append(
     csv_path: &Path,
@@ -469,6 +860,58 @@ async fn patch_batch_csv_update_exp_date(
     Ok(())
 }
 
+async fn patch_batch_csv_remove_expired(csv_path: &Path) -> Result<bool, TuliproxError> {
+    let raw = tokio::fs::read_to_string(csv_path)
+        .await
+        .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to read csv: {e}")))?;
+    let lines: Vec<String> = raw.lines().map(ToString::to_string).collect();
+    let header_line_idx = lines.iter().position(|l| l.trim_start().starts_with('#'));
+    let Some(header_idx) = header_line_idx else {
+        return info_err_res!(TuliproxErrorKind::Info, "panel_api: csv missing header line");
+    };
+    let header = lines[header_idx].trim_start_matches('#').trim();
+    let cols: Vec<String> = header.split(';').map(|s| s.trim().to_lowercase()).collect();
+    let exp_idx = cols.iter().position(|c| c == "exp_date");
+    let Some(exp_idx) = exp_idx else {
+        debug!("panel_api: csv has no exp_date column; skipping expired removal");
+        return Ok(false);
+    };
+
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    if header_idx > 0 {
+        out.extend(lines[..header_idx].iter().cloned());
+    }
+    out.push(lines[header_idx].clone());
+
+    let mut changed = false;
+    for line in lines.iter().skip(header_idx + 1) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            out.push(line.clone());
+            continue;
+        }
+        let mut fields: Vec<String> = line.split(';').map(ToString::to_string).collect();
+        fields.resize(cols.len(), String::new());
+        let exp_date = fields
+            .get(exp_idx)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .and_then(|s| parse_timestamp(s).ok().flatten());
+        if exp_date.is_some_and(|ts| is_input_expired(Some(ts))) {
+            changed = true;
+            continue;
+        }
+        out.push(line.clone());
+    }
+
+    if changed {
+        tokio::fs::write(csv_path, out.join("\n") + "\n")
+            .await
+            .map_err(|e| TuliproxError::new(TuliproxErrorKind::Info, format!("panel_api: failed to write csv: {e}")))?;
+    }
+    Ok(changed)
+}
+
 const MAX_ALIAS_NAME_ATTEMPTS: usize = 1000;
 
 fn derive_unique_alias_name(existing: &[String], input_name: &str, username: &str) -> String {
@@ -486,17 +929,73 @@ fn derive_unique_alias_name(existing: &[String], input_name: &str, username: &st
     base
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum PanelApiProvisionOutcome {
+    Renewed { username: String, password: String },
+    Created { username: String, password: String },
+}
+
+impl PanelApiProvisionOutcome {
+    pub(crate) fn credentials(&self) -> (&str, &str) {
+        match self {
+            Self::Renewed { username, password } | Self::Created { username, password } => {
+                (username.as_str(), password.as_str())
+            }
+        }
+    }
+
+    pub(crate) fn kind_label(&self) -> &'static str {
+        match self {
+            Self::Renewed { .. } => "client_renew",
+            Self::Created { .. } => "client_new",
+        }
+    }
+}
+
 async fn try_renew_expired_account(
     app_state: &Arc<AppState>,
     input: &ConfigInput,
-    panel_cfg: &PanelApiConfig,
+    panel_cfg: &PanelApiConfigDto,
     is_batch: bool,
     sources_path: &Path,
-) -> bool {
-    let expired = collect_expired_accounts(input);
-    for acct in &expired {
+    treat_missing_exp_date_as_expired: bool,
+) -> Option<PanelApiProvisionOutcome> {
+    let mut candidates = collect_accounts(input);
+    for acct in &mut candidates {
+        if treat_missing_exp_date_as_expired && acct.exp_date.is_none() {
+            acct.exp_date = panel_client_info(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str())
+                .await
+                .ok()
+                .flatten();
+        }
+    }
+    let missing_sort = if treat_missing_exp_date_as_expired { i64::MIN } else { i64::MAX };
+    candidates.sort_by_key(|a| a.exp_date.unwrap_or(missing_sort));
+
+    for acct in &candidates {
+        let expired = if treat_missing_exp_date_as_expired {
+            acct.exp_date.is_none() || is_input_expired(acct.exp_date)
+        } else {
+            is_input_expired(acct.exp_date)
+        };
+        if !expired {
+            continue;
+        }
         match panel_client_renew(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str()).await {
             Ok(()) => {
+                if let Err(err) = panel_client_adult_content(
+                    app_state,
+                    panel_cfg,
+                    Some((acct.username.as_str(), acct.password.as_str())),
+                )
+                .await
+                {
+                    debug_if_enabled!(
+                        "panel_api client_adult_content failed for {}: {}",
+                        sanitize_sensitive_info(&acct.name),
+                        sanitize_sensitive_info(err.to_string().as_str())
+                    );
+                }
                 let refreshed_exp = panel_client_info(app_state, panel_cfg, acct.username.as_str(), acct.password.as_str())
                     .await
                     .ok()
@@ -513,7 +1012,7 @@ async fn try_renew_expired_account(
                         }
                     } else {
                         let _src_lock = app_state.app_config.file_locks.write_lock(sources_path).await;
-                        if let Err(err) = patch_source_yml_update_exp_date(app_state, sources_path, &input.name, &acct.name, new_exp).await {
+                        if let Err(err) = patch_source_yml_update_exp_date(sources_path, &input.name, &acct.name, new_exp).await {
                             debug_if_enabled!("panel_api failed to persist renew exp_date to source.yml: {}", err);
                         }
                     }
@@ -522,7 +1021,10 @@ async fn try_renew_expired_account(
                 if let Err(err) = ConfigFile::load_sources(app_state).await {
                     debug_if_enabled!("panel_api reload sources failed: {}", err);
                 }
-                return true;
+                return Some(PanelApiProvisionOutcome::Renewed {
+                    username: acct.username.clone(),
+                    password: acct.password.clone(),
+                });
             }
             Err(err) => {
                 debug_if_enabled!(
@@ -533,16 +1035,16 @@ async fn try_renew_expired_account(
             }
         }
     }
-    false
+    None
 }
 
 async fn try_create_new_account(
     app_state: &Arc<AppState>,
     input: &ConfigInput,
-    panel_cfg: &PanelApiConfig,
+    panel_cfg: &PanelApiConfigDto,
     is_batch: bool,
     sources_path: &Path,
-) -> bool {
+) -> Option<PanelApiProvisionOutcome> {
     match panel_client_new(app_state, panel_cfg).await {
         Ok((username, password, base_url_from_resp)) => {
             let base_url = base_url_from_resp.unwrap_or_else(|| input.url.clone());
@@ -553,6 +1055,14 @@ async fn try_create_new_account(
                 existing_names.extend(aliases.iter().map(|a| a.name.clone()));
             }
             let alias_name = derive_unique_alias_name(&existing_names, &input.name, &username);
+
+            if let Err(err) = panel_client_adult_content(app_state, panel_cfg, Some((&username, &password))).await {
+                debug_if_enabled!(
+                    "panel_api client_adult_content failed for {}: {}",
+                    sanitize_sensitive_info(&alias_name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+            }
 
             let exp_date = panel_client_info(app_state, panel_cfg, &username, &password)
                 .await
@@ -573,7 +1083,7 @@ async fn try_create_new_account(
                             patch_batch_csv_append(&csv_path, batch_type, &alias_name, &base_url, &username, &password, exp_date).await
                         {
                             warn!("panel_api failed to append new account to csv: {err}");
-                            return false;
+                            return None;
                         }
                     }
                     Err(err) => {
@@ -582,7 +1092,7 @@ async fn try_create_new_account(
                             sanitize_sensitive_info(batch_url),
                             err
                         );
-                        return false;
+                        return None;
                     }
                 }
             } else {
@@ -591,36 +1101,38 @@ async fn try_create_new_account(
                     patch_source_yml_add_alias(app_state, sources_path, &input.name, &alias_name, &base_url, &username, &password, exp_date).await
                 {
                     warn!("panel_api failed to persist new alias to source.yml: {err}");
-                    return false;
+                    return None;
                 }
             }
 
             if let Err(err) = ConfigFile::load_sources(app_state).await {
                 error!("panel_api reload sources failed: {err}");
-                return false;
+                return None;
             }
-            true
+            Some(PanelApiProvisionOutcome::Created { username, password })
         }
         Err(err) => {
             debug_if_enabled!("panel_api client_new failed: {}", sanitize_sensitive_info(err.to_string().as_str()));
-            false
+            None
         }
     }
 }
 
-pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input: &ConfigInput) -> bool {
+pub async fn try_provision_account_on_exhausted(
+    app_state: &Arc<AppState>,
+    input: &ConfigInput,
+) -> Option<PanelApiProvisionOutcome> {
     let Some(panel_cfg) = input.panel_api.as_ref() else {
         debug_if_enabled!("panel_api: skipped (no panel_api config) for input {}", sanitize_sensitive_info(&input.name));
-        return false;
+        return None;
     };
     if !panel_cfg.enabled {
         debug_if_enabled!("panel_api: skipped (panel_api.enabled false) for input {}", sanitize_sensitive_info(&input.name));
-        return false;
+        return None;
     }
-
     if panel_cfg.url.trim().is_empty() {
         debug_if_enabled!("panel_api: skipped (panel_api.url empty) for input {}", sanitize_sensitive_info(&input.name));
-        return false;
+        return None;
     }
 
     let _input_lock = app_state
@@ -628,6 +1140,14 @@ pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input
         .file_locks
         .write_lock_str(format!("panel_api:{}", input.name).as_str())
         .await;
+
+    if let Err(err) = validate_panel_api_config(panel_cfg) {
+        debug_if_enabled!("panel_api config invalid: {}", sanitize_sensitive_info(err.to_string().as_str()));
+        return None;
+    }
+    if is_alias_pool_max_reached(app_state, input) {
+        return None;
+    }
 
     debug_if_enabled!(
         "panel_api: exhausted -> provisioning for input {} (aliases={})",
@@ -639,19 +1159,25 @@ pub async fn try_provision_account_on_exhausted(app_state: &Arc<AppState>, input
     let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
     let sources_path = PathBuf::from(&sources_file_path);
 
-    if try_renew_expired_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await {
-        debug_if_enabled!("panel_api: provisioning succeeded via client_renew for input {}", sanitize_sensitive_info(&input.name));
-        return true;
+    if let Some(outcome) =
+        try_renew_expired_account(app_state, input, panel_cfg, is_batch, sources_path.as_path(), true).await
+    {
+        debug_if_enabled!(
+            "panel_api: provisioning succeeded via client_renew for input {}",
+            sanitize_sensitive_info(&input.name)
+        );
+        return Some(outcome);
     }
     let created = try_create_new_account(app_state, input, panel_cfg, is_batch, sources_path.as_path()).await;
     debug_if_enabled!(
         "panel_api: provisioning via client_new for input {} => {}",
         sanitize_sensitive_info(&input.name),
-        if created { "success" } else { "failed" }
+        if created.is_some() { "success" } else { "failed" }
     );
     created
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) {
     let sources_file_path = app_state.app_config.paths.load().sources_file_path.clone();
     let sources_path = PathBuf::from(&sources_file_path);
@@ -664,33 +1190,49 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
             continue;
         }
 
+        if let Err(err) = validate_panel_api_config(panel_cfg) {
+            debug_if_enabled!(
+                "panel_api boot sync skipped for {}: {}",
+                sanitize_sensitive_info(&input.name),
+                sanitize_sensitive_info(err.to_string().as_str())
+            );
+            continue;
+        }
+
         let is_batch = input.t_batch_url.as_ref().is_some_and(|u| !u.trim().is_empty());
         let batch_url = input.t_batch_url.as_deref().unwrap_or_default();
         let csv_path = if is_batch { get_csv_file_path(batch_url).ok() } else { None };
 
-        let mut accounts: Vec<AccountCredentials> = vec![];
-        if let Some((u, p)) = extract_account_creds_from_input(input.as_ref()) {
-            accounts.push(AccountCredentials {
-                name: input.name.clone(),
-                username: u,
-                password: p,
-                exp_date: input.exp_date,
-            });
-        }
-        if let Some(aliases) = input.aliases.as_ref() {
-            for a in aliases {
-                if let (Some(u), Some(p)) = (a.username.as_deref(), a.password.as_deref()) {
-                    accounts.push(AccountCredentials {
-                        name: a.name.clone(),
-                        username: u.to_string(),
-                        password: p.to_string(),
-                        exp_date: a.exp_date,
-                    });
+        let mut accounts = collect_accounts(input.as_ref());
+
+        if !panel_cfg.query_parameter.account_info.is_empty() {
+            let creds = accounts.first().map(|acct| (acct.username.as_str(), acct.password.as_str()));
+            match panel_account_info(app_state.as_ref(), panel_cfg, creds).await {
+                Ok(Some(credits)) => {
+                    let normalized = credits.trim().to_string();
+                    if !normalized.is_empty()
+                        && panel_cfg.credits.as_deref().map(str::trim) != Some(normalized.as_str())
+                    {
+                        let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
+                        if let Err(err) = patch_source_yml_update_panel_api_credits(&sources_path, &input.name, normalized.as_str()).await {
+                            debug_if_enabled!("panel_api boot sync failed to persist credits to source.yml: {}", err);
+                        } else {
+                            any_change = true;
+                        }
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    debug_if_enabled!(
+                        "panel_api account_info failed for {}: {}",
+                        sanitize_sensitive_info(&input.name),
+                        sanitize_sensitive_info(err.to_string().as_str())
+                    );
                 }
             }
         }
 
-        for acct in &accounts {
+        for acct in &mut accounts {
             let new_exp = match panel_client_info(app_state.as_ref(), panel_cfg, &acct.username, &acct.password).await {
                 Ok(v) => v,
                 Err(err) => {
@@ -720,7 +1262,42 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
                     continue;
                 }
             }
+            acct.exp_date = Some(new_exp);
             any_change = true;
+        }
+
+        if !panel_cfg.query_parameter.client_adult_content.is_empty() {
+            for acct in &accounts {
+                if let Err(err) = panel_client_adult_content(app_state.as_ref(), panel_cfg, Some((acct.username.as_str(), acct.password.as_str()))).await {
+                    debug_if_enabled!(
+                        "panel_api client_adult_content failed for {}: {}",
+                        sanitize_sensitive_info(&acct.name),
+                        sanitize_sensitive_info(err.to_string().as_str())
+                    );
+                }
+            }
+        }
+
+        if alias_pool_remove_expired(panel_cfg) {
+            if let Some(csv_path) = csv_path.as_ref() {
+                let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
+                match patch_batch_csv_remove_expired(csv_path).await {
+                    Ok(true) => {
+                        any_change = true;
+                    }
+                    Ok(false) => {}
+                    Err(err) => debug_if_enabled!("panel_api boot sync failed to remove expired csv accounts: {}", err),
+                }
+            } else {
+                let _src_lock = app_state.app_config.file_locks.write_lock(&sources_path).await;
+                match patch_source_yml_remove_expired_aliases(&sources_path, &input.name).await {
+                    Ok(true) => {
+                        any_change = true;
+                    }
+                    Ok(false) => {}
+                    Err(err) => debug_if_enabled!("panel_api boot sync failed to remove expired source accounts: {}", err),
+                }
+            }
         }
     }
 

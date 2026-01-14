@@ -1,16 +1,19 @@
 use crate::BUILD_TIMESTAMP;
 use crate::api::endpoints::xtream_api::{get_xtream_player_api_stream_url, ApiStreamContext};
-use crate::api::model::{create_channel_unavailable_stream, create_custom_video_stream_response,
-                        create_provider_connections_exhausted_stream, create_provider_stream,
-                        get_stream_response_with_headers, ActiveClientStream, AppState,
-                        CustomVideoStreamType, ProviderStreamFactoryOptions,
-                        SharedStreamManager, StreamError, ThrottledStream, UserApiRequest};
+use crate::api::model::{
+    create_channel_unavailable_stream, create_custom_video_stream_response,
+    create_panel_api_provisioning_stream_with_stop, create_provider_connections_exhausted_stream,
+    create_provider_stream, get_stream_response_with_headers, ActiveClientStream, AppState,
+    CustomVideoStreamType, ProviderStreamFactoryOptions, SharedStreamManager, StreamError,
+    ThrottledStream, UserApiRequest,
+};
 use crate::api::model::{tee_stream, UserSession};
 use crate::api::model::{ProviderAllocation, ProviderConfig, ProviderStreamState, StreamDetails, StreamingStrategy};
-use crate::api::panel_api::try_provision_account_on_exhausted;
+use crate::api::panel_api::{can_provision_on_exhausted, try_provision_account_on_exhausted, PanelApiProvisionOutcome};
 use crate::model::{ConfigInput, ResourceRetryConfig};
 use crate::model::{ConfigTarget, ProxyUserCredentials};
 use crate::tools::lru_cache::LRUResourceCache;
+use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::utils::{request};
 use crate::utils::{async_file_reader, async_file_writer, create_new_file_for_write, get_file_extension};
 use crate::utils::{debug_if_enabled, trace_if_enabled};
@@ -25,18 +28,24 @@ use futures::{StreamExt, TryStreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use log::{debug, error, info, log_enabled, trace, warn};
 use reqwest::header::RETRY_AFTER;
+use reqwest::Method;
 use serde::Serialize;
-use shared::model::{Claims, InputFetchMethod, PlaylistEntry, PlaylistItemType, StreamChannel, TargetType, UserConnectionPermission, XtreamCluster};
+use shared::model::{
+    Claims, InputFetchMethod, PanelApiProvisioningMethod, PlaylistEntry, PlaylistItemType,
+    StreamChannel, TargetType, UserConnectionPermission, VirtualId, XtreamCluster,
+};
 use shared::utils::{bin_serialize, default_grace_period_millis, human_readable_kbps, trim_slash};
 use shared::utils::{
     extract_extension_from_url, replace_url_extension, sanitize_sensitive_info, DASH_EXT, HLS_EXT,
 };
 use std::borrow::Cow;
+use std::fmt::Write;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::Mutex;
 use tokio_util::io::ReaderStream;
@@ -345,14 +354,12 @@ async fn resolve_streaming_strategy(
     force_provider: Option<&str>,
 ) -> StreamingStrategy {
     // allocate a provider connection
-    let mut provider_connection_handle = match force_provider {
+    let provider_connection_handle = match force_provider {
         Some(provider) => app_state.active_provider.force_exact_acquire_connection(provider, &fingerprint.addr).await,
         None => app_state.active_provider.acquire_connection(&input.name, &fingerprint.addr).await,
     };
 
-    if provider_connection_handle.is_none() && force_provider.is_none() && input.panel_api.as_ref().is_some_and(|panel_api| panel_api.enabled) {
-        provider_connection_handle = try_provision_and_reacquire_on_provider_pool_exhausted(app_state, fingerprint, input).await;
-    }
+    // panel_api provisioning/loading is handled later in the stream creation flow
 
     let stream_response_params =
         if let Some(allocation) = provider_connection_handle.as_ref().map(|ph| &ph.allocation) {
@@ -405,40 +412,6 @@ async fn resolve_streaming_strategy(
     }
 }
 
-async fn try_provision_and_reacquire_on_provider_pool_exhausted(
-    app_state: &Arc<AppState>,
-    fingerprint: &Fingerprint,
-    input: &ConfigInput,
-) -> Option<crate::api::model::ProviderHandle> {
-    let active_provider_connections = app_state
-        .active_provider
-        .active_connections()
-        .await
-        .map(|c| c.into_iter().collect::<BTreeMap<_, _>>());
-    debug_if_enabled!(
-        "panel_api: provider pool exhausted for input {} (active_provider_connections={:?})",
-        sanitize_sensitive_info(&input.name),
-        active_provider_connections
-    );
-
-    if try_provision_account_on_exhausted(app_state, input).await {
-        debug_if_enabled!(
-            "panel_api: provider pool exhausted for input {}, provision succeeded; re-acquiring connection",
-            sanitize_sensitive_info(&input.name)
-        );
-        app_state
-            .active_provider
-            .acquire_connection(&input.name, &fingerprint.addr)
-            .await
-    } else {
-        debug_if_enabled!(
-            "panel_api: provider pool exhausted for input {}, provision skipped/failed",
-            sanitize_sensitive_info(&input.name)
-        );
-        None
-    }
-}
-
 fn get_grace_period_millis(
     connection_permission: UserConnectionPermission,
     stream_response_params: &ProviderStreamState,
@@ -457,6 +430,274 @@ fn get_grace_period_millis(
     }
 }
 
+fn provisioning_method_to_reqwest(method: PanelApiProvisioningMethod) -> Method {
+    match method {
+        PanelApiProvisioningMethod::Head => Method::HEAD,
+        PanelApiProvisioningMethod::Get => Method::GET,
+        PanelApiProvisioningMethod::Post => Method::POST,
+    }
+}
+
+fn build_panel_api_test_url(base_url: &str, username: &str, password: &str) -> Option<Url> {
+    let url = Url::parse(base_url).ok()?;
+    let host = url.host_str()?;
+    let scheme = url.scheme();
+    let mut base = format!("{scheme}://{host}");
+    if let Some(port) = url.port() {
+        let _ = write!(base, ":{port}");
+    }
+    base.push_str("/player_api.php");
+    let mut test_url = Url::parse(&base).ok()?;
+    test_url
+        .query_pairs_mut()
+        .append_pair("username", username)
+        .append_pair("password", password)
+        .append_pair("action", "account_info");
+    Some(test_url)
+}
+
+async fn probe_panel_api_test_url(
+    app_state: &Arc<AppState>,
+    test_url: &Url,
+    method: PanelApiProvisioningMethod,
+) -> Result<StatusCode, reqwest::Error> {
+    let client = app_state.http_client.load();
+    let request_method = provisioning_method_to_reqwest(method);
+    let response = client.request(request_method, test_url.clone()).send().await?;
+    Ok(response.status())
+}
+
+#[allow(clippy::too_many_lines)]
+pub(crate) async fn run_panel_api_provisioning_probe(
+    app_state: Arc<AppState>,
+    input: ConfigInput,
+    stop_signal: Arc<AtomicOnceFlag>,
+    addr: SocketAddr,
+    virtual_id: VirtualId,
+) {
+    let Some(panel_cfg) = input.panel_api.as_ref() else {
+        debug_if_enabled!(
+            "panel_api provisioning probe skipped (missing config) for input {}",
+            sanitize_sensitive_info(&input.name)
+        );
+        stop_signal.notify();
+        let _ = app_state
+            .connection_manager
+            .kick_connection(&addr, virtual_id, 0)
+            .await;
+        return;
+    };
+    if !panel_cfg.enabled {
+        debug_if_enabled!(
+            "panel_api provisioning probe skipped (panel_api.enabled false) for input {}",
+            sanitize_sensitive_info(&input.name)
+        );
+        stop_signal.notify();
+        let _ = app_state
+            .connection_manager
+            .kick_connection(&addr, virtual_id, 0)
+            .await;
+        return;
+    }
+    if panel_cfg.url.trim().is_empty() {
+        debug_if_enabled!(
+            "panel_api provisioning probe skipped (panel_api.url empty) for input {}",
+            sanitize_sensitive_info(&input.name)
+        );
+        stop_signal.notify();
+        let _ = app_state
+            .connection_manager
+            .kick_connection(&addr, virtual_id, 0)
+            .await;
+        return;
+    }
+
+    let max_wait_secs = panel_cfg.provisioning.timeout_sec;
+    let probe_interval_secs = panel_cfg.provisioning.probe_interval_sec.max(1);
+    let probe_method = panel_cfg.provisioning.method;
+
+    debug_if_enabled!(
+        "panel_api provisioning probe start for input {} (timeout={}s interval={}s method={})",
+        sanitize_sensitive_info(&input.name),
+        max_wait_secs,
+        probe_interval_secs,
+        probe_method
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(max_wait_secs);
+    let outcome = try_provision_account_on_exhausted(&app_state, &input).await;
+    let credentials = outcome.as_ref().map(PanelApiProvisionOutcome::credentials);
+
+    if let Some(outcome) = outcome.as_ref() {
+        debug_if_enabled!(
+            "panel_api provisioning {} completed for input {}",
+            outcome.kind_label(),
+            sanitize_sensitive_info(&input.name)
+        );
+    } else {
+        debug_if_enabled!(
+            "panel_api provisioning failed for input {}; waiting for timeout",
+            sanitize_sensitive_info(&input.name)
+        );
+    }
+
+    let Some((username, password)) = credentials else {
+        if max_wait_secs > 0 {
+            tokio::time::sleep(Duration::from_secs(max_wait_secs)).await;
+        }
+        debug_if_enabled!(
+            "panel_api provisioning probe timeout reached for input {} (no credentials)",
+            sanitize_sensitive_info(&input.name)
+        );
+        stop_signal.notify();
+        debug_if_enabled!(
+            "panel_api provisioning closing client connection for input {} addr={}",
+            sanitize_sensitive_info(&input.name),
+            sanitize_sensitive_info(addr.to_string().as_str())
+        );
+        let _ = app_state
+            .connection_manager
+            .kick_connection(&addr, virtual_id, 0)
+            .await;
+        return;
+    };
+
+    let Some(test_url) = build_panel_api_test_url(input.url.as_str(), username, password) else {
+        if max_wait_secs > 0 {
+            tokio::time::sleep(Duration::from_secs(max_wait_secs)).await;
+        }
+        debug_if_enabled!(
+            "panel_api provisioning probe failed to build test url for input {}",
+            sanitize_sensitive_info(&input.name)
+        );
+        stop_signal.notify();
+        let _ = app_state
+            .connection_manager
+            .kick_connection(&addr, virtual_id, 0)
+            .await;
+        return;
+    };
+
+    let probe_delay = Duration::from_secs(probe_interval_secs);
+    let mut attempt = 0u64;
+    let mut ready = false;
+    while Instant::now() < deadline {
+        attempt += 1;
+        match probe_panel_api_test_url(&app_state, &test_url, probe_method).await {
+            Ok(status) => {
+                debug_if_enabled!(
+                    "panel_api provisioning probe status: '{}' url: {} attempt={}",
+                    status,
+                    sanitize_sensitive_info(test_url.as_str()),
+                    attempt
+                );
+                if status.is_success() {
+                    ready = true;
+                    break;
+                }
+            }
+            Err(err) => {
+                if err.is_timeout() {
+                    debug_if_enabled!(
+                        "panel_api provisioning probe timeout for {} attempt={}",
+                        sanitize_sensitive_info(test_url.as_str()),
+                        attempt
+                    );
+                } else {
+                    debug_if_enabled!(
+                        "panel_api provisioning probe failed for {} attempt={}: {err}",
+                        sanitize_sensitive_info(test_url.as_str()),
+                        attempt
+                    );
+                }
+            }
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        let remaining = deadline.checked_duration_since(now).unwrap_or_default();
+        let sleep_for = if remaining < probe_delay { remaining } else { probe_delay };
+        tokio::time::sleep(sleep_for).await;
+    }
+
+    if ready {
+        debug_if_enabled!(
+            "panel_api provisioning ready for input {} (attempts={})",
+            sanitize_sensitive_info(&input.name),
+            attempt
+        );
+    } else {
+        debug_if_enabled!(
+            "panel_api provisioning probe timeout reached for input {} (attempts={})",
+            sanitize_sensitive_info(&input.name),
+            attempt
+        );
+    }
+    stop_signal.notify();
+    debug_if_enabled!(
+        "panel_api provisioning closing client connection for input {} addr={}",
+        sanitize_sensitive_info(&input.name),
+        sanitize_sensitive_info(addr.to_string().as_str())
+    );
+    let _ = app_state
+        .connection_manager
+        .kick_connection(&addr, virtual_id, 0)
+        .await;
+}
+
+fn create_panel_api_provisioning_stream_details(
+    app_state: &Arc<AppState>,
+    input: &ConfigInput,
+    provider_name: Option<String>,
+    grace_period_millis: u64,
+    addr: SocketAddr,
+    virtual_id: VirtualId,
+) -> StreamDetails {
+    let stop_signal = Arc::new(AtomicOnceFlag::new());
+    let headers = [("connection".to_string(), "close".to_string())];
+    let (stream, stream_info) = create_panel_api_provisioning_stream_with_stop(
+        &app_state.app_config,
+        &headers,
+        Arc::clone(&stop_signal),
+    );
+
+    if stream.is_none() {
+        debug_if_enabled!(
+            "panel_api provisioning stream missing; falling back to provider exhausted for input {}",
+            sanitize_sensitive_info(&input.name)
+        );
+        let (stream, stream_info) = create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
+        return StreamDetails {
+            stream,
+            stream_info,
+            provider_name,
+            grace_period_millis,
+            disable_provider_grace: true,
+            reconnect_flag: None,
+            provider_handle: None,
+        };
+    }
+
+    let app_state_clone = Arc::clone(app_state);
+    let input_clone = input.clone();
+    let stop_clone = Arc::clone(&stop_signal);
+    tokio::spawn(async move {
+        run_panel_api_provisioning_probe(app_state_clone, input_clone, stop_clone, addr, virtual_id).await;
+    });
+
+    StreamDetails {
+        stream,
+        stream_info,
+        provider_name,
+        grace_period_millis,
+        disable_provider_grace: true,
+        reconnect_flag: None,
+        provider_handle: None,
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn create_stream_response_details(
     app_state: &Arc<AppState>,
@@ -469,6 +710,7 @@ async fn create_stream_response_details(
     share_stream: bool,
     connection_permission: UserConnectionPermission,
     force_provider: Option<&str>,
+    virtual_id: VirtualId,
 ) -> StreamDetails {
     let mut streaming_strategy = resolve_streaming_strategy(app_state, stream_url, fingerprint, input, force_provider).await;
     let config_grace_period_millis = app_state.app_config.config
@@ -488,6 +730,29 @@ async fn create_stream_response_details(
         .as_ref()
         .and_then(|guard| guard.allocation.get_provider_name());
 
+    if matches!(streaming_strategy.provider_stream_state, ProviderStreamState::Custom(_))
+        && can_provision_on_exhausted(app_state, input)
+    {
+        if let Some(handle) = streaming_strategy.provider_handle.take() {
+            app_state
+                .connection_manager
+                .release_provider_handle(Some(handle))
+                .await;
+        }
+        debug_if_enabled!(
+            "panel_api: provider connections exhausted; sending provisioning stream for input {}",
+            sanitize_sensitive_info(&input.name)
+        );
+        return create_panel_api_provisioning_stream_details(
+            app_state,
+            input,
+            guard_provider_name.clone(),
+            grace_period_millis,
+            fingerprint.addr,
+            virtual_id,
+        );
+    }
+
     match streaming_strategy.provider_stream_state {
         // custom stream means we display our own stream like connection exhausted, channel-unavailable...
         ProviderStreamState::Custom(provider_stream) => {
@@ -497,6 +762,7 @@ async fn create_stream_response_details(
                 stream_info,
                 provider_name: guard_provider_name.clone(),
                 grace_period_millis,
+                disable_provider_grace: false,
                 reconnect_flag: None,
                 provider_handle: streaming_strategy.provider_handle.clone(),
             }
@@ -560,6 +826,7 @@ async fn create_stream_response_details(
                 stream_info,
                 provider_name: guard_provider_name.clone(),
                 grace_period_millis,
+                disable_provider_grace: false,
                 reconnect_flag,
                 provider_handle,
             }
@@ -776,6 +1043,7 @@ pub async fn force_provider_stream_response(
         share_stream,
         connection_permission,
         Some(&user_session.provider),
+        stream_channel.virtual_id,
     )
         .await;
 
@@ -880,6 +1148,7 @@ pub async fn stream_response(
         share_stream,
         connection_permission,
         None,
+        stream_channel.virtual_id,
     ).await;
 
     if stream_details.has_stream() {
@@ -889,6 +1158,16 @@ pub async fn stream_response(
             .as_ref()
             .map(|(h, sc, response_url, cvt)| (h.clone(), *sc, response_url.clone(), *cvt));
         let provider_name = stream_details.provider_name.clone();
+
+        if let Some((headers, status, _response_url, Some(CustomVideoStreamType::Provisioning))) =
+            stream_details.stream_info.as_ref()
+        {
+            debug_if_enabled!(
+                "panel_api provisioning response to client: status={} headers={:?}",
+                status,
+                headers
+            );
+        }
 
         let provider_handle = if share_stream {
             stream_details.provider_handle.take()

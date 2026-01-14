@@ -30,7 +30,6 @@ pub mod macros;
 mod favourites;
 mod geoip;
 mod library;
-mod panel_api;
 
 pub use api::*;
 pub use api_proxy::*;
@@ -62,4 +61,3 @@ pub use web_auth::*;
 pub use web_ui::*;
 pub use favourites::*;
 pub use library::*;
-pub use panel_api::*;
