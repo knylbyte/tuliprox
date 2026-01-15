@@ -366,24 +366,30 @@ fn build_panel_url(
     Ok(url)
 }
 
-fn sanitize_panel_api_json_for_log(value: &Value) -> Value {
+fn sanitize_panel_api_json_for_log(value: &Value, sanitize_sensitive: bool) -> Value {
     match value {
         Value::Array(arr) => {
-            Value::Array(arr.iter().map(sanitize_panel_api_json_for_log).collect())
+            Value::Array(
+                arr.iter()
+                    .map(|v| sanitize_panel_api_json_for_log(v, sanitize_sensitive))
+                    .collect(),
+            )
         }
         Value::Object(obj) => {
             let mut out = serde_json::Map::with_capacity(obj.len());
             for (k, v) in obj {
-                if k.eq_ignore_ascii_case("api_key")
-                    || k.eq_ignore_ascii_case("apikey")
-                    || k.eq_ignore_ascii_case("token")
-                {
-                    out.insert(k.clone(), Value::String("***".to_string()));
-                    continue;
-                }
-                if k.eq_ignore_ascii_case("username") || k.eq_ignore_ascii_case("password") {
-                    out.insert(k.clone(), Value::String("***".to_string()));
-                    continue;
+                if sanitize_sensitive {
+                    if k.eq_ignore_ascii_case("api_key")
+                        || k.eq_ignore_ascii_case("apikey")
+                        || k.eq_ignore_ascii_case("token")
+                    {
+                        out.insert(k.clone(), Value::String("***".to_string()));
+                        continue;
+                    }
+                    if k.eq_ignore_ascii_case("username") || k.eq_ignore_ascii_case("password") {
+                        out.insert(k.clone(), Value::String("***".to_string()));
+                        continue;
+                    }
                 }
                 if k.eq_ignore_ascii_case("url") {
                     if let Some(s) = v.as_str() {
@@ -394,7 +400,10 @@ fn sanitize_panel_api_json_for_log(value: &Value) -> Value {
                         continue;
                     }
                 }
-                out.insert(k.clone(), sanitize_panel_api_json_for_log(v));
+                out.insert(
+                    k.clone(),
+                    sanitize_panel_api_json_for_log(v, sanitize_sensitive),
+                );
             }
             Value::Object(out)
         }
@@ -419,7 +428,14 @@ async fn panel_get_json(app_state: &AppState, url: Url) -> Result<Value, Tulipro
         .map_err(|e| info_err!("panel_api read response failed: {e}"))?;
     let json: Value = serde_json::from_str(&body)
         .map_err(|e| info_err!("panel_api invalid json (http {status}): {e}"))?;
-    let json_for_log = sanitize_panel_api_json_for_log(&json);
+    let sanitize_sensitive = app_state
+        .app_config
+        .config
+        .load()
+        .log
+        .as_ref()
+        .is_none_or(|l| l.sanitize_sensitive_info);
+    let json_for_log = sanitize_panel_api_json_for_log(&json, sanitize_sensitive);
     if let Ok(json_str) = serde_json::to_string(&json_for_log) {
         debug_if_enabled!(
             "panel_api response (http {}): {}",
