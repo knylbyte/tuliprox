@@ -2089,21 +2089,23 @@ async fn sync_panel_api_for_input_on_boot(
             .ok()
             .flatten();
 
-            let ready = wait_for_panel_api_account_ready(
-                app_state,
-                input.as_ref(),
-                panel_cfg,
-                account_name.as_str(),
-                active_username.as_str(),
-                active_password.as_str(),
-            )
-            .await;
-            if !ready {
-                debug_if_enabled!(
-                    "panel_api boot sync probe timeout for {}; skipping exp_date refresh",
-                    sanitize_sensitive_info(&account_name)
-                );
-                continue;
+            if is_root {
+                let ready = wait_for_panel_api_account_ready(
+                    app_state,
+                    input.as_ref(),
+                    panel_cfg,
+                    account_name.as_str(),
+                    active_username.as_str(),
+                    active_password.as_str(),
+                )
+                .await;
+                if !ready {
+                    debug_if_enabled!(
+                        "panel_api boot sync probe timeout for {}; skipping exp_date refresh",
+                        sanitize_sensitive_info(&account_name)
+                    );
+                    continue;
+                }
             }
 
             if let Some(new_exp) = refreshed_exp {
