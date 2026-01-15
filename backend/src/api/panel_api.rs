@@ -1450,7 +1450,7 @@ async fn sync_panel_api_for_input_on_boot(
         .as_deref()
         .and_then(|v| parse_panel_api_provisioning_offset_secs(v).ok())
         .unwrap_or(0);
-    if offset_secs > 0 {
+    {
         for acct in &mut accounts {
             let account_name = acct.name.clone();
             let old_username = acct.username.clone();
@@ -1579,14 +1579,22 @@ async fn sync_panel_api_for_input_on_boot(
                 );
             }
 
-            let _ready = wait_for_panel_api_account_ready(
+            let ready = wait_for_panel_api_account_ready(
                 app_state,
                 input.as_ref(),
                 panel_cfg,
+                account_name.as_str(),
                 active_username.as_str(),
                 active_password.as_str(),
             )
             .await;
+            if !ready {
+                debug_if_enabled!(
+                    "panel_api boot sync probe timeout for {}; skipping exp_date refresh",
+                    sanitize_sensitive_info(&account_name)
+                );
+                continue;
+            }
 
             let refreshed_exp = panel_client_info(app_state.as_ref(), panel_cfg, active_username.as_str(), active_password.as_str())
                 .await
@@ -1865,6 +1873,7 @@ async fn wait_for_panel_api_account_ready(
     app_state: &Arc<AppState>,
     input: &ConfigInput,
     panel_cfg: &PanelApiConfigDto,
+    account_name: &str,
     username: &str,
     password: &str,
 ) -> bool {
@@ -1876,16 +1885,61 @@ async fn wait_for_panel_api_account_ready(
         return false;
     };
 
+    debug_if_enabled!(
+        "panel_api probe start for {} (input={} timeout={}s interval={}s method={}) url={}",
+        sanitize_sensitive_info(account_name),
+        sanitize_sensitive_info(&input.name),
+        max_wait_secs,
+        probe_interval_secs,
+        probe_method,
+        sanitize_sensitive_info(test_url.as_str())
+    );
+
     let deadline = Instant::now() + Duration::from_secs(max_wait_secs);
     let probe_delay = Duration::from_secs(probe_interval_secs);
-    while Instant::now() < deadline {
+    let mut attempt = 0u64;
+    loop {
+        attempt += 1;
         match probe_panel_api_test_url(app_state, &test_url, probe_method).await {
-            Ok(status) if status.is_success() => return true,
-            _ => {}
+            Ok(status) => {
+                debug_if_enabled!(
+                    "panel_api probe status: '{}' url: {} attempt={}",
+                    status,
+                    sanitize_sensitive_info(test_url.as_str()),
+                    attempt
+                );
+                if status.is_success() {
+                    return true;
+                }
+            }
+            Err(err) => {
+                if err.is_timeout() {
+                    debug_if_enabled!(
+                        "panel_api probe timeout for {} attempt={}",
+                        sanitize_sensitive_info(test_url.as_str()),
+                        attempt
+                    );
+                } else {
+                    debug_if_enabled!(
+                        "panel_api probe failed for {} attempt={}: {err}",
+                        sanitize_sensitive_info(test_url.as_str()),
+                        attempt
+                    );
+                }
+            }
         }
-        tokio::time::sleep(probe_delay).await;
+
+        if max_wait_secs == 0 {
+            return false;
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return false;
+        }
+        let remaining = deadline.checked_duration_since(now).unwrap_or_default();
+        let sleep_for = if remaining < probe_delay { remaining } else { probe_delay };
+        tokio::time::sleep(sleep_for).await;
     }
-    false
 }
 
 #[allow(clippy::too_many_lines)]
