@@ -5,8 +5,8 @@ use crate::api::model::{
 };
 use crate::model::{is_input_expired, ConfigInput, ProxyUserCredentials};
 use crate::repository::{
-    csv_patch_batch_append, csv_patch_batch_update_credentials, csv_patch_batch_update_exp_date,
-    get_csv_file_path,
+    csv_patch_batch_append, csv_patch_batch_remove_expired, csv_patch_batch_update_credentials,
+    csv_patch_batch_update_exp_date, get_csv_file_path,
 };
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::utils::{debug_if_enabled, persist_source_config, read_sources_file_from_path};
@@ -945,6 +945,9 @@ enum SourcesYmlPatch {
         password: String,
         exp_date: Option<i64>,
     },
+    RemoveExpiredAliases {
+        input_name: String,
+    },
 }
 
 fn update_url_query_credentials_if_present(url: &mut String, username: &str, password: &str) {
@@ -1155,6 +1158,24 @@ fn apply_sources_yml_patches(
 
                 alias_indices[idx].insert(alias_name.to_string(), aliases.len().saturating_sub(1));
                 changed = true;
+            }
+            SourcesYmlPatch::RemoveExpiredAliases { input_name } => {
+                let idx = *inputs_by_name.get(input_name.as_str()).ok_or_else(|| {
+                    info_err!("panel_api: could not find input '{input_name}' in source.yml")
+                })?;
+                let Some(aliases) = doc.inputs[idx].aliases.as_mut() else {
+                    continue;
+                };
+                let before = aliases.len();
+                aliases.retain(|a| !is_input_expired(a.exp_date));
+                if aliases.len() != before {
+                    alias_indices[idx] = aliases
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, alias)| (alias.name.clone(), idx))
+                        .collect();
+                    changed = true;
+                }
             }
         }
     }
@@ -2237,11 +2258,22 @@ async fn sync_panel_api_for_input_on_boot(
     }
 
     if alias_pool_remove_expired(panel_cfg) {
-        debug_if_enabled!(
-            "panel_api boot sync skipping alias_pool.remove_expired for input {} (offset={}s); aliases are renewed/rotated, not deleted",
-            sanitize_sensitive_info(&input.name),
-            offset_secs
-        );
+        if let Some(csv_path) = csv_path.as_ref() {
+            let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
+            match csv_patch_batch_remove_expired(input.input_type, csv_path).await {
+                Ok(true) => any_change = true,
+                Ok(false) => {}
+                Err(err) => debug_if_enabled!(
+                    "panel_api boot sync failed to remove expired csv accounts: {}",
+                    err
+                ),
+            }
+        } else {
+            sources_yml_patches.push(SourcesYmlPatch::RemoveExpiredAliases {
+                input_name: input.name.clone(),
+            });
+            pending_sources_yml = true;
+        }
     }
 
     if pending_sources_yml {
