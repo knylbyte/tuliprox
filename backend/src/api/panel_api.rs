@@ -1,9 +1,9 @@
 use crate::api::config_file::ConfigFile;
 use crate::api::model::{
-    create_panel_api_provisioning_stream_with_stop, create_provider_connections_exhausted_stream,
-    AppState, StreamDetails,
+    AppState, StreamDetails, create_panel_api_provisioning_stream_with_stop,
+    create_provider_connections_exhausted_stream,
 };
-use crate::model::{is_input_expired, ConfigInput, ProxyUserCredentials};
+use crate::model::{ConfigInput, ProxyUserCredentials, is_input_expired};
 use crate::repository::{
     csv_patch_batch_append, csv_patch_batch_remove_expired, csv_patch_batch_update_credentials,
     csv_patch_batch_update_exp_date, get_csv_file_path,
@@ -15,7 +15,7 @@ use jsonwebtoken::get_current_timestamp;
 use log::{error, warn};
 use serde_json::Value;
 use shared::concat_string;
-use shared::error::{info_err, info_err_res, TuliproxError};
+use shared::error::{TuliproxError, info_err, info_err_res};
 use shared::model::{
     ConfigInputAliasDto, InputType, PanelApiAliasPoolSizeValue, PanelApiConfigDto,
     PanelApiProvisioningMethod, PanelApiQueryParamDto, ProxyUserStatus, SourcesConfigDto,
@@ -151,12 +151,16 @@ fn require_username_password_params_auto(
         .iter()
         .find(|p| p.key.trim().eq_ignore_ascii_case("password"));
     if username.is_none() || password.is_none() {
-        return info_err_res!("panel_api: {section} must contain query params 'username' and 'password' (use value 'auto')");
+        return info_err_res!(
+            "panel_api: {section} must contain query params 'username' and 'password' (use value 'auto')"
+        );
     }
     if !username.is_some_and(|p| p.value.trim().eq_ignore_ascii_case("auto"))
         || !password.is_some_and(|p| p.value.trim().eq_ignore_ascii_case("auto"))
     {
-        return info_err_res!("panel_api: {section} requires 'username: auto' and 'password: auto' (credentials must not be hardcoded)");
+        return info_err_res!(
+            "panel_api: {section} requires 'username: auto' and 'password: auto' (credentials must not be hardcoded)"
+        );
     }
     Ok(())
 }
@@ -336,12 +340,16 @@ fn resolve_query_params(
                 value = k.to_string();
             } else if key.eq_ignore_ascii_case("username") {
                 let Some((u, _)) = creds else {
-                    return info_err_res!("panel_api: query param {key} uses 'auto' but no account username is available");
+                    return info_err_res!(
+                        "panel_api: query param {key} uses 'auto' but no account username is available"
+                    );
                 };
                 value = u.to_string();
             } else if key.eq_ignore_ascii_case("password") {
                 let Some((_, pw)) = creds else {
-                    return info_err_res!("panel_api: query param {key} uses 'auto' but no account password is available");
+                    return info_err_res!(
+                        "panel_api: query param {key} uses 'auto' but no account password is available"
+                    );
                 };
                 value = pw.to_string();
             }
@@ -368,13 +376,11 @@ fn build_panel_url(
 
 fn sanitize_panel_api_json_for_log(value: &Value, sanitize_sensitive: bool) -> Value {
     match value {
-        Value::Array(arr) => {
-            Value::Array(
-                arr.iter()
-                    .map(|v| sanitize_panel_api_json_for_log(v, sanitize_sensitive))
-                    .collect(),
-            )
-        }
+        Value::Array(arr) => Value::Array(
+            arr.iter()
+                .map(|v| sanitize_panel_api_json_for_log(v, sanitize_sensitive))
+                .collect(),
+        ),
         Value::Object(obj) => {
             let mut out = serde_json::Map::with_capacity(obj.len());
             for (k, v) in obj {
@@ -1045,7 +1051,9 @@ fn apply_sources_yml_patches(
                     info_err!("panel_api: could not find input '{input_name}' in source.yml")
                 })?;
                 let Some(panel_api) = doc.inputs[idx].panel_api.as_mut() else {
-                    return Err(info_err!("panel_api: could not find panel_api for input '{input_name}' in source.yml"));
+                    return Err(info_err!(
+                        "panel_api: could not find panel_api for input '{input_name}' in source.yml"
+                    ));
                 };
                 if panel_api.credits.as_deref().map(str::trim) != Some(credits.trim()) {
                     panel_api.credits = Some(credits.trim().to_string());
@@ -1274,7 +1282,9 @@ fn derive_unique_alias_name(existing: &[String], input_name: &str, username: &st
             return cand;
         }
     }
-    warn!("derive_unique_alias_name: exhausted {MAX_ALIAS_NAME_ATTEMPTS} attempts for base '{base}'; returning potentially duplicate name");
+    warn!(
+        "derive_unique_alias_name: exhausted {MAX_ALIAS_NAME_ATTEMPTS} attempts for base '{base}'; returning potentially duplicate name"
+    );
     base
 }
 
@@ -1293,7 +1303,9 @@ fn derive_unique_alias_name_set(
             return cand;
         }
     }
-    warn!("derive_unique_alias_name_set: exhausted {MAX_ALIAS_NAME_ATTEMPTS} attempts for base '{base}'; returning potentially duplicate name");
+    warn!(
+        "derive_unique_alias_name_set: exhausted {MAX_ALIAS_NAME_ATTEMPTS} attempts for base '{base}'; returning potentially duplicate name"
+    );
     base
 }
 
@@ -1904,6 +1916,8 @@ async fn sync_panel_api_for_input_on_boot(
     let mut pending_sources_yml = false;
 
     let mut accounts = collect_accounts(input.as_ref());
+    let mut existing_names: HashSet<String> = accounts.iter().map(|a| a.name.clone()).collect();
+    let mut newly_created_accounts: Vec<AccountCredentials> = Vec::new();
 
     if !panel_cfg.query_parameter.account_info.is_empty() {
         let creds = accounts
@@ -2059,7 +2073,94 @@ async fn sync_panel_api_for_input_on_boot(
                         sanitize_sensitive_info(err.to_string().as_str())
                     );
                     match panel_client_new(app_state.as_ref(), panel_cfg).await {
-                        Ok((new_username, new_password, _base_url_from_resp)) => {
+                        Ok((new_username, new_password, base_url_from_resp)) => {
+                            if !is_root {
+                                let base_url =
+                                    base_url_from_resp.unwrap_or_else(|| input.url.clone());
+                                let base_url = get_base_url_from_str(base_url.as_str())
+                                    .unwrap_or_else(|| base_url.clone());
+
+                                let alias_name = derive_unique_alias_name_set(
+                                    &existing_names,
+                                    &input.name,
+                                    &new_username,
+                                );
+                                existing_names.insert(alias_name.clone());
+
+                                if let Err(err) = panel_client_adult_content(
+                                    app_state.as_ref(),
+                                    panel_cfg,
+                                    Some((new_username.as_str(), new_password.as_str())),
+                                )
+                                .await
+                                {
+                                    debug_if_enabled!(
+                                        "panel_api client_adult_content failed for {}: {}",
+                                        sanitize_sensitive_info(&alias_name),
+                                        sanitize_sensitive_info(err.to_string().as_str())
+                                    );
+                                }
+
+                                let exp_date = panel_client_info(
+                                    app_state.as_ref(),
+                                    panel_cfg,
+                                    new_username.as_str(),
+                                    new_password.as_str(),
+                                )
+                                .await
+                                .ok()
+                                .flatten();
+
+                                if let Some(csv_path) = csv_path.as_ref() {
+                                    let batch_type = if input.input_type == InputType::Xtream {
+                                        InputType::XtreamBatch
+                                    } else if input.input_type == InputType::M3u {
+                                        InputType::M3uBatch
+                                    } else {
+                                        input.input_type
+                                    };
+                                    let _csv_lock =
+                                        app_state.app_config.file_locks.write_lock(csv_path).await;
+                                    if let Err(err) = csv_patch_batch_append(
+                                        csv_path,
+                                        batch_type,
+                                        &alias_name,
+                                        &base_url,
+                                        &new_username,
+                                        &new_password,
+                                        exp_date,
+                                    )
+                                    .await
+                                    {
+                                        debug_if_enabled!(
+                                            "panel_api boot sync failed to append new csv account for {}: {}",
+                                            sanitize_sensitive_info(&alias_name),
+                                            err
+                                        );
+                                        continue;
+                                    }
+                                    any_change = true;
+                                } else {
+                                    sources_yml_patches.push(SourcesYmlPatch::AddAlias {
+                                        input_name: input.name.clone(),
+                                        alias_name: alias_name.clone(),
+                                        base_url,
+                                        username: new_username.clone(),
+                                        password: new_password.clone(),
+                                        exp_date,
+                                    });
+                                    pending_sources_yml = true;
+                                }
+
+                                newly_created_accounts.push(AccountCredentials {
+                                    name: alias_name,
+                                    username: new_username,
+                                    password: new_password,
+                                    exp_date,
+                                });
+                                continue;
+                            }
+
                             if let Some(csv_path) = csv_path.as_ref() {
                                 let _csv_lock =
                                     app_state.app_config.file_locks.write_lock(csv_path).await;
@@ -2076,34 +2177,20 @@ async fn sync_panel_api_for_input_on_boot(
                                 .await
                                 {
                                     debug_if_enabled!(
-                                            "panel_api boot sync failed to persist credentials to csv for {}: {}",
-                                            sanitize_sensitive_info(&account_name),
-                                            err
-                                        );
+                                        "panel_api boot sync failed to persist credentials to csv for {}: {}",
+                                        sanitize_sensitive_info(&account_name),
+                                        err
+                                    );
                                 } else {
                                     any_change = true;
                                 }
                             } else {
-                                if is_root {
-                                    sources_yml_patches.push(
-                                        SourcesYmlPatch::UpdateRootCredentials {
-                                            input_name: input.name.clone(),
-                                            username: new_username.clone(),
-                                            password: new_password.clone(),
-                                            exp_date: None,
-                                        },
-                                    );
-                                } else {
-                                    sources_yml_patches.push(
-                                        SourcesYmlPatch::UpdateAliasCredentials {
-                                            input_name: input.name.clone(),
-                                            alias_name: account_name.clone(),
-                                            username: new_username.clone(),
-                                            password: new_password.clone(),
-                                            exp_date: None,
-                                        },
-                                    );
-                                }
+                                sources_yml_patches.push(SourcesYmlPatch::UpdateRootCredentials {
+                                    input_name: input.name.clone(),
+                                    username: new_username.clone(),
+                                    password: new_password.clone(),
+                                    exp_date: None,
+                                });
                                 pending_sources_yml = true;
                             }
 
@@ -2237,6 +2324,10 @@ async fn sync_panel_api_for_input_on_boot(
                 );
             }
         }
+    }
+
+    if !newly_created_accounts.is_empty() {
+        accounts.extend(newly_created_accounts);
     }
 
     if !panel_cfg.query_parameter.client_adult_content.is_empty() {
@@ -2708,7 +2799,10 @@ pub fn create_panel_api_provisioning_stream_details(
     );
 
     if stream.is_none() {
-        debug_if_enabled!("panel_api provisioning stream missing; falling back to provider exhausted for input {}", sanitize_sensitive_info(&input.name));
+        debug_if_enabled!(
+            "panel_api provisioning stream missing; falling back to provider exhausted for input {}",
+            sanitize_sensitive_info(&input.name)
+        );
         let (stream, stream_info) =
             create_provider_connections_exhausted_stream(&app_state.app_config, &[]);
         return StreamDetails {
