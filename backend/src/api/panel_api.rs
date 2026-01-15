@@ -5,8 +5,8 @@ use crate::api::model::{
 };
 use crate::model::{is_input_expired, ConfigInput, ProxyUserCredentials};
 use crate::repository::{
-    csv_patch_batch_append, csv_patch_batch_remove_expired, csv_patch_batch_update_credentials,
-    csv_patch_batch_update_exp_date, get_csv_file_path,
+    csv_patch_batch_append, csv_patch_batch_update_credentials, csv_patch_batch_update_exp_date,
+    get_csv_file_path,
 };
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::utils::{debug_if_enabled, persist_source_config, read_sources_file_from_path};
@@ -945,9 +945,6 @@ enum SourcesYmlPatch {
         password: String,
         exp_date: Option<i64>,
     },
-    RemoveExpiredAliases {
-        input_name: String,
-    },
 }
 
 fn update_url_query_credentials_if_present(url: &mut String, username: &str, password: &str) {
@@ -1158,24 +1155,6 @@ fn apply_sources_yml_patches(
 
                 alias_indices[idx].insert(alias_name.to_string(), aliases.len().saturating_sub(1));
                 changed = true;
-            }
-            SourcesYmlPatch::RemoveExpiredAliases { input_name } => {
-                let idx = *inputs_by_name.get(input_name.as_str()).ok_or_else(|| {
-                    info_err!("panel_api: could not find input '{input_name}' in source.yml")
-                })?;
-                let Some(aliases) = doc.inputs[idx].aliases.as_mut() else {
-                    continue;
-                };
-                let before = aliases.len();
-                aliases.retain(|a| !is_input_expired(a.exp_date));
-                if aliases.len() != before {
-                    alias_indices[idx] = aliases
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, alias)| (alias.name.clone(), idx))
-                        .collect();
-                    changed = true;
-                }
             }
         }
     }
@@ -1983,20 +1962,27 @@ async fn sync_panel_api_for_input_on_boot(
             let old_username = acct.username.clone();
             let old_password = acct.password.clone();
 
+            let is_root = account_name == input.name;
+
             // If exp_date is missing even after client_info refresh, treat it as expiring and
             // attempt to renew/new (independent of offset).
             let exp_missing = acct.exp_date.is_none();
-            if !exp_missing && !is_expiring_with_offset(acct.exp_date, offset_secs) {
+            let should_renew = if is_root {
+                exp_missing || is_input_expired(acct.exp_date)
+            } else {
+                exp_missing || is_expiring_with_offset(acct.exp_date, offset_secs)
+            };
+            if !should_renew {
                 continue;
             }
 
-            let is_root = account_name == input.name;
             debug_if_enabled!(
-                "panel_api boot sync renewing account {} for input {} (exp_date={:?}, offset={}s)",
+                "panel_api boot sync renewing account {} for input {} (exp_date={:?}, offset={}s{})",
                 sanitize_sensitive_info(&account_name),
                 sanitize_sensitive_info(&input.name),
                 acct.exp_date,
-                offset_secs
+                offset_secs,
+                if is_root { " ignored_for_root" } else { "" }
             );
 
             let (active_username, active_password, creds_changed) = match panel_client_renew(
@@ -2249,24 +2235,11 @@ async fn sync_panel_api_for_input_on_boot(
     }
 
     if alias_pool_remove_expired(panel_cfg) {
-        if let Some(csv_path) = csv_path.as_ref() {
-            let _csv_lock = app_state.app_config.file_locks.write_lock(csv_path).await;
-            match csv_patch_batch_remove_expired(input.input_type, csv_path).await {
-                Ok(true) => {
-                    any_change = true;
-                }
-                Ok(false) => {}
-                Err(err) => debug_if_enabled!(
-                    "panel_api boot sync failed to remove expired csv accounts: {}",
-                    err
-                ),
-            }
-        } else {
-            sources_yml_patches.push(SourcesYmlPatch::RemoveExpiredAliases {
-                input_name: input.name.clone(),
-            });
-            pending_sources_yml = true;
-        }
+        debug_if_enabled!(
+            "panel_api boot sync skipping alias_pool.remove_expired for input {} (offset={}s); aliases are renewed/rotated, not deleted",
+            sanitize_sensitive_info(&input.name),
+            offset_secs
+        );
     }
 
     if pending_sources_yml {
