@@ -391,6 +391,16 @@ where
     }
 }
 
+/// Serialize a Vec<T> as a block sequence where each item is in flow-style (`- { key: value, ... }`).
+pub fn serialize_vec_flow_map_items<T, S>(items: &[T], serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: serde::Serialize,
+    S: serde::Serializer,
+{
+    let flow_items: Vec<_> = items.iter().map(serde_saphyr::FlowMap).collect();
+    flow_items.serialize(serializer)
+}
+
 pub fn serialize_number_as_string<N, S>(value: &N, serializer: S) -> Result<S::Ok, S::Error>
 where
     N: std::fmt::Display,
