@@ -132,6 +132,12 @@ pub struct PanelApiProvisioningDto {
     pub method: PanelApiProvisioningMethod,
     #[serde(default = "default_panel_api_provision_probe_interval_secs")]
     pub probe_interval_sec: u64,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_as_option_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub offset: Option<String>,
 }
 
 impl Default for PanelApiProvisioningDto {
@@ -140,6 +146,7 @@ impl Default for PanelApiProvisioningDto {
             timeout_sec: default_panel_api_provision_timeout_secs(),
             method: PanelApiProvisioningMethod::default(),
             probe_interval_sec: default_panel_api_provision_probe_interval_secs(),
+            offset: None,
         }
     }
 }

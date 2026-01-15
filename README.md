@@ -548,9 +548,10 @@ Following attributes are available:
 
 - `channel_unavailable`: _optional_
 - `user_connections_exhausted`: _optional_
-- ` provider_connections_exhausted`: _optional_
+- `provider_connections_exhausted`: _optional_
+- `panel_api_provisioning`: _optional_
 
-Video files with name `channel_unavailable.ts`, `user_connections_exhausted`, `provider_connections_exhausted`
+Video files with name `channel_unavailable.ts`, `user_connections_exhausted`, `provider_connections_exhausted`, `panel_api_provisioning` 
 are already available in the docker image.
 
 You can convert an image with `ffmpeg`.
@@ -564,6 +565,7 @@ and add it to the `config.yml`.
 - `provider_connections_exhausted.ts`
 - `user_connections_exhausted.ts`
 - `channel_unavailable.ts`
+- `panel_api_provisioning.ts`
 
 ```yaml
 custom_stream_response_path: /home/tuliprox/resources 
@@ -1021,7 +1023,6 @@ The `exp_date` field is a date as:
 - "YYYY-MM-DD HH:MM:SS" format like `2028-11-30 12:34:12`
 - or Unix timestamp (seconds since epoch)
 
-
 #### `panel_api`
 
 If provider connections are exhausted, tuliprox can optionally call a provider panel API to:
@@ -1030,15 +1031,50 @@ If provider connections are exhausted, tuliprox can optionally call a provider p
 
 **Important!** Panel api accounts are not considering unlimited provider access!
 
-The API is configured generically via predefined query parameters; only `type: m3u` is supported.
+Optional alias pool controls:
+- `alias_pool.size.min`: `number` or `auto`.
+  - `number`: keep at least this many valid (not expired) accounts on boot/update. Must be greater `0` and <= `max` (when `max` is a number).
+  - `auto`: uses the number of enabled tuliprox users (Active/Trial and not expired) for targets in the same source. If below, tuliprox tries to renew expired accounts first and then creates new accounts until the minimum is met during boot/update. User add/update triggers only when `max` is also `auto`.
+- `alias_pool.size.max`: `number` or `auto`. 
+  - `number`: upper bound for valid accounts when provisioning is triggered by provider exhaustion. When the maximum is reached, provisioning (renew/create) is skipped. Must be greater than `0` and >= `min`.
+  - `auto`: no upper bound; if `min` is also `auto`, alias-pool min checks are triggered when tuliprox users are added/updated.
+- `alias_pool.remove_expired`: `boolean`
+  - `true`: remove expired accounts from `source.yml` or batch CSVs during boot/update. This cleanup runs last in the panel_api routines and only removes aliases/rows (the root input is not removed).
+
+Provisioning (stream probes):
+- `panel_api.provisioning.timeout_sec`: maximum wait time (seconds) to probe a newly created/renewed account before forcing a client reconnect (default `65`).
+- `panel_api.provisioning.method`: HTTP method used for probes (`HEAD`, `GET`, `POST`). Default `HEAD`.
+- `panel_api.provisioning.probe_interval_sec`: probe interval in seconds (default `10`).
+- `panel_api.provisioning.offset`: optional pre-expiry window for boot/update renewal of the root input account; if `now + offset > exp_date`, tuliprox tries `client_renew`, and falls back to `client_new` if renew fails. Supports suffixes `s` (seconds), `m` (minutes), `h` (hours), `d` (days), e.g. `30m`, `12h`, `2d`.
+- Each probe also calls `<scheme>://<host>/player_api.php?username=<username>&password=<password>` and logs status/response for debugging.
+
+The API is configured generically via predefined query parameters; only `type: m3u` is supported for `client_new`, `client_renew` and `client_adult_content`.
+Recommended section order in config/UI: `account_info`, `client_info`, `client_new`, `client_renew`, `client_adult_content`.
 
 Use the literal value `auto` to fill sensitive values at runtime:
-- `enabled`, optional, default true
-- `api_key: auto` is replaced by `panel_api.api_key`
-- in `client_renew`, `username: auto` / `password: auto` are replaced by the account being renewed
-- in `client_info`, `username: auto` / `password: auto` are replaced by the account being queried
+- in `account_info`:
+  - `api_key: auto` is replaced by `panel_api.api_key`
+- in `client_renew`:
+  - `api_key: auto` is replaced by `panel_api.api_key`
+  - `username: auto`: are replaced by the account being renewed
+  - `password: auto` are replaced by the account being renewed
+- in `client_info`:
+  - `api_key: auto` is replaced by `panel_api.api_key`
+  - `username: auto`: are replaced by the account being queried
+  - `password: auto` are replaced by the account being queried
+- in `client_adult_content`:
+  - `api_key: auto` is replaced by `panel_api.api_key`
+  - `username: auto`: are replaced by the account being queried
+  - `password: auto` are replaced by the account being queried
 
-`client_info` is used to fetch the exact `exp_date` (via the `expire` field) and is also executed on boot to sync `exp_date` for existing inputs/aliases.
+`account_info` is executed on boot/update to fetch account credits via the `credits` field. If credentials are required, (username/password=auto), Tuliprox uses the first available ones: the root input if present, otherwise the first alias in config order. If no credentials are required, none are used or if not auto the configured one is used.”
+
+`client_info` is used to fetch the exact `exp_date` (via the `expire` field) and is also executed on boot/update to sync `exp_date` for existing inputs/aliases.
+
+`client_adult_content` is executed when configured:
+- on boot/update for every root input account and alias
+- after `client_new` / `client_renew` for the affected account
+The request is skipped when `query_parameter.client_adult_content` is empty.
 
 For `client_new`, the Panel API call would look like this in the example shown:
 
@@ -1050,29 +1086,40 @@ Response evaluation logic
 Tuliprox evaluates Panel API responses as JSON with the following logic, depending on the operation:
 
 `Common rule (all operations)`
-- The response must contain `status: true`. If status is missing or not true, the operation is treated as failed.
+  - The response must contain `status: true`. If status is missing or not true, the operation is treated as failed.
 
-`client_new (create alias)`
+`account_info (credits)`
 
-- Require `status: true`.
-- Attempt to extract credentials directly from the JSON response:
-  - username
-  - password
-- If one or both fields are missing, tuliprox attempts a fallback extraction from a URL contained in the JSON:
-  - If the JSON contains a url field, tuliprox parses it and tries to extract username/password from it (e.g., query string or embedded credentials depending on the provider’s URL format).
-- If credentials cannot be derived from either the direct fields or the url fallback, the operation is treated as failed and no alias is persisted.
-
-`client_renew (renew existing account)`
-
--	Only `status: true` is evaluated. No credentials are extracted or updated as part of renew.
+  - Require `status: true`.
+  - Extract `credits` and persist it to `panel_api.credits`.
 
 `client_info (sync expiration)`
 
--	Require `status: true`.
--	Extract the expiration timestamp/date from the JSON field:
-     -	`expire` → used to populate/update exp_date for the corresponding input/alias.
+  -	Require `status: true`.
+  -	Extract the expiration timestamp/date from the JSON field:
+    -	`expire` → used to populate/update exp_date for the corresponding input/alias.
+
+`client_new (create alias)`
+	
+  -	Require `status: true`.
+  -	Attempt to extract credentials directly from the JSON response:
+    - username
+    - password
+  -	If one or both fields are missing, tuliprox attempts a fallback extraction from a URL contained in the JSON:
+    -	If the JSON contains a url field, tuliprox parses it and tries to extract username/password from it (e.g., query string or embedded credentials depending on the provider’s URL format).
+  -	If credentials cannot be derived from either the direct fields or the url fallback, the operation is treated as failed and no alias is persisted.
+
+`client_renew (renew existing account)`
+ 
+  -	Require `status: true`.
+  -	No credentials are extracted or updated as part of renew.
+
+`client_adult_content (toggle adult content)`
+
+  - Require `status: true`.
 ```yaml
-inputs:
+- sources:
+- inputs:
   - type: xtream
     name: my_provider
     url: 'http://provider.net'
@@ -1081,7 +1128,15 @@ inputs:
     panel_api:
       url: 'https://panel.example.tld/api.php'
       api_key: '1234567890'
+      alias_pool:
+        size:
+          min: auto
+          max: auto
+        remove_expired: false
       query_parameter:
+        account_info:
+          - { key: action, value: account_info }
+          - { key: api_key, value: auto }
         client_info:
           - { key: action, value: client_info }
           - { key: username, value: auto }
@@ -1098,6 +1153,11 @@ inputs:
           - { key: username, value: auto }
           - { key: password, value: auto }
           - { key: sub, value: '1' }
+          - { key: api_key, value: auto }
+        client_adult_content:
+          - { key: action, value: adult_content }
+          - { key: username, value: auto }
+          - { key: password, value: auto }
           - { key: api_key, value: auto }
 ```
 

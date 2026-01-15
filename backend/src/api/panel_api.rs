@@ -16,6 +16,7 @@ use url::Url;
 use shared::{concat_string};
 use crate::repository::{get_csv_file_path, csv_patch_batch_append, csv_patch_batch_remove_expired, csv_patch_batch_update_credentials, csv_patch_batch_update_exp_date};
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
+use jsonwebtoken::get_current_timestamp;
 
 #[derive(Debug, Clone)]
 struct AccountCredentials {
@@ -160,6 +161,50 @@ fn validate_client_adult_content_params(params: &[PanelApiQueryParamDto]) -> Res
     Ok(())
 }
 
+fn parse_panel_api_provisioning_offset_secs(offset: &str) -> Result<u64, TuliproxError> {
+    let raw = offset.trim();
+    if raw.is_empty() {
+        return Ok(0);
+    }
+    let lower = raw.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let last = *bytes.last().unwrap_or(&b'\0');
+    let (num_part, multiplier) = match last {
+        b's' => (&lower[..lower.len().saturating_sub(1)], 1_u64),
+        b'm' => (&lower[..lower.len().saturating_sub(1)], 60_u64),
+        b'h' => (&lower[..lower.len().saturating_sub(1)], 60_u64 * 60),
+        b'd' => (&lower[..lower.len().saturating_sub(1)], 60_u64 * 60 * 24),
+        b'0'..=b'9' => (lower.as_str(), 1_u64),
+        _ => {
+            return info_err_res!(
+                "panel_api.provisioning.offset must be a number with optional suffix s/m/h/d (e.g. 30m, 12h), got '{raw}'"
+            );
+        }
+    };
+    let num_part = num_part.trim();
+    if num_part.is_empty() {
+        return info_err_res!(
+            "panel_api.provisioning.offset must be a number with optional suffix s/m/h/d (e.g. 30m, 12h), got '{raw}'"
+        );
+    }
+    let value: u64 = num_part
+        .parse()
+        .map_err(|_| info_err!("panel_api.provisioning.offset is not a valid number: '{raw}'"))?;
+    value
+        .checked_mul(multiplier)
+        .ok_or_else(|| info_err!("panel_api.provisioning.offset is too large: '{raw}'"))
+}
+
+fn is_expiring_with_offset(exp_date: Option<i64>, offset_secs: u64) -> bool {
+    let Some(exp_date) = exp_date else {
+        return false;
+    };
+    let Ok(exp_ts) = u64::try_from(exp_date) else {
+        return true;
+    };
+    get_current_timestamp().saturating_add(offset_secs) >= exp_ts
+}
+
 fn validate_panel_api_config(cfg: &PanelApiConfigDto) -> Result<(), TuliproxError> {
     if !cfg.enabled {
         return Ok(());
@@ -199,6 +244,9 @@ fn validate_panel_api_config(cfg: &PanelApiConfigDto) -> Result<(), TuliproxErro
     }
     if cfg.provisioning.probe_interval_sec == 0 {
         return info_err_res!("panel_api.provisioning.probe_interval_sec must be greater than 0");
+    }
+    if let Some(offset) = cfg.provisioning.offset.as_deref() {
+        let _secs = parse_panel_api_provisioning_offset_secs(offset)?;
     }
     Ok(())
 }
@@ -1375,18 +1423,26 @@ async fn sync_panel_api_for_input_on_boot(
             }
         }
 
-        // Only renew/create when we are sure the root account is expired.
-        let root_expired = is_input_expired(accounts[root_idx].exp_date);
-        if root_expired {
+        let offset_secs = panel_cfg
+            .provisioning
+            .offset
+            .as_deref()
+            .and_then(|v| parse_panel_api_provisioning_offset_secs(v).ok())
+            .unwrap_or(0);
+
+        // Renew/create when the root account is expired or within the configured offset window.
+        let root_expiring = is_expiring_with_offset(accounts[root_idx].exp_date, offset_secs);
+        if root_expiring {
             let (root_name, root_username, root_password) = {
                 let root = &accounts[root_idx];
                 (root.name.clone(), root.username.clone(), root.password.clone())
             };
 
             debug_if_enabled!(
-                "panel_api boot sync renewing root account for input {} (exp_date={:?})",
+                "panel_api boot sync renewing root account for input {} (exp_date={:?}, offset={}s)",
                 sanitize_sensitive_info(&input.name),
-                accounts[root_idx].exp_date
+                accounts[root_idx].exp_date,
+                offset_secs
             );
 
             let (active_username, active_password, creds_changed) = match panel_client_renew(
