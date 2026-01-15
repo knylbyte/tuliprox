@@ -28,6 +28,7 @@ const LABEL_PANEL_PROVISIONING: &str = "LABEL.PANEL_PROVISIONING";
 const LABEL_PANEL_PROVISION_TIMEOUT: &str = "LABEL.PANEL_PROVISION_TIMEOUT_SEC";
 const LABEL_PANEL_PROBE_INTERVAL: &str = "LABEL.PANEL_PROBE_INTERVAL_SEC";
 const LABEL_PANEL_PROVISION_METHOD: &str = "LABEL.PANEL_PROVISION_METHOD";
+const LABEL_PANEL_PROVISION_OFFSET: &str = "LABEL.PANEL_PROVISION_OFFSET";
 const LABEL_PANEL_ALIAS_POOL: &str = "LABEL.PANEL_ALIAS_POOL";
 const LABEL_PANEL_ALIAS_POOL_MIN: &str = "LABEL.PANEL_ALIAS_POOL_MIN";
 const LABEL_PANEL_ALIAS_POOL_MAX: &str = "LABEL.PANEL_ALIAS_POOL_MAX";
@@ -93,6 +94,11 @@ enum PanelConfigFormAction {
         source_idx: usize,
         input_idx: usize,
         method: PanelApiProvisioningMethod,
+    },
+    SetProvisioningOffset {
+        source_idx: usize,
+        input_idx: usize,
+        offset: String,
     },
     SetAliasPoolMin {
         source_idx: usize,
@@ -309,7 +315,36 @@ fn validate_panel(panel: Option<&PanelApiConfigDto>) -> Vec<String> {
     if panel.provisioning.probe_interval_sec == 0 {
         errors.push("provisioning: probe_interval_sec must be > 0".to_string());
     }
+    if let Some(offset) = panel.provisioning.offset.as_deref() {
+        if !offset.trim().is_empty() && parse_offset_secs(offset).is_none() {
+            errors.push("provisioning: offset must be a number with optional suffix s/m/h/d (e.g. 30m, 12h)".to_string());
+        }
+    }
     errors
+}
+
+fn parse_offset_secs(value: &str) -> Option<u64> {
+    let raw = value.trim();
+    if raw.is_empty() {
+        return Some(0);
+    }
+    let lower = raw.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let last = *bytes.last()?;
+    let (num_part, multiplier) = match last {
+        b's' => (&lower[..lower.len().saturating_sub(1)], 1_u64),
+        b'm' => (&lower[..lower.len().saturating_sub(1)], 60_u64),
+        b'h' => (&lower[..lower.len().saturating_sub(1)], 60_u64 * 60),
+        b'd' => (&lower[..lower.len().saturating_sub(1)], 60_u64 * 60 * 24),
+        b'0'..=b'9' => (lower.as_str(), 1_u64),
+        _ => return None,
+    };
+    let num_part = num_part.trim();
+    if num_part.is_empty() {
+        return None;
+    }
+    let value: u64 = num_part.parse().ok()?;
+    value.checked_mul(multiplier)
 }
 
 fn ensure_required_params(params: &mut Vec<PanelApiQueryParamDto>, section: PanelSection) {
@@ -477,6 +512,29 @@ impl Reducible for PanelConfigFormState {
                         .panel_api
                         .get_or_insert_with(PanelApiConfigDto::default);
                     panel.provisioning.method = method;
+                });
+                Self {
+                    form,
+                    modified: true,
+                }
+                .into()
+            }
+            PanelConfigFormAction::SetProvisioningOffset {
+                source_idx,
+                input_idx,
+                offset,
+            } => {
+                let mut form = self.form.clone();
+                with_input_mut(&mut form, source_idx, input_idx, |input| {
+                    let panel = input
+                        .panel_api
+                        .get_or_insert_with(PanelApiConfigDto::default);
+                    let normalized = offset.trim().to_string();
+                    panel.provisioning.offset = if normalized.is_empty() {
+                        None
+                    } else {
+                        Some(normalized)
+                    };
                 });
                 Self {
                     form,
@@ -876,6 +934,16 @@ pub fn PanelConfigView() -> Html {
                 }
             })
         };
+        let on_provision_offset = {
+            let form_state = form_state.clone();
+            Callback::from(move |value: String| {
+                form_state.dispatch(PanelConfigFormAction::SetProvisioningOffset {
+                    source_idx,
+                    input_idx,
+                    offset: value,
+                });
+            })
+        };
         let on_alias_pool_min = {
             let form_state = form_state.clone();
             Callback::from(move |value: String| {
@@ -915,6 +983,10 @@ pub fn PanelConfigView() -> Html {
             .unwrap_or_default();
         let provisioning_probe_interval_val = panel
             .map(|p| p.provisioning.probe_interval_sec.to_string())
+            .unwrap_or_default();
+        let provisioning_offset_val = panel
+            .and_then(|p| p.provisioning.offset.as_ref())
+            .map(|v| v.trim().to_string())
             .unwrap_or_default();
         let provisioning_method = panel
             .map(|p| p.provisioning.method)
@@ -1036,6 +1108,11 @@ pub fn PanelConfigView() -> Html {
                                                 value={provisioning_probe_interval_val.clone()}
                                                 on_change={Some(on_probe_interval)}
                                                 placeholder={Some("5".to_string())}/>
+                                            <Input name="panel_provision_offset"
+                                                label={Some(translate.t(LABEL_PANEL_PROVISION_OFFSET))}
+                                                value={provisioning_offset_val.clone()}
+                                                on_change={Some(on_provision_offset)}
+                                                placeholder={Some("30m".to_string())}/>
                                             <div class="tp__input">
                                                 <label>{ translate.t(LABEL_PANEL_PROVISION_METHOD) }</label>
                                                 <Select
