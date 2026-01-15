@@ -674,6 +674,23 @@ pub(crate) fn find_input_by_name(app_state: &AppState, input_name: &str) -> Opti
     sources.get_input_by_name(input_name).map(Arc::clone)
 }
 
+pub(crate) fn find_input_by_provider_name(app_state: &AppState, provider_name: &str) -> Option<Arc<ConfigInput>> {
+    let sources = app_state.app_config.sources.load();
+    for input in &sources.inputs {
+        if input.name == provider_name {
+            return Some(Arc::clone(input));
+        }
+        if input
+            .aliases
+            .as_ref()
+            .is_some_and(|aliases| aliases.iter().any(|alias| alias.name == provider_name))
+        {
+            return Some(Arc::clone(input));
+        }
+    }
+    None
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn patch_source_yml_add_alias(
     app_state: &Arc<AppState>,
