@@ -1456,10 +1456,10 @@ async fn sync_panel_api_for_input_on_boot(
             let old_username = acct.username.clone();
             let old_password = acct.password.clone();
 
-            if acct.exp_date.is_none() {
-                continue;
-            }
-            if !is_expiring_with_offset(acct.exp_date, offset_secs) {
+            // If exp_date is missing even after client_info refresh, treat it as expiring and
+            // attempt to renew/new (independent of offset).
+            let exp_missing = acct.exp_date.is_none();
+            if !exp_missing && !is_expiring_with_offset(acct.exp_date, offset_secs) {
                 continue;
             }
 
@@ -1579,6 +1579,12 @@ async fn sync_panel_api_for_input_on_boot(
                 );
             }
 
+            let refreshed_exp =
+                panel_client_info(app_state.as_ref(), panel_cfg, active_username.as_str(), active_password.as_str())
+                    .await
+                    .ok()
+                    .flatten();
+
             let ready = wait_for_panel_api_account_ready(
                 app_state,
                 input.as_ref(),
@@ -1595,11 +1601,6 @@ async fn sync_panel_api_for_input_on_boot(
                 );
                 continue;
             }
-
-            let refreshed_exp = panel_client_info(app_state.as_ref(), panel_cfg, active_username.as_str(), active_password.as_str())
-                .await
-                .ok()
-                .flatten();
 
             if let Some(new_exp) = refreshed_exp {
                 if let Some(csv_path) = csv_path.as_ref() {
