@@ -2033,14 +2033,34 @@ async fn sync_panel_api_for_input_on_boot(
     // Root is handled first (may affect desired_aliases and avoids over-provisioning).
     let mut root_action_planned = false;
     let mut root_action_done = false;
+    let mut root_exp_date_summary: Option<i64> = None;
+    let mut root_exp_missing_summary = false;
+    let mut root_expired_summary = false;
+    let mut root_expiring_summary = false;
 
     if let Some(root_idx) = accounts.iter().position(|a| a.name == input.name) {
+        let now = get_current_timestamp();
+        let offset_deadline = now.saturating_add(offset_secs);
         let root_exp_date = accounts[root_idx].exp_date;
         let root_exp_missing = root_exp_date.is_none();
-        let root_expired = is_input_expired(root_exp_date);
-        let root_expiring = is_expiring_with_offset(root_exp_date, offset_secs);
+        let root_expired = match root_exp_date {
+            Some(ts) => u64::try_from(ts)
+                .map(|exp_ts| exp_ts <= now)
+                .unwrap_or(true),
+            None => false,
+        };
+        let root_expiring = match root_exp_date {
+            Some(ts) => u64::try_from(ts)
+                .map(|exp_ts| exp_ts > now && exp_ts <= offset_deadline)
+                .unwrap_or(true),
+            None => false,
+        };
         let should_refresh_root = root_exp_missing || root_expired || root_expiring;
         root_action_planned = should_refresh_root;
+        root_exp_date_summary = root_exp_date;
+        root_exp_missing_summary = root_exp_missing;
+        root_expired_summary = root_expired;
+        root_expiring_summary = root_expiring;
 
         debug_if_enabled!(
             "panel_api boot/update root decision for input {}: exp_date={:?}, missing={}, expired={}, expiring(offset)={}, offset={}s",
@@ -2379,9 +2399,13 @@ async fn sync_panel_api_for_input_on_boot(
             .saturating_add(u16::from(root_action_planned));
 
         debug_if_enabled!(
-            "panel_api boot/update provisioning for input {} (offset={}s):\n  root: valid={}, planned={}, done={}\n  aliases: desired={}, valid={}, missing={}, exp_missing={}, expiring(offset)={}, expired={}, refresh(offset)={}\n  total: enabled_users={}, valid_accounts={}, to_provision={}",
+            "panel_api boot/update provisioning for input {} (offset={}s):\n  root: exp_date={:?}, missing={}, expired={}, expiring(offset)={}, valid={}, planned={}, done={}\n  aliases: desired={}, valid={}, missing={}, exp_missing={}, expiring(offset)={}, expired={}, refresh(offset)={}\n  total: enabled_users={}, valid_accounts={}, to_provision={}",
             sanitize_sensitive_info(&input.name),
             offset_secs,
+            root_exp_date_summary,
+            root_exp_missing_summary,
+            root_expired_summary,
+            root_expiring_summary,
             root_valid,
             root_action_planned,
             root_action_done,
