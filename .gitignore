@@ -20,7 +20,7 @@ AGENTS.md
 
 *.m3u
 
-.idea
+*.idea
 *.iml
 
 node_modules
