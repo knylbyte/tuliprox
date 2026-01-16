@@ -2393,20 +2393,21 @@ async fn sync_panel_api_for_input_on_boot(
             .saturating_add(u16::from(root_action_planned));
 
         debug_if_enabled!(
-            "panel_api boot/update alias pool auto for input {}: enabled_users={}, valid_accounts={}, root_valid={}, valid_aliases={}, desired_aliases={}, missing_aliases={}, exp_missing_aliases={}, expiring_aliases(offset)={}, expired_aliases={}, planned_refresh_aliases(offset)={}, root_planned={}, root_done={}, to_provision={}",
+            "panel_api boot/update provisioning for input {} (offset={}s):\n  root: valid={}, planned={}, done={}\n  aliases: desired={}, valid={}, missing={}, exp_missing={}, expiring(offset)={}, expired={}, refresh(offset)={}\n  total: enabled_users={}, valid_accounts={}, to_provision={}",
             sanitize_sensitive_info(&input.name),
-            enabled_users,
-            valid_total,
+            offset_secs,
             root_valid,
-            valid_aliases,
+            root_action_planned,
+            root_action_done,
             desired_aliases_u16,
+            valid_aliases,
             missing_aliases,
             exp_missing_aliases,
             expiring_aliases,
             expired_aliases,
             planned_refresh_aliases,
-            root_action_planned,
-            root_action_done,
+            enabled_users,
+            valid_total,
             to_provision
         );
     }
@@ -2736,9 +2737,11 @@ pub(crate) async fn sync_panel_api_exp_dates_on_boot(app_state: &Arc<AppState>) 
         }
     }
 
-    if any_change && should_reload_sources_after_internal_write(app_state.as_ref()) {
+    if any_change {
+        // Even with `config_hot_reload=true`, the file watcher reload is asynchronous.
+        // Reload immediately so subsequent routines use updated credentials (e.g. after root renewal).
         if let Err(err) = ConfigFile::load_sources(app_state).await {
-            debug_if_enabled!("panel_api boot sync reload sources failed: {}", err);
+            debug_if_enabled!("panel_api boot/update reload sources failed: {}", err);
         }
     }
 }
