@@ -2331,34 +2331,18 @@ async fn sync_panel_api_for_input_on_boot(
         .filter(|a| a.name != input.name && is_expiring_with_offset(a.exp_date, offset_secs))
         .count();
 
-    let offset_valid_aliases = accounts
-        .iter()
-        .filter(|a| {
-            if a.name == input.name {
-                return false;
-            }
-            let Some(exp_date) = a.exp_date else {
-                return false;
-            };
-            let Ok(exp_ts) = u64::try_from(exp_date) else {
-                return false;
-            };
-            exp_ts > offset_deadline
-        })
-        .count();
-
     let desired_aliases_u16 = desired_aliases;
     let valid_aliases_u16 = u16::try_from(valid_aliases).unwrap_or(u16::MAX);
     let missing_aliases = desired_aliases_u16.saturating_sub(valid_aliases_u16);
-
-    let offset_valid_aliases_u16 = u16::try_from(offset_valid_aliases).unwrap_or(u16::MAX);
-    let refresh_needed = desired_aliases_u16.saturating_sub(offset_valid_aliases_u16);
 
     let mut refresh_candidates: Vec<usize> = accounts
         .iter()
         .enumerate()
         .filter(|(_, a)| {
             if a.name == input.name {
+                return false;
+            }
+            if is_input_expired(a.exp_date) {
                 return false;
             }
             match a.exp_date {
@@ -2379,7 +2363,9 @@ async fn sync_panel_api_for_input_on_boot(
         }
     });
 
-    let planned_refresh_aliases = usize::from(refresh_needed).min(refresh_candidates.len());
+    let planned_refresh_aliases = refresh_candidates
+        .len()
+        .min(usize::from(desired_aliases_u16));
     let refresh_plan: Vec<usize> = refresh_candidates
         .into_iter()
         .take(planned_refresh_aliases)
