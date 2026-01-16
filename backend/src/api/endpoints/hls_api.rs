@@ -123,7 +123,13 @@ pub(in crate::api) async fn handle_hls_stream_request(
     let filter_header: HeaderFilter = Some(Box::new(|name: &str| !name.eq_ignore_ascii_case("range")));
     let forwarded = get_headers_from_request(req_headers, &filter_header);
     let disabled_headers = app_state.get_disabled_headers();
-    let headers = request::get_request_headers(None, Some(&forwarded), disabled_headers.as_ref());
+    let default_user_agent = app_state.app_config.config.load().default_user_agent.clone();
+    let headers = request::get_request_headers(
+        None,
+        Some(&forwarded),
+        disabled_headers.as_ref(),
+        default_user_agent.as_deref(),
+    );
     let input_source = InputSource::from(input).with_url(request_url);
     match request::download_text_content(
         &app_state.http_client.load(),
@@ -131,7 +137,8 @@ pub(in crate::api) async fn handle_hls_stream_request(
         &input_source,
         Some(&headers),
         None,
-        false
+        false,
+        default_user_agent.as_deref(),
     )
         .await
     {

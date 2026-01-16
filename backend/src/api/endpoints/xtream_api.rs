@@ -945,13 +945,15 @@ async fn xtream_get_short_epg(
 
                         // TODO serve epg from own db
                         let input_source = InputSource::from(&*input).with_url(info_url);
+                        let default_user_agent = config.default_user_agent.clone();
                         return match request::download_text_content(
                             &app_state.http_client.load(),
                             None,
                             &input_source,
                             None,
                             None,
-                            false
+                            false,
+                            default_user_agent.as_deref(),
                         )
                             .await
                         {
@@ -1050,11 +1052,13 @@ async fn xtream_get_catchup_response(
         pli.provider_id
     )));
     let input_source = InputSource::from(&*input).with_url(info_url);
+    let default_user_agent = app_state.app_config.config.load().default_user_agent.clone();
     let content = try_result_bad_request!(
         xtream::get_xtream_stream_info_content(
             &app_state.http_client.load(),
             &input_source,
-            false
+            false,
+            default_user_agent.as_deref(),
         )
         .await
     );

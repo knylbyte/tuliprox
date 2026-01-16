@@ -490,6 +490,7 @@ async fn create_stream_response_details(
         | ProviderStreamState::GracePeriod(_provider_name, request_url) => {
             let parsed_url = Url::parse(&request_url);
             let ((stream, stream_info), reconnect_flag) = if let Ok(url) = parsed_url {
+                let default_user_agent = app_state.app_config.config.load().default_user_agent.clone();
                 let disabled_headers = app_state.get_disabled_headers();
                 let provider_stream_factory_options = ProviderStreamFactoryOptions::new(
                     fingerprint.addr,
@@ -500,6 +501,7 @@ async fn create_stream_response_details(
                     req_headers,
                     streaming_strategy.input_headers.as_ref(),
                     disabled_headers.as_ref(),
+                    default_user_agent.as_deref(),
                 );
                 let reconnect_flag = provider_stream_factory_options.get_reconnect_flag_clone();
                 let provider_stream = match create_provider_stream(
@@ -1332,10 +1334,12 @@ async fn fetch_resource_with_retry(
     input: Option<&ConfigInput>,
 ) -> Option<axum::response::Response> {
     let config = app_state.app_config.config.load();
+    let default_user_agent = config.default_user_agent.clone();
     let (max_attempts, backoff_ms, backoff_multiplier) = config
         .reverse_proxy
         .as_ref()
         .map_or_else(ResourceRetryConfig::get_default_retry_values, |rp| rp.resource_retry.get_retry_values());
+    drop(config);
     let disabled_headers = app_state.get_disabled_headers();
     for attempt in 0..max_attempts {
         let client = request::get_client_request(
@@ -1345,6 +1349,7 @@ async fn fetch_resource_with_retry(
             url,
             Some(req_headers),
             disabled_headers.as_ref(),
+            default_user_agent.as_deref(),
         );
         match client.send().await {
             Ok(response) => {

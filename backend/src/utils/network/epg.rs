@@ -52,7 +52,17 @@ async fn download_epg_file(url: &str, ctx: &PlaylistProcessingContext, input: &C
         return Ok(persist_file_path);
     }
     debug!("Downloading epg for input '{}'", input.name);
-    match request::get_input_epg_content_as_file(&ctx.client, input, working_dir, url, &persist_file_path).await {
+    let default_user_agent = ctx.config.config.load().default_user_agent.clone();
+    match request::get_input_epg_content_as_file(
+        &ctx.client,
+        input,
+        working_dir,
+        url,
+        &persist_file_path,
+        default_user_agent.as_deref(),
+    )
+        .await
+    {
         Ok(path) => {
             ctx.mark_input_downloaded(lock_key.clone()).await;
             Ok(path)

@@ -30,6 +30,7 @@
     "WEB_ROOT": "Web-Root",
     "PROCESS_PARALLEL": "Process Parallel",
     "WORKING_DIR": "Working dir",
+    "DEFAULT_USER_AGENT": "Default User-Agent",
     "BACKUP_DIR": "Backup dir",
     "UPDATE_ON_BOOT": "Update on boot",
     "WEB_UI": "Web UI",

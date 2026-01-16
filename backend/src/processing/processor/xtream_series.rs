@@ -45,6 +45,7 @@ async fn playlist_resolve_series_info(app_config: &Arc<AppConfig>, client: &reqw
     let mut processed_series_info_count = 0;
     let mut group_series: HashMap<u32, PlaylistGroup> = HashMap::new();
     let mut batch = Vec::with_capacity(BATCH_SIZE);
+    let default_user_agent = app_config.config.load().default_user_agent.clone();
 
     let input = fpl.input;
     for pli in fpl.items_mut() {
@@ -61,7 +62,17 @@ async fn playlist_resolve_series_info(app_config: &Arc<AppConfig>, client: &reqw
         let should_download = resolve_series && !pli.has_details();
         if should_download {
             processed_series_info_count += 1;
-            if let Some(content) = playlist_resolve_download_playlist_item(client, pli, input, errors, resolve_delay, XtreamCluster::Series).await {
+            if let Some(content) = playlist_resolve_download_playlist_item(
+                client,
+                pli,
+                input,
+                errors,
+                resolve_delay,
+                XtreamCluster::Series,
+                default_user_agent.as_deref(),
+            )
+                .await
+            {
                 if !content.is_empty() {
                     match serde_json::from_str::<XtreamSeriesInfo>(&content) {
                         Ok(info) => {
