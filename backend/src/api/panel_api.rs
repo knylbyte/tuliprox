@@ -2062,16 +2062,6 @@ async fn sync_panel_api_for_input_on_boot(
         root_expired_summary = root_expired;
         root_expiring_summary = root_expiring;
 
-        debug_if_enabled!(
-            "panel_api boot/update root decision for input {}: exp_date={:?}, missing={}, expired={}, expiring(offset)={}, offset={}s",
-            sanitize_sensitive_info(&input.name),
-            root_exp_date,
-            root_exp_missing,
-            root_expired,
-            root_expiring,
-            offset_secs
-        );
-
         if should_refresh_root {
             let old_username = accounts[root_idx].username.clone();
             let old_password = accounts[root_idx].password.clone();
