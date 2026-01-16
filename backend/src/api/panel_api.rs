@@ -808,6 +808,20 @@ fn count_valid_accounts(accounts: &[AccountCredentials]) -> usize {
         .count()
 }
 
+fn count_valid_alias_accounts(accounts: &[AccountCredentials], input_name: &str) -> usize {
+    accounts
+        .iter()
+        .filter(|acct| acct.name != input_name && !is_input_expired(acct.exp_date))
+        .count()
+}
+
+fn root_counts_towards_pool(accounts: &[AccountCredentials], input_name: &str) -> bool {
+    accounts
+        .iter()
+        .find(|acct| acct.name == input_name)
+        .is_some_and(|acct| !is_input_expired(acct.exp_date))
+}
+
 fn should_reload_sources_after_internal_write(app_state: &AppState) -> bool {
     !app_state.app_config.config.load().config_hot_reload
 }
@@ -1685,7 +1699,7 @@ async fn ensure_alias_pool_min(
     let mut existing_names: HashSet<String> = accounts.iter().map(|a| a.name.clone()).collect();
     let max_attempts = usize::from(min_pool).saturating_add(10);
     for _ in 0..max_attempts {
-        let current_valid = count_valid_accounts(accounts);
+        let current_valid = count_valid_alias_accounts(accounts, input.name.as_str());
         if current_valid >= usize::from(min_pool) {
             break;
         }
@@ -1698,7 +1712,7 @@ async fn ensure_alias_pool_min(
         let expired_index = accounts
             .iter()
             .enumerate()
-            .filter(|(_, acct)| is_input_expired(acct.exp_date))
+            .filter(|(_, acct)| acct.name != input.name && is_input_expired(acct.exp_date))
             .min_by_key(|(_, acct)| acct.exp_date.unwrap_or(i64::MAX))
             .map(|(idx, _)| idx);
 
@@ -2003,31 +2017,57 @@ async fn sync_panel_api_for_input_on_boot(
         acct.exp_date = Some(new_exp);
     }
 
-    let min_pool = resolve_alias_pool_min(app_state.as_ref(), &input.name, panel_cfg);
-    if let Some(min_pool_value) = min_pool {
-        if alias_pool_both_auto(panel_cfg) {
-            let enabled_users = count_enabled_proxy_users(app_state.as_ref(), &input.name);
-            let current_valid = count_valid_accounts(&accounts);
-            let current_valid_u16 = u16::try_from(current_valid).unwrap_or(u16::MAX);
-            let needed = min_pool_value.saturating_sub(current_valid_u16);
-            debug_if_enabled!(
-                "panel_api boot/update alias pool auto for input {}: enabled_users={}, valid_accounts={}, to_provision={}",
-                sanitize_sensitive_info(&input.name),
-                enabled_users,
-                current_valid,
-                needed
-            );
-        }
-    }
-
-    // On boot/update, also try to renew the root input account (not only aliases),
-    // so expired/missing exp_date root credentials don't keep the provider disabled.
     let offset_secs = panel_cfg
         .provisioning
         .offset
         .as_deref()
         .and_then(|v| parse_panel_api_provisioning_offset_secs(v).ok())
         .unwrap_or(0);
+
+    let min_pool = resolve_alias_pool_min(app_state.as_ref(), &input.name, panel_cfg);
+    if let Some(min_pool_value) = min_pool {
+        if alias_pool_both_auto(panel_cfg) {
+            let enabled_users = count_enabled_proxy_users(app_state.as_ref(), &input.name);
+            let valid_total = count_valid_accounts(&accounts);
+            let root_valid = root_counts_towards_pool(&accounts, input.name.as_str());
+            let valid_aliases = count_valid_alias_accounts(&accounts, input.name.as_str());
+            let exp_missing_aliases = accounts
+                .iter()
+                .filter(|a| a.name != input.name && a.exp_date.is_none())
+                .count();
+            let expired_aliases = accounts
+                .iter()
+                .filter(|a| a.name != input.name && is_input_expired(a.exp_date))
+                .count();
+            let expiring_aliases = accounts
+                .iter()
+                .filter(|a| {
+                    a.name != input.name && is_expiring_with_offset(a.exp_date, offset_secs)
+                })
+                .count();
+
+            let desired_aliases = min_pool_value.saturating_sub(u16::from(root_valid));
+            let valid_aliases_u16 = u16::try_from(valid_aliases).unwrap_or(u16::MAX);
+            let to_provision = desired_aliases.saturating_sub(valid_aliases_u16);
+
+            debug_if_enabled!(
+                "panel_api boot/update alias pool auto for input {}: enabled_users={}, valid_accounts={}, root_valid={}, valid_aliases={}, desired_aliases={}, exp_missing_aliases={}, expiring_aliases(offset)={}, expired_aliases={}, to_provision={}",
+                sanitize_sensitive_info(&input.name),
+                enabled_users,
+                valid_total,
+                root_valid,
+                valid_aliases,
+                desired_aliases,
+                exp_missing_aliases,
+                expiring_aliases,
+                expired_aliases,
+                to_provision
+            );
+        }
+    }
+
+    // On boot/update, also try to renew the root input account (not only aliases),
+    // so expired/missing exp_date root credentials don't keep the provider disabled.
     {
         for acct in &mut accounts {
             let account_name = acct.name.clone();
@@ -2350,12 +2390,14 @@ async fn sync_panel_api_for_input_on_boot(
 
     let min_pool = min_pool.filter(|m| *m > 0);
     if let Some(min_pool) = min_pool {
+        let root_valid = root_counts_towards_pool(&accounts, input.name.as_str());
+        let alias_min = min_pool.saturating_sub(u16::from(root_valid));
         if ensure_alias_pool_min(
             app_state,
             input.as_ref(),
             panel_cfg,
             &mut accounts,
-            min_pool,
+            alias_min,
             csv_path.as_deref(),
             &mut sources_yml_patches,
         )
