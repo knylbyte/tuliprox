@@ -82,6 +82,7 @@ This means, even disabled inputs and targets are processed when the given target
 Top level entries in the config files are:
 * `api`
 * `working_dir`
+* `default_user_agent` _optional_, used as fallback for upstream requests when no `User-Agent` is provided by input headers or the client request (client request overrides it).
 * `process_parallel` _optional_
 * `messaging`  _optional_
 * `video` _optional_
