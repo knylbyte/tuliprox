@@ -6,6 +6,10 @@ use crate::utils::{is_false, default_connect_timeout_secs, is_default_connect_ti
 
 pub const DEFAULT_USER_AGENT: &str = "VLC/3.0.16 LibVLC/3.0.16";
 
+fn default_default_user_agent() -> Option<String> {
+    Some(DEFAULT_USER_AGENT.to_string())
+}
+
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -14,7 +18,7 @@ pub struct ConfigDto {
     pub process_parallel: bool,
     pub api: ConfigApiDto,
     pub working_dir: String,
-    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
+    #[serde(default = "default_default_user_agent", skip_serializing_if = "is_blank_optional_string")]
     pub default_user_agent: Option<String>,
     #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub backup_dir: Option<String>,
@@ -67,7 +71,7 @@ pub struct MainConfigDto {
     #[serde(default, skip_serializing_if = "is_false")]
     pub process_parallel: bool,
     pub working_dir: String,
-    #[serde(default, skip_serializing_if = "is_blank_optional_string")]
+    #[serde(default = "default_default_user_agent", skip_serializing_if = "is_blank_optional_string")]
     pub default_user_agent: Option<String>,
     #[serde(default, skip_serializing_if = "is_blank_optional_string")]
     pub backup_dir: Option<String>,
@@ -99,7 +103,7 @@ impl Default for MainConfigDto {
             process_parallel: false,
             disk_based_processing: false,
             working_dir: String::new(),
-            default_user_agent: None,
+            default_user_agent: default_default_user_agent(),
             backup_dir: None,
             user_config_dir: None,
             mapping_path: None,
@@ -166,7 +170,7 @@ pub struct HdHomeRunDeviceOverview {
 impl ConfigDto {
     pub fn prepare(&mut self, include_computed: bool) -> Result<(), TuliproxError> {
         if is_blank_optional_string(&self.default_user_agent) {
-            self.default_user_agent = None;
+            self.default_user_agent = default_default_user_agent();
         }
 
         if let Some(mins) = self.sleep_timer_mins {
