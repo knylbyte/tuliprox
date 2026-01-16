@@ -2048,16 +2048,22 @@ async fn sync_panel_api_for_input_on_boot(
 
             let desired_aliases = min_pool_value.saturating_sub(u16::from(root_valid));
             let valid_aliases_u16 = u16::try_from(valid_aliases).unwrap_or(u16::MAX);
-            let to_provision = desired_aliases.saturating_sub(valid_aliases_u16);
+            let missing_aliases = desired_aliases.saturating_sub(valid_aliases_u16);
+            let exp_missing_aliases_u16 = u16::try_from(exp_missing_aliases).unwrap_or(u16::MAX);
+            let expiring_aliases_u16 = u16::try_from(expiring_aliases).unwrap_or(u16::MAX);
+            let to_provision = missing_aliases
+                .saturating_add(exp_missing_aliases_u16)
+                .saturating_add(expiring_aliases_u16);
 
             debug_if_enabled!(
-                "panel_api boot/update alias pool auto for input {}: enabled_users={}, valid_accounts={}, root_valid={}, valid_aliases={}, desired_aliases={}, exp_missing_aliases={}, expiring_aliases(offset)={}, expired_aliases={}, to_provision={}",
+                "panel_api boot/update alias pool auto for input {}: enabled_users={}, valid_accounts={}, root_valid={}, valid_aliases={}, desired_aliases={}, missing_aliases={}, exp_missing_aliases={}, expiring_aliases(offset)={}, expired_aliases={}, to_provision={}",
                 sanitize_sensitive_info(&input.name),
                 enabled_users,
                 valid_total,
                 root_valid,
                 valid_aliases,
                 desired_aliases,
+                missing_aliases,
                 exp_missing_aliases,
                 expiring_aliases,
                 expired_aliases,
