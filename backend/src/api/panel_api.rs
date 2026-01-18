@@ -2831,17 +2831,13 @@ async fn sync_panel_api_for_input_on_boot(
         .take(planned_refresh_aliases)
         .collect();
 
-    let enabled_users = alias_pool_both_auto(panel_cfg)
-        .then(|| count_enabled_proxy_users(app_state.as_ref(), &input.name));
-    if alias_pool_both_auto(panel_cfg) {
-        debug_if_enabled!(
-            "panel_api boot/update provisioning root for input {} (offset={}s): valid={}, planned_refresh(offset)={}",
-            sanitize_sensitive_info(&input.name),
-            offset_secs,
-            root_valid,
-            root_action_planned
-        );
-
+    let log_pool = alias_pool_has_min(panel_cfg);
+    let enabled_users = if log_pool {
+        count_enabled_proxy_users(app_state.as_ref(), &input.name)
+    } else {
+        0
+    };
+    if log_pool {
         debug_if_enabled!(
             "panel_api boot/update provisioning aliases for input {} (offset={}s): desired={}, valid_beyond_offset={}, expiring(offset)={}, refresh_planned(offset)={}",
             sanitize_sensitive_info(&input.name),
@@ -3092,7 +3088,7 @@ async fn sync_panel_api_for_input_on_boot(
         accounts.extend(newly_created_accounts);
     }
 
-    if let Some(enabled_users) = enabled_users {
+    if log_pool {
         let valid_total = count_valid_accounts_at(&accounts, now);
         debug_if_enabled!(
             "panel_api boot/update provisioning total for input {} (offset={}s): enabled_users={}, valid_accounts={}, provisioned_root={}, provisioned_aliases={}",
