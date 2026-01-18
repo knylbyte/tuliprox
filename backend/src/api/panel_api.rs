@@ -3293,14 +3293,12 @@ fn build_panel_api_test_url(base_url: &str, username: &str, password: &str) -> O
 }
 
 enum PanelApiProbeTarget {
-    PanelClientInfo,
     PlayerApi { action: &'static str, url: Url },
 }
 
 impl PanelApiProbeTarget {
     fn action(&self) -> &'static str {
         match self {
-            PanelApiProbeTarget::PanelClientInfo => "client_info",
             PanelApiProbeTarget::PlayerApi { action, .. } => action,
         }
     }
@@ -3308,15 +3306,12 @@ impl PanelApiProbeTarget {
 
 fn build_panel_api_probe_targets(
     input: &ConfigInput,
-    panel_cfg: &PanelApiConfigDto,
     username: &str,
     password: &str,
 ) -> Vec<PanelApiProbeTarget> {
     let mut targets = Vec::new();
-    if !panel_cfg.query_parameter.client_info.is_empty() {
-        targets.push(PanelApiProbeTarget::PanelClientInfo);
-    }
     for action in [
+        "client_info",
         "get_live_categories",
         "get_series_categories",
         "get_vod_categories",
@@ -3332,36 +3327,17 @@ fn build_panel_api_probe_targets(
 
 async fn probe_panel_api_targets(
     app_state: &Arc<AppState>,
-    panel_cfg: &PanelApiConfigDto,
-    username: &str,
-    password: &str,
     probe_method: PanelApiProvisioningMethod,
     targets: &[PanelApiProbeTarget],
     attempt: u64,
+    done: &mut HashSet<&'static str>,
 ) -> bool {
-    let mut all_ready = true;
     for target in targets {
+        let action = target.action();
+        if done.contains(action) {
+            continue;
+        }
         match target {
-            PanelApiProbeTarget::PanelClientInfo => {
-                match panel_client_info_raw(app_state, panel_cfg, username, password).await {
-                    Ok(_) => {
-                        debug_if_enabled!(
-                            "panel_api probe status: 'ok' action={} attempt={}",
-                            target.action(),
-                            attempt
-                        );
-                    }
-                    Err(err) => {
-                        debug_if_enabled!(
-                            "panel_api probe failed action={} attempt={}: {}",
-                            target.action(),
-                            attempt,
-                            sanitize_sensitive_info(err.to_string().as_str())
-                        );
-                        all_ready = false;
-                    }
-                }
-            }
             PanelApiProbeTarget::PlayerApi { action, url } => {
                 match probe_panel_api_test_url(app_state, url, probe_method).await {
                     Ok(status) => {
@@ -3372,8 +3348,8 @@ async fn probe_panel_api_targets(
                             sanitize_sensitive_info(url.as_str()),
                             attempt
                         );
-                        if !status.is_success() {
-                            all_ready = false;
+                        if status.is_success() {
+                            done.insert(action);
                         }
                     }
                     Err(err) => {
@@ -3392,13 +3368,12 @@ async fn probe_panel_api_targets(
                                 attempt
                             );
                         }
-                        all_ready = false;
                     }
                 }
             }
         }
     }
-    all_ready
+    done.len() == targets.len()
 }
 
 async fn probe_panel_api_test_url(
@@ -3427,7 +3402,7 @@ async fn wait_for_panel_api_account_ready(
     let probe_interval_secs = panel_cfg.provisioning.probe_interval_sec.max(1);
     let probe_method = panel_cfg.provisioning.method;
 
-    let probe_targets = build_panel_api_probe_targets(input, panel_cfg, username, password);
+    let probe_targets = build_panel_api_probe_targets(input, username, password);
     if probe_targets.is_empty() {
         debug_if_enabled!(
             "panel_api probe skipped for {} (input={}): no probe targets",
@@ -3454,17 +3429,16 @@ async fn wait_for_panel_api_account_ready(
 
     let deadline = Instant::now() + Duration::from_secs(max_wait_secs);
     let probe_delay = Duration::from_secs(probe_interval_secs);
+    let mut done_targets = HashSet::new();
     let mut attempt = 0u64;
     loop {
         attempt += 1;
         if probe_panel_api_targets(
             app_state,
-            panel_cfg,
-            username,
-            password,
             probe_method,
             &probe_targets,
             attempt,
+            &mut done_targets,
         )
         .await
         {
