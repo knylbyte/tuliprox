@@ -3328,7 +3328,6 @@ async fn probe_panel_api_targets(
     app_state: &Arc<AppState>,
     probe_method: PanelApiProvisioningMethod,
     targets: &[PanelApiProbeTarget],
-    attempt: u64,
     done: &mut HashSet<&'static str>,
 ) -> bool {
     for target in targets {
@@ -3341,11 +3340,10 @@ async fn probe_panel_api_targets(
                 match probe_panel_api_test_url(app_state, url, probe_method).await {
                     Ok(status) => {
                         debug_if_enabled!(
-                            "panel_api probe status: '{}' action={} url: {} attempt={}",
+                            "panel_api probe status: '{}' action={} url: {}",
                             status,
                             action,
-                            sanitize_sensitive_info(url.as_str()),
-                            attempt
+                            sanitize_sensitive_info(url.as_str())
                         );
                         if status.is_success() {
                             done.insert(action);
@@ -3354,17 +3352,15 @@ async fn probe_panel_api_targets(
                     Err(err) => {
                         if err.is_timeout() {
                             debug_if_enabled!(
-                                "panel_api probe timeout action={} url: {} attempt={}",
+                                "panel_api probe timeout action={} url: {}",
                                 action,
-                                sanitize_sensitive_info(url.as_str()),
-                                attempt
+                                sanitize_sensitive_info(url.as_str())
                             );
                         } else {
                             debug_if_enabled!(
-                                "panel_api probe failed action={} url: {} attempt={}: {err}",
+                                "panel_api probe failed action={} url: {}: {err}",
                                 action,
-                                sanitize_sensitive_info(url.as_str()),
-                                attempt
+                                sanitize_sensitive_info(url.as_str())
                             );
                         }
                     }
@@ -3450,14 +3446,8 @@ async fn wait_for_panel_api_account_ready(
     let mut attempt = 0u64;
     loop {
         attempt += 1;
-        if probe_panel_api_targets(
-            app_state,
-            probe_method,
-            &probe_targets,
-            attempt,
-            &mut done_targets,
-        )
-        .await
+        debug_if_enabled!("panel_api probe attempt {}", attempt);
+        if probe_panel_api_targets(app_state, probe_method, &probe_targets, &mut done_targets).await
         {
             apply_provisioning_cooldown(panel_cfg, account_name, &input.name).await;
             return true;
@@ -3596,13 +3586,13 @@ pub(crate) async fn run_panel_api_provisioning_probe(
     let mut ready = false;
     while Instant::now() < deadline {
         attempt += 1;
+        debug_if_enabled!("panel_api provisioning probe attempt {}", attempt);
         match probe_panel_api_test_url(&app_state, &test_url, probe_method).await {
             Ok(status) => {
                 debug_if_enabled!(
-                    "panel_api provisioning probe status: '{}' url: {} attempt={}",
+                    "panel_api provisioning probe status: '{}' url: {}",
                     status,
-                    sanitize_sensitive_info(test_url.as_str()),
-                    attempt
+                    sanitize_sensitive_info(test_url.as_str())
                 );
                 if status.is_success() {
                     ready = true;
@@ -3612,15 +3602,13 @@ pub(crate) async fn run_panel_api_provisioning_probe(
             Err(err) => {
                 if err.is_timeout() {
                     debug_if_enabled!(
-                        "panel_api provisioning probe timeout for {} attempt={}",
-                        sanitize_sensitive_info(test_url.as_str()),
-                        attempt
+                        "panel_api provisioning probe timeout for {}",
+                        sanitize_sensitive_info(test_url.as_str())
                     );
                 } else {
                     debug_if_enabled!(
-                        "panel_api provisioning probe failed for {} attempt={}: {err}",
-                        sanitize_sensitive_info(test_url.as_str()),
-                        attempt
+                        "panel_api provisioning probe failed for {}: {err}",
+                        sanitize_sensitive_info(test_url.as_str())
                     );
                 }
             }
