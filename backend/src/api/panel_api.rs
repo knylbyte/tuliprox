@@ -917,6 +917,11 @@ fn alias_pool_both_auto(cfg: &PanelApiConfigDto) -> bool {
         && max.is_some_and(PanelApiAliasPoolSizeValue::is_auto)
 }
 
+fn alias_pool_has_min(cfg: &PanelApiConfigDto) -> bool {
+    let (min, _) = alias_pool_limit_values(cfg);
+    min.is_some()
+}
+
 fn resolve_alias_pool_limit_value(
     value: Option<&PanelApiAliasPoolSizeValue>,
     auto_value: Option<u16>,
@@ -980,7 +985,7 @@ fn resolve_alias_pool_auto_value(app_state: &AppState, input_name: &str) -> u16 
 }
 
 #[allow(dead_code)]
-pub(crate) fn target_has_alias_pool_auto(app_state: &AppState, target_name: &str) -> bool {
+pub(crate) fn target_has_alias_pool_min(app_state: &AppState, target_name: &str) -> bool {
     let sources = app_state.app_config.sources.load();
     for source in &sources.sources {
         let target_match = source
@@ -998,7 +1003,7 @@ pub(crate) fn target_has_alias_pool_auto(app_state: &AppState, target_name: &str
                 if !panel_cfg.enabled {
                     continue;
                 }
-                if alias_pool_both_auto(panel_cfg) {
+                if alias_pool_has_min(panel_cfg) {
                     return true;
                 }
             }
@@ -3231,15 +3236,15 @@ pub(crate) async fn sync_panel_api_alias_pool_for_target(
             if !panel_cfg.enabled || panel_cfg.url.trim().is_empty() {
                 continue;
             }
-            if !alias_pool_both_auto(panel_cfg) {
-                continue;
-            }
             if let Err(err) = validate_panel_api_config(panel_cfg) {
                 debug_if_enabled!(
                     "panel_api user sync skipped for {}: {}",
                     sanitize_sensitive_info(&input.name),
                     sanitize_sensitive_info(err.to_string().as_str())
                 );
+                continue;
+            }
+            if !alias_pool_has_min(panel_cfg) {
                 continue;
             }
 
