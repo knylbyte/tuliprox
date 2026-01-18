@@ -1,9 +1,9 @@
 use crate::api::config_file::ConfigFile;
 use crate::api::model::{
-    AppState, StreamDetails, create_panel_api_provisioning_stream_with_stop,
-    create_provider_connections_exhausted_stream,
+    create_panel_api_provisioning_stream_with_stop, create_provider_connections_exhausted_stream,
+    AppState, StreamDetails,
 };
-use crate::model::{ConfigInput, ProxyUserCredentials, is_input_expired};
+use crate::model::{is_input_expired, ConfigInput, ProxyUserCredentials};
 use crate::repository::{
     csv_patch_batch_append, csv_patch_batch_remove_expired, csv_patch_batch_update_credentials,
     csv_patch_batch_update_exp_date, get_csv_file_path,
@@ -15,9 +15,10 @@ use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 use jsonwebtoken::get_current_timestamp;
 use log::{error, warn};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use shared::concat_string;
-use shared::error::{TuliproxError, info_err, info_err_res};
+use shared::error::{info_err, info_err_res, TuliproxError};
 use shared::model::{
     ConfigInputAliasDto, InputType, PanelApiAliasPoolSizeValue, PanelApiConfigDto,
     PanelApiProvisioningMethod, PanelApiQueryParamDto, ProxyUserStatus, SourcesConfigDto,
@@ -43,7 +44,8 @@ struct AccountCredentials {
     exp_date: Option<i64>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 enum PanelApiExpireMode {
     UtcString,
     ServerTzString,
@@ -60,6 +62,18 @@ struct UserApiAccountInfo {
     exp_date: Option<i64>,
     server_now_ts: Option<i64>,
     server_tz: Option<Tz>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct PanelApiTimeCache {
+    inputs: HashMap<String, PanelApiTimeCacheEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PanelApiTimeCacheEntry {
+    expire_mode: PanelApiExpireMode,
+    server_tz: Option<String>,
+    skew_secs: Option<i64>,
 }
 
 fn parse_boolish(value: &Value) -> bool {
@@ -766,6 +780,48 @@ fn apply_clock_skew(now: u64, skew_secs: i64) -> u64 {
     } else {
         now.saturating_add(u64::try_from(skew_secs).unwrap_or(0))
     }
+}
+
+fn panel_api_time_cache_path(app_state: &AppState) -> PathBuf {
+    let paths = app_state.app_config.paths.load();
+    PathBuf::from(&paths.config_path)
+        .join("panel-api")
+        .join("panel_api_time_cache.json")
+}
+
+async fn load_panel_api_time_cache(app_state: &AppState, cache_path: &Path) -> PanelApiTimeCache {
+    if let Some(parent) = cache_path.parent() {
+        if tokio::fs::create_dir_all(parent).await.is_err() {
+            return PanelApiTimeCache::default();
+        }
+    }
+    let _lock = app_state.app_config.file_locks.read_lock(cache_path).await;
+    let Ok(content) = tokio::fs::read_to_string(cache_path).await else {
+        return PanelApiTimeCache::default();
+    };
+    serde_json::from_str(&content).unwrap_or_default()
+}
+
+async fn persist_panel_api_time_cache(
+    app_state: &AppState,
+    cache_path: &Path,
+    cache: &PanelApiTimeCache,
+) -> Result<(), TuliproxError> {
+    if let Some(parent) = cache_path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| info_err!("panel_api: failed to create cache dir: {e}"))?;
+    }
+    let content = serde_json::to_string_pretty(cache).map_err(|e| info_err!("panel_api: {e}"))?;
+    let _lock = app_state.app_config.file_locks.write_lock(cache_path).await;
+    tokio::fs::write(cache_path, content)
+        .await
+        .map_err(|e| info_err!("panel_api: failed to persist time cache: {e}"))?;
+    Ok(())
+}
+
+fn parse_cached_tz(tz: Option<String>) -> Option<Tz> {
+    tz.and_then(|name| name.parse::<Tz>().ok())
 }
 
 async fn panel_account_info(
@@ -2199,14 +2255,18 @@ async fn sync_panel_api_for_input_on_boot(
     let mut time_ctx: Option<PanelApiTimeContext> = None;
     let mut effective_now = get_current_timestamp();
 
+    let cache_path = panel_api_time_cache_path(app_state.as_ref());
+    let mut time_cache = load_panel_api_time_cache(app_state.as_ref(), &cache_path).await;
+    let cached_entry = time_cache.inputs.get(&input.name).cloned();
+
     if let Some((root_username, root_password)) = extract_account_creds_from_input(input.as_ref()) {
         let user_info = fetch_root_user_api_info(app_state.as_ref(), input.as_ref()).await;
         let (root_exp_date, server_tz, skew_secs) = if let Some(info) = user_info {
             let local_now = i64::try_from(get_current_timestamp()).unwrap_or(0);
             let skew_secs = info.server_now_ts.unwrap_or(local_now) - local_now;
-            (info.exp_date, info.server_tz, skew_secs)
+            (info.exp_date, info.server_tz, Some(skew_secs))
         } else {
-            (None, None, 0)
+            (None, None, None)
         };
 
         let panel_expire_raw = match panel_client_info_raw(
@@ -2228,20 +2288,70 @@ async fn sync_panel_api_for_input_on_boot(
             }
         };
 
-        let expire_mode =
+        let mut expire_mode =
             resolve_panel_expire_mode(root_exp_date, panel_expire_raw.as_deref(), server_tz);
+        let mut server_tz = server_tz;
+        let mut skew_secs = skew_secs.or_else(|| cached_entry.as_ref().and_then(|e| e.skew_secs));
+
+        if root_exp_date.is_none() {
+            if let Some(cached) = cached_entry.as_ref() {
+                expire_mode = cached.expire_mode;
+                if server_tz.is_none() {
+                    server_tz = parse_cached_tz(cached.server_tz.clone());
+                }
+                if skew_secs.is_none() {
+                    skew_secs = cached.skew_secs;
+                }
+            }
+        }
+
         time_ctx = Some(PanelApiTimeContext {
             expire_mode,
             server_tz,
         });
-        effective_now = apply_clock_skew(get_current_timestamp(), skew_secs);
+        effective_now = apply_clock_skew(get_current_timestamp(), skew_secs.unwrap_or_default());
+
+        time_cache.inputs.insert(
+            input.name.clone(),
+            PanelApiTimeCacheEntry {
+                expire_mode,
+                server_tz: server_tz.map(|tz| tz.name().to_string()),
+                skew_secs,
+            },
+        );
+        if let Err(err) =
+            persist_panel_api_time_cache(app_state.as_ref(), &cache_path, &time_cache).await
+        {
+            debug_if_enabled!(
+                "panel_api failed to persist time cache for {}: {}",
+                sanitize_sensitive_info(&input.name),
+                err
+            );
+        }
 
         debug_if_enabled!(
             "panel_api time context for input {}: expire_mode={:?}, tz={:?}, skew_secs={}",
             sanitize_sensitive_info(&input.name),
             expire_mode,
             server_tz,
-            skew_secs
+            skew_secs.unwrap_or_default()
+        );
+    } else if let Some(cached) = cached_entry.as_ref() {
+        let server_tz = parse_cached_tz(cached.server_tz.clone());
+        time_ctx = Some(PanelApiTimeContext {
+            expire_mode: cached.expire_mode,
+            server_tz,
+        });
+        effective_now = apply_clock_skew(
+            get_current_timestamp(),
+            cached.skew_secs.unwrap_or_default(),
+        );
+        debug_if_enabled!(
+            "panel_api time context fallback for input {}: expire_mode={:?}, tz={:?}, skew_secs={}",
+            sanitize_sensitive_info(&input.name),
+            cached.expire_mode,
+            server_tz,
+            cached.skew_secs.unwrap_or_default()
         );
     } else {
         debug_if_enabled!(
@@ -2346,11 +2456,6 @@ async fn sync_panel_api_for_input_on_boot(
     // Refresh/provision credentials on boot/update.
     // Root is handled first (may affect desired_aliases and avoids over-provisioning).
     let mut root_action_planned = false;
-    let mut root_action_done = false;
-    let mut root_exp_date_summary: Option<i64> = None;
-    let mut root_exp_missing_summary = false;
-    let mut root_expired_summary = false;
-    let mut root_expiring_summary = false;
 
     if let Some(root_idx) = accounts.iter().position(|a| a.name == input.name) {
         let now = effective_now;
@@ -2371,10 +2476,16 @@ async fn sync_panel_api_for_input_on_boot(
         };
         let should_refresh_root = root_exp_missing || root_expired || root_expiring;
         root_action_planned = should_refresh_root;
-        root_exp_date_summary = root_exp_date;
-        root_exp_missing_summary = root_exp_missing;
-        root_expired_summary = root_expired;
-        root_expiring_summary = root_expiring;
+
+        debug_if_enabled!(
+            "panel_api boot/update root status for input {} (offset={}s): exp_date={:?}, missing={}, expired={}, expiring(offset)={}",
+            sanitize_sensitive_info(&input.name),
+            offset_secs,
+            root_exp_date,
+            root_exp_missing,
+            root_expired,
+            root_expiring
+        );
 
         if should_refresh_root {
             let old_username = accounts[root_idx].username.clone();
@@ -2599,7 +2710,6 @@ async fn sync_panel_api_for_input_on_boot(
                     } else {
                         accounts[root_idx].exp_date = Some(new_exp);
                         any_change = true;
-                        root_action_done = true;
                     }
                 } else {
                     if creds_changed {
@@ -2618,7 +2728,6 @@ async fn sync_panel_api_for_input_on_boot(
                     }
                     pending_sources_yml = true;
                     accounts[root_idx].exp_date = Some(new_exp);
-                    root_action_done = true;
                 }
             }
         }
@@ -2658,6 +2767,24 @@ async fn sync_panel_api_for_input_on_boot(
         })
         .count();
 
+    let valid_aliases_beyond_offset = accounts
+        .iter()
+        .filter(|a| {
+            if a.name == input.name {
+                return false;
+            }
+            if is_input_expired_at(a.exp_date, now) {
+                return false;
+            }
+            match a.exp_date {
+                Some(ts) => u64::try_from(ts)
+                    .map(|exp_ts| exp_ts > offset_deadline)
+                    .unwrap_or(false),
+                None => false,
+            }
+        })
+        .count();
+
     let desired_aliases_u16 = desired_aliases;
     let valid_aliases_u16 = u16::try_from(valid_aliases).unwrap_or(u16::MAX);
     let missing_aliases = desired_aliases_u16.saturating_sub(valid_aliases_u16);
@@ -2690,9 +2817,13 @@ async fn sync_panel_api_for_input_on_boot(
         }
     });
 
+    let valid_aliases_beyond_offset_u16 =
+        u16::try_from(valid_aliases_beyond_offset).unwrap_or(u16::MAX);
+    let needed_refresh_aliases_u16 =
+        desired_aliases_u16.saturating_sub(valid_aliases_beyond_offset_u16);
     let planned_refresh_aliases = refresh_candidates
         .len()
-        .min(usize::from(desired_aliases_u16));
+        .min(usize::from(needed_refresh_aliases_u16));
     let refresh_plan: Vec<usize> = refresh_candidates
         .into_iter()
         .take(planned_refresh_aliases)
@@ -2706,35 +2837,20 @@ async fn sync_panel_api_for_input_on_boot(
             .saturating_add(u16::from(root_action_planned));
 
         debug_if_enabled!(
-            "panel_api boot/update provisioning for input {} (offset={}s) -> root: exp_date={:?}, missing={}, expired={}, expiring(offset)={}, valid={}, planned={}, done={}",
+            "panel_api boot/update provisioning for input {} (offset={}s):\n  root: valid={}, planned_refresh(offset)={}\n  aliases: desired={}, valid={}, valid_beyond_offset={}, missing={}, exp_missing={}, expiring(offset)={}, expired={}, refresh_needed(offset)={}, refresh_planned(offset)={}\n  total: enabled_users={}, valid_accounts={}, to_provision={}",
             sanitize_sensitive_info(&input.name),
             offset_secs,
-            root_exp_date_summary,
-            root_exp_missing_summary,
-            root_expired_summary,
-            root_expiring_summary,
             root_valid,
             root_action_planned,
-            root_action_done
-        );
-
-        debug_if_enabled!(
-            "panel_api boot/update provisioning for input {} (offset={}s) -> aliases: desired={}, valid={}, missing={}, exp_missing={}, expiring(offset)={}, expired={}, refresh(offset)={}",
-            sanitize_sensitive_info(&input.name),
-            offset_secs,
             desired_aliases_u16,
             valid_aliases,
+            valid_aliases_beyond_offset,
             missing_aliases,
             exp_missing_aliases,
             expiring_aliases,
             expired_aliases,
-            planned_refresh_aliases
-        );
-
-        debug_if_enabled!(
-            "panel_api boot/update provisioning for input {} (offset={}s) -> total: enabled_users={}, valid_accounts={}, to_provision={}",
-            sanitize_sensitive_info(&input.name),
-            offset_secs,
+            needed_refresh_aliases_u16,
+            planned_refresh_aliases,
             enabled_users,
             valid_total,
             to_provision
