@@ -8,8 +8,8 @@ use crate::app::components::{
 use crate::app::context::ConfigContext;
 use crate::html_if;
 use shared::model::{
-    ConfigInputDto, PanelApiAliasPoolAuto, PanelApiAliasPoolSizeValue, PanelApiConfigDto,
-    PanelApiProvisioningMethod, PanelApiQueryParamDto, SourcesConfigDto,
+    ConfigInputDto, PanelApiAliasPoolAuto, PanelApiAliasPoolSizeDto, PanelApiAliasPoolSizeValue,
+    PanelApiConfigDto, PanelApiProvisioningMethod, PanelApiQueryParamDto, SourcesConfigDto,
 };
 use std::rc::Rc;
 use yew::prelude::*;
@@ -1047,12 +1047,12 @@ pub fn PanelConfigView() -> Html {
             .unwrap_or_default();
         let provisioning_method = panel.map(|p| p.provisioning.method).unwrap_or_default();
         let alias_pool = panel.and_then(|p| p.alias_pool.as_ref());
-        let alias_pool_min = alias_pool
+        let alias_pool_size_default = PanelApiAliasPoolSizeDto::default();
+        let alias_pool_size = alias_pool
             .and_then(|p| p.size.as_ref())
-            .and_then(|s| s.min.as_ref());
-        let alias_pool_max = alias_pool
-            .and_then(|p| p.size.as_ref())
-            .and_then(|s| s.max.as_ref());
+            .unwrap_or(&alias_pool_size_default);
+        let alias_pool_min = alias_pool_size.min.as_ref();
+        let alias_pool_max = alias_pool_size.max.as_ref();
         let alias_pool_min_val = alias_pool_size_to_string(alias_pool_min);
         let alias_pool_max_val = alias_pool_size_to_string(alias_pool_max);
         let alias_pool_remove_expired = alias_pool.is_some_and(|p| p.remove_expired);

@@ -6,7 +6,7 @@ use shared::check_input_credentials;
 use shared::error::TuliproxError;
 use shared::model::{
     ConfigInputAliasDto, ConfigInputDto, ConfigInputOptionsDto, InputFetchMethod, InputType,
-    PanelApiAliasPoolSizeValue, PanelApiConfigDto, StagedInputDto,
+    PanelApiAliasPoolSizeDto, PanelApiAliasPoolSizeValue, PanelApiConfigDto, StagedInputDto,
 };
 use shared::utils::get_credentials_from_url;
 use shared::{check_input_connections, info_err_res, write_if_some};
@@ -182,13 +182,18 @@ impl ConfigInput {
     }
 
     fn prepare_panel_api(&mut self) -> Result<(), TuliproxError> {
-        if let Some(panel) = self.panel_api.as_ref() {
+        if let Some(panel) = self.panel_api.as_mut() {
             if panel.enabled {
-                if let Some(size) = panel
-                    .alias_pool
-                    .as_ref()
-                    .and_then(|pool| pool.size.as_ref())
-                {
+                if let Some(alias_pool) = panel.alias_pool.as_mut() {
+                    let size = alias_pool
+                        .size
+                        .get_or_insert_with(PanelApiAliasPoolSizeDto::default);
+                    if size.min.is_none() {
+                        size.min = Some(PanelApiAliasPoolSizeValue::Number(1));
+                    }
+                    if size.max.is_none() {
+                        size.max = Some(PanelApiAliasPoolSizeValue::Number(1));
+                    }
                     let min = size
                         .min
                         .as_ref()
