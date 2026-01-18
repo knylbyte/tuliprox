@@ -11,6 +11,8 @@ use crate::repository::{
 use crate::tools::atomic_once_flag::AtomicOnceFlag;
 use crate::utils::{debug_if_enabled, persist_source_config, read_sources_file_from_path};
 use axum::http::{Method, StatusCode};
+use chrono::{NaiveDateTime, TimeZone};
+use chrono_tz::Tz;
 use jsonwebtoken::get_current_timestamp;
 use log::{error, warn};
 use serde_json::Value;
@@ -22,7 +24,8 @@ use shared::model::{
     VirtualId,
 };
 use shared::utils::{
-    get_base_url_from_str, get_credentials_from_url, get_credentials_from_url_str, parse_timestamp,
+    get_base_url_from_str, get_credentials_from_url, get_credentials_from_url_str,
+    get_i64_from_serde_value, get_string_from_serde_value, parse_timestamp,
     sanitize_sensitive_info,
 };
 use std::collections::{HashMap, HashSet};
@@ -38,6 +41,25 @@ struct AccountCredentials {
     username: String,
     password: String,
     exp_date: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PanelApiExpireMode {
+    UtcString,
+    ServerTzString,
+}
+
+#[derive(Debug, Clone)]
+struct PanelApiTimeContext {
+    expire_mode: PanelApiExpireMode,
+    server_tz: Option<Tz>,
+}
+
+#[derive(Debug, Clone)]
+struct UserApiAccountInfo {
+    exp_date: Option<i64>,
+    server_now_ts: Option<i64>,
+    server_tz: Option<Tz>,
 }
 
 fn parse_boolish(value: &Value) -> bool {
@@ -79,6 +101,81 @@ fn is_date_only_yyyy_mm_dd(value: &str) -> bool {
         && bytes[0..4].iter().all(u8::is_ascii_digit)
         && bytes[5..7].iter().all(u8::is_ascii_digit)
         && bytes[8..10].iter().all(u8::is_ascii_digit)
+}
+
+fn parse_panel_expire_utc(value: &str) -> Option<i64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let parsed = parse_timestamp(value).ok().flatten();
+    if parsed.is_some() {
+        return parsed;
+    }
+    if is_date_only_yyyy_mm_dd(value) {
+        let normalized = format!("{value} 00:00:00");
+        return parse_timestamp(&normalized).ok().flatten();
+    }
+    None
+}
+
+fn parse_panel_expire_with_tz(value: &str, tz: Tz) -> Option<i64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if let Ok(ts) = value.parse::<i64>() {
+        return Some(ts);
+    }
+    let value = if is_date_only_yyyy_mm_dd(value) {
+        format!("{value} 00:00:00")
+    } else {
+        value.to_string()
+    };
+    let dt = NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S").ok()?;
+    match tz.from_local_datetime(&dt) {
+        chrono::LocalResult::Single(local_dt) => Some(local_dt.timestamp()),
+        chrono::LocalResult::Ambiguous(first, _) => Some(first.timestamp()),
+        chrono::LocalResult::None => None,
+    }
+}
+
+fn normalize_panel_expire(value: &str, ctx: Option<&PanelApiTimeContext>) -> Option<i64> {
+    let Some(ctx) = ctx else {
+        return parse_panel_expire_utc(value);
+    };
+    if let Ok(ts) = value.trim().parse::<i64>() {
+        return Some(ts);
+    }
+    match ctx.expire_mode {
+        PanelApiExpireMode::UtcString => parse_panel_expire_utc(value),
+        PanelApiExpireMode::ServerTzString => ctx
+            .server_tz
+            .and_then(|tz| parse_panel_expire_with_tz(value, tz))
+            .or_else(|| parse_panel_expire_utc(value)),
+    }
+}
+
+fn is_input_expired_at(exp_date: Option<i64>, now: u64) -> bool {
+    let Some(exp_date) = exp_date else {
+        return false;
+    };
+    u64::try_from(exp_date)
+        .map(|exp_ts| exp_ts <= now)
+        .unwrap_or(true)
+}
+
+fn is_expiring_with_offset_at(exp_date: Option<i64>, offset_secs: u64, now: u64) -> bool {
+    let Some(exp_date) = exp_date else {
+        return false;
+    };
+    let Ok(exp_ts) = u64::try_from(exp_date) else {
+        return true;
+    };
+    if exp_ts <= now {
+        return false;
+    }
+    now.saturating_add(offset_secs) >= exp_ts
 }
 
 fn first_json_object(value: &Value) -> Option<&serde_json::Map<String, Value>> {
@@ -252,20 +349,6 @@ fn parse_panel_api_provisioning_offset_secs(offset: &str) -> Result<u64, Tulipro
     value
         .checked_mul(multiplier)
         .ok_or_else(|| info_err!("panel_api.provisioning.offset is too large: '{raw}'"))
-}
-
-fn is_expiring_with_offset(exp_date: Option<i64>, offset_secs: u64) -> bool {
-    let Some(exp_date) = exp_date else {
-        return false;
-    };
-    let Ok(exp_ts) = u64::try_from(exp_date) else {
-        return true;
-    };
-    let now = get_current_timestamp();
-    if exp_ts <= now {
-        return false;
-    }
-    now.saturating_add(offset_secs) >= exp_ts
 }
 
 fn validate_panel_api_config(cfg: &PanelApiConfigDto) -> Result<(), TuliproxError> {
@@ -452,6 +535,41 @@ async fn panel_get_json(app_state: &AppState, url: Url) -> Result<Value, Tulipro
     Ok(json)
 }
 
+async fn user_api_get_json(app_state: &AppState, url: Url) -> Result<Value, TuliproxError> {
+    let client = app_state.http_client.load();
+    let sanitized = sanitize_sensitive_info(url.as_str());
+    debug_if_enabled!("panel_api user_api request {}", sanitized);
+    let resp = client
+        .get(url)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|e| info_err!("panel_api user_api request failed: {e}"))?;
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| info_err!("panel_api user_api read response failed: {e}"))?;
+    let json: Value = serde_json::from_str(&body)
+        .map_err(|e| info_err!("panel_api user_api invalid json (http {status}): {e}"))?;
+    let sanitize_sensitive = app_state
+        .app_config
+        .config
+        .load()
+        .log
+        .as_ref()
+        .is_none_or(|l| l.sanitize_sensitive_info);
+    let json_for_log = sanitize_panel_api_json_for_log(&json, sanitize_sensitive);
+    if let Ok(json_str) = serde_json::to_string(&json_for_log) {
+        debug_if_enabled!(
+            "panel_api user_api response (http {}): {}",
+            status,
+            sanitize_sensitive_info(&json_str)
+        );
+    }
+    Ok(json)
+}
+
 async fn panel_client_new(
     app_state: &AppState,
     cfg: &PanelApiConfigDto,
@@ -507,12 +625,12 @@ async fn panel_client_renew(
     Ok(())
 }
 
-async fn panel_client_info(
+async fn panel_client_info_raw(
     app_state: &AppState,
     cfg: &PanelApiConfigDto,
     username: &str,
     password: &str,
-) -> Result<Option<i64>, TuliproxError> {
+) -> Result<Option<String>, TuliproxError> {
     validate_client_info_params(&cfg.query_parameter.client_info)?;
     let params = resolve_query_params(
         &cfg.query_parameter.client_info,
@@ -532,19 +650,122 @@ async fn panel_client_info(
         .get("expire")
         .and_then(|v| v.as_str())
         .unwrap_or_default()
-        .trim();
-    let parsed = parse_timestamp(expire).ok().flatten();
-    if parsed.is_some() {
-        return Ok(parsed);
+        .trim()
+        .to_string();
+    if expire.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(expire))
+    }
+}
+
+async fn panel_client_info(
+    app_state: &AppState,
+    cfg: &PanelApiConfigDto,
+    username: &str,
+    password: &str,
+    time_ctx: Option<&PanelApiTimeContext>,
+) -> Result<Option<i64>, TuliproxError> {
+    let expire = panel_client_info_raw(app_state, cfg, username, password).await?;
+    Ok(expire
+        .as_deref()
+        .and_then(|value| normalize_panel_expire(value, time_ctx)))
+}
+
+async fn fetch_root_user_api_info(
+    app_state: &AppState,
+    input: &ConfigInput,
+) -> Option<UserApiAccountInfo> {
+    let (username, password) = extract_account_creds_from_input(input)?;
+    let base_url = get_base_url_from_str(input.url.as_str()).unwrap_or_else(|| input.url.clone());
+    let mut url = Url::parse(base_url.as_str()).ok()?;
+    url.set_path("/player_api.php");
+    {
+        let mut pairs = url.query_pairs_mut();
+        pairs.append_pair("username", username.as_str());
+        pairs.append_pair("password", password.as_str());
+        pairs.append_pair("action", "account_info");
     }
 
-    // Some panels return only a date ("YYYY-MM-DD") without time. Normalize to midnight.
-    if is_date_only_yyyy_mm_dd(expire) {
-        let normalized = format!("{expire} 00:00:00");
-        return Ok(parse_timestamp(&normalized).ok().flatten());
-    }
+    let json = match user_api_get_json(app_state, url).await {
+        Ok(json) => json,
+        Err(err) => {
+            debug_if_enabled!(
+                "panel_api user_api account_info failed for {}: {}",
+                sanitize_sensitive_info(&input.name),
+                sanitize_sensitive_info(err.to_string().as_str())
+            );
+            return None;
+        }
+    };
 
-    Ok(None)
+    let exp_date = json
+        .get("user_info")
+        .and_then(|v| v.get("exp_date"))
+        .and_then(get_i64_from_serde_value);
+    let server_now_ts = json
+        .get("server_info")
+        .and_then(|v| v.get("timestamp_now"))
+        .and_then(get_i64_from_serde_value);
+    let server_tz = json
+        .get("server_info")
+        .and_then(|v| v.get("timezone"))
+        .and_then(get_string_from_serde_value)
+        .and_then(|tz| tz.parse::<Tz>().ok());
+
+    Some(UserApiAccountInfo {
+        exp_date,
+        server_now_ts,
+        server_tz,
+    })
+}
+
+fn resolve_panel_expire_mode(
+    root_expire: Option<i64>,
+    panel_expire: Option<&str>,
+    server_tz: Option<Tz>,
+) -> PanelApiExpireMode {
+    let Some(root_expire) = root_expire else {
+        return PanelApiExpireMode::UtcString;
+    };
+    let Some(panel_expire) = panel_expire else {
+        return PanelApiExpireMode::UtcString;
+    };
+    let utc_ts = parse_panel_expire_utc(panel_expire);
+    let tz_ts = server_tz.and_then(|tz| parse_panel_expire_with_tz(panel_expire, tz));
+    let Some(utc_ts) = utc_ts else {
+        return tz_ts.map_or(PanelApiExpireMode::UtcString, |_| {
+            PanelApiExpireMode::ServerTzString
+        });
+    };
+    let Some(tz_ts) = tz_ts else {
+        return PanelApiExpireMode::UtcString;
+    };
+    let diff_utc = (utc_ts - root_expire).abs();
+    let diff_tz = (tz_ts - root_expire).abs();
+    let threshold = 120_i64;
+    match (diff_utc <= threshold, diff_tz <= threshold) {
+        (true, false) => PanelApiExpireMode::UtcString,
+        (false, true) => PanelApiExpireMode::ServerTzString,
+        _ => {
+            if diff_tz < diff_utc {
+                PanelApiExpireMode::ServerTzString
+            } else {
+                PanelApiExpireMode::UtcString
+            }
+        }
+    }
+}
+
+fn apply_clock_skew(now: u64, skew_secs: i64) -> u64 {
+    if skew_secs == 0 {
+        return now;
+    }
+    if skew_secs.is_negative() {
+        now.saturating_sub(skew_secs.unsigned_abs())
+    } else {
+        now.saturating_add(u64::try_from(skew_secs).unwrap_or(0))
+    }
 }
 
 async fn panel_account_info(
@@ -812,18 +1033,44 @@ fn count_valid_accounts(accounts: &[AccountCredentials]) -> usize {
         .count()
 }
 
-fn count_valid_alias_accounts(accounts: &[AccountCredentials], input_name: &str) -> usize {
-    accounts
-        .iter()
-        .filter(|acct| acct.name != input_name && is_account_valid(acct.exp_date))
-        .count()
-}
-
 fn root_counts_towards_pool(accounts: &[AccountCredentials], input_name: &str) -> bool {
     accounts
         .iter()
         .find(|acct| acct.name == input_name)
         .is_some_and(|acct| is_account_valid(acct.exp_date))
+}
+
+fn count_valid_accounts_at(accounts: &[AccountCredentials], now: u64) -> usize {
+    accounts
+        .iter()
+        .filter(|acct| acct.exp_date.is_some() && !is_input_expired_at(acct.exp_date, now))
+        .count()
+}
+
+fn count_valid_alias_accounts_at(
+    accounts: &[AccountCredentials],
+    input_name: &str,
+    now: u64,
+) -> usize {
+    accounts
+        .iter()
+        .filter(|acct| {
+            acct.name != input_name
+                && acct.exp_date.is_some()
+                && !is_input_expired_at(acct.exp_date, now)
+        })
+        .count()
+}
+
+fn root_counts_towards_pool_at(
+    accounts: &[AccountCredentials],
+    input_name: &str,
+    now: u64,
+) -> bool {
+    accounts
+        .iter()
+        .find(|acct| acct.name == input_name)
+        .is_some_and(|acct| acct.exp_date.is_some() && !is_input_expired_at(acct.exp_date, now))
 }
 
 fn should_reload_sources_after_internal_write(app_state: &AppState) -> bool {
@@ -1367,6 +1614,7 @@ async fn try_renew_expired_account(
                 panel_cfg,
                 acct.username.as_str(),
                 acct.password.as_str(),
+                None,
             )
             .await
             .ok()
@@ -1409,6 +1657,7 @@ async fn try_renew_expired_account(
                     panel_cfg,
                     acct.username.as_str(),
                     acct.password.as_str(),
+                    None,
                 )
                 .await
                 .ok()
@@ -1510,7 +1759,7 @@ async fn try_create_new_account(
                 );
             }
 
-            let exp_date = panel_client_info(app_state, panel_cfg, &username, &password)
+            let exp_date = panel_client_info(app_state, panel_cfg, &username, &password, None)
                 .await
                 .ok()
                 .flatten();
@@ -1682,7 +1931,7 @@ pub async fn try_provision_account_on_exhausted(
     created
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 async fn ensure_alias_pool_min(
     app_state: &Arc<AppState>,
     input: &ConfigInput,
@@ -1691,6 +1940,8 @@ async fn ensure_alias_pool_min(
     min_pool: u16,
     csv_path: Option<&Path>,
     sources_yml_patches: &mut Vec<SourcesYmlPatch>,
+    time_ctx: Option<&PanelApiTimeContext>,
+    effective_now: u64,
 ) -> bool {
     if min_pool == 0 {
         return false;
@@ -1703,7 +1954,8 @@ async fn ensure_alias_pool_min(
     let mut existing_names: HashSet<String> = accounts.iter().map(|a| a.name.clone()).collect();
     let max_attempts = usize::from(min_pool).saturating_add(10);
     for _ in 0..max_attempts {
-        let current_valid = count_valid_alias_accounts(accounts, input.name.as_str());
+        let current_valid =
+            count_valid_alias_accounts_at(accounts, input.name.as_str(), effective_now);
         if current_valid >= usize::from(min_pool) {
             break;
         }
@@ -1716,7 +1968,9 @@ async fn ensure_alias_pool_min(
         let expired_index = accounts
             .iter()
             .enumerate()
-            .filter(|(_, acct)| acct.name != input.name && is_input_expired(acct.exp_date))
+            .filter(|(_, acct)| {
+                acct.name != input.name && is_input_expired_at(acct.exp_date, effective_now)
+            })
             .min_by_key(|(_, acct)| acct.exp_date.unwrap_or(i64::MAX))
             .map(|(idx, _)| idx);
 
@@ -1753,6 +2007,7 @@ async fn ensure_alias_pool_min(
                         panel_cfg,
                         acct.username.as_str(),
                         acct.password.as_str(),
+                        time_ctx,
                     )
                     .await
                     .ok()
@@ -1828,11 +2083,16 @@ async fn ensure_alias_pool_min(
                     );
                 }
 
-                let exp_date =
-                    panel_client_info(app_state.as_ref(), panel_cfg, &username, &password)
-                        .await
-                        .ok()
-                        .flatten();
+                let exp_date = panel_client_info(
+                    app_state.as_ref(),
+                    panel_cfg,
+                    &username,
+                    &password,
+                    time_ctx,
+                )
+                .await
+                .ok()
+                .flatten();
 
                 accounts.push(AccountCredentials {
                     name: alias_name.clone(),
@@ -1936,6 +2196,59 @@ async fn sync_panel_api_for_input_on_boot(
     let mut accounts = collect_accounts(input.as_ref());
     let mut existing_names: HashSet<String> = accounts.iter().map(|a| a.name.clone()).collect();
     let mut newly_created_accounts: Vec<AccountCredentials> = Vec::new();
+    let mut time_ctx: Option<PanelApiTimeContext> = None;
+    let mut effective_now = get_current_timestamp();
+
+    if let Some((root_username, root_password)) = extract_account_creds_from_input(input.as_ref()) {
+        let user_info = fetch_root_user_api_info(app_state.as_ref(), input.as_ref()).await;
+        let (root_exp_date, server_tz, skew_secs) = if let Some(info) = user_info {
+            let local_now = i64::try_from(get_current_timestamp()).unwrap_or(0);
+            let skew_secs = info.server_now_ts.unwrap_or(local_now) - local_now;
+            (info.exp_date, info.server_tz, skew_secs)
+        } else {
+            (None, None, 0)
+        };
+
+        let panel_expire_raw = match panel_client_info_raw(
+            app_state.as_ref(),
+            panel_cfg,
+            root_username.as_str(),
+            root_password.as_str(),
+        )
+        .await
+        {
+            Ok(expire) => expire,
+            Err(err) => {
+                debug_if_enabled!(
+                    "panel_api root client_info (raw) failed for {}: {}",
+                    sanitize_sensitive_info(&input.name),
+                    sanitize_sensitive_info(err.to_string().as_str())
+                );
+                None
+            }
+        };
+
+        let expire_mode =
+            resolve_panel_expire_mode(root_exp_date, panel_expire_raw.as_deref(), server_tz);
+        time_ctx = Some(PanelApiTimeContext {
+            expire_mode,
+            server_tz,
+        });
+        effective_now = apply_clock_skew(get_current_timestamp(), skew_secs);
+
+        debug_if_enabled!(
+            "panel_api time context for input {}: expire_mode={:?}, tz={:?}, skew_secs={}",
+            sanitize_sensitive_info(&input.name),
+            expire_mode,
+            server_tz,
+            skew_secs
+        );
+    } else {
+        debug_if_enabled!(
+            "panel_api time context skipped for input {}: missing root credentials",
+            sanitize_sensitive_info(&input.name)
+        );
+    }
 
     if !panel_cfg.query_parameter.account_info.is_empty() {
         let creds = accounts
@@ -1971,6 +2284,7 @@ async fn sync_panel_api_for_input_on_boot(
             panel_cfg,
             &acct.username,
             &acct.password,
+            time_ctx.as_ref(),
         )
         .await
         {
@@ -2039,17 +2353,29 @@ async fn sync_panel_api_for_input_on_boot(
     let mut root_expiring_summary = false;
 
     if let Some(root_idx) = accounts.iter().position(|a| a.name == input.name) {
+        let now = effective_now;
+        let offset_deadline = now.saturating_add(offset_secs);
         let root_exp_date = accounts[root_idx].exp_date;
         let root_exp_missing = root_exp_date.is_none();
-        let root_expired = is_input_expired(root_exp_date);
-        let root_expiring = is_expiring_with_offset(root_exp_date, offset_secs);
+        let root_expired = match root_exp_date {
+            Some(ts) => u64::try_from(ts)
+                .map(|exp_ts| exp_ts <= now)
+                .unwrap_or(true),
+            None => false,
+        };
+        let root_expiring = match root_exp_date {
+            Some(ts) => u64::try_from(ts)
+                .map(|exp_ts| exp_ts > now && exp_ts <= offset_deadline)
+                .unwrap_or(true),
+            None => false,
+        };
         let should_refresh_root = root_exp_missing || root_expired || root_expiring;
         root_action_planned = should_refresh_root;
         root_exp_date_summary = root_exp_date;
         root_exp_missing_summary = root_exp_missing;
         root_expired_summary = root_expired;
         root_expiring_summary = root_expiring;
-        
+
         if should_refresh_root {
             let old_username = accounts[root_idx].username.clone();
             let old_password = accounts[root_idx].password.clone();
@@ -2218,6 +2544,7 @@ async fn sync_panel_api_for_input_on_boot(
                 panel_cfg,
                 active_username.as_str(),
                 active_password.as_str(),
+                time_ctx.as_ref(),
             )
             .await
             .ok()
@@ -2303,9 +2630,9 @@ async fn sync_panel_api_for_input_on_boot(
     }
 
     // Plan and execute alias refresh after the root operation (avoids over-provisioning).
-    let now = get_current_timestamp();
+    let now = effective_now;
     let offset_deadline = now.saturating_add(offset_secs);
-    let root_valid = root_counts_towards_pool(&accounts, input.name.as_str());
+    let root_valid = root_counts_towards_pool_at(&accounts, input.name.as_str(), now);
     let desired_aliases = min_pool.filter(|m| *m > 0).map_or_else(
         || {
             u16::try_from(accounts.iter().filter(|a| a.name != input.name).count())
@@ -2314,19 +2641,21 @@ async fn sync_panel_api_for_input_on_boot(
         |min_pool| min_pool.saturating_sub(u16::from(root_valid)),
     );
 
-    let valid_total = count_valid_accounts(&accounts);
-    let valid_aliases = count_valid_alias_accounts(&accounts, input.name.as_str());
+    let valid_total = count_valid_accounts_at(&accounts, now);
+    let valid_aliases = count_valid_alias_accounts_at(&accounts, input.name.as_str(), now);
     let exp_missing_aliases = accounts
         .iter()
         .filter(|a| a.name != input.name && a.exp_date.is_none())
         .count();
     let expired_aliases = accounts
         .iter()
-        .filter(|a| a.name != input.name && is_input_expired(a.exp_date))
+        .filter(|a| a.name != input.name && is_input_expired_at(a.exp_date, now))
         .count();
     let expiring_aliases = accounts
         .iter()
-        .filter(|a| a.name != input.name && is_expiring_with_offset(a.exp_date, offset_secs))
+        .filter(|a| {
+            a.name != input.name && is_expiring_with_offset_at(a.exp_date, offset_secs, now)
+        })
         .count();
 
     let desired_aliases_u16 = desired_aliases;
@@ -2340,7 +2669,7 @@ async fn sync_panel_api_for_input_on_boot(
             if a.name == input.name {
                 return false;
             }
-            if is_input_expired(a.exp_date) {
+            if is_input_expired_at(a.exp_date, now) {
                 return false;
             }
             match a.exp_date {
@@ -2488,6 +2817,7 @@ async fn sync_panel_api_for_input_on_boot(
                             panel_cfg,
                             new_username.as_str(),
                             new_password.as_str(),
+                            time_ctx.as_ref(),
                         )
                         .await
                         .ok()
@@ -2573,6 +2903,7 @@ async fn sync_panel_api_for_input_on_boot(
             panel_cfg,
             active_username.as_str(),
             active_password.as_str(),
+            time_ctx.as_ref(),
         )
         .await
         .ok()
@@ -2675,6 +3006,8 @@ async fn sync_panel_api_for_input_on_boot(
             alias_min,
             csv_path.as_deref(),
             &mut sources_yml_patches,
+            time_ctx.as_ref(),
+            effective_now,
         )
         .await
         {
